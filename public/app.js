@@ -1163,13 +1163,15 @@ async function viewDriver(id) {
 
 // Kurzinfo zum Fahrzeug im Vorgang: weitere offene Vorgänge, bald fällige Prüfungen, letzter km-Stand (nur gespeicherte Daten)
 function vehInfo(vi, c) {
-  if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km)) return '';
+  const prev = (vi && vi.previous_same_item) || [];
+  if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km && !prev.length)) return '';
   const today = new Date().toISOString().slice(0, 10);
   const parts = [];
   if (vi.other_open_total) parts.push(`<dt>${esc(t('vi_other_cases'))}</dt><dd>${vi.other_open_cases.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}`).join('<br>')}${vi.other_open_total > vi.other_open_cases.length ? `<br><span class="small muted">+${vi.other_open_total - vi.other_open_cases.length}</span>` : ''}</dd>`);
   if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due'))}</dt><dd>${vi.inspections_due.map((m) => `${esc(m.kind)} ${fmtD(m.next_due_date)}${m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}`).join('<br>')}</dd>`);
+  if (prev.length) parts.unshift(`<dt>${esc(t('vi_prev_same'))}</dt><dd>${prev.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtD(o.closed_at)}`).join('<br>')}<div class="small muted">${esc(t('vi_prev_same_hint'))}</div></dd>`);
   if (vi.last_km) parts.push(`<dt>${esc(t('km'))}</dt><dd>${fmtKm(vi.last_km.km)} <span class="small muted">(${fmtD(vi.last_km.measured_at)})</span></dd>`);
-  return `<details class="small" style="margin-top:8px"${vi.other_open_total || vi.inspections_due.some((m) => m.next_due_date < today) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
+  return `<details class="small" style="margin-top:8px"${vi.other_open_total || prev.length || vi.inspections_due.some((m) => m.next_due_date < today) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
 }
 
 // Nach Scan des Fahrzeug-Aufklebers: Auswahl „Schaden melden“ / „Abfahrtskontrolle“ für dieses Fahrzeug

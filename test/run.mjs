@@ -1727,6 +1727,28 @@ await test('Mängelstatistik der Kontrollen: Summen wie gespeichert, Filter, Rec
   finally { await env.DB.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').bind(V1).run(); }
 });
 
+await test('Vorgang zeigt: gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen davor bereits repariert (nicht für Fahrer)', async () => {
+  const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const chk = () => users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 4 ? 'mangel' : 'ok', note: i === 4 ? 'Wischer schmiert' : null })) });
+  const first = (await chk()).data.followups[0].id;
+  // als repariert und freigegeben markieren (Ablauf selbst ist in T02 ff. geprüft)
+  const closed = new Date(Date.now() - 10 * 86400000).toISOString();
+  await env.DB.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=?, workshop_site='DORTMUND' WHERE id=?`).bind(closed, first).run();
+  const second = (await chk()).data.followups[0];
+  ok(second.id !== first && !second.repeat, 'neuer Vorgang, da der alte abgeschlossen ist');
+  const d = (await users.fleet.get(`/api/cases/${second.id}`)).data;
+  eq(d.vehicle_info.previous_same_item.map((x) => x.id).join(), first, 'früherer Vorgang mit gleichem Prüfpunkt');
+  eq(d.vehicle_info.previous_same_item[0].closed_at, closed);
+  ok(!('vehicle_info' in (await users.driver.get(`/api/cases/${second.id}`)).data), 'Fahrer ohne Fahrzeug-Kurzinfo');
+  // anderer Prüfpunkt → kein Hinweis
+  const other = (await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 5 ? 'mangel' : 'ok', note: i === 5 ? 'anderes' : null })) })).data.followups[0].id;
+  eq((await users.fleet.get(`/api/cases/${other}`)).data.vehicle_info.previous_same_item.length, 0, 'anderer Prüfpunkt');
+  // älter als 90 Tage vor der Meldung → kein Hinweis
+  await env.DB.prepare('UPDATE cases SET closed_at=? WHERE id=?').bind(new Date(Date.now() - 100 * 86400000).toISOString(), first).run();
+  eq((await users.fleet.get(`/api/cases/${second.id}`)).data.vehicle_info.previous_same_item.length, 0, 'älter als 90 Tage');
+  for (const cc of [second.id, other]) { const x = (await users.fleet.get(`/api/cases/${cc}`)).data.case; await users.fleet.post(`/api/cases/${cc}/commands`, { action: 'reject', command_id: rk(), expected_version: x.version, note: 'Testdaten' }); }
+});
+
 await test('Datenauskunft je Person: nur Inhaber, vollständig je Bereich, ohne Geheimnisse, protokolliert', async () => {
   const id = users.driver.id;
   eq((await users.fleet.get(`/api/admin/users/${id}/data-export`)).status, 403);
