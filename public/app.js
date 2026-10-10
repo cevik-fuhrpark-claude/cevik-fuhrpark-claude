@@ -1078,7 +1078,12 @@ async function viewUsage() {
 // ---------- Hilfe (Schritt für Schritt, DE/UK/EN) ----------
 function viewHelp() {
   const sec = (n) => `<section class="panel"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
-  render(`<h1>${esc(t('help'))}</h1>${['report', 'prio', 'check', 'push', 'offline'].map(sec).join('')}`, 'more');
+  const r = S.me.role;
+  const parts = ['report', 'prio', 'check', 'push', 'offline'];
+  if (r === 'workshop') parts.unshift('ws');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates');
+  if (r === 'dispatch') parts.unshift('dispo');
+  render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}`, 'more');
 }
 
 // ---------- Reifen über die Flotte ----------
