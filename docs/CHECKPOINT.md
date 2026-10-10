@@ -145,7 +145,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 
 ## Offene Fragen an den Auftraggeber
 - **YellowFox-Übergabedoku** aus dem ChatGPT-Projekt (Prompt im Chat 10.10.2026 übergeben): Basis-URL, Anmeldeart, Endpunkte, Beispielantworten, Fahrzeug-/Fahrer-Zuordnung, gebuchte Module.
-- **Führerscheinkontrolle (neu 10.10.2026):** Soll die App die regelmäßige Führerscheinkontrolle der Fahrer führen (Klassen, Ablaufdatum, Kontrolldatum, Prüfer; Erinnerung)? Das sind sensible Personaldaten – nur mit Freigabe. Wenn ja: Kontrollintervall (Monate) vorgeben.
+- **Testkonten und gemeinsame Stammdaten (neu 10.10.2026, wichtig vor dem Testrundgang):** Fahrzeuge, Prüftermine/-historie und Kilometerstände gibt es nur einmal (keine Trennung Test/Betrieb). Testkonten mit Rolle Fuhrparkleitung/Werkstatt/Fahrer können sie heute ändern (z. B. Fahrzeug außer Betrieb nehmen, Prüfung „erledigt“, km-Stand aus Test-Abfahrtskontrolle). **Empfehlung:** Für Testkonten Stammdaten nur lesen; km-Stände aus Testkontrollen nicht in die gemeinsame Fahrzeugakte schreiben. Soll ich das so umsetzen?
+- **Führerscheinkontrolle:** grundsätzlich freigegeben (Fahrerakte, 10.10.2026 17:37). Offen: Kontrollintervall in Monaten (keine Annahme ohne Vorgabe).
 - **Geteilte Werkstatt-Tablets (neu 10.10.2026):** Automatische Abmeldung nach wie vielen Minuten ohne Nutzung (derzeit 30 Tage Sitzung)? Nur für Rolle Werkstatt oder für alle?
 - **SZ-YC 5539 doppelt:** Stammliste FIN `WDB96340510318431` (aktiv) und Dortmunder Datei FIN `WDB96300510318431` (ruhend) – vermutlich dasselbe Fahrzeug mit Tippfehler. Welche FIN ist richtig?
 - **Letzte HU fehlt bei 13 Fahrzeugen** (nur SP belegt): Prüfberichte/Plaketten nachreichen, sonst bleibt die SP-Frist „ungeklärt“.
