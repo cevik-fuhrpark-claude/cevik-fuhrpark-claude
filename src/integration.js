@@ -3,6 +3,7 @@ import { json, readJson, HttpError, nowIso, uuid, normalizeVin, timingSafeEqual,
 import { masterPanel } from './agent.js';
 import { costReport } from './reports.js';
 import { maintenanceOverview } from './maintenance.js';
+import { listVehicles } from './vehicles.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
 // und INTEGRATION_TOKEN_READ (nur lesen, z. B. für Auswertungen). Ergebnis: 'write' oder 'read'.
@@ -38,6 +39,13 @@ export async function integrationRouter(request, env, ctx, url) {
       c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version
       FROM cases c WHERE c.environment=? AND c.updated_at > ? ORDER BY c.updated_at LIMIT 1000`).bind(envParam(url), since).all()).results;
     return json({ schema_version: '1.0', cases: rows });
+  }
+  // Verfügbarkeit für Tourenplanung: gesperrt / Werkstatt / Meldung offen / laut System einsatzbereit (keine Freigabe-Aussage)
+  if (p === '/v1/availability' && m === 'GET') {
+    const list = await listVehicles(env, { role: 'owner' }, envParam(url));
+    return json({ schema_version: '1.0', environment: envParam(url), generated_at: nowIso(),
+      note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
+      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due })) });
   }
   if (p === '/v1/findings' && m === 'GET') {
     const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;
