@@ -256,7 +256,7 @@ async function flushOutbox() {
   const rest = [];
   try {
     for (const item of list) {
-      try { const r = await api('POST', '/api/cases', item.body); toast(`${t('report_sent')}: ${r.case_no}`); }
+      try { const r = await api('POST', item.path || '/api/cases', item.body); toast(item.path === '/api/inspections' ? t('check_saved') : `${t('report_sent')}: ${r.case_no}`); }
       catch (err) { if (err.offline) { rest.push(item); continue; } toast(`${t('outbox_failed')}: ${err.message}`, true); }
     }
   } finally { outboxSet(rest); flushing = false; }
@@ -268,12 +268,16 @@ function outboxBanner() {
   return n ? `<div class="panel alert" id="outbox" role="status">${esc(t('outbox_pending').replace('{n}', n))}</div>` : '';
 }
 
+async function vehiclesCached() {
+  const vkey = `cfp_veh_${S.me.id}_${S.me.environment}`;
+  try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability })))); } catch {} return vs; }
+  catch (err) { if (!err.offline) throw err; let vs = null; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; return vs; }
+}
+function outboxAdd(path, body) { const list = outboxGet(); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, saved_at: new Date().toISOString() }); outboxSet(list); }
+
 // ---------- Neue Meldung ----------
 async function viewNew() {
-  const vkey = `cfp_veh_${S.me.id}_${S.me.environment}`;
-  let vs;
-  try { vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability })))); } catch {} }
-  catch (err) { if (!err.offline) throw err; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; }
+  const vs = await vehiclesCached();
   const mine = vs.filter((v) => v.assigned);
   const others = vs.filter((v) => !v.assigned);
   const pick = (arr) => `<div class="vehpick">${arr.map((v) => `<label><input type="radio" name="veh" value="${esc(v.id)}" required>${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>`;
@@ -303,7 +307,7 @@ async function viewNew() {
       location.hash = '#/cases/' + r.id;
     } catch (err) {
       if (err.offline) {
-        const list = outboxGet(); if (!list.some((x) => x.body.request_key === key)) list.push({ body, saved_at: new Date().toISOString() }); outboxSet(list);
+        outboxAdd('/api/cases', body);
         render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
       }
@@ -470,18 +474,27 @@ async function viewInspection(caseId) {
   };
 }
 async function viewDepartureCheck() {
-  const vs = (await api('GET', '/api/vehicles')).vehicles;
-  render(`<h1>${esc(t('departure_check'))}</h1><form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select>
+  const vs = await vehiclesCached();
+  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select>
     ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric"><div class="actions"><button class="btn block">${esc(t('submit_inspection'))}</button></div></form>`, 'check');
   const form = $('#f'); bindChecklist(form);
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
+    const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
     try {
-      const r = await api('POST', '/api/inspections', { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null });
+      const r = await api('POST', '/api/inspections', body);
       toast(t('check_saved'));
       location.hash = r.followups.length ? '#/cases/' + r.followups[0].id : '#/';
-    } catch (err) { toast(err.message, true); }
+    } catch (err) {
+      if (err.offline) {
+        outboxAdd('/api/inspections', body);
+        const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
+        render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
+        return;
+      }
+      toast(err.message, true);
+    }
   };
 }
 
