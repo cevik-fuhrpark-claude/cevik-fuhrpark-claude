@@ -18,6 +18,7 @@ import { recordUsage, usageReport } from './usage.js';
 
 // Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
 const usageEnv = new WeakMap();
+const usageAction = new WeakMap(); // Befehlsname bei …/commands (z. B. receive, add_part) – keine Inhalte
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -211,14 +212,14 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/fines' && m === 'GET') return json({ fines: await fines.listFines(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));
-  if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/commands$/)) && m === 'POST') return json(await fines.fineCommand(env, ctx, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await fines.fineCommand(env, ctx, user, envName, mm[1], b)); }
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/files$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await fines.uploadFineFile(env, user, envName, mm[1], request), 201); }
 
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
-  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') return json(await cases.runCommand(env, ctx, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await cases.runCommand(env, ctx, user, envName, mm[1], b)); }
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/files$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await cases.uploadFile(env, user, envName, mm[1], request), 201); }
   if ((mm = path.match(/^\/api\/files\/([\w-]+)$/)) && m === 'GET') return cases.downloadFile(env, user, envName, mm[1]);
   if (path === '/api/inspections' && m === 'POST') return json(await cases.submitInspection(env, ctx, user, envName, await readJson(request)), 201);
@@ -335,7 +336,7 @@ export default {
       if (url.pathname.startsWith('/api/')) {
         let res;
         try { res = await handleApi(request, env, ctx, url); } catch (e) { res = errorResponse(e); }
-        if (usageEnv.has(request)) recordUsage(env, ctx, usageEnv.get(request), request.method, url.pathname, res.status);
+        if (usageEnv.has(request)) recordUsage(env, ctx, usageEnv.get(request), request.method, url.pathname, res.status, usageAction.get(request));
         return withHeaders(res);
       }
       if (env.ASSETS) return withHeaders(await env.ASSETS.fetch(request), { 'content-security-policy': "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });

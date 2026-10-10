@@ -7,17 +7,19 @@ const AREA = { cases: 'cases', vehicles: 'vehicles', tires: 'tires', stock: 'sto
   me: 'account', logout: 'account', meta: 'account', dashboard: 'dashboard', inspections: 'checks' };
 
 // Pfadsegmente, die Einzelobjekte bezeichnen (UUID, Vorgangsnummer, FIN, Token, Zahlen), werden zu ':id'
-export function featureOf(method, path) {
+export function featureOf(method, path, action) {
+  // Befehle: nur bekannte, kurze Befehlsnamen anhängen (keine freien Inhalte)
+  const act = typeof action === 'string' && /^[a-z_]{2,32}$/.test(action) ? `:${action}` : '';
   const segs = path.replace(/^\/api\//, '').split('/').filter(Boolean).slice(0, 5)
     .map((s) => (/^[a-z_-]+$/.test(s) && s.length <= 24 ? s : ':id'));
-  return `${method} ${segs.join('/')}`.slice(0, 80);
+  return `${method} ${segs.join('/')}${act}`.slice(0, 80);
 }
 export const areaOf = (feature) => AREA[feature.split(' ')[1]?.split('/')[0]] || 'other';
 
-export function recordUsage(env, ctx, environment, method, path, status) {
+export function recordUsage(env, ctx, environment, method, path, status, action) {
   const job = env.DB.prepare(`INSERT INTO usage_daily(day, environment, feature, calls, errors) VALUES (?1, ?2, ?3, 1, ?4)
     ON CONFLICT(day, environment, feature) DO UPDATE SET calls = calls + 1, errors = errors + ?4`)
-    .bind(berlinDate(), environment, featureOf(method, path), status >= 400 ? 1 : 0).run().catch(() => {});
+    .bind(berlinDate(), environment, featureOf(method, path, action), status >= 400 ? 1 : 0).run().catch(() => {});
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else return job;
 }
 

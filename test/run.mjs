@@ -760,6 +760,9 @@ await test('Nutzungsstatistik ohne Personenbezug: nur Inhaber, IDs ersetzt, Fehl
   eq(featureOf('POST', '/api/cases/0b8c3c1e-1111-4222-8333-944455556666/commands'), 'POST cases/:id/commands');
   eq(featureOf('GET', '/api/vehicles/VIN:WDB96340310123456'), 'GET vehicles/:id');
   eq(areaOf('POST agent/run'), 'master');
+  eq(featureOf('POST', '/api/cases/x1/commands', 'add_part'), 'POST cases/:id/commands:add_part');
+  eq(featureOf('POST', '/api/cases/x1/commands', 'Freitext mit Inhalt'), 'POST cases/:id/commands', 'freie Texte nie übernehmen');
+  eq(areaOf('POST cases/:id/commands:receive'), 'cases');
   eq((await users.fleet.get('/api/admin/usage')).status, 403);
   await users.fleet.get('/api/cases/00000000-0000-4000-8000-000000000000'); // 404 → Fehler gezählt
   const r = await owner.get('/api/admin/usage?days=7', { 'x-cfp-env': 'test' });
@@ -767,6 +770,7 @@ await test('Nutzungsstatistik ohne Personenbezug: nur Inhaber, IDs ersetzt, Fehl
   const f = (k) => r.data.features.find((x) => x.feature === k);
   ok(f('GET cases') && f('GET cases').calls > 0, 'Vorgangsliste gezählt');
   ok(f('GET cases/:id') && f('GET cases/:id').errors >= 1, 'Fehler gezählt');
+  ok(r.data.features.some((x) => x.feature === 'POST cases/:id/commands:receive'), 'Befehle je Aktion');
   ok(r.data.features.every((x) => !/[0-9a-f]{8}-|\d{3,}/.test(x.feature)), 'keine IDs in Funktionsnamen');
   const raw = JSON.stringify((await env.DB.prepare('SELECT * FROM usage_daily').all()).results);
   const ids = (await env.DB.prepare('SELECT id, username FROM users').all()).results;
