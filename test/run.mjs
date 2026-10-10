@@ -1454,6 +1454,20 @@ await test('Anmeldungen eines Benutzers beenden (Geräteverlust): Rechte, Sitzun
   eq((await users.driver.post('/api/login', { username: 'test.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200, 'neu anmelden möglich');
 });
 
+await test('Vorgang zeigt Kurzinfo zum Fahrzeug (weitere offene Vorgänge, Prüfungen ≤ 30 Tage, km) – nicht für Fahrer', async () => {
+  const a = await users.driver.post('/api/cases', { vehicle_id: V2, description: 'Kurzinfo A: Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  const b = await users.driver.post('/api/cases', { vehicle_id: V2, description: 'Kurzinfo B: Licht', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() });
+  eq(a.status, 201); eq(b.status, 201);
+  const d = (await users.fleet.get(`/api/cases/${a.data.id}`)).data;
+  ok(d.vehicle_info.other_open_cases.some((o) => o.id === b.data.id), 'anderer offener Vorgang');
+  ok(!d.vehicle_info.other_open_cases.some((o) => o.id === a.data.id), 'nicht sich selbst');
+  ok(Array.isArray(d.vehicle_info.inspections_due));
+  eq((await users.driver.get(`/api/cases/${a.data.id}`)).data.vehicle_info, undefined, 'Fahrer: keine Fahrzeug-Kurzinfo');
+  const w = (await users.fleet.get(`/api/cases/${a.data.id}`)).data;
+  ok(w.vehicle_info.other_open_total >= 1);
+  for (const id of [a.data.id, b.data.id]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; await users.fleet.post(`/api/cases/${id}/commands`, { command: 'reject', command_id: rk(), expected_version: c.version, reason: 'Testdaten Kurzinfo' }); }
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');

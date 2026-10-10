@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 87 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 88 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -159,6 +159,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 10.10.2026: Datenqualität um Fahrerakte/Auslesungen erweitert (Backlog 17): Fahrer ohne Führerschein-Nachweis, Fahrerkarte ohne erfasste Auslesung, Lkw-Massenspeicher ohne Auslesung, Fahrer-Konto ohne Fahrerakte, Fahrerakte mit deaktiviertem Konto; Einträge verlinken in die Fahrerakte. 86 Tests grün, UI-Rauchtest 213 Ansichten ohne Auffälligkeit.
 - 10.10.2026: Wiederherstellungs-Probe der JSON-Sicherung (Backlog 18): `scripts/sicherung-probe.mjs` spielt eine Sicherung in eine frische In-Memory-DB ein und prüft Zeilenzahl je Tabelle + Fremdschlüssel; als Teil von `npm test` automatisiert; mit Sicherung des UI-Testservers geprüft (vollständig, 0 Fremdschlüssel-Fehler). 86 Tests grün.
 - 10.10.2026: Benutzerverwaltung (Backlog 19): je Benutzer „angemeldet auf N Gerät(en) · zuletzt aktiv“ (ohne Gerätedetails) und „Alle Anmeldungen beenden“ (Geräteverlust) – löscht alle Sitzungen und meldet Push-Geräte ab, gleiche Rechte wie „Sperre aufheben“, nicht für sich selbst, Protokoll `user.revoke_sessions`. Benutzerliste auf dem Handy als Karten. 87 Tests grün, UI-Rauchtest 213 Ansichten ohne Auffälligkeit.
+- 10.10.2026: Anmeldeseite „Passwort vergessen oder Konto gesperrt?“ mit Hinweis auf neuen Einladungslink durch die Fuhrparkleitung (DE/UK/EN, Backlog 20). Vorgang zeigt „Zum Fahrzeug“ (Backlog 21): weitere offene Vorgänge (Werkstatt nur eigene), Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand – nicht für Fahrer. 88 Tests grün, UI-Rauchtest 213 Ansichten ohne Auffälligkeit.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
@@ -176,9 +177,9 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Antworten auf die offenen Fragen prüfen und umsetzen – vor allem „Testkonten und gemeinsame Stammdaten“ (Empfehlung: Testkonten nur lesend für Fahrzeuge/Prüftermine/km; km aus Testkontrollen nicht in die gemeinsame Akte) und „Tablet-Abmeldung“. Ohne Antwort: weitere Verbesserungen aus der Liste unten (20 ff., in Reihenfolge; 15/16 nur nach Freigabe). Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Antworten auf die offenen Fragen prüfen und umsetzen – vor allem „Testkonten und gemeinsame Stammdaten“ (Empfehlung: Testkonten nur lesend für Fahrzeuge/Prüftermine/km; km aus Testkontrollen nicht in die gemeinsame Akte) und „Tablet-Abmeldung“. Ohne Antwort: weitere Verbesserungen aus der Liste unten (22 ff., in Reihenfolge; 15/16 nur nach Freigabe). Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
 15. Auslesungen über die Integrations-API (Auslesesoftware/n8n meldet automatisch) – **erst nach Freigabe**: Fahrerkarten-Daten sind personenbezogen; Freigabe vom 10.10. umfasst Sichtbarkeit nur für Inhaber/Fuhrparkleitung, nicht für technische Schnittstellen. Massenspeicher (fahrzeugbezogen) wäre ohne Personenbezug möglich.
 16. Fahrerakte: Nachweis-Dateien (Scan Führerschein/Fahrerkarte) anhängen – erst nach Datenschutz-Freigabe (Aufbewahrung/Löschfristen offen).
-20. Passwort vergessen ohne E-Mail: Inhaber/Fuhrparkleitung erzeugt neuen Einladungslink (vorhanden) – zusätzlich Hinweis auf der Anmeldeseite „Passwort vergessen? Bitte Fuhrparkleitung um neuen Link“ (DE/UK/EN).
-21. Vorgangsdetail: Fahrzeugakte-Kurzinfo (nächste Prüfung, Sperre, offene Restarbeiten) direkt im Werkstattauftrag anzeigen.
+22. Einladungslink als QR-Code anzeigen (ohne Fremdbibliothek, eigener QR-Encoder), damit Fahrer den Link am Handy direkt scannen können – kein Versand nötig.
+23. Lasttest-Ergebnis automatisch prüfen: Skript-Option `--check` bricht ab, wenn ein Aufruf > 50 Abfragen oder p95 über Schwellwert liegt (für CI).

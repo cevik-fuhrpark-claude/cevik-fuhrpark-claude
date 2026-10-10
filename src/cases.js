@@ -144,6 +144,17 @@ export async function getCaseDetail(env, user, envName, caseId) {
     files, open_items: openItems, inspections, followups, parent,
     allowed_actions: allowedActions(user, c, access),
   };
+  if (user.role !== 'driver') {
+    // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
+    // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
+    let others = (await env.DB.prepare(`SELECT id, case_no, status, priority, workshop_site, safety_lock FROM cases WHERE vehicle_id=? AND environment=? AND id<>?
+      AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ORDER BY created_at DESC LIMIT 20`).bind(c.vehicle_id, envName, c.id).all()).results;
+    if (user.role === 'workshop') others = others.filter((o) => o.workshop_site === user.workshop_site && o.status !== 'gemeldet');
+    const soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const due = (await env.DB.prepare(`SELECT kind, next_due_date FROM maintenance_rules WHERE vehicle_id=? AND next_due_date IS NOT NULL AND next_due_date <= ? ORDER BY next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results;
+    const km = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(c.vehicle_id).first();
+    detail.vehicle_info = { other_open_cases: others.slice(0, 5), other_open_total: others.length, inspections_due: due, last_km: km || null };
+  }
   if (user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch') {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;
     detail.parts = (await env.DB.prepare('SELECT * FROM parts WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;

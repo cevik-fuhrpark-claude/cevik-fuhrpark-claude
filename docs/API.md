@@ -52,7 +52,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Benutzer | `GET/POST /api/users`, `PATCH /api/users/:id`, `POST /api/users/:id/invite` |
 | Fahrzeuge | `GET /api/vehicles[?inactive=1]`, `POST /api/vehicles` (Anlegen/Bearbeiten, `kind` lkw/anhaenger), `POST /api/vehicles/:id/documents?kind=&note=&valid_until=JJJJ-MM-TT` (Rohdaten, Header `x-filename`), `POST /api/vehicles/:id/active` (`{active:false, reason}` = außer Betrieb, nur ohne offene Vorgänge), `POST /api/vehicles/import` (CSV), `GET /api/vehicles/:id`, `POST …/drivers`, `DELETE /api/assignments/:id`, `POST …/maintenance`, `POST /api/maintenance/:id/complete`, `POST …/odometer`, `POST …/ai` |
 | Prüftermine | `GET /api/maintenance[?format=csv]` (alle außer Fahrer), `POST /api/maintenance/import[?dry_run=1]` (CSV, Inhaber/Fuhrparkleitung) |
-| Vorgänge | `GET /api/cases?status=open/closed&q=<Suche>&vehicle_id=&limit=`, `POST /api/cases`, `GET /api/cases/:id`, `POST /api/cases/:id/commands`, `POST /api/cases/:id/files`, `GET /api/files/:id` |
+| Vorgänge | `GET /api/cases?status=open/closed&q=<Suche>&vehicle_id=&limit=`, `POST /api/cases`, `GET /api/cases/:id` (außer Fahrer zusätzlich `vehicle_info`: weitere offene Vorgänge, Prüfungen ≤ 30 Tage, letzter km-Stand), `POST /api/cases/:id/commands`, `POST /api/cases/:id/files`, `GET /api/files/:id` |
 | Kontrollen | `POST /api/inspections` (`kind`: `nach_reparatur` \| `abfahrt`) |
 | Hinweise | `GET /api/notifications`, `POST /api/notifications/:id/(received|opened|ack)`, `POST /api/notifications/read-all` |
 | Push | `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `GET /api/push/devices`, `POST /api/push/test` |

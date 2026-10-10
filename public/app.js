@@ -189,6 +189,7 @@ function viewLogin() {
     <label for="u">${esc(t('username'))}</label><input id="u" autocomplete="username" required autocapitalize="none">
     <label for="p">${esc(t('password'))}</label><input id="p" type="password" autocomplete="current-password" required>
     <div class="actions"><button class="btn block">${esc(t('login'))}</button></div>
+    <details class="small" style="margin-top:8px"><summary>${esc(t('forgot_pw'))}</summary><p class="muted">${esc(t('forgot_pw_hint'))}</p></details>
     ${langSelect()}
   </form></div>`);
   bindLang();
@@ -494,7 +495,7 @@ async function viewCase(id) {
       ${c.location_note ? `<dt>${esc(t('location'))}</dt><dd>${esc(c.location_note)}</dd>` : ''}
       ${d.parent ? `<dt>${esc(t('parent'))}</dt><dd><a href="#/cases/${esc(d.parent.id)}">${esc(d.parent.case_no)}</a></dd>` : ''}
       ${!['driver'].includes(S.me.role) ? `<dt>${esc(t('vehicle_file'))}</dt><dd><a href="#/vehicles/${esc(d.vehicle.id)}">${esc(d.vehicle.plate)}</a></dd>` : ''}
-    </dl></section>`;
+    </dl>${vehInfo(d.vehicle_info, c)}</section>`;
 
   // Aktionen
   const main = A.filter((a) => !['comment', 'upload', 'inspection', 'resolve_open_item'].includes(a));
@@ -1046,6 +1047,17 @@ async function viewDriver(id) {
   const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(edf)); b.active = !!edf.active.checked; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+}
+
+// Kurzinfo zum Fahrzeug im Vorgang: weitere offene Vorgänge, bald fällige Prüfungen, letzter km-Stand (nur gespeicherte Daten)
+function vehInfo(vi, c) {
+  if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km)) return '';
+  const today = new Date().toISOString().slice(0, 10);
+  const parts = [];
+  if (vi.other_open_total) parts.push(`<dt>${esc(t('vi_other_cases'))}</dt><dd>${vi.other_open_cases.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}`).join('<br>')}${vi.other_open_total > vi.other_open_cases.length ? `<br><span class="small muted">+${vi.other_open_total - vi.other_open_cases.length}</span>` : ''}</dd>`);
+  if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due'))}</dt><dd>${vi.inspections_due.map((m) => `${esc(m.kind)} ${fmtD(m.next_due_date)}${m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}`).join('<br>')}</dd>`);
+  if (vi.last_km) parts.push(`<dt>${esc(t('km'))}</dt><dd>${fmtKm(vi.last_km.km)} <span class="small muted">(${fmtD(vi.last_km.measured_at)})</span></dd>`);
+  return `<details class="small" style="margin-top:8px"${vi.other_open_total || vi.inspections_due.some((m) => m.next_due_date < today) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
 }
 
 // ---------- Auslese-Fristen Fahrerkarte / Massenspeicher ----------

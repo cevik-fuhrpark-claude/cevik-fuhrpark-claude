@@ -217,3 +217,9 @@ Object.assign(STRINGS.en, { active_sessions: 'signed in on {n} device(s)', revok
 Object.assign(STRINGS.de, { revoked_n: '✓ {n} Anmeldung(en) beendet, {p} Push-Gerät(e) abgemeldet' });
 Object.assign(STRINGS.uk, { revoked_n: '✓ Завершено входів: {n}, вимкнено Push-пристроїв: {p}' });
 Object.assign(STRINGS.en, { revoked_n: '✓ {n} sign-in(s) ended, {p} push device(s) unregistered' });
+Object.assign(STRINGS.de, { forgot_pw: 'Passwort vergessen oder Konto gesperrt?', forgot_pw_hint: 'Bitte die Fuhrparkleitung ansprechen: Sie kann einen neuen Einladungslink erzeugen, mit dem Sie ein neues Passwort festlegen. Eine Sperre nach Fehlversuchen kann sie ebenfalls aufheben. Passwörter niemals per Telefon, Chat oder E-Mail weitergeben.' });
+Object.assign(STRINGS.uk, { forgot_pw: 'Забули пароль або акаунт заблоковано?', forgot_pw_hint: 'Зверніться до керівника автопарку: він може створити нове посилання-запрошення, за яким ви встановите новий пароль, а також зняти блокування після невдалих спроб. Ніколи не повідомляйте пароль телефоном, у чаті чи e-mail.' });
+Object.assign(STRINGS.en, { forgot_pw: 'Forgot your password or account locked?', forgot_pw_hint: 'Please contact fleet management: they can create a new invitation link to set a new password and can also lift a lock after failed attempts. Never share passwords by phone, chat or e-mail.' });
+Object.assign(STRINGS.de, { vi_title: 'Zum Fahrzeug', vi_other_cases: 'Weitere offene Vorgänge', vi_due: 'Prüfungen ≤ 30 Tage' });
+Object.assign(STRINGS.uk, { vi_title: 'Про транспорт', vi_other_cases: 'Інші відкриті справи', vi_due: 'Перевірки ≤ 30 днів' });
+Object.assign(STRINGS.en, { vi_title: 'About the vehicle', vi_other_cases: 'Other open cases', vi_due: 'Inspections ≤ 30 days' });
