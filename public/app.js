@@ -327,6 +327,7 @@ async function fleetTodo() {
   const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const groups = [
     ['todo_receive', cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'kritisch'],
+    ['todo_repeat', cs.filter((c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.last_repeat_at)}`, 'mittel'],
     ['todo_qc', cs.filter((c) => c.status === 'abschlusskontrolle'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'mittel'],
     ['todo_parts', cs.filter((c) => c.status === 'wartet_teile'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, ''],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${r.kind} · ${r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')}`, 'mittel'],

@@ -1576,6 +1576,7 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   eq(a2.data.followups[0].repeat, true);
   const fa = (await users.fleet.get(`/api/cases/${a1.data.followups[0].id}`)).data;
   ok(fa.events.some((e) => e.action === 'repeat_finding' && /Bremsleuchte links aus/.test(e.note)), 'Vermerk im Verlauf');
+  ok((await users.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === fa.case.id).last_repeat_at, 'Liste kennt letzte Wiederholung (Heute zu tun)');
   eq(fa.case.check_item, keys[2]);
   // sicherheitsrelevant, offener Vorgang ohne Sperre → eigener (kritischer, gesperrter) Vorgang
   const a3 = await chk(true);

@@ -72,7 +72,8 @@ export async function listCases(env, user, envName, query) {
   const rows = (await env.DB.prepare(`
     SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name,
       (SELECT COUNT(*) FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen') AS open_items,
-      (SELECT COUNT(*) FROM files f WHERE f.case_id=c.id) AS file_count
+      (SELECT COUNT(*) FROM files f WHERE f.case_id=c.id) AS file_count,
+      (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding') AS last_repeat_at
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
     ORDER BY CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END,
