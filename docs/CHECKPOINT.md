@@ -88,6 +88,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Vorgangssuche (`GET /api/cases?q=`): Beschreibung, Vorgangsnummer, Kennzeichen auch ohne Leerzeichen/Bindestrich; Rollenfilter bleiben, SQL-Platzhalter wirkungslos; Suchfeld in „Vorgänge“ (300 ms Verzögerung). 52 Tests grün.
 - [x] Gültig-bis an Fahrzeugdokumenten (Migration 0010): optionales Datum „nur wenn im Dokument angegeben“; Agent-Befunde `DOCUMENT_EXPIRES_SOON`/`DOCUMENT_EXPIRED` je Fahrzeug+Dokumentart (neueres Dokument ersetzt älteres), in der ruhigen Sammel-Erinnerung enthalten. Bugfix: Bemerkung wurde doppelt dekodiert (`%` brach den Upload). 52 Tests grün, Agent ≤ 32 Abfragen.
 - [x] Fotos im Offline-Ausgang: bei Funkloch werden bis zu 10 komprimierte Fotos in IndexedDB gespeichert und nach dem Nachsenden der Meldung automatisch angehängt, danach gelöscht (Playwright offline→online: 1 Vorgang, 2 Fotos).
+- [x] Leistung: Kostenbericht/Kennzahlen 20× schneller (Intl-Datumsformat zwischengespeichert – wichtig für das CPU-Budget je Worker-Aufruf); Lasttest um Kennzahlen, Prüftermine, Reifen-Flotte, Suche erweitert (`docs/BETRIEB.md`).
 
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.

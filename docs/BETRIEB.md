@@ -47,9 +47,10 @@ Vor dem Zurückspielen das aktuelle Lesezeichen notieren – damit lässt sich a
 
 ## Belastbarkeit (Lasttest)
 `node --experimental-sqlite scripts/lasttest.mjs 150 3000` – synthetische Daten (Kennzeichen `LT-…`), nur im Arbeitsspeicher, nie in der echten Datenbank.
-Ergebnis 10.10.2026 (150 Lkw, 3000 Vorgänge): Vorgang anlegen p95 ≈ 3 ms, Vorgangsliste ≈ 15 ms, Fahrzeugakte ≈ 2 ms,
-Management-Panel ≈ 8 ms, Kostenbericht 12 Monate ≈ 230 ms, Fuhrparkagent-Lauf ≈ 300 ms (reine Anwendungslogik; D1 im Betrieb
-zusätzlich wenige ms je Abfrage).
+Ergebnis 10.10.2026, 14 Uhr (150 Lkw, 3000 Vorgänge): Vorgang anlegen p95 ≈ 4 ms, Vorgangsliste ≈ 20 ms, Fahrzeugakte ≈ 3 ms,
+Management-Panel ≈ 11 ms, Kostenbericht 12 Monate ≈ 19 ms (vorher ≈ 430 ms – Datumsformatierung wird jetzt einmal erzeugt statt je Buchung),
+Kennzahlen 12 Monate ≈ 56 ms, Prüftermine ≈ 3 ms, Reifen-Flotte ≈ 2 ms, Vorgangssuche ≈ 20 ms, Fuhrparkagent-Lauf ≈ 500 ms (reine Anwendungslogik inkl.
+SQLite-Nachbildung; D1 im Betrieb zusätzlich wenige ms je Abfrage).
 
 Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
 mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt

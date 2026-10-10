@@ -151,8 +151,11 @@ export function addMonths(dateStr, months) {
   return d.toISOString().slice(0, 10);
 }
 
+// Formatter einmal erzeugen (Intl-Konstruktion ist teuer; Berichte rufen dies tausendfach auf – CPU-Budget je Worker-Aufruf)
+let BERLIN_FMT = null;
 export function berlinDate(iso = nowIso()) {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(iso));
+  if (!BERLIN_FMT) BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  return BERLIN_FMT.format(new Date(iso));
 }
 
 // Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)

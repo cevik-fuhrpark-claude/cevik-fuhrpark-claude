@@ -42,6 +42,10 @@ for (let k = 0; k < 20; k++) {
   await timed('Fahrzeugdetail', () => owner.get(`/api/vehicles/${vehicles[k % vehicles.length].id}`));
   await timed('Management-Panel', () => owner.get('/api/master'));
   await timed('Kostenbericht 12 Monate', () => owner.get('/api/reports/costs'));
+  await timed('Kennzahlen 12 Monate', () => owner.get('/api/reports/kpi?from=' + new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7)));
+  await timed('Prüftermine Übersicht', () => owner.get('/api/maintenance'));
+  await timed('Reifen Flotte', () => owner.get('/api/tires/fleet'));
+  await timed('Vorgangssuche', () => owner.get('/api/cases?q=LT'));
 }
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
