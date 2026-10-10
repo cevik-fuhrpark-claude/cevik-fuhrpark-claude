@@ -837,8 +837,8 @@ await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den
 });
 
 await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Überschneidungen einmal', async () => {
-  eq((await owner.post('/api/vehicles', { plate: 'KP-SP 1', vin: 'WDB96340310888001', site: 'Dortmund' })).status, 201);
-  const VK = 'VIN:WDB96340310888001';
+  eq((await owner.post('/api/vehicles', { plate: 'KP-SP 1', vin: 'WDB96340310555501', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310555501';
   const mk = async (desc) => (await users.fleet.post('/api/cases', { vehicle_id: VK, description: desc, priority: 'mittel', driveability: 'nicht_fahrbereit', request_key: rk() })).data.id;
   const a = await mk('Sperrzeit-Test A: Bremse'); const b = await mk('Sperrzeit-Test B: Reifen');
   const h = (n) => new Date(Date.now() - n * 3600000).toISOString();
@@ -854,6 +854,28 @@ await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Übers
   ok(r.definitions.locked_h, 'Definition');
   for (const id of [a, b]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; if (c.safety_lock) await users.fleet.post(`/api/cases/${id}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Testende', payload: { confirm: true } }); const c2 = (await users.fleet.get(`/api/cases/${id}`)).data.case; await users.fleet.post(`/api/cases/${id}/commands`, { action: 'reject', command_id: rk(), expected_version: c2.version, note: 'Testdaten' }); }
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Sperrzeit' })).status, 200);
+});
+
+await test('Sperre/Aufhebung erreicht die dem Fahrzeug zugeordneten Fahrer (ohne Zugriff auf den fremden Vorgang)', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'ZF-SP 2', vin: 'WDB96340310555502', site: 'Dortmund' })).status, 201);
+  const VZ = 'VIN:WDB96340310555502';
+  const as = await users.fleet.post(`/api/vehicles/${VZ}/drivers`, { user_id: users.driver.id });
+  eq(as.status, 201);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: VZ, description: 'Spiegel locker (Zuordnungstest)', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const mine = async (kind) => (await users.driver.get('/api/notifications')).data.notifications.filter((n) => n.kind === kind && /ZF-SP 2/.test(n.body));
+  eq((await mine('created')).length, 0, 'ohne Sperre keine Meldung an Fahrer');
+  let c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'set_safety_lock', command_id: rk(), expected_version: c.version, note: 'Spiegelhalter gebrochen' })).status, 200);
+  const lk = await mine('safety_lock');
+  eq(lk.length, 1, 'zugeordneter Fahrer erfährt die Sperre'); eq(lk[0].case_id, null, 'ohne Link auf fremden Vorgang'); ok(lk[0].urgent, 'dringend');
+  eq((await users.driver.get(`/api/cases/${cid}`)).status, 404, 'Vorgang bleibt für ihn unsichtbar');
+  c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Halter getauscht', payload: { confirm: true } })).status, 200);
+  eq((await mine('safety_lock_lifted')).length, 1, 'Aufhebung ebenfalls');
+  c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, note: 'Testdaten' });
+  eq((await users.fleet.req('DELETE', `/api/assignments/${as.data.id}`)).status, 200);
+  eq((await owner.post(`/api/vehicles/${VZ}/active`, { active: false, reason: 'Testdaten Zuordnung' })).status, 200);
 });
 
 console.log('Datensicherung');

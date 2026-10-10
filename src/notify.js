@@ -40,6 +40,14 @@ async function usersByRole(env, environment, roles, extraWhere = '', extraArgs =
     .bind(environment, ...roles, ...extraArgs).all()).results;
 }
 
+// Fahrer mit aktueller Zuordnung zum Fahrzeug (Sperre/Aufhebung/Freigabe betrifft sie direkt). Sie sehen fremde Vorgänge
+// nicht – ihr Hinweis verlinkt daher nicht auf den Vorgang (assigned), sondern erscheint in „Hinweise“/„Mein Fahrzeug“.
+async function assignedDrivers(env, c) {
+  return (await env.DB.prepare(`SELECT u.id, u.language, u.role, 1 AS assigned FROM driver_vehicles d JOIN users u ON u.id=d.user_id
+    WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`)
+    .bind(c.vehicle_id, nowIso(), c.environment, c.reporter_id).all()).results;
+}
+
 export async function recipientsFor(env, c, kind, ctxData = {}) {
   const e = c.environment;
   const urgent = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
@@ -52,6 +60,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'created':
       add(await usersByRole(env, e, ['fleet', 'owner']));
       if (urgent) { add(await usersByRole(env, e, ['dispatch'])); add(workshopUsers); }
+      if (c.safety_lock) add(await assignedDrivers(env, c)); // „nicht fahren“ auch an die anderen Fahrer dieses Fahrzeugs
       break;
     case 'received': case 'rejected': case 'priority_changed':
       add(reporter);
@@ -67,6 +76,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       break;
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(await usersByRole(env, e, ['dispatch', 'fleet', 'owner'])); add(workshopUsers);
+      add(await assignedDrivers(env, c));
       break;
     case 'comment': {
       // Optional gezielt: payload.notify ⊆ ['reporter','fleet','workshop'] (Standard: alle Beteiligten)
@@ -109,9 +119,9 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const title = kind === 'created' && urgent ? T[lang].created_urgent : T[lang][kind] || kind;
     // Sperrbildschirm: nur Vorgangsnummer, Kennzeichen, Priorität – keine Schadensbeschreibung
     const body = `${c.case_no} · ${vehicle?.plate || ''} · ${c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
-    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: c.id, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now });
+    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned ? null : c.id, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now });
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: c.id, kind }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;

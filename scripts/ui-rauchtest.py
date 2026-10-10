@@ -59,6 +59,16 @@ CONTRAST = """() => {
   }
   return out;
 }"""
+# Zielgröße (WCAG 2.2 AA 2.5.8: mind. 24×24 px; Werkstatt mit Handschuhen): Schaltflächen, Auswahlfelder, Eingaben, Links als Schaltfläche
+TARGETS = """() => {
+  const out = [];
+  for (const el of document.querySelectorAll('#app button, #app .btn, #app select, #app input:not([type=hidden]):not([type=checkbox]):not([type=radio]), #app textarea, .tabbar a')) {
+    if (!(el.offsetWidth || el.offsetHeight) || el.closest('.print-only')) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 24 || r.height < 24) out.push(`${Math.round(r.width)}×${Math.round(r.height)} ${el.tagName.toLowerCase()} „${(el.textContent || el.name || '').trim().slice(0, 25)}“`);
+  }
+  return out;
+}"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
     'owner': ['cases/', 'vehicles/', 'maintenance', 'stock/reorder', 'defects', 'vehicles/qr', 'vehicles/qr/'],
@@ -208,6 +218,9 @@ with sync_playwright() as p:
                     low = pg.evaluate(CONTRAST)
                     if low:
                         problems.append(f'{where}: Kontrast zu gering {low[:3]}')
+                    small = pg.evaluate(TARGETS)
+                    if small:
+                        problems.append(f'{where}: Bedienelement kleiner als 24 px {small[:3]}')
                     a11y = pg.evaluate(A11Y)
                     if a11y:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
