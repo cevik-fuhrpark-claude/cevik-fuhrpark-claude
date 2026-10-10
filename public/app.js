@@ -760,6 +760,13 @@ function kmDueHtml(m, latest) {
 // HU/SP getrennt: letzte Prüfung, Fälligkeit (verbindlich/Prognose), Status, Nachweis, geplanter Termin (StVZO Anlage VIII, serverseitig berechnet)
 const HS_CLS = { ok: 'ok', bald_faellig: 'mittel', ueberfaellig: 'kritisch', ungeklaert: 'mittel', nicht_sp_pflichtig: '', erste_sp_kuenftig: '' };
 const mY = (d) => (d ? `${d.slice(5, 7)}/${d.slice(0, 4)}` : '–');
+// HU/SP-Hinweis in der App-Sprache (Server liefert deutschen Text + Code mit Werten; Deutsch = Servertext)
+function huNote(x, i) {
+  const c = (x.note_codes || [])[i];
+  if (!c || S.lang === 'de') return x.notes[i];
+  const k = 'hn_' + c.code; const s = t(k);
+  return s === k ? x.notes[i] : s.replace(/\{(\w+)\}/g, (m, n) => (n in (c.p || {}) ? String(c.p[n]) : m));
+}
 function huSpHtml(h, v, canEdit) {
   const card = (k, x) => {
     const rid = h.rules[k];
@@ -769,7 +776,7 @@ function huSpHtml(h, v, canEdit) {
       ${x.prognosis ? `<dt>${esc(t('prognosis'))}</dt><dd>${mY(x.prognosis)} <span class="small muted">(${esc(t('not_binding'))})</span></dd>` : ''}
       ${x.planned_date ? `<dt>${esc(t('planned_appt'))}</dt><dd>${fmtD(x.planned_date)}</dd>` : ''}
       <dt>${esc(t('evidence'))}</dt><dd>${esc(x.last_evidence || '–')}</dd></dl>
-      ${x.notes && x.notes.length ? `<ul class="small" style="margin:8px 0 0 18px">${x.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      ${x.notes && x.notes.length ? `<ul class="small" style="margin:8px 0 0 18px">${x.notes.map((n, i) => `<li>${esc(huNote(x, i))}</li>`).join('')}</ul>` : ''}
       ${canEdit && rid && x.status !== 'nicht_sp_pflichtig' ? `<details><summary>${esc(t('record_done'))}</summary><form data-hsdone="${esc(rid)}"><label>${esc(t('date'))}</label><input type="date" name="done_date" required><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('evidence_ph'))}">
         <label>${esc(t('result'))}</label><select name="result"><option value="">–</option>${['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'].map((r) => `<option value="${r}">${esc(t('res_' + r))}</option>`).join('')}</select>
         <label>${esc(t('documented_due'))}</label><input type="date" name="next_due_date"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
@@ -1252,7 +1259,7 @@ async function viewMaint() {
   if (f === 'gaps') {
     html += `<p class="small muted">${esc(t('gaps_hint'))}</p><div class="list">${ov.gaps.map((g) => `<a class="row" href="#/vehicles/${encodeURIComponent(g.vehicle_id)}">${plate(g.plate)}<span class="title">${g.vehicle_kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(g.site || '')}</span><span></span><span class="sub" style="white-space:normal">${g.missing.map((k) => `<span class="chip">${esc(k)}</span>`).join(' ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`;
   } else {
-    html += `<div class="list">${rows.map((r) => `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : r.status === 'faellig' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)} · ${r.due_month ? `${esc(t('due_until_end'))} ${esc(r.due_month)}${r.due_basis ? ` <span class="small muted">(${esc(t('db_' + r.due_basis))})</span>` : ''}` : r.next_due_date ? fmtD(r.next_due_date) : r.prognosis ? `${esc(t('prognosis'))} ${mY(r.prognosis)}` : '–'}${r.planned_date ? ` · ${esc(t('planned_appt'))} ${fmtD(r.planned_date)}` : ''}${r.next_due_km ? ` · ${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining !== null ? ` (${r.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-r.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(r.km_remaining)})` : ''}` : ''}</span><span class="chip ${cls[r.status]}">${esc(t('ms_' + r.status))}${r.days !== null ? ` (${r.days})` : ''}</span><span class="sub">${r.notes && r.notes.length && ['ungeklaert', 'ueberfaellig'].includes(r.status) ? esc(r.notes[r.notes.length - 1]) + ' · ' : ''}${esc(r.evidence)}${r.site ? ' · ' + esc(r.site) : ''}</span></a>`).join('') || `<p class="muted">${esc(t('none_due'))}</p>`}</div>`;
+    html += `<div class="list">${rows.map((r) => `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : r.status === 'faellig' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)} · ${r.due_month ? `${esc(t('due_until_end'))} ${esc(r.due_month)}${r.due_basis ? ` <span class="small muted">(${esc(t('db_' + r.due_basis))})</span>` : ''}` : r.next_due_date ? fmtD(r.next_due_date) : r.prognosis ? `${esc(t('prognosis'))} ${mY(r.prognosis)}` : '–'}${r.planned_date ? ` · ${esc(t('planned_appt'))} ${fmtD(r.planned_date)}` : ''}${r.next_due_km ? ` · ${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining !== null ? ` (${r.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-r.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(r.km_remaining)})` : ''}` : ''}</span><span class="chip ${cls[r.status]}">${esc(t('ms_' + r.status))}${r.days !== null ? ` (${r.days})` : ''}</span><span class="sub">${r.notes && r.notes.length && ['ungeklaert', 'ueberfaellig'].includes(r.status) ? esc(huNote(r, r.notes.length - 1)) + ' · ' : ''}${esc(r.evidence)}${r.site ? ' · ' + esc(r.site) : ''}</span></a>`).join('') || `<p class="muted">${esc(t('none_due'))}</p>`}</div>`;
   }
   if (isMgr()) html += `<section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,text/csv" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>`;
   render(html, 'more');

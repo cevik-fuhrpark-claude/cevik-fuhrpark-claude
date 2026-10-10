@@ -1254,6 +1254,13 @@ console.log('HU/SP nach StVZO Anlage VIII');
     eq(r.sp.status, 'ungeklaert', 'zGM fehlt'); eq(r.hu.status, 'ungeklaert');
     r = calc(L('ueber_12'), [], '2026-03-01');
     eq(r.hu.status, 'ungeklaert'); ok(/Keine durchgeführte HU/.test(r.hu.notes.join(' ')));
+    // jeder Hinweis hat einen Code mit deutschem Gegenstück in der Oberfläche (UK/EN-Anzeige)
+    eq(r.hu.notes.length, r.hu.note_codes.length, 'Code je Hinweis');
+    const { STRINGS: TX } = await import('../public/i18n.js');
+    const src = (await import('node:fs')).readFileSync(new URL('../src/inspection_rules.js', import.meta.url), 'utf8');
+    const codes = [...src.matchAll(/note\((?:hu|sp), '([a-z_]+)'|useDoc\('([a-z_]+)'/g)].map((m) => m[1] || m[2]);
+    ok(codes.length >= 19, 'alle Hinweis-Codes gefunden');
+    eq(codes.filter((c) => !TX.de['hn_' + c] || !TX.uk['hn_' + c] || !TX.en['hn_' + c]).join(','), '', 'Hinweis-Codes ohne Übersetzung');
     r = calc(L('ueber_12'), [HU('2026-01-15')], '2026-03-01');
     eq(r.sp.status, 'ungeklaert', 'ohne Erstzulassung und ohne SP-Nachweis'); eq(r.sp.prognosis, '2026-07-31');
     r = calc(L('ueber_12'), [HU('2025-01-15'), SP('2025-01-15'), HU('2026-01-15')], '2026-03-01');

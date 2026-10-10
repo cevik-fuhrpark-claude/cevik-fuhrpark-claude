@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Rauchtest: alle Ansichten je Rolle in Handy-, Tablet- und PC-Breite aufrufen
 # Voraussetzung: lokaler Entwicklungsserver mit frischer In-Memory-DB (sh scripts/restart-dev.sh) und Python-Playwright.
-# Aufruf: python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
+# Aufruf: [CFP_LANG=uk|en] python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
 # Prüft je Ansicht: keine JavaScript-Fehler, keine Fehlermeldung (rote Meldung), keine waagrechte Scrollleiste der Seite,
 # Überschrift vorhanden. Nur synthetische Testdaten (Kennzeichen RT-…), nichts verlässt den Rechner.
 import sys, os
@@ -110,6 +110,13 @@ with sync_playwright() as p:
     else:
         problems.append(f'Vorbereitung Lager: {st}')
 
+    # Sprache für alle Rauchtest-Konten (CFP_LANG=uk|en): lange ukrainische Texte dürfen das Layout nicht sprengen
+    LANG = os.environ.get('CFP_LANG')
+    if LANG:
+        for pg in pages.values():
+            r = pg.evaluate(JS, ['PATCH', '/api/me', {'language': LANG}])
+            if r['s'] != 200:
+                sys.exit(f'Sprache {LANG}: {r}')
     for role, pg in pages.items():
         errors = []
         pg.on('pageerror', lambda e, errors=errors: errors.append(str(e)))
@@ -133,6 +140,13 @@ with sync_playwright() as p:
                     a11y = pg.evaluate(A11Y)
                     if a11y:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
+                if LANG and name == 'handy':
+                    # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
+                    de = pg.evaluate(r"""() => { const out = []; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
+                      while (w.nextNode()) { const x = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
+                        if (x && /[äöüßÄÖÜ]/.test(x) && !/Bußgeldstelle|StVZO|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
+                    if de:
+                        problems.append(f'{where}: deutscher Text in {LANG}: {de[:4]}')
                 over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
                 if over > 2:
                     problems.append(f'{where}: Seite {over}px breiter als der Bildschirm')

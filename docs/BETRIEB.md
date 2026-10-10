@@ -92,6 +92,7 @@ wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 
 `sh scripts/restart-dev.sh && python3 scripts/ui-rauchtest.py [Screenshot-Ordner]` – ruft jede Ansicht für Inhaber, Fuhrparkleitung,
 Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (267 Ansichten, inkl. Bußgeld-/Lager-/Vorgangsdetails je Rolle, Disposition, Fahrerakte, Auslesungen, QR-Aufkleber, Vorgang und Kontrollformular) und meldet JavaScript-Fehler, abgebrochene Ansichten, rote Fehlermeldungen,
 fehlende Überschriften, waagrechtes Scrollen sowie (Handybreite) Felder ohne Beschriftung, Bilder ohne Alternativtext und Schaltflächen/Links ohne Text. Braucht Python-Playwright, nur lokale synthetische Daten. Stand 10.10.2026: 0 Auffälligkeiten.
+Mit `CFP_LANG=uk` bzw. `CFP_LANG=en` laufen alle Konten in dieser Sprache; zusätzlich werden sichtbare deutsche Texte (Umlaute) gemeldet.
 
 ## UI-Ablauftest (Kernprozess per Klick)
 `sh scripts/restart-dev.sh && python3 scripts/ui-ablauf.py [Screenshot-Ordner]` – spielt den Kernprozess in Handybreite über die Oberfläche durch:
