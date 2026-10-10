@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 45 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 46 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -69,16 +69,20 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Datensicherung: Inhaber-Download (JSON, ohne Geheimnisse) unter Einstellungen; Wiederherstellung per D1 Time Travel in `docs/BETRIEB.md`. 43 Tests grün.
 
 - [x] Prüftermine (Migration 0005, nur Indizes): Übersicht über alle Fahrzeuge unter Mehr → „Prüftermine“ (überfällig / bald fällig / alle / Lückenliste HU·SP·UVV·Tachograph ohne Termin), CSV-Export, Integrationsendpunkt `/v1/maintenance`. CSV-Import mit Vorschau (`dry_run`), Nachweis je Zeile Pflicht, Zuordnung FIN bzw. eindeutiges Kennzeichen, Plakette MM/JJJJ → Monatsende (vermerkt), spätere vorhandene Termine werden nie überschrieben, idempotent. 45 Tests grün, UI 390 px/Tablet/PC geprüft.
+- [x] Anhänger als eigene Prüfobjekte (Migration 0006: `vehicles.kind` lkw/anhaenger): Import mit Spalte „Fahrzeugart“ (Lkw/Anhänger/KFZ/ANH) und „Quelle“, Kopplung Lkw↔Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“) in Liste und Fahrzeugakte, Filter Lkw/Anhänger, Lückenliste für Anhänger nur HU/SP, Integrations-API liefert `kind`. Pflege ohne Fahrzeugart lässt die Art unverändert. 46 Tests grün, UI 390 px/Tablet/PC geprüft (Kennzeichen in Listen werden nicht mehr abgeschnitten, Nachweis in der Fahrzeugakte als eigene Zeile).
+- [x] Belegte Daten vorbereitet (nur Dateien im Repository, nichts produktiv eingespielt): `seed/anhaenger_belegt.csv` (23 Anhänger mit FIN von TÜV-NORD-Rechnungen „ANH“ bzw. KÜS-Rechnungen + Anhängerkennzeichen der Stammliste), `seed/prueftermine_belegt.csv` (61 Zeilen: 29 Lkw + 32 Anhänger, je letzte HU/SP/Tacho). Trockenlauf gegen Stammliste: 61 übernehmbar, 2 Prüffälle (SZ-YC 5548 FIN-Abweichung). **Einspiel-Reihenfolge nach Ersteinrichtung:** Stammliste → Anhänger (Einstellungen → Fahrzeugstamm importieren) → Prüftermine (Mehr → Prüftermine, Vorschau prüfen, Übernehmen).
 
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
 - **Prüfintervalle (10.10.2026, gepusht):** Die Prüfrechnungen belegen nur das Prüfdatum, keinen nächsten Termin. Soll die App die nächste Fälligkeit aus festen Intervallen berechnen (Vorschlag zur Bestätigung: HU 12 Monate, SP 6 Monate, Tachograph 24 Monate, UVV 12 Monate), oder werden die Plakettenmonate je Fahrzeug nachgereicht?
+- **Anhänger-Kennzeichen abweichend:** FIN VAK656EBDG1613170 steht auf TÜV-Rechnungen als „SZ KC5514“ (2×) und „SZ YC5514“ (1×), Stammliste „SZ-YC 5514“; FIN VAK654D0C01407532 auf TÜV-Rechnung „SZ YC5518“, Stammliste „SZ-KC 5518“. Seed nutzt das Kennzeichen der jüngsten Prüfrechnung – bitte richtiges Kennzeichen bestätigen (davon hängt die Kopplung zum Lkw ab). Fremdkennzeichen DAH-AC558 (KÜS 18.07.2026) nicht übernommen.
 - **FIN-Abweichung SZ-YC 5548:** Stammliste `YV2XTW056GB769768`, TÜV-Rechnungen 5354987055/5356025425 `YV2XTW0A6GB769768`. Welche FIN ist richtig? (Bis zur Klärung keine Prüftermine für dieses Fahrzeug importiert.)
 
 ## Backlog (in dieser Reihenfolge)
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **vorbereitet**: `seed/prueftermine_belegt.csv` (31 Zeilen, letzte HU/SP/Tacho je Lkw aus 22 TÜV-NORD-/KÜS-/Kienzle-Rechnungen in Drive, Stand 10.10.2026; 29 passen per FIN zur Stammliste). Enthält bewusst **nur „Letzte Prüfung“** – die Rechnungen nennen keinen nächsten Termin. Import (Mehr → Prüftermine) legt die Prüfungen „ohne Termin“ an; Fälligkeiten entstehen erst mit bestätigtem Intervall oder Plakette. **Nächster Schritt nach Antwort des Auftraggebers** (siehe Offene Fragen): Intervalle als Spalte `Intervall Monate` ergänzen bzw. Plakettenmonate eintragen. Nicht übernommen: Anhänger (nicht im Fahrzeugstamm), Kienzle-Rechnung AR121628+ (Kennzeichen „SC-YC“ verdruckt, keine FIN), Mirsso RE3267/RE3382 (kein Fahrzeug genannt), Bildrechnungen ohne lesbaren Text.
-9. Anhänger als eigene Prüfobjekte: Anhänger haben eigene HU/SP (TÜV-Rechnungen enthalten 40+ Anhängerzeilen mit FIN). Fahrzeugstamm um Fahrzeugart Lkw/Anhänger erweitern, Kopplung Lkw↔Anhänger mit Historie, Prüftermine/Lückenliste auch für Anhänger.
+9. Kopplungshistorie Lkw↔Anhänger (wer zog wann welchen Anhänger) – erst sinnvoll mit Telematik/Tourenplan als Quelle; bis dahin gilt die Stammliste.
+10. Eigene Verbesserungen (ohne Freigabe möglich): Fahrzeug-Stammdaten in der App bearbeiten (Formular statt nur CSV), Prüftermin-Erinnerung per Push an Fuhrparkleitung X Tage vorher (Agent-Befund existiert, Push-Zuordnung prüfen), Barrierefreiheit (Tastatur/Screenreader) systematisch prüfen.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

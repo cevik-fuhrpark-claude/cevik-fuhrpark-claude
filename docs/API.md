@@ -9,7 +9,7 @@ Parameter `environment=production|test` (Standard: production).
 
 | Methode & Pfad | Zweck |
 |---|---|
-| `GET /api/integration/v1/vehicles` | Fahrzeugstamm (ID `VIN:<FIN>`, Kennzeichen, Standort, Anhänger) |
+| `GET /api/integration/v1/vehicles` | Fahrzeugstamm (ID `VIN:<FIN>`, Kennzeichen, `kind` lkw/anhaenger, Standort, Anhänger) |
 | `GET /api/integration/v1/cases?since=<ISO>` | Vorgänge mit Status, Priorität, Sperre, Zeitstempeln, Version (max. 1000, aufsteigend nach `updated_at`) |
 | `GET /api/integration/v1/findings` | Offene Befunde des Fuhrparkagenten |
 | `GET /api/integration/v1/costs?environment=&from=JJJJ-MM&to=JJJJ-MM&vehicle_id=` | Kosten je Fahrzeug und Monat (belegt / geschätzt / Anzahl unbewertet; max. 36 Monate) |

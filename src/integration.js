@@ -18,7 +18,7 @@ export async function integrationRouter(request, env, ctx, url) {
   const p = url.pathname.replace('/api/integration', '');
   const m = request.method;
   if (p === '/v1/vehicles' && m === 'GET') {
-    const rows = (await env.DB.prepare(`SELECT v.id, v.vin, v.plate, v.site, v.manufacturer, v.model, v.build_year, v.trailer_plate, v.trailer_vin, v.master_status, v.updated_at
+    const rows = (await env.DB.prepare(`SELECT v.id, v.vin, v.plate, v.kind, v.site, v.manufacturer, v.model, v.build_year, v.trailer_plate, v.trailer_vin, v.master_status, v.updated_at
       FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).all()).results;
     return json({ schema_version: '1.0', vehicles: rows });
   }

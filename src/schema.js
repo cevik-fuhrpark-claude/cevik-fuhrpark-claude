@@ -78,5 +78,12 @@ export const MIGRATIONS = [
    "CREATE INDEX IF NOT EXISTS idx_maintenance_vehicle_kind ON maintenance_rules(vehicle_id, kind)",
    "CREATE INDEX IF NOT EXISTS idx_maintenance_due ON maintenance_rules(next_due_date)"
   ]
+ },
+ {
+  "id": "0006_trailers",
+  "statements": [
+   "ALTER TABLE vehicles ADD COLUMN kind TEXT NOT NULL DEFAULT 'lkw' CHECK (kind IN ('lkw','anhaenger'))",
+   "CREATE INDEX IF NOT EXISTS idx_vehicles_kind ON vehicles(kind)"
+  ]
  }
 ];

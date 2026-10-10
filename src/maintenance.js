@@ -9,6 +9,7 @@ const WRITE_ROLES = ['owner', 'fleet'];
 // Gesetzliche Pflichtprüfungen für schwere Lkw (StVZO § 29 HU/SP, § 57b Kontrollgerät, DGUV Vorschrift 70 UVV).
 // Dient nur der Lückenliste „kein Termin hinterlegt“ – es werden keine Termine daraus berechnet.
 export const REQUIRED_KINDS = ['HU', 'SP', 'UVV', 'Tachograph'];
+export const REQUIRED_KINDS_TRAILER = ['HU', 'SP']; // Anhänger: kein Kontrollgerät; UVV nur bei eigener Ladetechnik → nicht pauschal gefordert
 const MAX_ROWS = 2000;
 
 const KIND_ALIASES = new Map([
@@ -84,7 +85,7 @@ export async function maintenanceOverview(env, user) {
   const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first();
   const warnDays = Number(warnRow && warnRow.value) || 30;
   const today = berlinDate();
-  const vehicles = (await env.DB.prepare('SELECT id, plate, site FROM vehicles WHERE active=1').all()).results;
+  const vehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1').all()).results;
   const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.last_done_date, m.next_due_date, m.evidence, m.updated_at
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
   const vmap = new Map(vehicles.map((v) => [v.id, v]));
@@ -92,17 +93,17 @@ export async function maintenanceOverview(env, user) {
     const v = vmap.get(r.vehicle_id) || {};
     const days = r.next_due_date ? daysUntil(r.next_due_date, today) : null;
     const status = days === null ? 'ohne_termin' : days < 0 ? 'ueberfaellig' : days <= warnDays ? 'faellig' : 'ok';
-    return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, kind: r.kind, last_done_date: r.last_done_date,
+    return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: r.last_done_date,
       next_due_date: r.next_due_date, interval_months: r.interval_months, days, status, evidence: r.evidence, updated_at: r.updated_at };
   }).sort((a, b) => (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
   const has = new Set(rules.filter((r) => r.next_due_date).map((r) => `${r.vehicle_id}|${r.kind}`));
   const gaps = [];
   for (const v of vehicles.sort((a, b) => String(a.plate).localeCompare(String(b.plate)))) {
-    const missing = REQUIRED_KINDS.filter((k) => !has.has(`${v.id}|${k}`));
-    if (missing.length) gaps.push({ vehicle_id: v.id, plate: v.plate, site: v.site, missing });
+    const missing = (v.kind === 'anhaenger' ? REQUIRED_KINDS_TRAILER : REQUIRED_KINDS).filter((k) => !has.has(`${v.id}|${k}`));
+    if (missing.length) gaps.push({ vehicle_id: v.id, plate: v.plate, site: v.site, vehicle_kind: v.kind, missing });
   }
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, warn_days: warnDays, required_kinds: REQUIRED_KINDS, rows, gaps,
+  return { today, warn_days: warnDays, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps,
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 
@@ -114,9 +115,9 @@ const csvCell = (x) => {
 const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin' };
 
 export function maintenanceCsv(ov) {
-  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis'].join(';')];
-  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence)].join(';'));
-  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', ''].join(';'));
+  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart'].join(';')];
+  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw'].join(';'));
+  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw'].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

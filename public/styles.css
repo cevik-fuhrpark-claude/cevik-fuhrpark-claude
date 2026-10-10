@@ -81,6 +81,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 /* Listen */
 .list { display: flex; flex-direction: column; gap: 8px; }
 .row { background: var(--surface); border: 1px solid var(--rule); border-left: 6px solid var(--rule); border-radius: var(--radius-s); padding: 12px 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: center; text-decoration: none; color: inherit; min-height: 64px; }
+.row > .plate { min-width: max-content; }
+@media (max-width: 420px) { .row > .chip { white-space: normal; text-align: center; font-size: 0.75rem; } }
 .row:hover { border-color: var(--steel); }
 .row.p-kritisch { border-left-color: var(--stop); }
 .row.p-mittel { border-left-color: var(--mid); }

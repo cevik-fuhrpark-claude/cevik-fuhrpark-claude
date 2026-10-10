@@ -397,6 +397,31 @@ await test('Prüftermin-Import: nur mit Nachweis, FIN/eindeutiges Kennzeichen, V
   eq(ov2.rows.find((x) => x.vehicle_id === V2 && x.kind === 'Tachograph').next_due_date, '2028-08-28', 'Intervall ergänzt');
   eq((await users.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Art;Nächster Termin\nSZ-YC 5513;HU;2027-01-01', { 'content-type': 'text/csv' })).status, 400, 'Spalte Nachweis Pflicht');
 });
+await test('Anhänger als eigene Prüfobjekte: Import mit Fahrzeugart, Kopplung laut Stammliste, Lückenliste nur HU/SP', async () => {
+  const csv = 'Kennzeichen;FIN;Fahrzeugart;Quelle\nSZ-YC 5514;VAK656EBDG1613170;ANH;TÜV NORD Rechnung 5355932559\nSZ-XX 9;VAK656EBDG1613171;Kran;Test';
+  eq((await users.fleet.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 403, 'nur Inhaber');
+  const r = await owner.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' });
+  eq(r.status, 200); eq(r.data.imported, 1); ok(/Fahrzeugart unbekannt/.test(r.data.skipped[0].reason), 'unbekannte Art abgewiesen');
+  const T = 'VIN:VAK656EBDG1613170';
+  const list = (await users.fleet.get('/api/vehicles')).data.vehicles;
+  const tr = list.find((v) => v.id === T); const tk = list.find((v) => v.id === V1);
+  eq(tr.kind, 'anhaenger'); eq(tk.kind, 'lkw'); eq(tk.trailer_id, T, 'Lkw kennt Anhänger'); eq(tr.truck_plate, 'SZ-YC 5513', 'Anhänger kennt Zugfahrzeug');
+  ok(/TÜV NORD Rechnung/.test(tr.source), 'Quelle gespeichert');
+  const d = (await users.fleet.get(`/api/vehicles/${T}`)).data;
+  eq(d.coupled.length, 1); eq(d.coupled[0].id, V1);
+  eq((await users.fleet.get(`/api/vehicles/${V1}`)).data.coupled[0].id, T);
+  const gap = (await users.fleet.get('/api/maintenance')).data.gaps.find((g) => g.vehicle_id === T);
+  eq(gap.missing.join(','), 'HU,SP', 'Anhänger: nur HU/SP gefordert'); eq(gap.vehicle_kind, 'anhaenger');
+  // Pflege ohne Fahrzeugart lässt die Art unverändert
+  eq((await users.fleet.post('/api/vehicles', { vin: 'VAK656EBDG1613170', plate: 'SZ-YC 5514', site: 'Dortmund' })).status, 201);
+  eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === T).kind, 'anhaenger');
+  eq((await users.fleet.post('/api/vehicles', { vin: 'VAK656EBDG1613170', plate: 'SZ-YC 5514', kind: 'Boot' })).status, 400);
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, H)).data.vehicles.find((v) => v.id === T).kind, 'anhaenger');
+  // Prüftermin für den Anhänger über die FIN der Prüfrechnung
+  const imp = await users.fleet.req('POST', '/api/maintenance/import', 'FIN;Art;Letzte Prüfung;Nachweis\nVAK656EBDG1613170;HU;09.09.2026;TÜV NORD Rechnung 5355932559', { 'content-type': 'text/csv' });
+  eq(imp.data.created, 1);
+});
 await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pflicht', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer falsch' })).status, 401);

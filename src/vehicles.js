@@ -4,6 +4,7 @@ import { audit } from './auth.js';
 import { vehicleCosts } from './cases.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
+const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Sonstiges'];
 
 export async function listVehicles(env, user, envName) {
@@ -14,13 +15,18 @@ export async function listVehicles(env, user, envName) {
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
       (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL) AS next_due
     FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).bind(envName, envName, envName).all()).results;
+  const byPlate = new Map(rows.map((v) => [normPlate(v.plate), v]));
+  const pulledBy = new Map();
+  for (const v of rows) if (v.kind === 'lkw' && v.trailer_plate) { const tr = byPlate.get(normPlate(v.trailer_plate)); if (tr && tr.kind === 'anhaenger') pulledBy.set(tr.id, v); }
   let list = rows.map((v) => ({
     ...v,
+    trailer_id: v.kind === 'lkw' && v.trailer_plate && byPlate.get(normPlate(v.trailer_plate))?.kind === 'anhaenger' ? byPlate.get(normPlate(v.trailer_plate)).id : null,
+    truck_id: pulledBy.get(v.id)?.id || null, truck_plate: pulledBy.get(v.id)?.plate || null,
     availability: v.locked ? 'gesperrt' : v.in_workshop ? 'werkstatt' : v.open_cases ? 'meldung_offen' : 'einsatzbereit_lt_system',
   }));
   if (user.role === 'driver') {
     const assigned = (await env.DB.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)`).bind(user.id, nowIso()).all()).results.map((r) => r.vehicle_id);
-    list = list.map((v) => ({ id: v.id, plate: v.plate, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, assigned: assigned.includes(v.id), availability: v.availability }));
+    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability }));
     list.sort((a, b) => (b.assigned - a.assigned) || a.plate.localeCompare(b.plate));
   }
   return list;
@@ -41,7 +47,12 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
         WHERE d.vehicle_id=? AND u.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
     : [];
-  const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers };
+  // Kopplung Lkw ↔ Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“ des Lkw)
+  const all = (await env.DB.prepare('SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1').all()).results;
+  const coupled = v.kind === 'anhaenger'
+    ? all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw' }))
+    : all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger' }));
+  const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers, coupled };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
   }
@@ -58,20 +69,34 @@ function vehicleRow(user, body) {
     build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
     trailer_plate: str(body.trailer_plate, { max: 20 }), trailer_vin: body.trailer_vin ? normalizeVin(body.trailer_vin) : null,
     master_status: str(body.master_status, { max: 40 }), source: str(body.source, { max: 200 }) || `manuell durch ${user.username}`,
+    kind: normalizeVehicleKind(body.kind),
   };
+}
+
+// Fahrzeugart: Lkw (Zugmaschine/Motorwagen) oder Anhänger; Werte wie auf Prüfrechnungen (KFZ/ANH) werden verstanden. null = unverändert lassen
+export function normalizeVehicleKind(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+  const s = String(raw).trim().toLowerCase();
+  if (['anhaenger', 'anhänger', 'anh', 'trailer', 'auflieger', 'sattelauflieger'].includes(s)) return 'anhaenger';
+  if (['lkw', 'kfz', 'truck', 'zugmaschine', 'motorwagen'].includes(s)) return 'lkw';
+  throw bad('validation', `Fahrzeugart unbekannt: ${raw} (Lkw oder Anhänger)`);
 }
 
 // Sammel-Upsert über json_each: eine Anweisung je 400 Fahrzeuge (Abfragebudget je Aufruf)
 async function upsertVehicleRows(env, rows) {
   const now = nowIso();
+  if (rows.some((r) => !r.kind)) {
+    const known = new Map((await env.DB.prepare('SELECT id, kind FROM vehicles').all()).results.map((v) => [v.id, v.kind]));
+    for (const r of rows) if (!r.kind) r.kind = known.get(r.id) || 'lkw';
+  }
   const J = (k) => `json_extract(value,'$.${k}')`;
   const stmts = [];
   for (let i = 0; i < rows.length; i += 400) {
-    stmts.push(env.DB.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,model,build_year,trailer_plate,trailer_vin,master_status,source,active,created_at,updated_at)
-      SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, 1, ?1, ?1
+    stmts.push(env.DB.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,model,build_year,trailer_plate,trailer_vin,master_status,source,kind,active,created_at,updated_at)
+      SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, ${J('kind')}, 1, ?1, ?1
       FROM json_each(?2) WHERE 1
       ON CONFLICT(id) DO UPDATE SET plate=excluded.plate, site=excluded.site, manufacturer=excluded.manufacturer, model=excluded.model, build_year=excluded.build_year,
-        trailer_plate=excluded.trailer_plate, trailer_vin=excluded.trailer_vin, master_status=excluded.master_status, source=excluded.source, active=1, updated_at=excluded.updated_at`)
+        trailer_plate=excluded.trailer_plate, trailer_vin=excluded.trailer_vin, master_status=excluded.master_status, source=excluded.source, kind=excluded.kind, active=1, updated_at=excluded.updated_at`)
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
   if (stmts.length) await env.DB.batch(stmts);
@@ -161,7 +186,7 @@ export async function importVehiclesCsv(env, user, text) {
   const sep = lines[0].includes(';') ? ';' : ',';
   const head = lines[0].split(sep).map((h) => h.trim().toLowerCase());
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']) };
+  const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']), kind: col(['fahrzeugart', 'art']), src: col(['quelle', 'nachweis']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
   const result = { imported: 0, skipped: [] };
   const rows = new Map();
@@ -173,7 +198,8 @@ export async function importVehiclesCsv(env, user, text) {
       const row = vehicleRow(user, {
         vin, plate: cells[ci.plate], site: ci.site >= 0 ? cells[ci.site] : null, master_status: ci.status >= 0 ? cells[ci.status] : null,
         manufacturer: ci.man >= 0 ? cells[ci.man] : null, build_year: ci.year >= 0 && /^\d{4}(\.0+)?$/.test(cells[ci.year]) ? parseInt(cells[ci.year], 10) : null,
-        trailer_plate: ci.trailer >= 0 ? cells[ci.trailer] : null, source: 'CSV-Import Fuhrpark Stammliste',
+        trailer_plate: ci.trailer >= 0 ? cells[ci.trailer] : null, kind: ci.kind >= 0 ? cells[ci.kind] : null,
+        source: ci.kind >= 0 && ci.src >= 0 && cells[ci.src] ? `CSV-Import: ${cells[ci.src].slice(0, 180)}` : 'CSV-Import Fuhrpark Stammliste',
       });
       rows.set(row.id, row); // doppelte FIN: letzte Zeile gilt
     } catch (e) { result.skipped.push({ plate: cells[ci.plate], reason: e.message }); }
