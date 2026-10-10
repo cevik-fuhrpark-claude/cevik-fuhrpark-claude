@@ -100,6 +100,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 10.10.2026: 7 Lkw aus der Dortmunder Fuhrparkdatei (SZ-YC 5501, 5511, 5519, 5527, 5528, 5531, 5539; versehentlich über den Reifenimport angelegt) bleiben im Bestand, Reparatur/Verkauf offen – **aus allen Bewertungen ausgenommen** (Migration 0011, Status „ruhend“). Fahrzeugimport weist Reifen-/Prüftermindateien jetzt ab.
 
 ## Offene Fragen an den Auftraggeber
+- **Datenschutz (neu 10.10.2026):** Entwurf `docs/DATENSCHUTZ_ENTWURF.md` prüfen – Aufbewahrungsfristen je Bereich festlegen (bisher keine automatische Löschung), Mitarbeiterinformation in der Hilfe ja/nein, Ansprechpartner. Erst danach Löschfristen bzw. Hilfetext umsetzen.
 - Testkonten (Fahrer/Werkstatt) anlegen – optional, für den Rundgang.
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
 - **Anhänger-Kennzeichen abweichend:** FIN VAK656EBDG1613170 steht auf TÜV-Rechnungen als „SZ KC5514“ (2×) und „SZ YC5514“ (1×), Stammliste „SZ-YC 5514“; FIN VAK654D0C01407532 auf TÜV-Rechnung „SZ YC5518“, Stammliste „SZ-KC 5518“. Seed nutzt das Kennzeichen der jüngsten Prüfrechnung – bitte richtiges Kennzeichen bestätigen (davon hängt die Kopplung zum Lkw ab). Fremdkennzeichen DAH-AC558 (KÜS 18.07.2026) nicht übernommen.
@@ -110,5 +111,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
 9. Kopplungshistorie Lkw↔Anhänger (wer zog wann welchen Anhänger) – erst sinnvoll mit Telematik/Tourenplan als Quelle; bis dahin gilt die Stammliste.
-10. Eigene Verbesserungen (ohne Freigabe möglich): **Nächster Schritt:** Datenschutz-Kurzinfo für Mitarbeitende in der Hilfe (welche Daten die App speichert, Aufbewahrung) als Entwurf zur Freigabe durch den Auftraggeber.
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Sitzungsübersicht „Meine Geräte“ (eigene aktive Anmeldungen mit Gerät/zuletzt aktiv, einzeln abmelden) – Sicherheitsfunktion ohne Freigabe möglich.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
