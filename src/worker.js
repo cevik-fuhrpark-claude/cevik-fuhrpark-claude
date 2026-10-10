@@ -113,6 +113,10 @@ async function handleApi(request, env, ctx, url) {
     if (b.language && ['de', 'uk', 'en'].includes(b.language)) await env.DB.prepare('UPDATE users SET language=?, updated_at=? WHERE id=?').bind(b.language, nowIso(), user.id).run();
     return json({ ok: true });
   }
+  if (path === '/api/me/sessions' && m === 'GET') return json({ sessions: await auth.listOwnSessions(env, user) });
+  if (path === '/api/me/sessions/revoke-others' && m === 'POST') return json(await auth.revokeOtherSessions(env, user));
+  const sm = path.match(/^\/api\/me\/sessions\/([0-9a-f]{16})$/);
+  if (sm && m === 'DELETE') return json(await auth.revokeOwnSession(env, user, sm[1]));
   if (path === '/api/me/password' && m === 'POST') return json(await auth.changePassword(env, user, await readJson(request)));
 
   if (path === '/api/meta' && m === 'GET') {

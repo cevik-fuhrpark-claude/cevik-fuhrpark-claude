@@ -996,8 +996,19 @@ function viewMore() {
   </div>
   <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
   <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
+  <details id="sess"><summary>${esc(t('my_sessions'))}</summary><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div></details>
   <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
   bindLang(true);
+  const sess = $('#sess');
+  const loadSessions = async () => {
+    const box = $('#sesslist'); if (!box) return;
+    const list = (await api('GET', '/api/me/sessions')).sessions;
+    box.innerHTML = list.map((x) => `<div class="row"><span>${x.current ? '●' : '○'}</span><span class="title">${esc(x.device)}${x.current ? ` <span class="chip ok">${esc(t('this_device'))}</span>` : ''}</span>${x.current ? '<span></span>' : `<button type="button" class="btn secondary" data-sid="${esc(x.id)}">${esc(t('sign_out_device'))}</button>`}<span class="sub" style="white-space:normal">${esc(t('last_active'))}: ${fmtDT(x.last_seen)} · ${esc(t('signed_in_at'))}: ${fmtDT(x.created_at)}</span></div>`).join('')
+      + (list.length > 1 ? `<div class="actions"><button type="button" class="btn secondary" id="sessall">${esc(t('sign_out_others'))}</button></div>` : '');
+    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`); toast('✓'); loadSessions(); } catch (err) { toast(err.message, true); } }));
+    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); loadSessions(); } catch (err) { toast(err.message, true); } };
+  };
+  sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
   $('#lo').onclick = async () => { await api('POST', '/api/logout'); S.me = null; location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
 }

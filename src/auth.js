@@ -152,6 +152,32 @@ export async function changePassword(env, user, body) {
   return { ok: true };
 }
 
+// ---- Eigene Anmeldungen (Geräte): ansehen, einzeln oder alle anderen abmelden ----
+export function deviceFromUa(ua = '') {
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : null;
+  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : null;
+  return [br, os].filter(Boolean).join(' · ') || 'Unbekanntes Gerät';
+}
+const SID_LEN = 16; // Kurzkennung = Anfang des Token-Hashes (aus ihr lässt sich kein Token ableiten)
+export async function listOwnSessions(env, user) {
+  const rows = (await env.DB.prepare('SELECT token_hash, created_at, last_seen, expires_at, user_agent FROM sessions WHERE user_id=? AND expires_at > ? ORDER BY last_seen DESC')
+    .bind(user.id, nowIso()).all()).results;
+  return rows.map((r) => ({ id: r.token_hash.slice(0, SID_LEN), device: deviceFromUa(r.user_agent || ''), created_at: r.created_at, last_seen: r.last_seen,
+    expires_at: r.expires_at, current: r.token_hash === user._session }));
+}
+export async function revokeOwnSession(env, user, sid) {
+  if (!/^[0-9a-f]{16}$/.test(String(sid))) throw bad('invalid_session', 'Ungültige Anmeldung.');
+  if (user._session.startsWith(sid)) throw bad('current_session', 'Die aktuelle Anmeldung bitte über „Abmelden“ beenden.');
+  const r = await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND substr(token_hash,1,16)=?').bind(user.id, sid).run();
+  if (r.meta.changes) await audit(env, user.id, 'session.revoke', user.id, { count: r.meta.changes });
+  return { ok: true, revoked: r.meta.changes };
+}
+export async function revokeOtherSessions(env, user) {
+  const r = await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session).run();
+  await audit(env, user.id, 'session.revoke_others', user.id, { count: r.meta.changes });
+  return { ok: true, revoked: r.meta.changes };
+}
+
 // ---- Benutzerverwaltung (owner; fleet darf driver/workshop/viewer in eigener Umgebung anlegen) ----
 const FLEET_MAY_CREATE = ['driver', 'workshop', 'viewer'];
 

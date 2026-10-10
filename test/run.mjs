@@ -783,6 +783,33 @@ await test('Nutzungsstatistik ohne Personenbezug: nur Inhaber, IDs ersetzt, Fehl
   ok(rows.some((x) => x.environment === 'production') && rows.some((x) => x.environment === 'test'), 'Umgebungen getrennt');
 });
 
+await test('Meine Anmeldungen: Geräte anzeigen, einzeln/alle anderen abmelden, fremde Sitzungen unantastbar', async () => {
+  const { deviceFromUa } = await import('../src/auth.js');
+  eq(deviceFromUa('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'), 'Safari · iPhone');
+  eq(deviceFromUa('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36'), 'Chrome · Android');
+  const login = async (ua) => { const c = new Client(worker, env, 'muc'); const r = await c.post('/api/login', { username: 'test.werkstatt.muc', password: 'Sicheres-Passwort-2026' }, { 'user-agent': ua }); eq(r.status, 200); return c; };
+  const a = await login('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0 Safari/537.36');
+  const b = await login('Mozilla/5.0 (Linux; Android 14) Chrome/126.0 Mobile Safari/537.36');
+  const c = await login('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Version/17.0 Safari/604.1');
+  const list = (await a.get('/api/me/sessions')).data.sessions;
+  ok(list.length >= 3 && list.filter((x) => x.current).length === 1, 'genau eine aktuelle Anmeldung');
+  ok(list.some((x) => x.device === 'Chrome · Android') && list.every((x) => /^[0-9a-f]{16}$/.test(x.id) && !('token_hash' in x)), 'Gerät, Kurzkennung, kein Hash');
+  const cur = list.find((x) => x.current);
+  eq((await a.req('DELETE', `/api/me/sessions/${cur.id}`)).status, 400, 'aktuelle nicht über Geräteliste');
+  // fremde Person kann die Sitzung nicht beenden
+  const other = list.find((x) => x.device === 'Chrome · Android');
+  eq((await users.fleet.req('DELETE', `/api/me/sessions/${other.id}`)).data.revoked, 0);
+  eq((await b.get('/api/me')).status, 200);
+  eq((await a.req('DELETE', `/api/me/sessions/${other.id}`)).data.revoked, 1);
+  eq((await b.get('/api/me')).status, 401, 'Android abgemeldet');
+  eq((await c.get('/api/me')).status, 200);
+  ok((await a.post('/api/me/sessions/revoke-others')).data.revoked >= 1);
+  eq((await c.get('/api/me')).status, 401, 'iPhone abgemeldet');
+  eq((await a.get('/api/me')).status, 200, 'aktuelle bleibt');
+  const au = (await owner.get('/api/admin/audit?action=session.')).data.entries.map((e) => e.action);
+  ok(au.includes('session.revoke') && au.includes('session.revoke_others'), 'protokolliert');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

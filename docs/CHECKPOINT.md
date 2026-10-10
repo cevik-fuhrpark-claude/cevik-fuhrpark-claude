@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 55 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 56 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -92,6 +92,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Fuhrparkagent-Profil (`scripts/agentprofil.mjs`): Befundtexte mit Zeitpunkt statt laufender Minuten, unveränderte Befunde werden nicht neu geschrieben (Folgelauf bei 3000 Vorgängen: 2 statt 3053 geschriebene Zeilen, ≈ 150 statt ≈ 320 ms), Fingerabdrücke gesammelt berechnet, schnellere Hex-Umwandlung; Panel zeigt „offen seit“, Folgetext umbricht auf dem Handy. 53 Tests grün.
 - [x] Management-Panel auf dem Handy: Vorgangstabelle als Karten (allgemeine Klasse `table.stack`, Spaltenüberschrift je Zelle automatisch), Vorgangsnummer ohne Umbruch, Entscheidungs-Links „Gesehen/Erledigt“ werden nicht mehr abgeschnitten (Tablet). Geprüft 390 px/Tablet/PC.
 - [x] Nutzungsstatistik ohne Personenbezug (Migration 0012 `usage_daily`): Zähler je Tag/Umgebung/Funktionspfad inkl. Fehler (Status ≥ 400), keine Person/Rolle/IP; Inhaber-Ansicht Mehr → „Nutzung der App“ (7/30/90/365 Tage, Bereiche, Tagesbalken, Einzelfunktionen), `GET /api/admin/usage`; Vorgangs- und Bußgeldbefehle je Aktion (`POST cases/:id/commands:receive`, nur bekannte Befehlsnamen). 55 Tests grün, UI 390 px/Tablet/PC geprüft.
+- [x] Meine Anmeldungen (Mehr → Mein Konto): eigene aktive Sitzungen mit Gerät (aus Browser-Kennung), zuletzt aktiv, einzeln oder alle anderen abmelden; fremde Sitzungen nicht erreichbar, im Protokoll (`session.revoke`, `session.revoke_others`). Datenschutz-Entwurf `docs/DATENSCHUTZ_ENTWURF.md` zur Prüfung. 56 Tests grün.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -111,5 +112,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
 9. Kopplungshistorie Lkw↔Anhänger (wer zog wann welchen Anhänger) – erst sinnvoll mit Telematik/Tourenplan als Quelle; bis dahin gilt die Stammliste.
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Sitzungsübersicht „Meine Geräte“ (eigene aktive Anmeldungen mit Gerät/zuletzt aktiv, einzeln abmelden) – Sicherheitsfunktion ohne Freigabe möglich.
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Fahrzeugakte-Zeitleiste (alle Ereignisse eines Fahrzeugs chronologisch: Vorgänge, Prüfungen, Reifen, Dokumente, km-Stände, Fahrerwechsel) als eigene Ansicht mit Filter – nur vorhandene Daten.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
