@@ -232,3 +232,6 @@ Object.assign(STRINGS.en, { qr_sheet: 'Print QR stickers', qr_sticker: 'QR stick
 Object.assign(STRINGS.de, { scan_title: 'Was möchten Sie tun?', scan_locked: 'Dieses Fahrzeug ist gesperrt – nicht fahren, bis es technisch freigegeben ist.' });
 Object.assign(STRINGS.uk, { scan_title: 'Що ви хочете зробити?', scan_locked: 'Цей транспорт заблоковано – не їздити до технічного дозволу.' });
 Object.assign(STRINGS.en, { scan_title: 'What would you like to do?', scan_locked: 'This vehicle is locked – do not drive until it has been technically released.' });
+Object.assign(STRINGS.de, { check_photos_hint: 'Nur bei Mängeln: Fotos werden an den Folgeauftrag angehängt (bis 10).', check_photos_skipped: 'kein Mangel – Fotos nicht übertragen' });
+Object.assign(STRINGS.uk, { check_photos_hint: 'Лише при недоліках: фото додаються до наступного замовлення (до 10).', check_photos_skipped: 'недоліків немає – фото не передано' });
+Object.assign(STRINGS.en, { check_photos_hint: 'Only for defects: photos are attached to the follow-up order (up to 10).', check_photos_skipped: 'no defect – photos not uploaded' });

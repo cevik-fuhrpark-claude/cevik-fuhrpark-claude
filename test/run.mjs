@@ -1465,7 +1465,7 @@ await test('Vorgang zeigt Kurzinfo zum Fahrzeug (weitere offene Vorgänge, Prüf
   eq((await users.driver.get(`/api/cases/${a.data.id}`)).data.vehicle_info, undefined, 'Fahrer: keine Fahrzeug-Kurzinfo');
   const w = (await users.fleet.get(`/api/cases/${a.data.id}`)).data;
   ok(w.vehicle_info.other_open_total >= 1);
-  for (const id of [a.data.id, b.data.id]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; await users.fleet.post(`/api/cases/${id}/commands`, { command: 'reject', command_id: rk(), expected_version: c.version, reason: 'Testdaten Kurzinfo' }); }
+  for (const id of [a.data.id, b.data.id]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; eq((await users.fleet.post(`/api/cases/${id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, note: 'Testdaten Kurzinfo' })).status, 200, 'Testvorgang abgelehnt'); }
 });
 
 await test('QR-Code für Einladungslinks (eigener Encoder): Größe je Länge, Positionsmuster, Referenz (per Decoder geprüft), Grenze 213 Bytes', async () => {
@@ -1480,6 +1480,18 @@ await test('QR-Code für Einladungslinks (eigener Encoder): Größe je Länge, P
   eq(encode('q'.repeat(213)).length, 57, 'Version 10');
   let threw = false; try { encode('q'.repeat(214)); } catch { threw = true; } ok(threw, 'zu lang → Fehler');
   ok(svg('x<"y', { label: 'a"b' }).includes('aria-label="a&quot;b"'), 'SVG maskiert');
+});
+
+await test('Abfahrtskontrolle mit Mangel: Fahrer kann Fotos an den Folgeauftrag hängen', async () => {
+  const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const items = keys.map((k) => ({ key: k, result: k === 'beleuchtung' || (k === keys[0] && !keys.includes('beleuchtung')) ? 'mangel' : 'ok', note: 'Rücklicht links defekt' }));
+  const r = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items });
+  eq(r.status, 201); eq(r.data.followups.length, 1);
+  const png = concatBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.getRandomValues(new Uint8Array(300)));
+  eq((await users.driver.req('POST', `/api/cases/${r.data.followups[0].id}/files`, png, { 'content-type': 'image/png', 'x-filename': 'ruecklicht.png' })).status, 201, 'Foto am Folgeauftrag');
+  const c = (await users.fleet.get(`/api/cases/${r.data.followups[0].id}`)).data;
+  eq(c.files.length, 1);
+  eq((await users.fleet.post(`/api/cases/${c.case.id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.case.version, note: 'Testdaten' })).status, 200);
 });
 
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {

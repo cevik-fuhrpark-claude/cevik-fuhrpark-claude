@@ -395,10 +395,11 @@ async function flushOutbox() {
         let failed = 0;
         if (item.photos) {
           const list = await photosGet(item.body.request_key).catch(() => null);
-          if (list && list.length) failed = await uploadCasePhotos(r.id, list);
+          const target = r.id || (r.followups && r.followups[0] && r.followups[0].id); // Meldung bzw. Folgeauftrag der Abfahrtskontrolle
+          if (list && list.length && target) failed = await uploadCasePhotos(target, list);
           await photosDel(item.body.request_key).catch(() => {});
         }
-        toast(item.path === '/api/inspections' ? t('check_saved') : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
+        toast(item.path === '/api/inspections' ? `${t('check_saved')}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
       }
       catch (err) { if (err.offline) { rest.push(item); continue; } toast(`${t('outbox_failed')}: ${err.message}`, true); }
     }
@@ -655,19 +656,33 @@ async function viewInspection(caseId) {
 async function viewDepartureCheck(preId) {
   const vs = await vehiclesCached();
   render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select>
-    ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric"><div class="actions"><button class="btn block">${esc(t('submit_inspection'))}</button></div></form>`, 'check');
+    ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric">
+    <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
+    <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form>`, 'check');
   const form = $('#f'); bindChecklist(form);
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
+    const files = [...($('#ph').files || [])].slice(0, 10);
+    const hasDefect = body.items.some((i) => i.result === 'mangel');
     try {
+      $('#sb').disabled = true;
       const r = await api('POST', '/api/inspections', body);
-      toast(t('check_saved'));
+      // Fotos gehören zum Mangel: an den (ersten) Folgeauftrag hängen; ohne Mangel wird nichts hochgeladen
+      let failed = 0;
+      if (files.length && r.followups.length) for (const [i, file] of files.entries()) {
+        $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
+        try { failed += await uploadCasePhotos(r.followups[0].id, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
+      }
+      toast(`${t('check_saved')}${files.length && !r.followups.length ? ' · ' + t('check_photos_skipped') : ''}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
       location.hash = r.followups.length ? '#/cases/' + r.followups[0].id : '#/';
     } catch (err) {
+      $('#sb').disabled = false;
       if (err.offline) {
-        outboxAdd('/api/inspections', body);
+        let stored = 0;
+        if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
+        outboxAdd('/api/inspections', body, stored);
         const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
         render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
         return;
