@@ -60,7 +60,11 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.doc_valid_until, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
     : [];
-  const out = { vehicle: v, cases: caseRows, inspections, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents };
+  // Letzter Telematik-Stand (nur Inhaber, Fuhrparkleitung, Disposition – Positionsdaten sind über die Fahrerzuordnung personenbeziehbar)
+  const telematics = isManager(user) || user.role === 'dispatch'
+    ? (await env.DB.prepare('SELECT provider, match_basis, gps_time, received_at, lat, lon, km, speed, ignition FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
+    : [];
+  const out = { vehicle: v, telematics, cases: caseRows, inspections, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
   }

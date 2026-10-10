@@ -527,6 +527,9 @@ await test('Telematik-Prüffälle: Zuordnung nur durch Fuhrpark mit Nachweis; da
   eq((await users.fleet.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-2', vehicle_id: V1, evidence: 'x' })).status, 409, 'keine Doppelzuordnung');
   const r = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-2', gps_time: '2026-10-10T10:00:00Z', lat: 51.5, lon: 7.4 }] }, H);
   eq(r.data.matched, 1, 'jetzt über bestätigtes Mapping zugeordnet');
+  const vt = (await users.fleet.get(`/api/vehicles/${V2}`)).data.telematics;
+  ok(vt.length === 1 && vt[0].match_basis === 'confirmed_mapping' && vt[0].lat === 51.5, 'Fahrzeugakte zeigt Stand');
+  eq((await users.ws.get(`/api/vehicles/${V2}`)).data.telematics.length, 0, 'Werkstatt sieht keine Position');
   const ov2 = (await users.fleet.get('/api/telematics')).data;
   ok(!ov2.unmatched.some((u) => u.external_id === 'WF-2') && ov2.mappings.some((m) => m.external_id === 'WF-2' && m.confirmed_by_name), 'Prüffall erledigt, Mapping mit Person');
   eq((await users.fleet.req('DELETE', '/api/telematics/mappings?provider=webfleet&external_id=WF-2')).status, 200);
