@@ -5,12 +5,22 @@ import { audit } from './auth.js';
 
 const LIMIT = 5000;
 
-export async function personExport(env, actor, userId) {
+// Aufruf mit App-Konto (userId) oder Fahrerakte (driverId); ist die Fahrerakte mit einem Konto verknüpft, gilt die volle Auskunft des Kontos
+export async function personExport(env, actor, { userId = null, driverId = null }) {
   if (actor.role !== 'owner') throw forbidden('Datenauskunft nur durch den Inhaber.');
-  const u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(userId).first();
-  if (!u) throw notFound('Benutzer nicht gefunden.');
-  delete u.password_hash; delete u.password_salt;
-  const driver = await env.DB.prepare('SELECT * FROM drivers WHERE user_id=?').bind(userId).first();
+  let driver = null;
+  if (driverId) {
+    driver = await env.DB.prepare('SELECT * FROM drivers WHERE id=?').bind(driverId).first();
+    if (!driver) throw notFound('Fahrer nicht gefunden.');
+    userId = driver.user_id || null;
+  }
+  let u = null;
+  if (userId) {
+    u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(userId).first();
+    if (!u) throw notFound('Benutzer nicht gefunden.');
+    delete u.password_hash; delete u.password_salt;
+    if (!driver) driver = await env.DB.prepare('SELECT * FROM drivers WHERE user_id=?').bind(userId).first();
+  } else userId = '\u0000'; // Fahrer ohne App-Konto: nur Fahrerakte
   const did = driver ? driver.id : '\u0000';
   const q = (sql, ...args) => env.DB.prepare(`${sql} LIMIT ${LIMIT}`).bind(...args);
   const stmts = {
@@ -27,7 +37,7 @@ export async function personExport(env, actor, userId) {
     odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
     fines_as_driver: q('SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, status, driver_basis, driver_informed_at, driver_ack_at, created_at FROM fines WHERE driver_id=? ORDER BY offense_at', userId),
     audit_as_actor: q('SELECT action, target, detail, created_at FROM audit_log WHERE actor_id=? ORDER BY created_at', userId),
-    audit_about: q('SELECT actor_id, action, detail, created_at FROM audit_log WHERE target=? ORDER BY created_at', userId),
+    audit_about: q('SELECT actor_id, action, detail, created_at FROM audit_log WHERE target IN (?, ?) ORDER BY created_at', userId, did),
     driver_documents: q('SELECT * FROM driver_documents WHERE driver_id=? ORDER BY created_at', did),
     license_checks: q('SELECT * FROM driver_license_checks WHERE driver_id=? ORDER BY checked_on', did),
     card_downloads: q('SELECT kind, downloaded_on, evidence, created_at FROM tacho_downloads WHERE driver_id=? ORDER BY downloaded_on', did),
@@ -37,7 +47,7 @@ export async function personExport(env, actor, userId) {
   const data = {};
   names.forEach((n, i) => { data[n] = res[i].results || []; });
   const generatedAt = nowIso();
-  await audit(env, actor.id, 'privacy.export', userId, { sections: names.filter((n) => data[n].length).length });
+  await audit(env, actor.id, 'privacy.export', u ? u.id : driver.id, { sections: names.filter((n) => data[n].length).length, ...(u ? {} : { driver_only: true }) });
   return {
     meta: {
       title: 'Datenauskunft je Person ([CLAUDE] CEVIK Fuhrpark)', generated_at: generatedAt, generated_by: actor.display_name,
@@ -45,7 +55,7 @@ export async function personExport(env, actor, userId) {
       limit_per_section: LIMIT,
       truncated: names.filter((n) => data[n].length >= LIMIT),
     },
-    user: u,
+    user: u, // null = Fahrer ohne App-Konto
     driver_record: driver || null,
     ...data,
   };

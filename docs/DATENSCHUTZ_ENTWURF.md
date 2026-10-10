@@ -32,7 +32,7 @@ Inhaber → Mehr → Benutzer → „Datenauskunft“ je Person: JSON-Datei mit 
 (Konto, Anmeldungen/Geräte ohne Token, Fahrzeugzuordnungen, Meldungen, Vorgangsverlauf, Arbeitszeiten, Kontrollen, Dateiangaben,
 Hinweise, km-Stände, Bußgelder als Fahrer, Protokolleinträge, verknüpfte Fahrerakte). Ohne Passwort-Hashes und Push-Schlüssel,
 Dateiinhalte (Fotos/PDF) nur als Angaben. Abruf wird protokolliert (`privacy.export`). Vor Herausgabe auf Daten Dritter in Freitexten prüfen.
-Fahrer ohne App-Konto: Fahrerakte direkt (Mehr → Fahrer) bzw. künftig eigene Auskunft – noch offen.
+Fahrer ohne App-Konto: Button „Datenauskunft“ in der Fahrerakte (nur Fahrerakte, Nachweise, Kontrollen, Auslesungen, Protokoll).
 
 ## 3. Offene Entscheidungen (Auftraggeber)
 1. Aufbewahrungsfristen je Bereich (z. B. Schadensvorgänge, Abfahrtskontrollen, Bußgeldakten, Fahrerakte/Führerscheinkontrollen nach Ausscheiden, Protokoll, Benachrichtigungen) – danach

@@ -1696,6 +1696,13 @@ await test('Datenauskunft je Person: nur Inhaber, vollständig je Bereich, ohne 
   eq(x.meta.truncated.length, 0);
   const au = (await owner.get('/api/admin/audit?action=privacy.export')).data.entries;
   ok(au.some((e) => e.target === id), 'Abruf protokolliert');
+  // Fahrerakte ohne App-Konto: Auskunft nur der Fahrerakte
+  const dr = await owner.post('/api/drivers', { display_name: 'Auskunft Ohne Konto', personnel_no: 'AUS-1' });
+  eq(dr.status, 201);
+  eq((await users.fleet.get(`/api/drivers/${dr.data.id}/data-export`)).status, 403);
+  const y = (await owner.get(`/api/drivers/${dr.data.id}/data-export`)).data;
+  eq(y.user, null); eq(y.driver_record.display_name, 'Auskunft Ohne Konto'); eq(y.reported_cases.length, 0, 'keine fremden Daten');
+  ok(y.audit_about.length >= 1, 'Protokoll zur Fahrerakte enthalten');
 });
 
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
