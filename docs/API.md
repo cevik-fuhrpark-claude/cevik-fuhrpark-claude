@@ -68,6 +68,11 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Sperre aufheben | `POST /api/users/<id>/unlock` (owner; fleet für eigene Rollen/Umgebung); `GET /api/users` liefert `locked_until` |
 | Eigene Anmeldungen | `GET /api/me/sessions` (Gerät aus Browser-Kennung, zuletzt aktiv, `current`), `DELETE /api/me/sessions/<16-stellige Kennung>`, `POST /api/me/sessions/revoke-others` – protokolliert als `session.revoke*` |
 | Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
+| Systemzustand | `GET /api/health` (ohne Anmeldung, nur `ok`/Zeit), `GET /healthz` |
+| Stammwerte für die App | `GET /api/meta` (Werkstätten, Checkliste, Prioritäten, Status, Prüfarten, Dokumentarten, Reifenpositionen, Bußgeldarten, VAPID-Schlüssel) |
+| Reifengrößen-Import | `POST /api/tires/import[?dry_run=1]` (owner, CSV: Quelle;Kennzeichen;FIN;Reifen Lenkachse;…) → `counts`, `kept_verified`, `skipped_no_vehicle` |
+| Datensicherung | `GET /api/admin/backup` (owner): JSON aller Fachtabellen ohne Geheimnisse (siehe `docs/BETRIEB.md`) |
+| Vorschläge Werkstatt | `GET /api/work-suggestions` → häufige Tätigkeiten; `GET /api/part-suggestions` → frühere Teile (Bezeichnung, Teilenummer) – owner/fleet/workshop, Werkstatt nur eigener Standort |
 | Kommentar gezielt | Befehl `comment` mit `payload.notify ⊆ ['reporter','fleet','workshop']` (leer = alle Beteiligten) |
 | Fahrzeugimport | `POST /api/vehicles/import[?dry_run=1]` (owner, CSV): Vorschau `preview[] {line, plate, action neu/geändert/unverändert, changes[]}`, `counts`, `skipped[]`; leere Zellen/fehlende Spalten behalten vorhandene Werte |
 | Bußgelder Export | `GET /api/fines?format=csv[&with_driver=1]` (owner/fleet/viewer; Fahrer nur owner/fleet), `GET /api/fines?format=ics` (offene Antwortfristen, ohne Namen) |
