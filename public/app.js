@@ -285,9 +285,32 @@ async function viewHome() {
       if (n) html += `<a class="panel alert" style="display:block;text-decoration:none" href="#/master"><b>${esc(t('not_clear'))}</b>: ${n} ${esc(t('findings'))}</a>`;
     }
     if (S.me.role === 'workshop') html += await workshopBoard();
-    else html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
+    else {
+      if (isMgr()) html += await fleetTodo();
+      html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
+    }
   }
   render(html, 'home');
+}
+
+// Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
+async function fleetTodo() {
+  const [cs, ov, fs] = await Promise.all([
+    api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []),
+    api('GET', '/api/maintenance').catch(() => null),
+    api('GET', '/api/fines?status=open').then((r) => r.fines).catch(() => []),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const groups = [
+    ['todo_receive', cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'kritisch'],
+    ['todo_qc', cs.filter((c) => c.status === 'abschlusskontrolle'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'mittel'],
+    ['todo_parts', cs.filter((c) => c.status === 'wartet_teile'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, ''],
+    ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${r.kind} · ${r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')}`, 'mittel'],
+    ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
+  ].filter(([, list]) => list.length);
+  if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
+  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}</details>`).join('')}`;
 }
 
 function caseList(list, empty) {
