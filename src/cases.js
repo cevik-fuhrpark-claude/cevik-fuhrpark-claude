@@ -2,6 +2,7 @@
 import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate } from './util.js';
 import { notifyCaseEvent } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
+import { canReadFineFile } from './fines.js';
 
 export const PRIORITIES = ['niedrig', 'mittel', 'kritisch'];
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
@@ -620,7 +621,8 @@ export async function uploadFile(env, user, envName, caseId, request) {
 export async function downloadFile(env, user, envName, fileId) {
   const f = await env.DB.prepare('SELECT * FROM files WHERE id=? AND environment=?').bind(fileId, envName).first();
   if (!f) throw notFound();
-  await loadCase(env, user, envName, f.case_id); // gleiche Rollen-/Umgebungsprüfung wie beim Vorgang
+  if (f.fine_id) await canReadFineFile(env, user, envName, f.fine_id);
+  else await loadCase(env, user, envName, f.case_id); // gleiche Rollen-/Umgebungsprüfung wie beim Vorgang
   const data = await env.FILES.get(f.r2_key, { type: 'arrayBuffer' });
   if (!data) throw notFound('Datei nicht im Speicher.');
   return new Response(data, {

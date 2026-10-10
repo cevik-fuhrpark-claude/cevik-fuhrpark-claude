@@ -61,5 +61,15 @@ export const MIGRATIONS = [
    "CREATE INDEX IF NOT EXISTS idx_stock_mov_item ON stock_movements(item_id, created_at)",
    "ALTER TABLE parts ADD COLUMN stock_item_id TEXT NULL"
   ]
+ },
+ {
+  "id": "0004_fines",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS fines (\n  id TEXT PRIMARY KEY,\n  fine_no TEXT NOT NULL UNIQUE,                 -- z. B. B-2026-0001 (Betrieb) / TB-2026-0001 (Test)\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  kind TEXT NOT NULL CHECK (kind IN ('anhoerung','zeugenfragebogen','bussgeldbescheid','verwarnung','maut','sonstiges')),\n  authority TEXT NOT NULL,                      -- Behörde / Absender\n  reference TEXT NULL,                          -- Aktenzeichen\n  offense_type TEXT NOT NULL CHECK (offense_type IN ('geschwindigkeit','abstand','parken','rotlicht','lenk_ruhezeit','ladung','maut','handy','sonstiges')),\n  offense_at TEXT NOT NULL,                     -- Tatzeit (ISO, laut Schreiben)\n  location TEXT NULL,\n  plate_in_letter TEXT NOT NULL,                -- Kennzeichen wie im Schreiben\n  vehicle_id TEXT NULL REFERENCES vehicles(id),\n  amount_eur REAL NULL,\n  response_due TEXT NULL,                       -- Antwortfrist laut Schreiben (YYYY-MM-DD), nie geschätzt\n  status TEXT NOT NULL CHECK (status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert','beantwortet','bezahlt','eingestellt','erledigt')),\n  driver_id TEXT NULL REFERENCES users(id),\n  driver_name_note TEXT NULL,                   -- Fahrer ohne App-Konto (Name laut Nachweis)\n  driver_basis TEXT NULL CHECK (driver_basis IS NULL OR driver_basis IN ('zuordnung','tourenplan','telematik','fahrerangabe','manuell')),\n  driver_evidence TEXT NULL,\n  driver_confirmed_by TEXT NULL REFERENCES users(id),\n  driver_confirmed_at TEXT NULL,\n  driver_informed_at TEXT NULL,\n  driver_ack_at TEXT NULL,\n  note TEXT NULL,\n  created_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL,\n  version INTEGER NOT NULL DEFAULT 1\n)",
+   "CREATE INDEX IF NOT EXISTS idx_fines_env_status ON fines(environment, status)",
+   "CREATE TABLE IF NOT EXISTS fine_events (\n  id TEXT PRIMARY KEY,\n  fine_id TEXT NOT NULL REFERENCES fines(id) ON DELETE CASCADE,\n  actor_id TEXT NULL,\n  action TEXT NOT NULL,\n  note TEXT NULL,\n  payload TEXT NULL,\n  created_at TEXT NOT NULL\n)",
+   "CREATE TABLE IF NOT EXISTS fine_counters (\n  environment TEXT NOT NULL,\n  year INTEGER NOT NULL,\n  last_no INTEGER NOT NULL,\n  PRIMARY KEY (environment, year)\n)",
+   "ALTER TABLE files ADD COLUMN fine_id TEXT NULL"
+  ]
  }
 ];

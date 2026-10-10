@@ -106,9 +106,10 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-m); padding: 16px; margin-bottom: 12px; }
 .panel.alert { border-color: var(--stop); background: var(--stop-bg); }
 .panel.good { border-color: var(--go); background: var(--go-bg); }
-.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.kv { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 4px 16px; margin: 0; }
 .kv dt { color: var(--steel); }
-.kv dd { margin: 0; }
+.kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 480px) { .kv { grid-template-columns: minmax(0, 1fr); gap: 0 } .kv dt { margin-top: 8px; font-size: .85em } }
 
 /* Formulare */
 label { display: block; font-weight: 600; margin: 14px 0 6px; }

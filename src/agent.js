@@ -4,6 +4,7 @@ import { nowIso, uuid, sha256Hex } from './util.js';
 import { notifyUsers } from './notify.js';
 import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
+import { fineFindings } from './fines.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -160,6 +161,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       add({ code: 'STOCK_BELOW_MIN', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
         message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.`,
         next_action: 'Nachbestellung prüfen (Bestellung nur nach Freigabe).' });
+    }
+
+    // Bußgelder: Fristen nur aus dem Schreiben; Fahrer offen; Kennzeichen unbekannt
+    for (const x of await fineFindings(env, environment)) {
+      add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
     }
 
     // ---- Befunde persistieren (Upsert), Erledigtes schließen, Übergaben an Master ----

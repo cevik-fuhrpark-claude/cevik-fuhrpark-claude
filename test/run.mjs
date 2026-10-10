@@ -437,5 +437,49 @@ await test('Mindestbestand unterschritten → Agent-Hinweis; Zugang behebt ihn',
   ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'STOCK_BELOW_MIN'), 'Hinweis erledigt');
 });
 
+console.log('Bußgelder & Zeugenfragebögen');
+let FINE;
+await test('Erfassung nur durch Fuhrpark; Kennzeichen-Zuordnung; Aktenzeichen-Dublette', async () => {
+  const body = { kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: 'AZ-4711', offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1, Dortmund', plate_in_letter: 'SZ YC 5513', amount_eur: 70, response_due: '2026-01-01' };
+  eq((await users.driver.post('/api/fines', body)).status, 403);
+  const r = await users.fleet.post('/api/fines', body);
+  eq(r.status, 201); eq(r.data.vehicle_matched, true); ok(r.data.fine_no.startsWith('TB-'));
+  FINE = r.data.id;
+  eq((await users.fleet.post('/api/fines', body)).status, 409, 'Dublette');
+  const u = await users.fleet.post('/api/fines', { ...body, reference: 'AZ-4712', plate_in_letter: 'DO-XX 1' });
+  eq(u.data.vehicle_matched, false);
+});
+await test('Fahrerermittlung: Kandidat aus Fahrzeugzuordnung, Bestätigung nur mit Nachweis, Fahrer erst nach Information sichtbar', async () => {
+  const d = await users.fleet.get(`/api/fines/${FINE}`);
+  ok(d.data.candidates.some((c) => c.user_id === users.driver.id && c.basis === 'zuordnung'), 'Zugeordneter Fahrer als Kandidat');
+  eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung' } })).status, 400, 'Ohne Nachweis');
+  eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung', evidence: 'Fahrzeugzuordnung + Tourenplan KW 41' } })).status, 200);
+  eq((await users.driver.get(`/api/fines/${FINE}`)).status, 404, 'Noch nicht informiert');
+  eq((await users.driver.get('/api/fines')).data.fines.length, 0);
+  eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'inform_driver' })).status, 200);
+  const n = await users.driver.get('/api/notifications');
+  ok(n.data.notifications.some((x) => x.kind === 'fine' && !x.body.includes('Dortmund')), 'Push ohne Details');
+  const dv = await users.driver.get(`/api/fines/${FINE}`);
+  eq(dv.status, 200); ok(!('driver_evidence' in dv.data.fine), 'Fahrer sieht keine internen Nachweise');
+  eq((await users.driver.post(`/api/fines/${FINE}/commands`, { action: 'driver_ack' })).status, 200);
+  eq((await users.ws.get('/api/fines')).status, 403, 'Werkstatt hat keinen Zugriff');
+});
+await test('Schreiben als PDF anhängen; Fahrer darf es lesen, anderer nicht', async () => {
+  const pdf = new TextEncoder().encode('%PDF-1.4 Test');
+  const up = await users.fleet.req('POST', `/api/fines/${FINE}/files`, pdf, { 'x-filename': 'anhoerung.pdf' });
+  eq(up.status, 201);
+  eq((await users.driver.get(`/api/files/${up.data.id}`)).status, 200);
+  eq((await users.ws.get(`/api/files/${up.data.id}`)).status, 404);
+});
+await test('Überschrittene Frist → Agent-Befund; Status erledigt schließt ihn', async () => {
+  await users.fleet.post('/api/agent/run');
+  ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_OVERDUE'), 'Frist überschritten');
+  ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_VEHICLE_UNKNOWN'), 'Unbekanntes Kennzeichen');
+  eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'set_status', payload: { status: 'beantwortet' } })).status, 400, 'Vermerk Pflicht');
+  eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'set_status', payload: { status: 'beantwortet' }, note: 'Anhörungsbogen mit Fahrerangabe zurückgesandt' })).status, 200);
+  await users.fleet.post('/api/agent/run');
+  ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_OVERDUE' && f.subject_key === FINE), 'Befund erledigt');
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 if (failed) { console.log('Fehlgeschlagen:', failures.join(' | ')); process.exit(1); }

@@ -10,6 +10,7 @@ import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
 import * as stock from './stock.js';
+import * as fines from './fines.js';
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -53,7 +54,7 @@ function requireRole(user, roles) {
 }
 
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'maintenance_warn_days', 'tire_warn_tread_mm',
+  'workshop_hourly_rate_net', 'maintenance_warn_days', 'tire_warn_tread_mm', 'fine_warn_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
@@ -110,7 +111,7 @@ async function handleApi(request, env, ctx, url) {
     let vapid = null;
     try { vapid = (await getVapid(env)).publicKey; } catch {}
     return json({ workshops, checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
-      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, vapid_public_key: vapid, app_name: env.APP_NAME });
+      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, fine_kinds: fines.FINE_KINDS, fine_offenses: fines.OFFENSES, fine_statuses: fines.FINE_STATUSES, vapid_public_key: vapid, app_name: env.APP_NAME });
   }
 
   // Benutzer
@@ -152,6 +153,13 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'PATCH') return json(await stock.updateItem(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/movements$/)) && m === 'POST') return json(await stock.addMovement(env, user, envName, mm[1], await readJson(request)), 201);
+
+  // Bußgelder & Zeugenfragebögen
+  if (path === '/api/fines' && m === 'GET') return json({ fines: await fines.listFines(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/commands$/)) && m === 'POST') return json(await fines.fineCommand(env, ctx, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/files$/)) && m === 'POST') return json(await fines.uploadFineFile(env, user, envName, mm[1], request), 201);
 
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });
