@@ -170,3 +170,8 @@ th { color: var(--steel); font-weight: 600; }
 .seg-tabs a.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 @media (prefers-reduced-motion: no-preference) { .toast { animation: rise 0.2s ease-out; } @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } } }
+
+.specrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); align-items: center; }
+.btn.small { min-height: 36px; padding: 6px 12px; font-size: 0.875rem; }
+.topbar .brand { white-space: nowrap; }
+@media (max-width: 420px) { .topbar .brand small { display: none; } }

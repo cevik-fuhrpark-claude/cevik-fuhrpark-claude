@@ -60,9 +60,15 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [ ] Inhaber-Konto durch Auftraggeber anlegen (Ersteinrichtung), dann Fahrzeugstamm (38 LKW) importieren
 - [ ] Testkonten Fahrer/Fuhrparkleitung/Werkstatt anlegen; Einladungslinks an Auftraggeber
 
+## Erledigt seit Erststand
+- [x] Reifenmanagement (Migration 0002): Reifengrößen je Achse mit Prüfstatus (Import `seed/reifen_quelldaten.csv` aus Drive-Datei „Fuhrpark Cevik Mobility GmbH Dortmund (1).xlsx“, nur FIN-Treffer, geprüfte Werte bleiben), Messung/Wechsel/Reparatur/Sichtprüfung je Position, gesetzliches Mindestprofil 1,6 mm (StVZO § 36) → Agent-Befund `TIRE_BELOW_MINIMUM`, optionale Warnschwelle `tire_warn_tread_mm`. 33 Tests grün.
+
+## Offene Fragen an den Auftraggeber
+- Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
+- GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
+
 ## Backlog (in dieser Reihenfolge)
-1. Deploy prüfen, Ersteinrichtung, Seed importieren, gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe) + Screenshots.
-2. Reifenmanagement (Reifen je Achse/Position, Profiltiefe, Wechselhistorie; Import „Fahrzeug Zusatzdaten“).
+1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 3. Ersatzteillager (Bestand, Mindestmenge, Entnahme je Vorgang → Kosten).
 4. Bußgeld/Zeugenfragebogen: Fahrerermittlung zum Zeitpunkt (Fahrerzuordnung + Telematik) – häufigster Vorgang im fuhrpark@-Postfach.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.

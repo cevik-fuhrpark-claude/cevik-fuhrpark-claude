@@ -48,6 +48,7 @@ export const STRINGS = {
     language: 'Sprache', change_password: 'Passwort ändern', old_password: 'Altes Passwort', import_csv: 'Fahrzeugstamm importieren (CSV)',
     departure_check: 'Abfahrtskontrolle', check_saved: 'Kontrolle gespeichert', error: 'Fehler', retry: 'Erneut versuchen', offline: 'Keine Verbindung.',
     setup: 'Ersteinrichtung', setup_code: 'Einrichtungscode', create_owner: 'Inhaber anlegen', loading: 'Lädt…', back: 'Zurück', details: 'Details',
+    tires: 'Reifen', tire_sizes: 'Reifengrößen', axle_lenkachse: 'Lenkachse', axle_liftachse: 'Liftachse', axle_antriebsachse: 'Antriebsachse', axle_anhaenger: 'Anhänger', source_unverified: 'Quellwert, nicht geprüft', verified: 'am Fahrzeug geprüft', mark_verified: 'Als geprüft bestätigen', positions: 'Positionen', position: 'Position', tread: 'Profil (mm)', pressure: 'Luftdruck (bar)', te_messung: 'Messung', te_wechsel: 'Reifenwechsel', te_reparatur: 'Reparatur', te_sichtpruefung: 'Sichtprüfung', ts_ok: 'OK', ts_warnung: 'Warnung', ts_unter_minimum: 'Unter Minimum', ts_unbekannt: 'kein Messwert', record_tire: 'Reifen erfassen', brand: 'Marke', dot: 'DOT (Woche/Jahr, z. B. 2324)', tire_warn: 'Warnschwelle Profiltiefe (mm, leer = nur gesetzliches Minimum 1,6 mm)', import_tires: 'Reifengrößen importieren (CSV)',
     open_items_count: 'Restarbeiten offen', crit_open: 'kritisch', overdue: 'überfällig',
   },
   uk: {
@@ -98,6 +99,7 @@ export const STRINGS = {
     language: 'Мова', change_password: 'Змінити пароль', old_password: 'Старий пароль', import_csv: 'Імпорт транспорту (CSV)',
     departure_check: 'Перевірка перед виїздом', check_saved: 'Перевірку збережено', error: 'Помилка', retry: 'Спробувати ще', offline: 'Немає з’єднання.',
     setup: 'Початкове налаштування', setup_code: 'Код налаштування', create_owner: 'Створити власника', loading: 'Завантаження…', back: 'Назад', details: 'Деталі',
+    tires: 'Шини', tire_sizes: 'Розміри шин', axle_lenkachse: 'Кермова вісь', axle_liftachse: 'Підйомна вісь', axle_antriebsachse: 'Ведуча вісь', axle_anhaenger: 'Причіп', source_unverified: 'З джерела, не перевірено', verified: 'перевірено на авто', mark_verified: 'Підтвердити перевірку', positions: 'Позиції', position: 'Позиція', tread: 'Протектор (мм)', pressure: 'Тиск (бар)', te_messung: 'Вимірювання', te_wechsel: 'Заміна шини', te_reparatur: 'Ремонт', te_sichtpruefung: 'Візуальний огляд', ts_ok: 'OK', ts_warnung: 'Попередження', ts_unter_minimum: 'Нижче мінімуму', ts_unbekannt: 'немає вимірювання', record_tire: 'Записати шину', brand: 'Марка', dot: 'DOT (тиждень/рік, напр. 2324)', tire_warn: 'Поріг попередження протектора (мм)', import_tires: 'Імпорт розмірів шин (CSV)',
     open_items_count: 'залишкових робіт', crit_open: 'критично', overdue: 'прострочено',
   },
   en: {
@@ -148,6 +150,7 @@ export const STRINGS = {
     language: 'Language', change_password: 'Change password', old_password: 'Old password', import_csv: 'Import vehicle master data (CSV)',
     departure_check: 'Pre-trip check', check_saved: 'Check saved', error: 'Error', retry: 'Retry', offline: 'No connection.',
     setup: 'Initial setup', setup_code: 'Setup code', create_owner: 'Create owner', loading: 'Loading…', back: 'Back', details: 'Details',
+    tires: 'Tyres', tire_sizes: 'Tyre sizes', axle_lenkachse: 'Steer axle', axle_liftachse: 'Lift axle', axle_antriebsachse: 'Drive axle', axle_anhaenger: 'Trailer', source_unverified: 'Source value, not verified', verified: 'verified on vehicle', mark_verified: 'Confirm as verified', positions: 'Positions', position: 'Position', tread: 'Tread (mm)', pressure: 'Pressure (bar)', te_messung: 'Measurement', te_wechsel: 'Tyre change', te_reparatur: 'Repair', te_sichtpruefung: 'Visual check', ts_ok: 'OK', ts_warnung: 'Warning', ts_unter_minimum: 'Below minimum', ts_unbekannt: 'no reading', record_tire: 'Record tyre', brand: 'Brand', dot: 'DOT (week/year, e.g. 2324)', tire_warn: 'Tread warning threshold (mm, empty = legal minimum 1.6 mm only)', import_tires: 'Import tyre sizes (CSV)',
     open_items_count: 'open items', crit_open: 'critical', overdue: 'overdue',
   },
 };

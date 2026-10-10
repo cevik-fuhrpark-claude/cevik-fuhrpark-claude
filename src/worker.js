@@ -8,6 +8,7 @@ import { getVapid } from './push.js';
 import { retryFailedPush, notifyUsers } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
+import * as tires from './tires.js';
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -51,12 +52,13 @@ function requireRole(user, roles) {
 }
 
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'maintenance_warn_days',
+  'workshop_hourly_rate_net', 'maintenance_warn_days', 'tire_warn_tread_mm',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
 async function handleApi(request, env, ctx, url) {
-  const path = url.pathname;
+  let path = url.pathname;
+  try { path = decodeURIComponent(url.pathname); } catch { throw new HttpError(400, "bad_path", "Ungültiger Pfad."); }
   const m = request.method;
   checkCsrf(request);
 
@@ -107,7 +109,7 @@ async function handleApi(request, env, ctx, url) {
     let vapid = null;
     try { vapid = (await getVapid(env)).publicKey; } catch {}
     return json({ workshops, checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
-      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, vapid_public_key: vapid, app_name: env.APP_NAME });
+      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, vapid_public_key: vapid, app_name: env.APP_NAME });
   }
 
   // Benutzer
@@ -132,6 +134,16 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));
+
+  // Reifen
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires$/)) && m === 'GET') return json(await tires.tireOverview(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/events$/)) && m === 'POST') return json(await tires.addTireEvent(env, user, envName, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
+  if (path === '/api/tires/import' && m === 'POST') {
+    const text = await request.text();
+    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    return json(await tires.importTireSpecs(env, user, text));
+  }
 
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });

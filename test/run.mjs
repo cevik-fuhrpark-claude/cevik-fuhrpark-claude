@@ -361,5 +361,42 @@ await test('Cron-Lauf (scheduled) läuft für Test und Betrieb fehlerfrei', asyn
   ok(runs.every((r) => !r.error), 'ohne Fehler');
 });
 
+console.log('Reifenmanagement');
+await test('Reifengrößen-Import nur über FIN; geprüfte Werte bleiben erhalten', async () => {
+  const csv = (await import('node:fs')).readFileSync(new URL('../seed/reifen_quelldaten.csv', import.meta.url), 'utf8');
+  eq((await users.fleet.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' })).status, 403);
+  const r = await owner.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' });
+  eq(r.status, 200); ok(r.data.imported >= 4, 'Größen für Testfahrzeuge übernommen'); ok(r.data.skipped_no_vehicle.length > 10, 'Unbekannte FIN übersprungen');
+  const o = await users.fleet.get(`/api/vehicles/${V1}/tires`);
+  const lenk = o.data.specs.find((x) => x.axle === 'lenkachse');
+  eq(lenk.size, '315/60 R22.5'); eq(lenk.verified, 0, 'Quellwert ungeprüft');
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true })).status, 200);
+  await owner.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' });
+  eq((await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.specs.find((x) => x.axle === 'lenkachse').size, '315/70 R22.5', 'Geprüfter Wert nicht überschrieben');
+});
+await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitung 1,6 mm wird kritischer Befund', async () => {
+  eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 5 })).status, 403);
+  eq((await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id, evidence: 'Test-Zuordnung' })).status, 201);
+  const m = await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: '1,2' });
+  eq(m.status, 201); eq(m.data.warnings.length, 1);
+  eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5' })).status, 403, 'Fahrer wechselt keine Reifen');
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'HA-L-aussen' })).status, 400, 'Messung ohne Wert');
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'XX', tread_mm: 5 })).status, 400, 'Unbekannte Position');
+  const o = await users.fleet.get(`/api/vehicles/${V1}/tires`);
+  eq(o.data.positions.find((p) => p.position === 'VA-L').status, 'unter_minimum');
+  await users.fleet.post('/api/agent/run');
+  ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'Agent meldet Reifen');
+});
+await test('Reifenwechsel nur mit Größe; danach ist der alte Messwert nicht mehr maßgeblich', async () => {
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L' })).status, 400);
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5', brand: 'Testmarke', dot: '2326', odometer_km: 812600 })).status, 201);
+  const o = await users.fleet.get(`/api/vehicles/${V1}/tires`);
+  const p = o.data.positions.find((x) => x.position === 'VA-L');
+  eq(p.last_event, 'wechsel'); eq(p.tread_mm, null, 'Nach Wechsel kein alter Messwert'); eq(p.status, 'unbekannt');
+  await users.fleet.post('/api/agent/run');
+  ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'Befund nach Wechsel erledigt');
+  eq((await users.prodFleet.get(`/api/vehicles/${V1}/tires`)).data.history.length, 0, 'Testmessungen nicht im Betrieb');
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 if (failed) { console.log('Fehlgeschlagen:', failures.join(' | ')); process.exit(1); }

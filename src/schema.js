@@ -43,5 +43,13 @@ export const MIGRATIONS = [
    "CREATE TABLE IF NOT EXISTS telematics_unmatched (\n  provider TEXT NOT NULL,\n  external_id TEXT NOT NULL,\n  source_plate TEXT NULL,\n  source_vin TEXT NULL,\n  candidate_vehicle_id TEXT NULL,\n  last_seen TEXT NOT NULL,\n  PRIMARY KEY (provider, external_id)\n)",
    "CREATE TABLE IF NOT EXISTS telematics_mappings (\n  provider TEXT NOT NULL,\n  external_id TEXT NOT NULL,\n  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),\n  evidence TEXT NOT NULL,\n  confirmed_by TEXT NOT NULL,\n  confirmed_at TEXT NOT NULL,\n  PRIMARY KEY (provider, external_id)\n)"
   ]
+ },
+ {
+  "id": "0002_tires",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS tire_specs (\n  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),\n  axle TEXT NOT NULL CHECK (axle IN ('lenkachse','liftachse','antriebsachse','anhaenger')),\n  size TEXT NOT NULL,\n  source TEXT NOT NULL,\n  verified INTEGER NOT NULL DEFAULT 0,          -- 0 = Quellwert, nicht am Fahrzeug bestätigt\n  verified_by TEXT NULL REFERENCES users(id),\n  verified_at TEXT NULL,\n  updated_at TEXT NOT NULL,\n  PRIMARY KEY (vehicle_id, axle)\n)",
+   "CREATE TABLE IF NOT EXISTS tire_events (\n  id TEXT PRIMARY KEY,\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),\n  position TEXT NOT NULL,                       -- z. B. VA-L, HA-R-aussen, AH2-L\n  event_type TEXT NOT NULL CHECK (event_type IN ('messung','wechsel','reparatur','sichtpruefung')),\n  tread_mm REAL NULL CHECK (tread_mm IS NULL OR (tread_mm >= 0 AND tread_mm <= 30)),\n  pressure_bar REAL NULL CHECK (pressure_bar IS NULL OR (pressure_bar >= 0 AND pressure_bar <= 15)),\n  size TEXT NULL,\n  brand TEXT NULL,\n  dot TEXT NULL,                                -- DOT-Code (Herstellwoche/-jahr)\n  odometer_km INTEGER NULL,\n  case_id TEXT NULL REFERENCES cases(id),\n  note TEXT NULL,\n  recorded_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL\n)",
+   "CREATE INDEX IF NOT EXISTS idx_tire_events_vehicle ON tire_events(environment, vehicle_id, position, created_at)"
+  ]
  }
 ];
