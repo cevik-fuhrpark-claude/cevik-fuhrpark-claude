@@ -1144,6 +1144,14 @@ await test('Tätigkeitsvorschläge aus bisherigen Arbeiten der eigenen Werkstatt
   eq(ps.status, 200); ok(ps.data.suggestions.every((x) => 'name' in x && !('unit_price_net' in x)), 'Teile ohne Preise');
 });
 
+await test('Fahrzeugliste als CSV (nicht für Fahrer)', async () => {
+  const r = await users.fleet.get('/api/vehicles?format=csv');
+  eq(r.status, 200);
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  ok(txt.startsWith('\ufeffKennzeichen;FIN;Fahrzeugart') && txt.trim().split('\r\n').length - 1 === (await users.fleet.get('/api/vehicles')).data.vehicles.length, 'alle Fahrzeuge');
+  eq((await users.driver.get('/api/vehicles?format=csv')).status, 403);
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

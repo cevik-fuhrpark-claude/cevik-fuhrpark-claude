@@ -77,6 +77,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Fahrzeugimport | `POST /api/vehicles/import[?dry_run=1]` (owner, CSV): Vorschau `preview[] {line, plate, action neu/geändert/unverändert, changes[]}`, `counts`, `skipped[]`; leere Zellen/fehlende Spalten behalten vorhandene Werte |
 | Bußgelder Export | `GET /api/fines?format=csv[&with_driver=1]` (owner/fleet/viewer; Fahrer nur owner/fleet), `GET /api/fines?format=ics` (offene Antwortfristen, ohne Namen) |
 | Lager | `GET /api/stock?format=csv`; Inventur `POST /api/stock/inventory[?dry_run=1] {site, counts: [{item_id, counted}], note?}` → `differences[]`, `booked` |
+| Fahrzeuge als CSV | `GET /api/vehicles?format=csv[&inactive=1]` (nicht driver) |
 | Vorgänge als CSV | `GET /api/cases?format=csv&status=&q=` (nicht driver): gleiche Filter/Rechte wie die Liste, bis 5000 Zeilen, Formelschutz, Audit `reports.cases.export` |
 | Werkstatt-Auslastung | `GET /api/reports/workshop-load?weeks=1..52` (owner/fleet/viewer; workshop nur eigener Standort): je Standort `weeks[] {week JJJJ-Www, hours, acknowledged, released}`, `open {status: n}` – ohne Personenbezug |
 | Telematik-Zuordnung | `GET /api/telematics` (owner/fleet): `unmatched`, `mappings`, `latest`; `POST /api/telematics/mappings {provider, external_id, vehicle_id, evidence}` (409 bei vorhandener Zuordnung); `DELETE /api/telematics/mappings?provider=&external_id=` |

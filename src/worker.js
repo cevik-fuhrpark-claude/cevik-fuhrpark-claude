@@ -150,7 +150,14 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/unlock$/)) && m === 'POST') return json(await auth.unlockUser(env, user, mm[1]));
 
   // Fahrzeuge
-  if (path === '/api/vehicles' && m === 'GET') return json({ vehicles: await veh.listVehicles(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/vehicles' && m === 'GET') {
+    const list = await veh.listVehicles(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      if (user.role === 'driver') throw forbidden();
+      return new Response(veh.vehiclesCsv(list, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${new Date().toISOString().slice(0, 10)}.csv"` } });
+    }
+    return json({ vehicles: list });
+  }
   if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request)), 201);
   if (path === '/api/vehicles/import' && m === 'POST') {
     await rateLimit(env, 'import', user.id);

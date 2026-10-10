@@ -127,6 +127,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Sprache: ohne gespeicherte Wahl gilt die Gerätesprache (Ukrainisch/Englisch, sonst Deutsch); häufige Server-Fehler (Anmeldung, Sperre, Passwort, Einladung, Dateigröße/-typ, Mengenbegrenzung, Versionskonflikt, km) werden in UK/EN angezeigt (Playwright: falsches Passwort auf ukrainischem Gerät → ukrainische Meldung). 78 Tests grün.
 - [x] Meldeformular prüft Fahrzeugwahl und Beschreibung (≥ 5 Zeichen) in der App-Sprache statt mit Browser-Meldungen in der Gerätesprache (Playwright UK geprüft).
 - [x] Arbeitszeit erfassen: Tätigkeitsvorschläge (häufigste Beschreibungen der eigenen Werkstatt, 12 Monate; `GET /api/work-suggestions`) als Auswahlliste – ohne neue Tabelle; ebenso Teilevorschläge (Bezeichnung → Teilenummer wird ergänzt, ohne Preise; `GET /api/part-suggestions`). 79 Tests grün.
+- [x] Fahrzeugliste als CSV (Stammdaten, Verfügbarkeit laut System, offene Vorgänge, letzter km-Stand, nächste Prüfung; nicht für Fahrer). API-Doku gegen Router abgeglichen. 82 Tests grün.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.

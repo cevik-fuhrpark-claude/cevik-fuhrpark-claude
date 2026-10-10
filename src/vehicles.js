@@ -107,6 +107,16 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   return { vehicle: { id: d.vehicle.id, plate: d.vehicle.plate, kind: d.vehicle.kind }, types: TIMELINE_TYPES, total: items.length, items: items.slice(0, limit) };
 }
 
+// Fahrzeugliste als CSV (Excel): Stammdaten + Verfügbarkeit laut System
+const AV_DE = { gesperrt: 'gesperrt', werkstatt: 'in Werkstatt', meldung_offen: 'Meldung offen', einsatzbereit_lt_system: 'keine offenen Meldungen' };
+export function vehiclesCsv(list, csvCell) {
+  const head = ['Kennzeichen', 'FIN', 'Fahrzeugart', 'Standort', 'Hersteller', 'Modell', 'Baujahr', 'Anhänger', 'Status Stammliste', 'Verfügbarkeit laut System', 'Offene Vorgänge', 'Letzter km-Stand', 'Nächste Prüfung'];
+  const lines = [head.join(';')];
+  for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
+    csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || ''].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
+
 // Prüft und normalisiert einen Stammdatensatz (gemeinsam für Einzelpflege und Import)
 function vehicleRow(user, body) {
   const vin = normalizeVin(body.vin);
