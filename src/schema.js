@@ -71,5 +71,12 @@ export const MIGRATIONS = [
    "CREATE TABLE IF NOT EXISTS fine_counters (\n  environment TEXT NOT NULL,\n  year INTEGER NOT NULL,\n  last_no INTEGER NOT NULL,\n  PRIMARY KEY (environment, year)\n)",
    "ALTER TABLE files ADD COLUMN fine_id TEXT NULL"
   ]
+ },
+ {
+  "id": "0005_maintenance_index",
+  "statements": [
+   "CREATE INDEX IF NOT EXISTS idx_maintenance_vehicle_kind ON maintenance_rules(vehicle_id, kind)",
+   "CREATE INDEX IF NOT EXISTS idx_maintenance_due ON maintenance_rules(next_due_date)"
+  ]
  }
 ];

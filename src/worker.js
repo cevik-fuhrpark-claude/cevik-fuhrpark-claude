@@ -13,6 +13,7 @@ import * as stock from './stock.js';
 import * as fines from './fines.js';
 import * as reports from './reports.js';
 import { exportBackup } from './backup.js';
+import * as maint from './maintenance.js';
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -135,6 +136,19 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
+  if (path === '/api/maintenance' && m === 'GET') {
+    const ov = await maint.maintenanceOverview(env, user);
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length });
+      return new Response(maint.maintenanceCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.csv"` } });
+    }
+    return json(ov);
+  }
+  if (path === '/api/maintenance/import' && m === 'POST') {
+    const text = await request.text();
+    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    return json(await maint.importMaintenanceCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
+  }
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));

@@ -13,6 +13,7 @@ Parameter `environment=production|test` (Standard: production).
 | `GET /api/integration/v1/cases?since=<ISO>` | Vorgänge mit Status, Priorität, Sperre, Zeitstempeln, Version (max. 1000, aufsteigend nach `updated_at`) |
 | `GET /api/integration/v1/findings` | Offene Befunde des Fuhrparkagenten |
 | `GET /api/integration/v1/costs?environment=&from=JJJJ-MM&to=JJJJ-MM&vehicle_id=` | Kosten je Fahrzeug und Monat (belegt / geschätzt / Anzahl unbewertet; max. 36 Monate) |
+| `GET /api/integration/v1/maintenance` | Prüftermine aller aktiven Fahrzeuge (Status überfällig/bald fällig/in Ordnung) und Lückenliste HU/SP/UVV/Tachograph |
 | `GET /api/integration/v1/master` | Management-Panel als Daten (Fälle, Befunde, Master-Eingang) |
 | `POST /api/integration/v1/telematics` | Telematik-Einspeisung (siehe unten) |
 
@@ -45,6 +46,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Anmeldung | `POST /api/login`, `POST /api/logout`, `GET/PATCH /api/me`, `POST /api/me/password`, `GET /api/invite/:token`, `POST /api/invite/accept` |
 | Benutzer | `GET/POST /api/users`, `PATCH /api/users/:id`, `POST /api/users/:id/invite` |
 | Fahrzeuge | `GET/POST /api/vehicles`, `POST /api/vehicles/import` (CSV), `GET /api/vehicles/:id`, `POST …/drivers`, `DELETE /api/assignments/:id`, `POST …/maintenance`, `POST /api/maintenance/:id/complete`, `POST …/odometer`, `POST …/ai` |
+| Prüftermine | `GET /api/maintenance[?format=csv]` (alle außer Fahrer), `POST /api/maintenance/import[?dry_run=1]` (CSV, Inhaber/Fuhrparkleitung) |
 | Vorgänge | `GET/POST /api/cases`, `GET /api/cases/:id`, `POST /api/cases/:id/commands`, `POST /api/cases/:id/files`, `GET /api/files/:id` |
 | Kontrollen | `POST /api/inspections` (`kind`: `nach_reparatur` \| `abfahrt`) |
 | Hinweise | `GET /api/notifications`, `POST /api/notifications/:id/(received|opened|ack)`, `POST /api/notifications/read-all` |
@@ -75,3 +77,9 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 
 ## Kostenbericht (App)
 `GET /api/reports/costs?from=JJJJ-MM&to=JJJJ-MM[&vehicle_id=][&format=csv]` – Rollen Inhaber, Fuhrparkleitung, Lesezugriff. CSV: Semikolon, Dezimalkomma, UTF-8 mit BOM (Excel), Formel-Injektion neutralisiert; jeder Export wird im Audit-Log vermerkt.
+
+## Prüftermin-Import (CSV)
+Kopfzeile mit `Kennzeichen` und/oder `FIN`, `Art` (HU, SP, UVV, Tachograph … ; Aliase TÜV, Sicherheitsprüfung, Tacho, Fahrtenschreiber),
+`Nächster Termin` (JJJJ-MM-TT, TT.MM.JJJJ oder Plakette MM/JJJJ → fällig bis Monatsende, im Nachweis vermerkt) **oder** `Letzte Prüfung` + `Intervall Monate`,
+`Nachweis` (Pflicht je Zeile). Zuordnung über FIN, sonst nur über eindeutiges Kennzeichen. Ein vorhandener späterer Termin wird nie überschrieben;
+gleiche Termine bleiben unverändert (Import ist wiederholbar). `?dry_run=1` liefert die Vorschau ohne zu speichern. Jeder Import/Export im Audit-Log.

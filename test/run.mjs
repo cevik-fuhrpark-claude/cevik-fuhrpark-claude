@@ -328,6 +328,61 @@ await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () =>
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_DUE'), 'HU-Fälligkeit erkannt');
 });
+await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho, Rechte, CSV-Export', async () => {
+  const r = await users.fleet.get('/api/maintenance');
+  eq(r.status, 200);
+  const hu = r.data.rows.find((x) => x.vehicle_id === V1 && x.kind === 'HU');
+  ok(hu && hu.next_due_date === '2026-10-20' && hu.plate === 'SZ-YC 5513', 'HU-Termin mit Kennzeichen');
+  ok(['faellig', 'ueberfaellig', 'ok'].includes(hu.status) && typeof hu.days === 'number', 'Status und Tage');
+  const g1 = r.data.gaps.find((g) => g.vehicle_id === V1); const g2 = r.data.gaps.find((g) => g.vehicle_id === V2);
+  eq(g1.missing.join(','), 'SP,UVV,Tachograph', 'V1 ohne SP/UVV/Tacho'); eq(g2.missing.length, 4, 'V2 ohne alle Pflichtprüfungen');
+  eq(r.data.totals.vehicles_with_gaps, 2);
+  eq((await users.driver.get('/api/maintenance')).status, 403, 'Fahrer');
+  eq((await users.ws.get('/api/maintenance')).status, 200, 'Werkstatt liest');
+  const csv = await users.fleet.get('/api/maintenance?format=csv');
+  eq(csv.status, 200);
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  ok(text.startsWith('﻿Kennzeichen;'), 'BOM + Kopfzeile');
+  ok(text.includes('SZ-KC 5515;VIN:WDB9630051L917317;Dortmund;HU;;;;kein Termin hinterlegt;'), 'Lücke im Export');
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const api = await anon.req('GET', '/api/integration/v1/maintenance', undefined, H);
+  eq(api.status, 200); eq(api.data.rows.length, r.data.rows.length);
+});
+await test('Prüftermin-Import: nur mit Nachweis, FIN/eindeutiges Kennzeichen, Vorschau, kein Überschreiben neuerer Termine, idempotent', async () => {
+  const csv = [
+    'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis',
+    ';WMA15SZZ2HM722774;HU;2026-09-01;;;Alter Prüfbericht',
+    'SZ-KC 5515;;SP;11/2026;;;Prüfplakette Foto 10.10.2026',
+    'sz kc 5515;;UVV;;15.01.2026;12;UVV-Prüfbuch S. 4',
+    'XX-AB 1;;HU;2027-01-01;;;Beleg',
+    ';WMA15SZZ2HM722774;Tacho;2027-05-31;;;',
+    ';WMA15SZZ2HM722774;Fahrtenschreiber;31.02.2027;;;Tachobescheinigung',
+    ';WMA15SZZ2HM722774;SP;2027-03-31;;;"Prüfbericht; Nr. ""17"""',
+    'SZ-YC 5513;;Luftballon;2027-01-01;;;Beleg',
+  ].join('\n');
+  eq((await users.ws.req('POST', '/api/maintenance/import', csv, { 'content-type': 'text/csv' })).status, 403, 'Werkstatt darf nicht importieren');
+  const before = (await users.fleet.get('/api/maintenance')).data.rows.length;
+  const dry = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(dry.status, 200); eq(dry.data.dry_run, true); eq(dry.data.created, 3, 'Vorschau: 3 neu');
+  eq((await users.fleet.get('/api/maintenance')).data.rows.length, before, 'Vorschau schreibt nichts');
+  const reasons = Object.fromEntries(dry.data.skipped.map((x) => [x.line, x.reason]));
+  ok(/neuer/.test(reasons[2]), 'älterer Termin überschreibt nicht'); ok(/nicht im Fahrzeugstamm/.test(reasons[5]), 'unbekanntes Kennzeichen');
+  ok(/Nachweis/.test(reasons[6]), 'Nachweis Pflicht'); ok(/ungültig/.test(reasons[7]), 'ungültiges Datum'); ok(/Prüfart unbekannt/.test(reasons[9]), 'unbekannte Art');
+  const real = await users.fleet.req('POST', '/api/maintenance/import', csv, { 'content-type': 'text/csv' });
+  eq(real.data.created, 3);
+  const ov = (await users.fleet.get('/api/maintenance')).data;
+  const sp2 = ov.rows.find((x) => x.vehicle_id === V2 && x.kind === 'SP');
+  eq(sp2.next_due_date, '2026-11-30', 'Plakette: Monatsende'); ok(/Monatsende/.test(sp2.evidence), 'Herleitung im Nachweis');
+  eq(ov.rows.find((x) => x.vehicle_id === V2 && x.kind === 'UVV').next_due_date, '2027-01-15', 'Letzte Prüfung + Intervall');
+  eq(ov.rows.find((x) => x.vehicle_id === V1 && x.kind === 'SP').evidence, 'Prüfbericht; Nr. "17"', 'CSV mit Anführungszeichen');
+  const again = await users.fleet.req('POST', '/api/maintenance/import', csv, { 'content-type': 'text/csv' });
+  eq(again.data.created, 0); eq(again.data.unchanged, 3, 'Wiederholung idempotent');
+  const upd = await users.fleet.req('POST', '/api/maintenance/import', 'FIN;Art;Fällig am;Nachweis\nWMA15SZZ2HM722774;HU;20.10.2027;Prüfbericht TÜV 09.10.2026', { 'content-type': 'text/csv' });
+  eq(upd.data.updated, 1);
+  const hu = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.vehicle_id === V1 && x.kind === 'HU');
+  eq(hu.next_due_date, '2027-10-20'); eq(hu.evidence, 'Prüfbericht TÜV 09.10.2026');
+  eq((await users.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Art;Nächster Termin\nSZ-YC 5513;HU;2027-01-01', { 'content-type': 'text/csv' })).status, 400, 'Spalte Nachweis Pflicht');
+});
 await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pflicht', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer falsch' })).status, 401);

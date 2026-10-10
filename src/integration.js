@@ -2,6 +2,7 @@
 import { json, readJson, HttpError, nowIso, uuid, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
 import { costReport } from './reports.js';
+import { maintenanceOverview } from './maintenance.js';
 
 function checkToken(request, env) {
   if (!env.INTEGRATION_TOKEN) throw new HttpError(503, 'integration_disabled', 'Integrations-API ist nicht aktiviert (Secret INTEGRATION_TOKEN fehlt).');
@@ -33,6 +34,7 @@ export async function integrationRouter(request, env, ctx, url) {
     return json({ schema_version: '1.0', findings: rows });
   }
   if (p === '/v1/costs' && m === 'GET') return json({ schema_version: '1.0', ...(await costReport(env, null, envParam(url), Object.fromEntries(url.searchParams))) });
+  if (p === '/v1/maintenance' && m === 'GET') return json({ schema_version: '1.0', ...(await maintenanceOverview(env, null)) });
   if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung

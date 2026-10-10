@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 43 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 45 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -68,6 +68,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Lasttest & Abfragebudget: `scripts/lasttest.mjs` (150 Lkw / 3000 Vorgänge, synthetisch, nur Arbeitsspeicher). Agent, Importe, Push-Zustellung, Fahrzeugakte auf Sammelabfragen umgestellt (Agent ≈ 33 statt ≈ 9000 Abfragen); Cron getrennt für Betrieb (`*/15`) und Test (`7,37`); Test „jeder API-Aufruf ≤ 50 D1-Abfragen“.
 - [x] Datensicherung: Inhaber-Download (JSON, ohne Geheimnisse) unter Einstellungen; Wiederherstellung per D1 Time Travel in `docs/BETRIEB.md`. 43 Tests grün.
 
+- [x] Prüftermine (Migration 0005, nur Indizes): Übersicht über alle Fahrzeuge unter Mehr → „Prüftermine“ (überfällig / bald fällig / alle / Lückenliste HU·SP·UVV·Tachograph ohne Termin), CSV-Export, Integrationsendpunkt `/v1/maintenance`. CSV-Import mit Vorschau (`dry_run`), Nachweis je Zeile Pflicht, Zuordnung FIN bzw. eindeutiges Kennzeichen, Plakette MM/JJJJ → Monatsende (vermerkt), spätere vorhandene Termine werden nie überschrieben, idempotent. 45 Tests grün, UI 390 px/Tablet/PC geprüft.
+
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
@@ -75,5 +77,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 ## Backlog (in dieser Reihenfolge)
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
-6. Prüftermine aus Belegen (HU/SP/UVV/Tacho) – Quellen aus Postfach/Drive sichten, nur belegte Termine eintragen.
+6. Prüftermine aus Belegen: Werkzeug fertig (Import unter Mehr → Prüftermine). **Nächster Schritt:** Postfächer/Drive lesend nach HU/SP/UVV/Tacho-Belegen sichten und daraus `seed/prueftermine_belegt.csv` (nur Termine mit eindeutigem Beleg, Nachweis = Dokument/Datum) vorbereiten; Import erst durch Inhaber/Fuhrparkleitung nach Ersteinrichtung.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
