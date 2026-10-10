@@ -11,7 +11,7 @@
   --stop-bg: #fbe9e7;
   --go: #23774a;           /* Freigabe */
   --go-bg: #e5f3ea;
-  --mid: #b86a00;
+  --mid: #9a5800;          /* WCAG AA auf --mid-bg (5:1) */
   --mid-bg: #fff2dc;
   --eu: #1f3f99;
   --test: #6b3fa0;
@@ -183,4 +183,16 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 /* [CLAUDE] Barrierefreiheit: Sprunglink zum Inhalt, nur bei Tastaturfokus sichtbar */
 .skip { position: absolute; left: -9999px; top: 0; z-index: 100; background: var(--signal); color: #111; padding: 10px 14px; font-weight: 700; }
 .skip:focus { left: 8px; top: 8px; }
-#main:focus { outline: none; }
+#main:focus, h1:focus { outline: none; }
+
+/* [CLAUDE] Druckansicht (z. B. Fahrzeugakte für Prüfer/Behörde als PDF über den Browser) */
+@media print {
+  :root { --paper: #fff; --surface: #fff; --ink: #000; --steel: #333; --rule: #999; }
+  body { padding: 0 !important; background: #fff; }
+  .tabbar, .topbar, .skip, .toast, .actions, button, details:not([open]), form, .noprint { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .panel, .row { break-inside: avoid; box-shadow: none; }
+  a { color: inherit; text-decoration: none; }
+  .print-only { display: block !important; }
+}
+.print-only { display: none; }
