@@ -1,11 +1,13 @@
 // [CLAUDE] Lasttest (lokal, synthetische Daten, nur In-Memory-DB): 150 LKW, viele Vorgänge, Messung der Antwortzeiten
-// Aufruf: node --experimental-sqlite scripts/lasttest.mjs [fahrzeuge] [vorgaenge] [fahrer]
+// Aufruf: node --experimental-sqlite scripts/lasttest.mjs [fahrzeuge] [vorgaenge] [fahrer] [--check]
 // Hinweis: misst die Anwendungslogik auf SQLite; D1 im Betrieb hat zusätzliche Netzlatenz je Abfrage (typisch einige ms).
 import worker from '../src/worker.js';
 import { makeEnv, Client, QSTAT } from '../test/harness.mjs';
 
-const N_VEH = Number(process.argv[2] || 150);
-const N_CASES = Number(process.argv[3] || 3000);
+const ARGS = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const CHECK = process.argv.includes('--check'); // Abbruch mit Fehlercode, wenn ein Aufruf > 50 D1-Abfragen braucht
+const N_VEH = Number(ARGS[0] || 150);
+const N_CASES = Number(ARGS[1] || 3000);
 const env = makeEnv();
 const owner = new Client(worker, env, 'owner');
 const must = (r, what) => { if (r.status >= 300) throw new Error(`${what}: ${r.status} ${JSON.stringify(r.data)}`); return r; };
@@ -53,7 +55,7 @@ for (let k = 0; k < 20; k++) {
   if (k < 3) await timed('Vorgänge CSV-Export', () => owner.get('/api/cases?format=csv'));
 }
 // Fahrerakte + Auslesungen (synthetisch): Fahrer mit Fahrerkarte, Führerschein, Kontrolle, Auslesungen; Massenspeicher je Lkw
-const N_DRV = Number(process.argv[4] || 200);
+const N_DRV = Number(ARGS[2] || 200);
 const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const drvIds = [];
 for (let i = 0; i < N_DRV; i++) {
@@ -79,3 +81,8 @@ console.log('\nAntwortzeiten (ms)          n     p50     p95     max   SQL max')
 for (const [k, a] of Object.entries(timings)) console.log(`${k.padEnd(26)} ${String(a.length).padStart(5)} ${pct(a, 0.5).toFixed(1).padStart(7)} ${pct(a, 0.95).toFixed(1).padStart(7)} ${Math.max(...a).toFixed(1).padStart(7)} ${String(Math.max(...queries[k])).padStart(9)}`);
 const list = (await owner.get('/api/cases')).data.cases;
 console.log(`\nVorgangsliste liefert ${list.length} Einträge (Begrenzung beachten).`);
+if (CHECK) {
+  const over = Object.entries(queries).filter(([, a]) => Math.max(...a) > 50).map(([k, a]) => `${k} (${Math.max(...a)})`);
+  if (over.length) { console.error(`\nPRÜFUNG FEHLGESCHLAGEN – über 50 D1-Abfragen je Aufruf: ${over.join(', ')}`); process.exit(1); }
+  console.log('\nPrüfung bestanden: alle Aufrufe ≤ 50 D1-Abfragen.');
+}

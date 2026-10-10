@@ -65,7 +65,7 @@ Vor dem Zurückspielen das aktuelle Lesezeichen notieren – damit lässt sich a
 **Code:** GitHub-Repository; jede Version ist unter Cloudflare → Worker → Deployments zurückrollbar.
 
 ## Belastbarkeit (Lasttest)
-`node --experimental-sqlite scripts/lasttest.mjs 150 3000` – synthetische Daten (Kennzeichen `LT-…`), nur im Arbeitsspeicher, nie in der echten Datenbank.
+`npm run lasttest` (= `scripts/lasttest.mjs 150 3000 200 --check`, bricht mit Fehlercode ab, wenn ein Aufruf mehr als 50 D1-Abfragen braucht) – synthetische Daten (Kennzeichen `LT-…`), nur im Arbeitsspeicher, nie in der echten Datenbank.
 Ergebnis 10.10.2026, 14 Uhr (150 Lkw, 3000 Vorgänge): Vorgang anlegen p95 ≈ 4 ms, Vorgangsliste ≈ 20 ms, Fahrzeugakte ≈ 3 ms,
 Management-Panel ≈ 11 ms, Kostenbericht 12 Monate ≈ 19 ms (vorher ≈ 430 ms – Datumsformatierung wird jetzt einmal erzeugt statt je Buchung),
 Kennzahlen 12 Monate ≈ 56 ms, Prüftermine ≈ 3 ms, Reifen-Flotte ≈ 2 ms, Vorgangssuche ≈ 20 ms, Fuhrparkagent-Lauf ≈ 500 ms (reine Anwendungslogik inkl.
