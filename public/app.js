@@ -1495,8 +1495,9 @@ function viewHelp() {
   const sec = (n) => `<section class="panel"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
   const r = S.me.role;
   const parts = ['report', 'prio', 'check', 'push', 'offline'];
-  if (r === 'workshop') parts.unshift('ws');
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'drivers');
+  if (r === 'workshop') parts.unshift('ws', 'stock');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'drivers', 'stock');
+  if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
   if (r === 'dispatch') parts.unshift('dispo');
   render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}<p class="small muted">${esc(t('app_version'))}: ${esc(S.appVersion || '–')}</p>`, 'more');
 }

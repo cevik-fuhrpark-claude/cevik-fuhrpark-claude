@@ -872,6 +872,14 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   for (const m of i18nSrc.matchAll(/Object\.assign\(STRINGS\.(de|uk|en), \{(.*)\}\);/g)) perLang[m[1]] += '\n' + m[2];
   const dupl = Object.entries(perLang).flatMap(([lang, b]) => { const seen = {}; return [...b.matchAll(/(?:^|[\s,{])([a-z0-9_]+): (?=['`])/g)].map((m) => m[1]).filter((k) => (seen[k] = (seen[k] || 0) + 1) > 1).map((k) => `${lang}.${k}`); });
   eq(dupl.join(','), '', 'doppelte Textschlüssel (der spätere überschreibt still den früheren)');
+  // Hilfe-Abschnitte werden dynamisch (help_<name>_t/_s) gebildet: jeder genannte Abschnitt muss in allen Sprachen mit gleicher Schrittzahl existieren
+  const helpSrc = app.slice(app.indexOf('function viewHelp()'), app.indexOf('// ---------- Reifen über die Flotte'));
+  const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'more', 'app_version', 'help'].includes(k)));
+  ok(helpParts.has('stock') && helpParts.has('privacy'), 'Hilfe: Lager und Datenauskunft');
+  for (const k of helpParts) for (const lang of ['de', 'uk', 'en']) {
+    ok(STRINGS[lang][`help_${k}_t`] && STRINGS[lang][`help_${k}_s`], `Hilfe ${k} fehlt in ${lang}`);
+    eq(STRINGS[lang][`help_${k}_s`].split('|').length, STRINGS.de[`help_${k}_s`].split('|').length, `Hilfe ${k}: Schrittzahl ${lang}`);
+  }
   const attr = [...app.matchAll(/(aria-label|title|placeholder)="([A-Za-zÄÖÜäöüß][^"$]{2,})"/g)].map((m) => m[2]).filter((x) => !/[0-9.…,]/.test(x)); // Beispielwerte (SZ-…, m.mustermann) sind sprachneutral
   eq(attr.join(' | '), '', 'Attribute ohne Übersetzung (aria-label/title/placeholder)');
 });

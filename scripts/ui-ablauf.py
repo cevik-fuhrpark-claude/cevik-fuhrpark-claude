@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Ablauftest: Kernprozess komplett über die Oberfläche (Klicks, Handybreite 390 px)
 # Fahrer meldet Schaden → Fuhrparkleitung gibt Reparatur frei → Werkstatt übernimmt, repariert, erfasst Arbeitszeit,
+# legt einen Lagerartikel an und entnimmt ihn im Vorgang (unter Mindestbestand → Bestellvorschlag),
 # macht die Pflicht-Kontrolle nach Reparatur (mit einem Mangel → Folgeauftrag) → Abschlusskontrolle → Fuhrparkleitung
 # erteilt die technische Freigabe. Danach Abfahrtskontrolle über den Aufkleber-Link.
 # Voraussetzung: frischer lokaler Entwicklungsserver (sh scripts/restart-dev.sh) und Python-Playwright.
@@ -157,6 +158,51 @@ with sync_playwright() as p:
     if status(api, cid) != 'in_reparatur':
         fail(f'nach Reparaturbeginn Status {status(api, cid)}')
     steps.append('Werkstatt (Tablet 820 px) übernimmt, beginnt Reparatur, erfasst 0,5 h')
+
+    # 3b. Lager: Werkstatt legt Artikel an (Bestand 3, Mindestbestand 2), entnimmt 2 im Vorgang → Bestellvorschlag
+    go(wsp, 'stock')
+    wsp.locator('details.panel summary').first.click()
+    wsp.fill('#nf [name=name]', 'Ablauftest Spiegelhalter-Schraube')
+    wsp.fill('#nf [name=part_number]', 'AT-4711')
+    wsp.fill('#nf [name=initial_qty]', '3')
+    wsp.fill('#nf [name=min_qty]', '2')
+    wsp.fill('#nf [name=unit_price_net]', '1,50')
+    wsp.locator('#nf button.btn').click()
+    wsp.wait_for_timeout(600)
+    if wsp.locator('.toast.err').count():
+        fail('Lagerartikel: ' + wsp.locator('.toast.err').first.text_content())
+    items = api('GET', '/api/stock')['d']['items']
+    item = next((i for i in items if i['part_number'] == 'AT-4711'), None)
+    if not item or item['on_hand'] != 3:
+        fail(f'Lagerartikel nicht angelegt: {items}')
+    check_view(wsp, 'workshop', 'Lager (Tablet)')
+    go(wsp, f'cases/{cid}')
+    wsp.locator('[data-act="add_part"]').first.click()
+    wsp.wait_for_selector('#af [name="stock_item_id"]', timeout=5000)
+    wsp.locator('#af [name="stock_item_id"]').select_option(item['id'])
+    wsp.fill('#af [name="quantity"]', '2')
+    wsp.locator('#af button.btn').first.click()
+    wsp.wait_for_timeout(700)
+    if wsp.locator('.toast.err').count():
+        fail('Teil aus Lager: ' + wsp.locator('.toast.err').first.text_content())
+    parts = api('GET', f'/api/cases/{cid}')['d'].get('parts') or []
+    if not any(p.get('stock_item_id') == item['id'] and float(p.get('quantity')) == 2 for p in parts):
+        fail(f'Teil aus Lager nicht im Vorgang: {parts}')
+    go(wsp, 'stock')
+    link = wsp.locator('a[href="#/stock/reorder"]')
+    if '1' not in (link.locator('.chip').text_content() if link.locator('.chip').count() else ''):
+        fail('Lager: Zähler unter Mindestbestand fehlt')
+    link.click()
+    wsp.wait_for_timeout(600)
+    rows = wsp.locator('table.stack tbody tr')
+    if rows.count() != 1 or 'Spiegelhalter-Schraube' not in rows.first.text_content():
+        fail(f'Bestellvorschlag: {rows.count()} Zeile(n)')
+    if '1,50' not in rows.first.text_content():
+        fail('Bestellvorschlag: Wert der Fehlmenge (1 × 1,50 €) fehlt: ' + rows.first.text_content())
+    check_view(wsp, 'workshop', 'Bestellvorschlag (Tablet)')
+    steps.append('Werkstatt legt Lagerartikel an, entnimmt 2 Stk im Vorgang → Bestellvorschlag zeigt 1 Stk Fehlmenge')
+    shot(wsp, 'bestellvorschlag')
+    go(wsp, f'cases/{cid}')
 
     # 4. Pflicht-Kontrolle nach Reparatur über das Formular – ein Punkt Mangel (nicht sicherheitsrelevant)
     wsp.locator('a[href^="#/inspect/"]').first.click()
