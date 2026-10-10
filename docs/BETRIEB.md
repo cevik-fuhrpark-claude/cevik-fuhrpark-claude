@@ -24,6 +24,15 @@
 - Reaktionsfristen (Erstbewertung, Werkstatt-Übernahme) je Priorität unter „Einstellungen“. Leer = keine Frist (der Agent meldet dann „Frist nicht konfiguriert“).
 - Interner Werkstatt-Stundensatz: ohne Wert bleiben Arbeitsstunden „unbewertet“.
 
+## HU/SP-Fristen (StVZO § 29, Anlage VIII)
+Berechnung zentral im Server (`src/inspection_rules.js`), nie im Browser:
+- HU alle 12 Monate ab Monat der letzten HU; Fristende = Ablauf des Monats (Plakette).
+- SP 6 Monate nach der letzten HU (nicht nach der letzten SP). Eine „SP i. V. m. HU“ am HU-Tag gehört zur HU. Eine SP im Vormonat ist zulässig und verschiebt den Turnus nicht; eine frühere SP → „Frist ungeklärt“.
+- SP-Pflicht: Lkw > 12 t ab 30 Monaten, Lkw > 7,5–12 t ab 42 Monaten nach Erstzulassung; Lkw ≤ 7,5 t und Anhänger ≤ 10 t keine SP; Anhänger > 10 t wie Lkw > 12 t.
+- Ohne zulässige Gesamtmasse, ohne belegte HU oder bei Widerspruch zum Nachweis: „Frist ungeklärt“ (keine geschätzten Fristen). Ein geplanter Werkstatttermin ersetzt keine Durchführung; eine HU erledigt keine offene SP; keine automatische Kulanz.
+- Fahrzeugdaten (zGM laut F.2, Erstzulassung laut B) in der Fahrzeugakte unter „Prüfrelevante Fahrzeugdaten“ – nur mit Nachweis.
+- Jede Neuberechnung einer gespeicherten Fälligkeit steht im Audit-Log (`maintenance.husp_recalc`, von/nach).
+
 ## Sicherung & Wiederherstellung
 **Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.
 

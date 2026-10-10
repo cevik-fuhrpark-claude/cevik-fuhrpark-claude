@@ -336,8 +336,9 @@ await test('Stundensatz festlegen → Kosten bewertet; ohne Satz unbewertet', as
 });
 await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () => {
   eq((await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', next_due_date: '2026-10-20' })).status, 400, 'Nachweis Pflicht');
+  for (const V of [V1, V2]) eq((await users.fleet.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
   const r = await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: '2025-10-20', interval_months: 12, evidence: 'Prüfbericht TÜV 20.10.2025' });
-  eq(r.status, 201); eq(r.data.next_due_date, '2026-10-20');
+  eq(r.status, 201); eq(r.data.next_due_date, '2026-10-31', 'HU: 12 Kalendermonate, Fristende Monatsende');
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_DUE'), 'HU-Fälligkeit erkannt');
   const rem = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
@@ -350,7 +351,7 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   const r = await users.fleet.get('/api/maintenance');
   eq(r.status, 200);
   const hu = r.data.rows.find((x) => x.vehicle_id === V1 && x.kind === 'HU');
-  ok(hu && hu.next_due_date === '2026-10-20' && hu.plate === 'SZ-YC 5513', 'HU-Termin mit Kennzeichen');
+  ok(hu && hu.next_due_date === '2026-10-31' && hu.plate === 'SZ-YC 5513', 'HU-Termin mit Kennzeichen');
   ok(['faellig', 'ueberfaellig', 'ok'].includes(hu.status) && typeof hu.days === 'number', 'Status und Tage');
   const g1 = r.data.gaps.find((g) => g.vehicle_id === V1); const g2 = r.data.gaps.find((g) => g.vehicle_id === V2);
   eq(g1.missing.join(','), 'SP,UVV,Tachograph', 'V1 ohne SP/UVV/Tacho'); eq(g2.missing.length, 4, 'V2 ohne alle Pflichtprüfungen');
@@ -365,7 +366,7 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   const ics = await users.fleet.get('/api/maintenance?format=ics');
   eq(ics.status, 200); ok((ics.headers.get('content-type') || '').startsWith('text/calendar'));
   const cal = new TextDecoder().decode(ics.data);
-  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:20261020') && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D'), 'Kalender mit HU-Termin und Erinnerung');
+  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:20261031') && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D'), 'Kalender mit HU-Termin und Erinnerung');
   ok(cal.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75), 'Zeilen auf 75 Oktette gefaltet');
   const H = { authorization: 'Bearer integration-token-xyz' };
   const api = await anon.req('GET', '/api/integration/v1/maintenance', undefined, H);
@@ -1090,6 +1091,99 @@ await test('Ruhendes Fahrzeug: bleibt sichtbar, zählt nicht in Kosten/Fahrzeugz
   eq((await users.fleet.post(`/api/vehicles/${V}/evaluation`, { excluded: false })).status, 200);
   eq((await users.fleet.get('/api/master')).data.vehicles_total, before);
 });
+
+console.log('HU/SP nach StVZO Anlage VIII');
+{
+  const { computeHuSp, zgmClassFromKg } = await import('../src/inspection_rules.js');
+  const L = (cls, ez = null) => ({ kind: 'lkw', zgm_class: cls, first_registration: ez });
+  const HU = (d) => ({ kind: 'HU', done_date: d, evidence: 'Prüfbericht HU' });
+  const SP = (d) => ({ kind: 'SP', done_date: d, evidence: 'Prüfbericht SP' });
+  const calc = (v, ev, today, extra = {}) => computeHuSp(v, ev, { today, warnDays: 30, ...extra });
+
+  await test('Halbjährlicher Wechsel: HU 01/2026 → SP 07/2026 → HU 01/2027 → SP 07/2027 (keine zusätzliche SP)', async () => {
+    let r = calc(L('ueber_12'), [HU('2026-01-15'), SP('2026-01-15')], '2026-03-01');
+    eq(r.hu.due, '2027-01-31', 'HU 12 Monate, Monatsende'); eq(r.sp.due, '2026-07-31', 'SP 6 Monate nach HU (SP i. V. m. HU am HU-Tag zählt nicht als Zyklus-SP)'); eq(r.sp.status, 'ok');
+    r = calc(L('ueber_12'), [HU('2026-01-15'), SP('2026-01-15'), SP('2026-07-10')], '2026-08-01');
+    eq(r.sp.status, 'ok'); eq(r.sp.due, null, 'nach durchgeführter SP keine weitere SP im selben Zyklus'); eq(r.sp.prognosis, '2027-07-31', 'Prognose: 6 Monate nach nächster HU');
+    eq(r.hu.due, '2027-01-31');
+    r = calc(L('ueber_12'), [HU('2026-01-15'), SP('2026-07-10'), HU('2027-01-20')], '2027-02-01');
+    eq(r.sp.due, '2027-07-31', 'SP folgt der neuen HU'); eq(r.hu.due, '2028-01-31');
+    r = calc(L('ueber_12', '2015-03-01'), [HU('2026-01-15')], '2026-08-01');
+    eq(r.sp.status, 'ueberfaellig', 'nicht nach „letzte SP + 12“, sondern HU + 6'); eq(r.sp.due, '2026-07-31');
+  });
+  await test('Erste SP 30 Monate (>12 t) bzw. 42 Monate (7,5–12 t) nach Erstzulassung', async () => {
+    let r = calc(L('ueber_12', '2024-01-15'), [HU('2025-01-10')], '2025-03-01');
+    eq(r.sp.status, 'erste_sp_kuenftig'); eq(r.sp.prognosis, '2026-07-31', '30 Monate');
+    r = calc(L('ueber_12', '2024-01-15'), [HU('2025-01-10'), HU('2026-01-12')], '2026-03-01');
+    eq(r.sp.due, '2026-07-31', 'nach HU 24 Monate → SP 6 Monate später = 30 Monate nach EZ'); eq(r.sp.status, 'ok');
+    r = calc(L('7_5_12', '2024-01-15'), [HU('2025-01-10'), HU('2026-01-12')], '2026-03-01');
+    eq(r.sp.status, 'erste_sp_kuenftig'); eq(r.sp.prognosis, '2027-07-31', '42 Monate');
+    r = calc(L('7_5_12', '2024-01-15'), [HU('2025-01-10'), HU('2026-01-12'), HU('2027-01-11')], '2027-03-01');
+    eq(r.sp.due, '2027-07-31');
+  });
+  await test('Gewichtsgrenzen genau 7,5 t und genau 12 t (Anhänger 10 t)', async () => {
+    eq(zgmClassFromKg('lkw', 7500), '3_5_7_5'); eq(zgmClassFromKg('lkw', 7501), '7_5_12');
+    eq(zgmClassFromKg('lkw', 12000), '7_5_12'); eq(zgmClassFromKg('lkw', 12001), 'ueber_12');
+    eq(zgmClassFromKg('anhaenger', 10000), '3_5_10'); eq(zgmClassFromKg('anhaenger', 10001), 'ueber_10');
+    eq(calc(L(zgmClassFromKg('lkw', 7500)), [HU('2026-01-15')], '2026-03-01').sp.status, 'nicht_sp_pflichtig', 'genau 7,5 t: keine SP');
+    eq(calc(L(zgmClassFromKg('lkw', 12000), '2020-01-01'), [HU('2026-01-15')], '2026-03-01').sp.due, '2026-07-31', 'genau 12 t: SP-pflichtig (42-Monats-Regel)');
+    eq(calc({ kind: 'anhaenger', zgm_class: '3_5_10' }, [HU('2026-01-15')], '2026-03-01').sp.status, 'nicht_sp_pflichtig', 'Anhänger bis 10 t: keine SP');
+    eq(calc({ kind: 'anhaenger', zgm_class: 'ueber_10', first_registration: '2015-01-01' }, [HU('2026-01-15')], '2026-03-01').sp.due, '2026-07-31', 'Anhänger > 10 t: SP 6 Monate nach HU');
+  });
+  await test('Zulässig im Vormonat vorgezogene SP verschiebt den Turnus nicht; zu frühe SP → Frist ungeklärt', async () => {
+    let r = calc(L('ueber_12'), [HU('2026-01-20'), SP('2026-01-20'), SP('2026-06-03')], '2026-08-15');
+    eq(r.sp.status, 'ok', 'SP im Vormonat (Juni) erfüllt die Juli-SP'); eq(r.sp.prognosis, '2027-07-31', 'Turnus bleibt Juli');
+    r = calc(L('ueber_12'), [HU('2026-01-20'), SP('2026-01-20'), SP('2026-04-02')], '2026-05-01');
+    eq(r.sp.status, 'ungeklaert', 'außerhalb Vormonat'); ok(/vor dem zulässigen Zeitraum/.test(r.sp.notes.join(' ')));
+  });
+  await test('Fehlende, widersprüchliche und überfällige Prüfdaten; HU erledigt keine offene SP; keine Kulanz', async () => {
+    let r = calc(L(null), [HU('2026-01-15')], '2026-03-01');
+    eq(r.sp.status, 'ungeklaert', 'zGM fehlt'); eq(r.hu.status, 'ungeklaert');
+    r = calc(L('ueber_12'), [], '2026-03-01');
+    eq(r.hu.status, 'ungeklaert'); ok(/Keine durchgeführte HU/.test(r.hu.notes.join(' ')));
+    r = calc(L('ueber_12'), [HU('2026-01-15')], '2026-03-01');
+    eq(r.sp.status, 'ungeklaert', 'ohne Erstzulassung und ohne SP-Nachweis'); eq(r.sp.prognosis, '2026-07-31');
+    r = calc(L('ueber_12'), [HU('2025-01-15'), SP('2025-01-15'), HU('2026-01-15')], '2026-03-01');
+    ok(/nicht belegt/.test(r.sp.notes.join(' ')) && r.sp.status === 'ungeklaert', 'SP 07/2025 fehlt – spätere HU ersetzt sie nicht');
+    r = calc(L('ueber_12'), [HU('2025-10-20')], '2026-10-31', { documented: { HU: { due: '2026-11-30' } } });
+    eq(r.hu.status, 'ungeklaert', 'Widerspruch Nachweis/Berechnung'); eq(r.hu.due, '2026-11-30', 'Nachweis wird nicht überschrieben');
+    r = calc(L('ueber_12'), [HU('2025-01-10'), SP('2025-01-10'), SP('2025-07-05')], '2026-02-01');
+    eq(r.hu.status, 'ueberfaellig', 'HU 01/2026 überschritten'); eq(r.hu.due, '2026-01-31', 'kein Verschieben, keine Kulanz');
+    r = calc(L('ueber_12'), [HU('2026-01-10'), SP('2026-01-10')], '2026-08-01', { planned: { SP: '2026-08-20' } });
+    eq(r.sp.status, 'ueberfaellig', 'geplanter Termin ersetzt keine Durchführung'); eq(r.sp.planned_date, '2026-08-20');
+    r = calc(L('ueber_12'), [{ ...HU('2026-01-10'), result: 'erhebliche_maengel' }, SP('2026-01-10')], '2026-02-01');
+    eq(r.hu.status, 'ungeklaert', 'HU mit erheblichen Mängeln: Nachprüfung belegen');
+  });
+  await test('Serverseitig: Fahrzeugakte, Übersicht, Befunde und protokollierte Neuberechnung; bestehende Funktionen bleiben', async () => {
+    const V3 = 'VIN:WDB9630051L909058';
+    eq((await users.fleet.post('/api/vehicles', { vin: 'WDB9630051L909058', plate: 'SZ-YC 5517', site: 'Dortmund', source: 'Test' })).status, 201);
+    eq((await users.fleet.post(`/api/vehicles/${V3}/maintenance`, { kind: 'HU', last_done_date: '2025-10-20', evidence: 'HU-Prüfbericht 20.10.2025' })).status, 201);
+    const before = (await users.fleet.get(`/api/vehicles/${V3}`)).data;
+    ok(before.hu_sp && before.hu_sp.hu && before.hu_sp.sp, 'HU/SP getrennt in der Fahrzeugakte');
+    eq((await users.ws.post(`/api/vehicles/${V3}/spec`, { zgm_class: 'ueber_12', spec_source: 'x' })).status, 403);
+    eq((await users.fleet.post(`/api/vehicles/${V3}/spec`, { zgm_kg: 12000, zgm_class: 'ueber_12', spec_source: 'Fahrzeugschein' })).status, 400, 'Klasse passt nicht zu kg');
+    eq((await users.fleet.post(`/api/vehicles/${V3}/spec`, { zgm_kg: 18000, first_registration: '2016-12-01', spec_source: 'Fahrzeugschein F.2/B' })).status, 200);
+    const sp = await users.fleet.post(`/api/vehicles/${V3}/maintenance`, { kind: 'SP', last_done_date: '2025-10-20', evidence: 'SP i. V. m. HU 20.10.2025' });
+    eq(sp.status, 201); eq(sp.data.next_due_date, '2026-04-30', 'SP 6 Monate nach HU 10/2025');
+    const d = (await users.fleet.get(`/api/vehicles/${V3}`)).data;
+    eq(d.hu_sp.sp.due, '2026-04-30'); eq(d.hu_sp.sp.status, 'ueberfaellig');
+    const ov = (await users.fleet.get('/api/maintenance')).data;
+    const row = ov.rows.find((x) => x.vehicle_id === V3 && x.kind === 'SP');
+    eq(row.status, 'ueberfaellig'); eq(row.due_month, '04/2026'); eq(row.due_basis, 'berechnet');
+    const audits = (await owner.get('/api/admin/audit?action=maintenance.husp_recalc')).data.entries;
+    ok(audits.some((a) => a.target === V3 && a.detail && a.detail.kind === 'SP' && a.detail.to === '2026-04-30'), 'Neuberechnung protokolliert (von/nach)');
+    await users.fleet.post('/api/agent/run');
+    ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_OVERDUE' && f.vehicle_id === V3 && /SP überfällig/.test(f.message)), 'Befund SP überfällig');
+    const rid = d.hu_sp.rules.SP;
+    eq((await users.fleet.post(`/api/maintenance/${rid}/plan`, { planned_date: '2026-10-28' })).status, 200);
+    eq((await users.fleet.get(`/api/vehicles/${V3}`)).data.hu_sp.sp.status, 'ueberfaellig', 'Planung erledigt nichts');
+    const done = await users.fleet.post(`/api/maintenance/${rid}/complete`, { done_date: '2026-10-10', evidence: 'SP-Prüfbericht 10.10.2026', result: 'ohne_maengel' });
+    eq(done.status, 200);
+    const after = (await users.fleet.get(`/api/vehicles/${V3}`)).data;
+    eq(after.hu_sp.sp.status, 'ok', 'verspätete SP schließt den Zyklus'); eq(after.hu_sp.hu.due, '2026-10-31');
+    ok(after.documents !== undefined && after.maintenance_history.length >= before.maintenance_history.length, 'Dokumente und Historie erhalten');
+  });
+}
 
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {

@@ -147,5 +147,24 @@ export const MIGRATIONS = [
   "statements": [
    "ALTER TABLE users ADD COLUMN push_muted TEXT NULL"
   ]
+ },
+ {
+  "id": "0016_hu_sp_rules",
+  "statements": [
+   "ALTER TABLE vehicles ADD COLUMN zgm_class TEXT NULL",
+   "ALTER TABLE vehicles ADD COLUMN zgm_kg INTEGER NULL",
+   "ALTER TABLE vehicles ADD COLUMN first_registration TEXT NULL",
+   "ALTER TABLE vehicles ADD COLUMN spec_source TEXT NULL",
+   "ALTER TABLE maintenance_rules ADD COLUMN due_source TEXT NULL",
+   "ALTER TABLE maintenance_rules ADD COLUMN planned_date TEXT NULL",
+   "ALTER TABLE maintenance_events ADD COLUMN result TEXT NULL",
+   "UPDATE maintenance_rules SET due_source = CASE WHEN interval_months IS NOT NULL THEN 'berechnet' ELSE 'nachweis' END WHERE next_due_date IS NOT NULL AND due_source IS NULL",
+   "UPDATE maintenance_rules SET due_source = 'berechnet' WHERE next_due_date IS NULL AND due_source IS NULL",
+   "UPDATE vehicles SET zgm_class = CASE WHEN kind='anhaenger' THEN 'ueber_10' ELSE 'ueber_12' END, spec_source = 'Angabe Inhaber 10.10.2026: alle Lkw über 12 t, alle Anhänger über 10 t zGM' WHERE zgm_class IS NULL",
+   "UPDATE maintenance_rules SET evidence = REPLACE(evidence, '; Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026', ''), interval_months = NULL, due_source = 'berechnet' WHERE kind = 'SP' AND evidence LIKE '%Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026%'",
+   "UPDATE maintenance_events SET evidence = REPLACE(evidence, '; Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026', '') WHERE kind = 'SP' AND evidence LIKE '%Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026%'",
+   "UPDATE maintenance_rules SET due_source = 'berechnet' WHERE kind = 'HU' AND evidence LIKE '%Intervall 12 Monate vom Inhaber bestätigt am 10.10.2026%'",
+   "INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES (lower(hex(randomblob(16))), NULL, 'maintenance.husp_migration', NULL, '{\"grund\":\"SP-Frist nach StVZO Anlage VIII (6 Monate nach HU) statt pauschal 6 Monate nach letzter SP; zGM-Klassen laut Angabe Inhaber\"}', strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
+  ]
  }
 ];

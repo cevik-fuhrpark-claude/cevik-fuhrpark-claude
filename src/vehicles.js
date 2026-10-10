@@ -1,6 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate } from './util.js';
 import { audit } from './auth.js';
+import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ } from './cases.js';
 import { sha256Hex } from './util.js';
 
@@ -44,7 +45,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT 50`).bind(vehicleId, envName).all()).results;
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
-  const maintenanceHistory = (await env.DB.prepare(`SELECT e.rule_id, e.kind, e.done_date, e.done_km, e.evidence, e.source, e.created_at, u.display_name AS recorded_by_name
+  const maintenanceHistory = (await env.DB.prepare(`SELECT e.rule_id, e.kind, e.done_date, e.done_km, e.evidence, e.source, e.result, e.created_at, u.display_name AS recorded_by_name
     FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC LIMIT 200`).bind(vehicleId).all()).results;
   const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 20').bind(vehicleId).all()).results;
   const drivers = isManager(user) || user.role === 'dispatch'
@@ -64,7 +65,9 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const telematics = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare('SELECT provider, match_basis, gps_time, received_at, lat, lon, km, speed, ignition FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
     : [];
-  const out = { vehicle: v, telematics, cases: caseRows, inspections, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents };
+  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first();
+  const husp = huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(warnRow && warnRow.value) || 30);
+  const out = { vehicle: v, telematics, cases: caseRows, inspections, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
   }
@@ -260,16 +263,54 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const km = body.interval_km ? Math.round(num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km' })) : null;
   const lastDate = str(body.last_done_date, { max: 10 });
   const lastKm = body.last_done_km ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km' })) : null;
+  const husp = kind === 'HU' || kind === 'SP';
   let nextDue = str(body.next_due_date, { max: 10 });
-  if (!nextDue && lastDate && months) nextDue = addMonths(lastDate, months);
+  const dueSource = nextDue ? 'nachweis' : 'berechnet';
+  // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
+  if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
   for (const d of [lastDate, nextDue]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   const id = uuid();
   const now = nowIso();
-  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, months, km, lastDate, lastKm, nextDue, evidence, user.id, now, now)];
+  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, nextDue, evidence, user.id, now, now, dueSource)];
   if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
   await env.DB.batch(stmts);
-  return { id, next_due_date: nextDue };
+  if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
+  return { id, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(id).first()).next_due_date : nextDue };
+}
+
+// Geplanter Werkstatttermin für eine Prüfung (ersetzt keine Durchführung, verschiebt keine Frist)
+export async function planMaintenance(env, user, ruleId, body) {
+  if (!isManager(user) && user.role !== 'workshop') throw forbidden();
+  const r = await env.DB.prepare('SELECT id, vehicle_id, kind FROM maintenance_rules WHERE id=?').bind(ruleId).first();
+  if (!r) throw notFound();
+  const d = body.planned_date ? str(body.planned_date, { max: 10 }) : null;
+  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
+  await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d });
+  return { ok: true, planned_date: d };
+}
+
+// Prüfrelevante Fahrzeugdaten: zulässige Gesamtmasse (F.2), Erstzulassung (B) – nur mit Nachweis
+export async function setVehicleSpec(env, user, vehicleId, body) {
+  if (!isManager(user)) throw forbidden();
+  const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!v) throw notFound();
+  const source = str(body.spec_source, { required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
+  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { min: 500, max: 60000, field: 'zulässige Gesamtmasse (kg)' }));
+  const allowed = v.kind === 'anhaenger' ? ZGM_CLASSES_TRAILER : ZGM_CLASSES_LKW;
+  let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse') : null;
+  if (kg !== null) {
+    const fromKg = zgmClassFromKg(v.kind, kg);
+    if (cls && cls !== fromKg) throw bad('validation', 'Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.');
+    cls = fromKg;
+  }
+  const ez = body.first_registration ? str(body.first_registration, { max: 10 }) : null;
+  if (ez && (!/^\d{4}-\d{2}-\d{2}$/.test(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
+  await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=?').bind(cls, kg, ez, source, nowIso(), vehicleId).run();
+  await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez }, source });
+  const sync = await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
+  return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
 }
 
 export async function completeMaintenance(env, user, ruleId, body) {
@@ -281,16 +322,23 @@ export async function completeMaintenance(env, user, ruleId, body) {
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km' })) : null;
   if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
-  const next = str(body.next_due_date, { max: 10 }) || (r.interval_months ? addMonths(date, r.interval_months) : null);
+  const husp = r.kind === 'HU' || r.kind === 'SP';
+  const docNext = str(body.next_due_date, { max: 10 });
+  const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
+  const result = body.result ? oneOf(body.result, ['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'], 'Prüfergebnis') : null;
   await env.DB.batch([
-    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=? WHERE id=?').bind(date, km, next, evidence, nowIso(), ruleId),
+    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
+      .bind(date, km, next, evidence, nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
+    ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=?').bind(result, ruleId, date)] : []),
   ]);
+  await audit(env, user.id, 'maintenance.done', r.vehicle_id, { kind: r.kind, done_date: date, result, evidence });
+  if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [r.vehicle_id] });
   if (km !== null) {
     await env.DB.prepare('INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)')
       .bind(uuid(), r.vehicle_id, km, `${date}T12:00:00.000Z`, `wartung:${r.kind}`, user.id, nowIso()).run();
   }
-  return { ok: true, next_due_date: next };
+  return { ok: true, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
 }
 
 export async function addOdometer(env, user, vehicleId, body) {

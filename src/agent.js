@@ -1,12 +1,13 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
-import { nowIso, uuid, sha256Hex, berlinDateTime } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate } from './util.js';
 import { notifyUsers } from './notify.js';
 import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
 import { fineFindings } from './fines.js';
 import { documentFindings } from './vehicles.js';
 import { latestKmByVehicle, kmDue } from './maintenance.js';
+import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -27,7 +28,7 @@ function slaMinutes(settings, environment, kind, priority) {
 // (unabhängig von der Anzahl der Vorgänge) und schreibt Befunde blockweise über json_each.
 const CHUNK = 400;
 // Befunde, die als ruhige Erinnerung (nicht dringend) an Fuhrparkleitung/Inhaber gehen, sobald sie neu auftreten
-const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab' };
+const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab' };
 const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
@@ -170,6 +171,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         message: `${r.plate}: ${r.kind} war bei ${fmtKm(k.next_due_km)} km fällig – Stand ${fmtKm(k.current_km)} km (abgelesen ${berlinDateTime(k.km_measured_at).slice(0, 10)}).`, next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         message: `${r.plate}: ${r.kind} fällig bei ${fmtKm(k.next_due_km)} km – Stand ${fmtKm(k.current_km)} km (noch ${fmtKm(k.km_remaining)} km).`, next_action: 'Werkstatttermin einplanen.' });
+      if (r.kind === 'HU' || r.kind === 'SP') continue; // HU/SP: zentrale Berechnung nach StVZO Anlage VIII (unten)
       const due = r.next_due_date;
       if (!due) continue;
       const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
@@ -177,6 +179,27 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         message: `${r.plate}: ${r.kind} seit ${-days} Tag(en) überfällig (fällig ${due}).`, next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (days <= warnDays) add({ code: 'MAINTENANCE_DUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         message: `${r.plate}: ${r.kind} fällig am ${due} (in ${days} Tag(en)).`, next_action: 'Werkstatttermin einplanen.' });
+    }
+
+    // HU/SP nach StVZO Anlage VIII: gespiegelte Fälligkeiten aktualisieren (nur Betrieb-Lauf, protokolliert) und Befunde bilden
+    const todayB = berlinDate();
+    if (environment === 'production') await syncHuSpDues(env, { today: todayB, warnDays });
+    const H_LABEL = { HU: 'HU', SP: 'SP' };
+    for (const [vid, x] of await loadHuSpInputs(env)) {
+      if (!x.v.active) continue; // außer Betrieb: Prüfpflicht ruht (Anlage VIII Nr. 2.7)
+      const res = huSpFor(x, todayB, warnDays);
+      for (const kind of ['HU', 'SP']) {
+        const h = kind === 'HU' ? res.hu : res.sp;
+        const subject = res.rules[kind] || `${vid}|${kind}`;
+        const m = (d) => `${d.slice(5, 7)}/${d.slice(0, 4)}`;
+        if (h.status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject, vehicle_id: vid, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
+          message: `${x.v.plate}: ${H_LABEL[kind]} überfällig (fällig bis Ende ${m(h.due)}${kind === 'SP' && res.hu.last_done ? `, 6 Monate nach HU ${res.hu.last_done}` : ''}).`,
+          next_action: 'Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.' });
+        else if (h.status === 'bald_faellig') add({ code: 'MAINTENANCE_DUE', subject, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
+          message: `${x.v.plate}: ${H_LABEL[kind]} fällig bis Ende ${m(h.due)}${h.planned_date ? ` (Werkstatttermin geplant ${h.planned_date})` : ''}.`, next_action: h.planned_date ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
+        else if (h.status === 'ungeklaert' && x.rules.length) add({ code: 'INSPECTION_UNCLEAR', subject: `${vid}|${kind}|unklar`, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
+          message: `${x.v.plate}: ${H_LABEL[kind]}-Frist ungeklärt – ${h.notes[h.notes.length - 1] || 'Grundlage fehlt'}`, next_action: 'Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.' });
+      }
     }
 
     // Fahrzeugdokumente mit Gültig-bis-Datum (z. B. Versicherung, Leasing) – nur wenn das Datum beim Hochladen angegeben wurde

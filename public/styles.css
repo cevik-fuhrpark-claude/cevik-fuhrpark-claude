@@ -213,3 +213,4 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   .print-only { display: block !important; }
 }
 .print-only { display: none; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }

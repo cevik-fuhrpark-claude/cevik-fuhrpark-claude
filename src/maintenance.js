@@ -2,6 +2,7 @@
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate } from './util.js';
 import { audit } from './auth.js';
+import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
@@ -91,7 +92,7 @@ export function kmDue(rule, latest, warnKm) {
   const st = remaining < 0 ? 'ueberfaellig' : warnKm && remaining <= warnKm ? 'faellig' : 'ok';
   return { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: remaining, km_status: st };
 }
-const RANK = { ueberfaellig: 3, faellig: 2, ok: 1, ohne_termin: 0 };
+const RANK = { ueberfaellig: 4, ungeklaert: 3, faellig: 2, ok: 1, erste_sp: 1, nicht_pflichtig: 0, ohne_termin: 0 };
 
 function daysUntil(due, today) {
   return Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
@@ -108,8 +109,21 @@ export async function maintenanceOverview(env, user) {
   const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.last_done_date, m.next_due_date, m.evidence, m.updated_at
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results;
   const vmap = new Map(vehicles.map((v) => [v.id, v]));
+  // HU/SP zentral nach StVZO Anlage VIII (inspection_rules.js)
+  const huspIn = await loadHuSpInputs(env);
+  const huspBy = new Map();
+  for (const [vid, x] of huspIn) if (vmap.has(vid)) huspBy.set(vid, huSpFor(x, today, warnDays));
+  const HUSP_MAP = { ok: 'ok', bald_faellig: 'faellig', ueberfaellig: 'ueberfaellig', ungeklaert: 'ungeklaert', nicht_sp_pflichtig: 'nicht_pflichtig', erste_sp_kuenftig: 'erste_sp' };
   const rows = rules.map((r) => {
     const v = vmap.get(r.vehicle_id) || {};
+    const hs = (r.kind === 'HU' || r.kind === 'SP') && huspBy.get(r.vehicle_id) ? huspBy.get(r.vehicle_id)[r.kind === 'HU' ? 'hu' : 'sp'] : null;
+    if (hs) {
+      const due = hs.due || null;
+      return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: hs.last_done || r.last_done_date,
+        next_due_date: due, due_month: due ? `${due.slice(5, 7)}/${due.slice(0, 4)}` : null, due_basis: hs.due_basis, prognosis: hs.prognosis || null, planned_date: hs.planned_date,
+        interval_months: r.kind === 'HU' ? hs.interval_months : null, days: due ? daysUntil(due, today) : null, status: HUSP_MAP[hs.status] || 'ungeklaert', husp_status: hs.status, notes: hs.notes,
+        evidence: r.evidence, updated_at: r.updated_at, interval_km: null, last_done_km: r.last_done_km, next_due_km: null, km_remaining: null, km_status: null };
+    }
     const days = r.next_due_date ? daysUntil(r.next_due_date, today) : null;
     const dateStatus = days === null ? 'ohne_termin' : days < 0 ? 'ueberfaellig' : days <= warnDays ? 'faellig' : 'ok';
     const kmd = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
@@ -118,8 +132,10 @@ export async function maintenanceOverview(env, user) {
     return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: r.last_done_date,
       next_due_date: r.next_due_date, interval_months: r.interval_months, days, status, evidence: r.evidence, updated_at: r.updated_at,
       interval_km: r.interval_km, last_done_km: r.last_done_km, ...(kmd || { next_due_km: null, km_remaining: null, km_status: null }) };
-  }).sort((a, b) => (a.status === 'ueberfaellig' ? 0 : 1) - (b.status === 'ueberfaellig' ? 0 : 1) || (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
-  const has = new Set(rules.filter((r) => r.next_due_date).map((r) => `${r.vehicle_id}|${r.kind}`));
+  }).sort((a, b) => (RANK[b.status] >= 3 ? RANK[b.status] : 0) - (RANK[a.status] >= 3 ? RANK[a.status] : 0) || (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
+  const has = new Set(rules.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP').map((r) => `${r.vehicle_id}|${r.kind}`));
+  // Nicht SP-pflichtige Fahrzeuge brauchen keinen SP-Eintrag
+  for (const [vid, h] of huspBy) if (h.sp.status === 'nicht_sp_pflichtig') has.add(`${vid}|SP`);
   const gaps = [];
   for (const v of vehicles.sort((a, b) => String(a.plate).localeCompare(String(b.plate)))) {
     const missing = (v.kind === 'anhaenger' ? REQUIRED_KINDS_TRAILER : REQUIRED_KINDS).filter((k) => !has.has(`${v.id}|${k}`));
@@ -127,7 +143,7 @@ export async function maintenanceOverview(env, user) {
   }
   const count = (s) => rows.filter((r) => r.status === s).length;
   return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps,
-    totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
+    totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 
 export const csvCell = (x) => {
@@ -135,7 +151,7 @@ export const csvCell = (x) => {
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin' };
+const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
 
 export function maintenanceCsv(ov) {
   const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km'].join(';')];
@@ -162,7 +178,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = new Map();
   for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
-  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, evidence FROM maintenance_rules ORDER BY created_at').all()).results;
+  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, evidence, due_source FROM maintenance_rules ORDER BY created_at').all()).results;
   const ruleOf = new Map();
   for (const r of existing) if (!ruleOf.has(`${r.vehicle_id}|${r.kind}`)) ruleOf.set(`${r.vehicle_id}|${r.kind}`, r);
 
@@ -199,6 +215,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     let interval = null;
     const ir = get(cells, ci.interval);
     if (ir) { interval = Number(ir.replace(',', '.')); if (!Number.isInteger(interval) || interval < 1 || interval > 120) return skip(`Intervall ungültig: ${ir}`); }
+    const husp = kind === 'HU' || kind === 'SP';
+    // HU/SP: Fälligkeit nur aus Nachweis (Plakette/Beleg) oder zentral nach StVZO Anlage VIII – nie aus einem pauschalen Intervall
+    if (husp) interval = null;
     let next = due.date;
     if (!next && last.date && interval) next = addMonths(last.date, interval);
     if (!next && !last.date) return skip('Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben');
@@ -209,7 +228,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     const prev = planned.get(key);
     if (prev && prev.sortKey >= sortKey) return skip(`Doppelt in der Datei (Zeile ${prev.line} ist gleich oder neuer)`);
     if (prev) result.skipped.push({ line: prev.line, plate: prev.plate, reason: `Ersetzt durch Zeile ${line} (neuerer Beleg)` });
-    planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy, sortKey });
+    planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy, sortKey, husp, dueSource: due.date ? 'nachweis' : 'berechnet' });
   });
 
   const now = nowIso();
@@ -226,21 +245,21 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     } else {
       // Nur letzte Prüfung belegt: Termin ergibt sich ausschließlich aus einem bereits hinterlegten Intervall
       if (cur.last_done_date && cur.last_done_date > p.last) { skipRow(`Vorhandene letzte Prüfung ${cur.last_done_date} ist neuer – nicht überschrieben`); continue; }
-      const iv = p.interval || cur.interval_months;
-      next = iv ? addMonths(p.last, iv) : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
+      const iv = p.husp ? null : (p.interval || cur.interval_months);
+      next = iv ? addMonths(p.last, iv) : p.husp ? null : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
       action = cur.last_done_date === p.last && cur.next_due_date === next ? 'unverändert' : 'aktualisiert';
     }
     result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, matched_by: p.matchedBy, action });
     if (action === 'neu') {
       result.created++;
       const ruleId = uuid();
-      stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at)
-        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?)`).bind(ruleId, p.vehicle_id, p.kind, p.interval, last, next, p.evidence, user.id, now, now));
+      stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
+        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?,?)`).bind(ruleId, p.vehicle_id, p.kind, p.interval, last, next, p.evidence, user.id, now, now, p.dueSource));
       if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else if (action === 'aktualisiert') {
       result.updated++;
-      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=COALESCE(?, interval_months), evidence=?, updated_at=? WHERE id=?`)
-        .bind(next, last || cur.last_done_date, p.interval, p.evidence, now, cur.id));
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, evidence=?, updated_at=?, due_source=? WHERE id=?`)
+        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, p.evidence, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp ? 'berechnet' : cur.due_source || null), cur.id));
       if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;
   }
@@ -248,6 +267,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (!dryRun) {
     for (let i = 0; i < stmts.length; i += 200) await env.DB.batch(stmts.slice(i, i + 200));
     await audit(env, user.id, 'maintenance.import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
+    const hv = [...new Set(result.rows.filter((r) => r.kind === 'HU' || r.kind === 'SP').map((r) => r.vehicle_id))];
+    if (hv.length) result.husp_recalc = (await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: hv })).changed;
   }
   return result;
 }

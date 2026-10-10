@@ -1,0 +1,225 @@
+// [CLAUDE] Zentrale HU-/SP-Fristberechnung nach StVZO § 29 i. V. m. Anlage VIII (Stand geprüft 10.10.2026)
+//
+// Rechtsgrundlage (Anlage VIII Nr. 2.1, 2.3, 2.4, 2.7; § 29 Abs. 2 / Nr. 3.1.2):
+//  - Lkw > 3,5 t: HU alle 12 Monate (2.1.4.2 ff.).
+//  - Lkw > 7,5 t bis 12 t: in den ersten 36 Monaten keine SP, danach SP 6 Monate nach der HU (2.1.4.3) → erste SP 42 Monate nach Erstzulassung.
+//  - Lkw > 12 t: in den ersten 24 Monaten keine SP, danach SP 6 Monate nach der HU (2.1.4.4) → erste SP 30 Monate nach Erstzulassung.
+//  - Lkw ≤ 7,5 t: keine SP.  Anhänger > 10 t: wie Lkw > 12 t (2.1.5.4); Anhänger ≤ 10 t: keine SP (2.1.5.3).
+//  - Frist der HU läuft vom Monat/Jahr der letzten HU (2.3); Frist der SP läuft vom Monat/Jahr der letzten HU (2.4),
+//    die SP darf im Vormonat durchgeführt werden, ohne den Turnus zu verschieben (2.4). Fristende = Ablauf des Monats.
+//  - Keine Kulanz: Die einmonatige Überschreitung nach 2.4 gilt nur mit Bestätigung im Prüfprotokoll – wird nie automatisch angenommen.
+// Grundsätze: Es werden keine Fahrzeugdaten oder Prüfnachweise erfunden. Fehlende oder widersprüchliche Grundlagen → „Frist ungeklärt“.
+// Eine bestandene HU erledigt keine offene SP; erledigt wird eine SP nur durch einen SP-Nachweis (auch „SP i. V. m. HU“ am HU-Tag).
+
+const RULE_VERSION = 'StVZO Anl. VIII Nr. 2.1/2.3/2.4 (geprüft 10.10.2026)';
+export const ZGM_CLASSES_LKW = ['bis_3_5', '3_5_7_5', '7_5_12', 'ueber_12'];
+export const ZGM_CLASSES_TRAILER = ['bis_3_5', '3_5_10', 'ueber_10'];
+export const HUSP_STATUSES = ['ok', 'bald_faellig', 'ueberfaellig', 'nicht_sp_pflichtig', 'erste_sp_kuenftig', 'ungeklaert'];
+const BAD_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];
+
+// zGM-Klasse aus kg (Grenzen inklusive: genau 7.500 kg = bis 7,5 t; genau 12.000 kg = bis 12 t; genau 10.000 kg Anhänger = bis 10 t)
+export function zgmClassFromKg(kind, kg) {
+  if (kg === null || kg === undefined || kg === '' || !Number.isFinite(Number(kg))) return null;
+  const k = Number(kg);
+  if (kind === 'anhaenger') return k <= 3500 ? 'bis_3_5' : k <= 10000 ? '3_5_10' : 'ueber_10';
+  return k <= 3500 ? 'bis_3_5' : k <= 7500 ? '3_5_7_5' : k <= 12000 ? '7_5_12' : 'ueber_12';
+}
+
+// ---- Kalendermonate ----
+const ym = (d) => [Number(d.slice(0, 4)), Number(d.slice(5, 7))];
+export function monthEnd(y, m) { // m 1..12, beliebig überlaufend
+  const d = new Date(Date.UTC(y, m, 0)); // Tag 0 des Folgemonats = letzter Tag des Monats m
+  return d.toISOString().slice(0, 10);
+}
+export function dueMonthEnd(dateOrYm, plusMonths) {
+  const [y, m] = ym(dateOrYm);
+  return monthEnd(y, m + plusMonths);
+}
+const monthStart = (y, m) => new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10);
+// Erster Tag des Vormonats eines Fälligkeitsmonats
+function prevMonthStart(dueDate) { const [y, m] = ym(dueDate); return monthStart(y, m - 1); }
+const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+export const fmtMonth = (d) => (d ? `${d.slice(5, 7)}/${d.slice(0, 4)}` : null);
+
+function statusFor(due, today, warnDays) {
+  const d = daysBetween(today, due);
+  return d < 0 ? 'ueberfaellig' : d <= warnDays ? 'bald_faellig' : 'ok';
+}
+
+/**
+ * Berechnet HU und SP für ein Fahrzeug.
+ * @param vehicle  { kind: 'lkw'|'anhaenger', zgm_class, first_registration (JJJJ-MM[-TT]|null), active }
+ * @param events   [{ kind: 'HU'|'SP', done_date: 'JJJJ-MM-TT', evidence, result? }]  – nur tatsächlich durchgeführte Prüfungen
+ * @param documented { HU?: { due, evidence }, SP?: { due, evidence } } – verbindliche Fälligkeit laut Nachweis (z. B. Plakette)
+ * @param planned  { HU?: 'JJJJ-MM-TT', SP?: … } – geplante Werkstatttermine (ersetzen nie eine Durchführung)
+ */
+export function computeHuSp(vehicle, events, { today, warnDays = 30, documented = {}, planned = {} } = {}) {
+  const kind = vehicle.kind === 'anhaenger' ? 'anhaenger' : 'lkw';
+  const cls = vehicle.zgm_class || null;
+  const sorted = (k) => events.filter((e) => e.kind === k && e.done_date).sort((a, b) => a.done_date.localeCompare(b.done_date));
+  const hus = sorted('HU');
+  const sps = sorted('SP');
+  const lastHu = hus[hus.length - 1] || null;
+  const prevHu = hus.length > 1 ? hus[hus.length - 2] : null;
+  const lastSp = sps[sps.length - 1] || null;
+
+  // ---------- HU ----------
+  const hu = { last_done: lastHu ? lastHu.done_date : null, last_evidence: lastHu ? lastHu.evidence : null, last_result: lastHu ? lastHu.result || null : null,
+    due: null, due_basis: null, status: 'ungeklaert', notes: [], planned_date: planned.HU || null, interval_months: null };
+  const huApplicableKnown = cls !== null;
+  if (cls === 'bis_3_5' && kind === 'lkw') hu.notes.push('Lkw bis 3,5 t: HU-Intervall hängt von weiteren Merkmalen ab – nicht automatisch berechnet.');
+  else if (huApplicableKnown) hu.interval_months = 12;
+  const huCalc = lastHu && hu.interval_months ? dueMonthEnd(lastHu.done_date, 12) : null;
+  const huDoc = documented.HU && documented.HU.due ? documented.HU.due : null;
+  if (huDoc && huCalc && huDoc.slice(0, 7) !== huCalc.slice(0, 7)) {
+    hu.notes.push(`Widerspruch: Nachweis nennt ${fmtMonth(huDoc)}, Berechnung aus letzter HU ergibt ${fmtMonth(huCalc)}.`);
+    hu.due = huDoc; hu.due_basis = 'nachweis'; hu.status = 'ungeklaert';
+  } else if (huDoc || huCalc) {
+    hu.due = huDoc || huCalc; hu.due_basis = huDoc ? 'nachweis' : 'berechnet';
+    hu.status = statusFor(hu.due, today, warnDays);
+  } else {
+    hu.notes.push(!lastHu ? 'Keine durchgeführte HU belegt.' : 'Fahrzeugklasse (zulässige Gesamtmasse) fehlt – HU-Intervall nicht bestimmbar.');
+  }
+  if (lastHu && BAD_RESULTS.includes(lastHu.result) && hu.status !== 'ueberfaellig') {
+    hu.status = 'ungeklaert'; hu.notes.push('Letzte HU mit erheblichen/gefährlichen Mängeln – Nachprüfung belegen.');
+  }
+
+  // ---------- SP ----------
+  const sp = { last_done: lastSp ? lastSp.done_date : null, last_evidence: lastSp ? lastSp.evidence : null,
+    due: null, due_basis: null, prognosis: null, status: 'ungeklaert', notes: [], planned_date: planned.SP || null, sp_required: null, basis: null };
+  if (!cls) {
+    sp.notes.push('Zulässige Gesamtmasse fehlt – SP-Pflicht nicht bestimmbar.');
+    return { hu, sp, rule_version: RULE_VERSION };
+  }
+  const spRequiredClass = (kind === 'lkw' && (cls === '7_5_12' || cls === 'ueber_12')) || (kind === 'anhaenger' && cls === 'ueber_10');
+  if (!spRequiredClass) {
+    sp.status = 'nicht_sp_pflichtig'; sp.sp_required = false;
+    sp.notes.push(kind === 'lkw' ? 'Lkw bis 7,5 t zGM: keine Sicherheitsprüfung.' : 'Anhänger bis 10 t zGM: keine Sicherheitsprüfung.');
+    return { hu, sp, rule_version: RULE_VERSION };
+  }
+  sp.sp_required = true;
+  const firstSpMonths = cls === '7_5_12' ? 42 : 30; // 36 bzw. 24 Monate ohne SP, danach 6 Monate nach der HU
+  const firstSpDue = vehicle.first_registration ? dueMonthEnd(vehicle.first_registration, firstSpMonths) : null;
+  const spDoc = documented.SP && documented.SP.due ? documented.SP.due : null;
+  const useDoc = (note) => { sp.due = spDoc; sp.due_basis = 'nachweis'; sp.status = statusFor(spDoc, today, warnDays); sp.notes.push(note); return { hu, sp, rule_version: RULE_VERSION }; };
+
+  if (!lastHu) {
+    if (spDoc) return useDoc('Fälligkeit laut Nachweis (Plakette/Beleg); keine durchgeführte HU belegt.');
+    if (firstSpDue && daysBetween(today, firstSpDue) >= 0) {
+      sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue; sp.basis = 'erstzulassung';
+      sp.notes.push(`Erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose; verbindlich 6 Monate nach der dann letzten HU).`);
+    } else sp.notes.push('Keine durchgeführte HU belegt – SP-Frist (6 Monate nach HU) nicht bestimmbar.');
+    return { hu, sp, rule_version: RULE_VERSION };
+  }
+
+  const cycleDue = dueMonthEnd(lastHu.done_date, 6);
+  // Beginn der SP-Pflicht: aus Erstzulassung; ohne Erstzulassung nur, wenn bereits eine SP belegt ist (dann durch Prüfstelle festgestellt)
+  if (firstSpDue) {
+    sp.basis = 'erstzulassung';
+    if (cycleDue < firstSpDue) {
+      sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue;
+      sp.notes.push(`SP-Pflicht beginnt erst; erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose).`);
+      return { hu, sp, rule_version: RULE_VERSION };
+    }
+  } else if (sps.length) {
+    sp.basis = 'sp_nachweis';
+    sp.notes.push('Erstzulassung fehlt; SP-Pflicht aus vorhandenem SP-Nachweis abgeleitet.');
+  } else {
+    if (spDoc && spDoc.slice(0, 7) === cycleDue.slice(0, 7)) { sp.basis = 'sp_nachweis'; return useDoc('Fälligkeit laut Nachweis (Plakette/Beleg) stimmt mit der Berechnung überein.'); }
+    sp.notes.push('Erstzulassung fehlt und keine SP belegt – Beginn der SP-Pflicht unklar.');
+    sp.prognosis = cycleDue;
+    return { hu, sp, rule_version: RULE_VERSION };
+  }
+
+  // Offene SP aus dem Zyklus vor der letzten HU? Eine HU erledigt keine SP – nur ein SP-Nachweis (auch „SP i. V. m. HU“ am HU-Tag).
+  if (prevHu) {
+    const prevDue = dueMonthEnd(prevHu.done_date, 6);
+    const pduty = !firstSpDue || prevDue >= firstSpDue;
+    if (pduty && prevDue < lastHu.done_date) {
+      const closed = sps.some((s) => s.done_date > prevHu.done_date && s.done_date >= prevMonthStart(prevDue) && s.done_date <= lastHu.done_date);
+      if (!closed) sp.notes.push(`SP fällig ${fmtMonth(prevDue)} (nach HU ${prevHu.done_date}) nicht belegt – die spätere HU ersetzt sie nicht.`);
+      if (!closed) sp.prev_cycle_open = prevDue;
+    }
+  }
+
+  // SP dieses Zyklus: Nachweis nach der letzten HU (nicht am HU-Tag), frühestens im Vormonat der Fälligkeit
+  const afterHu = sps.filter((s) => s.done_date > lastHu.done_date);
+  const valid = afterHu.filter((s) => s.done_date >= prevMonthStart(cycleDue));
+  const tooEarly = afterHu.filter((s) => s.done_date < prevMonthStart(cycleDue));
+
+  if (valid.length) {
+    sp.cycle_done = valid[valid.length - 1].done_date;
+    sp.status = 'ok'; sp.due = null; sp.due_basis = null;
+    // Nächste SP richtet sich nach der nächsten HU → nur Prognose (6 Monate nach voraussichtlicher HU)
+    sp.prognosis = dueMonthEnd(lastHu.done_date, 18);
+    sp.notes.push(`SP für diesen Zyklus durchgeführt (${sp.cycle_done}). Nächste SP 6 Monate nach der nächsten HU.`);
+  } else if (tooEarly.length) {
+    sp.status = 'ungeklaert'; sp.due = cycleDue; sp.due_basis = 'berechnet';
+    sp.notes.push(`SP am ${tooEarly[tooEarly.length - 1].done_date} vor dem zulässigen Zeitraum (ab ${fmtMonth(prevMonthStart(cycleDue))}) – Frist ungeklärt, Prüfprotokoll prüfen.`);
+  } else {
+    sp.due = cycleDue; sp.due_basis = 'berechnet';
+    if (spDoc && spDoc.slice(0, 7) !== cycleDue.slice(0, 7)) {
+      sp.status = 'ungeklaert'; sp.due = spDoc; sp.due_basis = 'nachweis';
+      sp.notes.push(`Widerspruch: Nachweis nennt ${fmtMonth(spDoc)}, Berechnung (6 Monate nach HU ${lastHu.done_date}) ergibt ${fmtMonth(cycleDue)}.`);
+    } else sp.status = statusFor(cycleDue, today, warnDays);
+  }
+  if (sp.prev_cycle_open && sp.status !== 'ueberfaellig') sp.status = 'ungeklaert';
+  return { hu, sp, rule_version: RULE_VERSION };
+}
+
+// ---- Laden & Synchronisieren (serverseitig, mit Abfragebudget: feste Anzahl Abfragen) ----
+export async function loadHuSpInputs(env, vehicleIds = null) {
+  const filter = vehicleIds ? ` AND v.id IN (SELECT value FROM json_each(?))` : '';
+  const bindV = vehicleIds ? [JSON.stringify(vehicleIds)] : [];
+  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.zgm_class, v.zgm_kg, v.first_registration, v.active, v.eval_excluded FROM vehicles v WHERE 1=1${filter}`).bind(...bindV).all()).results;
+  const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.next_due_date, m.due_source, m.planned_date, m.last_done_date, m.evidence FROM maintenance_rules m
+    JOIN vehicles v ON v.id=m.vehicle_id WHERE m.kind IN ('HU','SP')${filter}`).bind(...bindV).all()).results;
+  const events = (await env.DB.prepare(`SELECT e.vehicle_id, e.kind, e.done_date, e.evidence, e.result FROM maintenance_events e
+    JOIN vehicles v ON v.id=e.vehicle_id WHERE e.kind IN ('HU','SP')${filter}`).bind(...bindV).all()).results;
+  const byV = new Map(vehicles.map((v) => [v.id, { v, rules: [], events: [] }]));
+  for (const r of rules) byV.get(r.vehicle_id)?.rules.push(r);
+  for (const e of events) byV.get(e.vehicle_id)?.events.push(e);
+  // Altbestand ohne Ereignis: letzte Durchführung aus der Regel übernehmen (keine erfundenen Daten)
+  for (const x of byV.values()) for (const r of x.rules) {
+    if (r.last_done_date && !x.events.some((e) => e.kind === r.kind && e.done_date === r.last_done_date)) x.events.push({ vehicle_id: r.vehicle_id, kind: r.kind, done_date: r.last_done_date, evidence: r.evidence, result: null });
+  }
+  return byV;
+}
+
+export function huSpFor(x, today, warnDays) {
+  const v = { ...x.v, zgm_class: x.v.zgm_class || zgmClassFromKg(x.v.kind, x.v.zgm_kg) };
+  const documented = {}; const planned = {};
+  for (const r of x.rules) {
+    if (r.due_source === 'nachweis' && r.next_due_date) documented[r.kind] = { due: r.next_due_date, evidence: r.evidence };
+    if (r.planned_date) planned[r.kind] = r.planned_date;
+  }
+  return { ...computeHuSp(v, x.events, { today, warnDays, documented, planned }), rules: Object.fromEntries(x.rules.map((r) => [r.kind, r.id])) };
+}
+
+// Verbindliche berechnete Fälligkeit in maintenance_rules.next_due_date spiegeln (nur due_source='berechnet', nie Nachweise überschreiben).
+// Jede Änderung wird im Audit-Log protokolliert.
+export async function syncHuSpDues(env, { today, warnDays = 30, actorId = null, vehicleIds = null } = {}) {
+  const byV = await loadHuSpInputs(env, vehicleIds);
+  const stmts = []; const changes = [];
+  const now = new Date().toISOString();
+  for (const x of byV.values()) {
+    const res = huSpFor(x, today, warnDays);
+    for (const kind of ['HU', 'SP']) {
+      const r = x.rules.find((q) => q.kind === kind);
+      if (!r || r.due_source === 'nachweis') continue;
+      const target = kind === 'HU' ? (res.hu.due_basis === 'berechnet' ? res.hu.due : r.next_due_date) : res.sp.due;
+      if ((target || null) !== (r.next_due_date || null)) {
+        changes.push({ vehicle_id: x.v.id, plate: x.v.plate, kind, from: r.next_due_date || null, to: target || null, status: kind === 'HU' ? res.hu.status : res.sp.status });
+        stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, due_source='berechnet', interval_months=?, updated_at=? WHERE id=?`)
+          .bind(target || null, kind === 'HU' ? res.hu.interval_months : null, now, r.id));
+      }
+    }
+  }
+  if (changes.length) {
+    stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+      SELECT lower(hex(randomblob(16))), ?1, 'maintenance.husp_recalc', json_extract(value,'$.vehicle_id'), value, ?2 FROM json_each(?3)`)
+      .bind(actorId, now, JSON.stringify(changes)));
+    for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
+  }
+  return { changed: changes.length, changes };
+}
