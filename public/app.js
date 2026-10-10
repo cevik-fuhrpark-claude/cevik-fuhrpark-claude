@@ -1,7 +1,9 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
 import { STRINGS, CHECK_LABELS } from './i18n.js';
 
-const S = { me: null, meta: null, lang: localStorage.getItem('cfp_lang') || 'de', viewEnv: null, unread: 0 };
+// Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
+const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase(); return l.startsWith('uk') ? 'uk' : l.startsWith('en') ? 'en' : 'de'; };
+const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,7 +33,12 @@ async function api(method, path, body, extra = {}) {
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { S.me = null; try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
-  if (!res.ok) { const e = new Error((data && data.message) || `${t('error')} ${res.status}`); e.code = data && data.error; e.status = res.status; throw e; }
+  if (!res.ok) {
+    // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch); unbekannte Codes: Server-Text
+    const code = data && data.error;
+    const tr = code && S.lang !== 'de' && STRINGS[S.lang] && STRINGS[S.lang]['err_' + code];
+    const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; throw e;
+  }
   return data;
 }
 
