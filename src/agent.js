@@ -24,6 +24,9 @@ function slaMinutes(settings, environment, kind, priority) {
 // Abfragebudget: Cloudflare begrenzt D1-Abfragen je Aufruf. Der Agent arbeitet daher mit Sammelabfragen
 // (unabhängig von der Anzahl der Vorgänge) und schreibt Befunde blockweise über json_each.
 const CHUNK = 400;
+// Befunde, die als ruhige Erinnerung (nicht dringend) an Fuhrparkleitung/Inhaber gehen, sobald sie neu auftreten
+const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab' };
+const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -184,7 +187,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const now = nowIso();
     const seen = new Set();
     let handoffs = 0;
-    const newCritical = [];
+    const newCritical = []; const newReminders = [];
     const existingMap = new Map((await env.DB.prepare('SELECT id, finding_code, subject_key, status, fingerprint, first_seen FROM agent_findings WHERE environment=?')
       .bind(environment).all()).results.map((r) => [`${r.finding_code}|${r.subject_key}`, r]));
     const rows = [];
@@ -199,6 +202,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const changed = !existing || existing.status !== 'offen' || existing.fingerprint !== fingerprint;
       rows.push({ id: findingId, code: f.code, subject: f.subject, case_id: f.case_id, vehicle_id: f.vehicle_id, severity: f.severity, message: f.message,
         next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint });
+      if (changed && f.severity !== 'kritisch' && REMINDER_CODES.has(f.code)) newReminders.push(f);
       if (changed && SEV_RANK[f.severity] >= SEV_RANK.handeln) {
         const eventId = await sha256Hex(`${findingId}|${fingerprint}|${existing ? existing.first_seen : now}`);
         candidates.push({ eventId, findingId, fingerprint, f });
@@ -242,14 +246,24 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     await processMasterInbox(env, environment);
 
     // Kritische neue Befunde zusätzlich an Fuhrparkleitung/Owner pushen
+    let ids = null;
+    const recipients = async () => ids || (ids = (await env.DB.prepare(`SELECT id FROM users WHERE environment=? AND role IN ('fleet','owner') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results.map((r) => r.id));
     if (newCritical.length) {
-      const ids = (await env.DB.prepare(`SELECT id FROM users WHERE environment=? AND role IN ('fleet','owner') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results.map((r) => r.id);
+      await recipients();
       // Abfragebudget: bei vielen neuen kritischen Befunden eine Sammelmeldung statt Einzel-Pushs
       if (newCritical.length > 3) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${newCritical.length} neue kritische Befunde${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${runId}`, caseId: null, urgent: true });
       } else for (const { eventId, f } of newCritical) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${f.code}${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
       }
+    }
+
+    // Neue Termine/Fristen (Prüftermine, Behördenfristen): eine ruhige Sammel-Erinnerung je Lauf, ohne Details im Push-Text
+    if (newReminders.length) {
+      const counts = {};
+      for (const f of newReminders) counts[REMINDER_LABEL[f.code]] = (counts[REMINDER_LABEL[f.code]] || 0) + 1;
+      const body = Object.entries(counts).map(([k, n]) => `${n}× ${k}`).join(', ') + (environment === 'test' ? ' · TEST' : '');
+      await notifyUsers(env, ctx, environment, await recipients(), { kind: 'agent_reminder', title: 'Fuhrparkagent: neue Termine/Fristen', body, eventKey: `agent-reminder:${runId}`, caseId: null, urgent: false });
     }
 
     const openCount = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM agent_findings WHERE environment=? AND status='offen'`).bind(environment).first()).n;

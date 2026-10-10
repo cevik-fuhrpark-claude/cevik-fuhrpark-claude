@@ -327,6 +327,11 @@ await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () =>
   eq(r.status, 201); eq(r.data.next_due_date, '2026-10-20');
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_DUE'), 'HU-Fälligkeit erkannt');
+  const rem = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
+  eq(rem.length, 1, 'eine Sammel-Erinnerung'); ok(/1× Prüftermin bald fällig/.test(rem[0].body) && !rem[0].urgent && !/SZ-/.test(rem[0].body), 'ruhig, ohne Details');
+  await users.fleet.post('/api/agent/run');
+  eq((await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder').length, 1, 'keine Wiederholung bei gleichem Befund');
+  ok(!(await users.ws.get('/api/notifications')).data.notifications.some((n) => n.kind === 'agent_reminder'), 'Werkstatt nicht');
 });
 await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho, Rechte, CSV-Export', async () => {
   const r = await users.fleet.get('/api/maintenance');
