@@ -158,7 +158,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     let others = (await env.DB.prepare(`SELECT id, case_no, status, priority, workshop_site, safety_lock FROM cases WHERE vehicle_id=? AND environment=? AND id<>?
       AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ORDER BY created_at DESC LIMIT 20`).bind(c.vehicle_id, envName, c.id).all()).results;
     if (user.role === 'workshop') others = others.filter((o) => o.workshop_site === user.workshop_site && o.status !== 'gemeldet');
-    const soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const soon = berlinDate(new Date(Date.now() + 30 * 86400000).toISOString());
     const due = (await env.DB.prepare(`SELECT kind, next_due_date FROM maintenance_rules WHERE vehicle_id=? AND next_due_date IS NOT NULL AND next_due_date <= ? ORDER BY next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results;
     const km = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(c.vehicle_id).first();
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)

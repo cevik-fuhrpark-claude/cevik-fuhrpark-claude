@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, icsCalendar } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar } from './util.js';
 import * as auth from './auth.js';
 import { personExport } from './privacy.js';
 import * as cases from './cases.js';
@@ -159,7 +159,7 @@ async function handleApi(request, env, ctx, url) {
     const list = await veh.listVehicles(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
       if (user.role === 'driver') throw forbidden();
-      return new Response(veh.vehiclesCsv(list, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${new Date().toISOString().slice(0, 10)}.csv"` } });
+      return new Response(veh.vehiclesCsv(list, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${berlinDate()}.csv"` } });
     }
     return json({ vehicles: list });
   }
@@ -253,8 +253,8 @@ async function handleApi(request, env, ctx, url) {
   // Ersatzteillager
   if (path === '/api/stock' && m === 'GET') {
     const items = await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
-    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
+    if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${berlinDate()}.csv"` } });
+    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
     return json({ items });
   }
   if (path === '/api/stock/inventory' && m === 'POST') return json(await stock.inventory(env, user, envName, await readJson(request, 512 * 1024), { dryRun: url.searchParams.get('dry_run') === '1' }));
@@ -271,7 +271,7 @@ async function handleApi(request, env, ctx, url) {
       if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
       const tr = await tacho.tachoRows(env, envName, await tacho.warnDays(env));
       await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName });
-      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
+      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}.csv"` } });
     }
     return json({ drivers: list });
   }
@@ -305,7 +305,7 @@ async function handleApi(request, env, ctx, url) {
     const list = await fines.listFines(env, user, envName, q);
     if (q.format === 'csv' || q.format === 'ics') {
       if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
-      const day = new Date().toISOString().slice(0, 10);
+      const day = berlinDate();
       if (q.format === 'ics') {
         const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
         const warn = w && Number(w.value) > 0 ? Number(w.value) : null;
@@ -330,7 +330,7 @@ async function handleApi(request, env, ctx, url) {
       const rows = await cases.listCases(env, user, envName, { ...q, limit: 5000, __export: true });
       await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, rows: rows.length, environment: envName });
       const fmt = (iso) => (iso ? berlinDateTime(iso) : '');
-      return new Response(cases.casesCsv(rows, maint.csvCell, fmt), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
+      return new Response(cases.casesCsv(rows, maint.csvCell, fmt), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"` } });
     }
     return json({ cases: await cases.listCases(env, user, envName, q) });
   }
