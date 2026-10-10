@@ -251,6 +251,9 @@ async function workshopBoard() {
     ['st_abschlusskontrolle', open.filter((c) => c.status === 'abschlusskontrolle')],
     ['ws_preview', open.filter((c) => c.status === 'gemeldet')],
   ];
+  // Mangel bei der Abfahrtskontrolle erneut festgestellt (letzte 3 Tage) – zuerst, damit die Werkstatt ihn vorzieht
+  const rep = open.filter((c) => c.status !== 'gemeldet' && recentRepeat(c));
+  if (rep.length) lanes.unshift(['ws_repeat', rep]);
   let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
     const ov = await api('GET', '/api/maintenance');
@@ -327,7 +330,7 @@ async function fleetTodo() {
   const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const groups = [
     ['todo_receive', cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'kritisch'],
-    ['todo_repeat', cs.filter((c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.last_repeat_at)}`, 'mittel'],
+    ['todo_repeat', cs.filter(recentRepeat), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.last_repeat_at)}`, 'mittel'],
     ['todo_qc', cs.filter((c) => c.status === 'abschlusskontrolle'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'mittel'],
     ['todo_parts', cs.filter((c) => c.status === 'wartet_teile'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, ''],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${r.kind} · ${r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')}`, 'mittel'],
@@ -339,13 +342,14 @@ async function fleetTodo() {
   return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}</details>`).join('')}`;
 }
 
+const recentRepeat = (c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000;
 function caseList(list, empty) {
   if (!list.length) return `<p class="muted">${esc(empty || t('no_cases'))}</p>`;
   return `<div class="list">${list.map((c) => `<a class="row p-${esc(c.priority)}" href="#/cases/${esc(c.id)}">
     ${plate(c.plate, { locked: c.safety_lock })}
     <span class="title">${esc(c.description)}</span>
     <span class="chip ${esc(c.status === 'fahrzeug_freigegeben' ? 'ok' : c.priority)}">${esc(t('st_' + c.status))}</span>
-    <span class="sub">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''} · ${fmtDT(c.updated_at)}</span></a>`).join('')}</div>`;
+    <span class="sub">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}</span></a>`).join('')}</div>`;
 }
 
 async function viewCases() {

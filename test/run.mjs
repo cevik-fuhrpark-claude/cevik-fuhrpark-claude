@@ -1578,6 +1578,11 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   ok(fa.events.some((e) => e.action === 'repeat_finding' && /Bremsleuchte links aus/.test(e.note)), 'Vermerk im Verlauf');
   ok((await users.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === fa.case.id).last_repeat_at, 'Liste kennt letzte Wiederholung (Heute zu tun)');
   eq(fa.case.check_item, keys[2]);
+  // Werkstatt sieht die Wiederholung in ihrer Tagesübersicht – nur für Aufträge des eigenen Standorts
+  const fav = (await users.fleet.get(`/api/cases/${fa.case.id}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${fa.case.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: fav.version, payload: { workshop_site: 'DORTMUND' }, note: 'Bremsleuchte prüfen' })).status, 200);
+  ok((await users.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === fa.case.id)?.last_repeat_at, 'Werkstatt Dortmund sieht „erneut festgestellt“');
+  ok(!(await users.wsMuc.get('/api/cases?status=open')).data.cases.some((x) => x.id === fa.case.id), 'andere Werkstatt sieht den Auftrag nicht');
   // sicherheitsrelevant, offener Vorgang ohne Sperre → eigener (kritischer, gesperrter) Vorgang
   const a3 = await chk(true);
   ok(a3.data.followups[0].id !== a1.data.followups[0].id, 'sicherheitsrelevant → neuer Vorgang');
