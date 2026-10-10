@@ -229,3 +229,13 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 .qrcard .qr svg { width: 120px; }
 .qrcard p { margin: 4px 0; }
 @media print { .qrsheet { grid-template-columns: repeat(2, 1fr); gap: 6mm; } .qrcard { border: 1px dashed #999; } .qrcard .qr svg { width: 38mm; } }
+/* Papiervordruck Abfahrtskontrolle */
+.paper-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 24px; margin: 12px 0; }
+.paper-field { display: flex; align-items: flex-end; gap: 8px; }
+.paper-field span { white-space: nowrap; font-weight: 600; }
+.paper-field i { flex: 1; border-bottom: 1px solid var(--ink); min-height: 1.6em; }
+table.paper { width: 100%; border-collapse: collapse; }
+table.paper th, table.paper td { border: 1px solid var(--rule); padding: 6px; vertical-align: top; }
+table.paper td.box { text-align: center; font-size: 1.2rem; width: 3.2em; }
+table.paper td:last-child { min-width: 30%; }
+@media print { table.paper th, table.paper td { border-color: #555; padding: 4px; } }

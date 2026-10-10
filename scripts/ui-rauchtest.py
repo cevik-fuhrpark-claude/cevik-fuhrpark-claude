@@ -15,7 +15,7 @@ ROUTES = {
     'owner': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
     'fleet': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
     'workshop': ['', 'cases', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'wsload', 'help'],
-    'driver': ['', 'cases', 'new', 'check', 'more', 'fines', 'help'],
+    'driver': ['', 'cases', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
     'dispatch': ['', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
