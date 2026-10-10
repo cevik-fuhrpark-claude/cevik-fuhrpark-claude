@@ -35,6 +35,14 @@ const T = {
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
 export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'acknowledged', 'started', 'waiting_parts', 'resumed',
   'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder'];
+// Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
+export function localizedTitle(n, lang) {
+  const L = T[lang] ? lang : 'de';
+  if (!T.de[n.kind] || !n.case_id && n.kind === 'created') return n.title; // Agent/Sonstiges: Text wie gespeichert
+  if (n.title !== T.de[n.kind] && n.title !== T.uk[n.kind] && n.title !== T.en[n.kind] && !(n.kind === 'created' && [T.de, T.uk, T.en].some((x) => x.created_urgent === n.title))) return n.title;
+  return n.kind === 'created' && n.urgent ? T[L].created_urgent : T[L][n.kind];
+}
+
 export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.filter((k) => MUTABLE_KINDS.includes(k)) : []; } catch { return []; } }
 
 async function usersByRole(env, environment, roles, extraWhere = '', extraArgs = []) {

@@ -13,11 +13,11 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
+    'owner': ['', 'inbox', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
+    'fleet': ['', 'inbox', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
     'workshop': ['', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
-    'driver': ['', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
-    'dispatch': ['', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
+    'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
+    'dispatch': ['', 'inbox', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
 A11Y = """() => {
@@ -228,7 +228,7 @@ with sync_playwright() as p:
                     # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
                     de = pg.evaluate(r"""() => { const out = []; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
                       while (w.nextNode()) { const x = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
-                        if (x && /[äöüßÄÖÜ]/.test(x) && !/Bußgeldstelle|StVZO|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
+                        if (x && /[äöüßÄÖÜ]/.test(x) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
                     if de:
                         problems.append(f'{where}: deutscher Text in {LANG}: {de[:4]}')
                 over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')

@@ -6,7 +6,7 @@ import * as cases from './cases.js';
 import * as veh from './vehicles.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted } from './notify.js';
+import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -345,8 +345,9 @@ async function handleApi(request, env, ctx, url) {
 
   // Benachrichtigungen & Push
   if (path === '/api/notifications' && m === 'GET') {
-    const rows = (await env.DB.prepare(`SELECT id, case_id, kind, urgent, title, body, created_at, push_status, device_received_at, opened_at, acknowledged_at
-      FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100`).bind(user.id).all()).results;
+    const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
+      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ORDER BY n.created_at DESC LIMIT 100`).bind(user.id).all()).results;
+    for (const r of rows) { r.title = localizedTitle(r, r.lang); delete r.lang; }
     return json({ notifications: rows, unread: rows.filter((r) => !r.opened_at && !r.acknowledged_at).length });
   }
   if ((mm = path.match(/^\/api\/notifications\/([\w-]+)\/(received|opened|ack)$/)) && m === 'POST') {

@@ -869,6 +869,9 @@ await test('Sperre/Aufhebung erreicht die dem Fahrzeug zugeordneten Fahrer (ohne
   const lk = await mine('safety_lock');
   eq(lk.length, 1, 'zugeordneter Fahrer erfährt die Sperre'); eq(lk[0].case_id, null, 'ohne Link auf fremden Vorgang'); ok(lk[0].urgent, 'dringend');
   eq((await users.driver.get(`/api/cases/${cid}`)).status, 404, 'Vorgang bleibt für ihn unsichtbar');
+  eq((await users.driver.patch('/api/me', { language: 'en' })).status, 200);
+  { const nn = (await users.driver.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'safety_lock'); ok(nn.some((n) => n.title === 'Vehicle locked'), 'Titel in der aktuellen Sprache ' + JSON.stringify(nn.map((n) => [n.title, n.case_id]))); }
+  eq((await users.driver.patch('/api/me', { language: 'de' })).status, 200);
   c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
   eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Halter getauscht', payload: { confirm: true } })).status, 200);
   eq((await mine('safety_lock_lifted')).length, 1, 'Aufhebung ebenfalls');
