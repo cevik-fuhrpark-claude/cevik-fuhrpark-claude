@@ -154,3 +154,14 @@ export function addMonths(dateStr, months) {
 export function berlinDate(iso = nowIso()) {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(iso));
 }
+
+// Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)
+export const LIMITS = { upload: [60, 600], import: [20, 3600] };
+export async function rateLimit(env, action, userId) {
+  const [max, windowSec] = LIMITS[action];
+  const win = Math.floor(Date.now() / 1000 / windowSec) * windowSec;
+  const row = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
+    ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
+    RETURNING count`).bind(`${action}:${userId}`, win).first();
+  if (row && row.count > max) throw new HttpError(429, 'rate_limited', `Zu viele Vorgänge in kurzer Zeit (max. ${max} je ${Math.round(windowSec / 60)} Min.). Bitte später erneut versuchen.`);
+}

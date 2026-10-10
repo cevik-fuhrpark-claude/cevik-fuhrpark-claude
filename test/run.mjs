@@ -691,6 +691,20 @@ await test('Protokoll nur für Inhaber: Anmeldungen, Sperren, Exporte, Filter; k
   ok(older.data.entries.length === 1 && older.data.entries[0].created_at <= r.data.entries[0].created_at, 'Blättern');
 });
 
+await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
+  const { rateLimit, LIMITS } = await import('../src/util.js');
+  const saved = LIMITS.import; LIMITS.import = [2, 3600];
+  try {
+    await rateLimit(env, 'import', 'rl-test'); await rateLimit(env, 'import', 'rl-test');
+    let err = null; try { await rateLimit(env, 'import', 'rl-test'); } catch (e) { err = e; }
+    ok(err && err.status === 429, '3. Aufruf abgewiesen');
+    await rateLimit(env, 'import', 'rl-andere-person');
+    await rateLimit(env, 'upload', 'rl-test');
+  } finally { LIMITS.import = saved; }
+  const r = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;HU;01.01.2026;x', { 'content-type': 'text/csv' });
+  eq(r.status, 200, 'normaler Betrieb nicht betroffen');
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

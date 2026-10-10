@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit } from './util.js';
 import * as auth from './auth.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
@@ -128,6 +128,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/vehicles' && m === 'GET') return json({ vehicles: await veh.listVehicles(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request)), 201);
   if (path === '/api/vehicles/import' && m === 'POST') {
+    await rateLimit(env, 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await veh.importVehiclesCsv(env, user, text));
@@ -150,6 +151,7 @@ async function handleApi(request, env, ctx, url) {
     return json(ov);
   }
   if (path === '/api/maintenance/import' && m === 'POST') {
+    await rateLimit(env, 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await maint.importMaintenanceCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
@@ -163,6 +165,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/events$/)) && m === 'POST') return json(await tires.addTireEvent(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
   if (path === '/api/tires/import' && m === 'POST') {
+    await rateLimit(env, 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await tires.importTireSpecs(env, user, text));
@@ -200,14 +203,14 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/commands$/)) && m === 'POST') return json(await fines.fineCommand(env, ctx, user, envName, mm[1], await readJson(request)));
-  if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/files$/)) && m === 'POST') return json(await fines.uploadFineFile(env, user, envName, mm[1], request), 201);
+  if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/files$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await fines.uploadFineFile(env, user, envName, mm[1], request), 201); }
 
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') return json(await cases.runCommand(env, ctx, user, envName, mm[1], await readJson(request)));
-  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/files$/)) && m === 'POST') return json(await cases.uploadFile(env, user, envName, mm[1], request), 201);
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/files$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await cases.uploadFile(env, user, envName, mm[1], request), 201); }
   if ((mm = path.match(/^\/api\/files\/([\w-]+)$/)) && m === 'GET') return cases.downloadFile(env, user, envName, mm[1]);
   if (path === '/api/inspections' && m === 'POST') return json(await cases.submitInspection(env, ctx, user, envName, await readJson(request)), 201);
 

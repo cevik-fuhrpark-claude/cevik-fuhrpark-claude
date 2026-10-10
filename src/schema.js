@@ -91,5 +91,11 @@ export const MIGRATIONS = [
   "statements": [
    "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)"
   ]
+ },
+ {
+  "id": "0008_rate_limits",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS rate_limits (\n  key TEXT PRIMARY KEY,                 -- '<aktion>:<benutzer-id>'\n  window_start INTEGER NOT NULL,        -- Fensterbeginn (Unix-Sekunden)\n  count INTEGER NOT NULL\n)"
+  ]
  }
 ];
