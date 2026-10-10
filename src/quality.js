@@ -6,18 +6,36 @@ import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER } from './maintenance.js';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
-  duplicate_plate: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
+  duplicate_plate: 'fehler', vin_similar: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
   missing_site: 'luecke', no_km: 'luecke', km_stale: 'hinweis', missing_inspection: 'luecke',
   km_inspection_rejected: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
 };
 
+// FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
+// Liefert [Fahrzeug, anderes Fahrzeug, erste abweichende Stelle 1–17] in beide Richtungen.
+export function similarVins(list) {
+  const out = [];
+  const vs = list.filter((v) => v.vin && v.vin.length === 17).map((v) => ({ ...v, vin: v.vin.toUpperCase() }));
+  for (let a = 0; a < vs.length; a++) {
+    for (let b = a + 1; b < vs.length; b++) {
+      const x = vs[a].vin; const y = vs[b].vin;
+      if (x === y) continue;
+      const diff = [];
+      for (let i = 0; i < 17 && diff.length < 3; i++) if (x[i] !== y[i]) diff.push(i);
+      const typo = diff.length === 1 || (diff.length === 2 && diff[1] === diff[0] + 1 && x[diff[0]] === y[diff[1]] && x[diff[1]] === y[diff[0]]);
+      if (typo) { out.push([vs[a], vs[b], diff[0] + 1], [vs[b], vs[a], diff[0] + 1]); }
+    }
+  }
+  return out;
+}
+
 export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
     env.DB.prepare('SELECT DISTINCT vehicle_id, kind FROM maintenance_rules WHERE next_due_date IS NOT NULL').all(),
@@ -36,6 +54,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km
       FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?) WHERE prev_km IS NOT NULL AND odometer_km < prev_km ORDER BY created_at DESC LIMIT 200`).bind(envName, staleBefore).all(),
+    // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
+    env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -43,6 +63,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const byPlate = new Map();
   for (const v of vs) { const k = normPlate(v.plate); byPlate.set(k, [...(byPlate.get(k) || []), v]); }
   for (const [, list] of byPlate) if (list.length > 1) for (const v of list) add('duplicate_plate', v, list.filter((x) => x !== v).map((x) => x.id).join(', '));
+  for (const [v, other, pos] of similarVins(vins.results)) add('vin_similar', v, `${other.plate} · ${other.vin} · #${pos}`);
   const lastKm = new Map(kms.results.map((r) => [r.vehicle_id, r.last]));
   const hasRule = new Set(rules.results.map((r) => `${r.vehicle_id}|${r.kind}`));
   const pulledBy = new Map();

@@ -1108,6 +1108,13 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   ok(has('no_km', 'WDB96340310999001'), 'kein km-Stand');
   ok(r.data.items.find((i) => i.check === 'missing_inspection' && i.vehicle_id === 'VIN:WDB96340310999001').detail.includes('HU'), 'fehlende Pflichtprüfung');
   eq(r.data.items[0].severity, 'fehler', 'Fehler zuerst');
+  ok(r.data.items.find((i) => i.check === 'vin_similar' && i.vehicle_id === 'VIN:WDB96340310999001')?.detail === 'DQ XY1 · WDB96340310999002 · #17', 'FIN fast gleich (Stelle 17)');
+  const { similarVins } = await import('../src/quality.js');
+  const sv = (a, b) => similarVins([{ id: 1, vin: a, plate: 'A' }, { id: 2, vin: b, plate: 'B' }]).map((x) => x[2]);
+  eq(sv('WDB96340510318431', 'WDB96300510318431').join(), '7,7', 'eine Stelle (Fall SZ-YC 5539)');
+  eq(sv('WDB96340510318431', 'WDB96430510318431').join(), '6,6', 'Zahlendreher');
+  eq(sv('WDB96340510318431', 'WDB96340510318499').length, 0, 'zwei Stellen: kein Tippfehler');
+  eq(sv('WDB96340510318431', 'WDB96340510318431').length, 0, 'gleiche FIN: dafür gibt es keine zweite Anlage');
   eq((await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles').first()).n, before, 'nichts geändert');
   // Aufräumen: Testfahrzeuge außer Betrieb nehmen, damit spätere Tests unbeeinflusst bleiben
   for (const v of ['WDB96340310999001', 'WDB96340310999002']) eq((await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Datenqualität' })).status, 200);
