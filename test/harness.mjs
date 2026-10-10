@@ -2,7 +2,7 @@
 import { DatabaseSync } from 'node:sqlite';
 
 // Zähler ausgeführter SQL-Anweisungen (für Abfragebudget je Aufruf im Lasttest)
-export const QSTAT = { n: 0, perRequest: [] };
+export const QSTAT = { n: 0, written: 0, perRequest: [] };
 class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
   bind(...args) { return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a))); }
@@ -16,12 +16,14 @@ class Stmt {
   async all() { return { results: this._prep().all(...this.args).map((r) => ({ ...r })), success: true }; }
   async run() {
     const r = this._prep().run(...this.args);
+    QSTAT.written += Number(r.changes);
     return { success: true, meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
   }
   _runSync() {
     const st = this._prep();
     if (/^\s*(SELECT|WITH)/i.test(this.sql) || /RETURNING/i.test(this.sql)) return { results: st.all(...this.args), meta: { changes: 0 } };
     const r = st.run(...this.args);
+    QSTAT.written += Number(r.changes);
     return { results: [], meta: { changes: Number(r.changes) } };
   }
 }

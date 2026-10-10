@@ -304,6 +304,19 @@ await test('T18: Kontrollpanel zeigt Fall, Befund und Entscheidungsbedarf; Betri
   eq(prod.data.cases.length, 0); eq(prod.data.inbox.length, 0, 'Betrieb ohne Testmeldungen');
   eq((await users.ws.get('/api/master')).status, 403);
 });
+await test('Agent schreibt unveränderte Befunde nicht neu (D1-Schreibkontingent), Meldung mit Zeitpunkt statt Minuten', async () => {
+  await users.fleet.post('/api/agent/run');
+  const before = (await users.fleet.get('/api/master')).data.findings;
+  const w0 = QSTAT.written;
+  const r = await users.fleet.post('/api/agent/run');
+  eq(r.data.handoffs, 0);
+  ok(QSTAT.written - w0 <= 4, `nur Laufprotokoll geschrieben (${QSTAT.written - w0} Zeilen)`);
+  const after = (await users.fleet.get('/api/master')).data.findings;
+  eq(after.length, before.length, 'gleiche Befunde');
+  ok(after.every((f) => !/\d+ Min\.\)?\s*(nicht|$)|seit \d+ Min\./.test(f.message)), 'keine laufende Minutenzahl im Text');
+  const crit = after.find((f) => f.finding_code === 'CRITICAL_UNTRIAGED');
+  ok(/seit \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/.test(crit.message), 'Zeitpunkt in Berliner Zeit: ' + crit.message);
+});
 await test('Erledigter Zustand schließt Befund automatisch', async () => {
   const list = (await users.fleet.get('/api/cases?status=open')).data.cases.filter((c) => c.priority === 'kritisch' && !c.fleet_received_at);
   for (const c of list) {

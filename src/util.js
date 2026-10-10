@@ -37,8 +37,12 @@ export function errorResponse(err) {
 
 const enc = new TextEncoder();
 
+const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 export function bytesToHex(buf) {
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const b = new Uint8Array(buf);
+  let out = '';
+  for (let i = 0; i < b.length; i++) out += HEX[b[i]];
+  return out;
 }
 
 export async function sha256Hex(input) {
@@ -156,6 +160,13 @@ let BERLIN_FMT = null;
 export function berlinDate(iso = nowIso()) {
   if (!BERLIN_FMT) BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
   return BERLIN_FMT.format(new Date(iso));
+}
+
+// Zeitpunkt für Agent-Meldungen (stabiler Text statt „seit X Min.“ – unveränderte Befunde müssen nicht neu geschrieben werden)
+let BERLIN_DT_FMT = null;
+export function berlinDateTime(iso) {
+  if (!BERLIN_DT_FMT) BERLIN_DT_FMT = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return BERLIN_DT_FMT.format(new Date(iso)).replace(',', '');
 }
 
 // Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)

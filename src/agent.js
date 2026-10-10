@@ -1,6 +1,6 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
-import { nowIso, uuid, sha256Hex } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinDateTime } from './util.js';
 import { notifyUsers } from './notify.js';
 import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
@@ -31,6 +31,11 @@ const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
+// Meldungstexte enthalten den Zeitpunkt statt einer laufenden Minutenzahl: so bleibt der Text zwischen zwei Läufen gleich
+// und der Agent schreibt nur geänderte Befunde (D1-Schreibkontingent: sonst jede Viertelstunde alle Befunde neu).
+const since = (iso) => `seit ${berlinDateTime(iso)}`;
+// Felder, deren Änderung einen Befund „geändert“ macht (sonst kein Schreibzugriff)
+const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'next_action', 'owner_role', 'requires_decision', 'fingerprint'];
 
 export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
   const runId = uuid();
@@ -64,14 +69,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const age = ageMin(c.created_at);
         if (urgent) {
           add({ code: 'CRITICAL_UNTRIAGED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
-            message: `${label}: sicherheitsrelevante Meldung seit ${age} Min. nicht von der Fuhrparkleitung bestätigt.`,
+            message: `${label}: sicherheitsrelevante Meldung ${since(c.created_at)} nicht von der Fuhrparkleitung bestätigt.`,
             next_action: 'Meldung bewerten, Fahrzeug nicht disponieren, Werkstatt festlegen.' });
         } else if (sla !== null && age > sla) {
           add({ code: 'TRIAGE_OVERDUE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 0,
-            message: `${label}: Erstbewertung überfällig (${age} Min., Frist ${sla} Min.).`, next_action: 'Meldung bewerten und Priorität bestätigen.' });
+            message: `${label}: Erstbewertung überfällig (gemeldet ${berlinDateTime(c.created_at)}, Frist ${sla} Min.).`, next_action: 'Meldung bewerten und Priorität bestätigen.' });
         } else {
           add({ code: 'TRIAGE_OPEN', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-            message: `${label}: wartet auf Erstbewertung (seit ${age} Min.${sla === null ? '; Frist nicht konfiguriert' : ''}).`, next_action: 'Meldung bewerten.' });
+            message: `${label}: wartet auf Erstbewertung (${since(c.created_at)}${sla === null ? '; Frist nicht konfiguriert' : ''}).`, next_action: 'Meldung bewerten.' });
         }
       }
       if (c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at) {
@@ -84,16 +89,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
             next_action: 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
         } else if (c.priority === 'kritisch' || (sla !== null && age > sla)) {
           add({ code: 'WORKSHOP_ACK_MISSING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: c.priority === 'kritisch' ? 1 : 0,
-            message: `${label}: freigegebener Auftrag seit ${age} Min. nicht von Werkstatt ${c.workshop_site} übernommen.`,
+            message: `${label}: freigegebener Auftrag ${since(c.updated_at)} nicht von Werkstatt ${c.workshop_site} übernommen.`,
             next_action: 'Werkstatt direkt kontaktieren oder Auftrag umleiten.' });
         } else {
           add({ code: 'WORKSHOP_ACK_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'workshop',
-            message: `${label}: wartet auf Übernahme durch Werkstatt ${c.workshop_site} (seit ${age} Min.${sla === null ? '; Frist nicht konfiguriert' : ''}).`, next_action: 'Auftrag übernehmen.' });
+            message: `${label}: wartet auf Übernahme durch Werkstatt ${c.workshop_site} (${since(c.updated_at)}${sla === null ? '; Frist nicht konfiguriert' : ''}).`, next_action: 'Auftrag übernehmen.' });
         }
       }
       if (c.status === 'wartet_teile') {
         add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',
-          message: `${label}: Reparatur wartet auf Teile (seit ${ageMin(c.updated_at)} Min.).`, next_action: 'Teilelieferung klären, Dispo informieren.' });
+          message: `${label}: Reparatur wartet auf Teile (${since(c.updated_at)}).`, next_action: 'Teilelieferung klären, Dispo informieren.' });
       }
       if (c.status === 'abschlusskontrolle') {
         add({ code: 'QC_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
@@ -200,26 +205,35 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const seen = new Set();
     let handoffs = 0;
     const newCritical = []; const newReminders = [];
-    const existingMap = new Map((await env.DB.prepare('SELECT id, finding_code, subject_key, status, fingerprint, first_seen FROM agent_findings WHERE environment=?')
-      .bind(environment).all()).results.map((r) => [`${r.finding_code}|${r.subject_key}`, r]));
-    const rows = [];
-    const candidates = [];
+    const existingMap = new Map((await env.DB.prepare(`SELECT id, finding_code, subject_key, status, fingerprint, first_seen, ${ROW_FIELDS.filter((k) => k !== 'fingerprint').join(', ')}
+      FROM agent_findings WHERE environment=?`).bind(environment).all()).results.map((r) => [`${r.finding_code}|${r.subject_key}`, r]));
+    const unique = [];
     for (const f of findings) {
       const key = `${f.code}|${f.subject}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const fingerprint = await sha256Hex(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`);
-      const existing = existingMap.get(key);
+      unique.push(f);
+    }
+    // Fingerabdrücke gemeinsam berechnen (nicht 3000× nacheinander warten)
+    const fingerprints = await Promise.all(unique.map((f) => sha256Hex(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`)));
+    const rows = [];
+    const candidates = [];
+    for (let i = 0; i < unique.length; i++) {
+      const f = unique[i]; const fingerprint = fingerprints[i];
+      const existing = existingMap.get(`${f.code}|${f.subject}`);
       const findingId = existing ? existing.id : uuid();
       const changed = !existing || existing.status !== 'offen' || existing.fingerprint !== fingerprint;
-      rows.push({ id: findingId, code: f.code, subject: f.subject, case_id: f.case_id, vehicle_id: f.vehicle_id, severity: f.severity, message: f.message,
-        next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint });
+      const row = { id: findingId, code: f.code, subject: f.subject, case_id: f.case_id ?? null, vehicle_id: f.vehicle_id ?? null, severity: f.severity, message: f.message,
+        next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint };
+      // Unveränderte offene Befunde nicht erneut schreiben
+      if (changed || ROW_FIELDS.some((k) => (existing[k] ?? null) !== row[k])) rows.push(row);
       if (changed && f.severity !== 'kritisch' && REMINDER_CODES.has(f.code)) newReminders.push(f);
       if (changed && SEV_RANK[f.severity] >= SEV_RANK.handeln) {
-        const eventId = await sha256Hex(`${findingId}|${fingerprint}|${existing ? existing.first_seen : now}`);
-        candidates.push({ eventId, findingId, fingerprint, f });
+        candidates.push({ eventInput: `${findingId}|${fingerprint}|${existing ? existing.first_seen : now}`, findingId, fingerprint, f });
       }
     }
+    const eventIds = await Promise.all(candidates.map((c) => sha256Hex(c.eventInput)));
+    candidates.forEach((c, i) => { c.eventId = eventIds[i]; delete c.eventInput; });
     const J = (k) => `json_extract(value,'$.${k}')`;
     const upserts = chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
       SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ?2, ?2
