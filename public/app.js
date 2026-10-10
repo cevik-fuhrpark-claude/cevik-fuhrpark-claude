@@ -28,7 +28,7 @@ async function api(method, path, body, extra = {}) {
   let res;
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { S.me = null; location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { S.me = null; try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   if (!res.ok) { const e = new Error((data && data.message) || `${t('error')} ${res.status}`); e.code = data && data.error; e.status = res.status; throw e; }
@@ -125,11 +125,19 @@ async function route() {
   const pub = /^#\/(login|setup|invite\/)/.test(h);
   try {
     if (!S.me && !pub) {
-      try { const r = await api('GET', '/api/me'); S.me = r.user; S.lang = r.user.language || S.lang; }
-      catch { const st = await api('GET', '/api/setup/status').catch(() => ({})); location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
+      try { const r = await api('GET', '/api/me'); S.me = r.user; S.lang = r.user.language || S.lang; S.offlineStart = false; }
+      catch (err) {
+        // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
+        const cached = err.offline ? offlineSession() : null;
+        if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
+        S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
+      }
       if (S.me.role === 'owner') S.viewEnv = localStorage.getItem('cfp_env') || null;
-      S.meta = await api('GET', '/api/meta');
-      refreshUnread();
+      if (!S.offlineStart) {
+        S.meta = await api('GET', '/api/meta');
+        saveOfflineSession();
+        refreshUnread();
+      }
     }
     for (const [re, fn] of routes) {
       const m = h.match(re);
@@ -148,6 +156,20 @@ async function route() {
   }
 }
 window.addEventListener('hashchange', route);
+
+// Offline-Start: nur Anzeige-Daten des Kontos (keine Zugangsdaten – die Anmeldung bleibt im HttpOnly-Cookie); beim Abmelden gelöscht
+const OFFLINE_KEY = 'cfp_offline_session';
+function saveOfflineSession() {
+  try {
+    const { id, username, display_name, role, environment, workshop_site, language } = S.me;
+    localStorage.setItem(OFFLINE_KEY, JSON.stringify({ me: { id, username, display_name, role, environment, workshop_site, language }, meta: S.meta, saved_at: new Date().toISOString() }));
+  } catch {}
+}
+function offlineSession() { try { const x = JSON.parse(localStorage.getItem(OFFLINE_KEY) || 'null'); return x && x.me && x.meta ? x : null; } catch { return null; } }
+function clearOfflineData() {
+  try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_')) localStorage.removeItem(k); } catch {}
+}
+window.addEventListener('online', () => { if (S.offlineStart) { S.offlineStart = false; S.me = null; route(); } });
 
 async function refreshUnread() {
   try { const n = await api('GET', '/api/notifications'); S.unread = n.unread; } catch {}
@@ -229,15 +251,25 @@ async function workshopBoard() {
 }
 async function viewHome() {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
-  const d = await api('GET', '/api/dashboard');
-  const cases = (await api('GET', '/api/cases?status=open&limit=8')).cases;
+  let d, cases;
+  try {
+    d = await api('GET', '/api/dashboard');
+    cases = (await api('GET', '/api/cases?status=open&limit=8')).cases;
+  } catch (err) {
+    if (!err.offline || S.me.role !== 'driver') throw err;
+    d = {}; cases = null; // Fahrer ohne Netz: Startseite mit zuletzt gespeicherten Fahrzeugdaten
+  }
   let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
   if (S.me.role === 'driver') {
     html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p>`;
-    let mv = null; try { mv = (await api('GET', '/api/me/vehicles')).vehicles; } catch {}
+    const mvKey = `cfp_myveh_${S.me.id}_${S.me.environment}`;
+    let mv = null; let mvOffline = false;
+    try { mv = (await api('GET', '/api/me/vehicles')).vehicles; try { localStorage.setItem(mvKey, JSON.stringify({ at: new Date().toISOString(), vehicles: mv })); } catch {} }
+    catch { try { const c = JSON.parse(localStorage.getItem(mvKey) || 'null'); if (c) { mv = c.vehicles; mvOffline = c.at; } } catch {} }
+    if (mvOffline || cases === null) html += `<div class="panel alert">${esc(t('offline_view'))}${mvOffline ? ` (${esc(t('as_of'))} ${fmtDT(mvOffline)})` : ''}</div>`;
     if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => `<section class="panel ${v.locked ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${v.open_cases_total} ${esc(t('open'))}</span>` : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}</div>
       <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${v.next_inspections.map((r) => `<dt>${esc(r.kind)}</dt><dd>${fmtD(r.next_due_date)}</dd>`).join('')}</dl></section>`).join('')}`;
-    html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
+    if (cases) html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
   } else {
     if (d.vehicles) {
       const v = d.vehicles; const tot = Math.max(v.total, 1);
@@ -1195,7 +1227,7 @@ function viewMore() {
     const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); loadSessions(); } catch (err) { toast(err.message, true); } };
   };
   sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
-  $('#lo').onclick = async () => { await api('POST', '/api/logout'); S.me = null; location.hash = '#/login'; };
+  $('#lo').onclick = async () => { await api('POST', '/api/logout'); clearOfflineData(); S.me = null; location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
 }
 

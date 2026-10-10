@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 68 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 74 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -112,6 +112,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Vorgang: „Dauer je Status“ aus dem Verlauf (nur gespeicherte Statuswechsel, aktueller Status bis jetzt) und Druckansicht/PDF (Werkstattauftrag) mit Ausdruckvermerk. 67 Tests grün, UI/Druck geprüft.
 - [x] Ersatzteillager: Bestandsliste als CSV (Bestandswert nur mit hinterlegtem Preis) und Inventur je Lager (`POST /api/stock/inventory`, Vorschau `?dry_run=1`): Abweichungen werden als Korrektur mit Grund „Inventur <Datum>: gezählt X, Buchbestand Y“ gebucht, leere Felder = nicht gezählt, nur eigenes Lager, Protokoll. 68 Tests grün, UI 390 px geprüft.
 - [x] UI-Rauchtest prüft zusätzlich Barrierefreiheit (unbeschriftete Felder, Bilder ohne alt, Schaltflächen/Links ohne Text; Prüfung selbst mit Negativbeispiel verifiziert): 174 Ansichten ohne Auffälligkeit.
+- [x] Offline-Start für Fahrer: App startet im Funkloch mit zuletzt gespeichertem Konto (nur Anzeigedaten, keine Zugangsdaten; beim Abmelden/401 gelöscht), Startseite zeigt „Mein Fahrzeug“ aus dem Zwischenspeicher mit Stand-Hinweis, Meldungen gehen in den Offline-Ausgang und werden bei Netz gesendet (Playwright: kalter Start offline → Meldung → online → genau 1 Vorgang). Service-Worker-Cache v2.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -137,5 +138,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin: Service Worker – Offline-Zwischenspeicher für zuletzt geöffnete Fahrzeugakte/„Mein Fahrzeug“ (nur lesend, je Benutzer), damit Fahrer im Funkloch ihr Fahrzeug, Sperre und Prüftermine sehen; Versionswechsel des Caches bei Deploy. Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin: Abfahrtskontrolle offline mit Kaltstart prüfen (gleicher Ablauf wie Meldung) und Hinweis in der Hilfe ergänzen; danach Sitzungsdauer/automatische Abmeldung für geteilte Werkstatt-Tablets (Einstellung je Rolle – Wert vom Auftraggeber). Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
