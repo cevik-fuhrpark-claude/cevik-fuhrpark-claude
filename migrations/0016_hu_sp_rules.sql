@@ -19,7 +19,7 @@ UPDATE maintenance_rules SET due_source = 'berechnet' WHERE next_due_date IS NUL
 -- Angabe des Inhabers vom 10.10.2026: alle Lkw über 12 t, alle Anhänger über 10 t zulässige Gesamtmasse (je Fahrzeug änderbar)
 UPDATE vehicles SET zgm_class = CASE WHEN kind='anhaenger' THEN 'ueber_10' ELSE 'ueber_12' END, spec_source = 'Angabe Inhaber 10.10.2026: alle Lkw über 12 t, alle Anhänger über 10 t zGM' WHERE zgm_class IS NULL;
 -- Korrektur 10.10.2026: der Zusatz „Intervall 6 Monate“ an SP-Nachweisen war fachlich falsch (SP richtet sich nach der HU) – Zusatz entfernen, Beleg bleibt
-UPDATE maintenance_rules SET evidence = REPLACE(evidence, '; Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026', ''), interval_months = NULL, due_source = 'berechnet' WHERE kind = 'SP' AND evidence LIKE '%Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026%';
-UPDATE maintenance_events SET evidence = REPLACE(evidence, '; Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026', '') WHERE kind = 'SP' AND evidence LIKE '%Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026%';
-UPDATE maintenance_rules SET due_source = 'berechnet' WHERE kind = 'HU' AND evidence LIKE '%Intervall 12 Monate vom Inhaber bestätigt am 10.10.2026%';
+UPDATE maintenance_rules SET evidence = REPLACE(evidence, '; Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026', ''), interval_months = NULL, due_source = 'berechnet' WHERE kind = 'SP' AND instr(evidence, 'Intervall 6 Monate vom Inhaber') > 0;
+UPDATE maintenance_events SET evidence = REPLACE(evidence, '; Intervall 6 Monate vom Inhaber bestätigt am 10.10.2026', '') WHERE kind = 'SP' AND instr(evidence, 'Intervall 6 Monate vom Inhaber') > 0;
+UPDATE maintenance_rules SET due_source = 'berechnet' WHERE kind = 'HU' AND instr(evidence, 'Intervall 12 Monate vom Inhaber') > 0;
 INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES (lower(hex(randomblob(16))), NULL, 'maintenance.husp_migration', NULL, '{"grund":"SP-Frist nach StVZO Anlage VIII (6 Monate nach HU) statt pauschal 6 Monate nach letzter SP; zGM-Klassen laut Angabe Inhaber"}', strftime('%Y-%m-%dT%H:%M:%fZ','now'));
