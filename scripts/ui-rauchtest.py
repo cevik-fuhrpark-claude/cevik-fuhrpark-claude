@@ -16,6 +16,7 @@ ROUTES = {
     'fleet': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
     'workshop': ['', 'cases', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'wsload', 'help'],
     'driver': ['', 'cases', 'new', 'check', 'more', 'fines', 'help'],
+    'dispatch': ['', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
 A11Y = """() => {
@@ -53,7 +54,7 @@ with sync_playwright() as p:
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     pages = {'owner': adm}
-    for role, extra in [('fleet', {}), ('workshop', {'workshop_site': 'DORTMUND'}), ('driver', {})]:
+    for role, extra in [('fleet', {}), ('workshop', {'workshop_site': 'DORTMUND'}), ('driver', {}), ('dispatch', {})]:
         u = api('POST', '/api/users', {'username': f'rt.{role}', 'display_name': f'Rauchtest {role}', 'role': role, 'environment': 'production', **extra})
         if u['s'] != 201:
             sys.exit(f'Benutzer {role}: {u}')

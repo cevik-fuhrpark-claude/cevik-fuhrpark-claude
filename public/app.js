@@ -287,10 +287,21 @@ async function viewHome() {
     if (S.me.role === 'workshop') html += await workshopBoard();
     else {
       if (isMgr()) html += await fleetTodo();
+      if (S.me.role === 'dispatch') html += dispoBoard(cases === null ? [] : await api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []));
       html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
     }
   }
   render(html, 'home');
+}
+
+// Disposition: nicht einplanbare Fahrzeuge (gesperrt / in Werkstatt / wartet auf Teile) mit Status und „seit“ – nur gespeicherte Angaben
+function dispoBoard(cs) {
+  const byV = new Map();
+  const rank = (c) => (c.safety_lock ? 3 : c.status === 'wartet_teile' ? 2 : ['werkstatt_freigegeben', 'in_reparatur', 'abschlusskontrolle'].includes(c.status) ? 1 : 0);
+  for (const c of cs) { const r = rank(c); if (!r) continue; const cur = byV.get(c.vehicle_id); if (!cur || r > cur.r) byV.set(c.vehicle_id, { r, c }); }
+  const list = [...byV.values()].sort((a, b) => b.r - a.r || a.c.plate.localeCompare(b.c.plate));
+  if (!list.length) return `<section class="panel good"><b>${esc(t('dispo_all_ok'))}</b></section>`;
+  return `<h2>${esc(t('dispo_not_plannable'))}</h2><div class="list">${list.map(({ r, c }) => `<a class="row ${r === 3 ? 'p-kritisch' : 'p-mittel'}" href="#/cases/${esc(c.id)}">${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(r === 3 ? t('locked') + ' – ' + t('do_not_drive') : t('st_' + c.status))}</span><span class="chip ${r === 3 ? 'kritisch' : 'mittel'}">${esc(t('since'))} ${fmtDT(r === 3 ? c.created_at : c.updated_at)}</span><span class="sub">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}</span></a>`).join('')}</div>`;
 }
 
 // Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
