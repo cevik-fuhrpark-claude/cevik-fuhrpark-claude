@@ -6,6 +6,7 @@ import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
 import { fineFindings } from './fines.js';
 import { driverFindings } from './drivers.js';
+import { tachoFindings } from './tacho.js';
 import { documentFindings } from './vehicles.js';
 import { latestKmByVehicle, kmDue } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
@@ -29,7 +30,7 @@ function slaMinutes(settings, environment, kind, priority) {
 // (unabhängig von der Anzahl der Vorgänge) und schreibt Befunde blockweise über json_each.
 const CHUNK = 1000; // JSON-Parameter je Anweisung ≈ 0,5 MB (D1: max. 2 MB je Wert) – weniger Anweisungen je Lauf
 // Befunde, die als ruhige Erinnerung (nicht dringend) an Fuhrparkleitung/Inhaber gehen, sobald sie neu auftreten
-const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab', DRIVER_DOC_EXPIRED: 'Fahrernachweis abgelaufen', DRIVER_DOC_EXPIRES_SOON: 'Fahrernachweis läuft ab', LICENSE_CHECK_DUE: 'Führerscheinkontrolle fällig', LICENSE_CHECK_FAILED: 'Führerscheinkontrolle mit Mangel' };
+const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab', DRIVER_DOC_EXPIRED: 'Fahrernachweis abgelaufen', DRIVER_DOC_EXPIRES_SOON: 'Fahrernachweis läuft ab', LICENSE_CHECK_DUE: 'Führerscheinkontrolle fällig', LICENSE_CHECK_FAILED: 'Führerscheinkontrolle mit Mangel', TACHO_CARD_OVERDUE: 'Fahrerkarte nicht ausgelesen', TACHO_CARD_DUE: 'Fahrerkarte bald auslesen', TACHO_VU_OVERDUE: 'Massenspeicher nicht ausgelesen', TACHO_VU_DUE: 'Massenspeicher bald auslesen' };
 const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
@@ -231,7 +232,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Bußgelder: Fristen nur aus dem Schreiben; Fahrer offen; Kennzeichen unbekannt
     // Fahrerakte: Nachweise und Führerscheinkontrolle (Fristen nur laut Dokument)
-    for (const x of await driverFindings(env, environment)) add({ code: x.code, subject: x.subject, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
+    for (const x of await driverFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
+    for (const x of await tachoFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, vehicle_id: x.vehicle_id || null, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
 
     for (const x of await fineFindings(env, environment)) {
       add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });

@@ -178,5 +178,13 @@ export const MIGRATIONS = [
    "CREATE TABLE IF NOT EXISTS driver_license_checks (\n  id TEXT PRIMARY KEY,\n  driver_id TEXT NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,\n  checked_on TEXT NOT NULL,\n  result TEXT NOT NULL CHECK (result IN ('in_ordnung','maengel','nicht_vorgelegt')),\n  checked_by TEXT NOT NULL REFERENCES users(id),\n  note TEXT NULL,\n  created_at TEXT NOT NULL\n)",
    "CREATE INDEX IF NOT EXISTS idx_license_checks ON driver_license_checks(driver_id, checked_on)"
   ]
+ },
+ {
+  "id": "0018_tacho_downloads",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS tacho_downloads (\n  id TEXT PRIMARY KEY,\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  kind TEXT NOT NULL CHECK (kind IN ('fahrerkarte','massenspeicher')),\n  driver_id TEXT NULL REFERENCES drivers(id) ON DELETE CASCADE,\n  vehicle_id TEXT NULL REFERENCES vehicles(id),\n  downloaded_on TEXT NOT NULL,\n  evidence TEXT NOT NULL,\n  note TEXT NULL,\n  created_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL,\n  CHECK ((kind='fahrerkarte' AND driver_id IS NOT NULL AND vehicle_id IS NULL) OR (kind='massenspeicher' AND vehicle_id IS NOT NULL AND driver_id IS NULL))\n)",
+   "CREATE UNIQUE INDEX IF NOT EXISTS idx_tacho_driver_day ON tacho_downloads(driver_id, downloaded_on) WHERE driver_id IS NOT NULL",
+   "CREATE UNIQUE INDEX IF NOT EXISTS idx_tacho_vehicle_day ON tacho_downloads(environment, vehicle_id, downloaded_on) WHERE vehicle_id IS NOT NULL"
+  ]
  }
 ];

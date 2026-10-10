@@ -12,6 +12,7 @@ import * as tires from './tires.js';
 import * as stock from './stock.js';
 import * as fines from './fines.js';
 import * as drivers from './drivers.js';
+import * as tacho from './tacho.js';
 import * as reports from './reports.js';
 import { exportBackup } from './backup.js';
 import * as maint from './maintenance.js';
@@ -65,7 +66,7 @@ function requireRole(user, roles) {
 }
 
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'driver_doc_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
+  'workshop_hourly_rate_net', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
@@ -254,6 +255,18 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'PATCH') return json(await drivers.updateDriver(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/documents$/)) && m === 'POST') return json(await drivers.addDriverDocument(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/license-checks$/)) && m === 'POST') return json(await drivers.addLicenseCheck(env, user, envName, mm[1], await readJson(request)), 201);
+
+  // Auslese-Fristen Fahrerkarte / Massenspeicher (FPersV § 2 Abs. 5)
+  if (path === '/api/tacho' && m === 'GET') {
+    const ov = await tacho.tachoOverview(env, user, envName);
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'reports.tacho.export', null, { environment: envName });
+      return new Response(tacho.tachoCsv(ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-auslesungen_${envName}_${ov.today}.csv"` } });
+    }
+    return json(ov);
+  }
+  if (path === '/api/tacho/downloads' && m === 'GET') return json({ downloads: await tacho.listDownloads(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/tacho/downloads' && m === 'POST') return json(await tacho.addDownload(env, user, envName, await readJson(request)), 201);
 
   // Bußgelder & Zeugenfragebögen
   if (path === '/api/fines' && m === 'GET') {

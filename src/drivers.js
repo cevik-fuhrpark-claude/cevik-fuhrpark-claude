@@ -3,6 +3,7 @@
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate } from './util.js';
 import { audit } from './auth.js';
+import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
 export const CHECK_RESULTS = ['in_ordnung', 'maengel', 'nicht_vorgelegt'];
@@ -18,7 +19,7 @@ const date = (v, field, { required = false, notFuture = false } = {}) => {
 const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
 async function settingsMap(env) {
-  return new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('driver_doc_warn_days','license_check_months')`).all()).results.map((r) => [r.key, r.value]));
+  return new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('driver_doc_warn_days','license_check_months','tacho_warn_days')`).all()).results.map((r) => [r.key, r.value]));
 }
 function cfg(map) {
   const warn = Number(map.get('driver_doc_warn_days'));
@@ -58,7 +59,7 @@ async function loadDriver(env, user, envName, id) {
   return d;
 }
 
-export async function listDrivers(env, user, envName, query = {}) {
+export async function listDrivers(env, user, envName, query = {}, settings = null) {
   if (!isMgr(user)) {
     if (user.role !== 'driver') throw forbidden();
     const own = await env.DB.prepare('SELECT id FROM drivers WHERE user_id=? AND environment=?').bind(user.id, envName).first();
@@ -69,7 +70,7 @@ export async function listDrivers(env, user, envName, query = {}) {
   const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.valid_until, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.driver_id, c.checked_on, c.result FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id
     WHERE d.environment=? AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id)`).bind(envName).all()).results;
-  const c = cfg(await settingsMap(env)); const today = berlinDate();
+  const c = cfg(settings || await settingsMap(env)); const today = berlinDate();
   const byD = new Map(); for (const x of docs) { if (!byD.has(x.driver_id)) byD.set(x.driver_id, []); byD.get(x.driver_id).push(x); }
   const chk = new Map(checks.map((x) => [x.driver_id, x]));
   return drivers.map((d) => ({ ...d, status: driverStatus(byD.get(d.id) || [], chk.get(d.id) || null, today, c) }));
@@ -79,9 +80,12 @@ export async function driverDetail(env, user, envName, id) {
   const d = await loadDriver(env, user, envName, id);
   const docs = (await env.DB.prepare(`SELECT x.*, u.display_name AS created_by_name FROM driver_documents x LEFT JOIN users u ON u.id=x.created_by WHERE x.driver_id=? ORDER BY x.superseded, x.kind, x.valid_until DESC`).bind(id).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.*, u.display_name AS checked_by_name FROM driver_license_checks c LEFT JOIN users u ON u.id=c.checked_by WHERE c.driver_id=? ORDER BY c.checked_on DESC LIMIT 50`).bind(id).all()).results;
-  const c = cfg(await settingsMap(env));
+  const sm = await settingsMap(env); const c = cfg(sm);
+  const downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by WHERE t.driver_id=? ORDER BY t.downloaded_on DESC LIMIT 20`).bind(id).all()).results;
+  const hasCard = docs.some((x) => !x.superseded && x.kind === 'fahrerkarte');
+  const tacho = hasCard || downloads.length ? { ...tachoStatus(downloads[0] ? downloads[0].downloaded_on : null, TACHO_RULE.card_days, berlinDate(), warnDaysOf(sm)), rule: TACHO_RULE } : null;
   const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)`).bind(d.user_id, nowIso()).all()).results : [];
-  return { driver: d, documents: docs, license_checks: checks, vehicles, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
+  return { driver: d, documents: docs, license_checks: checks, vehicles, tacho, tacho_downloads: downloads, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
 }
 
 export async function createDriver(env, user, envName, body) {
@@ -157,8 +161,8 @@ export async function addLicenseCheck(env, user, envName, id, body) {
 }
 
 // Für den Fuhrparkagenten: abgelaufene/ablaufende Nachweise, fällige/fehlerhafte Führerscheinkontrollen (nur aktive Fahrer)
-export async function driverFindings(env, environment) {
-  const list = await listDrivers(env, { role: 'owner' }, environment, {});
+export async function driverFindings(env, environment, settings = null) {
+  const list = await listDrivers(env, { role: 'owner' }, environment, {}, settings);
   const out = [];
   const L = { fuehrerschein: 'Führerschein', fahrerkarte: 'Fahrerkarte', code95: 'Code 95 / Weiterbildung', unterweisung: 'Unterweisung', sonstiges: 'Nachweis' };
   for (const d of list) {

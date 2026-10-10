@@ -125,7 +125,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -1017,6 +1017,9 @@ async function viewDriver(id) {
     ${!d.active ? `<p class="chip">${esc(t('inactive_drivers'))}</p>` : ''}${!st.has_license ? `<div class="alert small" style="margin-top:8px">${esc(t('no_license_doc'))}</div>` : ''}</section>
     <h2>${esc(t('driver_docs'))}</h2>${cur.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('kind'))}</th><th></th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${cur.map(docRow).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}
     ${old.length ? `<details><summary>${esc(t('history'))} (${old.length})</summary><div class="scroll"><table><tbody>${old.map(docRow).join('')}</tbody></table></div></details>` : ''}`;
+  if (x.tacho) html += `<h2>${esc(t('tacho_card'))}</h2><section class="panel"><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${x.tacho.last ? fmtD(x.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${x.tacho.due ? fmtD(x.tacho.due) + ' ' : ''}<span class="chip ${TST[x.tacho.status]}">${esc(t('tst_' + x.tacho.status))}</span></dd></dl>
+    ${x.tacho_downloads.length ? `<details><summary>${esc(t('history'))} (${x.tacho_downloads.length})</summary><ul class="small">${x.tacho_downloads.map((o) => `<li>${fmtD(o.downloaded_on)} · ${esc(o.evidence)}${o.note ? ' – ' + esc(o.note) : ''}${o.created_by_name ? ` <span class="muted">(${esc(o.created_by_name)})</span>` : ''}</li>`).join('')}</ul></details>` : ''}
+    ${mgr ? `<form id="tdf" class="actions" style="flex-wrap:wrap;align-items:flex-end"><div><label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${new Date().toISOString().slice(0, 10)}"></div><div style="flex:1;min-width:200px"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"></div><button class="btn secondary">${esc(t('tacho_record'))}</button></form>` : ''}</section>`;
   if (mgr) {
     html += `<details class="panel"><summary>${esc(t('add_driver_doc'))}</summary><form id="ddf"><label>${esc(t('kind'))}</label><select name="kind">${['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'].map((k) => `<option value="${k}">${esc(t('dk2_' + k))}</option>`).join('')}</select>
       <label>${esc(t('doc_title'))}</label><input name="title" placeholder="${esc(t('doc_title_ph'))}"><label>${esc(t('license_classes'))}</label><input name="license_classes" placeholder="C, CE"><label>${esc(t('doc_number'))}</label><input name="number">
@@ -1031,8 +1034,36 @@ async function viewDriver(id) {
   render(html, 'more');
   const post = async (path, b) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', path, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
   const ddf = $('#ddf'); if (ddf) ddf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/documents`, Object.fromEntries(new FormData(ddf))); };
+  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(edf)); b.active = !!edf.active.checked; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+}
+
+// ---------- Auslese-Fristen Fahrerkarte / Massenspeicher ----------
+const TST = { ueberfaellig: 'kritisch', bald: 'mittel', keine: '', ok: 'ok' };
+async function viewTacho() {
+  const r = await api('GET', '/api/tacho');
+  const tab = S.tachoTab || 'drivers'; const f = S.tachoFilter || 'attention';
+  const list = r[tab];
+  const sel = (x) => f === 'all' || (f === 'attention' ? ['ueberfaellig', 'bald'].includes(x.status) : x.status === f);
+  const rows = list.filter(sel); const tot = r.totals[tab];
+  const filters = [['attention', `${t('tst_ueberfaellig')} / ${t('tst_bald')}`, tot.ueberfaellig + tot.bald], ['keine', t('tst_keine'), tot.keine], ['all', t('filter_all'), list.length]];
+  const opts = list.map((x) => `<option value="${esc(x.id)}">${esc(tab === 'drivers' ? x.display_name : x.plate)}</option>`).join('');
+  render(`<h1>${esc(t('tacho'))}</h1><p class="small muted">${esc(t('tacho_rule'))}</p>
+    <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${tab === 'drivers' ? '' : 'secondary'}" data-tt="drivers">${esc(t('tacho_cards'))} (${r.drivers.length})</button><button type="button" class="btn ${tab === 'vehicles' ? '' : 'secondary'}" data-tt="vehicles">${esc(t('tacho_vus'))} (${r.vehicles.length})</button></div>
+    <div class="actions" style="flex-wrap:wrap;margin-top:0">${filters.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
+    <div class="list">${rows.map((x) => `<a class="row ${x.status === 'ueberfaellig' ? 'p-kritisch' : x.status === 'bald' ? 'p-mittel' : ''}" href="${tab === 'drivers' ? '#/drivers/' + esc(x.id) : '#/vehicles/' + encodeURIComponent(x.id)}">${tab === 'drivers' ? '<span>🪪</span>' : plate(x.plate)}<span class="title">${tab === 'drivers' ? esc(x.display_name) : x.due ? `${esc(t('tacho_due'))} ${fmtD(x.due)}` : '–'}</span><span class="chip ${TST[x.status]}">${esc(t('tst_' + x.status))}</span><span class="sub">${[tab === 'drivers' && x.due && `${esc(t('tacho_due'))} ${fmtD(x.due)}`, `${esc(t('tacho_last'))}: ${x.last ? fmtD(x.last) : '–'}`, x.site && esc(x.site), tab === 'drivers' && x.personnel_no && esc(x.personnel_no)].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>
+    ${tab === 'drivers' && r.without_card.length ? `<p class="small muted">${esc(t('tacho_without_card'))}: ${r.without_card.map((d) => esc(d.display_name)).join(', ')}</p>` : ''}
+    ${list.length ? `<details class="panel"><summary>${esc(t('tacho_record'))}</summary><form id="tnf"><label>${esc(tab === 'drivers' ? t('role_driver') : t('vehicle'))}</label><select name="target" required>${opts}</select>
+      <label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${new Date().toISOString().slice(0, 10)}"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"><label>${esc(t('note'))}</label><input name="note">
+      <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
+    <div class="actions"><button type="button" class="btn secondary" id="tcsv">${esc(t('export_csv'))}</button></div>`, 'more');
+  $$('[data-tt]').forEach((b) => (b.onclick = () => { S.tachoTab = b.dataset.tt; viewTacho(); }));
+  $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tachoFilter = b.dataset.tf; viewTacho(); }));
+  $('#tcsv').onclick = async () => { try { download(await api('GET', '/api/tacho?format=csv'), `fuhrpark-auslesungen_${r.today}.csv`); } catch (err) { toast(err.message, true); } };
+  const nf = $('#tnf'); if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); const body = { kind: tab === 'drivers' ? 'fahrerkarte' : 'massenspeicher', downloaded_on: b.downloaded_on, evidence: b.evidence };
+    body[tab === 'drivers' ? 'driver_id' : 'vehicle_id'] = b.target; if (b.note) body.note = b.note;
+    try { await api('POST', '/api/tacho/downloads', body); toast('✓'); viewTacho(); } catch (err) { toast(err.message, true); } };
 }
 
 // ---------- Hinweise & Push ----------
@@ -1314,6 +1345,7 @@ function viewMore() {
     <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
     <a class="row" href="#/help"><span>?</span><span class="title">${esc(t('help'))}</span><span></span></a>
     ${isMgr() ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('drivers'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('my_driver_file'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/tacho"><span>⏏</span><span class="title">${esc(t('tacho'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('fines'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('my_fines'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'workshop', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/tires"><span>◎</span><span class="title">${esc(t('fleet_tires'))}</span><span></span></a>` : ''}
     ${S.me.role !== 'driver' ? `<a class="row" href="#/maintenance"><span>📅</span><span class="title">${esc(t('inspections_due'))}</span><span></span></a>` : ''}
@@ -1372,7 +1404,7 @@ async function viewSettings() {
   const v = s.values;
   const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="decimal" value="${esc(v[k] ?? '')}">`;
   const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
-  render(`<h1>${esc(t('settings'))}</h1><form id="sf" class="panel">${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('fine_warn_days', t('response_due') + ' – ' + t('warn_days'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}<h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
+  render(`<h1>${esc(t('settings'))}</h1><form id="sf" class="panel">${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('fine_warn_days', t('response_due') + ' – ' + t('warn_days'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}${field('tacho_warn_days', t('tacho_warn'))}<h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,text/csv" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted">Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger</p><input type="file" id="tcsv" accept=".csv,text/csv" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('backup'))}</h2><p class="small muted">${esc(t('backup_hint'))}</p><button type="button" class="btn secondary" id="bkp">${esc(t('backup_download'))}</button></section>`, 'more');

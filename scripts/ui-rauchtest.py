@@ -64,6 +64,15 @@ with sync_playwright() as p:
         pg.goto(B)
         pg.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}])
         pages[role] = pg
+    # Fahrerakte mit Fahrerkarte und Auslesungen (synthetisch)
+    drv_user = [x for x in api('GET', '/api/users')['d']['users'] if x['username'] == 'rt.driver'][0]['id']
+    did = api('POST', '/api/drivers', {'display_name': 'Rauchtest Fahrer', 'personnel_no': 'RT-1', 'user_id': drv_user})['d']['id']
+    api('POST', f'/api/drivers/{did}/documents', {'kind': 'fahrerkarte', 'valid_until': '2030-12-31', 'evidence': 'Rauchtest'})
+    api('POST', '/api/tacho/downloads', {'kind': 'fahrerkarte', 'driver_id': did, 'downloaded_on': '2026-09-01', 'evidence': 'Rauchtest Datei C_RT.ddd'})
+    api('POST', '/api/tacho/downloads', {'kind': 'massenspeicher', 'vehicle_id': vid, 'downloaded_on': '2026-08-01', 'evidence': 'Rauchtest Datei M_RT.ddd'})
+    for r in ('owner', 'fleet'):
+        ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho']
+    ROUTES['driver'] += ['drivers']
     # Eine Meldung, damit Listen nicht leer sind
     pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegel locker', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-1'}])
 

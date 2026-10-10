@@ -1325,6 +1325,53 @@ await test('Führerscheinkontrolle: Vermerk bei Mangel, Intervall nur wenn einge
   eq((await owner.put('/api/settings', { license_check_months: '' })).status, 200);
 });
 
+await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nach FPersV § 2 Abs. 5: nur aus erfassten Auslesungen, Rechte, Befunde', async () => {
+  const ago = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const id = (await users.fleet.get('/api/drivers')).data.drivers.find((x) => x.display_name === 'Testfahrer Eins').id;
+  const other = (await users.fleet.get('/api/drivers')).data.drivers.find((x) => x.display_name === 'Fahrer ohne Konto').id;
+  eq((await users.ws.get('/api/tacho')).status, 403, 'Werkstatt sieht keine Auslesungen');
+  eq((await users.driver.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, downloaded_on: ago(1), evidence: 'x' })).status, 403, 'Fahrer erfasst nichts');
+  let ov = (await users.fleet.get('/api/tacho')).data;
+  eq(ov.rule.card_days, 28); eq(ov.rule.vu_days, 90);
+  const d0 = ov.drivers.find((x) => x.id === id);
+  eq(d0.status, 'keine', 'Fahrerkarte vorhanden, keine Auslesung → keine erfundene Frist'); eq(d0.due, null);
+  ok(ov.without_card.some((x) => x.id === other), 'Fahrer ohne Fahrerkarte getrennt aufgeführt');
+  ok(ov.vehicles.every((v) => v.status === 'keine'), 'Fahrzeuge ohne Auslesung: keine Frist');
+  ok(!ov.vehicles.some((v) => v.id === 'VIN:VAK656EBDG1613170'), 'Anhänger ohne Fahrtenschreiber');
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: 'VIN:VAK656EBDG1613170', downloaded_on: ago(1), evidence: 'x' })).status, 400, 'Anhänger abgewiesen');
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, downloaded_on: '2099-01-01', evidence: 'x' })).status, 400, 'nicht in der Zukunft');
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, downloaded_on: ago(30) })).status, 400, 'Nachweis Pflicht');
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, downloaded_on: ago(30), evidence: 'Auslesesoftware, Datei C_…ddd' })).status, 201);
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, downloaded_on: ago(30), evidence: 'doppelt' })).status, 409, 'gleicher Tag doppelt');
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V1, downloaded_on: ago(85), evidence: 'Downloadkey, Datei M_…ddd' })).status, 201);
+  ov = (await users.fleet.get('/api/tacho')).data;
+  const d1 = ov.drivers.find((x) => x.id === id); const v1 = ov.vehicles.find((x) => x.id === V1);
+  eq(d1.last, ago(30)); eq(d1.due, ago(2)); eq(d1.status, 'ueberfaellig', '30 Tage > 28 Tage');
+  eq(v1.due, new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10)); eq(v1.status, 'bald', 'noch 5 Tage (Vorwarnung 7)');
+  eq(ov.drivers[0].status, 'ueberfaellig', 'Dringendes zuerst');
+  const csv = await users.fleet.get('/api/tacho?format=csv');
+  const ctext = new TextDecoder().decode(csv.data); ok(ctext.includes('Fahrerkarte;Testfahrer Eins;P-1;') && ctext.includes('überfällig'), 'CSV');
+  // Fahrer sieht eigene Fahrerkarten-Auslesungen, nicht fremde
+  const own = (await users.driver.get(`/api/drivers/${id}`)).data;
+  eq(own.tacho.status, 'ueberfaellig'); eq(own.tacho_downloads.length, 1);
+  eq((await users.driver.get(`/api/tacho/downloads?driver_id=${other}`)).status, 404);
+  eq((await users.driver.get(`/api/tacho/downloads?vehicle_id=${encodeURIComponent(V1)}`)).status, 403);
+  eq((await users.fleet.get(`/api/tacho/downloads?vehicle_id=${encodeURIComponent(V1)}`)).data.downloads.length, 1);
+  await users.fleet.post('/api/agent/run');
+  let f = (await users.fleet.get('/api/master')).data.findings;
+  ok(f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'Befund Fahrerkarte überfällig');
+  ok(f.some((x) => x.finding_code === 'TACHO_VU_DUE'), 'Befund Massenspeicher bald');
+  ok(!f.some((x) => /TACHO/.test(x.finding_code) && /Fahrer ohne Konto/.test(x.message)), 'ohne Auslesung kein Befund');
+  // neue Auslesung erledigt den Befund
+  eq((await users.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, downloaded_on: ago(0), evidence: 'Auslesung heute' })).status, 201);
+  await users.fleet.post('/api/agent/run');
+  f = (await users.fleet.get('/api/master')).data.findings;
+  ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
+  eq((await owner.put('/api/settings', { tacho_warn_days: 3 })).status, 200);
+  eq((await users.fleet.get('/api/tacho')).data.vehicles.find((x) => x.id === V1).status, 'ok', 'Vorwarnung einstellbar');
+  eq((await owner.put('/api/settings', { tacho_warn_days: '' })).status, 200);
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

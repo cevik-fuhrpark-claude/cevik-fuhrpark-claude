@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 79 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 83 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -151,6 +151,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 
 - 10.10.2026 17:51: **Auftrag „Technische Übernahme Webfleet & YellowFox“** (nur lesend beginnen, keine Neuentwicklung, nichts überschreiben, Veröffentlichung nur nach Prüfung/Freigabe; Fortschritt im MASTER-CHECKPOINT). Stand: siehe `docs/TELEMATIK_BESTANDSAUFNAHME.md` – MASTER-CHECKPOINT gelesen, Telemetrie-Sheet analysiert (894 YellowFox-Zeilen: 0 Dubletten, 0 Zukunftszeiten, 0 km-Rückläufe; Gerät „SZ-YC 5523“ sendet RTI „SZ-YC 5531“; SZ-YC 5517 seit 46 h ohne Position), Monitor-Korrekturentwurf 153acd06 unabhängig getestet (live 3/8, Entwurf 8/8 Teilquellen-Tests; 18+14 Bestandstests grün) – **nicht veröffentlicht**. Laut Inhaber **keine Neon-Datenbank**. YellowFox-RTI: `https://map.yellowfox.de/rti`, Schlüssel-Authentifizierung (company/import/vehicle/group) laut doc.yellowfox.net; Lenkzeit-Funktionen dort nicht öffentlich belegt. Webfleet liefert Restlenkzeiten (getRemainingDrivingTimesEU, 27 Fahrer). Inhaber macht Pause (18:08); Wiederaufnahme mit n8n-Login.
 
+- 10.10.2026: **Auslese-Fristen (Stufe 2) erledigt** (Migration 0018 `tacho_downloads`, `src/tacho.js`): Gesetzestext geprüft – FPersV § 2 Abs. 5: Massenspeicher spätestens 90 Tage, Fahrerkarte spätestens 28 Kalendertage nach Aufzeichnung kopieren. Umsetzung (vorsichtig): spätestens fällig = letzte erfasste Auslesung + 28/90 Tage; ohne erfasste Auslesung **keine** Frist (Status „keine Auslesung erfasst“). Erfassung mit Pflicht-Nachweis (z. B. Dateiname), nicht Zukunft, je Tag einmal; Massenspeicher nur Lkw (nicht Anhänger, nicht ruhend). Mehr → „Auslesungen Fahrtenschreiber“ (Fahrerkarten/Massenspeicher, Filter, CSV), Fahrerakte zeigt Fahrerkarten-Auslesung (Fahrer nur eigene). Agent-Befunde `TACHO_CARD_OVERDUE/DUE`, `TACHO_VU_OVERDUE/DUE` (in Sammel-Erinnerung, nur bei vorhandener Auslesung), Vorwarnung `tacho_warn_days` (Standard 7). Sicherung, Audit-Log. Agent spart eine Abfrage (Einstellungen werden durchgereicht): max. 44/50. 83 Tests grün, UI-Rauchtest 213 Ansichten ohne Auffälligkeit, 390 px/PC geprüft. Noch keine echten Auslesungen erfasst; automatische Übernahme aus der Auslesesoftware/YellowFox offen (Stufe 3).
+
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.
@@ -163,7 +165,6 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - Testkonten (Fahrer/Werkstatt) anlegen – optional, für den Rundgang.
 
 ## Backlog (in dieser Reihenfolge)
-0b. Auslese-Fristen Fahrerkarte/Fahrtenschreiber (Stufe 2, Fristen vor Umsetzung am Gesetzestext prüfen).
 0c. Lenk-/Ruhezeiten & Verstöße über YellowFox (Stufe 3) – wartet auf Übergabedoku und Secret.
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
