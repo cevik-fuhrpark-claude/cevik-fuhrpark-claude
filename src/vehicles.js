@@ -371,7 +371,8 @@ export async function completeMaintenance(env, user, ruleId, body) {
   if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [r.vehicle_id] });
   if (km !== null) {
     await env.DB.prepare('INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)')
-      .bind(uuid(), r.vehicle_id, km, `${date}T12:00:00.000Z`, `wartung:${r.kind}`, user.id, nowIso()).run();
+      // heute erledigt → jetziger Zeitpunkt (12:00 UTC läge morgens in der Zukunft und überdeckte spätere Ablesungen desselben Tages)
+      .bind(uuid(), r.vehicle_id, km, date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`, `wartung:${r.kind}`, user.id, nowIso()).run();
   }
   return { ok: true, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
 }

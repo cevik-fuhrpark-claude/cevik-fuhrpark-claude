@@ -12,6 +12,12 @@ async function test(name, fn) {
 function eq(a, b, msg = '') { if (a !== b) throw new Error(`${msg} erwartet ${JSON.stringify(b)}, erhalten ${JSON.stringify(a)}`); }
 function ok(v, msg = 'Bedingung nicht erfüllt') { if (!v) throw new Error(msg); }
 const rk = () => crypto.randomUUID();
+// Testdaten relativ zum heutigen Berliner Datum, damit die Suite an jedem Tag gleich läuft (Prüfung: scripts/zeitreise-test.sh)
+const BERLIN_TODAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
+const BERLIN_YM = BERLIN_TODAY.slice(0, 7);
+const COST_TO = BERLIN_YM > '2026-12' ? BERLIN_YM : '2026-12'; // Testdaten teils fest auf 10/2026, teils heute gebucht
+const HU_LAST = `${Number(BERLIN_TODAY.slice(0, 4)) - 1}${BERLIN_TODAY.slice(4, 8)}01`;
+const HU_DUE = (() => { const [y, m] = BERLIN_YM.split('-').map(Number); return `${BERLIN_YM}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`; })();
 
 const env = makeEnv();
 const anon = new Client(worker, env, 'anon');
@@ -344,8 +350,9 @@ await test('Stundensatz festlegen → Kosten bewertet; ohne Satz unbewertet', as
 await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () => {
   eq((await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', next_due_date: '2026-10-20' })).status, 400, 'Nachweis Pflicht');
   for (const V of [V1, V2]) eq((await users.fleet.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
-  const r = await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: '2025-10-20', interval_months: 12, evidence: 'Prüfbericht TÜV 20.10.2025' });
-  eq(r.status, 201); eq(r.data.next_due_date, '2026-10-31', 'HU: 12 Kalendermonate, Fristende Monatsende');
+  // HU vor 12 Monaten im laufenden Berliner Monat → fällig zum Monatsende (bald fällig, unabhängig vom Testdatum)
+  const r = await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: HU_LAST, interval_months: 12, evidence: 'Prüfbericht TÜV (Test)' });
+  eq(r.status, 201); eq(r.data.next_due_date, HU_DUE, 'HU: 12 Kalendermonate, Fristende Monatsende');
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_DUE'), 'HU-Fälligkeit erkannt');
   const rem = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
@@ -358,7 +365,7 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   const r = await users.fleet.get('/api/maintenance');
   eq(r.status, 200);
   const hu = r.data.rows.find((x) => x.vehicle_id === V1 && x.kind === 'HU');
-  ok(hu && hu.next_due_date === '2026-10-31' && hu.plate === 'SZ-YC 5513', 'HU-Termin mit Kennzeichen');
+  ok(hu && hu.next_due_date === HU_DUE && hu.plate === 'SZ-YC 5513', 'HU-Termin mit Kennzeichen');
   ok(['faellig', 'ueberfaellig', 'ok'].includes(hu.status) && typeof hu.days === 'number', 'Status und Tage');
   const g1 = r.data.gaps.find((g) => g.vehicle_id === V1); const g2 = r.data.gaps.find((g) => g.vehicle_id === V2);
   eq(g1.missing.join(','), 'SP,UVV,Tachograph', 'V1 ohne SP/UVV/Tacho'); eq(g2.missing.length, 4, 'V2 ohne alle Pflichtprüfungen');
@@ -373,7 +380,7 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   const ics = await users.fleet.get('/api/maintenance?format=ics');
   eq(ics.status, 200); ok((ics.headers.get('content-type') || '').startsWith('text/calendar'));
   const cal = new TextDecoder().decode(ics.data);
-  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:20261031') && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D'), 'Kalender mit HU-Termin und Erinnerung');
+  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:' + HU_DUE.replace(/-/g, '')) && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D'), 'Kalender mit HU-Termin und Erinnerung');
   ok(cal.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75), 'Zeilen auf 75 Oktette gefaltet');
   const H = { authorization: 'Bearer integration-token-xyz' };
   const api = await anon.req('GET', '/api/integration/v1/maintenance', undefined, H);
@@ -789,7 +796,7 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
   const list = (await users.fleet.get('/api/cases')).data.cases;
   let actual = 0; let estimate = 0; let unvalued = 0;
   for (const c of list) { const d = (await users.fleet.get(`/api/cases/${c.id}`)).data; actual += d.costs.actual_net; estimate += d.costs.estimate_net; unvalued += d.costs.unvalued_items; }
-  const r = await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12');
+  const r = await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`);
   eq(r.status, 200);
   eq(r.data.totals.actual_net, Math.round(actual * 100) / 100, 'Summe belegt');
   eq(r.data.totals.estimate_net, Math.round(estimate * 100) / 100, 'Summe geschätzt');
@@ -799,7 +806,7 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
   eq((await users.ws.get('/api/reports/costs')).status, 403);
   eq((await users.fleet.get('/api/reports/costs?from=2026-13')).status, 400);
   eq((await users.fleet.get('/api/reports/costs?from=2020-01&to=2026-12')).status, 400, 'max. 36 Monate');
-  const csv = await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12&format=csv');
+  const csv = await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&format=csv`);
   eq(csv.status, 200); ok((csv.headers.get('content-type') || '').startsWith('text/csv'));
   const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
   ok(text.startsWith('﻿Kennzeichen;'), 'BOM + Kopfzeile');
@@ -808,12 +815,12 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
   const inj = costReportCsv({ rows: [{ plate: '=HYPERLINK("x")', vehicle_id: 'VIN:X', site: 'A;B', month: '2026-10', cases_opened: 1, hours: 1.5, work_net: null, parts_actual_net: 10.5, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, actual_net: 10.5, estimate_net: 0, unvalued_items: 1, complete: false }] });
   ok(inj.includes(`"'=HYPERLINK(""x"")"`), 'Formel neutralisiert'); ok(inj.includes('"A;B"')); ok(inj.includes(';1,5;;10,5;'), 'Dezimalkomma, leere Arbeitszeit ohne Satz');
   const H = { authorization: 'Bearer integration-token-xyz' };
-  const api = await anon.req('GET', '/api/integration/v1/costs?environment=test&from=2026-01&to=2026-12', undefined, H);
+  const api = await anon.req('GET', `/api/integration/v1/costs?environment=test&from=2026-01&to=${COST_TO}`, undefined, H);
   eq(api.status, 200); eq(api.data.totals.actual_net, r.data.totals.actual_net);
 });
 
 await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den Vorgängen überein; Rechte', async () => {
-  const ym = new Date().toISOString().slice(0, 7);
+  const ym = BERLIN_YM; // Monate nach Berliner Zeit (wie der Bericht)
   const r = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`);
   eq(r.status, 200);
   const all = r.data.by_priority.find((x) => x.priority === 'alle');
@@ -1022,9 +1029,12 @@ await test('Prüfungen mit Kilometer-Intervall: Fälligkeit aus letztem km-Stand
   ok(over && /Ölwechsel war bei .* km fällig/.test(over.message), 'Agent meldet km-Überschreitung');
   ok(fs.some((f) => f.finding_code === 'MAINTENANCE_DUE' && f.subject_key === `${r2.data.id}|km`), 'Agent meldet km-Vorwarnung');
   eq((await users.ws.post(`/api/maintenance/${r1.data.id}/complete`, { done_date: new Date().toISOString().slice(0, 10), evidence: 'Werkstattauftrag Test' })).status, 400, 'km bei Durchführung Pflicht');
-  eq((await users.ws.post(`/api/maintenance/${r1.data.id}/complete`, { done_date: new Date().toISOString().slice(0, 10), evidence: 'Werkstattauftrag Test', done_km: cur })).status, 200);
+  eq((await users.ws.post(`/api/maintenance/${r1.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Werkstattauftrag Test', done_km: cur })).status, 200);
   ov = (await users.fleet.get('/api/maintenance')).data;
   eq(ov.rows.find((x) => x.id === r1.data.id).next_due_km, cur + 50000, 'neuer Zyklus ab Durchführung');
+  // heute erledigt: km-Stand mit jetzigem Zeitpunkt – eine spätere Ablesung desselben Tages ist der neueste Wert (früher 12:00 UTC fest)
+  const mk = (await owner.get(vp)).data.odometer.find((o) => o.source === 'wartung:Ölwechsel');
+  ok(mk && mk.measured_at <= new Date().toISOString(), 'Durchführung heute nicht in der Zukunft datiert: ' + (mk && mk.measured_at));
   await owner.put('/api/settings', { maintenance_warn_km: null });
 });
 
@@ -1287,7 +1297,7 @@ await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster get
 console.log('Ruhende Fahrzeuge');
 await test('Ruhendes Fahrzeug: bleibt sichtbar, zählt nicht in Kosten/Fahrzeugzahl/Prüfbefunden; nur Fuhrpark/Inhaber, Grund Pflicht', async () => {
   const before = (await users.fleet.get('/api/master')).data.vehicles_total;
-  const costsBefore = (await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12')).data;
+  const costsBefore = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   const withCost = costsBefore.rows.find((r) => r.actual_net > 0 || r.unvalued_items > 0);
   ok(withCost, 'Kostenzeile vorhanden');
   const V = withCost.vehicle_id;
@@ -1295,7 +1305,7 @@ await test('Ruhendes Fahrzeug: bleibt sichtbar, zählt nicht in Kosten/Fahrzeugz
   eq((await users.fleet.post(`/api/vehicles/${V}/evaluation`, { excluded: true })).status, 400, 'Grund Pflicht');
   eq((await users.fleet.post(`/api/vehicles/${V}/evaluation`, { excluded: true, reason: 'Reparatur oder Verkauf offen' })).status, 200);
   eq((await users.fleet.get('/api/master')).data.vehicles_total, before - 1);
-  const costsAfter = (await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12')).data;
+  const costsAfter = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   ok(!costsAfter.rows.some((r) => r.vehicle_id === V), 'nicht im Kostenbericht');
   ok((await users.fleet.get('/api/vehicles')).data.vehicles.some((v) => v.id === V && v.eval_excluded === 1), 'bleibt in der Fahrzeugliste');
   await users.fleet.post('/api/agent/run');
@@ -1416,7 +1426,7 @@ await test('Fahrerakte: nur Fuhrpark/Inhaber anlegen und sehen, Fahrer nur eigen
   eq((await users.fleet.post('/api/drivers', { display_name: 'Doppelt', user_id: users.driver.id })).status, 409, 'Konto nur einmal zuordnen');
   eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fahrerkarte', evidence: 'Karte' })).status, 400, 'Fahrerkarte braucht Gültig-bis');
   eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2030-01-31' })).status, 400, 'Nachweis Pflicht');
-  eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fuehrerschein', license_classes: 'CE', valid_until: '2027-03-31', evidence: 'Führerschein Original gesehen' })).status, 201);
+  eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fuehrerschein', license_classes: 'CE', valid_until: '2035-03-31', evidence: 'Führerschein Original gesehen' })).status, 201);
   const soon = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
   eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fahrerkarte', valid_until: soon, evidence: 'Fahrerkarte Kopie' })).status, 201);
   eq((await users.fleet.post(`/api/drivers/${b.data.id}/documents`, { kind: 'code95', valid_until: '2025-12-31', evidence: 'Schlüsselzahl 95 im Führerschein' })).status, 201);
@@ -1494,7 +1504,7 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
   eq((await users.driver.get('/api/drivers?format=csv')).status, 403, 'Fahrer: keine Fristenliste');
   const dcsv = new TextDecoder().decode((await users.fleet.get('/api/drivers?format=csv')).data);
-  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;2027-03-31;2031-05-31;;2026-01-10;in_ordnung;;/.test(dcsv) && dcsv.includes(`in_ordnung;;${ago(0)};${ago(-28)};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
+  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;2035-03-31;2031-05-31;;2026-01-10;in_ordnung;;/.test(dcsv) && dcsv.includes(`in_ordnung;;${ago(0)};${ago(-28)};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
   const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
   eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
   eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');

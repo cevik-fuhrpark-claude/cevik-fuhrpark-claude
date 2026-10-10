@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node scripts/build-schema.mjs",
     "test": "node scripts/build-schema.mjs && node --experimental-sqlite --no-warnings test/run.mjs",
-    "lasttest": "node --experimental-sqlite --no-warnings scripts/lasttest.mjs 150 3000 200 --check"
+    "lasttest": "node --experimental-sqlite --no-warnings scripts/lasttest.mjs 150 3000 200 --check",
+    "zeitreise": "sh scripts/zeitreise-test.sh"
   }
 }
