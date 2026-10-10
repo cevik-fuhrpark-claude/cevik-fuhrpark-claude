@@ -197,6 +197,25 @@ async function viewInvite(token) {
 }
 
 // ---------- Übersicht ----------
+// Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
+async function workshopBoard() {
+  const open = (await api('GET', '/api/cases?status=open&limit=500')).cases;
+  const lanes = [
+    ['ws_to_ack', open.filter((c) => c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at)],
+    ['ws_to_start', open.filter((c) => c.status === 'werkstatt_freigegeben' && c.workshop_ack_at)],
+    ['st_in_reparatur', open.filter((c) => c.status === 'in_reparatur')],
+    ['st_wartet_teile', open.filter((c) => c.status === 'wartet_teile')],
+    ['st_abschlusskontrolle', open.filter((c) => c.status === 'abschlusskontrolle')],
+    ['ws_preview', open.filter((c) => c.status === 'gemeldet')],
+  ];
+  let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  try {
+    const ov = await api('GET', '/api/maintenance');
+    const soon = ov.rows.filter((r) => r.days !== null && r.days <= 14);
+    if (soon.length) html += `<h2>${esc(t('inspections_due'))} (≤ 14 ${esc(t('days'))})</h2><div class="list">${soon.map((r) => `<a class="row ${r.days < 0 ? 'p-kritisch' : 'p-mittel'}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)} · ${fmtD(r.next_due_date)}</span><span class="chip ${r.days < 0 ? 'kritisch' : 'mittel'}">${esc(t('ms_' + r.status))}</span></a>`).join('')}</div>`;
+  } catch {}
+  return html + `<p><a href="#/cases">${esc(t('all'))}</a></p>`;
+}
 async function viewHome() {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
   const d = await api('GET', '/api/dashboard');
@@ -219,7 +238,8 @@ async function viewHome() {
       const n = d.findings.filter((f) => ['kritisch', 'handeln'].includes(f.severity)).reduce((s, f) => s + f.n, 0);
       if (n) html += `<a class="panel alert" style="display:block;text-decoration:none" href="#/master"><b>${esc(t('not_clear'))}</b>: ${n} ${esc(t('findings'))}</a>`;
     }
-    html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
+    if (S.me.role === 'workshop') html += await workshopBoard();
+    else html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
   }
   render(html, 'home');
 }
@@ -521,7 +541,7 @@ async function viewVehicles() {
   render(`<h1>${esc(t('vehicles'))}${inact ? ` · ${esc(t('inactive_vehicles'))}` : ''}</h1>${isMgr() ? `<details class="panel"><summary>${esc(t('new_vehicle'))}</summary><form id="nvf">${vehicleForm()}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
     <p><label style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="inact" ${inact ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_vehicles'))}</label></p>` : ''}<input id="q" placeholder="SZ-…" aria-label="Suche" style="margin-bottom:12px">
     ${nT ? `<div class="actions" role="tablist" style="margin-top:0">${[['all', t('filter_all'), vs.length], ['lkw', t('vk_lkw'), vs.length - nT], ['anhaenger', t('vk_anhaenger'), nT]].map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-vk="${k}" role="tab" aria-selected="${f === k}">${esc(l)} (${n})</button>`).join('')}</div>` : ''}
-    <div class="list" id="vl">${vs.filter((v) => f === 'all' || v.kind === f).map((v) => `<a class="row ${v.availability === 'gesperrt' ? 'p-kritisch' : v.availability === 'werkstatt' ? 'p-mittel' : ''}" href="#/vehicles/${esc(v.id)}" data-s="${esc((v.plate + ' ' + (v.site || '') + ' ' + (v.vin || '') + ' ' + (v.trailer_plate || '') + ' ' + (v.truck_plate || '')).toLowerCase())}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.build_year || '')}</span><span class="chip ${v.availability === 'gesperrt' ? 'gesperrt' : ''}">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.site || '')}${v.trailer_plate ? ' · ' + esc(t('trailer')) + ' ' + esc(v.trailer_plate) : ''}${v.truck_plate ? ' · ' + esc(t('truck')) + ' ' + esc(v.truck_plate) : ''}${v.next_due ? ' · ' + esc(t('next_due')) + ' ' + fmtD(v.next_due) : ''}${v.last_km ? ' · ' + Number(v.last_km).toLocaleString('de-DE') + ' km' : ''}</span></a>`).join('')}</div>`, 'vehicles');
+    <div class="list" id="vl">${vs.filter((v) => f === 'all' || v.kind === f).map((v) => `<a class="row ${v.availability === 'gesperrt' ? 'p-kritisch' : v.availability === 'werkstatt' ? 'p-mittel' : ''}" href="#/vehicles/${esc(v.id)}" data-s="${esc((v.plate + ' ' + (v.site || '') + ' ' + (v.vin || '') + ' ' + (v.trailer_plate || '') + ' ' + (v.truck_plate || '')).toLowerCase())}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.build_year || '')}</span><span class="chip ${v.availability === 'gesperrt' ? 'gesperrt' : ''}">${esc(t('av_' + v.availability))}</span><span class="sub">${[v.site && esc(v.site), v.trailer_plate && esc(t('trailer')) + ' ' + esc(v.trailer_plate), v.truck_plate && esc(t('truck')) + ' ' + esc(v.truck_plate), v.next_due && esc(t('next_due')) + ' ' + fmtD(v.next_due), v.last_km && Number(v.last_km).toLocaleString('de-DE') + ' km'].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>`, 'vehicles');
   $$('[data-vk]').forEach((b) => (b.onclick = () => { S.vehKind = b.dataset.vk; viewVehicles(); }));
   const ia = $('#inact'); if (ia) ia.onchange = () => { S.vehInactive = ia.checked; viewVehicles(); };
   const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { toast(err.message, true); } };
