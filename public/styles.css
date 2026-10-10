@@ -157,6 +157,8 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 /* Tastatur: das Radio ist unsichtbar – Fokusrahmen an der Beschriftung zeigen */
 .seg label:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: -3px; position: relative; z-index: 1; }
 .checkitem .detail { grid-column: 1 / 3; }
+.checkitem > span:first-child { min-width: 0; overflow-wrap: break-word; hyphens: auto; }
+.checkitem .seg { justify-self: end; }
 .checkitem.missing { background: color-mix(in srgb, var(--stop) 10%, transparent); box-shadow: inset 4px 0 0 var(--stop); padding-left: 10px; }
 
 /* Verlauf */
