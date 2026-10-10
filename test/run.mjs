@@ -854,6 +854,8 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   ok(!/\son[a-z]+=["']/i.test(app) && !/\son[a-z]+=["']/i.test(html), 'Inline-Handler verstoßen gegen die CSP (script-src self)');
   ok(!/<script>(?!\s*<\/script>)/.test(html), 'kein Inline-Skript');
+  // Kalendertage in der Oberfläche nach Berliner Zeit (bDate/bYm), nicht UTC – sonst nachts bis 2 Uhr „gestern“ als Standarddatum
+  eq((app.match(/toISOString\(\)\.slice\(0, (7|10)\)/g) || []).length, 1, 'nur bYm darf toISOString().slice für Kalenderdaten nutzen');
   // Statische Dateien kommen ohne Worker: Sicherheitsheader stehen in public/_headers und müssen zur Worker-CSP passen
   const hdr = readFileSync(new URL('../public/_headers', import.meta.url), 'utf8');
   const { CSP } = await import('../src/worker.js');

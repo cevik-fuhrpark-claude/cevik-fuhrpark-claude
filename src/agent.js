@@ -159,8 +159,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       }
     }
 
-    // Wartung/Prüftermine (nur aus belegten Regeln)
-    const today = new Date().toISOString().slice(0, 10);
+    // Wartung/Prüftermine (nur aus belegten Regeln); „heute“ nach Berliner Kalender wie Übersicht und HU/SP-Regeln
+    const today = berlinDate();
     const rules = (await env.DB.prepare(`SELECT m.*, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
     const warnDays = Number(settings.get('maintenance_warn_days')) || 30;
     const warnKm = Number(settings.get('maintenance_warn_km')) > 0 ? Number(settings.get('maintenance_warn_km')) : null;
