@@ -1,0 +1,15 @@
+# [CLAUDE] Sicherheitsheader für die statischen Dateien (Cloudflare Workers Static Assets liefert sie ohne den Worker aus).
+# Die CSP muss mit CSP in src/worker.js übereinstimmen (Test „Sicherheitsheader“ prüft das).
+/*
+  Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: geolocation=(), microphone=()
+  Strict-Transport-Security: max-age=31536000
+
+/sw.js
+  Cache-Control: no-cache
+
+/version.json
+  Cache-Control: no-store

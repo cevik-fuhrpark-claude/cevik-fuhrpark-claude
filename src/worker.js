@@ -39,6 +39,8 @@ export async function ensureSchema(env) {
   migratedDbs.add(env.DB);
 }
 
+// gleiche CSP wie in public/_headers (statische Dateien werden ohne Worker ausgeliefert)
+export const CSP = "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'same-origin',
@@ -444,7 +446,7 @@ export default {
         if (usageEnv.has(request)) recordUsage(env, ctx, usageEnv.get(request), request.method, url.pathname, res.status, usageAction.get(request));
         return withHeaders(res);
       }
-      if (env.ASSETS) return withHeaders(await env.ASSETS.fetch(request), { 'content-security-policy': "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });
+      if (env.ASSETS) return withHeaders(await env.ASSETS.fetch(request), { 'content-security-policy': CSP });
       return withHeaders(json({ error: 'not_found' }, 404));
     } catch (e) {
       return withHeaders(errorResponse(e));

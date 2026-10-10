@@ -101,6 +101,12 @@ Fahrer meldet → Fuhrparkleitung gibt Reparatur frei → Werkstatt übernimmt, 
 den Aufkleber-Link. Prüft nach jedem Schritt den Status über die API und meldet JavaScript-Fehler. Anlass: Fehler „preId is not defined“
 (10.10.2026) – die Kontrolle nach Reparatur war in der Oberfläche nicht abschließbar, obwohl alle API-Tests grün waren.
 
+## Sicherheitsheader
+Die Oberfläche (HTML/JS/CSS) liefert Cloudflare direkt aus den statischen Dateien aus – **ohne** den Worker. Deshalb stehen
+Content-Security-Policy, X-Frame-Options, HSTS usw. in `public/_headers` (Cloudflare wendet die Datei automatisch an; sie selbst ist
+nicht abrufbar). Die CSP muss mit `CSP` in `src/worker.js` übereinstimmen (Test). Der lokale Entwicklungsserver wendet `_headers`
+ebenfalls an, der UI-Rauchtest meldet CSP-Verstöße. Prüfen nach dem Deployment: Browser-Entwicklertools → Netzwerk → `/` → Antwort-Header.
+
 ## Nutzungsstatistik (Einführungsphase)
 „Mehr → Nutzung der App“ (nur Inhaber) zeigt, wie oft welche Funktion aufgerufen wurde und wo Fehler auftraten – je Tag und Umgebung.
 Gespeichert werden nur Tag, Umgebung, Funktionspfad (IDs, Kennzeichen, Token durch `:id` ersetzt) und Zähler (Tabelle `usage_daily`);

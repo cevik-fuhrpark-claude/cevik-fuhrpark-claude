@@ -120,6 +120,7 @@ with sync_playwright() as p:
     for role, pg in pages.items():
         errors = []
         pg.on('pageerror', lambda e, errors=errors: errors.append(str(e)))
+        pg.on('console', lambda m, errors=errors: errors.append('CSP: ' + m.text) if 'Content Security Policy' in m.text else None)
         for name, w, h in SIZES:
             pg.set_viewport_size({'width': w, 'height': h})
             for r in ROUTES[role]:

@@ -788,6 +788,12 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   ok(!/\son[a-z]+=["']/i.test(app) && !/\son[a-z]+=["']/i.test(html), 'Inline-Handler verstoßen gegen die CSP (script-src self)');
   ok(!/<script>(?!\s*<\/script>)/.test(html), 'kein Inline-Skript');
+  // Statische Dateien kommen ohne Worker: Sicherheitsheader stehen in public/_headers und müssen zur Worker-CSP passen
+  const hdr = readFileSync(new URL('../public/_headers', import.meta.url), 'utf8');
+  const { CSP } = await import('../src/worker.js');
+  ok(hdr.includes(`Content-Security-Policy: ${CSP}\n`), '_headers-CSP = Worker-CSP');
+  for (const h of ['X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: same-origin', 'Strict-Transport-Security:']) ok(hdr.includes(h), `_headers: ${h}`);
+  ok(/^\/\*$/m.test(hdr), '_headers gilt für alle Pfade');
   ok(/class="seg" role="radiogroup" aria-labelledby="cl_/.test(app), 'Checkliste: Segmentgruppen als benannte Radiogruppe (Tastatur/Screenreader)');
   const { STRINGS } = await import('../public/i18n.js');
   const used = new Set([...app.matchAll(/\bt\('([a-z0-9_äöü]+)'\)/gi)].map((m) => m[1]));

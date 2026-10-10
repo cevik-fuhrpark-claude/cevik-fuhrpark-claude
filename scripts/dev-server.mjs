@@ -5,8 +5,19 @@ import { extname, join } from 'node:path';
 import worker from '../src/worker.js';
 import { makeEnv } from '../test/harness.mjs';
 const env = makeEnv({ __pushFetch: async () => new Response('', { status: 201 }) });
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
 const root = new URL('../public/', import.meta.url).pathname;
+// public/_headers wie bei Cloudflare anwenden (einfacher Teil: Pfad /* oder exakter Pfad), damit lokale Tests unter der echten CSP laufen
+const headerRules = [];
+if (existsSync(join(root, '_headers'))) {
+  let cur = null;
+  for (const line of readFileSync(join(root, '_headers'), 'utf8').split('\n')) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    if (!/^\s/.test(line)) { cur = { path: line.trim(), h: {} }; headerRules.push(cur); continue; }
+    const i = line.indexOf(':'); if (cur && i > 0) cur.h[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+  }
+}
+const staticHeaders = (path) => Object.assign({}, ...headerRules.filter((r) => r.path === '/*' || r.path === path).map((r) => r.h));
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:8787');
   if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') {
@@ -17,6 +28,6 @@ http.createServer(async (req, res) => {
     res.writeHead(r.status, h); res.end(Buffer.from(await r.arrayBuffer())); return;
   }
   let p = join(root, url.pathname === '/' ? 'index.html' : url.pathname);
-  if (!existsSync(p)) p = join(root, 'index.html');
-  res.writeHead(200, { 'content-type': types[extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
+  if (!existsSync(p) || url.pathname === '/_headers') p = join(root, 'index.html');
+  res.writeHead(200, { ...staticHeaders(url.pathname), 'content-type': types[extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
 }).listen(8787, () => console.log('dev on 8787'));
