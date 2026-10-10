@@ -65,6 +65,39 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   return out;
 }
 
+// Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
+export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine'];
+export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
+  const d = await vehicleDetail(env, user, envName, vehicleId);
+  const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
+  const limit = Math.min(Math.max(Number(query.limit) || 300, 1), 1000);
+  const items = [];
+  const add = (type, at, data) => { if (at && (!want.size || want.has(type))) items.push({ type, at, ...data }); };
+  for (const c of d.cases) {
+    add('case', c.created_at, { case_id: c.id, case_no: c.case_no, priority: c.priority, status: c.status, text: c.description.slice(0, 140), origin: c.origin });
+    if (c.closed_at) add('case_closed', c.closed_at, { case_id: c.id, case_no: c.case_no, status: c.status });
+  }
+  for (const i of d.inspections) add('inspection', i.created_at, { inspection_kind: i.kind, result: i.result, km: i.odometer_km, case_id: i.case_id, by: i.performed_by_name });
+  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source });
+  for (const r of d.drivers) { add('driver_from', r.valid_from, { by: r.display_name, evidence: r.evidence }); add('driver_to', r.valid_to, { by: r.display_name }); }
+  for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
+  for (const m of d.maintenance) add('maintenance', m.last_done_date, { maintenance_kind: m.kind, km: m.last_done_km, next_due: m.next_due_date, evidence: m.evidence });
+  if (user.role !== 'driver') {
+    const tires = (await env.DB.prepare(`SELECT created_at, position, event_type, tread_mm, odometer_km, case_id FROM tire_events WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 300`)
+      .bind(vehicleId, envName).all()).results;
+    for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: t.case_id });
+  }
+  if (isManager(user)) {
+    const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT 200`)
+      .bind(vehicleId, envName).all()).results;
+    for (const f of fines) add('fine', f.offense_at, { fine_id: f.id, fine_no: f.fine_no, fine_kind: f.kind, offense_type: f.offense_type, status: f.status });
+  }
+  // Datum ohne Uhrzeit (z. B. Prüfung „erledigt am“) als Tagesmitte einsortieren
+  const key = (x) => (x.at.length === 10 ? x.at + 'T12:00:00.000Z' : x.at);
+  items.sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
+  return { vehicle: { id: d.vehicle.id, plate: d.vehicle.plate, kind: d.vehicle.kind }, types: TIMELINE_TYPES, total: items.length, items: items.slice(0, limit) };
+}
+
 // Prüft und normalisiert einen Stammdatensatz (gemeinsam für Einzelpflege und Import)
 function vehicleRow(user, body) {
   const vin = normalizeVin(body.vin);

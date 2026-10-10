@@ -19,7 +19,7 @@ Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · 
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Sicherung |
 
 ```bash
-npm test                                            # 56 Abnahmetests (Node ≥ 22)
+npm test                                            # 57 Abnahmetests (Node ≥ 22)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
 Deployment: Push auf `main` → Cloudflare Workers Builds (`node scripts/build-schema.mjs`, `npx wrangler deploy`).

@@ -116,7 +116,7 @@ function labelFix(root) {
 const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
-  [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/inbox$/, viewInbox],
+  [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
   [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
@@ -603,7 +603,7 @@ async function viewVehicle(id) {
     <h1 style="margin-top:12px">${esc(t('vehicle_file'))}</h1><section class="panel"><dl class="kv"><dt>${esc(t('vin'))}</dt><dd>${esc(v.vin)}</dd><dt>${esc(t('manufacturer'))}</dt><dd>${esc(v.manufacturer || '–')} ${esc(v.model || '')}</dd><dt>${esc(t('year'))}</dt><dd>${esc(v.build_year || '–')}</dd><dt>${esc(t('site'))}</dt><dd>${esc(v.site || '–')}</dd><dt>${esc(t('vehicle_kind'))}</dt><dd>${esc(t('vk_' + (v.kind || 'lkw')))}</dd>${v.kind === 'anhaenger' ? `<dt>${esc(t('truck'))}</dt><dd>${(d.coupled || []).map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>`).join(', ') || '–'}</dd>` : `<dt>${esc(t('trailer'))}</dt><dd>${(d.coupled || []).length ? d.coupled.map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>`).join(', ') : esc(v.trailer_plate || '–')}</dd>`}<dt>${esc(t('km'))}</dt><dd>${d.odometer[0] ? Number(d.odometer[0].km).toLocaleString('de-DE') + ' km · ' + fmtD(d.odometer[0].measured_at) : '–'}</dd></dl></section>`;
   if (!v.active) html += `<div class="panel alert">${esc(t('vehicle_inactive'))}</div>`;
   if (v.eval_excluded) html += `<div class="panel alert"><b>${esc(t('eval_excluded'))}</b> – ${esc(t('eval_excluded_hint'))}${v.eval_excluded_reason ? `<div class="small">${esc(v.eval_excluded_reason)}</div>` : ''}</div>`;
-  html += `<p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p><div class="actions noprint"><button type="button" class="btn secondary" id="prt">${esc(t('print'))}</button></div>`;
+  html += `<p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p><div class="actions noprint"><a class="btn secondary" href="#/vehicles/${esc(v.id)}/timeline">${esc(t('timeline'))}</a><button type="button" class="btn secondary" id="prt">${esc(t('print'))}</button></div>`;
   if (isMgr()) html += `<details class="panel"><summary>${esc(t('edit_master'))}</summary><form id="evf">${vehicleForm(v)}<div class="actions"><button class="btn">${esc(t('save'))}</button>${v.active ? `<button type="button" class="btn secondary" id="deact">${esc(t('deactivate_vehicle'))}</button>` : `<button type="button" class="btn secondary" id="react">${esc(t('activate_vehicle'))}</button>`}<button type="button" class="btn secondary" id="evx">${esc(v.eval_excluded ? t('eval_include') : t('eval_exclude'))}</button></div></form></details>`;
   if (d.costs) html += `<section class="panel"><h3>${esc(t('costs'))}</h3><dl class="kv"><dt>Ist</dt><dd>${eur(d.costs.actual_net)}</dd><dt>${esc(t('estimate'))}</dt><dd>${eur(d.costs.estimate_net)}</dd><dt>${esc(t('unvalued'))}</dt><dd>${d.costs.unvalued_items}</dd></dl></section>`;
   html += `<h2>${esc(t('maintenance'))}</h2>${d.maintenance.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('last_done'))}</th><th>${esc(t('next_due'))}</th>${canMaint ? '<th></th>' : ''}</tr></thead><tbody>${d.maintenance.map((m) => { const days = m.next_due_date ? Math.round((Date.parse(m.next_due_date) - Date.now()) / 86400000) : null; return `<tr><td>${esc(m.kind)}</td><td>${fmtD(m.last_done_date)}</td><td>${m.next_due_date ? `<span class="chip ${days < 0 ? 'kritisch' : days < 30 ? 'mittel' : ''}">${fmtD(m.next_due_date)}</span>` : '–'}</td>${canMaint ? `<td><button class="btn secondary" data-done="${esc(m.id)}">${esc(t('done'))}</button></td>` : ''}</tr><tr><td colspan="${canMaint ? 4 : 3}" class="small muted" style="border-top:0;padding-top:0">${esc(t('evidence'))}: ${esc(m.evidence)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}`;
@@ -936,6 +936,38 @@ async function viewAudit(more) {
     ${r.entries.length === 100 ? `<div class="actions"><button type="button" class="btn secondary" id="amore">${esc(t('load_more'))}</button></div>` : ''}`, 'more');
   $$('[data-af]').forEach((b) => (b.onclick = () => { S.auditFilter = b.dataset.af; viewAudit(); }));
   const am = $('#amore'); if (am) am.onclick = () => viewAudit(true);
+}
+
+// ---------- Zeitleiste der Fahrzeugakte ----------
+async function viewTimeline(id) {
+  const f = S.tlFilter || '';
+  const groups = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'] };
+  const r = await api('GET', `/api/vehicles/${encodeURIComponent(id)}/timeline?limit=500${f ? '&types=' + groups[f].join(',') : ''}`);
+  const km = (n) => (n === null || n === undefined ? '' : ` · ${Number(n).toLocaleString('de-DE')} km`);
+  const caseLink = (x) => (x.case_id ? ` · <a href="#/cases/${esc(x.case_id)}">${esc(x.case_no || t('details'))}</a>` : '');
+  const line = (x) => {
+    switch (x.type) {
+      case 'case': return [x.priority === 'kritisch' ? 'p-kritisch' : '', `${esc(t('tl_case'))}: ${esc(x.text)}`, `<span class="chip ${esc(x.priority)}">${esc(t('prio_' + x.priority))}</span> ${esc(t('st_' + x.status))}${caseLink(x)}`];
+      case 'case_closed': return ['', `${esc(t('tl_case_closed'))}`, `${esc(t('st_' + x.status))}${caseLink(x)}`];
+      case 'inspection': return [x.result === 'maengel' ? 'p-mittel' : '', `${esc(t(x.inspection_kind === 'abfahrt' ? 'departure_check' : 'inspection'))}: ${esc(t(x.result === 'ok' ? 'ok' : 'defect'))}`, `${esc(x.by || '')}${km(x.km)}${caseLink(x)}`];
+      case 'odometer': return ['', `${esc(t('km'))}${km(x.km)}`, esc(x.source || '')];
+      case 'driver_from': return ['', `${esc(t('tl_driver_from'))}: ${esc(x.by)}`, esc(x.evidence || '')];
+      case 'driver_to': return ['', `${esc(t('tl_driver_to'))}: ${esc(x.by)}`, ''];
+      case 'document': return ['', `${esc(t('dk_' + (x.doc_kind || 'sonstiges')))}: <a href="${fileUrl(x.file_id)}" target="_blank" rel="noopener">${esc(x.text)}</a>`, x.valid_until ? `${esc(t('valid_until'))} ${fmtD(x.valid_until)}` : ''];
+      case 'tire': return [x.tread_mm !== null && x.tread_mm < 1.6 ? 'p-kritisch' : '', `${esc(t('tires'))} ${esc(x.position)}: ${esc(t('te_' + x.tire_event))}${x.tread_mm !== null ? ' · ' + esc(String(x.tread_mm).replace('.', ',')) + ' mm' : ''}`, `${km(x.km).replace(/^ · /, '')}${caseLink(x)}`];
+      case 'maintenance': return ['', `${esc(x.maintenance_kind)} ${esc(t('tl_done'))}`, `${x.next_due ? esc(t('next_due')) + ' ' + fmtD(x.next_due) : ''}${km(x.km)} · ${esc(x.evidence || '')}`];
+      case 'fine': return ['', `${esc(t('fk_' + x.fine_kind))}: <a href="#/fines/${esc(x.fine_id)}">${esc(x.fine_no)}</a>`, esc(t('fs_' + x.status))];
+      default: return ['', esc(x.type), ''];
+    }
+  };
+  const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines') };
+  const visible = Object.keys(groups).filter((k) => k !== 'fine' || isMgr());
+  render(`<p><a href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
+    <h1 style="margin-top:12px">${esc(t('timeline'))}</h1><p class="small muted">${esc(t('timeline_hint'))}</p>
+    <div class="actions" style="flex-wrap:wrap">${visible.map((k) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tl="${esc(k)}">${esc(labels[k])}</button>`).join('')}</div>
+    <div class="list">${r.items.map((x) => { const [cls, title, sub] = line(x); return `<div class="row ${cls}"><span class="chip">${x.at.length === 10 ? fmtD(x.at) : fmtDT(x.at)}</span><span class="title" style="white-space:normal">${title}</span><span></span>${sub ? `<span class="sub" style="white-space:normal">${sub}</span>` : ''}</div>`; }).join('') || `<p class="muted">–</p>`}</div>
+    ${r.total > r.items.length ? `<p class="small muted">${r.items.length} / ${r.total}</p>` : ''}`, 'vehicles');
+  $$('[data-tl]').forEach((b) => (b.onclick = () => { S.tlFilter = b.dataset.tl; viewTimeline(id); }));
 }
 
 // ---------- Nutzungsstatistik (Inhaber, ohne Personenbezug) ----------

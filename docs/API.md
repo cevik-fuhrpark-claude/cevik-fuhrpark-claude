@@ -53,6 +53,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Push | `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `GET /api/push/devices`, `POST /api/push/test` |
 | Management | `GET /api/dashboard`, `GET /api/master`, `POST /api/master/:eventId/decision`, `POST /api/agent/run` |
 | Einstellungen | `GET/PUT /api/settings` (nur owner) |
+| Fahrzeug-Zeitleiste | `GET /api/vehicles/<id>/timeline?types=case,case_closed,inspection,odometer,driver_from,driver_to,document,tire,maintenance,fine&limit=` – alle gespeicherten Ereignisse absteigend, gleiche Rechte wie die Fahrzeugakte (Bußgelder nur owner/fleet) |
 | Eigene Anmeldungen | `GET /api/me/sessions` (Gerät aus Browser-Kennung, zuletzt aktiv, `current`), `DELETE /api/me/sessions/<16-stellige Kennung>`, `POST /api/me/sessions/revoke-others` – protokolliert als `session.revoke*` |
 | Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
 | Nutzungsstatistik | `GET /api/admin/usage?days=1..366` (nur owner, aktuelle Ansicht Test/Betrieb): Aufrufe/Fehler je Bereich, Funktion und Tag – ohne Personenbezug |

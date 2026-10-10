@@ -810,6 +810,23 @@ await test('Meine Anmeldungen: Geräte anzeigen, einzeln/alle anderen abmelden, 
   ok(au.includes('session.revoke') && au.includes('session.revoke_others'), 'protokolliert');
 });
 
+await test('Zeitleiste der Fahrzeugakte: chronologisch, Filter, gleiche Rechte wie die Akte', async () => {
+  const r = await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`);
+  eq(r.status, 200);
+  const it = r.data.items;
+  ok(it.length > 3 && it.some((x) => x.type === 'case') && it.some((x) => x.type === 'inspection'), 'Vorgänge und Kontrollen enthalten');
+  const k = (x) => (x.at.length === 10 ? x.at + 'T12:00:00.000Z' : x.at);
+  ok(it.every((x, i) => i === 0 || k(it[i - 1]) >= k(x)), 'absteigend sortiert');
+  const f = await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=case_closed,odometer&limit=5`);
+  ok(f.data.items.length <= 5 && f.data.items.every((x) => ['case_closed', 'odometer'].includes(x.type)), 'Filter und Begrenzung');
+  eq((await users.driver.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`)).status, 403, 'Fahrer nicht');
+  const ws = await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`);
+  eq(ws.status, 200);
+  ok(!ws.data.items.some((x) => x.type === 'fine' || (x.type === 'case' && x.status === 'gemeldet')), 'Werkstatt ohne Bußgelder und ohne ungeprüfte Meldungen');
+  const prod = await users.prodFleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`);
+  ok(!prod.data.items.some((x) => x.type === 'case'), 'Betrieb ohne Testvorgänge');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];
