@@ -1549,6 +1549,32 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   const r2 = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: before[0].km + 50 });
   eq(r2.data.km_rejected, null);
   eq((await owner.get(`/api/vehicles/${V1}`)).data.odometer[0].km, before[0].km + 50);
+  // Wiederkehrende Mängel: zwei Abfahrtskontrollen mit Mangel am selben Punkt (Folgeaufträge danach ablehnen)
+  for (let n = 0; n < 2; n++) {
+    const rr = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 1 ? 'mangel' : 'ok', note: i === 1 ? 'Blinker hinten rechts' : null })) });
+    eq(rr.status, 201);
+    const fc = (await users.fleet.get(`/api/cases/${rr.data.followups[0].id}`)).data.case;
+    await users.fleet.post(`/api/cases/${fc.id}/commands`, { action: 'reject', command_id: rk(), expected_version: fc.version, note: 'Testdaten' });
+  }
+  const rec = (await users.fleet.get(`/api/vehicles/${V1}`)).data.recurring_defects;
+  ok(rec.some((r) => r.item === keys[1] && r.n >= 2), 'wiederkehrender Mangel erkannt');
+  eq((await users.prodFleet.get(`/api/vehicles/${V1}`)).data.recurring_defects.length, 0, 'Betrieb sieht Testkontrollen nicht');
+  // Gleicher offener Mangel bei der nächsten Abfahrtskontrolle: kein neuer Vorgang, sondern Vermerk im offenen Folgeauftrag
+  const chk = (sev) => users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 2 ? 'mangel' : 'ok', note: i === 2 ? 'Bremsleuchte links aus' : null, safety_relevant: i === 2 && sev })) });
+  const a1 = await chk(false); const a2 = await chk(false);
+  eq(a1.data.followups.length, 1); eq(a2.data.followups[0].id, a1.data.followups[0].id, 'derselbe Vorgang');
+  eq(a2.data.followups[0].repeat, true);
+  const fa = (await users.fleet.get(`/api/cases/${a1.data.followups[0].id}`)).data;
+  ok(fa.events.some((e) => e.action === 'repeat_finding' && /Bremsleuchte links aus/.test(e.note)), 'Vermerk im Verlauf');
+  eq(fa.case.check_item, keys[2]);
+  // sicherheitsrelevant, offener Vorgang ohne Sperre → eigener (kritischer, gesperrter) Vorgang
+  const a3 = await chk(true);
+  ok(a3.data.followups[0].id !== a1.data.followups[0].id, 'sicherheitsrelevant → neuer Vorgang');
+  const fc3 = (await users.fleet.get(`/api/cases/${a3.data.followups[0].id}`)).data.case;
+  eq(fc3.priority, 'kritisch'); eq(fc3.safety_lock, 1);
+  // danach: weiterer sicherheitsrelevanter Befund hängt sich an den gesperrten kritischen Vorgang
+  eq((await chk(true)).data.followups[0].id, fc3.id, 'an gesperrten kritischen Vorgang angehängt');
+  for (const cc of [fa.case.id, fc3.id]) { const x = (await users.fleet.get(`/api/cases/${cc}`)).data.case; await users.fleet.post(`/api/cases/${cc}/commands`, { action: 'reject', command_id: rk(), expected_version: x.version, note: 'Testdaten' }); }
   const dq = (await users.fleet.get('/api/admin/data-quality')).data;
   ok(dq.items.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === V1 && /^1000 km/.test(i.detail)), 'Datenqualität zeigt die Kontrolle mit zu kleinem km-Stand');
   ok(!dq.items.some((i) => i.check === 'km_inspection_rejected' && i.detail.startsWith(`${before[0].km + 50} km`)), 'plausibler Wert nicht gemeldet');

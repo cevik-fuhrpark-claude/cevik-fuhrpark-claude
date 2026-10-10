@@ -287,6 +287,7 @@ export async function createCase(env, ctx, user, envName, body) {
   const location = str(body.location_note, { max: 300 });
   const origin = body.origin && ['meldung', 'kontrolle'].includes(body.origin) ? body.origin : 'meldung';
   const parentId = body.parent_case_id ? str(body.parent_case_id, { max: 40 }) : null;
+  const checkItem = origin === 'kontrolle' && body.check_item ? str(body.check_item, { max: 60 }) : null;
   const contentHash = await sha256Hex(JSON.stringify([vehicleId, description, reportedPriority, driveability, suggested, location, parentId]));
 
   const existing = await env.DB.prepare('SELECT id, case_no, content_hash FROM cases WHERE environment=? AND reporter_id=? AND request_key=?')
@@ -308,10 +309,10 @@ export async function createCase(env, ctx, user, envName, body) {
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
-        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,request_key,content_hash,version,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'gemeldet',?,?,?,?,?,1,?,?)`).bind(
+        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,version,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'gemeldet',?,?,?,?,?,?,1,?,?)`).bind(
         id, caseNo, envName, vehicleId, user.id, str(body.reporter_name_note, { max: 120 }), description, location, reportedPriority, reportedPriority,
-        driveability, safetyLock, lockReason, suggested, origin, parentId, requestKey, contentHash, now, now),
+        driveability, safetyLock, lockReason, suggested, origin, parentId, checkItem, requestKey, contentHash, now, now),
       env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         VALUES (?,?,?,?,?,'create',NULL,'gemeldet',NULL,1,NULL,?,?)`).bind(uuid(), id, envName, user.id, user.role,
         JSON.stringify({ priority: reportedPriority, driveability, safety_lock: !!safetyLock, origin, parent_case_id: parentId }), now),
@@ -623,8 +624,22 @@ export async function submitInspection(env, ctx, user, envName, body) {
 
   // Folgeaufträge für jeden Mangel (eigener Vorgang, mit Bezug)
   const followups = [];
+  const repeats = [];
+  const RANK = { niedrig: 0, mittel: 1, kritisch: 2 };
   for (const d of defects) {
     const prio = d.followup_priority || (d.safety_relevant ? 'kritisch' : 'mittel');
+    // Abfahrtskontrolle: derselbe Prüfpunkt hat bereits einen offenen Folgeauftrag → kein neuer Vorgang, sondern Vermerk dort.
+    // Nur wenn der offene Vorgang mindestens so dringend ist; ein sicherheitsrelevanter Mangel braucht dort eine aktive Sperre.
+    if (kind === 'abfahrt') {
+      const open = await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version FROM cases WHERE vehicle_id=? AND environment=? AND check_item=? AND origin='kontrolle'
+        AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 1`).bind(vehicleId, envName, d.key).first();
+      if (open && RANK[open.priority] >= RANK[prio] && (!d.safety_relevant || open.safety_lock)) {
+        repeats.push({ open, d });
+        d.followup_case_id = open.id; d.followup_case_no = open.case_no; d.repeat = true;
+        followups.push({ id: open.id, case_no: open.case_no, duplicate: true, repeat: true });
+        continue;
+      }
+    }
     const res = await createCase(env, ctx, user, envName, {
       vehicle_id: vehicleId,
       description: `[Kontrolle ${kind === 'nach_reparatur' ? 'nach Reparatur' : 'Abfahrt'}] ${d.key}: ${d.note}`,
@@ -633,6 +648,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
       workshop_site: c?.workshop_site || user.workshop_site || null,
       request_key: `${requestKey}:${d.key}`,
       origin: 'kontrolle',
+      check_item: d.key,
       parent_case_id: c?.id || null,
     });
     d.followup_case_id = res.id;
@@ -660,6 +676,12 @@ export async function submitInspection(env, ctx, user, envName, body) {
         VALUES (?,?,?,?,?,'inspection',?,?,?,?,?,?,?)`).bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, c.version, c.version,
         (defects.length ? `${defects.length} Mangel/Mängel festgestellt` : 'Kontrolle ohne Mängel') + (kmRejected ? ` · km-Stand ${odo} kleiner als zuletzt erfasst (${kmRejected.previous_km}) – nicht in die Fahrzeugakte übernommen` : ''),
         JSON.stringify({ inspection_id: id, followups: followups.map((f) => f.case_no) }), now));
+    }
+    for (const { open, d } of repeats) {
+      stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+        VALUES (?,?,?,?,?,'repeat_finding',?,?,?,?,?,?,?)`).bind(uuid(), open.id, envName, user.id, user.role, open.status, open.status, open.version, open.version,
+        `Erneut festgestellt (Abfahrtskontrolle): ${d.note}`, JSON.stringify({ inspection_id: id }), now));
+      stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(now, open.id));
     }
     await env.DB.batch(stmts);
   }

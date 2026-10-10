@@ -186,5 +186,12 @@ export const MIGRATIONS = [
    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tacho_driver_day ON tacho_downloads(driver_id, downloaded_on) WHERE driver_id IS NOT NULL",
    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tacho_vehicle_day ON tacho_downloads(environment, vehicle_id, downloaded_on) WHERE vehicle_id IS NOT NULL"
   ]
+ },
+ {
+  "id": "0019_case_check_item",
+  "statements": [
+   "ALTER TABLE cases ADD COLUMN check_item TEXT NULL",
+   "CREATE INDEX IF NOT EXISTS idx_cases_check_item ON cases(vehicle_id, environment, check_item)"
+  ]
  }
 ];
