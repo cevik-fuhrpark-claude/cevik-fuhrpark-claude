@@ -623,14 +623,28 @@ function actionForm(action, c, cmd, preset = {}) {
 
 // ---------- Kontrollen ----------
 function checklistHtml() {
-  return S.meta.checklist.map((i) => `<div class="checkitem" data-key="${esc(i.key)}"><span>${esc(checkLabel(i.key))}</span>
-    <span class="seg"><label><input type="radio" name="${esc(i.key)}" value="ok" required>${esc(t('ok'))}</label><label class="bad"><input type="radio" name="${esc(i.key)}" value="mangel">${esc(t('defect'))}</label><label><input type="radio" name="${esc(i.key)}" value="na">${esc(t('na'))}</label></span>
+  return S.meta.checklist.map((i) => `<div class="checkitem" data-key="${esc(i.key)}"><span id="cl_${esc(i.key)}">${esc(checkLabel(i.key))}</span>
+    <span class="seg" role="radiogroup" aria-labelledby="cl_${esc(i.key)}"><label><input type="radio" name="${esc(i.key)}" value="ok" required>${esc(t('ok'))}</label><label class="bad"><input type="radio" name="${esc(i.key)}" value="mangel">${esc(t('defect'))}</label><label><input type="radio" name="${esc(i.key)}" value="na">${esc(t('na'))}</label></span>
     <div class="detail" hidden><input name="${esc(i.key)}__note" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label></div></div>`).join('');
 }
 function bindChecklist(form) {
   $$('.checkitem', form).forEach((row) => {
-    $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
+    $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
   });
+  // Unbeantwortete Punkte in der App-Sprache melden (statt Browser-Hinweis am unsichtbaren Radio in der Gerätesprache)
+  let shown = false;
+  form.addEventListener('invalid', (e) => {
+    const row = e.target.closest('.checkitem');
+    if (!row || e.target.type !== 'radio') return;
+    e.preventDefault();
+    row.classList.add('missing');
+    if (shown) return;
+    shown = true; setTimeout(() => (shown = false), 0);
+    const open = $$('.checkitem', form).filter((r) => !$('input[type=radio]:checked', r)).length;
+    row.scrollIntoView({ block: 'center' });
+    $('input[type=radio]', row).focus({ preventScroll: true });
+    toast(t('check_missing').replace('{n}', open), true);
+  }, true);
 }
 function collectChecklist(form) {
   const fd = new FormData(form);
@@ -642,7 +656,6 @@ async function viewInspection(caseId) {
     <form id="f">${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" name="km" inputmode="numeric"><label for="n">${esc(t('note'))}</label><textarea id="n" name="n"></textarea>
     <div class="actions"><button class="btn block">${esc(t('submit_inspection'))}</button></div></form>`, 'cases');
   const form = $('#f'); bindChecklist(form);
-  if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -660,6 +673,7 @@ async function viewDepartureCheck(preId) {
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form>`, 'check');
   const form = $('#f'); bindChecklist(form);
+  if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();

@@ -772,6 +772,7 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   ok(!/\son[a-z]+=["']/i.test(app) && !/\son[a-z]+=["']/i.test(html), 'Inline-Handler verstoßen gegen die CSP (script-src self)');
   ok(!/<script>(?!\s*<\/script>)/.test(html), 'kein Inline-Skript');
+  ok(/class="seg" role="radiogroup" aria-labelledby="cl_/.test(app), 'Checkliste: Segmentgruppen als benannte Radiogruppe (Tastatur/Screenreader)');
   const { STRINGS } = await import('../public/i18n.js');
   const used = new Set([...app.matchAll(/\bt\('([a-z0-9_äöü]+)'\)/gi)].map((m) => m[1]));
   const missing = [...used].filter((k) => !(k in STRINGS.de));

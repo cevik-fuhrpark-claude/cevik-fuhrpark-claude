@@ -74,7 +74,11 @@ with sync_playwright() as p:
         ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho', 'vehicles/qr', f'vehicles/qr/{vid}']
     ROUTES['driver'] += ['drivers', f'new/{vid}', f'v/{vid}', f'check/{vid}']
     # Eine Meldung, damit Listen nicht leer sind
-    pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegel locker', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-1'}])
+    cs = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegel locker', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-1'}])
+    cid = (cs.get('d') or {}).get('case', {}).get('id') or (cs.get('d') or {}).get('id')
+    if cid:
+        for r in ('owner', 'fleet'):  # Werkstatt sieht den Vorgang erst nach Zuweisung
+            ROUTES[r] += [f'cases/{cid}', f'inspect/{cid}']
 
     for role, pg in pages.items():
         errors = []
@@ -88,6 +92,8 @@ with sync_playwright() as p:
                 where = f'{role} {name} #/{r}'
                 if errors:
                     problems.append(f'{where}: JS-Fehler {errors[:2]}')
+                if pg.locator('#rl').count():
+                    problems.append(f'{where}: Ansicht abgebrochen „{pg.locator(".panel.alert").first.text_content()}“')
                 err = pg.locator('.toast.err')
                 if err.count():
                     problems.append(f'{where}: Fehlermeldung „{err.first.text_content()}“')

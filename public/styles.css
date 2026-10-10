@@ -153,7 +153,10 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg label:has(input:checked) { background: var(--ink); color: var(--surface); }
 .seg label.bad:has(input:checked) { background: var(--stop); color: #fff; }
+/* Tastatur: das Radio ist unsichtbar – Fokusrahmen an der Beschriftung zeigen */
+.seg label:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: -3px; position: relative; z-index: 1; }
 .checkitem .detail { grid-column: 1 / 3; }
+.checkitem.missing { background: color-mix(in srgb, var(--stop) 10%, transparent); box-shadow: inset 4px 0 0 var(--stop); padding-left: 10px; }
 
 /* Verlauf */
 .timeline { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--rule); }
