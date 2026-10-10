@@ -1,6 +1,7 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, icsCalendar } from './util.js';
 import * as auth from './auth.js';
+import { personExport } from './privacy.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
@@ -220,6 +221,11 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/admin/usage' && m === 'GET') return json(await usageReport(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/audit' && m === 'GET') return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });
 
+  // Datenauskunft je Person (Inhaber, Vorbereitung Art. 15 DSGVO)
+  if ((mm = path.match(/^\/api\/admin\/users\/([\w-]+)\/data-export$/)) && m === 'GET') {
+    const x = await personExport(env, user, mm[1]);
+    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_${x.user.username.replace(/[^\w.-]/g, '_')}_${x.meta.generated_at.slice(0, 10)}.json"` } });
+  }
   // Datensicherung (Inhaber)
   if (path === '/api/admin/backup' && m === 'GET') {
     const b = await exportBackup(env, user);

@@ -1676,6 +1676,28 @@ await test('Letzte Abfahrtskontrolle je Fahrzeug in Liste, Akte und CSV (nur Inf
   eq(row.split(';')[idx + 1], last.result === 'ok' ? 'ohne Mangel' : 'mit Mangel');
 });
 
+await test('Datenauskunft je Person: nur Inhaber, vollständig je Bereich, ohne Geheimnisse, protokolliert', async () => {
+  const id = users.driver.id;
+  eq((await users.fleet.get(`/api/admin/users/${id}/data-export`)).status, 403);
+  eq((await owner.get('/api/admin/users/gibt-es-nicht/data-export')).status, 404);
+  const r = await owner.get(`/api/admin/users/${id}/data-export`);
+  eq(r.status, 200); ok(/attachment; filename="datenauskunft_/.test(r.headers.get('content-disposition')), 'Download');
+  const x = r.data;
+  eq(x.user.id, id); ok(!('password_hash' in x.user) && !('password_salt' in x.user), 'ohne Passwort-Hash');
+  const txt = JSON.stringify(x);
+  ok(!/token_hash|p256dh|"endpoint"|"auth":|Sicheres-Passwort/.test(txt), 'ohne Token/Push-Schlüssel');
+  const counts = Object.fromEntries(await Promise.all([
+    ['reported_cases', 'SELECT COUNT(*) AS n FROM cases WHERE reporter_id=?'], ['inspections', 'SELECT COUNT(*) AS n FROM inspections WHERE performed_by=?'],
+    ['vehicle_assignments', 'SELECT COUNT(*) AS n FROM driver_vehicles WHERE user_id=?'], ['notifications', 'SELECT COUNT(*) AS n FROM notifications WHERE user_id=?'],
+  ].map(async ([k, sql]) => [k, (await env.DB.prepare(sql).bind(id).first()).n])));
+  for (const k of Object.keys(counts)) eq(x[k].length, counts[k], k);
+  ok(x.reported_cases.length > 0 && x.inspections.length > 0, 'Testdaten vorhanden');
+  ok('driver_record' in x && Array.isArray(x.driver_documents) && Array.isArray(x.audit_about), 'alle Bereiche');
+  eq(x.meta.truncated.length, 0);
+  const au = (await owner.get('/api/admin/audit?action=privacy.export')).data.entries;
+  ok(au.some((e) => e.target === id), 'Abruf protokolliert');
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');

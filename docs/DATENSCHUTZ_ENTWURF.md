@@ -27,9 +27,16 @@ Nicht gespeichert: IP-Adressen, Standort des Handys, Kontakte, Passwörter im Kl
 Cloudflare (Worker, Datenbank D1 und Dateispeicher KV mit Jurisdiktion **EU**), Push über die Dienste von Google/Apple/Mozilla
 (nur verschlüsselter Hinweistext, Ende-zu-Ende nach RFC 8291), KI-Analyse über Cloudflare Workers AI (nur Schadenshistorie eines Fahrzeugs).
 
+## 2a. Auskunft (Art. 15 DSGVO) – vorbereitet
+Inhaber → Mehr → Benutzer → „Datenauskunft“ je Person: JSON-Datei mit allen in der App gespeicherten Daten zu diesem Konto
+(Konto, Anmeldungen/Geräte ohne Token, Fahrzeugzuordnungen, Meldungen, Vorgangsverlauf, Arbeitszeiten, Kontrollen, Dateiangaben,
+Hinweise, km-Stände, Bußgelder als Fahrer, Protokolleinträge, verknüpfte Fahrerakte). Ohne Passwort-Hashes und Push-Schlüssel,
+Dateiinhalte (Fotos/PDF) nur als Angaben. Abruf wird protokolliert (`privacy.export`). Vor Herausgabe auf Daten Dritter in Freitexten prüfen.
+Fahrer ohne App-Konto: Fahrerakte direkt (Mehr → Fahrer) bzw. künftig eigene Auskunft – noch offen.
+
 ## 3. Offene Entscheidungen (Auftraggeber)
 1. Aufbewahrungsfristen je Bereich (z. B. Schadensvorgänge, Abfahrtskontrollen, Bußgeldakten, Fahrerakte/Führerscheinkontrollen nach Ausscheiden, Protokoll, Benachrichtigungen) – danach
-   kann eine automatische Löschung/Anonymisierung umgesetzt werden (bisher wird nichts automatisch gelöscht außer abgelaufenen Sitzungen).
+   kann eine automatische Löschung/Anonymisierung umgesetzt werden (bisher wird nichts automatisch gelöscht außer abgelaufenen Sitzungen, Mengenzählern und alten Fehlanmeldungen).
 2. Ob und in welcher Form die Mitarbeiterinformation in der App (Hilfe-Seite, DE/UK/EN) erscheinen soll.
 3. Ansprechpartner für Datenschutzfragen, der in der Information genannt wird.
 
