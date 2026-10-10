@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime } from './util.js';
 import * as auth from './auth.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
@@ -225,7 +225,17 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/files$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await fines.uploadFineFile(env, user, envName, mm[1], request), 201); }
 
   // Vorgänge
-  if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/cases' && m === 'GET') {
+    const q = Object.fromEntries(url.searchParams);
+    if (q.format === 'csv') {
+      if (user.role === 'driver') throw forbidden();
+      const rows = await cases.listCases(env, user, envName, { ...q, limit: 5000, __export: true });
+      await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, rows: rows.length, environment: envName });
+      const fmt = (iso) => (iso ? berlinDateTime(iso) : '');
+      return new Response(cases.casesCsv(rows, maint.csvCell, fmt), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
+    }
+    return json({ cases: await cases.listCases(env, user, envName, q) });
+  }
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await cases.runCommand(env, ctx, user, envName, mm[1], b)); }

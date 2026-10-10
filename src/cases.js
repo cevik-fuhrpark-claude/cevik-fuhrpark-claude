@@ -68,7 +68,7 @@ export async function listCases(env, user, envName, query) {
     where.push(`(c.description LIKE ? ESCAPE '\\' OR c.case_no LIKE ? ESCAPE '\\' OR REPLACE(REPLACE(UPPER(v.plate),' ',''),'-','') LIKE ?)`);
     args.push(like, like, plateLike);
   }
-  const limit = Math.min(Number(query.limit) || 200, 500);
+  const limit = Math.min(Number(query.limit) || 200, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`
     SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name,
       (SELECT COUNT(*) FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen') AS open_items,
@@ -79,6 +79,18 @@ export async function listCases(env, user, envName, query) {
       CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, c.updated_at DESC
     LIMIT ?`).bind(...args, limit).all()).results;
   return rows.map((r) => ({ ...shapeCase(r, user), access: caseAccess(user, r) }));
+}
+
+// CSV-Export der Vorgangsliste (gleiche Filter und Rechte wie die Liste), Excel-tauglich (UTF-8 mit BOM, Semikolon)
+const PRIO_DE = { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' };
+export function casesCsv(rows, csvCell, fmt) {
+  const head = ['Vorgang', 'Kennzeichen', 'Standort', 'Priorität', 'Status', 'Sicherheitssperre', 'Fahrbereit laut Meldung', 'Werkstatt', 'Beschreibung', 'Gemeldet am', 'Gemeldet von',
+    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien'];
+  const lines = [head.join(';')];
+  for (const c of rows) lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
+    csvCell(c.reported_driveability), csvCell(c.workshop_site), csvCell(c.description), fmt(c.created_at), csvCell(c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
+    c.open_items ?? '', c.file_count ?? ''].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
 function shapeCase(c, user) {

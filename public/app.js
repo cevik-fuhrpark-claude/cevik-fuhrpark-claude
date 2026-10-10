@@ -274,7 +274,9 @@ async function viewCases() {
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">
     <div class="seg-tabs">${['open', 'closed', 'all'].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k))}</a>`).join('')}</div>
-    <div id="cl">${caseList(list)}</div>`, 'cases');
+    <div id="cl">${caseList(list)}</div>
+    ${S.me.role !== 'driver' ? `<div class="actions"><button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button></div>` : ''}`, 'cases');
+  const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { download(await api('GET', `/api/cases?format=csv&status=${f === 'all' ? '' : f}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}`), `fuhrpark-vorgaenge_${new Date().toISOString().slice(0, 10)}.csv`); } catch (err) { toast(err.message, true); } };
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); viewCases(); }));
   let timer = null;
   const cq = $('#cq');

@@ -130,7 +130,7 @@ export async function maintenanceOverview(env, user) {
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 
-const csvCell = (x) => {
+export const csvCell = (x) => {
   let s = x === null || x === undefined ? '' : String(x);
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

@@ -951,6 +951,25 @@ await test('Werkstatt-Auslastung je Standort/Kalenderwoche ohne Personenbezug; W
   eq((await users.driver.get('/api/reports/workshop-load')).status, 403);
 });
 
+await test('Vorgangsliste als CSV: gleiche Filter/Rechte wie die Liste, Excel-tauglich, Formelschutz, protokolliert', async () => {
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  const all = await users.fleet.get('/api/cases?format=csv');
+  eq(all.status, 200); ok(/text\/csv/.test(all.headers.get('content-type')));
+  const txt = dec(all);
+  ok(txt.startsWith('\ufeffVorgang;Kennzeichen'), 'BOM + Kopfzeile');
+  const list = (await users.fleet.get('/api/cases?limit=500')).data.cases;
+  eq(txt.trim().split('\r\n').length - 1, list.length, 'gleiche Anzahl wie Liste');
+  const open = dec(await users.fleet.get('/api/cases?format=csv&status=open'));
+  ok(open.split('\r\n').length <= txt.split('\r\n').length, 'Filter wirkt');
+  const ws = dec(await users.ws.get('/api/cases?format=csv'));
+  eq(ws.trim().split('\r\n').length - 1, (await users.ws.get('/api/cases?limit=500')).data.cases.length, 'Werkstatt nur eigene Sicht');
+  eq((await users.driver.get('/api/cases?format=csv')).status, 403);
+  // Formelschutz: Beschreibung, die mit = beginnt
+  await users.driver.post('/api/cases', { vehicle_id: V1, description: '=HYPERLINK("http://x")', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  ok(dec(await users.fleet.get('/api/cases?format=csv')).includes(`"'=HYPERLINK(""http://x"")"`), 'Formel entschärft');
+  ok((await owner.get('/api/admin/audit?action=reports.cases')).data.entries.length >= 1, 'protokolliert');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];
