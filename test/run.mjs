@@ -856,6 +856,25 @@ await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Übers
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Sperrzeit' })).status, 200);
 });
 
+await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von anderen Rollen; Aktivität verlängert', async () => {
+  const tab = await invite(owner, { username: 'test.tablet', display_name: 'Test Tablet DO', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' });
+  const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const setSeen = (id, min) => env.DB.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').bind(ago(min), id).run();
+  await setSeen(tab.id, 120);
+  eq((await tab.get('/api/me')).status, 200, 'Standard: keine Leerlauf-Abmeldung');
+  eq((await owner.put('/api/settings', { idle_logout_workshop_min: 30 })).status, 200);
+  try {
+    await setSeen(tab.id, 20);
+    eq((await tab.get('/api/me')).status, 200, '20 Min. < 30 Min.');
+    const seen = (await env.DB.prepare('SELECT last_seen FROM sessions WHERE user_id=?').bind(tab.id).first()).last_seen;
+    ok(Date.now() - Date.parse(seen) < 60000, 'Aktivität setzt Leerlauf zurück');
+    await setSeen(tab.id, 31); await setSeen(users.fleet.id, 31);
+    eq((await users.fleet.get('/api/me')).status, 200, 'andere Rollen nicht betroffen');
+    eq((await tab.get('/api/me')).status, 401, 'Werkstatt nach 31 Min. abgemeldet');
+    eq((await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id=?').bind(tab.id).first()).n, 0, 'Sitzung gelöscht');
+  } finally { eq((await owner.put('/api/settings', { idle_logout_workshop_min: null })).status, 200); }
+});
+
 await test('Einstellung „Testkonten: Stammdaten nur lesen“: Standard aus; an → Testkonten ändern keine gemeinsamen Stammdaten, km nur an der Kontrolle', async () => {
   const vp = `/api/vehicles/${encodeURIComponent(V1)}`;
   const kmBefore = (await owner.get(vp)).data.odometer[0].km;

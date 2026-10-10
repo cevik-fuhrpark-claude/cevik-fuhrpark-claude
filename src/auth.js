@@ -14,16 +14,22 @@ export async function getSessionUser(env, request) {
   const token = parseCookies(request.headers.get('cookie'))[COOKIE];
   if (!token) return null;
   const h = await sha256Hex(token);
+  // Abmeldung nach Leerlauf (Einstellung des Inhabers, leer = aus): je Werkstatt (geteilte Tablets) bzw. alle anderen Rollen.
+  // In derselben Abfrage gelesen – keine zusätzliche D1-Abfrage je Aufruf.
   const row = await env.DB.prepare(
-    `SELECT u.*, s.expires_at AS s_exp, s.last_seen AS s_seen FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`
+    `SELECT u.*, s.expires_at AS s_exp, s.last_seen AS s_seen,
+      (SELECT value FROM settings WHERE key = CASE WHEN u.role='workshop' THEN 'idle_logout_workshop_min' ELSE 'idle_logout_other_min' END) AS idle_min
+     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`
   ).bind(h).first();
   if (!row) return null;
-  if (row.s_exp < nowIso() || !row.active) {
+  const idleMs = Number(row.idle_min) > 0 ? Math.max(Number(row.idle_min), 5) * 60000 : 0;
+  const idle = Date.now() - Date.parse(row.s_seen);
+  if (row.s_exp < nowIso() || !row.active || (idleMs && idle > idleMs)) {
     await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(h).run();
     return null;
   }
-  // last_seen höchstens alle 10 Minuten schreiben
-  if (Date.now() - Date.parse(row.s_seen) > 10 * 60 * 1000) {
+  // last_seen höchstens alle 10 Minuten schreiben (bei Leerlauf-Abmeldung häufiger, damit aktive Nutzung zählt)
+  if (idle > Math.min(10 * 60 * 1000, idleMs ? idleMs / 3 : Infinity)) {
     await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(nowIso(), h).run();
   }
   return publicUser(row, h);
