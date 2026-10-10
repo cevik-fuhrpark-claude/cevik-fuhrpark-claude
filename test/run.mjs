@@ -1412,6 +1412,22 @@ await test('Auslesungen-Sammelimport (CSV): Vorschau, nur eindeutige Treffer, An
   eq((await users.fleet.get(`/api/tacho/downloads?vehicle_id=${encodeURIComponent(V2)}`)).data.downloads.find((x) => x.downloaded_on === ago(20)).evidence, 'Export Auslesesoftware');
 });
 
+await test('Datenqualität: Fahrerakte und Auslesungen (ohne Führerschein, Karte ohne Auslesung, Konto ohne Akte, Lkw ohne Auslesung)', async () => {
+  eq((await users.dispatch.get('/api/admin/data-quality')).status, 403);
+  const r = (await users.fleet.get('/api/admin/data-quality')).data;
+  const has = (check, pred) => r.items.some((i) => i.check === check && (!pred || pred(i)));
+  ok(has('driver_no_license', (i) => i.driver_name === 'Fahrer ohne Konto' && i.driver_id), 'Fahrer ohne Führerschein-Nachweis');
+  ok(!has('driver_no_license', (i) => i.driver_name === 'Testfahrer Eins'), 'mit Führerschein kein Befund');
+  ok(!has('driver_card_no_download', (i) => i.driver_name === 'Testfahrer Eins'), 'Karte mit Auslesung');
+  ok(!has('vu_no_download', (i) => i.vehicle_id === V1), 'Lkw mit Auslesung');
+  ok(!has('vu_no_download', (i) => i.vehicle_id === 'VIN:VAK656EBDG1613170'), 'Anhänger nie');
+  const nd = await users.fleet.post('/api/drivers', { display_name: 'Karte ohne Auslesung' });
+  await users.fleet.post(`/api/drivers/${nd.data.id}/documents`, { kind: 'fahrerkarte', valid_until: '2030-01-31', evidence: 'Kopie' });
+  const r2 = (await users.fleet.get('/api/admin/data-quality')).data;
+  ok(r2.items.some((i) => i.check === 'driver_card_no_download' && i.driver_id === nd.data.id), 'Karte ohne Auslesung');
+  eq((await users.fleet.patch(`/api/drivers/${nd.data.id}`, { active: false })).status, 200);
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
