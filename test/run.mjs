@@ -1591,6 +1591,27 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   ok(!dq.items.some((i) => i.check === 'km_inspection_rejected' && i.detail.startsWith(`${before[0].km + 50} km`)), 'plausibler Wert nicht gemeldet');
 });
 
+await test('Letzte Abfahrtskontrolle je Fahrzeug in Liste, Akte und CSV (nur Information, Umgebung getrennt)', async () => {
+  const last = (await env.DB.prepare(`SELECT created_at, result FROM inspections WHERE vehicle_id=? AND environment='test' AND kind='abfahrt' ORDER BY created_at DESC LIMIT 1`).bind(V1).first());
+  ok(last, 'Testdaten: Abfahrtskontrolle vorhanden');
+  const v = (await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.id === V1);
+  eq(v.last_check_at, last.created_at); eq(v.last_check_result, last.result);
+  ok(!('last_check' in v), 'Hilfsfeld entfernt');
+  const d = (await users.fleet.get('/api/vehicles/' + encodeURIComponent(V1))).data;
+  eq(d.last_check.created_at, last.created_at); eq(d.last_check.kind, 'abfahrt');
+  const dv = (await users.driver.get('/api/vehicles')).data.vehicles.find((x) => x.id === V1);
+  ok(dv && !('last_check_at' in dv), 'Fahrerliste ohne Kontrollinfo');
+  // Kontrolle nach Reparatur zählt nicht als Abfahrtskontrolle; anderes Fahrzeug ohne Kontrolle → leer
+  const other = (await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.id !== V1 && !x.last_check_at);
+  if (other) eq(other.last_check_result, null);
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data);
+  const head = txt.split('\r\n')[0].split(';');
+  const idx = head.indexOf('Letzte Abfahrtskontrolle'); ok(idx > 0, 'CSV-Spalte vorhanden');
+  const row = txt.split('\r\n').find((l) => l.startsWith(v.plate + ';') || l.startsWith('"' + v.plate));
+  ok(/^\d\d\.\d\d\.\d{4} \d\d:\d\d$/.test(row.split(';')[idx]), 'Zeitpunkt deutsch formatiert: ' + row.split(';')[idx]);
+  eq(row.split(';')[idx + 1], last.result === 'ok' ? 'ohne Mangel' : 'mit Mangel');
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
