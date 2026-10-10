@@ -125,7 +125,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -978,6 +978,54 @@ async function viewCosts() {
   $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${cr.from.value}&to=${cr.to.value}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${cr.from.value}_${cr.to.value}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
 }
 
+// ---------- Fahrerakte (personenbezogen: nur Inhaber/Fuhrparkleitung, Fahrer nur eigene Akte) ----------
+const DST = { ok: 'ok', hinweis: 'mittel', kritisch: 'kritisch', laeuft_ab: 'mittel', abgelaufen: 'kritisch', faellig: 'kritisch', bald: 'mittel', fehlt: 'mittel', mangel: 'kritisch' };
+async function viewDrivers() {
+  const list = (await api('GET', '/api/drivers' + (S.drvInactive ? '?inactive=1' : ''))).drivers;
+  if (!isMgr()) { if (list.length) { location.hash = '#/drivers/' + list[0].id; return; } render(`<h1>${esc(t('my_driver_file'))}</h1><p class="muted">${esc(t('no_driver_file'))}</p>`, 'more'); return; }
+  let users = [];
+  try { users = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active); } catch {}
+  const html = `<h1>${esc(t('drivers'))}</h1><p class="small muted">${esc(t('driver_privacy'))}</p>
+    <details class="panel"><summary>${esc(t('new_driver'))}</summary><form id="ndf"><label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('personnel_no'))}</label><input name="personnel_no"><label>${esc(t('site'))}</label><input name="site">
+      <label>${esc(t('app_account'))}</label><select name="user_id"><option value="">${esc(t('no_account'))}</option>${users.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)} (${esc(u.username)})</option>`).join('')}</select>
+      <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+    <p><label style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label></p>
+    <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${esc(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${[...crit.map((i) => `${t('dk2_' + i.kind)}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || `<p class="muted">–</p>`}</div>`;
+  render(html, 'more');
+  const ia = $('#dinact'); if (ia) ia.onchange = () => { S.drvInactive = ia.checked; viewDrivers(); };
+  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', '/api/drivers', b); location.hash = '#/drivers/' + r.id; } catch (err) { toast(err.message, true); } };
+}
+async function viewDriver(id) {
+  const x = await api('GET', '/api/drivers/' + id);
+  const d = x.driver; const st = x.status; const mgr = isMgr();
+  const cur = x.documents.filter((o) => !o.superseded); const old = x.documents.filter((o) => o.superseded);
+  const docRow = (o) => { const it = st.items.find((i) => i.id === o.id); return `<tr><td>${esc(t('dk2_' + o.kind))}${o.title ? `<div class="small muted">${esc(o.title)}</div>` : ''}</td><td>${o.license_classes ? esc(o.license_classes) + '<br>' : ''}${o.number ? `<span class="small">${esc(o.number)}</span>` : ''}</td><td>${o.valid_until ? `<span class="chip ${it ? DST[it.status] : ''}">${fmtD(o.valid_until)}</span>` : '–'}</td><td class="small">${esc(o.evidence)}<div class="muted">${fmtD(o.created_at)} · ${esc(o.created_by_name || '')}</div></td></tr>`; };
+  let html = `${mgr ? `<p><a href="#/drivers">‹ ${esc(t('back'))}</a></p>` : ''}<h1>🪪 ${esc(d.display_name)}</h1>
+    <section class="panel"><dl class="kv"><dt>${esc(t('personnel_no'))}</dt><dd>${esc(d.personnel_no || '–')}</dd><dt>${esc(t('site'))}</dt><dd>${esc(d.site || '–')}</dd>
+    <dt>${esc(t('status'))}</dt><dd><span class="chip ${DST[st.overall]}">${esc(t('dov_' + st.overall))}</span></dd>
+    <dt>${esc(t('license_check'))}</dt><dd>${st.check.last ? `${fmtD(st.check.last)} · ${esc(t('lcr_' + st.check.result))}` : '–'}${st.check.due ? ` · ${esc(t('next_due'))} ${fmtD(st.check.due)}` : ''} <span class="chip ${DST[st.check.status]}">${esc(t('dck_' + st.check.status))}</span></dd>
+    ${x.vehicles.length ? `<dt>${esc(t('vehicles'))}</dt><dd>${x.vehicles.map((v) => plate(v.plate)).join(' ')}</dd>` : ''}</dl>
+    ${!d.active ? `<p class="chip">${esc(t('inactive_drivers'))}</p>` : ''}${!st.has_license ? `<div class="alert small" style="margin-top:8px">${esc(t('no_license_doc'))}</div>` : ''}</section>
+    <h2>${esc(t('driver_docs'))}</h2>${cur.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('kind'))}</th><th></th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${cur.map(docRow).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}
+    ${old.length ? `<details><summary>${esc(t('history'))} (${old.length})</summary><div class="scroll"><table><tbody>${old.map(docRow).join('')}</tbody></table></div></details>` : ''}`;
+  if (mgr) {
+    html += `<details class="panel"><summary>${esc(t('add_driver_doc'))}</summary><form id="ddf"><label>${esc(t('kind'))}</label><select name="kind">${['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'].map((k) => `<option value="${k}">${esc(t('dk2_' + k))}</option>`).join('')}</select>
+      <label>${esc(t('doc_title'))}</label><input name="title" placeholder="${esc(t('doc_title_ph'))}"><label>${esc(t('license_classes'))}</label><input name="license_classes" placeholder="C, CE"><label>${esc(t('doc_number'))}</label><input name="number">
+      <label>${esc(t('issued_on'))}</label><input type="date" name="issued_on"><label>${esc(t('valid_until'))} <span class="hint">${esc(t('valid_until_hint'))}</span></label><input type="date" name="valid_until">
+      <label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('driver_ev_ph'))}"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+      <details class="panel"><summary>${esc(t('record_license_check'))}</summary><form id="lcf"><label>${esc(t('date'))}</label><input type="date" name="checked_on" required value="${new Date().toISOString().slice(0, 10)}">
+      <label>${esc(t('result'))}</label><select name="result">${['in_ordnung', 'maengel', 'nicht_vorgelegt'].map((r) => `<option value="${r}">${esc(t('lcr_' + r))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
+    if (x.license_checks.length) html += `<details><summary>${esc(t('license_check'))} – ${esc(t('history'))} (${x.license_checks.length})</summary><ul class="small">${x.license_checks.map((c) => `<li>${fmtD(c.checked_on)} · ${esc(t('lcr_' + c.result))} · ${esc(c.checked_by_name || '')}${c.note ? ' – ' + esc(c.note) : ''}</li>`).join('')}</ul></details>`;
+    html += `<details class="panel"><summary>${esc(t('edit_master'))}</summary><form id="edf"><label>${esc(t('display_name'))}</label><input name="display_name" required value="${esc(d.display_name)}"><label>${esc(t('personnel_no'))}</label><input name="personnel_no" value="${esc(d.personnel_no || '')}"><label>${esc(t('site'))}</label><input name="site" value="${esc(d.site || '')}">
+      <label class="check"><input type="checkbox" name="active" ${d.active ? 'checked' : ''}> ${esc(t('active'))}</label><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
+  }
+  render(html, 'more');
+  const post = async (path, b) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', path, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+  const ddf = $('#ddf'); if (ddf) ddf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/documents`, Object.fromEntries(new FormData(ddf))); };
+  const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
+  const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(edf)); b.active = !!edf.active.checked; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+}
+
 // ---------- Hinweise & Push ----------
 async function viewInbox() {
   const n = await api('GET', '/api/notifications');
@@ -1256,6 +1304,7 @@ function viewMore() {
     <a class="row" href="#/check"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>
     <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
     <a class="row" href="#/help"><span>?</span><span class="title">${esc(t('help'))}</span><span></span></a>
+    ${isMgr() ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('drivers'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('my_driver_file'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('fines'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('my_fines'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'workshop', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/tires"><span>◎</span><span class="title">${esc(t('fleet_tires'))}</span><span></span></a>` : ''}
     ${S.me.role !== 'driver' ? `<a class="row" href="#/maintenance"><span>📅</span><span class="title">${esc(t('inspections_due'))}</span><span></span></a>` : ''}
@@ -1314,7 +1363,7 @@ async function viewSettings() {
   const v = s.values;
   const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="decimal" value="${esc(v[k] ?? '')}">`;
   const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
-  render(`<h1>${esc(t('settings'))}</h1><form id="sf" class="panel">${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('fine_warn_days', t('response_due') + ' – ' + t('warn_days'))}<h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
+  render(`<h1>${esc(t('settings'))}</h1><form id="sf" class="panel">${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('fine_warn_days', t('response_due') + ' – ' + t('warn_days'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}<h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,text/csv" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted">Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger</p><input type="file" id="tcsv" accept=".csv,text/csv" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('backup'))}</h2><p class="small muted">${esc(t('backup_hint'))}</p><button type="button" class="btn secondary" id="bkp">${esc(t('backup_download'))}</button></section>`, 'more');

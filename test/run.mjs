@@ -1261,6 +1261,52 @@ console.log('HU/SP nach StVZO Anlage VIII');
   });
 }
 
+console.log('Fahrerakte');
+await test('Fahrerakte: nur Fuhrpark/Inhaber anlegen und sehen, Fahrer nur eigene Akte; Nachweise mit Gültig-bis laut Dokument', async () => {
+  eq((await users.ws.get('/api/drivers')).status, 403, 'Werkstatt sieht keine Fahrerdaten');
+  eq((await users.dispatch.get('/api/drivers')).status, 403, 'Dispo sieht keine Fahrerdaten');
+  eq((await users.driver.post('/api/drivers', { display_name: 'X' })).status, 403);
+  const a = await users.fleet.post('/api/drivers', { display_name: 'Testfahrer Eins', personnel_no: 'P-1', user_id: users.driver.id });
+  eq(a.status, 201);
+  const b = await users.fleet.post('/api/drivers', { display_name: 'Fahrer ohne Konto' });
+  eq(b.status, 201);
+  eq((await users.fleet.post('/api/drivers', { display_name: 'Doppelt', user_id: users.driver.id })).status, 409, 'Konto nur einmal zuordnen');
+  eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fahrerkarte', evidence: 'Karte' })).status, 400, 'Fahrerkarte braucht Gültig-bis');
+  eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2030-01-31' })).status, 400, 'Nachweis Pflicht');
+  eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fuehrerschein', license_classes: 'CE', valid_until: '2027-03-31', evidence: 'Führerschein Original gesehen' })).status, 201);
+  const soon = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+  eq((await users.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind: 'fahrerkarte', valid_until: soon, evidence: 'Fahrerkarte Kopie' })).status, 201);
+  eq((await users.fleet.post(`/api/drivers/${b.data.id}/documents`, { kind: 'code95', valid_until: '2025-12-31', evidence: 'Schlüsselzahl 95 im Führerschein' })).status, 201);
+  const list = (await users.fleet.get('/api/drivers')).data.drivers;
+  const A = list.find((x) => x.id === a.data.id); const B = list.find((x) => x.id === b.data.id);
+  eq(A.status.items.find((i) => i.kind === 'fahrerkarte').status, 'laeuft_ab'); eq(B.status.overall, 'kritisch', 'abgelaufener Code 95');
+  const own = (await users.driver.get('/api/drivers')).data.drivers;
+  eq(own.length, 1); eq(own[0].id, a.data.id, 'Fahrer sieht nur sich');
+  eq((await users.driver.get(`/api/drivers/${b.data.id}`)).status, 404, 'fremde Akte nicht sichtbar');
+  eq((await users.driver.post(`/api/drivers/${a.data.id}/documents`, { kind: 'sonstiges', evidence: 'x' })).status, 403, 'Fahrer ändert nichts');
+});
+await test('Führerscheinkontrolle: Vermerk bei Mangel, Intervall nur wenn eingestellt; Befunde und Ersetzen alter Nachweise', async () => {
+  const id = (await users.fleet.get('/api/drivers')).data.drivers.find((x) => x.display_name === 'Testfahrer Eins').id;
+  eq((await users.fleet.post(`/api/drivers/${id}/license-checks`, { checked_on: '2026-01-10', result: 'nicht_vorgelegt' })).status, 400, 'Vermerk Pflicht');
+  eq((await users.fleet.post(`/api/drivers/${id}/license-checks`, { checked_on: '2099-01-10', result: 'in_ordnung' })).status, 400, 'nicht in der Zukunft');
+  eq((await users.fleet.post(`/api/drivers/${id}/license-checks`, { checked_on: '2026-01-10', result: 'in_ordnung' })).status, 201);
+  let d = (await users.fleet.get(`/api/drivers/${id}`)).data;
+  eq(d.status.check.due, null, 'ohne eingestelltes Intervall keine erfundene Frist');
+  eq((await owner.put('/api/settings', { license_check_months: 6 })).status, 200);
+  d = (await users.fleet.get(`/api/drivers/${id}`)).data;
+  eq(d.status.check.due, '2026-07-10'); ok(['faellig', 'bald', 'ok'].includes(d.status.check.status));
+  eq((await users.fleet.post(`/api/drivers/${id}/documents`, { kind: 'fahrerkarte', valid_until: '2031-05-31', evidence: 'Neue Fahrerkarte' })).status, 201);
+  d = (await users.fleet.get(`/api/drivers/${id}`)).data;
+  eq(d.documents.filter((x) => x.kind === 'fahrerkarte' && !x.superseded).length, 1, 'neue Karte ersetzt alte');
+  eq(d.documents.filter((x) => x.kind === 'fahrerkarte').length, 2, 'Historie bleibt');
+  await users.fleet.post('/api/agent/run');
+  const f = (await users.fleet.get('/api/master')).data.findings;
+  ok(f.some((x) => x.finding_code === 'DRIVER_DOC_EXPIRED' && /Code 95/.test(x.message)), 'abgelaufener Code 95 gemeldet');
+  ok(!f.some((x) => x.finding_code === 'DRIVER_DOC_EXPIRES_SOON' && /Fahrerkarte/.test(x.message) && /Testfahrer Eins/.test(x.message)), 'ersetzte Karte nicht mehr gemeldet');
+  ok(f.some((x) => x.finding_code === 'LICENSE_CHECK_DUE'), 'Kontrolle fällig (Intervall 6 Monate eingestellt)');
+  eq((await owner.put('/api/settings', { license_check_months: '' })).status, 200);
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

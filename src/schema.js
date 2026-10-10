@@ -166,5 +166,17 @@ export const MIGRATIONS = [
    "UPDATE maintenance_rules SET due_source = 'berechnet' WHERE kind = 'HU' AND instr(evidence, 'Intervall 12 Monate vom Inhaber') > 0",
    "INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES (lower(hex(randomblob(16))), NULL, 'maintenance.husp_migration', NULL, '{\"grund\":\"SP-Frist nach StVZO Anlage VIII (6 Monate nach HU) statt pauschal 6 Monate nach letzter SP; zGM-Klassen laut Angabe Inhaber\"}', strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
   ]
+ },
+ {
+  "id": "0017_driver_records",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS drivers (\n  id TEXT PRIMARY KEY,\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  display_name TEXT NOT NULL,\n  personnel_no TEXT NULL,\n  site TEXT NULL,\n  user_id TEXT NULL REFERENCES users(id),\n  active INTEGER NOT NULL DEFAULT 1,\n  note TEXT NULL,\n  created_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n)",
+   "CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id) WHERE user_id IS NOT NULL",
+   "CREATE INDEX IF NOT EXISTS idx_drivers_env ON drivers(environment, active)",
+   "CREATE TABLE IF NOT EXISTS driver_documents (\n  id TEXT PRIMARY KEY,\n  driver_id TEXT NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,\n  kind TEXT NOT NULL,\n  title TEXT NULL,\n  number TEXT NULL,\n  license_classes TEXT NULL,\n  issued_on TEXT NULL,\n  valid_until TEXT NULL,\n  evidence TEXT NOT NULL,\n  superseded INTEGER NOT NULL DEFAULT 0,\n  created_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL\n)",
+   "CREATE INDEX IF NOT EXISTS idx_driver_docs ON driver_documents(driver_id, kind, superseded)",
+   "CREATE TABLE IF NOT EXISTS driver_license_checks (\n  id TEXT PRIMARY KEY,\n  driver_id TEXT NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,\n  checked_on TEXT NOT NULL,\n  result TEXT NOT NULL CHECK (result IN ('in_ordnung','maengel','nicht_vorgelegt')),\n  checked_by TEXT NOT NULL REFERENCES users(id),\n  note TEXT NULL,\n  created_at TEXT NOT NULL\n)",
+   "CREATE INDEX IF NOT EXISTS idx_license_checks ON driver_license_checks(driver_id, checked_on)"
+  ]
  }
 ];

@@ -11,6 +11,7 @@ import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
 import * as stock from './stock.js';
 import * as fines from './fines.js';
+import * as drivers from './drivers.js';
 import * as reports from './reports.js';
 import { exportBackup } from './backup.js';
 import * as maint from './maintenance.js';
@@ -64,7 +65,7 @@ function requireRole(user, roles) {
 }
 
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
+  'workshop_hourly_rate_net', 'driver_doc_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
@@ -238,6 +239,14 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'PATCH') return json(await stock.updateItem(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/movements$/)) && m === 'POST') return json(await stock.addMovement(env, user, envName, mm[1], await readJson(request)), 201);
+
+  // Fahrerakte
+  if (path === '/api/drivers' && m === 'GET') return json({ drivers: await drivers.listDrivers(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') return json(await drivers.driverDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'PATCH') return json(await drivers.updateDriver(env, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/documents$/)) && m === 'POST') return json(await drivers.addDriverDocument(env, user, envName, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/license-checks$/)) && m === 'POST') return json(await drivers.addLicenseCheck(env, user, envName, mm[1], await readJson(request)), 201);
 
   // Bußgelder & Zeugenfragebögen
   if (path === '/api/fines' && m === 'GET') {

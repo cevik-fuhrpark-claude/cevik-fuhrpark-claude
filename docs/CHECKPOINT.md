@@ -144,6 +144,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 
 - 10.10.2026 17:37: **Freigabe Fahrerdaten & YellowFox (Inhaber: „Ja ich gebe alles frei“):** Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen, Führerscheinkontrolle), Auslese-Fristen Fahrerkarte/Fahrtenschreiber, Lenk-/Ruhezeiten und Verstöße über YellowFox-API. Bedingungen: nur lesend gegenüber YellowFox, Sichtbarkeit nur Inhaber/Fuhrparkleitung, Fahrer nur eigene Daten, zuerst Testumgebung. Eigener YellowFox-API-Zugang für diese App empfohlen (Kosten ggf. Entscheidung Inhaber). Zugangsdaten trägt der Inhaber selbst als Cloudflare-Secret ein. Übergabedoku der bestehenden YellowFox-Anbindung kommt vom Inhaber aus dem ChatGPT-Projekt (ChatGPT-Projekt selbst wird nicht verändert).
 
+- 10.10.2026: **Fahrerakte (Stufe 1) erledigt** (Migration 0017, `src/drivers.js`): Fahrer auch ohne App-Konto (optional mit Fahrer-Konto verknüpft), Nachweise Führerschein (Klassen), Fahrerkarte, Code 95, Unterweisungen, Sonstiges – Gültig-bis nur laut Dokument, neuer Nachweis ersetzt alten (Historie bleibt); Führerscheinkontrolle mit Ergebnis (Vermerk bei Mangel), Intervall nur wenn eingestellt (`license_check_months`, leer = keine Erinnerung), Vorwarnung `driver_doc_warn_days` (Standard 30). Agent-Befunde DRIVER_DOC_EXPIRED/EXPIRES_SOON, LICENSE_CHECK_DUE/FAILED. Sichtbar nur Inhaber/Fuhrparkleitung, Fahrer nur eigene Akte; Werkstatt/Dispo/Lesezugriff nichts. Teil der Datensicherung, Änderungen im Audit-Log. 80 Tests grün. Noch keine echten Fahrerdaten erfasst.
+
 ## Offene Fragen an den Auftraggeber
 - **YellowFox-Übergabedoku** aus dem ChatGPT-Projekt (Prompt im Chat 10.10.2026 übergeben): Basis-URL, Anmeldeart, Endpunkte, Beispielantworten, Fahrzeug-/Fahrer-Zuordnung, gebuchte Module.
 - **Testkonten und gemeinsame Stammdaten (neu 10.10.2026, wichtig vor dem Testrundgang):** Fahrzeuge, Prüftermine/-historie und Kilometerstände gibt es nur einmal (keine Trennung Test/Betrieb). Testkonten mit Rolle Fuhrparkleitung/Werkstatt/Fahrer können sie heute ändern (z. B. Fahrzeug außer Betrieb nehmen, Prüfung „erledigt“, km-Stand aus Test-Abfahrtskontrolle). **Empfehlung:** Für Testkonten Stammdaten nur lesen; km-Stände aus Testkontrollen nicht in die gemeinsame Fahrzeugakte schreiben. Soll ich das so umsetzen?
@@ -156,7 +158,6 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
 
 ## Backlog (in dieser Reihenfolge)
-0. **Fahrerakte (Stufe 1) – IN ARBEIT durch interaktive Sitzung 10.10.2026, nicht parallel bearbeiten:** Fahrer (auch ohne App-Konto), Führerschein/Fahrerkarte/Code 95/Unterweisungen mit belegtem Gültig-bis, Führerscheinkontrolle, Erinnerungen, Rechte.
 0b. Auslese-Fristen Fahrerkarte/Fahrtenschreiber (Stufe 2, Fristen vor Umsetzung am Gesetzestext prüfen).
 0c. Lenk-/Ruhezeiten & Verstöße über YellowFox (Stufe 3) – wartet auf Übergabedoku und Secret.
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
