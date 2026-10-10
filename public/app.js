@@ -254,7 +254,7 @@ async function workshopBoard() {
   // Mangel bei der Abfahrtskontrolle erneut festgestellt (letzte 3 Tage) – zuerst, damit die Werkstatt ihn vorzieht
   const rep = open.filter((c) => c.status !== 'gemeldet' && recentRepeat(c));
   if (rep.length) lanes.unshift(['ws_repeat', rep]);
-  let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
     const ov = await api('GET', '/api/maintenance');
     const soon = ov.rows.filter((r) => r.days !== null && r.days <= 14);
@@ -1524,8 +1524,8 @@ async function viewDefects() {
     </div>
     <div class="stats"><div><b>${r.totals.checks}</b>${esc(t('checks_done'))}</div><div><b>${r.totals.checks_with_defects}</b>${esc(t('checks_with_defects'))}</div><div><b style="${r.totals.defect_items ? 'color:var(--mid)' : ''}">${r.totals.defect_items}</b>${esc(t('defect_items'))}</div></div>
     <h2>${esc(t('defects_by_item'))}</h2>
-    ${r.items.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('check_item'))}</th><th>${esc(t('defect_items'))}</th><th>${esc(t('nav_vehicles'))}</th><th>${esc(t('last_used'))}</th></tr></thead><tbody>
-      ${r.items.map((i) => `<tr><td><b>${esc(checkLabel(i.item))}</b></td><td>${i.defects}</td><td>${i.vehicles.map((v) => `${veh(v.vehicle_id, v.plate)} (${v.n})`).join(', ')}${i.vehicle_count > i.vehicles.length ? ` +${i.vehicle_count - i.vehicles.length}` : ''}</td><td>${fmtD(i.last_at)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${esc(t('no_defects_period'))}</p>`}
+    ${r.items.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('check_item'))}</th><th>${esc(t('defect_items'))}</th><th>${esc(t('again_after_repair'))}</th><th>${esc(t('nav_vehicles'))}</th><th>${esc(t('last_used'))}</th></tr></thead><tbody>
+      ${r.items.map((i) => `<tr><td><b>${esc(checkLabel(i.item))}</b></td><td>${i.defects}</td><td>${i.again_after_repair ? `<b style="color:var(--mid)">${i.again_after_repair}</b>` : '0'}</td><td>${i.vehicles.map((v) => `${veh(v.vehicle_id, v.plate)} (${v.n})`).join(', ')}${i.vehicle_count > i.vehicles.length ? ` +${i.vehicle_count - i.vehicles.length}` : ''}</td><td>${i.last_at ? fmtD(i.last_at) : '–'}</td></tr>`).join('')}</tbody></table></div><p class="small muted">${esc(t('again_after_repair_hint'))}</p>` : `<p class="muted">${esc(t('no_defects_period'))}</p>`}
     <h2>${esc(t('defects_by_vehicle'))}</h2>
     ${vlist.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('vehicle'))}</th><th>${esc(t('checks_done'))}</th><th>${esc(t('checks_with_defects'))}</th><th>${esc(t('defect_items'))}</th><th>${esc(t('last_check_any'))}</th></tr></thead><tbody>
       ${vlist.map((v) => `<tr><td>${veh(v.vehicle_id, v.plate)}</td><td>${v.checks}</td><td>${v.checks_with_defects}</td><td><b>${v.defect_items}</b></td><td>${fmtD(v.last_check_at)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${esc(t('no_defects_period'))}</p>`}

@@ -1727,7 +1727,7 @@ await test('Mängelstatistik der Kontrollen: Summen wie gespeichert, Filter, Rec
   finally { await env.DB.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').bind(V1).run(); }
 });
 
-await test('Vorgang zeigt: gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen davor bereits repariert (nicht für Fahrer)', async () => {
+await test('Vorgang + Mängelstatistik: gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen davor bereits repariert (nicht für Fahrer)', async () => {
   const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
   const chk = () => users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 4 ? 'mangel' : 'ok', note: i === 4 ? 'Wischer schmiert' : null })) });
   const first = (await chk()).data.followups[0].id;
@@ -1743,9 +1743,14 @@ await test('Vorgang zeigt: gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tage
   // anderer Prüfpunkt → kein Hinweis
   const other = (await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 5 ? 'mangel' : 'ok', note: i === 5 ? 'anderes' : null })) })).data.followups[0].id;
   eq((await users.fleet.get(`/api/cases/${other}`)).data.vehicle_info.previous_same_item.length, 0, 'anderer Prüfpunkt');
+  const ds = (await users.fleet.get('/api/reports/defects')).data;
+  eq(ds.items.find((i) => i.item === keys[4]).again_after_repair, 1, 'Mängelstatistik: erneut nach Reparatur');
+  eq(ds.items.find((i) => i.item === keys[5]).again_after_repair, 0);
+  eq(ds.totals.again_after_repair, ds.items.reduce((x, i) => x + i.again_after_repair, 0));
   // älter als 90 Tage vor der Meldung → kein Hinweis
   await env.DB.prepare('UPDATE cases SET closed_at=? WHERE id=?').bind(new Date(Date.now() - 100 * 86400000).toISOString(), first).run();
   eq((await users.fleet.get(`/api/cases/${second.id}`)).data.vehicle_info.previous_same_item.length, 0, 'älter als 90 Tage');
+  eq((await users.fleet.get('/api/reports/defects')).data.items.find((i) => i.item === keys[4]).again_after_repair, 0, 'Statistik: älter als 90 Tage');
   for (const cc of [second.id, other]) { const x = (await users.fleet.get(`/api/cases/${cc}`)).data.case; await users.fleet.post(`/api/cases/${cc}/commands`, { action: 'reject', command_id: rk(), expected_version: x.version, note: 'Testdaten' }); }
 });
 

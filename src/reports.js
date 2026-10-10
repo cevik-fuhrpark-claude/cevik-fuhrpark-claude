@@ -246,14 +246,20 @@ export async function defectReport(env, user, envName, query = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const kf = kind ? ' AND i.kind=?' : '';
   const args = kind ? [envName, since, kind] : [envName, since];
-  const [checks, items] = await Promise.all([
+  const [checks, items, again] = await Promise.all([
     env.DB.prepare(`SELECT i.vehicle_id, v.plate, v.kind AS vehicle_kind, COUNT(*) AS checks, SUM(i.result='maengel') AS with_defects, MAX(i.created_at) AS last_at
       FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0
       WHERE i.environment=? AND i.created_at >= ?${kf} GROUP BY i.vehicle_id`).bind(...args).all(),
     env.DB.prepare(`SELECT json_extract(j.value,'$.key') AS item, i.vehicle_id, COUNT(*) AS n, MAX(i.created_at) AS last_at
       FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0, json_each(i.items) j
       WHERE i.environment=? AND i.created_at >= ?${kf} AND json_extract(j.value,'$.result')='mangel' GROUP BY item, i.vehicle_id`).bind(...args).all(),
+    // Vorgänge aus Kontrollen (alle Kontrollarten) im Zeitraum, deren Prüfpunkt am selben Fahrzeug in den 90 Tagen davor repariert und freigegeben wurde
+    env.DB.prepare(`SELECT c.check_item AS item, COUNT(*) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
+      WHERE c.environment=? AND c.created_at >= ? AND c.origin='kontrolle' AND c.check_item IS NOT NULL AND EXISTS (SELECT 1 FROM cases p
+        WHERE p.vehicle_id=c.vehicle_id AND p.environment=c.environment AND p.check_item=c.check_item AND p.id<>c.id AND p.status='fahrzeug_freigegeben'
+        AND p.closed_at <= c.created_at AND p.closed_at >= strftime('%Y-%m-%dT%H:%M:%fZ', c.created_at, '-90 days')) GROUP BY c.check_item`).bind(envName, since).all(),
   ]);
+  const againBy = new Map(again.results.map((r) => [r.item, r.n]));
   const plates = new Map(checks.results.map((c) => [c.vehicle_id, c.plate]));
   const byItem = new Map(); const byVeh = new Map();
   for (const r of items.results) {
@@ -263,12 +269,13 @@ export async function defectReport(env, user, envName, query = {}) {
     if (!it.last_at || r.last_at > it.last_at) it.last_at = r.last_at;
     byVeh.set(r.vehicle_id, (byVeh.get(r.vehicle_id) || 0) + r.n);
   }
-  const itemsOut = [...byItem.values()].map((it) => ({ ...it, vehicle_count: it.vehicles.length, vehicles: it.vehicles.sort((a, b) => b.n - a.n || a.plate.localeCompare(b.plate)).slice(0, 10) }))
+  for (const [item, n] of againBy) if (!byItem.has(item)) byItem.set(item, { item, defects: 0, vehicles: [], last_at: null, again_after_repair: n });
+  const itemsOut = [...byItem.values()].map((it) => ({ ...it, again_after_repair: againBy.get(it.item) || 0, vehicle_count: it.vehicles.length, vehicles: it.vehicles.sort((a, b) => b.n - a.n || a.plate.localeCompare(b.plate)).slice(0, 10) }))
     .sort((a, b) => b.defects - a.defects || a.item.localeCompare(b.item));
   const vehicles = checks.results.map((c) => ({ vehicle_id: c.vehicle_id, plate: c.plate, vehicle_kind: c.vehicle_kind, checks: c.checks, checks_with_defects: c.with_defects || 0, defect_items: byVeh.get(c.vehicle_id) || 0, last_check_at: c.last_at }))
     .sort((a, b) => b.defect_items - a.defect_items || b.checks_with_defects - a.checks_with_defects || a.plate.localeCompare(b.plate));
   const total = vehicles.reduce((s, v) => s + v.checks, 0);
   return { environment: envName, days, kind: kind || null, since,
-    totals: { checks: total, checks_with_defects: vehicles.reduce((s, v) => s + v.checks_with_defects, 0), defect_items: itemsOut.reduce((s, i) => s + i.defects, 0), vehicles_checked: vehicles.length },
+    totals: { checks: total, checks_with_defects: vehicles.reduce((s, v) => s + v.checks_with_defects, 0), defect_items: itemsOut.reduce((s, i) => s + i.defects, 0), again_after_repair: itemsOut.reduce((s, i) => s + i.again_after_repair, 0), vehicles_checked: vehicles.length },
     items: itemsOut, vehicles };
 }
