@@ -45,6 +45,17 @@ for (let k = 0; k < 20; k++) {
   await timed('Management-Panel', () => owner.get('/api/master'));
   await timed('Kostenbericht 12 Monate', () => owner.get('/api/reports/costs'));
   await timed('Kennzahlen 12 Monate', () => owner.get('/api/reports/kpi?from=' + new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7)));
+  if (!globalThis.__ltInsp) { globalThis.__ltInsp = true; // synthetische Kontrollen direkt in die DB (100 je Fahrzeug über 365 Tage, 18 Prüfpunkte, jede 10. mit Mangel) für die Mängelstatistik
+    const me = (await owner.get('/api/me')).data.user.id; const keys = (await owner.get('/api/meta')).data.checklist.map((c) => c.key);
+    const st = env.DB.prepare(`INSERT INTO inspections (id, environment, vehicle_id, kind, template_version, performed_by, items, result, created_at) VALUES (?,?,?,?,?,?,?,?,?)`);
+    const batch = [];
+    for (const [vi, v] of vehicles.entries()) for (let n = 0; n < 100; n++) {
+      const bad = (vi + n) % 10 === 0;
+      batch.push(st.bind(`lt-insp-${vi}-${n}`, 'test', v.id, 'abfahrt', 'v1', me, JSON.stringify(keys.map((k, j) => ({ key: k, result: bad && j === n % keys.length ? 'mangel' : 'ok' }))), bad ? 'maengel' : 'ok', new Date(Date.now() - n * 3.6 * 86400000).toISOString()));
+    }
+    await env.DB.batch(batch);
+  }
+  await timed('Mängelstatistik 365 Tage', () => owner.get('/api/reports/defects?days=365'));
   await timed('Prüftermine Übersicht', () => owner.get('/api/maintenance'));
   await timed('Reifen Flotte', () => owner.get('/api/tires/fleet'));
   await timed('Vorgangssuche', () => owner.get('/api/cases?q=LT'));

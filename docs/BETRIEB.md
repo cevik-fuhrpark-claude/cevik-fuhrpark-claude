@@ -76,6 +76,7 @@ zwischengespeichertem Zeitzonenversatz umgestellt, 12 000 Werte ≈ 10 ms statt 
 Ergänzt 10.10.2026, 18 Uhr (zusätzlich 200 Fahrer mit Fahrerkarte, Führerschein, Kontrolle, Auslesungen; Auslesung je Lkw; Aufruf
 `scripts/lasttest.mjs 150 3000 200`): Fahrerliste ≈ 14 ms / 6 Abfragen, Fahrerakte ≈ 2 ms / 7, Auslesungen-Übersicht ≈ 6 ms / 5,
 Fuhrparkagent ≈ 200 ms / 40 Abfragen (Fahrer- und Auslesebefunde mit konstanter Abfragezahl).
+Ergänzt 10.10.2026, 21:45 UTC: Mängelstatistik über 365 Tage mit 15 000 synthetischen Abfahrtskontrollen (100 je Lkw, je 18 Prüfpunkte) ≈ 165 ms / 4 Abfragen (überwiegend JSON-Auswertung in der Datenbank).
 
 Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
 mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt

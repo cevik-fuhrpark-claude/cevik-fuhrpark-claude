@@ -123,5 +123,7 @@ gleiche Termine bleiben unverändert (Import ist wiederholbar). `?dry_run=1` lie
 ## Kennzahlen (App)
 `GET /api/reports/kpi?from=JJJJ-MM&to=JJJJ-MM` – Inhaber, Fuhrparkleitung, Lesezugriff. Je Priorität (`kritisch`/`mittel`/`niedrig`/`alle`): `created`, `released`, `rejected`, `open`, `triage`/`workshop_ack`/`created_to_release` als `{n, median_h, p90_h}`, `parts_wait_h`; `vehicles[]` mit `workshop_h` und `parts_wait_h`. Definitionen im Feld `definitions`.
 
+`GET /api/reports/defects?days=90&kind=abfahrt|nach_reparatur` – Inhaber, Fuhrparkleitung. Mängelstatistik der Kontrollen (Zeitraum 7–730 Tage, Standard 90): `totals` (`checks`, `checks_with_defects`, `defect_items`, `vehicles_checked`), `items[]` je Prüfpunkt (`item`, `defects`, `vehicle_count`, `vehicles[]` max. 10 mit `plate`/`n`, `last_at`), `vehicles[]` je kontrolliertem Fahrzeug. Ruhende Fahrzeuge ausgenommen, ohne Personen.
+
 ## Reifen – Flotte (App)
 `GET /api/tires/fleet?stale_days=90` – Inhaber, Fuhrparkleitung, Werkstatt, Lesezugriff. Je aktivem Fahrzeug `status` (unter_minimum/warnung/ok/unbekannt), `min_tread_mm`, `measured_positions`, `below_min`, `below_warn`, `oldest_measure_at`, `stale`; Summen in `totals`.

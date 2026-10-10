@@ -234,3 +234,41 @@ export async function workshopLoad(env, user, envName, query = {}) {
   return { environment: envName, from: startDate, weeks: weekList, open_statuses: OPEN_WS,
     sites: [...bySite.values()].map((s) => ({ ...s, name: names.get(s.site) || s.site, weeks: weekList.map((w) => ({ week: w, ...s.weeks[w] })) })) };
 }
+
+// Mängelstatistik der Kontrollen (Abfahrt / nach Reparatur): welche Prüfpunkte wie oft und an welchen Fahrzeugen als Mangel
+// erfasst wurden – nur gespeicherte Kontrollen, ruhende Fahrzeuge (eval_excluded) ausgenommen, Umgebung getrennt, ohne Personen.
+export async function defectReport(env, user, envName, query = {}) {
+  if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
+  const days = query.days === undefined || query.days === '' ? 90 : Number(query.days);
+  if (!Number.isInteger(days) || days < 7 || days > 730) throw bad('invalid_days', 'days: 7–730 Tage');
+  const kind = query.kind || '';
+  if (kind && !['abfahrt', 'nach_reparatur'].includes(kind)) throw bad('invalid_kind', 'kind: abfahrt oder nach_reparatur');
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const kf = kind ? ' AND i.kind=?' : '';
+  const args = kind ? [envName, since, kind] : [envName, since];
+  const [checks, items] = await Promise.all([
+    env.DB.prepare(`SELECT i.vehicle_id, v.plate, v.kind AS vehicle_kind, COUNT(*) AS checks, SUM(i.result='maengel') AS with_defects, MAX(i.created_at) AS last_at
+      FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0
+      WHERE i.environment=? AND i.created_at >= ?${kf} GROUP BY i.vehicle_id`).bind(...args).all(),
+    env.DB.prepare(`SELECT json_extract(j.value,'$.key') AS item, i.vehicle_id, COUNT(*) AS n, MAX(i.created_at) AS last_at
+      FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0, json_each(i.items) j
+      WHERE i.environment=? AND i.created_at >= ?${kf} AND json_extract(j.value,'$.result')='mangel' GROUP BY item, i.vehicle_id`).bind(...args).all(),
+  ]);
+  const plates = new Map(checks.results.map((c) => [c.vehicle_id, c.plate]));
+  const byItem = new Map(); const byVeh = new Map();
+  for (const r of items.results) {
+    if (!byItem.has(r.item)) byItem.set(r.item, { item: r.item, defects: 0, vehicles: [], last_at: null });
+    const it = byItem.get(r.item);
+    it.defects += r.n; it.vehicles.push({ vehicle_id: r.vehicle_id, plate: plates.get(r.vehicle_id) || r.vehicle_id, n: r.n });
+    if (!it.last_at || r.last_at > it.last_at) it.last_at = r.last_at;
+    byVeh.set(r.vehicle_id, (byVeh.get(r.vehicle_id) || 0) + r.n);
+  }
+  const itemsOut = [...byItem.values()].map((it) => ({ ...it, vehicle_count: it.vehicles.length, vehicles: it.vehicles.sort((a, b) => b.n - a.n || a.plate.localeCompare(b.plate)).slice(0, 10) }))
+    .sort((a, b) => b.defects - a.defects || a.item.localeCompare(b.item));
+  const vehicles = checks.results.map((c) => ({ vehicle_id: c.vehicle_id, plate: c.plate, vehicle_kind: c.vehicle_kind, checks: c.checks, checks_with_defects: c.with_defects || 0, defect_items: byVeh.get(c.vehicle_id) || 0, last_check_at: c.last_at }))
+    .sort((a, b) => b.defect_items - a.defect_items || b.checks_with_defects - a.checks_with_defects || a.plate.localeCompare(b.plate));
+  const total = vehicles.reduce((s, v) => s + v.checks, 0);
+  return { environment: envName, days, kind: kind || null, since,
+    totals: { checks: total, checks_with_defects: vehicles.reduce((s, v) => s + v.checks_with_defects, 0), defect_items: itemsOut.reduce((s, i) => s + i.defects, 0), vehicles_checked: vehicles.length },
+    items: itemsOut, vehicles };
+}

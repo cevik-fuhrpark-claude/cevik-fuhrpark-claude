@@ -873,7 +873,7 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const dupl = Object.entries(perLang).flatMap(([lang, b]) => { const seen = {}; return [...b.matchAll(/(?:^|[\s,{])([a-z0-9_]+): (?=['`])/g)].map((m) => m[1]).filter((k) => (seen[k] = (seen[k] || 0) + 1) > 1).map((k) => `${lang}.${k}`); });
   eq(dupl.join(','), '', 'doppelte Textschlüssel (der spätere überschreibt still den früheren)');
   // Hilfe-Abschnitte werden dynamisch (help_<name>_t/_s) gebildet: jeder genannte Abschnitt muss in allen Sprachen mit gleicher Schrittzahl existieren
-  const helpSrc = app.slice(app.indexOf('function viewHelp()'), app.indexOf('// ---------- Reifen über die Flotte'));
+  const helpSrc = app.slice(app.indexOf('function viewHelp()'), app.indexOf('\n}\n', app.indexOf('function viewHelp()')));
   const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'more', 'app_version', 'help'].includes(k)));
   ok(helpParts.has('stock') && helpParts.has('privacy'), 'Hilfe: Lager und Datenauskunft');
   for (const k of helpParts) for (const lang of ['de', 'uk', 'en']) {
@@ -1697,6 +1697,34 @@ await test('Letzte Abfahrtskontrolle je Fahrzeug in Liste, Akte und CSV (nur Inf
   const row = txt.split('\r\n').find((l) => l.startsWith(v.plate + ';') || l.startsWith('"' + v.plate));
   ok(/^\d\d\.\d\d\.\d{4} \d\d:\d\d$/.test(row.split(';')[idx]), 'Zeitpunkt deutsch formatiert: ' + row.split(';')[idx]);
   eq(row.split(';')[idx + 1], last.result === 'ok' ? 'ohne Mangel' : 'mit Mangel');
+});
+
+await test('Mängelstatistik der Kontrollen: Summen wie gespeichert, Filter, Rechte, Umgebung, ruhende Fahrzeuge ausgenommen', async () => {
+  for (const u of [users.driver, users.ws, users.dispatch]) eq((await u.get('/api/reports/defects')).status, 403);
+  for (const q of ['days=3', 'days=1000', 'days=x', 'kind=sonstwas']) eq((await users.fleet.get('/api/reports/defects?' + q)).status, 400, q);
+  const since = new Date(Date.now() - 90 * 86400000).toISOString();
+  const db = async (kind) => {
+    const kf = kind ? ' AND i.kind=?' : ''; const a = kind ? ['test', since, kind] : ['test', since];
+    const c = await env.DB.prepare(`SELECT COUNT(*) AS n, SUM(i.result='maengel') AS m FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0 WHERE i.environment=? AND i.created_at>=?${kf}`).bind(...a).first();
+    const d = await env.DB.prepare(`SELECT COUNT(*) AS n FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0, json_each(i.items) j WHERE i.environment=? AND i.created_at>=?${kf} AND json_extract(j.value,'$.result')='mangel'`).bind(...a).first();
+    return { checks: c.n, with: c.m || 0, defects: d.n };
+  };
+  const r = (await users.fleet.get('/api/reports/defects')).data;
+  const x = await db();
+  ok(x.defects > 0, 'Testdaten: Mängel vorhanden');
+  eq(r.days, 90); eq(r.totals.checks, x.checks); eq(r.totals.checks_with_defects, x.with); eq(r.totals.defect_items, x.defects);
+  eq(r.items.reduce((s, i) => s + i.defects, 0), x.defects, 'Summe je Prüfpunkt');
+  eq(r.vehicles.reduce((s, v) => s + v.defect_items, 0), x.defects, 'Summe je Fahrzeug');
+  const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  ok(r.items.find((i) => i.item === keys[2])?.vehicles.some((v) => v.vehicle_id === V1), 'Bremsleuchten-Mangel an V1');
+  for (let k = 1; k < r.items.length; k++) ok(r.items[k - 1].defects >= r.items[k].defects, 'sortiert nach Häufigkeit');
+  ok(!/display_name|performed_by|reporter/.test(JSON.stringify(r)), 'ohne Personen');
+  for (const kind of ['abfahrt', 'nach_reparatur']) { const k = (await users.fleet.get('/api/reports/defects?kind=' + kind)).data; const y = await db(kind); eq(k.totals.checks, y.checks, kind); eq(k.totals.defect_items, y.defects, kind); }
+  const p = (await users.prodFleet.get('/api/reports/defects')).data;
+  ok(!p.vehicles.some((v) => v.vehicle_id === V1 && v.checks === r.vehicles.find((w) => w.vehicle_id === V1).checks) || p.totals.checks !== r.totals.checks, 'Betrieb getrennt von Test');
+  await env.DB.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').bind(V1).run();
+  try { ok(!(await users.fleet.get('/api/reports/defects')).data.vehicles.some((v) => v.vehicle_id === V1), 'ruhendes Fahrzeug ausgenommen'); }
+  finally { await env.DB.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').bind(V1).run(); }
 });
 
 await test('Datenauskunft je Person: nur Inhaber, vollständig je Bereich, ohne Geheimnisse, protokolliert', async () => {
