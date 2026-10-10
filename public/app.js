@@ -310,7 +310,7 @@ async function viewNew() {
     <label>${esc(t('driveable'))}</label><div class="choices">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><b>${esc(t('drv_' + p))}</b></label>`).join('')}</div>
     <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>
     <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
-    <p class="small muted" style="margin-top:12px">${esc(t('photos_after'))}</p>
+    <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('photos_now_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('send_report'))}</button></div></form>`, 'new');
   const key = uid();
   $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => (l.hidden = q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q))); if (q) $$('details').forEach((d) => (d.open = true)); };
@@ -323,12 +323,19 @@ async function viewNew() {
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
     try {
       const r = await api('POST', '/api/cases', body);
-      toast(`${t('report_sent')}: ${r.case_no}`);
+      const files = [...($('#ph').files || [])].slice(0, 10);
+      let failed = 0;
+      for (const [i, file] of files.entries()) {
+        $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
+        try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${r.id}/files`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
+        catch { failed++; }
+      }
+      toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
       location.hash = '#/cases/' + r.id;
     } catch (err) {
       if (err.offline) {
         outboxAdd('/api/cases', body);
-        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
+        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${($('#ph').files || []).length ? `<p>${esc(t('photos_offline'))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
       }
       toast(err.message, true); $('#sb').disabled = false;
