@@ -1140,6 +1140,8 @@ await test('Tätigkeitsvorschläge aus bisherigen Arbeiten der eigenen Werkstatt
   const own = (await env.DB.prepare(`SELECT DISTINCT w.description AS d FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE c.workshop_site='DORTMUND' AND c.environment='test'`).all()).results.map((x) => x.d);
   ok(r.data.suggestions.every((x) => own.includes(x)), 'nur eigene Werkstatt');
   eq((await users.driver.get('/api/work-suggestions')).status, 403);
+  const ps = await users.ws.get('/api/part-suggestions');
+  eq(ps.status, 200); ok(ps.data.suggestions.every((x) => 'name' in x && !('unit_price_net' in x)), 'Teile ohne Preise');
 });
 
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {

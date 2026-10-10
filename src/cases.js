@@ -91,6 +91,16 @@ export async function workSuggestions(env, user, envName) {
   return { suggestions: rows.map((r) => r.d) };
 }
 
+// Vorschläge für Teile: bisher erfasste Teile der eigenen Werkstatt (Bezeichnung + Teilenummer, ohne Preise)
+export async function partSuggestions(env, user, envName) {
+  if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
+  const site = user.role === 'workshop' ? user.workshop_site : null;
+  const rows = (await env.DB.prepare(`SELECT p.name, p.part_number, COUNT(*) AS n, MAX(p.created_at) AS last FROM parts p JOIN cases c ON c.id=p.case_id
+    WHERE c.environment=? ${site ? 'AND c.workshop_site=?' : ''} AND p.created_at > ? GROUP BY p.name, p.part_number ORDER BY n DESC, last DESC LIMIT 60`)
+    .bind(...(site ? [envName, site] : [envName]), new Date(Date.now() - 365 * 86400000).toISOString()).all()).results;
+  return { suggestions: rows.map((r) => ({ name: r.name, part_number: r.part_number })) };
+}
+
 // CSV-Export der Vorgangsliste (gleiche Filter und Rechte wie die Liste), Excel-tauglich (UTF-8 mit BOM, Semikolon)
 const PRIO_DE = { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' };
 export function casesCsv(rows, csvCell, fmt) {
