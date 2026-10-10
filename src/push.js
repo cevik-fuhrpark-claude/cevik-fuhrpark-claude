@@ -4,7 +4,14 @@ import { b64urlEncode, b64urlDecode, concatBytes, nowIso } from './util.js';
 const te = new TextEncoder();
 
 // VAPID-Schlüssel: bevorzugt aus Secret VAPID_PRIVATE_JWK, sonst einmalig erzeugt und in settings abgelegt
-export async function getVapid(env) {
+// Abfragebudget: Schlüssel je Datenbank-Bindung im Isolat zwischenspeichern (ändert sich nach dem Erzeugen nie)
+const vapidCache = new WeakMap();
+export function getVapid(env) {
+  if (env.VAPID_PRIVATE_JWK || !env.DB || typeof env.DB !== 'object') return loadVapid(env);
+  if (!vapidCache.has(env.DB)) vapidCache.set(env.DB, loadVapid(env).catch((e) => { vapidCache.delete(env.DB); throw e; }));
+  return vapidCache.get(env.DB);
+}
+async function loadVapid(env) {
   let jwk = null;
   if (env.VAPID_PRIVATE_JWK) jwk = JSON.parse(env.VAPID_PRIVATE_JWK);
   if (!jwk) {

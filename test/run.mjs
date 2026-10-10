@@ -836,6 +836,26 @@ await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den
   eq((await users.fleet.get('/api/reports/kpi?from=2026-13')).status, 400);
 });
 
+await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Überschneidungen einmal', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'KP-SP 1', vin: 'WDB96340310888001', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310888001';
+  const mk = async (desc) => (await users.fleet.post('/api/cases', { vehicle_id: VK, description: desc, priority: 'mittel', driveability: 'nicht_fahrbereit', request_key: rk() })).data.id;
+  const a = await mk('Sperrzeit-Test A: Bremse'); const b = await mk('Sperrzeit-Test B: Reifen');
+  const h = (n) => new Date(Date.now() - n * 3600000).toISOString();
+  // A gesperrt seit 5 h, B seit 3 h (überschneidet) → 5 h; A wird vor 1 h aufgehoben, B bleibt offen → weiterhin 5 h
+  await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='create'`).bind(h(5), a).run();
+  await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='create'`).bind(h(3), b).run();
+  const ca = (await users.fleet.get(`/api/cases/${a}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${a}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: ca.version, note: 'Sichtprüfung: Bremse in Ordnung', payload: { confirm: true } })).status, 200);
+  await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='lift_safety_lock'`).bind(h(1), a).run();
+  const r = (await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data;
+  const v = r.vehicles.find((x) => x.vehicle_id === VK);
+  ok(v && Math.abs(v.locked_h - 5) < 0.05, 'Sperrzeit 5 h: ' + (v && v.locked_h));
+  ok(r.definitions.locked_h, 'Definition');
+  for (const id of [a, b]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; if (c.safety_lock) await users.fleet.post(`/api/cases/${id}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Testende', payload: { confirm: true } }); const c2 = (await users.fleet.get(`/api/cases/${id}`)).data.case; await users.fleet.post(`/api/cases/${id}/commands`, { action: 'reject', command_id: rk(), expected_version: c2.version, note: 'Testdaten' }); }
+  eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Sperrzeit' })).status, 200);
+});
+
 console.log('Datensicherung');
 await test('Sicherung nur für Inhaber, ohne Passwörter/Token/Schlüssel, mit allen Fachtabellen', async () => {
   eq((await users.fleet.get('/api/admin/backup')).status, 403);

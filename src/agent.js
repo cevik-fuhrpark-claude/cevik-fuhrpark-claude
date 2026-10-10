@@ -316,11 +316,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Kritische neue Befunde zusätzlich an Fuhrparkleitung/Owner pushen
     let ids = null;
-    const recipients = async () => ids || (ids = (await env.DB.prepare(`SELECT id FROM users WHERE environment=? AND role IN ('fleet','owner') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results.map((r) => r.id));
+    const recipients = async () => ids || (ids = fleetUsers.map((r) => r.id)); // Empfänger wurden zu Beginn des Laufs geladen
     if (newCritical.length) {
       await recipients();
-      // Abfragebudget: bei vielen neuen kritischen Befunden eine Sammelmeldung statt Einzel-Pushs
-      if (newCritical.length > 3) {
+      // Abfragebudget: ab 2 neuen kritischen Befunden eine Sammelmeldung statt Einzel-Pushs (je Push ≈ 4 Abfragen; Agent liegt bei ≈ 44 von 50)
+      if (newCritical.length > 1) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${newCritical.length} neue kritische Befunde${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${runId}`, caseId: null, urgent: true });
       } else for (const { eventId, f } of newCritical) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${f.code}${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });

@@ -81,35 +81,46 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
   return { list: list.filter((u) => u.id !== actorId), urgent };
 }
 
+// Hinweise anlegen (doppelte Ereignisse je Person werden ignoriert) und die tatsächlich neuen zurückgeben.
+// Abfragebudget: ab 2 Empfängern 2 Anweisungen statt einer je Empfänger (Agent-Läufe mit mehreren Leitungskonten blieben sonst nicht unter 50).
+async function insertNotifications(env, rows) {
+  if (!rows.length) return [];
+  const sql = `INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status)`;
+  if (rows.length === 1) {
+    const x = rows[0];
+    const r = await env.DB.prepare(`${sql} VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`).bind(x.id, x.environment, x.user_id, x.case_id, x.event_key, x.kind, x.urgent, x.title, x.body, x.created_at).run();
+    return r.meta && r.meta.changes === 1 ? rows : [];
+  }
+  const f = (k) => `json_extract(value,'$.${k}')`;
+  await env.DB.prepare(`${sql} SELECT ${['id', 'environment', 'user_id', 'case_id', 'event_key', 'kind', 'urgent', 'title', 'body', 'created_at'].map(f).join(',')},'pending' FROM json_each(?)`)
+    .bind(JSON.stringify(rows)).run();
+  const ok = new Set((await env.DB.prepare('SELECT id FROM notifications WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(rows.map((r) => r.id))).all()).results.map((r) => r.id));
+  return rows.filter((r) => ok.has(r.id));
+}
+
 export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
   const { list, urgent } = await recipientsFor(env, c, kind, ctxData);
   const vehicle = ctxData.vehicle || await env.DB.prepare('SELECT plate FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
   const eventKey = `${c.id}:${kind}:${c.version}`;
   const now = nowIso();
-  const created = [];
+  const rows = [];
   for (const u of list) {
     const lang = T[u.language] ? u.language : 'de';
     const title = kind === 'created' && urgent ? T[lang].created_urgent : T[lang][kind] || kind;
     // Sperrbildschirm: nur Vorgangsnummer, Kennzeichen, Priorität – keine Schadensbeschreibung
     const body = `${c.case_no} · ${vehicle?.plate || ''} · ${c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
-    const id = uuid();
-    const r = await env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`).bind(id, c.environment, u.id, c.id, eventKey, kind, urgent ? 1 : 0, title, body, now).run();
-    if (r.meta && r.meta.changes === 1) created.push({ id, user_id: u.id, title, body, urgent, case_id: c.id, kind });
+    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: c.id, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now });
   }
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: c.id, kind }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
 }
 
 export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false }) {
-  const created = [];
-  for (const uid of userIds) {
-    const id = uuid();
-    const r = await env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`).bind(id, environment, uid, caseId, eventKey, kind, urgent ? 1 : 0, title, body, nowIso()).run();
-    if (r.meta && r.meta.changes === 1) created.push({ id, user_id: uid, title, body, urgent, case_id: caseId, kind });
-  }
+  const now = nowIso();
+  const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title, body, urgent, case_id: caseId, kind }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;

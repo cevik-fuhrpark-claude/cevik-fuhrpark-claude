@@ -121,7 +121,7 @@ Kopfzeile mit `Kennzeichen` und/oder `FIN`, `Art` (HU, SP, UVV, Tachograph … ;
 gleiche Termine bleiben unverändert (Import ist wiederholbar). `?dry_run=1` liefert die Vorschau ohne zu speichern. Jeder Import/Export im Audit-Log.
 
 ## Kennzahlen (App)
-`GET /api/reports/kpi?from=JJJJ-MM&to=JJJJ-MM` – Inhaber, Fuhrparkleitung, Lesezugriff. Je Priorität (`kritisch`/`mittel`/`niedrig`/`alle`): `created`, `released`, `rejected`, `open`, `triage`/`workshop_ack`/`created_to_release` als `{n, median_h, p90_h}`, `parts_wait_h`; `vehicles[]` mit `workshop_h` und `parts_wait_h`. Definitionen im Feld `definitions`.
+`GET /api/reports/kpi?from=JJJJ-MM&to=JJJJ-MM` – Inhaber, Fuhrparkleitung, Lesezugriff. Je Priorität (`kritisch`/`mittel`/`niedrig`/`alle`): `created`, `released`, `rejected`, `open`, `triage`/`workshop_ack`/`created_to_release` als `{n, median_h, p90_h}`, `parts_wait_h`; `vehicles[]` mit `workshop_h`, `parts_wait_h` und `locked_h` (Zeit mit Sicherheitssperre, Überschneidungen einmal). Definitionen im Feld `definitions`.
 
 `GET /api/reports/defects?days=90&kind=abfahrt|nach_reparatur` – Inhaber, Fuhrparkleitung. Mängelstatistik der Kontrollen (Zeitraum 7–730 Tage, Standard 90): `totals` (`checks`, `checks_with_defects`, `defect_items`, `again_after_repair`, `vehicles_checked`), `items[]` je Prüfpunkt (`item`, `defects`, `again_after_repair` = neue Vorgänge aus Kontrollen im Zeitraum, deren Prüfpunkt am selben Fahrzeug in den 90 Tagen davor freigegeben wurde, `vehicle_count`, `vehicles[]` max. 10 mit `plate`/`n`, `last_at`), `vehicles[]` je kontrolliertem Fahrzeug. Ruhende Fahrzeuge ausgenommen, ohne Personen.
 

@@ -148,12 +148,14 @@ export async function kpiReport(env, user, envName, query = {}) {
     WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results
     .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to; });
   const ids = cases.map((c) => c.id);
-  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
+  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
     .bind(JSON.stringify(ids)).all()).results : [];
   const evBy = new Map();
   for (const e of events) { if (!evBy.has(e.case_id)) evBy.set(e.case_id, []); evBy.get(e.case_id).push(e); }
   const now = Date.now();
   const groups = {}; const byVehicle = new Map();
+  const locks = new Map(); // je Fahrzeug Sperrabschnitte; überlappende Sperren mehrerer Vorgänge zählen einmal
+  const addLock = (vid, a, b) => { if (b > a) { if (!locks.has(vid)) locks.set(vid, []); locks.get(vid).push([a, b]); } };
   const g = (k) => groups[k] || (groups[k] = { created: 0, released: 0, rejected: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
   for (const c of cases) {
     const evs = evBy.get(c.id) || [];
@@ -166,6 +168,15 @@ export async function kpiReport(env, user, envName, query = {}) {
       else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { wait += Date.parse(e.created_at) - since; since = null; }
     }
     if (since !== null) wait += now - since;
+    // Sicherheitssperre: ab Meldung mit Sperre bzw. „Sperre setzen“ bis „Sperre aufheben“ oder technische Freigabe (offen bis jetzt)
+    let lockFrom = null;
+    for (const e of evs) {
+      const at = Date.parse(e.created_at);
+      if (e.action === 'create') { try { if (JSON.parse(e.create_payload || '{}').safety_lock) lockFrom = at; } catch { /* altes Format */ } }
+      else if (e.action === 'set_safety_lock' && lockFrom === null) lockFrom = at;
+      else if (lockFrom !== null && (e.action === 'lift_safety_lock' || e.to_status === 'fahrzeug_freigegeben' || e.to_status === 'abgelehnt')) { addLock(c.vehicle_id, lockFrom, at); lockFrom = null; }
+    }
+    if (lockFrom !== null) addLock(c.vehicle_id, lockFrom, now);
     const workshop = approved && c.closed_at && c.status === 'fahrzeug_freigegeben' ? Date.parse(c.closed_at) - Date.parse(approved.created_at) : null;
     for (const k of [c.priority, 'alle']) {
       const x = g(k); x.created++;
@@ -175,11 +186,18 @@ export async function kpiReport(env, user, envName, query = {}) {
       if (c.status === 'fahrzeug_freigegeben' && c.closed_at) x.total.push((Date.parse(c.closed_at) - t0) / H);
       x.parts_wait_h += wait / H;
     }
-    const v = byVehicle.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, cases: 0, released: 0, workshop_h: 0, parts_wait_h: 0 };
+    const v = byVehicle.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, cases: 0, released: 0, workshop_h: 0, parts_wait_h: 0, locked_h: 0 };
     v.cases++; if (c.status === 'fahrzeug_freigegeben') v.released++;
     if (workshop !== null) v.workshop_h += workshop / H;
     v.parts_wait_h += wait / H;
     byVehicle.set(c.vehicle_id, v);
+  }
+  for (const [vid, list] of locks) {
+    list.sort((x, y) => x[0] - y[0]);
+    let sum = 0; let [a, b] = list[0];
+    for (const [x, y] of list.slice(1)) { if (x <= b) b = Math.max(b, y); else { sum += b - a; a = x; b = y; } }
+    sum += b - a;
+    byVehicle.get(vid).locked_h = sum / H;
   }
   const plates = new Map((await env.DB.prepare('SELECT id, plate, kind FROM vehicles').all()).results.map((v) => [v.id, v]));
   const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
@@ -187,10 +205,10 @@ export async function kpiReport(env, user, envName, query = {}) {
     const x = groups[k];
     return { priority: k, created: x.created, released: x.released, rejected: x.rejected, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
   });
-  const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h) }))
+  const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h) }))
     .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
   return { from, to, environment: envName, by_priority, vehicles,
-    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“' } };
+    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum' } };
 }
 
 // ---- Werkstatt-Auslastung je Standort und Kalenderwoche (ohne Auswertung je Person) ----
