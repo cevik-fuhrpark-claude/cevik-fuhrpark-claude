@@ -995,7 +995,7 @@ await test('Kilometerstand: Ablesedatum (nicht Zukunft), Plausibilität gegen Na
   eq(high.status, 409, 'größer als späterer Wert');
   const withNote = await users.fleet.post(p, { km: 1200, measured_on: day(5), note: 'Tachotausch laut Werkstattrechnung' });
   eq(withNote.status, 201); ok(withNote.data.warning, 'Hinweis bei Begründung');
-  eq((await users.fleet.post(p, { km: 1300, measured_on: day(-1) })).status, 400, 'Zukunft abgewiesen');
+  eq((await users.fleet.post(p, { km: 1300, measured_on: day(-2) })).status, 400, 'Zukunft abgewiesen'); // -2: UTC-Datum liegt nachts hinter Berlin
   eq((await users.fleet.post(p, { km: 1300, measured_on: '2026-02-30x' })).status, 400);
   eq((await users.fleet.post(p, { km: 1250, measured_on: day(5), note: 'x' })).status, 409, 'Doppelerfassung gleicher Tag/Rolle');
   const d = await users.fleet.get(`/api/vehicles/${encodeURIComponent(V2)}`);
