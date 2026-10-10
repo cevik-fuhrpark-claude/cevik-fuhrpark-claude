@@ -214,3 +214,6 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 }
 .print-only { display: none; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }
+/* [CLAUDE] QR-Code für Einladungslinks: feste Schwarz/Weiß-Darstellung, gut scanbar */
+.qr svg { width: min(240px, 70vw); height: auto; display: block; border-radius: 4px; }
+@media print { .qr svg { width: 50mm; } }

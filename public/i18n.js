@@ -223,3 +223,6 @@ Object.assign(STRINGS.en, { forgot_pw: 'Forgot your password or account locked?'
 Object.assign(STRINGS.de, { vi_title: 'Zum Fahrzeug', vi_other_cases: 'Weitere offene Vorgänge', vi_due: 'Prüfungen ≤ 30 Tage' });
 Object.assign(STRINGS.uk, { vi_title: 'Про транспорт', vi_other_cases: 'Інші відкриті справи', vi_due: 'Перевірки ≤ 30 днів' });
 Object.assign(STRINGS.en, { vi_title: 'About the vehicle', vi_other_cases: 'Other open cases', vi_due: 'Inspections ≤ 30 days' });
+Object.assign(STRINGS.de, { invite_qr_hint: 'Oder direkt vom Handy der Person scannen lassen (Kamera-App). Der Link gilt nur einmal und läuft ab – nicht fotografieren und weiterleiten.' });
+Object.assign(STRINGS.uk, { invite_qr_hint: 'Або нехай людина відсканує код камерою свого телефона. Посилання одноразове і має строк дії – не фотографуйте і не пересилайте.' });
+Object.assign(STRINGS.en, { invite_qr_hint: 'Or let the person scan it with their phone camera. The link works once and expires – do not photograph or forward it.' });

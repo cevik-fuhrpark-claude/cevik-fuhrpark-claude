@@ -1468,6 +1468,20 @@ await test('Vorgang zeigt Kurzinfo zum Fahrzeug (weitere offene Vorgänge, Prüf
   for (const id of [a.data.id, b.data.id]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; await users.fleet.post(`/api/cases/${id}/commands`, { command: 'reject', command_id: rk(), expected_version: c.version, reason: 'Testdaten Kurzinfo' }); }
 });
 
+await test('QR-Code für Einladungslinks (eigener Encoder): Größe je Länge, Positionsmuster, Referenz (per Decoder geprüft), Grenze 213 Bytes', async () => {
+  const { encode, svg } = await import('../public/qr.js');
+  const { createHash } = await import('node:crypto');
+  const fp = (m) => createHash('sha256').update(m.map((r) => r.map((b) => (b ? 1 : 0)).join('')).join('\n')).digest('hex').slice(0, 16);
+  const hello = encode('HELLO'); eq(hello.length, 21);
+  // Referenzen: mit OpenCV-QR-Decoder (QRCodeDetectorAruco) erfolgreich gelesen, 10.10.2026
+  eq(fp(hello), 'c346c75add569873');
+  const link = encode('https://cevik-fuhrpark-claude.y-cevik.workers.dev/#/invite/' + 'a'.repeat(43)); eq(link.length, 41); eq(fp(link), 'e33b459d7087f49f');
+  for (const [x, y] of [[0, 0], [link.length - 7, 0], [0, link.length - 7]]) ok(link[y][x] && link[y + 6][x + 6] && !link[y + 1][x + 1] && link[y + 3][x + 3], 'Positionsmuster');
+  eq(encode('q'.repeat(213)).length, 57, 'Version 10');
+  let threw = false; try { encode('q'.repeat(214)); } catch { threw = true; } ok(threw, 'zu lang → Fehler');
+  ok(svg('x<"y', { label: 'a"b' }).includes('aria-label="a&quot;b"'), 'SVG maskiert');
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
