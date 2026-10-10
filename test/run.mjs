@@ -1081,6 +1081,20 @@ await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten
   for (const v of ['WDB96340310888001', 'WDB96340310888002']) await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Import' });
 });
 
+await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Namen; ICS-Text korrekt maskiert', async () => {
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  await users.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle Süd; Abt. 3', reference: 'AZ-ICS-1', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 35.5, response_due: '2099-03-15' });
+  const csv = await users.fleet.get('/api/fines?format=csv');
+  eq(csv.status, 200); const t = dec(csv);
+  ok(t.startsWith('\ufeffVorgang;Art;Behörde') && !t.includes(';Fahrer') && t.includes('35,5'), 'ohne Fahrer, Komma-Betrag');
+  ok(dec(await users.fleet.get('/api/fines?format=csv&with_driver=1')).split('\r\n')[0].endsWith(';Fahrer'), 'mit Fahrer auf Wunsch');
+  eq((await users.driver.get('/api/fines?format=csv')).status, 403);
+  const ics = dec(await users.fleet.get('/api/fines?format=ics'));
+  ok(ics.includes('DTSTART;VALUE=DATE:20990315') && ics.includes('Bußgeldstelle Süd\\; Abt. 3'), 'Frist mit maskiertem Semikolon');
+  const { icsEscape } = await import('../src/util.js');
+  eq(icsEscape('a;b,c\\d\nx'), 'a\\;b\\,c\\\\d\\nx');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

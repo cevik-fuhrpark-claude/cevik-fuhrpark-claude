@@ -205,6 +205,23 @@ export async function canReadFineFile(env, user, envName, fineId) {
   return true;
 }
 
+// CSV-Export (Buchhaltung/Steuerberatung): Fahrernamen nur auf ausdrücklichen Wunsch (with_driver=1) und nur für Inhaber/Fuhrparkleitung
+const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', bussgeldbescheid: 'Bußgeldbescheid', verwarnung: 'Verwarnung', maut: 'Maut', sonstiges: 'Sonstiges' };
+export function finesCsv(rows, csvCell, withDriver) {
+  const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
+  const lines = [head.join(';')];
+  for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), csvCell(f.reference), csvCell(f.offense_type), csvCell(f.offense_at), csvCell(f.location),
+    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : String(f.amount_eur).replace('.', ','), f.response_due || '', csvCell(f.status),
+    ...(withDriver ? [csvCell(f.driver_name || f.driver_name_note)] : [])].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
+// Fristenkalender: nur Antwortfristen laut Schreiben offener Vorgänge, ohne Fahrernamen (Kalender werden oft geteilt)
+export function finesIcs(rows, warnDays, icsCalendar) {
+  const open = rows.filter((f) => f.response_due && !['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status));
+  return icsCalendar('Fuhrpark Behördenfristen', open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due, summary: `Frist ${KIND_DE[f.kind] || f.kind} – ${f.plate || f.plate_in_letter} (${f.fine_no})`,
+    description: `${f.authority}${f.reference ? ' · Az. ' + f.reference : ''} · Frist laut Schreiben`, alarmDays: warnDays })));
+}
+
 export async function fineFindings(env, environment) {
   const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
   const warnDays = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;

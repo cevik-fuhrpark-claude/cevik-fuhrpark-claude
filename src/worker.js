@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, icsCalendar } from './util.js';
 import * as auth from './auth.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
@@ -239,7 +239,23 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/movements$/)) && m === 'POST') return json(await stock.addMovement(env, user, envName, mm[1], await readJson(request)), 201);
 
   // Bußgelder & Zeugenfragebögen
-  if (path === '/api/fines' && m === 'GET') return json({ fines: await fines.listFines(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/fines' && m === 'GET') {
+    const q = Object.fromEntries(url.searchParams);
+    const list = await fines.listFines(env, user, envName, q);
+    if (q.format === 'csv' || q.format === 'ics') {
+      if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
+      const day = new Date().toISOString().slice(0, 10);
+      if (q.format === 'ics') {
+        const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
+        const warn = w && Number(w.value) > 0 ? Number(w.value) : null;
+        return new Response(fines.finesIcs(list, warn, icsCalendar), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"` } });
+      }
+      const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
+      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName });
+      return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}.csv"` } });
+    }
+    return json({ fines: list });
+  }
   if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await fines.fineCommand(env, ctx, user, envName, mm[1], b)); }

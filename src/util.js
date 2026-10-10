@@ -221,3 +221,28 @@ export function parseCsv(text) {
   if (row.some((x) => x !== '')) rows.push(row);
   return rows;
 }
+
+// iCalendar (RFC 5545): ganztägige Termine mit optionaler Erinnerung; TEXT-Werte maskiert (\\ ; , Zeilenumbruch), Zeilen auf 75 Oktette gefaltet
+export function icsEscape(x) {
+  return String(x ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+export function icsCalendar(name, events, stamp = new Date().toISOString()) {
+  const enc = new TextEncoder();
+  const fold = (line) => {
+    const out = []; let cur = ''; let n = 0;
+    for (const ch of line) { const b = enc.encode(ch).length; if (n + b > 75) { out.push(cur); cur = ' '; n = 1; } cur += ch; n += b; }
+    out.push(cur); return out.join('\r\n');
+  };
+  const d8 = (d) => d.replace(/-/g, '');
+  const next = (d) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+  const ts = stamp.replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Cevik Mobility//CLAUDE Fuhrpark//DE', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${icsEscape(name)}`];
+  for (const e of events) {
+    lines.push('BEGIN:VEVENT', `UID:${e.uid}@cevik-fuhrpark-claude`, `DTSTAMP:${ts}`, `DTSTART;VALUE=DATE:${d8(e.date)}`, `DTEND;VALUE=DATE:${d8(next(e.date))}`,
+      `SUMMARY:${icsEscape(e.summary)}`, `DESCRIPTION:${icsEscape(e.description || '')}`, 'TRANSP:TRANSPARENT');
+    if (e.alarmDays !== null && e.alarmDays !== undefined) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(e.alarm || e.summary)}`, `TRIGGER:-P${e.alarmDays}D`, 'END:VALARM');
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
