@@ -210,6 +210,7 @@ export async function importVehiclesCsv(env, user, text) {
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
   const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']), kind: col(['fahrzeugart', 'art']), src: col(['quelle', 'nachweis']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
+  if (head.some((h) => h.startsWith('reifen') || h === 'art' || h.startsWith('letzte'))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');
   const result = { imported: 0, skipped: [] };
   const rows = new Map();
   for (const line of lines.slice(1)) {
