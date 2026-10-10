@@ -196,3 +196,9 @@ Object.assign(STRINGS.en, { todo_tacho: 'Downloads due (driver card/vehicle unit
 Object.assign(STRINGS.de, { tacho_vu: 'Massenspeicher Fahrtenschreiber', tl_tacho: 'Massenspeicher ausgelesen' });
 Object.assign(STRINGS.uk, { tacho_vu: 'Пам’ять тахографа', tl_tacho: 'Пам’ять тахографа зчитано' });
 Object.assign(STRINGS.en, { tacho_vu: 'Tachograph vehicle unit', tl_tacho: 'Vehicle unit downloaded' });
+Object.assign(STRINGS.de, { tacho_import: 'Auslesungen importieren (CSV)', tacho_import_hint: 'Export der Auslesesoftware mit Spalten Art (Fahrerkarte/Massenspeicher), Personalnummer oder Fahrer bzw. Kennzeichen oder FIN, Datum und Nachweis/Datei. Erst Vorschau, dann übernehmen. Nur eindeutige Treffer; bereits erfasste Tage bleiben unverändert.', tacho_import_src: 'Quelle für alle Zeilen (falls Spalte Nachweis fehlt)', tacho_known: 'bereits erfasst' });
+Object.assign(STRINGS.uk, { tacho_import: 'Імпорт зчитувань (CSV)', tacho_import_hint: 'Експорт програми зчитування зі стовпцями Вид (картка/пам’ять тахографа), табельний номер або водій, номерний знак або VIN, дата та підтвердження/файл. Спочатку перегляд, потім застосувати. Лише однозначні збіги; вже записані дні не змінюються.', tacho_import_src: 'Джерело для всіх рядків (якщо немає стовпця підтвердження)', tacho_known: 'вже записано' });
+Object.assign(STRINGS.en, { tacho_import: 'Import downloads (CSV)', tacho_import_hint: 'Export of the download software with columns type (driver card/vehicle unit), personnel no. or driver, plate or VIN, date and evidence/file. Preview first, then apply. Unique matches only; days already recorded stay unchanged.', tacho_import_src: 'Source for all rows (if no evidence column)', tacho_known: 'already recorded' });
+Object.assign(STRINGS.de, { tacho_target: 'Fahrer/Fahrzeug' });
+Object.assign(STRINGS.uk, { tacho_target: 'Водій/транспорт' });
+Object.assign(STRINGS.en, { tacho_target: 'Driver/vehicle' });

@@ -265,6 +265,12 @@ async function handleApi(request, env, ctx, url) {
     }
     return json(ov);
   }
+  if (path === '/api/tacho/import' && m === 'POST') {
+    await rateLimit(env, 'import', user.id);
+    const text = await request.text();
+    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    return json(await tacho.importDownloads(env, user, envName, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));
+  }
   if (path === '/api/tacho/downloads' && m === 'GET') return json({ downloads: await tacho.listDownloads(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/tacho/downloads' && m === 'POST') return json(await tacho.addDownload(env, user, envName, await readJson(request)), 201);
 

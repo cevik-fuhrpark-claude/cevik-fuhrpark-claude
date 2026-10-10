@@ -5,7 +5,7 @@
 // Umsetzung (vorsichtige Lesart): Das früheste nicht kopierte Ereignis liegt unmittelbar nach der letzten Auslesung,
 // daher „spätestens fällig“ = letzte erfasste Auslesung + 28 bzw. + 90 Tage. Ohne erfasste Auslesung wird KEINE Frist
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin } from './util.js';
 import { audit } from './auth.js';
 
 export const TACHO_RULE = { card_days: 28, vu_days: 90, source: 'FPersV § 2 Abs. 5' };
@@ -129,4 +129,98 @@ export function tachoCsv(ov, cell) {
   for (const d of ov.drivers) lines.push(['Fahrerkarte', cell(d.display_name), cell(d.personnel_no), cell(d.site), d.last || '', d.due || '', d.days ?? '', S[d.status]].join(';'));
   for (const v of ov.vehicles) lines.push(['Massenspeicher', cell(v.plate), '', cell(v.site), v.last || '', v.due || '', v.days ?? '', S[v.status]].join(';'));
   return lines.join('\r\n') + '\r\n';
+}
+
+// Sammelimport aus dem Export der Auslesesoftware (CSV, „;“ oder „,“). Spalten (Groß/Klein egal, Anfang genügt):
+// Art (Fahrerkarte/Karte/C bzw. Massenspeicher/Fahrzeug/VU/M), Personalnummer und/oder Fahrer/Name, Kennzeichen und/oder FIN,
+// Datum (JJJJ-MM-TT oder TT.MM.JJJJ), Nachweis/Datei (sonst Pflichtangabe `source` für alle Zeilen).
+// Zuordnung nur eindeutig: Fahrer über Personalnummer, sonst exakt gleicher Name; Fahrzeug über FIN, sonst eindeutiges Kennzeichen.
+const MAX_IMPORT = 2000;
+const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+const normName = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+function parseDay(raw) {
+  const t = String(raw || '').trim(); let m;
+  const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
+  if (ISO.test(t)) return iso(t);
+  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s.*)?$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]/))) return iso(m[1]);
+  return null;
+}
+function kindOf(raw) {
+  const k = String(raw || '').trim().toLowerCase();
+  if (['fahrerkarte', 'karte', 'c', 'card', 'driver card', 'fahrer'].includes(k)) return 'fahrerkarte';
+  if (['massenspeicher', 'fahrzeug', 'vu', 'm', 'fahrtenschreiber', 'kontrollgerät', 'kontrollgeraet', 'vehicle unit'].includes(k)) return 'massenspeicher';
+  return null;
+}
+
+export async function importDownloads(env, user, envName, text, { dryRun = false, source = '' } = {}) {
+  if (!isMgr(user)) throw forbidden();
+  const table = parseCsv(text);
+  if (table.length < 2) throw bad('validation', 'CSV leer.');
+  if (table.length - 1 > MAX_IMPORT) throw bad('validation', `Maximal ${MAX_IMPORT} Zeilen je Import.`);
+  const head = table[0].map((h) => h.toLowerCase());
+  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: col(['fahrer', 'name']),
+    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: col(['datum', 'auslesedatum', 'ausgelesen']), ev: col(['nachweis', 'datei', 'beleg']) };
+  const fallbackEv = str(source, { max: 200 });
+  if (ci.kind < 0) throw bad('validation', 'Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.');
+  if (ci.day < 0) throw bad('validation', 'Spalte „Datum“ erforderlich.');
+  if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“/„Datei“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
+  if (ci.pno < 0 && ci.name < 0 && ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Personalnummer/Fahrer oder Kennzeichen/FIN erforderlich.');
+
+  const drivers = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
+  const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind FROM vehicles WHERE active=1`).all()).results;
+  const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results.map((r) => r.k));
+  const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
+  const byPno = uniq(drivers, (d) => (d.personnel_no ? d.personnel_no.trim().toLowerCase() : null));
+  const byName = uniq(drivers, (d) => normName(d.display_name));
+  const byVin = new Map(vehicles.map((v) => [v.vin, v]));
+  const byPlate = uniq(vehicles, (v) => normPlate(v.plate));
+  const today = berlinDate();
+  const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
+  const rows = []; const skipped = []; const seen = new Set();
+  table.slice(1).forEach((cells, idx) => {
+    const line = idx + 2;
+    if (cells.every((c) => !String(c || '').trim())) return;
+    const skip = (reason) => skipped.push({ line, reason });
+    const kind = kindOf(get(cells, ci.kind));
+    if (!kind) return skip(`Art unbekannt: ${get(cells, ci.kind) || '–'}`);
+    const day = parseDay(get(cells, ci.day));
+    if (!day) return skip(`Datum nicht erkannt: ${get(cells, ci.day) || '–'}`);
+    if (day > today) return skip('Datum liegt in der Zukunft');
+    const evidence = (get(cells, ci.ev) || fallbackEv).slice(0, 300);
+    let target; let label;
+    if (kind === 'fahrerkarte') {
+      const pno = get(cells, ci.pno).toLowerCase(); const nm = normName(get(cells, ci.name));
+      target = pno ? byPno.get(pno) : nm ? byName.get(nm) : undefined;
+      if (target === 'mehrdeutig') return skip(`Fahrer nicht eindeutig: ${get(cells, ci.pno) || get(cells, ci.name)}`);
+      if (!target) return skip(`Fahrer nicht gefunden: ${get(cells, ci.pno) || get(cells, ci.name) || '–'}`);
+      label = target.display_name;
+    } else {
+      const vin = get(cells, ci.vin) ? normalizeVin(get(cells, ci.vin)) : '';
+      target = vin ? byVin.get(vin) : get(cells, ci.plate) ? byPlate.get(normPlate(get(cells, ci.plate))) : undefined;
+      if (target === 'mehrdeutig') return skip(`Kennzeichen nicht eindeutig: ${get(cells, ci.plate)}`);
+      if (!target) return skip(`Fahrzeug nicht gefunden: ${get(cells, ci.vin) || get(cells, ci.plate) || '–'}`);
+      if (target.kind === 'anhaenger') return skip(`Anhänger ohne Fahrtenschreiber: ${target.plate}`);
+      label = target.plate;
+    }
+    const key = `${target.id}|${day}`;
+    if (seen.has(key)) return skip('doppelt in der Datei');
+    seen.add(key);
+    rows.push({ line, kind, target_id: target.id, label, downloaded_on: day, evidence, status: existing.has(key) ? 'vorhanden' : 'neu' });
+  });
+  const fresh = rows.filter((r) => r.status === 'neu');
+  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows: rows.slice(0, 300), skipped: skipped.slice(0, 300) };
+  if (dryRun || !fresh.length) return result;
+  const now = nowIso();
+  const items = fresh.map((r) => ({ id: uuid(), kind: r.kind, d: r.kind === 'fahrerkarte' ? r.target_id : null, v: r.kind === 'massenspeicher' ? r.target_id : null, on: r.downloaded_on, ev: r.evidence }));
+  const J = (k) => `json_extract(value,'$.${k}')`;
+  const stmts = [];
+  for (let i = 0; i < items.length; i += 1000) {
+    stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO tacho_downloads(id,environment,kind,driver_id,vehicle_id,downloaded_on,evidence,note,created_by,created_at)
+      SELECT ${J('id')}, ?1, ${J('kind')}, ${J('d')}, ${J('v')}, ${J('on')}, ${J('ev')}, 'Import', ?2, ?3 FROM json_each(?4)`).bind(envName, user.id, now, JSON.stringify(items.slice(i, i + 1000))));
+  }
+  await env.DB.batch(stmts);
+  await audit(env, user.id, 'tacho.import', null, { ...result.counts, environment: envName });
+  return result;
 }

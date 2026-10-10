@@ -1377,6 +1377,38 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   eq((await owner.put('/api/settings', { tacho_warn_days: '' })).status, 200);
 });
 
+await test('Auslesungen-Sammelimport (CSV): Vorschau, nur eindeutige Treffer, Anhänger/Zukunft/doppelt abgewiesen, idempotent', async () => {
+  const ago = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const de = (iso) => iso.split('-').reverse().join('.');
+  const csv = ['Art;Personalnummer;Fahrer;Kennzeichen;FIN;Datum;Datei',
+    `Fahrerkarte;P-1;;;;${de(ago(3))};C_P1.ddd`,
+    `Karte;;fahrer ohne konto;;;${ago(4)};C_X.ddd`,
+    `Fahrerkarte;P-999;;;;${ago(3)};C_unbekannt.ddd`,
+    `Massenspeicher;;;;${V2.slice(4)};${ago(10)};M_V2.ddd`,
+    `VU;;;;VAK656EBDG1613170;${ago(10)};M_anh.ddd`,
+    `Fahrerkarte;P-1;;;;2099-01-01;C_zukunft.ddd`,
+    `Fahrerkarte;P-1;;;;${de(ago(3))};C_P1_doppelt.ddd`,
+    `Irgendwas;P-1;;;;${ago(3)};x`].join('\n');
+  eq((await users.ws.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' })).status, 403);
+  eq((await users.fleet.req('POST', '/api/tacho/import', 'Art;Datum\nFahrerkarte;2026-01-01', { 'content-type': 'text/csv' })).status, 400, 'Nachweis-Spalte oder Quelle nötig');
+  const dry = await users.fleet.req('POST', '/api/tacho/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(dry.status, 200); eq(dry.data.counts.neu, 3); eq(dry.data.counts.uebersprungen, 5);
+  const reasons = dry.data.skipped.map((x) => x.reason).join(' | ');
+  ok(/Fahrer nicht gefunden: P-999/.test(reasons) && /Anhänger/.test(reasons) && /Zukunft/.test(reasons) && /doppelt/.test(reasons) && /Art unbekannt/.test(reasons), reasons);
+  const before = (await users.fleet.get('/api/tacho')).data;
+  const run = await users.fleet.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' });
+  eq(run.data.counts.neu, 3);
+  const after = (await users.fleet.get('/api/tacho')).data;
+  eq(after.vehicles.find((v) => v.id === V2).last, ago(10), 'Massenspeicher übernommen');
+  ok(after.drivers.find((d) => d.display_name === 'Fahrer ohne Konto').last === ago(4), 'Name eindeutig (Groß/Klein egal)');
+  ok(before.drivers.length <= after.drivers.length);
+  const again = await users.fleet.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' });
+  eq(again.data.counts.neu, 0); eq(again.data.counts.vorhanden, 3, 'idempotent');
+  const q = await users.fleet.req('POST', `/api/tacho/import?source=${encodeURIComponent('Export Auslesesoftware')}`, `Art;Kennzeichen;Datum\nM;SZ-KC 5515;${ago(20)}`, { 'content-type': 'text/csv' });
+  eq(q.data.counts.neu, 1, 'Kennzeichen + Quelle für alle Zeilen');
+  eq((await users.fleet.get(`/api/tacho/downloads?vehicle_id=${encodeURIComponent(V2)}`)).data.downloads.find((x) => x.downloaded_on === ago(20)).evidence, 'Export Auslesesoftware');
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
