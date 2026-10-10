@@ -234,6 +234,9 @@ async function viewHome() {
   let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
   if (S.me.role === 'driver') {
     html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p>`;
+    let mv = null; try { mv = (await api('GET', '/api/me/vehicles')).vehicles; } catch {}
+    if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => `<section class="panel ${v.locked ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${v.open_cases_total} ${esc(t('open'))}</span>` : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}</div>
+      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${v.next_inspections.map((r) => `<dt>${esc(r.kind)}</dt><dd>${fmtD(r.next_due_date)}</dd>`).join('')}</dl></section>`).join('')}`;
     html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
   } else {
     if (d.vehicles) {
@@ -628,7 +631,7 @@ async function viewVehicle(id) {
   if (d.inspections.length) html += `<h2>${esc(t('inspections'))}</h2><div class="list">${d.inspections.map((i) => `<div class="row"><span class="chip ${i.result === 'ok' ? 'ok' : 'kritisch'}">${i.result === 'ok' ? 'OK' : esc(t('defect'))}</span><span class="title">${esc(i.kind === 'abfahrt' ? t('departure_check') : t('inspection'))}</span><span>${i.odometer_km ? Number(i.odometer_km).toLocaleString('de-DE') + ' km' : ''}</span><span class="sub">${fmtDT(i.created_at)} · ${esc(i.performed_by_name)}</span></div>`).join('')}</div>`;
   if (isMgr()) {
     html += `<h2>${esc(t('drivers'))}</h2>${d.drivers.length ? `<div class="list">${d.drivers.map((r) => `<div class="row"><span>${esc(r.display_name)}</span><span class="small muted">${fmtD(r.valid_from)} – ${r.valid_to ? fmtD(r.valid_to) : ''}</span>${!r.valid_to ? `<button class="btn secondary" data-end="${esc(r.id)}">${esc(t('end'))}</button>` : '<span></span>'}</div>`).join('')}</div>` : ''}
-      <form id="df" class="actions"><select name="user_id" id="drvsel" style="max-width:300px" aria-label="${esc(t('assign_driver'))}"></select><button class="btn secondary">${esc(t('assign_driver'))}</button></form>`;
+      <form id="df"><div class="actions"><select name="user_id" id="drvsel" style="max-width:300px" aria-label="${esc(t('assign_driver'))}"></select><button class="btn secondary">${esc(t('assign_driver'))}</button></div><label class="small"><input type="checkbox" id="endprev" checked> ${esc(t('end_previous'))}</label></form>`;
   }
   html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${new Date().toISOString().slice(0, 10)}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (canMaint) html += `<section class="panel noprint"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
@@ -661,9 +664,9 @@ async function viewVehicle(id) {
   if (df) {
     const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active);
     $('#drvsel').innerHTML = us.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)}</option>`).join('');
-    df.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/drivers`, { user_id: $('#drvsel').value }); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+    df.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/drivers`, { user_id: $('#drvsel').value, end_previous: $('#endprev').checked }); if (r.ended_previous.length) toast(`${t('ended_assignment')}: ${r.ended_previous.join(', ')}`); else if (r.other_open.length) toast(`${t('also_assigned')}: ${r.other_open.join(', ')}`, true); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   }
-  $$('[data-end]').forEach((b) => (b.onclick = async () => { await api('DELETE', '/api/assignments/' + b.dataset.end); viewVehicle(id); }));
+  $$('[data-end]').forEach((b) => (b.onclick = async () => { try { await api('DELETE', '/api/assignments/' + b.dataset.end); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   const aib = $('#aib'); if (aib) aib.onclick = async () => {
     aib.disabled = true; $('#ai').innerHTML = `<p class="muted">${esc(t('loading'))}</p>`;
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/ai`); $('#ai').innerHTML = r.suggestion ? `<p style="white-space:pre-wrap">${esc(r.suggestion)}</p><p class="small muted">${esc(r.disclaimer)}</p>` : `<p class="muted">${esc(r.message || '–')}</p>`; }

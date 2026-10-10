@@ -181,21 +181,62 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
 
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const driver = await env.DB.prepare(`SELECT id FROM users WHERE id=? AND role='driver' AND environment=?`).bind(str(body.user_id, { required: true, max: 40 }), envName).first();
+  const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=?`).bind(str(body.user_id, { required: true, max: 40 }), envName).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const now = nowIso();
+  const open = (await env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?)`)
+    .bind(driver.id, now).all()).results;
+  if (open.some((o) => o.vehicle_id === vehicleId)) throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
+  // Fahrzeugwechsel: bisherige offene Zuordnungen des Fahrers beenden, wenn ausdrücklich gewünscht
+  const endPrev = body.end_previous === true || body.end_previous === 'on' || body.end_previous === '1';
   const id = uuid();
-  await env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) VALUES (?,?,?,?,NULL,?,?,?)`)
-    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300 }) || 'Zuordnung durch Fuhrparkleitung', user.id, now).run();
-  return { id };
+  const stmts = [];
+  if (endPrev && open.length) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, now));
+  stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) VALUES (?,?,?,?,NULL,?,?,?)`)
+    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300 }) || 'Zuordnung durch Fuhrparkleitung', user.id, now));
+  await env.DB.batch(stmts);
+  await audit(env, user.id, 'vehicle.assign_driver', vehicleId, { driver: driver.id, ended_previous: endPrev ? open.map((o) => o.plate) : [] });
+  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate) };
 }
 
-export async function endAssignment(env, user, assignmentId) {
+export async function endAssignment(env, user, envName, assignmentId) {
   if (!isManager(user)) throw forbidden();
-  await env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE id=? AND valid_to IS NULL').bind(nowIso(), assignmentId).run();
+  // nur Zuordnungen von Fahrern der eigenen Umgebung (Test/Betrieb getrennt)
+  const r = await env.DB.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE id=? AND valid_to IS NULL AND user_id IN (SELECT id FROM users WHERE environment=?)`).bind(nowIso(), assignmentId, envName).run();
+  if (!r.meta.changes) throw notFound('Zuordnung nicht gefunden oder bereits beendet.');
+  await audit(env, user.id, 'vehicle.end_assignment', assignmentId, null);
   return { ok: true };
+}
+
+// „Mein Fahrzeug“ für Fahrer: zugeordnete Fahrzeuge mit eigenen offenen Meldungen, Sperrstatus, nächsten Prüfterminen und letztem km-Stand
+export async function myVehicles(env, user, envName) {
+  if (user.role !== 'driver') throw forbidden();
+  const now = nowIso();
+  const vs = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.site, v.manufacturer, v.model, v.trailer_plate, d.valid_from FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id
+    WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND v.active=1 ORDER BY d.valid_from DESC`).bind(user.id, now).all()).results;
+  if (!vs.length) return { vehicles: [] };
+  const ids = JSON.stringify(vs.map((v) => v.id));
+  const [locks, mine, rules, kms] = await Promise.all([
+    env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
+      AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
+    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, description, created_at FROM cases WHERE environment=? AND reporter_id=? AND vehicle_id IN (SELECT value FROM json_each(?))
+      AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(envName, user.id, ids).all(),
+    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND next_due_date IS NOT NULL ORDER BY next_due_date`).bind(ids).all(),
+    env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at FROM odometer_readings o WHERE o.vehicle_id IN (SELECT value FROM json_each(?1))
+      AND o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id)`).bind(ids).all(),
+  ]);
+  const lockMap = new Map(locks.results.map((r) => [r.vehicle_id, r]));
+  const kmMap = new Map(kms.results.map((r) => [r.vehicle_id, r]));
+  return {
+    vehicles: vs.map((v) => ({
+      ...v, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
+      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id),
+      next_inspections: rules.results.filter((r) => r.vehicle_id === v.id).slice(0, 4).map(({ kind, next_due_date }) => ({ kind, next_due_date })),
+      last_km: kmMap.get(v.id) || null,
+    })),
+  };
 }
 
 // Historie: jede Durchführung als eigener Eintrag (gleiche Regel + gleiches Datum nur einmal)

@@ -113,6 +113,7 @@ async function handleApi(request, env, ctx, url) {
     if (b.language && ['de', 'uk', 'en'].includes(b.language)) await env.DB.prepare('UPDATE users SET language=?, updated_at=? WHERE id=?').bind(b.language, nowIso(), user.id).run();
     return json({ ok: true });
   }
+  if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
   if (path === '/api/me/sessions' && m === 'GET') return json({ sessions: await auth.listOwnSessions(env, user) });
   if (path === '/api/me/sessions/revoke-others' && m === 'POST') return json(await auth.revokeOtherSessions(env, user));
   const sm = path.match(/^\/api\/me\/sessions\/([0-9a-f]{16})$/);
@@ -149,7 +150,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/active$/)) && m === 'POST') return json(await veh.setVehicleActive(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/documents$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await veh.uploadVehicleDocument(env, user, envName, mm[1], request, Object.fromEntries(url.searchParams)), 201); }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
-  if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, mm[1]));
+  if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance' && m === 'GET') {
     const ov = await maint.maintenanceOverview(env, user);

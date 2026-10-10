@@ -897,6 +897,25 @@ await test('Wartungshistorie: jede Durchführung bleibt erhalten (erfasst, erled
   ok(JSON.stringify(bkj).includes('Werkstattrechnung Test 2'), 'in der Sicherung');
 });
 
+await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte Zuordnung, Umgebungen getrennt; „Mein Fahrzeug“', async () => {
+  const dup = await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id });
+  eq(dup.status, 409, 'bereits zugeordnet');
+  const sw = await users.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: users.driver.id, end_previous: true });
+  eq(sw.status, 201); ok(sw.data.ended_previous.length >= 1, 'alte Zuordnung beendet');
+  const mine = await users.driver.get('/api/me/vehicles');
+  eq(mine.status, 200);
+  eq(mine.data.vehicles.length, 1); eq(mine.data.vehicles[0].id, V2);
+  ok('locked' in mine.data.vehicles[0] && Array.isArray(mine.data.vehicles[0].my_open_cases) && Array.isArray(mine.data.vehicles[0].next_inspections), 'Felder');
+  eq((await users.fleet.get('/api/me/vehicles')).status, 403, 'nur Fahrer');
+  const v2 = (await users.fleet.get(`/api/vehicles/${V2}`)).data.drivers.find((x) => x.user_id === users.driver.id && !x.valid_to);
+  eq((await users.prodFleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 404, 'Betrieb kann Test-Zuordnung nicht beenden');
+  eq((await users.fleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 200);
+  eq((await users.fleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 404, 'bereits beendet');
+  eq((await users.driver.get('/api/me/vehicles')).data.vehicles.length, 0);
+  // Ausgangszustand für spätere Tests wiederherstellen
+  eq((await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id })).status, 201);
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];
