@@ -3,6 +3,8 @@
 # macht die Pflicht-Kontrolle nach Reparatur (mit einem Mangel → Folgeauftrag) → Abschlusskontrolle → Fuhrparkleitung
 # erteilt die technische Freigabe. Danach Abfahrtskontrolle über den Aufkleber-Link.
 # Voraussetzung: frischer lokaler Entwicklungsserver (sh scripts/restart-dev.sh) und Python-Playwright.
+# Fahrer arbeitet auf Ukrainisch (CFP_DRV_LANG=uk|en|de, Standard uk) im Handy (390 px), Werkstatt auf dem Tablet (820 px),
+# Fuhrparkleitung im Handy. Geprüft wird zusätzlich: keine deutschen Reste in der Fahreroberfläche, kein waagrechtes Scrollen.
 # Aufruf: python3 scripts/ui-ablauf.py [Ordner für Screenshots]   – nur synthetische Testdaten (Kennzeichen UA-…)
 import sys, os
 from playwright.sync_api import sync_playwright
@@ -15,6 +17,25 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 VIN = 'WDB96340310654321'
 VID = 'VIN:' + VIN
 steps = []
+DRV_LANG = os.environ.get('CFP_DRV_LANG', 'uk')
+VIEWPORTS = {'fleet': (390, 844), 'workshop': (820, 1180), 'driver': (390, 844)}
+# deutsche Reste: sichtbare Texte mit Umlaut; ausgenommen Testdaten (Ablauftest …), Werkstattnamen, Gesetzeszitate
+DE_REST = r"""() => { const out = []; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) { const x = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
+    if (x && /[äöüßÄÖÜ]/.test(x) && !/Ablauftest|Spiegelhalter|Bußgeldstelle|StVZO|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); }
+  const t = document.querySelector('.toast'); if (t && /[äöüßÄÖÜ]/.test(t.textContent)) out.push('Meldung: ' + t.textContent.slice(0, 60));
+  return out; }"""
+
+
+def check_view(pg, role, where):
+    """Fahrer in Fremdsprache: keine deutschen Reste; alle Rollen: kein waagrechtes Scrollen in ihrer Breite."""
+    if role == 'driver' and DRV_LANG != 'de':
+        de = pg.evaluate(DE_REST)
+        if de:
+            fail(f'{where}: deutscher Text in der Fahreroberfläche ({DRV_LANG}): {de[:4]}')
+    over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
+    if over > 2:
+        fail(f'{where}: Seite {over}px breiter als der Bildschirm ({role}, {VIEWPORTS[role][0]} px)')
 
 
 def fail(msg):
@@ -85,16 +106,27 @@ with sync_playwright() as p:
             sys.exit(f'Benutzer {role}: {u}')
         if role == 'driver':
             api('POST', f'/api/vehicles/{VID}/drivers', {'user_id': u['d']['id']})
-        pg = br.new_context(viewport={'width': 390, 'height': 844}).new_page()
+        w, h = VIEWPORTS[role]
+        pg = br.new_context(viewport={'width': w, 'height': h}).new_page()
         pg.goto(B)
         pg.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}])
+        if role == 'driver':
+            pg.evaluate(JS, ['PATCH', '/api/me', {'language': DRV_LANG}])
         js_errors = []
         pg.on('pageerror', lambda e, js_errors=js_errors: js_errors.append(str(e)))
         pages[role] = (pg, js_errors)
     drv, fl, wsp = pages['driver'][0], pages['fleet'][0], pages['workshop'][0]
 
-    # 1. Fahrer meldet über das Formular
+    # 1. Fahrer meldet über das Formular (Startseite und leeres Absenden in der Fahrersprache)
+    go(drv, '')
+    drv.wait_for_timeout(300)
+    check_view(drv, 'driver', 'Fahrer-Startseite')
     go(drv, 'new')
+    check_view(drv, 'driver', 'Meldeformular')
+    drv.click('#sb')
+    drv.wait_for_timeout(300)
+    check_view(drv, 'driver', 'Meldeformular leer abgeschickt')
+    drv.evaluate("document.querySelectorAll('.toast').forEach(e => e.remove())")
     if not drv.locator(f'input[name=veh][value="{VID}"]').is_checked():
         fail('zugeordnetes Fahrzeug nicht vorausgewählt')
     drv.fill('#d', 'Ablauftest: Spiegel rechts locker, wackelt bei Fahrt')
@@ -104,7 +136,9 @@ with sync_playwright() as p:
     cid = drv.evaluate('location.hash').split('/')[-1]
     if status(api, cid) != 'gemeldet':
         fail('Meldung nicht angelegt')
-    steps.append('Fahrer meldet Schaden (Formular, Fahrzeug vorausgewählt)')
+    drv.wait_for_timeout(300)
+    check_view(drv, 'driver', 'Vorgang aus Fahrersicht')
+    steps.append(f'Fahrer meldet Schaden (Formular, Fahrzeug vorausgewählt, Sprache {DRV_LANG})')
     shot(drv, 'gemeldet')
 
     # 2. Fuhrparkleitung gibt Reparatur frei
@@ -119,9 +153,10 @@ with sync_playwright() as p:
     act(wsp, 'acknowledge')
     act(wsp, 'start_repair')
     act(wsp, 'record_work', {'hours': '0,5', 'description': 'Spiegelhalter nachgezogen'})
+    check_view(wsp, 'workshop', 'Vorgang Werkstatt (Tablet)')
     if status(api, cid) != 'in_reparatur':
         fail(f'nach Reparaturbeginn Status {status(api, cid)}')
-    steps.append('Werkstatt übernimmt, beginnt Reparatur, erfasst 0,5 h')
+    steps.append('Werkstatt (Tablet 820 px) übernimmt, beginnt Reparatur, erfasst 0,5 h')
 
     # 4. Pflicht-Kontrolle nach Reparatur über das Formular – ein Punkt Mangel (nicht sicherheitsrelevant)
     wsp.locator('a[href^="#/inspect/"]').first.click()
@@ -129,6 +164,7 @@ with sync_playwright() as p:
     wsp.wait_for_timeout(300)
     if wsp.locator('#rl').count():
         fail('Kontrollformular abgebrochen: ' + wsp.locator('.panel.alert').first.text_content())
+    check_view(wsp, 'workshop', 'Kontrollformular Werkstatt (Tablet)')
     # leeres Absenden → Hinweis in der App-Sprache, kein Versand
     wsp.locator('#f button.btn').click()
     wsp.wait_for_timeout(300)
@@ -167,6 +203,15 @@ with sync_playwright() as p:
     go(drv, f'check/{VID}')
     if drv.eval_on_selector('#v', 'e => e.value') != VID:
         fail('Aufkleber-Link: Fahrzeug nicht vorausgewählt')
+    drv.wait_for_timeout(300)
+    check_view(drv, 'driver', 'Abfahrtskontrolle')
+    drv.locator('#sb').click()  # leer absenden → Hinweis in der Fahrersprache
+    drv.wait_for_timeout(300)
+    check_view(drv, 'driver', 'Abfahrtskontrolle leer abgeschickt')
+    drv.evaluate("document.querySelectorAll('.toast').forEach(e => e.remove())")
+    go(drv, f'v/{VID}')
+    check_view(drv, 'driver', 'Aufkleber-Auswahlseite')
+    go(drv, f'check/{VID}')
     rows = drv.locator('.checkitem')
     for i in range(rows.count()):
         rows.nth(i).locator('label').first.click()
@@ -174,6 +219,9 @@ with sync_playwright() as p:
     drv.wait_for_timeout(800)
     if drv.locator('.toast.err').count():
         fail('Abfahrtskontrolle: ' + drv.locator('.toast.err').first.text_content())
+    go(drv, '')
+    drv.wait_for_timeout(300)
+    check_view(drv, 'driver', 'Fahrer-Startseite nach Kontrolle')
     steps.append('Fahrer: Abfahrtskontrolle über Aufkleber-Link ohne Mangel')
 
     for role, (pg, errs) in pages.items():
