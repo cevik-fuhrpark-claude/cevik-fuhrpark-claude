@@ -45,7 +45,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Einrichtung | `GET /api/setup/status`, `POST /api/setup` (SETUP_CODE, nur ohne Benutzer) |
 | Anmeldung | `POST /api/login`, `POST /api/logout`, `GET/PATCH /api/me`, `POST /api/me/password`, `GET /api/invite/:token`, `POST /api/invite/accept` |
 | Benutzer | `GET/POST /api/users`, `PATCH /api/users/:id`, `POST /api/users/:id/invite` |
-| Fahrzeuge | `GET /api/vehicles[?inactive=1]`, `POST /api/vehicles` (Anlegen/Bearbeiten, `kind` lkw/anhaenger), `POST /api/vehicles/:id/active` (`{active:false, reason}` = außer Betrieb, nur ohne offene Vorgänge), `POST /api/vehicles/import` (CSV), `GET /api/vehicles/:id`, `POST …/drivers`, `DELETE /api/assignments/:id`, `POST …/maintenance`, `POST /api/maintenance/:id/complete`, `POST …/odometer`, `POST …/ai` |
+| Fahrzeuge | `GET /api/vehicles[?inactive=1]`, `POST /api/vehicles` (Anlegen/Bearbeiten, `kind` lkw/anhaenger), `POST /api/vehicles/:id/documents?kind=&note=` (Rohdaten, Header `x-filename`), `POST /api/vehicles/:id/active` (`{active:false, reason}` = außer Betrieb, nur ohne offene Vorgänge), `POST /api/vehicles/import` (CSV), `GET /api/vehicles/:id`, `POST …/drivers`, `DELETE /api/assignments/:id`, `POST …/maintenance`, `POST /api/maintenance/:id/complete`, `POST …/odometer`, `POST …/ai` |
 | Prüftermine | `GET /api/maintenance[?format=csv]` (alle außer Fahrer), `POST /api/maintenance/import[?dry_run=1]` (CSV, Inhaber/Fuhrparkleitung) |
 | Vorgänge | `GET/POST /api/cases`, `GET /api/cases/:id`, `POST /api/cases/:id/commands`, `POST /api/cases/:id/files`, `GET /api/files/:id` |
 | Kontrollen | `POST /api/inspections` (`kind`: `nach_reparatur` \| `abfahrt`) |

@@ -114,7 +114,7 @@ async function handleApi(request, env, ctx, url) {
     let vapid = null;
     try { vapid = (await getVapid(env)).publicKey; } catch {}
     return json({ workshops, checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
-      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, fine_kinds: fines.FINE_KINDS, fine_offenses: fines.OFFENSES, fine_statuses: fines.FINE_STATUSES, vapid_public_key: vapid, app_name: env.APP_NAME });
+      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, doc_kinds: veh.DOC_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, fine_kinds: fines.FINE_KINDS, fine_offenses: fines.OFFENSES, fine_statuses: fines.FINE_STATUSES, vapid_public_key: vapid, app_name: env.APP_NAME });
   }
 
   // Benutzer
@@ -135,6 +135,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/active$/)) && m === 'POST') return json(await veh.setVehicleActive(env, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/documents$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await veh.uploadVehicleDocument(env, user, envName, mm[1], request, Object.fromEntries(url.searchParams)), 201); }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);

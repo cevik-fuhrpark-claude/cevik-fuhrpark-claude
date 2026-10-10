@@ -444,6 +444,23 @@ await test('Anhänger als eigene Prüfobjekte: Import mit Fahrzeugart, Kopplung 
   eq((await users.fleet.post(`/api/vehicles/${T}/active`, { active: true })).status, 200);
   ok((await users.fleet.get('/api/vehicles')).data.vehicles.some((v) => v.id === T), 'reaktiviert');
 });
+await test('Dokumentablage je Fahrzeug: Rechte, Dateityp, Dubletten, Download, Umgebungen getrennt', async () => {
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Testdokument Zulassung\n%%EOF');
+  const H = { 'content-type': 'application/pdf', 'x-filename': encodeURIComponent('Zulassung Teil I.pdf') };
+  eq((await users.driver.req('POST', `/api/vehicles/${V1}/documents?kind=zulassung`, pdf, H)).status, 403, 'Fahrer');
+  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=zulassung`, new TextEncoder().encode('<html>'), H)).status, 400, 'Typprüfung');
+  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=ausweis`, pdf, H)).status, 400, 'unbekannte Art');
+  const r = await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=zulassung&note=${encodeURIComponent('Teil I, Kopie')}`, pdf, H);
+  eq(r.status, 201); eq(r.data.duplicate, false);
+  eq((await users.ws.req('POST', `/api/vehicles/${V1}/documents?kind=zulassung`, pdf, H)).data.duplicate, true, 'Dublette');
+  const d = (await users.dispatch.get(`/api/vehicles/${V1}`)).data;
+  eq(d.documents.length, 1); eq(d.documents[0].doc_kind, 'zulassung'); eq(d.documents[0].doc_note, 'Teil I, Kopie'); eq(d.documents[0].filename, 'Zulassung Teil I.pdf');
+  const dl = await users.ws.get(`/api/files/${r.data.id}`);
+  eq(dl.status, 200); eq(new TextDecoder().decode(dl.data).slice(0, 8), '%PDF-1.4');
+  eq((await users.driver.get(`/api/files/${r.data.id}`)).status, 403, 'Fahrer lädt nicht herunter');
+  eq((await users.prodFleet.get(`/api/vehicles/${V1}`)).data.documents.length, 0, 'Betrieb sieht Testdokument nicht');
+  eq((await users.prodFleet.get(`/api/files/${r.data.id}`)).status, 404);
+});
 await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pflicht', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer falsch' })).status, 401);

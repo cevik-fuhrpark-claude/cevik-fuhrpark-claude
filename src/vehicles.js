@@ -1,7 +1,8 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths } from './util.js';
 import { audit } from './auth.js';
-import { vehicleCosts } from './cases.js';
+import { vehicleCosts, sniffType, VEHICLE_DOC_READ } from './cases.js';
+import { sha256Hex } from './util.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -53,7 +54,11 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const coupled = v.kind === 'anhaenger'
     ? all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw' }))
     : all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger' }));
-  const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers, coupled };
+  const documents = VEHICLE_DOC_READ.includes(user.role)
+    ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
+        WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
+    : [];
+  const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers, coupled, documents };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
   }
@@ -241,4 +246,33 @@ Erfinde keine Daten, Fristen oder Kosten. Kennzeichne Unsicherheit. Antworte kna
 Historie:\n${history}`;
   const res = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', { messages: [{ role: 'user', content: prompt }], max_tokens: 600 });
   return { available: true, suggestion: res.response || null, disclaimer: 'KI-Vorschlag – keine technische Diagnose und keine Freigabe. Bitte fachlich prüfen.' };
+}
+
+// Dokumentablage je Fahrzeug: PDF/JPG/PNG/WEBP bis 5 MB, max. 30 je Fahrzeug und Umgebung, Dubletten (SHA-256) werden erkannt
+export const DOC_KINDS = ['zulassung', 'pruefbericht', 'rechnung', 'versicherung', 'leasing', 'foto', 'sonstiges'];
+const MAX_VEHICLE_DOCS = 30;
+export async function uploadVehicleDocument(env, user, envName, vehicleId, request, query = {}) {
+  if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
+  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!v) throw notFound();
+  const kind = oneOf(query.kind || 'sonstiges', DOC_KINDS, 'Dokumentart');
+  const note = str(query.note ? decodeURIComponent(query.note) : null, { max: 200, field: 'Bemerkung' });
+  const buf = new Uint8Array(await request.arrayBuffer());
+  if (!buf.length) throw bad('empty', 'Leere Datei.');
+  if (buf.length > 5 * 1024 * 1024) throw bad('too_large', 'Datei zu groß (max. 5 MB).');
+  const type = sniffType(buf);
+  if (!type) throw bad('type', 'Nur PDF, JPG, PNG oder WEBP erlaubt.');
+  const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=?').bind(vehicleId, envName).first();
+  if (cnt.n >= MAX_VEHICLE_DOCS) throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
+  const sha = await sha256Hex(buf);
+  const dup = await env.DB.prepare('SELECT id FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
+  if (dup) return { id: dup.id, duplicate: true };
+  const id = uuid();
+  const key = `${envName}/vehicles/${vehicleId}/${id}`;
+  await env.FILES.put(key, buf, { metadata: { type, vehicle_id: vehicleId, env: envName } });
+  const name = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'dokument'); } catch { return 'dokument'; } })().replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'dokument';
+  await env.DB.prepare(`INSERT INTO files(id,case_id,vehicle_id,doc_kind,doc_note,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, vehicleId, kind, note, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
+  await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length });
+  return { id, duplicate: false };
 }

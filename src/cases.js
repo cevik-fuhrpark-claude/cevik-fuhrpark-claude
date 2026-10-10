@@ -10,6 +10,7 @@ export const STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'w
 const OPEN_STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
 const WORK_STATUSES = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
 const MAX_FILES = 10;
+export const VEHICLE_DOC_READ = ['owner', 'fleet', 'workshop', 'viewer', 'dispatch'];
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -607,7 +608,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
 
 // ---------- Dateien ----------
 
-function sniffType(bytes) {
+export function sniffType(bytes) {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
   if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
   if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'application/pdf';
@@ -652,6 +653,7 @@ export async function downloadFile(env, user, envName, fileId) {
   const f = await env.DB.prepare('SELECT * FROM files WHERE id=? AND environment=?').bind(fileId, envName).first();
   if (!f) throw notFound();
   if (f.fine_id) await canReadFineFile(env, user, envName, f.fine_id);
+  else if (f.vehicle_id && !f.case_id) { if (!VEHICLE_DOC_READ.includes(user.role)) throw forbidden(); }
   else await loadCase(env, user, envName, f.case_id); // gleiche Rollen-/Umgebungsprüfung wie beim Vorgang
   const data = await env.FILES.get(f.r2_key, { type: 'arrayBuffer' });
   if (!data) throw notFound('Datei nicht im Speicher.');

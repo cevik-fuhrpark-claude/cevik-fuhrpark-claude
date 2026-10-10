@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 50 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 51 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -84,6 +84,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Hilfe-Seite (Mehr → „Hilfe“, Link auf der Fahrer-Startseite) in DE/UK/EN: Schaden melden, Dringlichkeit, Abfahrtskontrolle, Push (inkl. iPhone), Verhalten ohne Netz.
 - [x] Mengenbegrenzung (Migration 0008 `rate_limits`): je Benutzer max. 60 Datei-Uploads/10 Min. und 20 Importe/Std., sonst HTTP 429 mit verständlicher Meldung; eine atomare Abfrage je Aufruf.
 - [x] Reifen über die Flotte (Mehr → „Reifen – Flotte“, `GET /api/tires/fleet?stale_days=90`): je Fahrzeug schlechtester Status, kleinste Profiltiefe, Anzahl Positionen unter Minimum, älteste Messung; Filter unter Minimum/Warnung, veraltet, nie gemessen. Nur gemessene Werte. 50 Tests grün.
+- [x] Dokumentablage je Fahrzeug (Migration 0009: `files.vehicle_id/doc_kind/doc_note`): Fahrzeugakte → „Dokumente“ (Zulassung, Prüfbericht, Rechnung, Versicherung, Leasing/Miete, Foto, Sonstiges), Upload Inhaber/Fuhrparkleitung/Werkstatt, Lesen auch Dispo/Lesezugriff, nicht Fahrer; Typprüfung, 5 MB, 30 je Fahrzeug, Dubletten erkannt, Audit-Log; Datei-Links berücksichtigen die Test/Betrieb-Ansicht des Inhabers. 51 Tests grün.
 
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
@@ -97,5 +98,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **vorbereitet**: `seed/prueftermine_belegt.csv` (61 Zeilen: letzte HU/SP/Tacho für 29 Lkw und 23 Anhänger aus 22 TÜV-NORD-/KÜS-/Kienzle-Rechnungen in Drive, Stand 10.10.2026) und `seed/anhaenger_belegt.csv`. Enthält bewusst **nur „Letzte Prüfung“** – die Rechnungen nennen keinen nächsten Termin; Import legt die Prüfungen „ohne Termin“ an. **Nächster Schritt nach Antwort des Auftraggebers** (siehe Offene Fragen): Intervalle als Spalte `Intervall Monate` ergänzen bzw. Plakettenmonate eintragen, dann Import durch Inhaber/Fuhrparkleitung. Nicht übernommen: Kienzle-Rechnung AR121628+ (Kennzeichen „SC-YC“ verdruckt, keine FIN), Mirsso RE3267/RE3382 (kein Fahrzeug genannt), Fremdkennzeichen DAH-AC558, Bildrechnungen ohne lesbaren Text, SZ-YC 5548 (FIN-Abweichung).
 9. Kopplungshistorie Lkw↔Anhänger (wer zog wann welchen Anhänger) – erst sinnvoll mit Telematik/Tourenplan als Quelle; bis dahin gilt die Stammliste.
-10. Eigene Verbesserungen (ohne Freigabe möglich): Fotos im Offline-Ausgang über IndexedDB; Dokumentablage je Fahrzeug (Zulassungsbescheinigung, Prüfberichte als PDF an der Fahrzeugakte statt nur am Vorgang).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Fotos im Offline-Ausgang über IndexedDB; Ablaufdaten an Dokumenten (Versicherung/Leasing) mit Erinnerung – nur wenn im Dokument belegt; Suche über alle Vorgänge (Volltext Beschreibung/Kennzeichen/Nummer).
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

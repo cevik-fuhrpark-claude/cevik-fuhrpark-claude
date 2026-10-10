@@ -97,5 +97,14 @@ export const MIGRATIONS = [
   "statements": [
    "CREATE TABLE IF NOT EXISTS rate_limits (\n  key TEXT PRIMARY KEY,                 -- '<aktion>:<benutzer-id>'\n  window_start INTEGER NOT NULL,        -- Fensterbeginn (Unix-Sekunden)\n  count INTEGER NOT NULL\n)"
   ]
+ },
+ {
+  "id": "0009_vehicle_documents",
+  "statements": [
+   "ALTER TABLE files ADD COLUMN vehicle_id TEXT NULL",
+   "ALTER TABLE files ADD COLUMN doc_kind TEXT NULL",
+   "ALTER TABLE files ADD COLUMN doc_note TEXT NULL",
+   "CREATE INDEX IF NOT EXISTS idx_files_vehicle ON files(vehicle_id)"
+  ]
  }
 ];

@@ -10,6 +10,8 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) 
 const fmtDT = (iso) => (iso ? new Date(iso).toLocaleString(S.lang === 'uk' ? 'uk-UA' : S.lang === 'en' ? 'en-GB' : 'de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–');
 const fmtD = (iso) => (iso ? new Date(iso.length === 10 ? iso + 'T12:00:00Z' : iso).toLocaleDateString(S.lang === 'uk' ? 'uk-UA' : S.lang === 'en' ? 'en-GB' : 'de-DE') : '–');
 const eur = (n) => (n === null || n === undefined ? '–' : new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n));
+// Datei-Links: Inhaber mit umgeschalteter Ansicht (Test/Betrieb) braucht die Umgebung als Parameter, da Links keine Header senden
+const fileUrl = (id) => `/api/files/${encodeURIComponent(id)}${S.viewEnv && S.me && S.me.role === 'owner' ? '?env=' + encodeURIComponent(S.viewEnv) : ''}`;
 const isMgr = () => S.me && ['owner', 'fleet'].includes(S.me.role);
 
 function plate(p, opts = {}) {
@@ -374,7 +376,7 @@ async function viewCase(id) {
   } else html += `<div id="actform"></div>`;
 
   // Dateien
-  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((f) => f.content_type.startsWith('image/') ? `<a href="/api/files/${esc(f.id)}" target="_blank" rel="noopener"><img loading="lazy" src="/api/files/${esc(f.id)}" alt="${esc(f.filename)}"></a>` : `<a href="/api/files/${esc(f.id)}" target="_blank" rel="noopener">PDF<br>${esc(f.filename.slice(0, 14))}</a>`).join('')}</div>`;
+  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((f) => f.content_type.startsWith('image/') ? `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(f.id)}" alt="${esc(f.filename)}"></a>` : `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener">PDF<br>${esc(f.filename.slice(0, 14))}</a>`).join('')}</div>`;
   const canUpload = A.includes('upload') || (c.reporter_id === S.me.id && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   if (canUpload && d.files.length < 10) html += `<label class="btn secondary" style="margin-top:8px;display:inline-flex">${esc(t('add_photos'))}<input id="file" type="file" accept="image/*,application/pdf" capture="environment" multiple hidden></label>`;
 
@@ -566,6 +568,11 @@ async function viewVehicle(id) {
   if (d.costs) html += `<section class="panel"><h3>${esc(t('costs'))}</h3><dl class="kv"><dt>Ist</dt><dd>${eur(d.costs.actual_net)}</dd><dt>${esc(t('estimate'))}</dt><dd>${eur(d.costs.estimate_net)}</dd><dt>${esc(t('unvalued'))}</dt><dd>${d.costs.unvalued_items}</dd></dl></section>`;
   html += `<h2>${esc(t('maintenance'))}</h2>${d.maintenance.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('last_done'))}</th><th>${esc(t('next_due'))}</th>${canMaint ? '<th></th>' : ''}</tr></thead><tbody>${d.maintenance.map((m) => { const days = m.next_due_date ? Math.round((Date.parse(m.next_due_date) - Date.now()) / 86400000) : null; return `<tr><td>${esc(m.kind)}</td><td>${fmtD(m.last_done_date)}</td><td>${m.next_due_date ? `<span class="chip ${days < 0 ? 'kritisch' : days < 30 ? 'mittel' : ''}">${fmtD(m.next_due_date)}</span>` : '–'}</td>${canMaint ? `<td><button class="btn secondary" data-done="${esc(m.id)}">${esc(t('done'))}</button></td>` : ''}</tr><tr><td colspan="${canMaint ? 4 : 3}" class="small muted" style="border-top:0;padding-top:0">${esc(t('evidence'))}: ${esc(m.evidence)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}`;
   if (canMaint) html += `<details class="panel"><summary>${esc(t('add_rule'))}</summary><form id="mf"><label>${esc(t('kind'))}</label><select name="kind">${S.meta.maintenance_kinds.map((k) => `<option>${esc(k)}</option>`).join('')}</select><label>${esc(t('last_done'))}</label><input type="date" name="last_done_date"><label>${esc(t('interval_months'))}</label><input name="interval_months" inputmode="numeric"><label>${esc(t('next_due'))}</label><input type="date" name="next_due_date"><label>${esc(t('evidence'))}</label><input name="evidence" required><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
+  if (d.documents) {
+    const canDoc = ['owner', 'fleet', 'workshop'].includes(S.me.role);
+    html += `<h2>${esc(t('documents'))}</h2>${d.documents.length ? `<div class="list">${d.documents.map((f) => `<a class="row" href="${fileUrl(f.id)}" target="_blank" rel="noopener"><span class="chip">${esc(t('dk_' + (f.doc_kind || 'sonstiges')))}</span><span class="title">${esc(f.filename)}</span><span class="small muted">${Math.max(1, Math.round(f.size / 1024))} KB</span><span class="sub">${[f.doc_note && esc(f.doc_note), fmtD(f.created_at), esc(f.uploaded_by_name)].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
+      ${canDoc ? `<details class="panel noprint"><summary>${esc(t('add_document'))}</summary><form id="docf"><label>${esc(t('doc_kind'))}</label><select name="kind">${(S.meta.doc_kinds || []).map((k) => `<option value="${k}">${esc(t('dk_' + k))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note" maxlength="200"><label>${esc(t('file'))}<span class="hint">PDF, JPG, PNG, WEBP · max. 5 MB</span></label><input type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required><div class="actions"><button class="btn">${esc(t('upload'))}</button></div></form></details>` : ''}`;
+  }
   html += `<h2>${esc(t('tires'))}</h2><div id="tires"><p class="muted">${esc(t('loading'))}</p></div>`;
   html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(d.cases.map((c) => ({ ...c, plate: v.plate })))}`;
   if (d.inspections.length) html += `<h2>${esc(t('inspections'))}</h2><div class="list">${d.inspections.map((i) => `<div class="row"><span class="chip ${i.result === 'ok' ? 'ok' : 'kritisch'}">${i.result === 'ok' ? 'OK' : esc(t('defect'))}</span><span class="title">${esc(i.kind === 'abfahrt' ? t('departure_check') : t('inspection'))}</span><span>${i.odometer_km ? Number(i.odometer_km).toLocaleString('de-DE') + ' km' : ''}</span><span class="sub">${fmtDT(i.created_at)} · ${esc(i.performed_by_name)}</span></div>`).join('')}</div>`;
@@ -579,6 +586,10 @@ async function viewVehicle(id) {
 
   renderTires(id, $('#tires'));
   const prt = $('#prt'); if (prt) prt.onclick = () => window.print();
+  const docf = $('#docf'); if (docf) docf.onsubmit = async (e) => {
+    e.preventDefault(); const file = docf.file.files[0]; if (!file) return;
+    try { const blob = file.type === 'application/pdf' ? file : await prepareUpload(file); const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/documents?kind=${encodeURIComponent(docf.kind.value)}&note=${encodeURIComponent(docf.note.value)}`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); toast(r.duplicate ? t('doc_duplicate') : '✓'); viewVehicle(id); } catch (err) { toast(err.message, true); }
+  };
   const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const react = $('#react'); if (react) react.onclick = async () => { try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
@@ -701,7 +712,7 @@ async function viewFine(id) {
       <dt>${esc(t('authority'))}</dt><dd>${esc(f.authority)}</dd><dt>${esc(t('reference'))}</dt><dd>${esc(f.reference || '–')}</dd><dt>${esc(t('amount'))}</dt><dd>${eur(f.amount_eur)}</dd>
       <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? fmtD(f.response_due) : '–'}</dd><dt>${esc(t('role_driver'))}</dt><dd>${esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(f.driver_evidence)}</div>` : ''}</dd></dl>
       ${f.note ? `<p style="white-space:pre-wrap;margin-top:8px">${esc(f.note)}</p>` : ''}</section>`;
-  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="/api/files/${esc(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="/api/files/${esc(x.id)}" alt="">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
+  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
   if (A.includes('upload')) html += `<label class="btn secondary" style="margin-top:8px;display:inline-flex">${esc(t('upload'))}<input id="ff" type="file" accept="application/pdf,image/*" hidden></label>`;
   if (A.includes('confirm_driver')) {
     html += `<h2>${esc(t('candidates'))}</h2>${d.candidates.length ? `<div class="list">${d.candidates.map((c, i) => `<label class="row"><input type="radio" name="cand" value="${i}"><span class="title">${esc(c.display_name)}</span><span class="chip">${esc(t('fb_' + c.basis))}</span><span class="sub">${esc(c.evidence)}</span></label>`).join('')}</div>` : `<p class="muted">${esc(t('no_candidates'))}</p>`}
