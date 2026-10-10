@@ -59,6 +59,15 @@ export async function listCases(env, user, envName, query) {
   else if (query.status === 'closed') where.push(`c.status IN ('fahrzeug_freigegeben','abgelehnt')`);
   else if (query.status && STATUSES.includes(query.status)) { where.push('c.status = ?'); args.push(query.status); }
   if (query.vehicle_id) { where.push('c.vehicle_id = ?'); args.push(query.vehicle_id); }
+  // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
+  const q = String(query.q || '').trim().slice(0, 60);
+  if (q.length >= 2) {
+    const like = '%' + q.replace(/[\\%_]/g, (ch) => '\\' + ch) + '%';
+    const plateKey = q.toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+    const plateLike = plateKey.length >= 2 ? '%' + plateKey + '%' : '\u0000';
+    where.push(`(c.description LIKE ? ESCAPE '\\' OR c.case_no LIKE ? ESCAPE '\\' OR REPLACE(REPLACE(UPPER(v.plate),' ',''),'-','') LIKE ?)`);
+    args.push(like, like, plateLike);
+  }
   const limit = Math.min(Number(query.limit) || 200, 500);
   const rows = (await env.DB.prepare(`
     SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name,

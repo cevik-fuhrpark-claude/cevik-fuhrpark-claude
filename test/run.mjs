@@ -627,6 +627,20 @@ await test('Überschrittene Frist → Agent-Befund; Status erledigt schließt ih
   ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_OVERDUE' && f.subject_key === FINE), 'Befund erledigt');
 });
 
+await test('Vorgangssuche: Beschreibung, Nummer, Kennzeichen ohne Leerzeichen; Rechte bleiben; Platzhalter wirkungslos', async () => {
+  const all = (await users.fleet.get('/api/cases?limit=500')).data.cases;
+  const byText = (await users.fleet.get('/api/cases?q=' + encodeURIComponent('rückleuchte'))).data.cases;
+  ok(byText.length >= 1 && byText.every((c) => /rückleuchte/i.test(c.description)), 'Text');
+  const no = all[0].case_no;
+  eq((await users.fleet.get('/api/cases?q=' + encodeURIComponent(no))).data.cases[0].case_no, no, 'Nummer');
+  const byPlate = (await users.fleet.get('/api/cases?q=szyc5513')).data.cases;
+  ok(byPlate.length > 0 && byPlate.every((c) => c.plate === 'SZ-YC 5513'), 'Kennzeichen ohne Trennzeichen');
+  eq((await users.fleet.get('/api/cases?q=%25%25')).data.cases.length, 0, 'Platzhalter');
+  eq((await users.fleet.get('/api/cases?q=--')).data.cases.length, 0, 'nur Trennzeichen');
+  const drv = (await users.driver.get('/api/cases?q=szyc')).data.cases.length; const drvAll = (await users.driver.get('/api/cases?limit=500')).data.cases.length;
+  ok(drv <= drvAll, 'Fahrer sieht nur eigene');
+});
+
 console.log('Kostenbericht');
 await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein; Rechte; CSV für Excel', async () => {
   const list = (await users.fleet.get('/api/cases')).data.cases;

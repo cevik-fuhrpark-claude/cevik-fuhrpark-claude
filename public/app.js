@@ -257,11 +257,19 @@ function caseList(list, empty) {
 
 async function viewCases() {
   const f = new URLSearchParams(location.hash.split('?')[1] || '').get('f') || sessionStorage.getItem('cfp_cf') || 'open';
-  const list = (await api('GET', `/api/cases?status=${f === 'all' ? '' : f}`)).cases;
+  const q = S.caseQ || '';
+  const list = (await api('GET', `/api/cases?status=${f === 'all' ? '' : f}${q.length >= 2 ? '&q=' + encodeURIComponent(q) : ''}`)).cases;
   render(`<h1>${esc(t('nav_cases'))}</h1>
+    <input id="cq" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">
     <div class="seg-tabs">${['open', 'closed', 'all'].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k))}</a>`).join('')}</div>
-    ${caseList(list)}`, 'cases');
+    <div id="cl">${caseList(list)}</div>`, 'cases');
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); viewCases(); }));
+  let timer = null;
+  const cq = $('#cq');
+  cq.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {
+    S.caseQ = cq.value.trim();
+    try { const l = (await api('GET', `/api/cases?status=${f === 'all' ? '' : f}${S.caseQ.length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}`)).cases; $('#cl').innerHTML = caseList(l); } catch (err) { toast(err.message, true); }
+  }, 300); };
 }
 
 // ---------- Offline-Ausgang für Schadensmeldungen (Funkloch) ----------
