@@ -128,6 +128,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Meldeformular prüft Fahrzeugwahl und Beschreibung (≥ 5 Zeichen) in der App-Sprache statt mit Browser-Meldungen in der Gerätesprache (Playwright UK geprüft).
 - [x] Arbeitszeit erfassen: Tätigkeitsvorschläge (häufigste Beschreibungen der eigenen Werkstatt, 12 Monate; `GET /api/work-suggestions`) als Auswahlliste – ohne neue Tabelle; ebenso Teilevorschläge (Bezeichnung → Teilenummer wird ergänzt, ohne Preise; `GET /api/part-suggestions`). 79 Tests grün.
 - [x] Fahrzeugliste als CSV (Stammdaten, Verfügbarkeit laut System, offene Vorgänge, letzter km-Stand, nächste Prüfung; nicht für Fahrer). API-Doku gegen Router abgeglichen. 82 Tests grün.
+- [x] Fuhrparkagent: Sammelblöcke 1000 statt 400 Befunde – erster Lauf bei 3000 Vorgängen 41 statt 47 Anweisungen (Grenze 50; durch neue Befundarten war der Abstand geschrumpft). Lasttest erneut ohne Auffälligkeit.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
