@@ -118,7 +118,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -991,6 +991,20 @@ async function viewTimeline(id) {
   $$('[data-tl]').forEach((b) => (b.onclick = () => { S.tlFilter = b.dataset.tl; viewTimeline(id); }));
 }
 
+// ---------- Datenqualität (Inhaber/Fuhrparkleitung) ----------
+async function viewQuality() {
+  const r = await api('GET', '/api/admin/data-quality');
+  const f = S.dqFilter || '';
+  const sevCls = { fehler: 'kritisch', luecke: 'mittel', hinweis: '' };
+  const items = f ? r.items.filter((i) => i.check === f) : r.items;
+  const checks = Object.keys(r.counts);
+  render(`<h1>${esc(t('dq'))}</h1><p class="small muted">${esc(t('dq_hint'))}</p>
+    <div class="stats"><div><b>${r.vehicles_checked}</b>${esc(t('vehicles'))}</div><div><b style="${r.items.some((i) => i.severity === 'fehler') ? 'color:var(--stop)' : ''}">${r.items.filter((i) => i.severity === 'fehler').length}</b>${esc(t('dq_sev_fehler'))}</div><div><b>${r.items.filter((i) => i.severity !== 'fehler').length}</b>${esc(t('dq_sev_luecke'))} / ${esc(t('dq_sev_hinweis'))}</div></div>
+    ${r.items.length ? `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${f ? 'secondary' : ''}" data-dq="">${esc(t('filter_all'))} (${r.items.length})</button>${checks.map((c) => `<button type="button" class="btn ${f === c ? '' : 'secondary'}" data-dq="${esc(c)}">${esc(t('dq_' + c))} (${r.counts[c]})</button>`).join('')}</div>` : `<div class="panel good"><b>${esc(t('dq_ok'))}</b></div>`}
+    <div class="list">${items.map((i) => `${i.vehicle_id ? `<a class="row ${i.severity === 'fehler' ? 'p-kritisch' : i.severity === 'luecke' ? 'p-mittel' : ''}" href="#/vehicles/${esc(i.vehicle_id)}">` : `<div class="row">`}${i.plate ? plate(i.plate) : `<span class="chip">${esc(t('users'))}</span>`}<span class="title" style="white-space:normal">${esc(t('dq_' + i.check))}</span><span class="chip ${sevCls[i.severity]}">${esc(t('dq_sev_' + i.severity))}</span>${i.detail ? `<span class="sub" style="white-space:normal">${esc(i.check === 'km_stale' ? fmtD(i.detail) : i.detail)}</span>` : ''}${i.vehicle_id ? '</a>' : '</div>'}`).join('')}</div>`, 'more');
+  $$('[data-dq]').forEach((b) => (b.onclick = () => { S.dqFilter = b.dataset.dq; viewQuality(); }));
+}
+
 // ---------- Nutzungsstatistik (Inhaber, ohne Personenbezug) ----------
 async function viewUsage() {
   const days = S.usageDays || 30;
@@ -1043,6 +1057,7 @@ function viewMore() {
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/costs"><span>€</span><span class="title">${esc(t('costs_report'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'workshop'].includes(S.me.role) ? `<a class="row" href="#/stock"><span>▦</span><span class="title">${esc(t('stock'))}</span><span></span></a>` : ''}
     ${isMgr() ? `<a class="row" href="#/users"><span>👤</span><span class="title">${esc(t('users'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/quality"><span>✓</span><span class="title">${esc(t('dq'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/usage"><span>📊</span><span class="title">${esc(t('usage'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/audit"><span>🔒</span><span class="title">${esc(t('audit'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/settings"><span>⚙</span><span class="title">${esc(t('settings'))}</span><span></span></a>` : ''}

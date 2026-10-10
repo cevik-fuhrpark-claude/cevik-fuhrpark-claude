@@ -916,6 +916,26 @@ await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte
   eq((await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id })).status, 201);
 });
 
+await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhaber/Fuhrparkleitung, ändert nichts', async () => {
+  eq((await users.ws.get('/api/admin/data-quality')).status, 403);
+  // Lkw mit Anhängerkennzeichen, das es nicht gibt; zweites Fahrzeug mit gleichem Kennzeichen (anders geschrieben)
+  eq((await owner.post('/api/vehicles', { plate: 'DQ-XY 1', vin: 'WDB96340310999001', trailer_plate: 'DQ-AH 404' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'DQ XY1', vin: 'WDB96340310999002', site: 'Dortmund' })).status, 201);
+  const before = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles').first()).n;
+  const r = await users.fleet.get('/api/admin/data-quality');
+  eq(r.status, 200);
+  const has = (check, vin) => r.data.items.some((i) => i.check === check && (!vin || i.vehicle_id === 'VIN:' + vin));
+  ok(has('duplicate_plate', 'WDB96340310999001') && has('duplicate_plate', 'WDB96340310999002'), 'gleiches Kennzeichen');
+  ok(has('trailer_unknown', 'WDB96340310999001'), 'unbekannter Anhänger');
+  ok(has('missing_site', 'WDB96340310999001') && !has('missing_site', 'WDB96340310999002'), 'fehlender Standort');
+  ok(has('no_km', 'WDB96340310999001'), 'kein km-Stand');
+  ok(r.data.items.find((i) => i.check === 'missing_inspection' && i.vehicle_id === 'VIN:WDB96340310999001').detail.includes('HU'), 'fehlende Pflichtprüfung');
+  eq(r.data.items[0].severity, 'fehler', 'Fehler zuerst');
+  eq((await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles').first()).n, before, 'nichts geändert');
+  // Aufräumen: Testfahrzeuge außer Betrieb nehmen, damit spätere Tests unbeeinflusst bleiben
+  for (const v of ['WDB96340310999001', 'WDB96340310999002']) eq((await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Datenqualität' })).status, 200);
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];
