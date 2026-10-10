@@ -107,10 +107,20 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
 }
 
 export async function deliverPush(env, notifications) {
+  if (!notifications.length) return;
+  // Abfragebudget: Geräte aller Empfänger in einer Abfrage laden, Statusänderungen gesammelt schreiben
+  const userIds = [...new Set(notifications.map((n) => n.user_id))];
+  const subsByUser = new Map();
+  for (const s of (await env.DB.prepare('SELECT * FROM push_subscriptions WHERE revoked_at IS NULL AND user_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) {
+    if (!subsByUser.has(s.user_id)) subsByUser.set(s.user_id, []);
+    subsByUser.get(s.user_id).push(s);
+  }
+  const writes = [];
+  const revoked = new Set();
   for (const n of notifications) {
-    const subs = (await env.DB.prepare('SELECT * FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL').bind(n.user_id).all()).results;
+    const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
     if (subs.length === 0) {
-      await env.DB.prepare(`UPDATE notifications SET push_status='no_subscription' WHERE id=?`).bind(n.id).run();
+      writes.push(env.DB.prepare(`UPDATE notifications SET push_status='no_subscription' WHERE id=?`).bind(n.id));
       continue;
     }
     let accepted = false; let lastErr = null;
@@ -118,23 +128,25 @@ export async function deliverPush(env, notifications) {
       const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent }, { urgent: n.urgent });
       if (res.status === 'accepted') {
         accepted = true;
-        await env.DB.prepare('UPDATE push_subscriptions SET last_success_at=? WHERE id=?').bind(nowIso(), s.id).run();
+        writes.push(env.DB.prepare('UPDATE push_subscriptions SET last_success_at=? WHERE id=?').bind(nowIso(), s.id));
       } else if (res.status === 'gone') {
-        await env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE id=?').bind(nowIso(), s.id).run();
+        revoked.add(s.id);
+        writes.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE id=?').bind(nowIso(), s.id));
         lastErr = `Gerät abgemeldet (${res.http})`;
       } else {
         lastErr = `HTTP ${res.http} ${res.error || ''}`.trim();
       }
     }
-    await env.DB.prepare(`UPDATE notifications SET push_status=?, push_attempts=push_attempts+1, push_last_error=?, push_accepted_at=? WHERE id=?`)
-      .bind(accepted ? 'accepted' : 'failed', accepted ? null : lastErr, accepted ? nowIso() : null, n.id).run();
+    writes.push(env.DB.prepare(`UPDATE notifications SET push_status=?, push_attempts=push_attempts+1, push_last_error=?, push_accepted_at=? WHERE id=?`)
+      .bind(accepted ? 'accepted' : 'failed', accepted ? null : lastErr, accepted ? nowIso() : null, n.id));
   }
+  if (writes.length) await env.DB.batch(writes);
 }
 
 // Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche
 export async function retryFailedPush(env) {
   const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id FROM notifications
-    WHERE push_status='failed' AND push_attempts < 3 AND acknowledged_at IS NULL AND created_at > ? LIMIT 50`)
+    WHERE push_status='failed' AND push_attempts < 3 AND acknowledged_at IS NULL AND created_at > ? LIMIT 20`)
     .bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()).all()).results;
   await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })));
   return rows.length;

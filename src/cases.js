@@ -114,12 +114,14 @@ export async function getCaseDetail(env, user, envName, caseId) {
 }
 
 // Kostenbewertung: fehlende Sätze/Preise = unbewertet, niemals 0 €
-export async function caseCosts(env, caseId) {
+async function hourlyRate(env) {
   const rateRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
-  const rate = rateRow && rateRow.value !== '' ? Number(rateRow.value) : null;
-  const work = (await env.DB.prepare('SELECT hours FROM work_entries WHERE case_id=?').bind(caseId).all()).results;
-  const parts = (await env.DB.prepare('SELECT quantity, unit_price_net, valuation FROM parts WHERE case_id=?').bind(caseId).all()).results;
-  const ext = (await env.DB.prepare('SELECT amount_net, valuation, covers_work_and_parts FROM external_costs WHERE case_id=?').bind(caseId).all()).results;
+  return rateRow && rateRow.value !== '' ? Number(rateRow.value) : null;
+}
+
+// Reine Bewertungslogik (gemeinsam für Vorgang und Fahrzeug): unbewertet ≠ 0 €, Schätzungen getrennt,
+// Fremdleistung „ersetzt eigene Stunden/Teile“ verhindert Doppelzählung
+export function computeCosts(rate, work, parts, ext) {
   const hours = work.reduce((s, w) => s + w.hours, 0);
   const coveredByExternal = ext.some((e) => e.covers_work_and_parts);
   let valued = 0; let estimate = 0; const unvalued = [];
@@ -144,6 +146,34 @@ export async function caseCosts(env, caseId) {
     unvalued_items: unvalued.length, unvalued, complete: unvalued.length === 0,
     external_replaces_own: coveredByExternal,
   };
+}
+
+export async function caseCosts(env, caseId) {
+  const rate = await hourlyRate(env);
+  const work = (await env.DB.prepare('SELECT hours FROM work_entries WHERE case_id=?').bind(caseId).all()).results;
+  const parts = (await env.DB.prepare('SELECT quantity, unit_price_net, valuation FROM parts WHERE case_id=?').bind(caseId).all()).results;
+  const ext = (await env.DB.prepare('SELECT amount_net, valuation, covers_work_and_parts FROM external_costs WHERE case_id=?').bind(caseId).all()).results;
+  return computeCosts(rate, work, parts, ext);
+}
+
+// Summe über alle Vorgänge eines Fahrzeugs mit 4 Abfragen (statt 4 je Vorgang)
+export async function vehicleCosts(env, envName, vehicleId) {
+  const rate = await hourlyRate(env);
+  const by = async (sql) => {
+    const m = new Map();
+    for (const r of (await env.DB.prepare(sql).bind(envName, vehicleId).all()).results) { if (!m.has(r.case_id)) m.set(r.case_id, []); m.get(r.case_id).push(r); }
+    return m;
+  };
+  const J = 'JOIN cases c ON c.id=x.case_id WHERE c.environment=? AND c.vehicle_id=?';
+  const work = await by(`SELECT x.case_id, x.hours FROM work_entries x ${J}`);
+  const parts = await by(`SELECT x.case_id, x.quantity, x.unit_price_net, x.valuation FROM parts x ${J}`);
+  const ext = await by(`SELECT x.case_id, x.amount_net, x.valuation, x.covers_work_and_parts FROM external_costs x ${J}`);
+  let actual = 0; let estimate = 0; let unvalued = 0;
+  for (const id of new Set([...work.keys(), ...parts.keys(), ...ext.keys()])) {
+    const k = computeCosts(rate, work.get(id) || [], parts.get(id) || [], ext.get(id) || []);
+    actual += k.actual_net; estimate += k.estimate_net; unvalued += k.unvalued_items;
+  }
+  return { actual_net: round2(actual), estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0 };
 }
 const round2 = (n) => Math.round(n * 100) / 100;
 

@@ -1,7 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, isValidVin, addMonths } from './util.js';
 import { audit } from './auth.js';
-import { caseCosts } from './cases.js';
+import { vehicleCosts } from './cases.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Sonstiges'];
@@ -43,33 +43,46 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     : [];
   const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers };
   if (isManager(user)) {
-    let actual = 0, estimate = 0, unvalued = 0;
-    for (const c of caseRows) {
-      const k = await caseCosts(env, c.id);
-      actual += k.actual_net; estimate += k.estimate_net; unvalued += k.unvalued_items;
-    }
-    out.costs = { actual_net: Math.round(actual * 100) / 100, estimate_net: Math.round(estimate * 100) / 100, unvalued_items: unvalued, complete: unvalued === 0 };
+    out.costs = await vehicleCosts(env, envName, vehicleId);
   }
   return out;
 }
 
-export async function upsertVehicle(env, user, body) {
-  if (!isManager(user)) throw forbidden();
+// Prüft und normalisiert einen Stammdatensatz (gemeinsam für Einzelpflege und Import)
+function vehicleRow(user, body) {
   const vin = normalizeVin(body.vin);
   if (!isValidVin(vin)) throw bad('validation', 'FIN muss 17 Zeichen haben (ohne I, O, Q).');
   const plate = str(body.plate, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
-  const id = `VIN:${vin}`;
+  return {
+    id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60 }), manufacturer: str(body.manufacturer, { max: 60 }), model: str(body.model, { max: 60 }),
+    build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
+    trailer_plate: str(body.trailer_plate, { max: 20 }), trailer_vin: body.trailer_vin ? normalizeVin(body.trailer_vin) : null,
+    master_status: str(body.master_status, { max: 40 }), source: str(body.source, { max: 200 }) || `manuell durch ${user.username}`,
+  };
+}
+
+// Sammel-Upsert über json_each: eine Anweisung je 400 Fahrzeuge (Abfragebudget je Aufruf)
+async function upsertVehicleRows(env, rows) {
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,model,build_year,trailer_plate,trailer_vin,master_status,source,active,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)
-    ON CONFLICT(id) DO UPDATE SET plate=excluded.plate, site=excluded.site, manufacturer=excluded.manufacturer, model=excluded.model, build_year=excluded.build_year,
-      trailer_plate=excluded.trailer_plate, trailer_vin=excluded.trailer_vin, master_status=excluded.master_status, source=excluded.source, active=1, updated_at=excluded.updated_at`)
-    .bind(id, vin, plate, str(body.site, { max: 60 }), str(body.manufacturer, { max: 60 }), str(body.model, { max: 60 }),
-      body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
-      str(body.trailer_plate, { max: 20 }), body.trailer_vin ? normalizeVin(body.trailer_vin) : null, str(body.master_status, { max: 40 }),
-      str(body.source, { max: 200 }) || `manuell durch ${user.username}`, now, now).run();
-  await audit(env, user.id, 'vehicle.upsert', id, { plate });
-  return { id };
+  const J = (k) => `json_extract(value,'$.${k}')`;
+  const stmts = [];
+  for (let i = 0; i < rows.length; i += 400) {
+    stmts.push(env.DB.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,model,build_year,trailer_plate,trailer_vin,master_status,source,active,created_at,updated_at)
+      SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, 1, ?1, ?1
+      FROM json_each(?2) WHERE 1
+      ON CONFLICT(id) DO UPDATE SET plate=excluded.plate, site=excluded.site, manufacturer=excluded.manufacturer, model=excluded.model, build_year=excluded.build_year,
+        trailer_plate=excluded.trailer_plate, trailer_vin=excluded.trailer_vin, master_status=excluded.master_status, source=excluded.source, active=1, updated_at=excluded.updated_at`)
+      .bind(now, JSON.stringify(rows.slice(i, i + 400))));
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+}
+
+export async function upsertVehicle(env, user, body) {
+  if (!isManager(user)) throw forbidden();
+  const row = vehicleRow(user, body);
+  await upsertVehicleRows(env, [row]);
+  await audit(env, user.id, 'vehicle.upsert', row.id, { plate: row.plate });
+  return { id: row.id };
 }
 
 export async function assignDriver(env, user, envName, vehicleId, body) {
@@ -151,17 +164,24 @@ export async function importVehiclesCsv(env, user, text) {
   const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
   const result = { imported: 0, skipped: [] };
+  const rows = new Map();
   for (const line of lines.slice(1)) {
     const cells = line.split(sep).map((c) => c.trim());
     const vin = normalizeVin(cells[ci.vin]);
     if (!isValidVin(vin)) { result.skipped.push({ plate: cells[ci.plate], reason: 'FIN ungültig/fehlt' }); continue; }
-    await upsertVehicle(env, user, {
-      vin, plate: cells[ci.plate], site: ci.site >= 0 ? cells[ci.site] : null, master_status: ci.status >= 0 ? cells[ci.status] : null,
-      manufacturer: ci.man >= 0 ? cells[ci.man] : null, build_year: ci.year >= 0 && /^\d{4}(\.0+)?$/.test(cells[ci.year]) ? parseInt(cells[ci.year], 10) : null,
-      trailer_plate: ci.trailer >= 0 ? cells[ci.trailer] : null, source: 'CSV-Import Fuhrpark Stammliste',
-    });
-    result.imported++;
+    try {
+      const row = vehicleRow(user, {
+        vin, plate: cells[ci.plate], site: ci.site >= 0 ? cells[ci.site] : null, master_status: ci.status >= 0 ? cells[ci.status] : null,
+        manufacturer: ci.man >= 0 ? cells[ci.man] : null, build_year: ci.year >= 0 && /^\d{4}(\.0+)?$/.test(cells[ci.year]) ? parseInt(cells[ci.year], 10) : null,
+        trailer_plate: ci.trailer >= 0 ? cells[ci.trailer] : null, source: 'CSV-Import Fuhrpark Stammliste',
+      });
+      rows.set(row.id, row); // doppelte FIN: letzte Zeile gilt
+    } catch (e) { result.skipped.push({ plate: cells[ci.plate], reason: e.message }); }
   }
+  if (rows.size > 5000) throw bad('validation', 'Maximal 5000 Fahrzeuge je Import.');
+  await upsertVehicleRows(env, [...rows.values()]);
+  result.imported = rows.size;
+  await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length });
   return result;
 }
 

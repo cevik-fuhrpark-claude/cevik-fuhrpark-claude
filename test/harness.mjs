@@ -1,10 +1,12 @@
 // [CLAUDE] Lokale Testumgebung: D1-Nachbildung über node:sqlite, KV im Speicher, Worker direkt aufrufen
 import { DatabaseSync } from 'node:sqlite';
 
+// Zähler ausgeführter SQL-Anweisungen (für Abfragebudget je Aufruf im Lasttest)
+export const QSTAT = { n: 0, perRequest: [] };
 class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
   bind(...args) { return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a))); }
-  _prep() { return this.db.prepare(this.sql); }
+  _prep() { QSTAT.n++; return this.db.prepare(this.sql); }
   async first(col) {
     const r = this._prep().get(...this.args);
     if (!r) return null;
@@ -84,8 +86,10 @@ export class Client {
     let b = body;
     if (body !== undefined && !(body instanceof Uint8Array) && typeof body !== 'string') { b = JSON.stringify(body); h['content-type'] = 'application/json'; }
     const ctx = makeCtx();
+    const q0 = QSTAT.n;
     const res = await this.worker.fetch(new Request('https://app.test' + path, { method, headers: h, body: b }), this.env, ctx);
     await ctx.flush();
+    QSTAT.perRequest.push({ method, path: path.split('?')[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ':id').replace(/VIN:[A-Z0-9]+/g, ':vin'), n: QSTAT.n - q0 });
     const sc = res.headers.get('set-cookie');
     if (sc) { const v = sc.split(';')[0]; this.cookie = v.endsWith('=') ? '' : v; }
     const ct = res.headers.get('content-type') || '';

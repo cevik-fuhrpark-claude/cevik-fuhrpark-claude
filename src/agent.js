@@ -15,11 +15,16 @@ async function setting(env, key) {
 }
 
 // Fristen nur, wenn ausdrücklich konfiguriert (je Umgebung, Minuten). Sonst: "Frist nicht konfiguriert".
-async function slaMinutes(env, environment, kind, priority) {
-  const v = await setting(env, `sla_${environment}_${kind}_${priority}_min`);
-  const n = v === null ? null : Number(v);
+function slaMinutes(settings, environment, kind, priority) {
+  const v = settings.get(`sla_${environment}_${kind}_${priority}_min`);
+  const n = v === undefined || v === null || v === '' ? null : Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
+
+// Abfragebudget: Cloudflare begrenzt D1-Abfragen je Aufruf. Der Agent arbeitet daher mit Sammelabfragen
+// (unabhängig von der Anzahl der Vorgänge) und schreibt Befunde blockweise über json_each.
+const CHUNK = 400;
+const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
 
@@ -28,6 +33,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
   const started = nowIso();
   await env.DB.prepare('INSERT INTO agent_runs(id,environment,trigger,started_at) VALUES (?,?,?,?)').bind(runId, environment, trigger, started).run();
   try {
+    const settings = new Map((await env.DB.prepare('SELECT key, value FROM settings').all()).results.map((r) => [r.key, r.value]));
     const findings = [];
     const add = (f) => findings.push({ requires_decision: 0, case_id: null, vehicle_id: null, ...f });
 
@@ -43,11 +49,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     const sitesWithUsers = new Set((await env.DB.prepare(`SELECT DISTINCT workshop_site FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results.map((r) => r.workshop_site));
 
+    const safetyOpen = new Map((await env.DB.prepare(`SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
+      WHERE c.environment=? AND c.status='in_reparatur' AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id`).bind(environment).all()).results.map((r) => [r.case_id, r.n]));
+
     for (const c of open) {
       const label = `${c.case_no} (${c.plate})`;
       if (c.status === 'gemeldet' && !c.fleet_received_at) {
         const urgent = c.priority === 'kritisch' || c.safety_lock;
-        const sla = await slaMinutes(env, environment, 'triage', c.priority);
+        const sla = slaMinutes(settings, environment, 'triage', c.priority);
         const age = ageMin(c.created_at);
         if (urgent) {
           add({ code: 'CRITICAL_UNTRIAGED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
@@ -62,7 +71,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         }
       }
       if (c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at) {
-        const sla = await slaMinutes(env, environment, 'ack', c.priority);
+        const sla = slaMinutes(settings, environment, 'ack', c.priority);
         const age = ageMin(c.updated_at);
         const noUser = c.workshop_site && !sitesWithUsers.has(c.workshop_site);
         if (noUser) {
@@ -88,7 +97,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
           next_action: 'Kontrolle durchführen: freigeben oder Nacharbeit anfordern.' });
       }
       if (c.status === 'in_reparatur') {
-        const oi = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
+        const oi = { n: safetyOpen.get(c.id) || 0 };
         if (oi.n > 0) add({ code: 'SAFETY_OPEN_ITEMS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'workshop',
           message: `${label}: ${oi.n} sicherheitsrelevante Restarbeit(en) offen.`, next_action: 'Restarbeiten erledigen oder Teile beschaffen.' });
       }
@@ -120,13 +129,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Kosten unbewertet bei abgeschlossenen Vorgängen (letzte 90 Tage)
-    const rate = await setting(env, 'workshop_hourly_rate_net');
-    const closed = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at > ?`)
+    const rateRaw = settings.get('workshop_hourly_rate_net');
+    const rate = rateRaw === undefined || rateRaw === null || rateRaw === '' ? null : rateRaw;
+    const closed = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate,
+        (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) AS hours_n,
+        (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND p.valuation='unvalued') AS unv_n,
+        (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS ext_n
+      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at > ?`)
       .bind(environment, new Date(Date.now() - 90 * 86400000).toISOString()).all()).results;
     for (const c of closed) {
-      const hasHours = await env.DB.prepare('SELECT COUNT(*) AS n FROM work_entries WHERE case_id=?').bind(c.id).first();
-      const unvParts = await env.DB.prepare(`SELECT COUNT(*) AS n FROM parts WHERE case_id=? AND valuation='unvalued'`).bind(c.id).first();
-      const ext = await env.DB.prepare(`SELECT COUNT(*) AS n FROM external_costs WHERE case_id=? AND covers_work_and_parts=1`).bind(c.id).first();
+      const hasHours = { n: c.hours_n }; const unvParts = { n: c.unv_n }; const ext = { n: c.ext_n };
       if (!ext.n && ((hasHours.n > 0 && rate === null) || unvParts.n > 0)) {
         add({ code: 'COSTS_UNVALUED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'owner',
           message: `${c.case_no} (${c.plate}): Kosten unvollständig bewertet (${rate === null && hasHours.n ? 'kein Stundensatz' : ''}${unvParts.n ? ` ${unvParts.n} Teil(e) ohne Preis` : ''}).`,
@@ -137,7 +149,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Wartung/Prüftermine (nur aus belegten Regeln)
     const today = new Date().toISOString().slice(0, 10);
     const rules = (await env.DB.prepare(`SELECT m.*, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
-    const warnDays = Number(await setting(env, 'maintenance_warn_days')) || 30;
+    const warnDays = Number(settings.get('maintenance_warn_days')) || 30;
     for (const r of rules) {
       const due = r.next_due_date;
       if (!due) continue;
@@ -168,52 +180,63 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
     }
 
-    // ---- Befunde persistieren (Upsert), Erledigtes schließen, Übergaben an Master ----
+    // ---- Befunde persistieren (Sammel-Upsert), Erledigtes schließen, Übergaben an Master ----
     const now = nowIso();
     const seen = new Set();
     let handoffs = 0;
     const newCritical = [];
+    const existingMap = new Map((await env.DB.prepare('SELECT id, finding_code, subject_key, status, fingerprint, first_seen FROM agent_findings WHERE environment=?')
+      .bind(environment).all()).results.map((r) => [`${r.finding_code}|${r.subject_key}`, r]));
+    const rows = [];
+    const candidates = [];
     for (const f of findings) {
       const key = `${f.code}|${f.subject}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const fingerprint = await sha256Hex(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`);
-      const existing = await env.DB.prepare('SELECT * FROM agent_findings WHERE environment=? AND finding_code=? AND subject_key=?').bind(environment, f.code, f.subject).first();
-      let findingId;
-      let changed = false;
-      if (!existing) {
-        findingId = uuid();
-        await env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,'offen',?,?,?)`).bind(findingId, environment, f.code, f.subject, f.case_id, f.vehicle_id, f.severity, f.message, f.next_action, f.owner_role, f.requires_decision, fingerprint, now, now).run();
-        changed = true;
-      } else {
-        findingId = existing.id;
-        changed = existing.status !== 'offen' || existing.fingerprint !== fingerprint;
-        await env.DB.prepare(`UPDATE agent_findings SET severity=?, message=?, next_action=?, owner_role=?, requires_decision=?, status='offen', fingerprint=?, last_seen=?, resolved_at=NULL,
-          first_seen=CASE WHEN status='erledigt' THEN ? ELSE first_seen END WHERE id=?`).bind(f.severity, f.message, f.next_action, f.owner_role, f.requires_decision, fingerprint, now, now, findingId).run();
-      }
+      const existing = existingMap.get(key);
+      const findingId = existing ? existing.id : uuid();
+      const changed = !existing || existing.status !== 'offen' || existing.fingerprint !== fingerprint;
+      rows.push({ id: findingId, code: f.code, subject: f.subject, case_id: f.case_id, vehicle_id: f.vehicle_id, severity: f.severity, message: f.message,
+        next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint });
       if (changed && SEV_RANK[f.severity] >= SEV_RANK.handeln) {
         const eventId = await sha256Hex(`${findingId}|${fingerprint}|${existing ? existing.first_seen : now}`);
-        const payload = {
-          schema_version: '1.0', event_id: eventId, event_type: 'fleet.finding.review_required', environment,
-          occurred_at: now, finding_id: findingId, finding_code: f.code, case_id: f.case_id, vehicle_id: f.vehicle_id,
-          severity: f.severity, message: f.message, next_action: f.next_action, owner_role: f.owner_role,
-          requires_human_approval: !!f.requires_decision, source_agent: 'claude-fleet-agent', agent_run_id: runId,
-        };
-        const r = await env.DB.prepare(`INSERT OR IGNORE INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,finding_id,case_id,vehicle_id,severity,payload,received_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(eventId, '1.0', environment, 'claude-fleet-agent', payload.event_type, findingId, f.case_id, f.vehicle_id, f.severity, JSON.stringify(payload), now).run();
-        if (r.meta && r.meta.changes === 1) {
-          handoffs++;
-          if (f.severity === 'kritisch') newCritical.push({ eventId, f });
-        }
+        candidates.push({ eventId, findingId, fingerprint, f });
       }
     }
-    // Nicht mehr zutreffende Befunde schließen
-    const openRows = (await env.DB.prepare(`SELECT id, finding_code, subject_key FROM agent_findings WHERE environment=? AND status='offen'`).bind(environment).all()).results;
-    for (const r of openRows) {
-      if (!seen.has(`${r.finding_code}|${r.subject_key}`)) {
-        await env.DB.prepare(`UPDATE agent_findings SET status='erledigt', resolved_at=? WHERE id=?`).bind(now, r.id).run();
+    const J = (k) => `json_extract(value,'$.${k}')`;
+    const upserts = chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
+      SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ?2, ?2
+      FROM json_each(?3) WHERE 1
+      ON CONFLICT(environment, finding_code, subject_key) DO UPDATE SET case_id=excluded.case_id, vehicle_id=excluded.vehicle_id, severity=excluded.severity, message=excluded.message,
+        next_action=excluded.next_action, owner_role=excluded.owner_role, requires_decision=excluded.requires_decision, fingerprint=excluded.fingerprint, last_seen=excluded.last_seen,
+        first_seen=CASE WHEN agent_findings.status='erledigt' THEN excluded.first_seen ELSE agent_findings.first_seen END, status='offen', resolved_at=NULL`)
+      .bind(environment, now, JSON.stringify(part)));
+    // Nicht mehr zutreffende Befunde schließen (eine Anweisung)
+    upserts.push(env.DB.prepare(`UPDATE agent_findings SET status='erledigt', resolved_at=?1 WHERE environment=?2 AND status='offen'
+      AND (finding_code || '|' || subject_key) NOT IN (SELECT value FROM json_each(?3))`).bind(now, environment, JSON.stringify([...seen])));
+    await env.DB.batch(upserts);
+
+    // Übergaben an den Master: idempotent über event_id; nur neue zählen
+    if (candidates.length) {
+      const known = new Set();
+      for (const part of chunks(candidates)) {
+        for (const r of (await env.DB.prepare('SELECT event_id FROM master_inbox WHERE event_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(part.map((c) => c.eventId))).all()).results) known.add(r.event_id);
       }
+      const fresh = candidates.filter((c) => !known.has(c.eventId));
+      const payloads = fresh.map(({ eventId, findingId, f }) => ({
+        schema_version: '1.0', event_id: eventId, event_type: 'fleet.finding.review_required', environment,
+        occurred_at: now, finding_id: findingId, finding_code: f.code, case_id: f.case_id, vehicle_id: f.vehicle_id,
+        severity: f.severity, message: f.message, next_action: f.next_action, owner_role: f.owner_role,
+        requires_human_approval: !!f.requires_decision, source_agent: 'claude-fleet-agent', agent_run_id: runId,
+      }));
+      if (payloads.length) {
+        await env.DB.batch(chunks(payloads).map((part) => env.DB.prepare(`INSERT OR IGNORE INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,finding_id,case_id,vehicle_id,severity,payload,received_at)
+          SELECT json_extract(value,'$.event_id'), '1.0', ?1, 'claude-fleet-agent', json_extract(value,'$.event_type'), json_extract(value,'$.finding_id'), json_extract(value,'$.case_id'),
+            json_extract(value,'$.vehicle_id'), json_extract(value,'$.severity'), value, ?2 FROM json_each(?3)`).bind(environment, now, JSON.stringify(part))));
+      }
+      handoffs = fresh.length;
+      for (const c of fresh) if (c.f.severity === 'kritisch') newCritical.push({ eventId: c.eventId, f: c.f });
     }
     // Master verarbeitet Eingänge (Bestätigung der Übernahme, getrennt von menschlicher Entscheidung)
     await processMasterInbox(env, environment);
@@ -221,7 +244,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Kritische neue Befunde zusätzlich an Fuhrparkleitung/Owner pushen
     if (newCritical.length) {
       const ids = (await env.DB.prepare(`SELECT id FROM users WHERE environment=? AND role IN ('fleet','owner') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results.map((r) => r.id);
-      for (const { eventId, f } of newCritical) {
+      // Abfragebudget: bei vielen neuen kritischen Befunden eine Sammelmeldung statt Einzel-Pushs
+      if (newCritical.length > 3) {
+        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${newCritical.length} neue kritische Befunde${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${runId}`, caseId: null, urgent: true });
+      } else for (const { eventId, f } of newCritical) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${f.code}${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
       }
     }

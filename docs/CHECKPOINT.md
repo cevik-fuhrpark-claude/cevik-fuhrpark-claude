@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 41 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 43 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -65,6 +65,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Ersatzteillager (Migration 0003): Artikel je Werkstatt, Zugang/Entnahme/Korrektur (Korrektur mit Grund), kein negativer Bestand, Entnahme direkt im Vorgang (`add_part` mit `stock_item_id`, Preis aus Lager), Mindestbestand → Agent-Hinweis `STOCK_BELOW_MIN` (keine automatische Bestellung). 36 Tests grün.
 - [x] Bußgelder, Anhörungen & Zeugenfragebögen (Migration 0004): Schreiben erfassen (Kennzeichen → Fahrzeug, doppeltes Aktenzeichen abgewiesen), Fahrerkandidaten zum Tatzeitpunkt aus Fahrzeugzuordnung und Abfahrtskontrollen, Bestätigung nur mit Nachweis, Fahrer informieren (Push) und Kenntnisnahme, Status mit Begründung, Schreiben als PDF/Foto anhängen (nur Fuhrpark und betroffener Fahrer lesen). Fristen ausschließlich laut Schreiben; Agent-Befunde `FINE_OVERDUE`, `FINE_DUE_SOON` (Vorlauf `fine_warn_days`), `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`. 40 Tests grün, UI mobil geprüft.
 - [x] Kosten je Fahrzeug/Monat: Bericht und CSV-Export (Excel-tauglich) in der App unter Mehr → „Kosten je Fahrzeug“, Integrationsendpunkt `/v1/costs`. Gleiche Regeln wie die Vorgangsbewertung (unbewertet ≠ 0 €, Schätzungen getrennt, keine Doppelzählung bei Fremdleistung); Test prüft Summengleichheit. 41 Tests grün.
+- [x] Lasttest & Abfragebudget: `scripts/lasttest.mjs` (150 Lkw / 3000 Vorgänge, synthetisch, nur Arbeitsspeicher). Agent, Importe, Push-Zustellung, Fahrzeugakte auf Sammelabfragen umgestellt (Agent ≈ 33 statt ≈ 9000 Abfragen); Cron getrennt für Betrieb (`*/15`) und Test (`7,37`); Test „jeder API-Aufruf ≤ 50 D1-Abfragen“.
+- [x] Datensicherung: Inhaber-Download (JSON, ohne Geheimnisse) unter Einstellungen; Wiederherstellung per D1 Time Travel in `docs/BETRIEB.md`. 43 Tests grün.
 
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
@@ -75,4 +77,3 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen (HU/SP/UVV/Tacho) – Quellen aus Postfach/Drive sichten, nur belegte Termine eintragen.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
-9. Lasttest (100+ LKW), Backup-/Restore-Anleitung (D1 Time Travel, KV-Export).

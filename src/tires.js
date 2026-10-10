@@ -98,22 +98,32 @@ export async function importTireSpecs(env, user, text) {
   const ci = { src: idx('quelle'), fin: idx('fin'), lenk: idx('reifen lenk'), lift: idx('reifen lift'), antr: idx('reifen antrieb'), anh: idx('reifen anh') };
   if (ci.fin < 0) throw bad('validation', 'Spalte FIN fehlt.');
   const res = { imported: 0, skipped_no_vehicle: [], kept_verified: 0 };
+  // Abfragebudget: Fahrzeuge und geprüfte Werte vorab laden, Schreibvorgang als Sammelanweisung
+  const byVin = new Map((await env.DB.prepare('SELECT id, vin FROM vehicles').all()).results.map((v) => [v.vin, v.id]));
+  const verified = new Set((await env.DB.prepare('SELECT vehicle_id, axle FROM tire_specs WHERE verified=1').all()).results.map((r) => `${r.vehicle_id}|${r.axle}`));
+  const rows = new Map();
   for (const line of lines) {
     const c = line.split(';').map((x) => x.trim());
     const vin = normalizeVin(c[ci.fin]);
-    const v = await env.DB.prepare('SELECT id FROM vehicles WHERE vin=?').bind(vin).first();
-    if (!v) { res.skipped_no_vehicle.push(vin || '(leer)'); continue; }
+    const vid = byVin.get(vin);
+    if (!vid) { res.skipped_no_vehicle.push(vin || '(leer)'); continue; }
     for (const [axle, k] of [['lenkachse', 'lenk'], ['liftachse', 'lift'], ['antriebsachse', 'antr'], ['anhaenger', 'anh']]) {
       const size = ci[k] >= 0 ? c[ci[k]] : '';
       if (!size || !/\d/.test(size)) continue;
-      const ex = await env.DB.prepare('SELECT verified FROM tire_specs WHERE vehicle_id=? AND axle=?').bind(v.id, axle).first();
-      if (ex && ex.verified) { res.kept_verified++; continue; }
-      await env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,updated_at) VALUES (?,?,?,?,0,?)
-        ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, updated_at=excluded.updated_at`)
-        .bind(v.id, axle, size.slice(0, 40), `Quelldatei Fuhrpark ${ci.src >= 0 ? c[ci.src] : ''} (ungeprüft)`.trim(), nowIso()).run();
-      res.imported++;
+      if (verified.has(`${vid}|${axle}`)) { res.kept_verified++; continue; }
+      rows.set(`${vid}|${axle}`, { v: vid, a: axle, s: size.slice(0, 40), src: `Quelldatei Fuhrpark ${ci.src >= 0 ? c[ci.src] : ''} (ungeprüft)`.trim() });
     }
   }
+  const list = [...rows.values()];
+  const stmts = [];
+  for (let i = 0; i < list.length; i += 400) {
+    stmts.push(env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,updated_at)
+      SELECT json_extract(value,'$.v'), json_extract(value,'$.a'), json_extract(value,'$.s'), json_extract(value,'$.src'), 0, ?1 FROM json_each(?2) WHERE 1
+      ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, updated_at=excluded.updated_at WHERE tire_specs.verified=0`)
+      .bind(nowIso(), JSON.stringify(list.slice(i, i + 400))));
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+  res.imported = list.length;
   await audit(env, user.id, 'tires.import', null, { imported: res.imported });
   return res;
 }

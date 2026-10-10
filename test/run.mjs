@@ -1,6 +1,6 @@
 // [CLAUDE] Automatisierte Abnahmetests (Node >= 22, ohne Fremdpakete): node --experimental-sqlite test/run.mjs
 import worker from '../src/worker.js';
-import { makeEnv, Client } from './harness.mjs';
+import { makeEnv, Client, QSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { b64urlEncode, b64urlDecode, concatBytes } from '../src/util.js';
 
@@ -353,12 +353,17 @@ await test('Login-Sperre nach wiederholten Fehlversuchen', async () => {
   const ok2 = await new Client(worker, env).post('/api/login', { username: 'test.fahrer', password: 'Sicheres-Passwort-2026' });
   eq(ok2.status, 200);
 });
-await test('Cron-Lauf (scheduled) läuft für Test und Betrieb fehlerfrei', async () => {
-  const p = [];
-  await worker.scheduled({}, env, { waitUntil: (x) => p.push(x) });
-  await Promise.all(p);
+await test('Cron-Läufe (Betrieb */15, Test 7,37) fehlerfrei und innerhalb des Abfragebudgets (≤ 50 je Aufruf)', async () => {
+  for (const cron of ['*/15 * * * *', '7,37 * * * *']) {
+    const p = [];
+    const q0 = QSTAT.n;
+    await worker.scheduled({ cron }, env, { waitUntil: (x) => p.push(x) });
+    await Promise.all(p);
+    ok(QSTAT.n - q0 <= 50, `Abfragen je Cron-Aufruf ${QSTAT.n - q0} > 50 (${cron})`);
+  }
   const runs = (await env.DB.prepare('SELECT environment, error FROM agent_runs ORDER BY started_at DESC LIMIT 2').all()).results;
   ok(runs.every((r) => !r.error), 'ohne Fehler');
+  eq(new Set(runs.map((r) => r.environment)).size, 2, 'beide Umgebungen');
 });
 
 console.log('Reifenmanagement');
@@ -507,6 +512,25 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
   const H = { authorization: 'Bearer integration-token-xyz' };
   const api = await anon.req('GET', '/api/integration/v1/costs?environment=test&from=2026-01&to=2026-12', undefined, H);
   eq(api.status, 200); eq(api.data.totals.actual_net, r.data.totals.actual_net);
+});
+
+console.log('Datensicherung');
+await test('Sicherung nur für Inhaber, ohne Passwörter/Token/Schlüssel, mit allen Fachtabellen', async () => {
+  eq((await users.fleet.get('/api/admin/backup')).status, 403);
+  const r = await owner.get('/api/admin/backup');
+  eq(r.status, 200);
+  ok(r.data.counts.vehicles > 0 && r.data.counts.cases > 0 && 'fines' in r.data.data && 'stock_movements' in r.data.data, 'Fachtabellen enthalten');
+  const txt = JSON.stringify(r.data);
+  ok(!/password_hash|password_salt|token_hash|vapid_private|"p256dh"|"auth":/.test(txt), 'keine Geheimnisse');
+  ok(r.data.data.users.every((u) => !('password_hash' in u)), 'keine Hashes');
+});
+
+console.log('Abfragebudget');
+await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
+  // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
+  const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
+  console.log('     größte Aufrufe: ' + worst.map((w) => `${w.method} ${w.path} = ${w.n}`).join(' · '));
+  ok(worst[0].n <= 50, `${worst[0].method} ${worst[0].path} braucht ${worst[0].n} Abfragen`);
 });
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);

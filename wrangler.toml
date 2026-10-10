@@ -25,7 +25,8 @@ id = "ed9ee50f6c09411d8b1be0711de32300"
 binding = "AI"
 
 [triggers]
-crons = ["*/15 * * * *"]
+# */15: Fuhrparkagent Betrieb + Push-Wiederholung · 7,37: Fuhrparkagent Testumgebung + Sitzungsbereinigung
+crons = ["*/15 * * * *", "7,37 * * * *"]
 
 [observability]
 enabled = true

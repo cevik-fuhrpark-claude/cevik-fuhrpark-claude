@@ -21,10 +21,38 @@
 - Reaktionsfristen (Erstbewertung, Werkstatt-Übernahme) je Priorität unter „Einstellungen“. Leer = keine Frist (der Agent meldet dann „Frist nicht konfiguriert“).
 - Interner Werkstatt-Stundensatz: ohne Wert bleiben Arbeitsstunden „unbewertet“.
 
-## Sicherung
-- D1: Cloudflare „Time Travel“ (Wiederherstellung auf jeden Zeitpunkt der letzten 30 Tage, im Dashboard unter D1 → Datenbank).
-- Dateien (KV): Export über Cloudflare-Dashboard bzw. Wrangler `kv key list` / `kv key get`.
-- Code: GitHub-Repository; jede Version ist über Cloudflare „Deployments“ zurückrollbar.
+## Sicherung & Wiederherstellung
+**Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.
+
+**Manuell (Inhaber):** „Mehr → Einstellungen → Sicherung herunterladen“ erzeugt eine JSON-Datei mit allen Fachdaten
+(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen, Reifen, Lager, Bußgelder, Befunde). Nicht enthalten: Passwörter,
+Sitzungen, Einladungs-/Integrations-Token, Push-Schlüssel und Dateiinhalte (nur deren Metadaten). Empfehlung: monatlich
+herunterladen und im eigenen Drive ablegen. Jeder Export steht im Audit-Log.
+
+**Wiederherstellung der Datenbank auf einen Zeitpunkt** (nur nach Freigabe durch den Inhaber – überschreibt den aktuellen Stand):
+```
+npx wrangler d1 time-travel info cevik-fuhrpark-claude                       # aktuelles Lesezeichen anzeigen und notieren
+npx wrangler d1 time-travel restore cevik-fuhrpark-claude --timestamp=2026-10-10T08:00:00Z
+```
+Vor dem Zurückspielen das aktuelle Lesezeichen notieren – damit lässt sich auch die Wiederherstellung selbst rückgängig machen.
+
+**Vollexport der Datenbank als SQL:** `npx wrangler d1 export cevik-fuhrpark-claude --remote --output=sicherung.sql`
+
+**Fotos/PDFs (KV `FILES`):** Schlüssel `<umgebung>/<Vorgangs-ID>/<Datei-ID>` bzw. `<umgebung>/fines/<Bußgeld-ID>/<Datei-ID>` (Zuordnung über Tabelle `files` in der Sicherung); Liste mit
+`npx wrangler kv key list --binding FILES --remote`, einzelne Datei mit `npx wrangler kv key get <Schlüssel> --binding FILES --remote > datei`.
+
+**Code:** GitHub-Repository; jede Version ist unter Cloudflare → Worker → Deployments zurückrollbar.
+
+## Belastbarkeit (Lasttest)
+`node --experimental-sqlite scripts/lasttest.mjs 150 3000` – synthetische Daten (Kennzeichen `LT-…`), nur im Arbeitsspeicher, nie in der echten Datenbank.
+Ergebnis 10.10.2026 (150 Lkw, 3000 Vorgänge): Vorgang anlegen p95 ≈ 3 ms, Vorgangsliste ≈ 15 ms, Fahrzeugakte ≈ 2 ms,
+Management-Panel ≈ 8 ms, Kostenbericht 12 Monate ≈ 230 ms, Fuhrparkagent-Lauf ≈ 300 ms (reine Anwendungslogik; D1 im Betrieb
+zusätzlich wenige ms je Abfrage).
+
+Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
+mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt
+zuvor ≈ 9000 bei 3000 offenen Vorgängen). Ein Test prüft bei jedem Lauf, dass jeder API-Aufruf ≤ 50 Abfragen braucht.
+Betrieb und Testumgebung laufen in getrennten Cron-Aufrufen (`*/15` bzw. `7,37`).
 
 ## Was die App bewusst nicht tut
 Keine automatische technische Fahrzeugfreigabe, keine Bestellungen oder kostenpflichtigen Aufträge, keine erfundenen Fristen,

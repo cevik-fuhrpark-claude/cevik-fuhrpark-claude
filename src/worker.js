@@ -12,6 +12,7 @@ import * as tires from './tires.js';
 import * as stock from './stock.js';
 import * as fines from './fines.js';
 import * as reports from './reports.js';
+import { exportBackup } from './backup.js';
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -148,6 +149,12 @@ async function handleApi(request, env, ctx, url) {
     return json(await tires.importTireSpecs(env, user, text));
   }
 
+  // Datensicherung (Inhaber)
+  if (path === '/api/admin/backup' && m === 'GET') {
+    const b = await exportBackup(env, user);
+    return new Response(JSON.stringify(b), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-sicherung_${b.created_at.slice(0, 10)}.json"` } });
+  }
+
   // Kostenbericht je Fahrzeug/Monat
   if (path === '/api/reports/costs' && m === 'GET') {
     const rep = await reports.costReport(env, user, envName, Object.fromEntries(url.searchParams));
@@ -282,6 +289,8 @@ async function dashboard(env, user, envName) {
   return out;
 }
 
+const CRON_TEST = '7,37 * * * *';
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -297,10 +306,13 @@ export default {
   },
   async scheduled(event, env, ctx) {
     await ensureSchema(env);
-    for (const e of ['production', 'test']) {
-      try { await runFleetAgent(env, ctx, e, 'cron'); } catch (err) { console.error('Agent', e, err); }
+    // Abfragebudget je Aufruf: Betrieb und Test laufen in getrennten Cron-Aufrufen (siehe wrangler.toml)
+    const testRun = event && event.cron === CRON_TEST;
+    try { await runFleetAgent(env, ctx, testRun ? 'test' : 'production', 'cron'); } catch (err) { console.error('Agent', err); }
+    if (!testRun) {
+      try { await retryFailedPush(env); } catch (err) { console.error('Push-Retry', err); }
+    } else {
+      await env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(nowIso()).run();
     }
-    try { await retryFailedPush(env); } catch (err) { console.error('Push-Retry', err); }
-    await env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(nowIso()).run();
   },
 };
