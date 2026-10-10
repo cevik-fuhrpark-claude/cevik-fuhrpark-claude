@@ -168,6 +168,8 @@ async function handleApi(request, env, ctx, url) {
     return json(await tires.importTireSpecs(env, user, text));
   }
 
+  if (path === '/api/admin/audit' && m === 'GET') return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });
+
   // Datensicherung (Inhaber)
   if (path === '/api/admin/backup' && m === 'GET') {
     const b = await exportBackup(env, user);

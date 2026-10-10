@@ -81,10 +81,12 @@ export async function login(env, request, body) {
     await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)
       ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, updated_at=excluded.updated_at`)
       .bind(username, locked ? 0 : failures, locked, nowIso()).run();
+    if (locked) await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
     throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   }
   await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(username).run();
   const cookie = await createSession(env, user.id, request);
+  await audit(env, user.id, 'login', user.id, null);
   return { user: publicUser(user), cookie };
 }
 
@@ -146,6 +148,7 @@ export async function changePassword(env, user, body) {
     env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, nowIso(), user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
   ]);
+  await audit(env, user.id, 'password.change', user.id, null);
   return { ok: true };
 }
 
@@ -259,4 +262,16 @@ export function effectiveEnv(user, request) {
     if (want === 'test' || want === 'production') return want;
   }
   return user.environment;
+}
+
+// Protokoll (nur Inhaber): wer hat wann was geändert/exportiert; Details ohne Geheimnisse
+export async function listAudit(env, user, query = {}) {
+  if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
+  const limit = Math.min(Math.max(Number(query.limit) || 200, 1), 1000);
+  const prefix = query.action ? String(query.action).slice(0, 40) : null;
+  const before = query.before && /^\d{4}-\d{2}-\d{2}T/.test(query.before) ? query.before : '9999';
+  const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE a.created_at < ? ${prefix ? "AND a.action LIKE ? ESCAPE '\\'" : ''} ORDER BY a.created_at DESC LIMIT ?`)
+    .bind(...(prefix ? [before, prefix.replace(/[%_\\]/g, (c) => '\\' + c) + '%', limit] : [before, limit])).all()).results;
+  return rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
 }

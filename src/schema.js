@@ -85,5 +85,11 @@ export const MIGRATIONS = [
    "ALTER TABLE vehicles ADD COLUMN kind TEXT NOT NULL DEFAULT 'lkw' CHECK (kind IN ('lkw','anhaenger'))",
    "CREATE INDEX IF NOT EXISTS idx_vehicles_kind ON vehicles(kind)"
   ]
+ },
+ {
+  "id": "0007_audit_index",
+  "statements": [
+   "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)"
+  ]
  }
 ];

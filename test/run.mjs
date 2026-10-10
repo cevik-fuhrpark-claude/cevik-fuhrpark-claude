@@ -672,6 +672,25 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   for (const lang of ['uk', 'en']) { const miss = Object.keys(STRINGS.de).filter((k) => !(k in STRINGS[lang])); eq(miss.join(','), '', `fehlende Übersetzungen ${lang}`); }
 });
 
+console.log('Protokoll');
+await test('Protokoll nur für Inhaber: Anmeldungen, Sperren, Exporte, Filter; keine Geheimnisse', async () => {
+  eq((await users.fleet.get('/api/admin/audit')).status, 403);
+  // Sperre nach Fehlversuchen wird protokolliert
+  const x = new Client(worker, env, 'x');
+  for (let i = 0; i < 8; i++) await x.post('/api/login', { username: 'test.dispo', password: 'falsch-falsch-1' });
+  const r = await owner.get('/api/admin/audit?limit=500');
+  eq(r.status, 200);
+  const acts = r.data.entries.map((e) => e.action);
+  ok(acts.includes('login') && acts.includes('login.locked') && acts.includes('backup.export') && acts.includes('user.create'), 'Ereignisse vorhanden');
+  ok(r.data.entries.find((e) => e.action === 'user.create').actor_name, 'Name des Handelnden');
+  ok(!/password|token|Sicheres-Passwort/i.test(JSON.stringify(r.data.entries.map((e) => e.detail))), 'keine Passwörter/Token');
+  const f = await owner.get('/api/admin/audit?action=maintenance.');
+  ok(f.data.entries.length > 0 && f.data.entries.every((e) => e.action.startsWith('maintenance.')), 'Filter nach Aktion');
+  eq((await owner.get('/api/admin/audit?action=%25')).data.entries.length, 0, 'Platzhalter werden nicht ausgewertet');
+  const older = await owner.get(`/api/admin/audit?limit=1&before=${encodeURIComponent(r.data.entries[0].created_at)}`);
+  ok(older.data.entries.length === 1 && older.data.entries[0].created_at <= r.data.entries[0].created_at, 'Blättern');
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

@@ -53,6 +53,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Push | `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `GET /api/push/devices`, `POST /api/push/test` |
 | Management | `GET /api/dashboard`, `GET /api/master`, `POST /api/master/:eventId/decision`, `POST /api/agent/run` |
 | Einstellungen | `GET/PUT /api/settings` (nur owner) |
+| Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
 
 ### Befehle auf Vorgängen
 `POST /api/cases/:id/commands` mit `{ action, command_id, expected_version, note, payload }`.
