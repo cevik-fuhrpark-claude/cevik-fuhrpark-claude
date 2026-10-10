@@ -224,6 +224,7 @@ export async function completeMaintenance(env, user, ruleId, body) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km' })) : null;
+  if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   const next = str(body.next_due_date, { max: 10 }) || (r.interval_months ? addMonths(date, r.interval_months) : null);
   await env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=? WHERE id=?')
     .bind(date, km, next, evidence, nowIso(), ruleId).run();

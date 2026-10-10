@@ -6,6 +6,7 @@ import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
 import { fineFindings } from './fines.js';
 import { documentFindings } from './vehicles.js';
+import { latestKmByVehicle, kmDue } from './maintenance.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -159,7 +160,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const today = new Date().toISOString().slice(0, 10);
     const rules = (await env.DB.prepare(`SELECT m.*, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
     const warnDays = Number(settings.get('maintenance_warn_days')) || 30;
+    const warnKm = Number(settings.get('maintenance_warn_km')) > 0 ? Number(settings.get('maintenance_warn_km')) : null;
+    const latestKm = rules.some((r) => r.interval_km) ? await latestKmByVehicle(env) : new Map();
+    const fmtKm = (n) => n.toLocaleString('de-DE');
     for (const r of rules) {
+      // Kilometer-Intervall (nur wenn Intervall, letzte Durchführung in km und ein km-Stand belegt sind)
+      const k = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
+      if (k && k.km_status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
+        message: `${r.plate}: ${r.kind} war bei ${fmtKm(k.next_due_km)} km fällig – Stand ${fmtKm(k.current_km)} km (abgelesen ${berlinDateTime(k.km_measured_at).slice(0, 10)}).`, next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+      else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
+        message: `${r.plate}: ${r.kind} fällig bei ${fmtKm(k.next_due_km)} km – Stand ${fmtKm(k.current_km)} km (noch ${fmtKm(k.km_remaining)} km).`, next_action: 'Werkstatttermin einplanen.' });
       const due = r.next_due_date;
       if (!due) continue;
       const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);

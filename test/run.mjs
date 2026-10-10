@@ -847,6 +847,32 @@ await test('Kilometerstand: Ablesedatum (nicht Zukunft), Plausibilität gegen Na
   ok(d.data.odometer.some((o) => o.note === 'Tachotausch laut Werkstattrechnung'), 'Begründung in der Akte');
 });
 
+await test('Prüfungen mit Kilometer-Intervall: Fälligkeit aus letztem km-Stand, Vorwarnung nur wenn eingestellt, Agent-Befund', async () => {
+  const vp = `/api/vehicles/${encodeURIComponent(V1)}`;
+  const cur = (await users.fleet.get(vp)).data.odometer[0].km;
+  const r1 = await users.ws.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 50000, last_done_km: cur - 60000, evidence: 'Testnachweis km-Intervall' });
+  eq(r1.status, 201);
+  const r2 = await users.ws.post(`${vp}/maintenance`, { kind: 'Bremsen', interval_km: 50000, last_done_km: cur - 45000, evidence: 'Testnachweis km-Intervall 2' });
+  let ov = (await users.fleet.get('/api/maintenance')).data;
+  const a = ov.rows.find((x) => x.id === r1.data.id); const b = ov.rows.find((x) => x.id === r2.data.id);
+  eq(a.next_due_km, cur - 10000); eq(a.km_remaining, -10000); eq(a.status, 'ueberfaellig', 'km überschritten');
+  eq(b.km_status, 'ok', 'ohne eingestellte Vorwarnung keine erfundene Schwelle');
+  eq((await owner.put('/api/settings', { maintenance_warn_km: 6000 })).status, 200);
+  ov = (await users.fleet.get('/api/maintenance')).data;
+  eq(ov.rows.find((x) => x.id === r2.data.id).status, 'faellig', 'Vorwarnung 6000 km');
+  ok(/Fällig bei km/.test((await users.fleet.get('/api/maintenance?format=csv')).data instanceof Uint8Array ? new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data) : ''), 'CSV-Spalte');
+  await users.fleet.post('/api/agent/run');
+  const fs = (await users.fleet.get('/api/master')).data.findings;
+  const over = fs.find((f) => f.finding_code === 'MAINTENANCE_OVERDUE' && f.subject_key === `${r1.data.id}|km`);
+  ok(over && /Ölwechsel war bei .* km fällig/.test(over.message), 'Agent meldet km-Überschreitung');
+  ok(fs.some((f) => f.finding_code === 'MAINTENANCE_DUE' && f.subject_key === `${r2.data.id}|km`), 'Agent meldet km-Vorwarnung');
+  eq((await users.ws.post(`/api/maintenance/${r1.data.id}/complete`, { done_date: new Date().toISOString().slice(0, 10), evidence: 'Werkstattauftrag Test' })).status, 400, 'km bei Durchführung Pflicht');
+  eq((await users.ws.post(`/api/maintenance/${r1.data.id}/complete`, { done_date: new Date().toISOString().slice(0, 10), evidence: 'Werkstattauftrag Test', done_km: cur })).status, 200);
+  ov = (await users.fleet.get('/api/maintenance')).data;
+  eq(ov.rows.find((x) => x.id === r1.data.id).next_due_km, cur + 50000, 'neuer Zyklus ab Durchführung');
+  await owner.put('/api/settings', { maintenance_warn_km: null });
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

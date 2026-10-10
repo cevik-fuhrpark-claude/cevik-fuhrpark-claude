@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 58 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 59 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -95,6 +95,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Meine Anmeldungen (Mehr → Mein Konto): eigene aktive Sitzungen mit Gerät (aus Browser-Kennung), zuletzt aktiv, einzeln oder alle anderen abmelden; fremde Sitzungen nicht erreichbar, im Protokoll (`session.revoke`, `session.revoke_others`). Datenschutz-Entwurf `docs/DATENSCHUTZ_ENTWURF.md` zur Prüfung. 56 Tests grün.
 - [x] Zeitleiste der Fahrzeugakte (Button „Zeitleiste“ in der Akte, `GET /api/vehicles/<id>/timeline`): Meldungen, Abschlüsse, Kontrollen, km-Stände, Fahrerzuordnungen, Dokumente, Reifen, erledigte Prüfungen, Bußgelder (nur Fuhrpark/Inhaber) – neueste zuerst, Filter je Bereich; nur gespeicherte Daten. 57 Tests grün, UI 390 px/Tablet/PC geprüft.
 - [x] Kilometerstände (Migration 0013: `odometer_readings.note`, Index): Ablesedatum nachträglich erfassbar (nicht Zukunft), Plausibilität gegen den zeitlich vorherigen **und** nächsten Wert – Abweichung nur mit Begründung (z. B. Tachotausch), sonst 409; Doppelerfassung gleicher Tag/Rolle abgewiesen; Begründung in Zeitleiste sichtbar. 58 Tests grün, UI 390 px geprüft.
+- [x] Prüfungen/Wartung nach Kilometern: `interval_km` + `last_done_km` werden ausgewertet (fällig bei, Rest-km aus letztem km-Stand), Status = strengerer aus Datum/km, überfällige zuerst, CSV-Spalten, Agent-Befunde (Subjekt `<regel>|km`, in Sammel-Erinnerung), Vorwarnung nur bei eingestellter Schwelle `maintenance_warn_km` (Einstellungen), Erledigen einer km-Regel nur mit km-Stand. Formular „Termin/Regel hinzufügen“ um km-Felder ergänzt. 59 Tests grün, UI 390 px/PC geprüft.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -116,5 +117,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Prüftermine mit Kilometer-Intervall (`interval_km` ist im Schema, wird aber nicht ausgewertet): Fälligkeit „bei X km“ aus letztem km-Stand anzeigen und im Agenten melden (nur wenn Intervall und km-Stand belegt sind).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Wartungshistorie je Regel (bisher überschreibt „erledigt“ die letzte Durchführung – frühere Durchführungen nur im Protokoll): Tabelle `maintenance_events` mit Datum, km, Nachweis, Person; Anzeige in Fahrzeugakte/Zeitleiste.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
