@@ -783,6 +783,14 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const hard = [...app.matchAll(/<(label|th|td|dt|dd|li|b|a|div|button|h[1-4]|span|p|summary|option|legend)[^>]*>([A-Za-zÄÖÜäöüß][^<>${}]{2,})</g)].map((m) => m[2].trim())
     .filter((x) => !allow.has(x) && !/^(PDF|Quelle;|Kennzeichen;)/.test(x));
   eq(hard.join(' | '), '', 'Texte ohne Übersetzung (t())');
+  const i18nSrc = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  // je Sprache: Hauptblock in STRINGS + alle Object.assign(STRINGS.<lang>, {...})-Nachträge
+  const main = i18nSrc.slice(i18nSrc.indexOf('export const STRINGS = {'), i18nSrc.indexOf('\n};'));
+  const perLang = { de: '', uk: '', en: '' };
+  main.split(/\n  (de|uk|en): \{/).forEach((part, k, arr) => { if (k % 2 === 1) perLang[part] += arr[k + 1]; });
+  for (const m of i18nSrc.matchAll(/Object\.assign\(STRINGS\.(de|uk|en), \{(.*)\}\);/g)) perLang[m[1]] += '\n' + m[2];
+  const dupl = Object.entries(perLang).flatMap(([lang, b]) => { const seen = {}; return [...b.matchAll(/(?:^|[\s,{])([a-z0-9_]+): (?=['`])/g)].map((m) => m[1]).filter((k) => (seen[k] = (seen[k] || 0) + 1) > 1).map((k) => `${lang}.${k}`); });
+  eq(dupl.join(','), '', 'doppelte Textschlüssel (der spätere überschreibt still den früheren)');
   const attr = [...app.matchAll(/(aria-label|title|placeholder)="([A-Za-zÄÖÜäöüß][^"$]{2,})"/g)].map((m) => m[2]).filter((x) => !/[0-9.…,]/.test(x)); // Beispielwerte (SZ-…, m.mustermann) sind sprachneutral
   eq(attr.join(' | '), '', 'Attribute ohne Übersetzung (aria-label/title/placeholder)');
 });

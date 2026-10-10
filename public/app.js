@@ -1067,7 +1067,7 @@ async function viewDriver(id) {
   if (mgr) {
     html += `<details class="panel"><summary>${esc(t('add_driver_doc'))}</summary><form id="ddf"><label>${esc(t('kind'))}</label><select name="kind">${['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'].map((k) => `<option value="${k}">${esc(t('dk2_' + k))}</option>`).join('')}</select>
       <label>${esc(t('doc_title'))}</label><input name="title" placeholder="${esc(t('doc_title_ph'))}"><label>${esc(t('license_classes'))}</label><input name="license_classes" placeholder="C, CE"><label>${esc(t('doc_number'))}</label><input name="number">
-      <label>${esc(t('issued_on'))}</label><input type="date" name="issued_on"><label>${esc(t('valid_until'))} <span class="hint">${esc(t('valid_until_hint'))}</span></label><input type="date" name="valid_until">
+      <label>${esc(t('issued_on'))}</label><input type="date" name="issued_on"><label>${esc(t('valid_until'))} <span class="hint">${esc(t('driver_valid_until_hint'))}</span></label><input type="date" name="valid_until">
       <label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('driver_ev_ph'))}"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
       <details class="panel"><summary>${esc(t('record_license_check'))}</summary><form id="lcf"><label>${esc(t('date'))}</label><input type="date" name="checked_on" required value="${new Date().toISOString().slice(0, 10)}">
       <label>${esc(t('result'))}</label><select name="result">${['in_ordnung', 'maengel', 'nicht_vorgelegt'].map((r) => `<option value="${r}">${esc(t('lcr_' + r))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
@@ -1423,7 +1423,7 @@ function viewHelp() {
   if (r === 'workshop') parts.unshift('ws');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'drivers');
   if (r === 'dispatch') parts.unshift('dispo');
-  render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}`, 'more');
+  render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}<p class="small muted">${esc(t('app_version'))}: ${esc(S.appVersion || '–')}</p>`, 'more');
 }
 
 // ---------- Reifen über die Flotte ----------
@@ -1538,6 +1538,29 @@ async function viewSettings() {
     } catch (err) { toast(err.message, true); }
   };
 }
+
+// ---------- Aktualisierung: neue App-Fassung erkennen ----------
+// Lange geöffnete Apps (Werkstatt-Tablet, Handy im Hintergrund) laden neue Fassungen sonst erst beim nächsten Neustart.
+// Kein automatisches Neuladen – ein halb ausgefülltes Formular darf nicht verloren gehen; die Person entscheidet.
+async function fetchVersion() {
+  try { const r = await fetch('/version.json', { cache: 'no-store' }); if (!r.ok) return null; return (await r.json()).version || null; } catch { return null; }
+}
+async function checkVersion() {
+  const v = await fetchVersion();
+  if (!v) return;
+  if (!S.appVersion) { S.appVersion = v; return; }
+  if (v === S.appVersion || document.getElementById('upd')) return;
+  const el = document.createElement('div');
+  el.id = 'upd'; el.className = 'update-bar'; el.setAttribute('role', 'status');
+  el.innerHTML = `<span>${esc(t('update_available'))}</span><button type="button" class="btn">${esc(t('update_now'))}</button><button type="button" class="btn secondary" aria-label="${esc(t('later'))}">×</button>`;
+  const [now, later] = el.querySelectorAll('button');
+  now.onclick = () => location.reload();
+  later.onclick = () => el.remove();
+  document.body.appendChild(el);
+}
+checkVersion();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkVersion(); });
+setInterval(checkVersion, 30 * 60 * 1000);
 
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
