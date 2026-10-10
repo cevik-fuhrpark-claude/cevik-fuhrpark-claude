@@ -842,6 +842,7 @@ await test('Meine Anmeldungen: Geräte anzeigen, einzeln/alle anderen abmelden, 
   ok((await a.post('/api/me/sessions/revoke-others')).data.revoked >= 1);
   eq((await c.get('/api/me')).status, 401, 'iPhone abgemeldet');
   eq((await a.get('/api/me')).status, 200, 'aktuelle bleibt');
+  users.wsMuc.cookie = a.cookie; // ursprüngliche Testsitzung wurde mit abgemeldet – für spätere Tests weiterverwenden
   const au = (await owner.get('/api/admin/audit?action=session.')).data.entries.map((e) => e.action);
   ok(au.includes('session.revoke') && au.includes('session.revoke_others'), 'protokolliert');
 });
@@ -1033,6 +1034,27 @@ await test('Sicherung: jede Tabelle ist gesichert oder bewusst ausgenommen (neue
   const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
   ok(j.data.audit_log.length > 0 && 'telematics_unmatched' in j.data, 'neue Tabellen enthalten');
   ok(!JSON.stringify(j).includes('password_hash') && !JSON.stringify(j.data.audit_log).includes('Sicheres-Passwort'), 'keine Geheimnisse');
+});
+
+await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund, nur eigenes Lager)', async () => {
+  const csv = await users.ws.get('/api/stock?format=csv');
+  eq(csv.status, 200);
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  ok(txt.startsWith('\ufeffLager;Artikelnummer') && txt.includes('Bremsbelagsatz VA'), 'CSV mit Artikel');
+  const n = await users.ws.post('/api/stock', { name: 'Inventurartikel', unit: 'Stk', initial_qty: 10 });
+  eq(n.status, 201);
+  const items = (await users.ws.get('/api/stock')).data.items;
+  const it = items.find((i) => i.id === n.data.id);
+  const pre = await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 7 }, { item_id: items.find((i) => i.id !== it.id).id, counted: '' }] });
+  eq(pre.status, 200); eq(pre.data.differences.length, 1); eq(pre.data.differences[0].delta, -3); eq(pre.data.booked, 0);
+  eq((await users.ws.get('/api/stock')).data.items.find((i) => i.id === it.id).on_hand, 10, 'Vorschau bucht nichts');
+  const go = await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 7 }], note: 'Jahresinventur' });
+  eq(go.data.booked, 1);
+  const d = (await users.ws.get(`/api/stock/${it.id}`)).data;
+  eq(d.item.on_hand, 7); ok(d.movements.some((m) => m.type === 'korrektur' && /Inventur .*gezählt 7 Stk, Buchbestand 10 Stk – Jahresinventur/.test(m.note)), 'Korrektur mit Grund');
+  eq((await users.wsMuc.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 1 }] })).status, 403, 'fremdes Lager');
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: -1 }] })).status, 400, 'negativ');
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 7 }, { item_id: it.id, counted: 7 }] })).status, 400, 'doppelt');
 });
 
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {

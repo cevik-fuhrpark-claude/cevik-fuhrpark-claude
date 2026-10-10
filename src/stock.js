@@ -1,5 +1,6 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate } from './util.js';
+import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 
@@ -105,6 +106,48 @@ export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, 
   const stmt = env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,part_id,unit_price_net,note,user_id,created_at)
     VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net, `Vorgang ${c.case_no}`, user.id, nowIso());
   return { item: it, stmt };
+}
+
+// Bestandsliste als CSV (Excel): Bestand und Bestandswert nur, wenn ein Preis hinterlegt ist (sonst leer, nie 0 €)
+export function stockCsv(items, csvCell) {
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Unter Mindestbestand', 'Preis netto', 'Bestandswert netto'];
+  const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const lines = [head.join(';')];
+  for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
+    n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100)].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
+
+// Inventur: gezählte Mengen je Artikel eines Lagers; Abweichungen werden als Korrektur mit Grund gebucht (Vorschau mit dry_run)
+export async function inventory(env, user, envName, body, { dryRun = false } = {}) {
+  const site = siteScope(user, body.site);
+  if (!site) throw bad('validation', 'Lager (Werkstatt) angeben.');
+  if (!Array.isArray(body.counts) || !body.counts.length) throw bad('validation', 'Keine Zählmengen übermittelt.');
+  if (body.counts.length > 2000) throw bad('validation', 'Maximal 2000 Artikel je Inventur.');
+  const items = new Map((await listStock(env, user, envName, { site })).map((i) => [i.id, i]));
+  const note = str(body.note, { max: 300 });
+  const date = berlinDate();
+  const diffs = [];
+  const seen = new Set();
+  for (const c of body.counts) {
+    const it = items.get(String(c.item_id || ''));
+    if (!it) throw bad('validation', 'Artikel gehört nicht zu diesem Lager.');
+    if (seen.has(it.id)) throw bad('validation', `Artikel doppelt gezählt: ${it.name}`);
+    seen.add(it.id);
+    if (c.counted === '' || c.counted === null || c.counted === undefined) continue; // nicht gezählt = keine Buchung
+    const counted = Math.round(num(c.counted, { min: 0, max: 1e6, field: `Zählmenge ${it.name}` }) * 1000) / 1000;
+    const delta = Math.round((counted - it.on_hand) * 1000) / 1000;
+    if (delta !== 0) diffs.push({ item_id: it.id, name: it.name, part_number: it.part_number, unit: it.unit, book: it.on_hand, counted, delta });
+  }
+  const result = { site, counted_items: seen.size, differences: diffs, booked: 0 };
+  if (dryRun || !diffs.length) return result;
+  const now = nowIso();
+  await env.DB.batch(diffs.map((d) => env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
+    VALUES (?,?,?,'korrektur',?,NULL,NULL,NULL,?,?,?,?)`).bind(uuid(), envName, d.item_id, d.delta, `Inventur ${date}`,
+    `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now)));
+  await audit(env, user.id, 'stock.inventory', null, { site, counted: seen.size, differences: diffs.length });
+  result.booked = diffs.length;
+  return result;
 }
 
 export async function stockFindings(env, environment) {

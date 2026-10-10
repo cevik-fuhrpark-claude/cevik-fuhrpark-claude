@@ -225,7 +225,12 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/reports/kpi' && m === 'GET') return json(await reports.kpiReport(env, user, envName, Object.fromEntries(url.searchParams)));
 
   // Ersatzteillager
-  if (path === '/api/stock' && m === 'GET') return json({ items: await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/stock' && m === 'GET') {
+    const items = await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
+    return json({ items });
+  }
+  if (path === '/api/stock/inventory' && m === 'POST') return json(await stock.inventory(env, user, envName, await readJson(request, 512 * 1024), { dryRun: url.searchParams.get('dry_run') === '1' }));
   if (path === '/api/stock' && m === 'POST') return json(await stock.createItem(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'PATCH') return json(await stock.updateItem(env, user, envName, mm[1], await readJson(request)));
