@@ -90,6 +90,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Fotos im Offline-Ausgang: bei Funkloch werden bis zu 10 komprimierte Fotos in IndexedDB gespeichert und nach dem Nachsenden der Meldung automatisch angehängt, danach gelöscht (Playwright offline→online: 1 Vorgang, 2 Fotos).
 - [x] Leistung: Kostenbericht/Kennzahlen 20× schneller (Intl-Datumsformat zwischengespeichert – wichtig für das CPU-Budget je Worker-Aufruf); Lasttest um Kennzahlen, Prüftermine, Reifen-Flotte, Suche erweitert (`docs/BETRIEB.md`).
 - [x] Fuhrparkagent-Profil (`scripts/agentprofil.mjs`): Befundtexte mit Zeitpunkt statt laufender Minuten, unveränderte Befunde werden nicht neu geschrieben (Folgelauf bei 3000 Vorgängen: 2 statt 3053 geschriebene Zeilen, ≈ 150 statt ≈ 320 ms), Fingerabdrücke gesammelt berechnet, schnellere Hex-Umwandlung; Panel zeigt „offen seit“, Folgetext umbricht auf dem Handy. 53 Tests grün.
+- [x] Management-Panel auf dem Handy: Vorgangstabelle als Karten (allgemeine Klasse `table.stack`, Spaltenüberschrift je Zelle automatisch), Vorgangsnummer ohne Umbruch, Entscheidungs-Links „Gesehen/Erledigt“ werden nicht mehr abgeschnitten (Tablet). Geprüft 390 px/Tablet/PC.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -106,5 +107,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
 9. Kopplungshistorie Lkw↔Anhänger (wer zog wann welchen Anhänger) – erst sinnvoll mit Telematik/Tourenplan als Quelle; bis dahin gilt die Stammliste.
-10. Eigene Verbesserungen (ohne Freigabe möglich): **Nächster Schritt:** Vorgangstabelle im Management-Panel auf dem Handy (390 px) als Kartenliste statt Tabelle (Beschreibung bricht derzeit buchstabenweise um, Status abgeschnitten); danach Nutzungsstatistik ohne Personenbezug (welche Funktionen werden genutzt) für die Einführungsphase.
+10. Eigene Verbesserungen (ohne Freigabe möglich): **Nächster Schritt:** Nutzungsstatistik ohne Personenbezug (welche Funktionen werden genutzt) für die Einführungsphase.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

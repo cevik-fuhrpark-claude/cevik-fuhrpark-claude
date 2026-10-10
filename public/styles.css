@@ -169,6 +169,17 @@ table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 th { color: var(--steel); font-weight: 600; }
 .scroll { overflow-x: auto; }
+/* Handy: Tabellen „stack“ als Karten (keine buchstabenweise umbrechenden Spalten) */
+@media (max-width: 600px) {
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-m); padding: 8px 12px; margin-bottom: 10px; }
+  table.stack td { border: 0; padding: 3px 0; display: flex; flex-wrap: wrap; column-gap: 10px; align-items: baseline; }
+  table.stack td > div { flex-basis: 100%; }
+  table.stack td > * { min-width: 0; }
+  table.stack td[data-label]::before { content: attr(data-label); flex: 0 0 38%; color: var(--steel); font-size: 0.85em; }
+  table.stack td:empty { display: none; }
+}
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom)); background: var(--ink); color: var(--surface); padding: 12px 18px; border-radius: var(--radius-s); z-index: 50; max-width: calc(100% - 32px); }
 .toast.err { background: var(--stop); color: #fff; }
