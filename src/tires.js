@@ -134,8 +134,9 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
 }
 
 // Für den Fuhrparkagenten: letzte Profilmessung je Position unter Grenzwert
-export async function tireFindings(env, environment) {
-  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
+export async function tireFindings(env, environment, settings = null) {
+  // Einstellungen vom Agenten durchgereicht (Abfragebudget), sonst einzeln laden
+  const warnRow = settings ? { value: settings.get('tire_warn_tread_mm') ?? null } : await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
   const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
   const rows = (await env.DB.prepare(`SELECT t.vehicle_id, t.position, t.tread_mm, t.created_at, v.plate FROM tire_events t JOIN vehicles v ON v.id=t.vehicle_id
     WHERE t.environment=? AND t.created_at = (SELECT MAX(t2.created_at) FROM tire_events t2 WHERE t2.environment=t.environment AND t2.vehicle_id=t.vehicle_id AND t2.position=t.position)`)

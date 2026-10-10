@@ -50,7 +50,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const findings = [];
     const add = (f) => findings.push({ requires_decision: 0, case_id: null, vehicle_id: null, ...f });
 
-    const fleetUsers = (await env.DB.prepare(`SELECT id FROM users WHERE environment=? AND role IN ('fleet','owner') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results;
+    // Leitung (Empfänger) und Werkstattstandorte mit Zugang in einer Abfrage
+    const activeUsers = (await env.DB.prepare(`SELECT id, role, workshop_site FROM users WHERE environment=? AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results;
+    const fleetUsers = activeUsers.filter((u) => u.role !== 'workshop');
     if (fleetUsers.length === 0) {
       add({ code: 'NO_FLEET_RECIPIENT', subject: 'system', severity: 'kritisch', owner_role: 'owner', requires_decision: 1,
         message: 'Keine aktive Fuhrparkleitung mit Zugang in dieser Umgebung – Meldungen haben keinen Empfänger.',
@@ -60,7 +62,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const open = (await env.DB.prepare(`SELECT c.*, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).all()).results;
 
-    const sitesWithUsers = new Set((await env.DB.prepare(`SELECT DISTINCT workshop_site FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results.map((r) => r.workshop_site));
+    const sitesWithUsers = new Set(activeUsers.filter((u) => u.role === 'workshop').map((r) => r.workshop_site));
 
     const safetyOpen = new Map((await env.DB.prepare(`SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
       WHERE c.environment=? AND c.status='in_reparatur' AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id`).bind(environment).all()).results.map((r) => [r.case_id, r.n]));
@@ -216,7 +218,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Reifen: letzte Profilmessung unter gesetzlichem Minimum bzw. konfigurierter Warnschwelle
-    for (const t of await tireFindings(env, environment)) {
+    for (const t of await tireFindings(env, environment, settings)) {
       add({ code: t.severity === 'kritisch' ? 'TIRE_BELOW_MINIMUM' : 'TIRE_WARN', subject: `${t.vehicle_id}|${t.position}`, vehicle_id: t.vehicle_id,
         severity: t.severity, owner_role: 'fleet', requires_decision: t.severity === 'kritisch' ? 1 : 0,
         message: `${t.plate} ${t.position}: Profiltiefe ${t.tread_mm} mm (Grenze ${t.limit} mm, gemessen ${t.created_at.slice(0, 10)}).`,
@@ -235,7 +237,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     for (const x of await driverFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
     for (const x of await tachoFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, vehicle_id: x.vehicle_id || null, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
 
-    for (const x of await fineFindings(env, environment)) {
+    for (const x of await fineFindings(env, environment, settings)) {
       add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
     }
 

@@ -9,8 +9,21 @@ const migrations = files.map((f) => {
   const statements = sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter((s) => s && !/^PRAGMA/i.test(s));
   return { id: f.replace('.sql', ''), statements };
 });
+// Spalten je Tabelle nach allen Migrationen (für Sammelabfragen, z. B. Datensicherung mit wenigen D1-Abfragen)
+const { DatabaseSync } = await import('node:sqlite');
+const mem = new DatabaseSync(':memory:');
+mem.exec('CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)'); // wie src/worker.js ensureSchema
+for (const m of migrations) for (const st of m.statements) mem.exec(st);
+const tableColumns = {};
+for (const { name } of mem.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all()) {
+  tableColumns[name] = mem.prepare(`SELECT name, type FROM pragma_table_info(?)`).all(name).map((c) => ({ name: c.name, type: c.type }));
+}
+mem.close();
 writeFileSync(new URL('../src/schema.js', import.meta.url),
-  `// AUTOMATISCH ERZEUGT durch scripts/build-schema.mjs – nicht von Hand bearbeiten\nexport const MIGRATIONS = ${JSON.stringify(migrations, null, 1)};\n`);
+  `// AUTOMATISCH ERZEUGT durch scripts/build-schema.mjs – nicht von Hand bearbeiten\nexport const MIGRATIONS = ${JSON.stringify(migrations, null, 1)};\n` +
+  `export const TABLE_COLUMNS = ${JSON.stringify(Object.fromEntries(Object.entries(tableColumns).map(([t, cs]) => [t, cs.map((c) => c.name)])))};\n`);
+const blobs = Object.entries(tableColumns).flatMap(([t, cs]) => cs.filter((c) => /BLOB/i.test(c.type)).map((c) => `${t}.${c.name}`));
+if (blobs.length) console.log('Hinweis: BLOB-Spalten (nicht JSON-fähig): ' + blobs.join(', '));
 console.log(`schema.js: ${migrations.length} Migration(en), ${migrations.reduce((n, m) => n + m.statements.length, 0)} Statements`);
 
 // App-Version = Hash über alle Dateien in public/ (ohne version.json). Die App vergleicht sie im Hintergrund und bietet

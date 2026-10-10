@@ -2,6 +2,7 @@
 // Nicht enthalten: Passwort-Hashes, Sitzungen, Einladungs-Token, Push-Geräteschlüssel, VAPID-Schlüssel, Dateiinhalte (nur Metadaten).
 import { forbidden, nowIso } from './util.js';
 import { audit } from './auth.js';
+import { TABLE_COLUMNS } from './schema.js';
 
 const TABLES = [
   'workshops', 'vehicles', 'driver_vehicles', 'case_counters', 'cases', 'case_events', 'work_entries', 'parts', 'open_items', 'external_costs',
@@ -18,14 +19,48 @@ export const EXCLUDED = {
 export const BACKUP_TABLES = TABLES;
 const ROW_LIMIT = 200000;
 
+const GROUP = 8;
+const ARGS = 30;
+const q = (c) => `"${c.replace(/"/g, '""')}"`;
+export function backupQueries(tables) {
+  const out = [];
+  for (let i = 0; i < tables.length; i += GROUP) {
+    out.push(tables.slice(i, i + GROUP).map((t) => {
+      const cols = TABLE_COLUMNS[t];
+      if (!cols) throw new Error(`Tabelle ${t} fehlt im Schema (npm run build)`);
+      const parts = [];
+      for (let k = 0; k < cols.length; k += ARGS) parts.push(`json_array(${cols.slice(k, k + ARGS).map(q).join(',')})`);
+      return `SELECT '${t}' AS t, json_array(${parts.join(',')}) AS j FROM (SELECT * FROM ${q(t)} LIMIT ${ROW_LIMIT})`;
+    }).join(' UNION ALL '));
+  }
+  return out;
+}
+
 export async function exportBackup(env, user) {
   if (user.role !== 'owner') throw forbidden('Nur der Inhaber darf eine Datensicherung herunterladen.');
   const data = {};
   const counts = {};
-  for (const t of TABLES) {
-    const rows = (await env.DB.prepare(`SELECT * FROM ${t} LIMIT ${ROW_LIMIT}`).all()).results;
-    data[t] = rows; counts[t] = rows.length;
+  for (const t of TABLES) { data[t] = []; }
+  // Abfragebudget (≤ 50 je Aufruf): je GROUP Tabellen eine Sammelabfrage statt einer je Tabelle; Zeilen als JSON-Arrays,
+  // je Funktion höchstens ARGS Argumente (D1-Grenze für Funktionsargumente), Spaltennamen aus dem Schema (Build).
+  // Spalten werden namentlich abgefragt (Reihenfolge egal). Weicht die Datenbank vom Schema ab (Abfragefehler), wird diese Gruppe
+  // wie früher je Tabelle mit SELECT * gelesen – lieber mehr Abfragen als eine unvollständige Sicherung.
+  const queries = backupQueries(TABLES);
+  for (let g = 0; g < queries.length; g++) {
+    let results;
+    try { results = (await env.DB.prepare(queries[g]).all()).results; } catch {
+      for (const t of TABLES.slice(g * GROUP, (g + 1) * GROUP)) data[t] = (await env.DB.prepare(`SELECT * FROM ${q(t)} LIMIT ${ROW_LIMIT}`).all()).results;
+      continue;
+    }
+    for (const r of results) {
+      const cols = TABLE_COLUMNS[r.t];
+      const vals = JSON.parse(r.j).flat();
+      const row = {};
+      cols.forEach((c, i) => { row[c] = vals[i]; });
+      data[r.t].push(row);
+    }
   }
+  for (const t of TABLES) counts[t] = data[t].length;
   data.users = (await env.DB.prepare(`SELECT id, username, display_name, role, environment, workshop_site, employee_number, language, active, created_by, created_at, updated_at,
     CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_password FROM users`).all()).results;
   counts.users = data.users.length;

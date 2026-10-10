@@ -1201,6 +1201,26 @@ await test('Sicherung: jede Tabelle ist gesichert oder bewusst ausgenommen (neue
   const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
   ok(j.data.audit_log.length > 0 && 'telematics_unmatched' in j.data, 'neue Tabellen enthalten');
   ok(!JSON.stringify(j).includes('password_hash') && !JSON.stringify(j.data.audit_log).includes('Sicheres-Passwort'), 'keine Geheimnisse');
+  // Sammelabfragen liefern exakt dieselben Zeilen wie SELECT * je Tabelle (Werte, Typen, NULL, Sonderzeichen)
+  const norm = (rows) => rows.map((r) => JSON.stringify(Object.keys(r).sort().map((k) => [k, r[k]]))).sort();
+  const diff = [];
+  for (const t of BACKUP_TABLES) {
+    if (t === 'audit_log') continue; // der Abruf selbst schreibt einen Protokolleintrag
+    const direct = (await env.DB.prepare(`SELECT * FROM ${t}`).all()).results;
+    if (JSON.stringify(norm(direct)) !== JSON.stringify(norm(j.data[t]))) diff.push(t);
+  }
+  eq(diff.join(','), '', 'Sicherung = SELECT * je Tabelle');
+  const { TABLE_COLUMNS } = await import('../src/schema.js');
+  for (const t of tables) eq((TABLE_COLUMNS[t] || []).join(','), (await env.DB.prepare(`SELECT name FROM pragma_table_info(?)`).bind(t).all()).results.map((c) => c.name).join(','), 'Spalten aus dem Build = Datenbank: ' + t);
+  ok(Math.max(...Object.values(TABLE_COLUMNS).map((c) => c.length)) <= 60, 'höchstens 60 Spalten je Tabelle (2 json_array à 30 Argumente)');
+  // Rückfall: weicht die Datenbank vom Schema ab (Spalte fehlt), wird die Gruppe je Tabelle mit SELECT * gelesen
+  TABLE_COLUMNS.workshops.push('spalte_gibt_es_nicht');
+  try {
+    const fb = await owner.get('/api/admin/backup');
+    const fj = fb.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(fb.data)) : fb.data;
+    eq(fb.status, 200); eq(JSON.stringify(norm(fj.data.workshops)), JSON.stringify(norm((await env.DB.prepare('SELECT * FROM workshops').all()).results)), 'Rückfall vollständig');
+    eq(fj.counts.cases, j.counts.cases, 'übrige Gruppen unverändert');
+  } finally { TABLE_COLUMNS.workshops.pop(); }
   // Wiederherstellungs-Probe: Sicherung in frische Datenbank einspielen, Zeilenzahl je Tabelle und Fremdschlüssel prüfen
   const { restoreInto } = await import('../scripts/sicherung-probe.mjs');
   const { ensureSchema } = await import('../src/worker.js');

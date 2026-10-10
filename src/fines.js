@@ -222,8 +222,8 @@ export function finesIcs(rows, warnDays, icsCalendar) {
     description: `${f.authority}${f.reference ? ' · Az. ' + f.reference : ''} · Frist laut Schreiben`, alarmDays: warnDays })));
 }
 
-export async function fineFindings(env, environment) {
-  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
+export async function fineFindings(env, environment, settings = null) {
+  const warnRow = settings ? { value: settings.get('fine_warn_days') ?? null } : await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
   const warnDays = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
   const rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
   const today = berlinDate();
