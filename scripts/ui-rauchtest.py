@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Rauchtest: alle Ansichten je Rolle in Handy-, Tablet- und PC-Breite aufrufen
 # Voraussetzung: lokaler Entwicklungsserver mit frischer In-Memory-DB (sh scripts/restart-dev.sh) und Python-Playwright.
-# Aufruf: [CFP_LANG=uk|en] python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
+# Aufruf: [CFP_LANG=uk|en] [CFP_SCHEME=dark] python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
+# Zusätzlich: Kontrast WCAG AA (Handy-Breite) und Druckansichten (A4).
 # Prüft je Ansicht: keine JavaScript-Fehler, keine Fehlermeldung (rote Meldung), keine waagrechte Scrollleiste der Seite,
 # Überschrift vorhanden. Nur synthetische Testdaten (Kennzeichen RT-…), nichts verlässt den Rechner.
 import sys, os
@@ -35,6 +36,29 @@ A11Y = """() => {
   return out;
 }"""
 SIZES = [('handy', 390, 844), ('tablet', 820, 1180), ('pc', 1440, 900)]
+# Kontrast (WCAG 2.1 AA): Text ≥ 4,5:1, großer Text (≥ 24 px bzw. ≥ 18,7 px fett) ≥ 3:1; Hintergrund = erster deckender Vorfahr.
+# Ausgenommen: deaktivierte Elemente, Kennzeichen-Grafik (fest schwarz/weiß), Texte über Bildern.
+CONTRAST = """() => {
+  const out = [];
+  const parse = (c) => { const m = c.match(/rgba?\\(([^)]+)\\)/); if (!m) return null; const p = m[1].split(',').map((x) => parseFloat(x)); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const bgOf = (el) => { let stack = []; for (let e = el; e; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.backgroundImage && cs.backgroundImage !== 'none') return null; const c = parse(cs.backgroundColor); if (c && c.a > 0) { stack.push(c); if (c.a >= 1) break; } }
+    let base = { r: 255, g: 255, b: 255 }; for (const c of stack.reverse()) base = { r: c.r * c.a + base.r * (1 - c.a), g: c.g * c.a + base.g * (1 - c.a), b: c.b * c.a + base.b * (1 - c.a) }; return base; };
+  const seen = new Set();
+  const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) {
+    const t = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
+    if (!t || !el || seen.has(el) || el.offsetParent === null) continue; seen.add(el);
+    if (el.closest('.plate, [disabled], .qr, .qrcard')) continue;
+    const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.5) continue;
+    const fg = parse(cs.color); const bg = bgOf(el); if (!fg || !bg) continue;
+    const a = fg.a ?? 1; const f2 = { r: fg.r * a + bg.r * (1 - a), g: fg.g * a + bg.g * (1 - a), b: fg.b * a + bg.b * (1 - a) };
+    const L1 = lum(f2), L2 = lum(bg); const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+    const size = parseFloat(cs.fontSize); const bold = parseInt(cs.fontWeight) >= 700; const need = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5;
+    if (ratio < need - 0.05) out.push(`${ratio.toFixed(2)}:1 „${t.slice(0, 30)}“ (${el.tagName.toLowerCase()}.${el.className})`);
+  }
+  return out;
+}"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
     'owner': ['cases/', 'vehicles/', 'maintenance', 'stock/reorder', 'defects', 'vehicles/qr', 'vehicles/qr/'],
@@ -65,7 +89,8 @@ PRINT_CHECK = """() => {
 problems = []
 with sync_playwright() as p:
     br = p.chromium.launch()
-    adm = br.new_page()
+    SCHEME = os.environ.get('CFP_SCHEME', 'light')  # CFP_SCHEME=dark prüft die dunkle Darstellung
+    adm = br.new_page(color_scheme=SCHEME)
     adm.goto(B)
     api = lambda m, path, body=None: adm.evaluate(JS, [m, path, body])
     st = api('GET', '/api/setup/status')['d']
@@ -86,7 +111,7 @@ with sync_playwright() as p:
             sys.exit(f'Benutzer {role}: {u}')
         if role == 'driver':
             api('POST', f'/api/vehicles/{vid}/drivers', {'user_id': u['d']['id']})
-        pg = br.new_context().new_page()
+        pg = br.new_context(color_scheme=SCHEME).new_page()
         pg.goto(B)
         pg.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}])
         pages[role] = pg
@@ -180,6 +205,9 @@ with sync_playwright() as p:
                 if not pg.locator('h1').count():
                     problems.append(f'{where}: keine Überschrift')
                 if name == 'handy':
+                    low = pg.evaluate(CONTRAST)
+                    if low:
+                        problems.append(f'{where}: Kontrast zu gering {low[:3]}')
                     a11y = pg.evaluate(A11Y)
                     if a11y:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
