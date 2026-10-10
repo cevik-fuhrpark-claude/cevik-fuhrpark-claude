@@ -3,6 +3,8 @@
 import { nowIso, uuid } from './util.js';
 import { sendPush } from './push.js';
 
+// Priorität im Hinweistext in der Sprache der Person (Sperrbildschirm)
+const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
@@ -118,7 +120,7 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const lang = T[u.language] ? u.language : 'de';
     const title = kind === 'created' && urgent ? T[lang].created_urgent : T[lang][kind] || kind;
     // Sperrbildschirm: nur Vorgangsnummer, Kennzeichen, Priorität – keine Schadensbeschreibung
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned ? null : c.id, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind }));
