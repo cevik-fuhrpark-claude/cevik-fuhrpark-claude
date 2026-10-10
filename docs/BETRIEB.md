@@ -41,9 +41,14 @@ Berechnung zentral im Server (`src/inspection_rules.js`), nie im Browser:
 **Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.
 
 **Manuell (Inhaber):** „Mehr → Einstellungen → Sicherung herunterladen“ erzeugt eine JSON-Datei mit allen Fachdaten
-(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen inkl. Historie, Reifen, Lager, Bußgelder, Befunde, Telematik-Zuordnungen, Protokoll). Nicht enthalten: Passwörter,
+(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen inkl. Historie, Reifen, Lager, Bußgelder, Fahrerakte, Auslesungen, Befunde, Telematik-Zuordnungen, Protokoll). Nicht enthalten: Passwörter,
 Sitzungen, Einladungs-/Integrations-Token, Push-Schlüssel und Dateiinhalte (nur deren Metadaten). Empfehlung: monatlich
 herunterladen und im eigenen Drive ablegen. Jeder Export steht im Audit-Log.
+
+**Probe der JSON-Sicherung (lokal, ohne echte Datenbank):** `node --experimental-sqlite scripts/sicherung-probe.mjs <sicherung.json>`
+spielt die Datei in eine frische In-Memory-Datenbank mit aktuellem Schema ein und vergleicht je Tabelle die Zeilenzahl sowie die
+Fremdschlüssel. Ein automatischer Test macht das bei jedem `npm test` mit der Sicherung der Testdaten. Die JSON-Sicherung ist ein
+Archiv der Fachdaten – Benutzer müssten nach einer Wiederherstellung daraus neu eingeladen werden (keine Passwörter enthalten).
 
 **Wiederherstellung der Datenbank auf einen Zeitpunkt** (nur nach Freigabe durch den Inhaber – überschreibt den aktuellen Stand):
 ```

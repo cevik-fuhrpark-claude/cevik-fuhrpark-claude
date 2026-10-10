@@ -1052,6 +1052,14 @@ await test('Sicherung: jede Tabelle ist gesichert oder bewusst ausgenommen (neue
   const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
   ok(j.data.audit_log.length > 0 && 'telematics_unmatched' in j.data, 'neue Tabellen enthalten');
   ok(!JSON.stringify(j).includes('password_hash') && !JSON.stringify(j.data.audit_log).includes('Sicheres-Passwort'), 'keine Geheimnisse');
+  // Wiederherstellungs-Probe: Sicherung in frische Datenbank einspielen, Zeilenzahl je Tabelle und Fremdschlüssel prüfen
+  const { restoreInto } = await import('../scripts/sicherung-probe.mjs');
+  const { ensureSchema } = await import('../src/worker.js');
+  const fresh = makeEnv(); await ensureSchema(fresh);
+  const rr = restoreInto(fresh.DB.db, j);
+  eq(rr.tables.filter((x) => !x.ok).map((x) => `${x.table} ${x.restored}/${x.expected}`).join(', '), '', 'alle Tabellen vollständig');
+  eq(rr.foreign_key_errors, 0, 'Fremdschlüssel stimmig');
+  ok(rr.tables.find((x) => x.table === 'cases').restored > 0 && rr.tables.find((x) => x.table === 'vehicles').restored > 0 && rr.tables.find((x) => x.table === 'users').restored > 0, 'Fachdaten vorhanden');
 });
 
 await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund, nur eigenes Lager)', async () => {
