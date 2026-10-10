@@ -297,3 +297,34 @@ export async function defectReport(env, user, envName, query = {}) {
     totals: { checks: total, checks_with_defects: vehicles.reduce((s, v) => s + v.checks_with_defects, 0), defect_items: itemsOut.reduce((s, i) => s + i.defects, 0), again_after_repair: itemsOut.reduce((s, i) => s + i.again_after_repair, 0), vehicles_checked: vehicles.length },
     items: itemsOut, vehicles };
 }
+
+// ---- Werkstattplan: geplante Termine je Tag (Vorgänge mit Termin, geplante Prüftermine), überfällig geplant, ohne Termin ----
+// Nur gespeicherte Termine; die App plant nichts selbst. Werkstattrolle sieht nur den eigenen Standort.
+const PLAN_STATUSES = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
+export async function workshopPlan(env, user, envName, query = {}) {
+  if (!['owner', 'fleet', 'viewer', 'workshop', 'dispatch'].includes(user.role)) throw forbidden();
+  const days = Math.min(Math.max(Number(query.days) || 14, 1), 60);
+  const today = berlinDate();
+  const to = new Date(Date.parse(today + 'T00:00:00Z') + (days - 1) * 86400000).toISOString().slice(0, 10);
+  const site = user.role === 'workshop' ? user.workshop_site : (query.site ? String(query.site).slice(0, 20) : null);
+  const sf = site ? ' AND c.workshop_site=?' : '';
+  const [cs, mt] = await Promise.all([
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.workshop_ack_at, substr(c.description,1,80) AS description
+      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
+      ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
+    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.kind AS vehicle_kind, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+      WHERE v.active=1 AND v.eval_excluded=0 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),
+  ]);
+  const byDay = new Map();
+  const put = (d, item) => { if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(item); };
+  const overdue = []; const unplanned = [];
+  for (const c of cs.results) {
+    const item = { type: 'case', ...c, safety_lock: !!c.safety_lock };
+    if (!c.planned_date) unplanned.push(item);
+    else if (c.planned_date < today) overdue.push(item);
+    else if (c.planned_date <= to) put(c.planned_date, item);
+  }
+  for (const m of mt.results) put(m.planned_date, { type: 'maintenance', ...m });
+  return { today, from: today, to, site, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned };
+}
+

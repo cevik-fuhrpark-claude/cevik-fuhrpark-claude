@@ -13,11 +13,11 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'inbox', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'inbox', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
-    'workshop': ['', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
+    'owner': ['', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
+    'fleet': ['', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
+    'workshop': ['', 'plan', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
-    'dispatch': ['', 'inbox', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
+    'dispatch': ['', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
 A11Y = """() => {
@@ -71,8 +71,8 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['cases/', 'vehicles/', 'maintenance', 'stock/reorder', 'defects', 'vehicles/qr', 'vehicles/qr/'],
-    'workshop': ['cases/', 'stock/reorder'],
+    'owner': ['cases/', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'defects', 'vehicles/qr', 'vehicles/qr/'],
+    'workshop': ['cases/', 'stock/reorder', 'plan'],
     'driver': ['check/paper'],
 }
 PRINT_CHECK = """() => {
@@ -150,7 +150,8 @@ with sync_playwright() as p:
             v = pg.evaluate(JS, ['GET', f'/api/cases/{c}', None])['d']['case']['version']
             return pg.evaluate(JS, ['POST', f'/api/cases/{c}/commands', {'action': action, 'command_id': f'rt-{action}-{c}', 'expected_version': v, 'note': note, 'payload': payload or {}}])
         cmd(adm, cid2, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
-        cmd(pages['workshop'], cid2, 'acknowledge')
+        import datetime
+        cmd(pages['workshop'], cid2, 'acknowledge', {'planned_date': (datetime.date.today() + datetime.timedelta(days=2)).isoformat()})
         r = cmd(pages['workshop'], cid2, 'start_repair')
         if r['s'] == 200:
             ROUTES['workshop'] += [f'cases/{cid2}', f'inspect/{cid2}']

@@ -246,6 +246,16 @@ export async function vehicleCosts(env, envName, vehicleId) {
 }
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Werkstatttermin: JJJJ-MM-TT, gültiges Datum, nicht mehr als 1 Jahr in der Vergangenheit/2 Jahre in der Zukunft
+function planDate(v) {
+  const d = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Termin im Format JJJJ-MM-TT.');
+  const today = berlinDate();
+  const lo = new Date(Date.parse(today) - 366 * 86400000).toISOString().slice(0, 10); const hi = new Date(Date.parse(today) + 731 * 86400000).toISOString().slice(0, 10);
+  if (d < lo || d > hi) throw bad('validation', 'Termin liegt außerhalb des zulässigen Zeitraums.');
+  return d;
+}
+
 export function allowedActions(user, c, access) {
   const a = [];
   if (!access || access === 'read' || access === 'preview') {
@@ -266,13 +276,14 @@ export function allowedActions(user, c, access) {
       break;
     case 'werkstatt_freigegeben':
       if (ws || mgr) { if (!c.workshop_ack_at) a.push('acknowledge'); a.push('start_repair'); }
+      if ((ws || mgr) && c.workshop_ack_at) a.push('set_planned_date');
       if (mgr) a.push('reassign_workshop');
       break;
     case 'in_reparatur':
-      if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check');
+      if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date');
       break;
     case 'wartet_teile':
-      if (ws || mgr) a.push('resume_repair');
+      if (ws || mgr) a.push('resume_repair', 'set_planned_date');
       break;
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
@@ -416,10 +427,17 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       set.workshop_site = site; set.approval_scope = note; set.priority_reviewed = 1;
       if (p.priority) { const np = oneOf(p.priority, PRIORITIES, 'Priorität'); if (np !== c.priority) { set.priority = np; payload.priority_from = c.priority; payload.priority_to = np; } }
       if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
-      if (p.planned_date) set.planned_date = str(p.planned_date, { max: 10 });
+      if (p.planned_date) set.planned_date = planDate(p.planned_date);
       toStatus = 'werkstatt_freigegeben';
       payload.workshop_site = site;
       notifyKind = 'approved';
+      break;
+    }
+    case 'set_planned_date': {
+      // Werkstatttermin setzen/verschieben/entfernen (leer); ohne Statuswechsel und ohne Push
+      const d = p.planned_date ? planDate(p.planned_date) : null;
+      if (d === (c.planned_date || null)) throw bad('validation', 'Termin ist unverändert.');
+      set.planned_date = d; payload = { from: c.planned_date || null, to: d };
       break;
     }
     case 'reassign_workshop': {
@@ -441,7 +459,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     case 'acknowledge':
       set.workshop_ack_at = now; set.workshop_ack_by = user.id;
-      if (p.planned_date) set.planned_date = str(p.planned_date, { max: 10 });
+      if (p.planned_date) set.planned_date = planDate(p.planned_date);
       notifyKind = 'acknowledged';
       break;
     case 'start_repair':

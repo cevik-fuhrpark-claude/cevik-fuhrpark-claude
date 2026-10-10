@@ -1921,6 +1921,36 @@ await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/AP
   eq(miss.join(', '), '', 'undokumentierte Pfade');
 });
 
+await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Termin setzen/verschieben nur gültig; Werkstatt nur eigener Standort', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'WP-LN 1', vin: 'WDB96340310555504', site: 'Dortmund' })).status, 201);
+  const VP = 'VIN:WDB96340310555504';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: VP, description: 'Werkstattplan-Test: Bremsbeläge', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: '2026-02-30' }, 'Beläge vorne')).status, 400, 'ungültiges Datum');
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(3) }, 'Beläge vorne')).status, 200);
+  ok(!(await users.ws.get(`/api/cases/${cid}`)).data.allowed_actions.includes('set_planned_date'), 'vor Übernahme kein Verschieben');
+  eq((await cmd(users.ws, 'acknowledge')).status, 200);
+  let p = (await users.ws.get('/api/workshop/plan?days=14')).data;
+  ok(p.days.find((d) => d.date === day(3))?.items.some((i) => i.id === cid), 'am geplanten Tag');
+  eq(p.site, 'DORTMUND');
+  ok(!(await users.wsMuc.get('/api/workshop/plan')).data.days.some((d) => d.items.some((i) => i.id === cid)), 'fremde Werkstatt sieht ihn nicht');
+  eq((await cmd(users.ws, 'set_planned_date', { planned_date: day(3) })).status, 400, 'unverändert');
+  eq((await cmd(users.ws, 'set_planned_date', { planned_date: day(-1) })).status, 200);
+  p = (await users.fleet.get('/api/workshop/plan')).data;
+  ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
+  eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
+  p = (await users.dispatch.get('/api/workshop/plan')).data;
+  ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
+  const ev = (await users.fleet.get(`/api/cases/${cid}`)).data.events.filter((e) => e.action === 'set_planned_date');
+  eq(ev.length, 2, 'im Verlauf');
+  eq((await users.driver.get('/api/workshop/plan')).status, 403, 'Fahrer');
+  // geplanter Prüftermin erscheint am Tag
+  const rule = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Werkstattplan-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(5) })).status, 200);
+  ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(5))?.items.some((i) => i.type === 'maintenance' && i.kind === 'UVV'), 'Prüftermin am Tag');
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
