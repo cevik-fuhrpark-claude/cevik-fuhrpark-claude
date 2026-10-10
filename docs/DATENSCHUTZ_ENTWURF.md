@@ -16,6 +16,7 @@ Keine Rechtsberatung – Rechtsgrundlagen, Aufbewahrungsfristen und Text der Mit
 | Abfahrtskontrolle | Fahrer, Fahrzeug, Zeitpunkt, Ergebnis, Mängel | `inspections` | Fuhrparkleitung, Inhaber |
 | Fahrerzuordnung | welcher Fahrer wann welchem Fahrzeug zugeordnet war (Historie) | `driver_vehicles` | Fuhrparkleitung, Dispo, Inhaber |
 | Bußgelder/Anhörungen | Tatvorwurf, Tatzeit/-ort, Fahrer (mit Nachweis), Kenntnisnahme, Schreiben als Datei | `fines`, `fine_events`, `files` | Fuhrparkleitung, Inhaber, **nur** betroffener Fahrer |
+| Fahrerakte (seit 10.10.2026) | Name, Personalnummer, Standort, Nachweise Führerschein (Nummer, Klassen, Gültig-bis), Fahrerkarte, Code 95, Unterweisungen, Führerscheinkontrollen (Datum, Ergebnis, Prüfer) | `drivers`, `driver_documents`, `driver_license_checks` | Inhaber, Fuhrparkleitung; Fahrer nur eigene Daten (laut Freigabe) |
 | Benachrichtigungen | Empfänger, Zustellung/Öffnen/Gesehen-Zeitpunkte, Push-Geräteadresse und Gerätebezeichnung | `notifications`, `push_subscriptions` | Empfänger; Zustellstatus für Fuhrparkleitung |
 | Telematik (noch nicht angebunden) | Fahrzeugposition, km, Geschwindigkeit, Zündung – fahrzeug-, nicht personenbezogen gespeichert, über Zuordnung aber Fahrern zuordenbar | `telematics_latest` | Fuhrparkleitung, Dispo |
 | Nutzungsstatistik | **ohne** Personenbezug (nur Tag, Umgebung, Funktion, Anzahl) | `usage_daily` | Inhaber |
@@ -27,7 +28,7 @@ Cloudflare (Worker, Datenbank D1 und Dateispeicher KV mit Jurisdiktion **EU**), 
 (nur verschlüsselter Hinweistext, Ende-zu-Ende nach RFC 8291), KI-Analyse über Cloudflare Workers AI (nur Schadenshistorie eines Fahrzeugs).
 
 ## 3. Offene Entscheidungen (Auftraggeber)
-1. Aufbewahrungsfristen je Bereich (z. B. Schadensvorgänge, Abfahrtskontrollen, Bußgeldakten, Protokoll, Benachrichtigungen) – danach
+1. Aufbewahrungsfristen je Bereich (z. B. Schadensvorgänge, Abfahrtskontrollen, Bußgeldakten, Fahrerakte/Führerscheinkontrollen nach Ausscheiden, Protokoll, Benachrichtigungen) – danach
    kann eine automatische Löschung/Anonymisierung umgesetzt werden (bisher wird nichts automatisch gelöscht außer abgelaufenen Sitzungen).
 2. Ob und in welcher Form die Mitarbeiterinformation in der App (Hilfe-Seite, DE/UK/EN) erscheinen soll.
 3. Ansprechpartner für Datenschutzfragen, der in der Information genannt wird.
