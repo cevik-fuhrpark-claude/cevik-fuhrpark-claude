@@ -1,4 +1,5 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
+import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
@@ -65,17 +66,23 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const telematics = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare('SELECT provider, match_basis, gps_time, received_at, lat, lon, km, speed, ignition FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
     : [];
-  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first();
-  const husp = huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(warnRow && warnRow.value) || 30);
+  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days')`).all()).results.map((r) => [r.key, r.value]));
+  const husp = huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);
   const out = { vehicle: v, telematics, cases: caseRows, inspections, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
+    if (v.kind !== 'anhaenger') {
+      // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
+      out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
+        WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT 20`).bind(vehicleId, envName).all()).results;
+      out.tacho = { ...tachoStatus(out.tacho_downloads[0] ? out.tacho_downloads[0].downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
+    }
   }
   return out;
 }
 
 // Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
-export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine'];
+export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
   const d = await vehicleDetail(env, user, envName, vehicleId);
   const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
@@ -99,6 +106,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   if (isManager(user)) {
     const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT 200`)
       .bind(vehicleId, envName).all()).results;
+    for (const x of d.tacho_downloads || []) add('tacho', x.downloaded_on, { evidence: x.evidence, by: x.created_by_name });
     for (const f of fines) add('fine', f.offense_at, { fine_id: f.id, fine_no: f.fine_no, fine_kind: f.kind, offense_type: f.offense_type, status: f.status });
   }
   // Datum ohne Uhrzeit (z. B. Prüfung „erledigt am“) als Tagesmitte einsortieren

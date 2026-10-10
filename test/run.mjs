@@ -1367,6 +1367,11 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   await users.fleet.post('/api/agent/run');
   f = (await users.fleet.get('/api/master')).data.findings;
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
+  const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
+  eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
+  eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');
+  eq((await users.fleet.get('/api/vehicles/VIN:VAK656EBDG1613170')).data.tacho, undefined, 'Anhänger ohne Fahrtenschreiber');
+  ok((await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=tacho`)).data.items.some((x) => x.type === 'tacho' && x.at === ago(85)), 'Zeitleiste');
   eq((await owner.put('/api/settings', { tacho_warn_days: 3 })).status, 200);
   eq((await users.fleet.get('/api/tacho')).data.vehicles.find((x) => x.id === V1).status, 'ok', 'Vorwarnung einstellbar');
   eq((await owner.put('/api/settings', { tacho_warn_days: '' })).status, 200);

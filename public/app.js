@@ -313,10 +313,12 @@ function dispoBoard(cs) {
 
 // Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
 async function fleetTodo() {
-  const [cs, ov, fs] = await Promise.all([
+  const [cs, ov, fs, tc, dr] = await Promise.all([
     api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []),
     api('GET', '/api/maintenance').catch(() => null),
     api('GET', '/api/fines?status=open').then((r) => r.fines).catch(() => []),
+    isMgr() ? api('GET', '/api/tacho').catch(() => null) : null,
+    isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(() => []) : [],
   ]);
   const today = new Date().toISOString().slice(0, 10);
   const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -325,6 +327,8 @@ async function fleetTodo() {
     ['todo_qc', cs.filter((c) => c.status === 'abschlusskontrolle'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'mittel'],
     ['todo_parts', cs.filter((c) => c.status === 'wartet_teile'), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, ''],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${r.kind} · ${r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')}`, 'mittel'],
+    ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/tacho' }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald') : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
+    ['todo_driver_docs', dr.filter((d) => d.status.overall === 'kritisch'), (d) => `#/drivers/${d.id}`, (d) => `${d.display_name} · ${[...d.status.items.filter((i) => i.status === 'abgelaufen').map((i) => t('dk2_' + i.kind)), d.status.check.status === 'mangel' ? t('license_check') : ''].filter(Boolean).join(', ')}`, 'kritisch'],
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
@@ -755,6 +759,8 @@ async function viewVehicle(id) {
   html += `<p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p><div class="actions noprint"><a class="btn secondary" href="#/vehicles/${esc(v.id)}/timeline">${esc(t('timeline'))}</a><button type="button" class="btn secondary" id="prt">${esc(t('print'))}</button></div>`;
   if (isMgr()) html += `<details class="panel"><summary>${esc(t('edit_master'))}</summary><form id="evf">${vehicleForm(v)}<div class="actions"><button class="btn">${esc(t('save'))}</button>${v.active ? `<button type="button" class="btn secondary" id="deact">${esc(t('deactivate_vehicle'))}</button>` : `<button type="button" class="btn secondary" id="react">${esc(t('activate_vehicle'))}</button>`}<button type="button" class="btn secondary" id="evx">${esc(v.eval_excluded ? t('eval_include') : t('eval_exclude'))}</button></div></form></details>`;
   if (d.telematics && d.telematics.length) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tm_live'))}</h3>${d.telematics.map((x) => `<dl class="kv"><dt>${esc(t('tm_source'))}</dt><dd>${esc(x.provider)} (${esc(x.match_basis === 'vin' ? 'FIN' : t('tm_mappings'))})</dd><dt>${esc(t('tm_time'))}</dt><dd>${fmtDT(x.gps_time || x.received_at)}</dd>${x.km !== null ? `<dt>${esc(t('km'))}</dt><dd>${fmtKm(x.km)}</dd>` : ''}${x.ignition !== null ? `<dt>${esc(t('tm_ignition'))}</dt><dd>${esc(t(x.ignition ? 'tm_on' : 'tm_off'))}</dd>` : ''}${x.lat !== null && x.lon !== null ? `<dt>${esc(t('tm_position'))}</dt><dd><a href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lon}#map=14/${x.lat}/${x.lon}" target="_blank" rel="noopener noreferrer">${x.lat.toFixed(4)}, ${x.lon.toFixed(4)}</a></dd>` : ''}</dl>`).join('')}</section>`;
+  if (d.tacho) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tacho_vu'))}</h3><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${d.tacho.last ? fmtD(d.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${d.tacho.due ? fmtD(d.tacho.due) + ' ' : ''}<span class="chip ${TST[d.tacho.status]}">${esc(t('tst_' + d.tacho.status))}</span></dd></dl>
+    <form id="tvf" class="actions" style="flex-wrap:wrap;align-items:flex-end"><div><label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${new Date().toISOString().slice(0, 10)}"></div><div style="flex:1;min-width:200px"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"></div><button class="btn secondary">${esc(t('tacho_record'))}</button></form></section>`;
   if (d.costs) html += `<section class="panel"><h3>${esc(t('costs'))}</h3><dl class="kv"><dt>Ist</dt><dd>${eur(d.costs.actual_net)}</dd><dt>${esc(t('estimate'))}</dt><dd>${eur(d.costs.estimate_net)}</dd><dt>${esc(t('unvalued'))}</dt><dd>${d.costs.unvalued_items}</dd></dl></section>`;
   if (d.hu_sp) html += huSpHtml(d.hu_sp, v, canMaint);
   html += `<h2>${esc(t('maintenance'))}</h2>${d.maintenance.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('last_done'))}</th><th>${esc(t('next_due'))}</th>${canMaint ? '<th></th>' : ''}</tr></thead><tbody>${d.maintenance.map((m) => { const days = m.next_due_date ? Math.round((Date.parse(m.next_due_date) - Date.now()) / 86400000) : null; return `<tr><td>${esc(m.kind)}</td><td>${fmtD(m.last_done_date)}</td><td>${m.next_due_date ? `<span class="chip ${days < 0 ? 'kritisch' : days < 30 ? 'mittel' : ''}">${fmtD(m.next_due_date)}</span>` : (m.interval_km && m.last_done_km !== null ? '' : '–')}${kmDueHtml(m, d.odometer[0])}</td>${canMaint ? `<td><button class="btn secondary" data-done="${esc(m.id)}"${m.interval_km ? ' data-km="1"' : ''}>${esc(t('done'))}</button></td>` : ''}</tr><tr><td colspan="${canMaint ? 4 : 3}" class="small muted" style="border-top:0;padding-top:0">${esc(t('evidence'))}: ${esc(m.evidence)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}`;
@@ -803,6 +809,7 @@ async function viewVehicle(id) {
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }); if (r.warning) toast(r.warning, true); viewVehicle(id); }
     catch (err) { toast(err.message, true); if (err.code === 'km_not_plausible') { $('#kmnote').hidden = false; kf.note.required = true; kf.note.focus(); } }
   };
+  const tvf = $('#tvf'); if (tvf) tvf.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: id, ...Object.fromEntries(new FormData(tvf)) }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const df = $('#df');
   if (df) {
     const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active);
@@ -1215,7 +1222,7 @@ async function viewAudit(more) {
 // ---------- Zeitleiste der Fahrzeugakte ----------
 async function viewTimeline(id) {
   const f = S.tlFilter || '';
-  const groups = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'] };
+  const groups = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'], tacho: ['tacho'] };
   const r = await api('GET', `/api/vehicles/${encodeURIComponent(id)}/timeline?limit=500${f ? '&types=' + groups[f].join(',') : ''}`);
   const km = (n) => (n === null || n === undefined ? '' : ` · ${Number(n).toLocaleString('de-DE')} km`);
   const caseLink = (x) => (x.case_id ? ` · <a href="#/cases/${esc(x.case_id)}">${esc(x.case_no || t('details'))}</a>` : '');
@@ -1230,12 +1237,13 @@ async function viewTimeline(id) {
       case 'document': return ['', `${esc(t('dk_' + (x.doc_kind || 'sonstiges')))}: <a href="${fileUrl(x.file_id)}" target="_blank" rel="noopener">${esc(x.text)}</a>`, x.valid_until ? `${esc(t('valid_until'))} ${fmtD(x.valid_until)}` : ''];
       case 'tire': return [x.tread_mm !== null && x.tread_mm < 1.6 ? 'p-kritisch' : '', `${esc(t('tires'))} ${esc(x.position)}: ${esc(t('te_' + x.tire_event))}${x.tread_mm !== null ? ' · ' + esc(String(x.tread_mm).replace('.', ',')) + ' mm' : ''}`, `${km(x.km).replace(/^ · /, '')}${caseLink(x)}`];
       case 'maintenance': return ['', `${esc(x.maintenance_kind)} ${esc(t('tl_done'))}`, `${esc(x.evidence || '')}${km(x.km)}${x.by ? ' · ' + esc(x.by) : ''}`];
+      case 'tacho': return ['', esc(t('tl_tacho')), `${esc(x.evidence || '')}${x.by ? ' · ' + esc(x.by) : ''}`];
       case 'fine': return ['', `${esc(t('fk_' + x.fine_kind))}: <a href="#/fines/${esc(x.fine_id)}">${esc(x.fine_no)}</a>`, esc(t('fs_' + x.status))];
       default: return ['', esc(x.type), ''];
     }
   };
-  const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines') };
-  const visible = Object.keys(groups).filter((k) => k !== 'fine' || isMgr());
+  const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines'), tacho: t('tacho') };
+  const visible = Object.keys(groups).filter((k) => !['fine', 'tacho'].includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger');
   render(`<p><a href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
     <h1 style="margin-top:12px">${esc(t('timeline'))}</h1><p class="small muted">${esc(t('timeline_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${visible.map((k) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tl="${esc(k)}">${esc(labels[k])}</button>`).join('')}</div>
