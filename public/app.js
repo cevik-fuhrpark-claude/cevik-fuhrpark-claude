@@ -25,7 +25,7 @@ async function api(method, path, body, extra = {}) {
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
   let res;
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
-  catch { throw new Error(t('offline')); }
+  catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { S.me = null; location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
@@ -127,6 +127,7 @@ async function route() {
       // Screenreader/Tastatur: nach Seitenwechsel Fokus auf die Überschrift (nicht bei Neuaufbau derselben Seite)
       if (S.lastHash && S.lastHash !== h) { const h1 = document.querySelector('#main h1, main h1'); if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); } }
       S.lastHash = h;
+      if (S.me && navigator.onLine !== false) flushOutbox();
       return;
     }
     location.hash = '#/';
@@ -200,7 +201,7 @@ async function viewHome() {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
   const d = await api('GET', '/api/dashboard');
   const cases = (await api('GET', '/api/cases?status=open&limit=8')).cases;
-  let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>`;
+  let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
   if (S.me.role === 'driver') {
     html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a>`;
     html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
@@ -241,14 +242,43 @@ async function viewCases() {
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); viewCases(); }));
 }
 
+// ---------- Offline-Ausgang für Schadensmeldungen (Funkloch) ----------
+// Meldungen werden nur auf diesem Gerät für genau diesen Benutzer/diese Umgebung zwischengespeichert und mit demselben
+// request_key gesendet, sobald wieder Verbindung besteht – der Server legt sie dadurch höchstens einmal an.
+const outboxKey = () => `cfp_outbox_${S.me.id}_${S.me.environment}`;
+function outboxGet() { try { return JSON.parse(localStorage.getItem(outboxKey()) || '[]'); } catch { return []; } }
+function outboxSet(list) { try { localStorage.setItem(outboxKey(), JSON.stringify(list)); } catch {} }
+let flushing = false;
+async function flushOutbox() {
+  if (!S.me || flushing) return;
+  const list = outboxGet(); if (!list.length) return;
+  flushing = true;
+  const rest = [];
+  try {
+    for (const item of list) {
+      try { const r = await api('POST', '/api/cases', item.body); toast(`${t('report_sent')}: ${r.case_no}`); }
+      catch (err) { if (err.offline) { rest.push(item); continue; } toast(`${t('outbox_failed')}: ${err.message}`, true); }
+    }
+  } finally { outboxSet(rest); flushing = false; }
+  const b = document.getElementById('outbox'); if (b && !rest.length) b.remove();
+}
+window.addEventListener('online', () => flushOutbox());
+function outboxBanner() {
+  const n = S.me ? outboxGet().length : 0;
+  return n ? `<div class="panel alert" id="outbox" role="status">${esc(t('outbox_pending').replace('{n}', n))}</div>` : '';
+}
+
 // ---------- Neue Meldung ----------
 async function viewNew() {
-  const vs = (await api('GET', '/api/vehicles')).vehicles;
+  const vkey = `cfp_veh_${S.me.id}_${S.me.environment}`;
+  let vs;
+  try { vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability })))); } catch {} }
+  catch (err) { if (!err.offline) throw err; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; }
   const mine = vs.filter((v) => v.assigned);
   const others = vs.filter((v) => !v.assigned);
   const pick = (arr) => `<div class="vehpick">${arr.map((v) => `<label><input type="radio" name="veh" value="${esc(v.id)}" required>${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>`;
   const ws = S.meta.workshops;
-  render(`<h1>${esc(t('report_damage'))}</h1><form id="f">
+  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}<form id="f">
     <label for="vq">${esc(t('choose_vehicle'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     ${mine.length ? `<h3>${esc(t('my_vehicles'))}</h3>${pick(mine)}<details><summary>${esc(t('other_vehicles'))}</summary>${pick(others)}</details>` : pick(vs)}
     <label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('what_wrong_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>
@@ -265,12 +295,20 @@ async function viewNew() {
     const veh = $('input[name=veh]:checked');
     if (!veh) { toast(t('choose_vehicle'), true); return; }
     $('#sb').disabled = true;
+    const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
+      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
     try {
-      const r = await api('POST', '/api/cases', { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
-        driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key });
+      const r = await api('POST', '/api/cases', body);
       toast(`${t('report_sent')}: ${r.case_no}`);
       location.hash = '#/cases/' + r.id;
-    } catch (err) { toast(err.message, true); $('#sb').disabled = false; }
+    } catch (err) {
+      if (err.offline) {
+        const list = outboxGet(); if (!list.some((x) => x.body.request_key === key)) list.push({ body, saved_at: new Date().toISOString() }); outboxSet(list);
+        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
+        return;
+      }
+      toast(err.message, true); $('#sb').disabled = false;
+    }
   };
 }
 
