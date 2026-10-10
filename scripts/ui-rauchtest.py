@@ -35,6 +35,32 @@ A11Y = """() => {
   return out;
 }"""
 SIZES = [('handy', 390, 844), ('tablet', 820, 1180), ('pc', 1440, 900)]
+# Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
+PRINT = {
+    'owner': ['cases/', 'vehicles/', 'maintenance', 'stock/reorder', 'defects', 'vehicles/qr', 'vehicles/qr/'],
+    'workshop': ['cases/', 'stock/reorder'],
+    'driver': ['check/paper'],
+}
+PRINT_CHECK = """() => {
+  const out = [];
+  const W = document.documentElement.clientWidth;
+  const app = document.querySelector('#app') || document.body;
+  const shown = (el) => { const cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden' && (el.offsetWidth || el.offsetHeight || el.getClientRects().length); };
+  if (document.documentElement.scrollWidth - W > 2) out.push(`Seite ${document.documentElement.scrollWidth - W}px breiter als A4`);
+  let n = 0;
+  for (const el of app.querySelectorAll('*')) {
+    if (!shown(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width && r.right - W > 2 && n++ < 3) out.push(`ragt ${Math.round(r.right - W)}px über den Rand: <${el.tagName.toLowerCase()} class="${el.className}">${(el.textContent || '').trim().slice(0, 40)}`);
+    const cs = getComputedStyle(el);
+    if (['auto', 'scroll', 'hidden', 'clip'].includes(cs.overflowX) && el.scrollWidth - el.clientWidth > 2 && !el.classList.contains('plate'))
+      out.push(`abgeschnitten (${el.scrollWidth - el.clientWidth}px): <${el.tagName.toLowerCase()} class="${el.className}">${(el.textContent || '').trim().slice(0, 40)}`);
+  }
+  for (const el of app.querySelectorAll('button, input:not([type=hidden]), select, textarea')) if (shown(el)) { out.push(`Bedienelement im Ausdruck: ${el.outerHTML.slice(0, 70)}`); break; }
+  const po = [...app.querySelectorAll('.print-only')].some(shown);
+  if (!po && !app.querySelector('.qrsheet, table.paper')) out.push('kein Ausdruckvermerk (print-only)');
+  return out;
+}"""
 
 problems = []
 with sync_playwright() as p:
@@ -110,6 +136,22 @@ with sync_playwright() as p:
     else:
         problems.append(f'Vorbereitung Lager: {st}')
 
+    # Mehr Inhalt für Listen und Druckansichten: zweites Fahrzeug mit überfälligen Prüfungen, Abfahrtskontrolle mit Mängeln,
+    # Lagerartikel unter Mindestbestand (alles synthetisch)
+    vin2 = 'WDB96340310654321'
+    api('POST', '/api/vehicles', {'plate': 'RT-CD 2022', 'vin': vin2, 'site': 'Dortmund Logistikzentrum Hafen Nord', 'manufacturer': 'Mercedes-Benz', 'model': 'Actros 1845 LS Sattelzugmaschine'})
+    for kind, d, m in [('UVV', '2025-06-01', 12), ('Tachograph', '2024-08-15', 24), ('Sonstiges', '2025-01-01', 6)]:
+        api('POST', f'/api/vehicles/VIN:{vin2}/maintenance', {'kind': kind, 'last_done_date': d, 'interval_months': m, 'evidence': 'Rauchtest Prüfbericht mit sehr langer Nachweisbezeichnung Nr. 2025-000123'})
+    api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'UVV', 'last_done_date': '2025-10-20', 'interval_months': 12, 'evidence': 'Rauchtest'})
+    keys = [i['key'] for i in api('GET', '/api/meta')['d']['checklist']]
+    ck = pages['driver'].evaluate(JS, ['POST', '/api/inspections', {'kind': 'abfahrt', 'vehicle_id': vid, 'request_key': 'rt-chk-1', 'items': [{'key': k, 'result': 'mangel' if i < 2 else 'ok', 'note': 'Rauchtest: Mangel mit ausführlicher Beschreibung, damit lange Texte im Ausdruck umbrechen müssen' if i < 2 else None} for i, k in enumerate(keys)]}])
+    if ck['s'] != 201:
+        problems.append(f'Vorbereitung Abfahrtskontrolle: {ck}')
+    st2 = pages['workshop'].evaluate(JS, ['POST', '/api/stock', {'name': 'Rauchtest Luftfilter Fahrerhaus mit langer Artikelbezeichnung', 'part_number': 'RT-A0000903400-LANG', 'initial_qty': 1, 'min_qty': 6, 'unit_price_net': 12.5}])
+    ROUTES['owner'] += [f'vehicles/VIN:{vin2}']
+    if st2['s'] not in (200, 201):
+        problems.append(f'Vorbereitung Lager 2: {st2}')
+
     # Sprache für alle Rauchtest-Konten (CFP_LANG=uk|en): lange ukrainische Texte dürfen das Layout nicht sprengen
     LANG = os.environ.get('CFP_LANG')
     if LANG:
@@ -154,10 +196,38 @@ with sync_playwright() as p:
                 if OUT and name == 'handy':
                     os.makedirs(OUT, exist_ok=True)
                     pg.screenshot(path=os.path.join(OUT, f"{role}_{r.replace('/', '_').replace(':', '') or 'start'}.png"), full_page=True)
+    # Druckansichten: Druckmodus in A4-Hochformat-Breite (190 mm Inhalt ≈ 718 px); prüft abgeschnittene Tabellen/Inhalte,
+    # waagrechtes Überlaufen, sichtbare Bedienelemente im Ausdruck, Ausdruckvermerk vorhanden.
+    print_routes = []
+    for role in PRINT:
+        for r in ROUTES[role]:
+            base = r.split('?')[0]
+            if any(base == x or (x.endswith('/') and base.startswith(x) and base.count('/') == x.count('/')) for x in PRINT[role]):
+                print_routes.append((role, r))
+    for role, r in print_routes:
+        pg = pages[role]
+        pg.set_viewport_size({'width': 718, 'height': 1000})
+        pg.emulate_media(media='screen')
+        pg.goto(f'{B}/#/{r}')
+        pg.wait_for_timeout(500)
+        base = r.split('?')[0]
+        if base == 'maintenance':
+            pg.click('[data-mf=all]')
+            pg.wait_for_timeout(300)
+        pg.emulate_media(media='print')
+        pg.wait_for_timeout(100)
+        where = f'{role} Druck #/{r}'
+        res = pg.evaluate(PRINT_CHECK)
+        for x in res:
+            problems.append(f'{where}: {x}')
+        if OUT:
+            os.makedirs(OUT, exist_ok=True)
+            pg.pdf(path=os.path.join(OUT, f"druck_{role}_{r.replace('/', '_').replace(':', '')}.pdf"), format='A4')
+        pg.emulate_media(media='screen')
     br.close()
 
 n = sum(len(v) for v in ROUTES.values()) * len(SIZES)
-print(f'{n} Ansichten geprüft, {len(problems)} Auffälligkeiten')
+print(f'{n} Ansichten geprüft, {len(print_routes)} Druckansichten, {len(problems)} Auffälligkeiten')
 for x in problems:
     print('  - ' + x)
 sys.exit(1 if problems else 0)
