@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 64 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 65 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -102,6 +102,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Datenqualität (Mehr → „Datenqualität“, Inhaber/Fuhrparkleitung, `GET /api/admin/data-quality`): doppelte Kennzeichen, Anhängerkennzeichen ohne Anhänger, Anhänger an mehreren Lkw, Zuordnung zu deaktivierten Fahrern, fehlender Standort/Hersteller/Baujahr, kein/veralteter km-Stand, Pflichtprüfung ohne Termin, offene Einladungen; ändert nichts. 62 Tests grün, UI-Rauchtest 159 Ansichten ohne Auffälligkeit.
 - [x] Werkstatt-Auslastung (Mehr → „Werkstatt-Auslastung“, `GET /api/reports/workshop-load?weeks=`): je Standort und ISO-Kalenderwoche erfasste Stunden, übernommene/freigegebene Aufträge, aktuell offene je Status; Werkstattrolle sieht nur den eigenen Standort; **keine** Auswertung je Person. 63 Tests grün, UI-Rauchtest 168 Ansichten ohne Auffälligkeit.
 - [x] Vorgangsliste als CSV (Button in „Vorgänge“, nicht für Fahrer): aktuelle Filter/Suche, gleiche Rollenrechte, Excel-tauglich (BOM, Semikolon), Formelschutz, Protokoll. 64 Tests grün.
+- [x] Push-Einstellungen je Person (Migration 0015 `users.push_muted`; Hinweise → „Push für diese Hinweise“, `GET/PUT /api/me/notify-prefs`): 15 nicht dringende Ereignisarten abwählbar → Hinweis bleibt in der App, Push-Status `disabled`; dringende Hinweise und Sperre/Sicherheits-Restarbeit nie abschaltbar. 65 Tests grün, UI 390 px geprüft.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -123,5 +124,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Benachrichtigungseinstellungen je Person (welche nicht dringenden Hinweise per Push; dringende immer) – vorher prüfen, welche Ereignisarten `notify.js` kennt. Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin: Sicherheitsdurchsicht der Integrations-API (Token-Rotation, Bereichsrechte je Token) und Dokumentation. Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

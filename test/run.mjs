@@ -970,6 +970,23 @@ await test('Vorgangsliste als CSV: gleiche Filter/Rechte wie die Liste, Excel-ta
   ok((await owner.get('/api/admin/audit?action=reports.cases')).data.entries.length >= 1, 'protokolliert');
 });
 
+await test('Push-Einstellungen je Person: nicht dringende Arten stummschaltbar, dringende immer, In-App bleibt', async () => {
+  const p0 = await users.driver.get('/api/me/notify-prefs');
+  eq(p0.status, 200); ok(p0.data.kinds.includes('received') && !p0.data.kinds.includes('safety_lock'), 'Sicherheitsereignisse nicht stummschaltbar');
+  const put = await users.driver.put('/api/me/notify-prefs', { muted: ['received', 'safety_lock', 'quatsch'] });
+  eq(put.data.muted.join(','), 'received', 'nur erlaubte Arten');
+  const c = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Push-Test leise', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'receive', command_id: rk(), expected_version: 1 });
+  const n = (await env.DB.prepare(`SELECT push_status FROM notifications WHERE case_id=? AND user_id=? AND kind='received'`).bind(c.data.id, users.driver.id).first());
+  eq(n.push_status, 'disabled', 'kein Push, aber In-App gespeichert');
+  // dringend: trotz Stummschaltung Push-Versuch
+  const u = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Push-Test dringend', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() });
+  await users.fleet.post(`/api/cases/${u.data.id}/commands`, { action: 'receive', command_id: rk(), expected_version: 1 });
+  const n2 = (await env.DB.prepare(`SELECT push_status, urgent FROM notifications WHERE case_id=? AND user_id=? AND kind='received'`).bind(u.data.id, users.driver.id).first());
+  ok(n2 && n2.urgent === 1 && n2.push_status !== 'disabled', 'dringend immer');
+  eq((await users.driver.put('/api/me/notify-prefs', { muted: [] })).data.muted.length, 0);
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

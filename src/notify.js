@@ -30,6 +30,11 @@ const T = {
   },
 };
 
+// Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
+export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'acknowledged', 'started', 'waiting_parts', 'resumed',
+  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder'];
+export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.filter((k) => MUTABLE_KINDS.includes(k)) : []; } catch { return []; } }
+
 async function usersByRole(env, environment, roles, extraWhere = '', extraArgs = []) {
   return (await env.DB.prepare(`SELECT id, language, role FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN (${roles.map(() => '?').join(',')}) ${extraWhere}`)
     .bind(environment, ...roles, ...extraArgs).all()).results;
@@ -86,7 +91,7 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const id = uuid();
     const r = await env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status)
       VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`).bind(id, c.environment, u.id, c.id, eventKey, kind, urgent ? 1 : 0, title, body, now).run();
-    if (r.meta && r.meta.changes === 1) created.push({ id, user_id: u.id, title, body, urgent, case_id: c.id });
+    if (r.meta && r.meta.changes === 1) created.push({ id, user_id: u.id, title, body, urgent, case_id: c.id, kind });
   }
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
@@ -99,7 +104,7 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
     const id = uuid();
     const r = await env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status)
       VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`).bind(id, environment, uid, caseId, eventKey, kind, urgent ? 1 : 0, title, body, nowIso()).run();
-    if (r.meta && r.meta.changes === 1) created.push({ id, user_id: uid, title, body, urgent, case_id: caseId });
+    if (r.meta && r.meta.changes === 1) created.push({ id, user_id: uid, title, body, urgent, case_id: caseId, kind });
   }
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
@@ -117,7 +122,15 @@ export async function deliverPush(env, notifications) {
   }
   const writes = [];
   const revoked = new Set();
+  const mutedByUser = new Map();
+  if (notifications.some((n) => !n.urgent && n.kind)) {
+    for (const u of (await env.DB.prepare('SELECT id, push_muted FROM users WHERE push_muted IS NOT NULL AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
+  }
   for (const n of notifications) {
+    if (!n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind)) {
+      writes.push(env.DB.prepare(`UPDATE notifications SET push_status='disabled' WHERE id=?`).bind(n.id));
+      continue;
+    }
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
     if (subs.length === 0) {
       writes.push(env.DB.prepare(`UPDATE notifications SET push_status='no_subscription' WHERE id=?`).bind(n.id));
@@ -145,7 +158,7 @@ export async function deliverPush(env, notifications) {
 
 // Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche
 export async function retryFailedPush(env) {
-  const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id FROM notifications
+  const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id, kind FROM notifications
     WHERE push_status='failed' AND push_attempts < 3 AND acknowledged_at IS NULL AND created_at > ? LIMIT 20`)
     .bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()).all()).results;
   await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })));

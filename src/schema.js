@@ -141,5 +141,11 @@ export const MIGRATIONS = [
    "CREATE INDEX IF NOT EXISTS idx_maint_events_vehicle ON maintenance_events(vehicle_id, done_date)",
    "INSERT OR IGNORE INTO maintenance_events(id, rule_id, vehicle_id, kind, done_date, done_km, evidence, source, recorded_by, created_at)\n  SELECT lower(hex(randomblob(16))), id, vehicle_id, kind, last_done_date, last_done_km, evidence, 'bestand', NULL, updated_at\n  FROM maintenance_rules WHERE last_done_date IS NOT NULL"
   ]
+ },
+ {
+  "id": "0015_push_prefs",
+  "statements": [
+   "ALTER TABLE users ADD COLUMN push_muted TEXT NULL"
+  ]
  }
 ];

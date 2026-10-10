@@ -832,9 +832,22 @@ async function viewCosts() {
 async function viewInbox() {
   const n = await api('GET', '/api/notifications');
   render(`<h1>${esc(t('notifications'))}</h1><section class="panel" id="push"></section>
+    <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
     ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>` : ''}
     <div class="list">${n.notifications.map((x) => `<div class="row ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" href="${x.case_id ? '#/cases/' + esc(x.case_id) : '#/master'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub">${esc(x.body)} · Push: ${esc(x.push_status)}</span></div>`).join('') || `<p class="muted">${esc(t('no_notifications'))}</p>`}</div>`, '');
   pushPanel($('#push'));
+  const np = $('#np');
+  np.ontoggle = async () => {
+    if (!np.open || np.dataset.loaded) return;
+    try {
+      const pr = await api('GET', '/api/me/notify-prefs'); np.dataset.loaded = '1';
+      $('#npl').innerHTML = pr.kinds.map((k) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pk="${esc(k)}"${pr.muted.includes(k) ? '' : ' checked'}> ${esc(t('pk_' + k))}</label>`).join('');
+      $$('[data-pk]', np).forEach((cb) => (cb.onchange = async () => {
+        const muted = $$('[data-pk]', np).filter((x) => !x.checked).map((x) => x.dataset.pk);
+        try { await api('PUT', '/api/me/notify-prefs', { muted }); toast('✓'); } catch (err) { toast(err.message, true); }
+      }));
+    } catch (err) { toast(err.message, true); }
+  };
   $$('[data-ack]').forEach((b) => (b.onclick = async () => { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); viewInbox(); }));
   $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).catch(() => {})));
   const ra = $('#ra'); if (ra) ra.onclick = async () => { await api('POST', '/api/notifications/read-all'); S.unread = 0; viewInbox(); };

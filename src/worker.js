@@ -5,7 +5,7 @@ import * as cases from './cases.js';
 import * as veh from './vehicles.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, notifyUsers } from './notify.js';
+import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -113,6 +113,16 @@ async function handleApi(request, env, ctx, url) {
     const b = await readJson(request);
     if (b.language && ['de', 'uk', 'en'].includes(b.language)) await env.DB.prepare('UPDATE users SET language=?, updated_at=? WHERE id=?').bind(b.language, nowIso(), user.id).run();
     return json({ ok: true });
+  }
+  if (path === '/api/me/notify-prefs' && m === 'GET') {
+    const row = await env.DB.prepare('SELECT push_muted FROM users WHERE id=?').bind(user.id).first();
+    return json({ kinds: MUTABLE_KINDS, muted: parseMuted(row && row.push_muted) });
+  }
+  if (path === '/api/me/notify-prefs' && m === 'PUT') {
+    const b = await readJson(request);
+    const muted = Array.isArray(b.muted) ? [...new Set(b.muted.filter((k) => MUTABLE_KINDS.includes(k)))] : [];
+    await env.DB.prepare('UPDATE users SET push_muted=?, updated_at=? WHERE id=?').bind(muted.length ? JSON.stringify(muted) : null, nowIso(), user.id).run();
+    return json({ kinds: MUTABLE_KINDS, muted });
   }
   if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
   if (path === '/api/me/sessions' && m === 'GET') return json({ sessions: await auth.listOwnSessions(env, user) });

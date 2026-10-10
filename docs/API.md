@@ -53,6 +53,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Push | `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `GET /api/push/devices`, `POST /api/push/test` |
 | Management | `GET /api/dashboard`, `GET /api/master`, `POST /api/master/:eventId/decision`, `POST /api/agent/run` |
 | Einstellungen | `GET/PUT /api/settings` (nur owner) |
+| Push-Einstellungen | `GET /api/me/notify-prefs` → `{kinds, muted}`, `PUT {muted: [...]}` – nur nicht dringende Arten; stumm → `push_status='disabled'`, In-App bleibt |
 | Fahrer: mein Fahrzeug | `GET /api/me/vehicles` (nur driver): zugeordnete Fahrzeuge mit `locked`, `open_cases_total`, `my_open_cases`, `next_inspections`, `last_km` |
 | Fahrerzuordnung | `POST /api/vehicles/<id>/drivers {user_id, end_previous?, evidence?}` – 409 `already_assigned`; `DELETE /api/assignments/<id>` nur eigene Umgebung |
 | Wartungshistorie | Fahrzeugakte liefert `maintenance_history` (Datum, km, Nachweis, Quelle bestand/erfasst/erledigt/import, Person); Zeitleiste Typ `maintenance` je Durchführung |
