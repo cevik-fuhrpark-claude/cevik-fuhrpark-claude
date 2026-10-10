@@ -16,6 +16,7 @@ import { exportBackup } from './backup.js';
 import * as maint from './maintenance.js';
 import { recordUsage, usageReport } from './usage.js';
 import { dataQuality } from './quality.js';
+import * as telem from './telematics.js';
 
 // Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
 const usageEnv = new WeakMap();
@@ -197,6 +198,9 @@ async function handleApi(request, env, ctx, url) {
     return json(await tires.importTireSpecs(env, user, text));
   }
 
+  if (path === '/api/telematics' && m === 'GET') return json(await telem.telematicsOverview(env, user));
+  if (path === '/api/telematics/mappings' && m === 'POST') return json(await telem.confirmMapping(env, user, await readJson(request)), 201);
+  if (path === '/api/telematics/mappings' && m === 'DELETE') return json(await telem.removeMapping(env, user, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/data-quality' && m === 'GET') return json(await dataQuality(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/usage' && m === 'GET') return json(await usageReport(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/audit' && m === 'GET') return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });

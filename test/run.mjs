@@ -515,6 +515,23 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
     eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [] }, R)).status, 403, 'Schreiben verboten');
   } finally { delete env.INTEGRATION_TOKEN_NEXT; delete env.INTEGRATION_TOKEN_READ; }
 });
+await test('Telematik-Prüffälle: Zuordnung nur durch Fuhrpark mit Nachweis; danach werden Daten zugeordnet', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  eq((await users.ws.get('/api/telematics')).status, 403);
+  const ov = await users.fleet.get('/api/telematics');
+  eq(ov.status, 200);
+  const wf2 = ov.data.unmatched.find((u) => u.external_id === 'WF-2');
+  ok(wf2 && wf2.source_plate === 'SZ-KC 5515', 'Prüffall mit Kennzeichen aus dem Gerät');
+  eq((await users.fleet.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-2', vehicle_id: V2 })).status, 400, 'Nachweis Pflicht');
+  eq((await users.fleet.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-2', vehicle_id: V2, evidence: 'Webfleet-Objektliste, Abgleich FIN' })).status, 201);
+  eq((await users.fleet.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-2', vehicle_id: V1, evidence: 'x' })).status, 409, 'keine Doppelzuordnung');
+  const r = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-2', gps_time: '2026-10-10T10:00:00Z', lat: 51.5, lon: 7.4 }] }, H);
+  eq(r.data.matched, 1, 'jetzt über bestätigtes Mapping zugeordnet');
+  const ov2 = (await users.fleet.get('/api/telematics')).data;
+  ok(!ov2.unmatched.some((u) => u.external_id === 'WF-2') && ov2.mappings.some((m) => m.external_id === 'WF-2' && m.confirmed_by_name), 'Prüffall erledigt, Mapping mit Person');
+  eq((await users.fleet.req('DELETE', '/api/telematics/mappings?provider=webfleet&external_id=WF-2')).status, 200);
+  ok((await owner.get('/api/admin/audit?action=telematics.')).data.entries.length >= 2, 'protokolliert');
+});
 await test('Deaktivierung entwertet Sitzung sofort', async () => {
   const r = await owner.patch(`/api/users/${users.driver2.id}`, { active: false });
   eq(r.status, 200);

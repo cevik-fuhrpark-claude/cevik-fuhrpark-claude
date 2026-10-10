@@ -68,6 +68,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
 | Vorgänge als CSV | `GET /api/cases?format=csv&status=&q=` (nicht driver): gleiche Filter/Rechte wie die Liste, bis 5000 Zeilen, Formelschutz, Audit `reports.cases.export` |
 | Werkstatt-Auslastung | `GET /api/reports/workshop-load?weeks=1..52` (owner/fleet/viewer; workshop nur eigener Standort): je Standort `weeks[] {week JJJJ-Www, hours, acknowledged, released}`, `open {status: n}` – ohne Personenbezug |
+| Telematik-Zuordnung | `GET /api/telematics` (owner/fleet): `unmatched`, `mappings`, `latest`; `POST /api/telematics/mappings {provider, external_id, vehicle_id, evidence}` (409 bei vorhandener Zuordnung); `DELETE /api/telematics/mappings?provider=&external_id=` |
 | Datenqualität | `GET /api/admin/data-quality?stale_days=90` (owner/fleet): `items[] {check, severity fehler/luecke/hinweis, vehicle_id, plate, detail}`, `counts` |
 | Nutzungsstatistik | `GET /api/admin/usage?days=1..366` (nur owner, aktuelle Ansicht Test/Betrieb): Aufrufe/Fehler je Bereich, Funktion und Tag – ohne Personenbezug |
 

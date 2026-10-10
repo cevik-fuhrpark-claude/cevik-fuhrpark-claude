@@ -118,7 +118,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -1020,6 +1020,28 @@ async function viewWsLoad() {
   $$('[data-wl]').forEach((b) => (b.onclick = () => { S.wlWeeks = Number(b.dataset.wl); viewWsLoad(); }));
 }
 
+// ---------- Telematik-Prüffälle und Zuordnungen ----------
+async function viewTelematics() {
+  const r = await api('GET', '/api/telematics');
+  const vs = await vehiclesCached();
+  const opts = (sel) => vs.map((v) => `<option value="${esc(v.id)}"${v.id === sel ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('');
+  render(`<h1>${esc(t('telematics'))}</h1><p class="small muted">${esc(t('telematics_hint'))}</p>
+    <div class="stats"><div><b>${r.latest.vehicles}</b>${esc(t('tm_with_data'))}</div><div><b style="${r.unmatched.length ? 'color:var(--mid)' : ''}">${r.unmatched.length}</b>${esc(t('tm_unmatched'))}</div><div><b>${r.mappings.length}</b>${esc(t('tm_mappings'))}</div></div>
+    ${r.latest.last_received ? `<p class="small muted">${esc(t('tm_last'))}: ${fmtDT(r.latest.last_received)}</p>` : r.unmatched.length ? '' : `<div class="panel">${esc(t('tm_none'))}</div>`}
+    <h2>${esc(t('tm_unmatched'))}</h2><div class="list">${r.unmatched.map((u, i) => `<div class="row p-mittel"><span class="chip">${esc(u.provider)}</span><span class="title" style="white-space:normal">${esc(u.external_id)}${u.source_plate ? ' · ' + esc(u.source_plate) : ''}${u.source_vin ? ' · FIN ' + esc(u.source_vin) : ''}</span><span></span>
+      <form class="sub" data-map="${i}" style="white-space:normal;display:grid;gap:6px;margin-top:6px"><label>${esc(t('vehicle'))}</label><select name="vehicle_id" required><option value="">–</option>${opts(null)}</select>${u.candidate_plate ? `<span class="small muted">${esc(t('tm_candidate'))}: ${esc(u.candidate_plate)}</span>` : ''}<label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" placeholder="${esc(t('tm_evidence_ph'))}"><button class="btn secondary">${esc(t('tm_confirm'))}</button></form></div>`).join('') || `<p class="muted">–</p>`}</div>
+    <h2>${esc(t('tm_mappings'))}</h2><div class="list">${r.mappings.map((m) => `<div class="row">${plate(m.plate)}<span class="title" style="white-space:normal">${esc(m.provider)} · ${esc(m.external_id)}</span><button type="button" class="btn secondary" data-unmap="${esc(m.provider)}|${esc(m.external_id)}">${esc(t('tm_remove'))}</button><span class="sub" style="white-space:normal">${esc(m.evidence)} · ${esc(m.confirmed_by_name || '')} · ${fmtDT(m.confirmed_at)}</span></div>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
+  $$('[data-map]').forEach((f) => (f.onsubmit = async (e) => {
+    e.preventDefault(); const u = r.unmatched[Number(f.dataset.map)];
+    try { await api('POST', '/api/telematics/mappings', { provider: u.provider, external_id: u.external_id, vehicle_id: f.vehicle_id.value, evidence: f.evidence.value }); toast('✓'); viewTelematics(); } catch (err) { toast(err.message, true); }
+  }));
+  $$('[data-unmap]').forEach((b) => (b.onclick = async () => {
+    if (!confirm(t('tm_remove') + '?')) return;
+    const [provider, ext] = b.dataset.unmap.split('|');
+    try { await api('DELETE', `/api/telematics/mappings?provider=${encodeURIComponent(provider)}&external_id=${encodeURIComponent(ext)}`); viewTelematics(); } catch (err) { toast(err.message, true); }
+  }));
+}
+
 // ---------- Datenqualität (Inhaber/Fuhrparkleitung) ----------
 async function viewQuality() {
   const r = await api('GET', '/api/admin/data-quality');
@@ -1087,6 +1109,7 @@ function viewMore() {
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/costs"><span>€</span><span class="title">${esc(t('costs_report'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'workshop'].includes(S.me.role) ? `<a class="row" href="#/stock"><span>▦</span><span class="title">${esc(t('stock'))}</span><span></span></a>` : ''}
     ${isMgr() ? `<a class="row" href="#/users"><span>👤</span><span class="title">${esc(t('users'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/telematics"><span>⌖</span><span class="title">${esc(t('telematics'))}</span><span></span></a>` : ''}
     ${isMgr() ? `<a class="row" href="#/quality"><span>✓</span><span class="title">${esc(t('dq'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/usage"><span>📊</span><span class="title">${esc(t('usage'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/audit"><span>🔒</span><span class="title">${esc(t('audit'))}</span><span></span></a>` : ''}
