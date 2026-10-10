@@ -18,12 +18,24 @@ export async function onHand(env, itemId) {
   return Math.round(r.q * 1000) / 1000;
 }
 
+const r3 = (x) => Math.round(x * 1000) / 1000;
 export async function listStock(env, user, envName, query) {
   const site = siteScope(user, query.site);
-  const rows = (await env.DB.prepare(`SELECT i.*, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand
+  // Verbrauch = Entnahmen der letzten 90 Tage (nur Information für den Bestellvorschlag)
+  const since = new Date(Date.now() - 90 * 86400000).toISOString();
+  const rows = (await env.DB.prepare(`SELECT i.*, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand,
+      COALESCE((SELECT -SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.created_at >= ?),0) AS used_90d
     FROM stock_items i WHERE i.environment=? AND i.active=1 ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`)
-    .bind(...(site ? [envName, site] : [envName])).all()).results;
-  return rows.map((r) => ({ ...r, on_hand: Math.round(r.on_hand * 1000) / 1000, below_min: r.min_qty !== null && r.on_hand < r.min_qty }));
+    .bind(...(site ? [since, envName, site] : [since, envName])).all()).results;
+  let list = rows.map((r) => ({ ...r, on_hand: r3(r.on_hand), used_90d: r3(r.used_90d), below_min: r.min_qty !== null && r.on_hand < r.min_qty }));
+  // Bestellvorschlag: nur Artikel unter Mindestbestand; Fehlmenge bis Mindestbestand – es wird nichts bestellt
+  if (query.reorder === '1') {
+    list = list.filter((r) => r.below_min).map((r) => {
+      const shortfall = r3(r.min_qty - r.on_hand);
+      return { ...r, shortfall, shortfall_value_net: r.unit_price_net === null ? null : Math.round(shortfall * r.unit_price_net * 100) / 100 };
+    });
+  }
+  return list;
 }
 
 async function loadItem(env, user, envName, id) {
@@ -115,6 +127,16 @@ export function stockCsv(items, csvCell) {
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
     n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100)].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
+
+// Bestellvorschlag als CSV: Fehlmenge bis Mindestbestand, Verbrauch 90 Tage, Wert nur mit hinterlegtem Preis (nie 0 €)
+export function reorderCsv(items, csvCell) {
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto'];
+  const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const lines = [head.join(';')];
+  for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), n(i.shortfall), n(i.used_90d),
+    n(i.unit_price_net), n(i.shortfall_value_net)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

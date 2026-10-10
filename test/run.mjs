@@ -655,6 +655,29 @@ await test('Entnahme aus Vorgang bucht Bestand ab, übernimmt Preis; zu wenig Be
   const item = await users.ws.get(`/api/stock/${ITEM}`);
   eq(item.data.item.on_hand, 1); ok(item.data.movements.some((m) => m.case_no === det.data.case.case_no), 'Bewegung mit Vorgangsnummer');
 });
+await test('Bestellvorschlag: nur Artikel unter Mindestbestand, Fehlmenge, Verbrauch 90 Tage, Wert nur mit Preis; nur eigenes Lager', async () => {
+  const r = await users.ws.get('/api/stock?reorder=1');
+  eq(r.status, 200);
+  const it = r.data.items.find((i) => i.id === ITEM);
+  ok(it, 'Artikel unter Mindestbestand enthalten');
+  eq(it.on_hand, 1); eq(it.min_qty, 2); eq(it.shortfall, 1); eq(it.used_90d, 2, 'Entnahme aus dem Vorgang zählt als Verbrauch'); eq(it.shortfall_value_net, 84.5);
+  ok(r.data.items.every((i) => i.below_min), 'nur unter Mindestbestand');
+  // ohne Preis → kein Wert (nie 0 €); Artikel ohne Mindestbestand erscheint nie
+  const np = await users.ws.post('/api/stock', { name: 'Kabelbinder ohne Preis', min_qty: 5, initial_qty: 1 });
+  const nm = await users.ws.post('/api/stock', { name: 'Ohne Mindestbestand', initial_qty: 0 });
+  const r2 = (await users.ws.get('/api/stock?reorder=1')).data.items;
+  eq(r2.find((i) => i.id === np.data.id).shortfall_value_net, null); eq(r2.find((i) => i.id === np.data.id).shortfall, 4);
+  ok(!r2.some((i) => i.id === nm.data.id), 'ohne Mindestbestand nicht im Vorschlag');
+  eq((await users.wsMuc.get('/api/stock?reorder=1')).data.items.filter((i) => i.site === 'DORTMUND').length, 0, 'fremdes Lager unsichtbar');
+  eq((await users.driver.get('/api/stock?reorder=1')).status, 403);
+  const csv = await users.ws.get('/api/stock?reorder=1&format=csv');
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  ok(txt.startsWith('\ufeffLager;Artikelnummer;Bezeichnung;Einheit;Lagerort;Bestand;Mindestbestand;Fehlmenge bis Mindestbestand'), 'CSV-Kopf');
+  ok(txt.includes(';1;2;1;2;84,5;84,5'), 'CSV-Zeile mit Komma-Dezimalen');
+  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;\r\n/.test(txt), 'ohne Preis: Wert leer');
+  // Testartikel wieder entfernen (deaktivieren), damit spätere Zählungen unverändert bleiben
+  for (const id of [np.data.id, nm.data.id]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
+});
 await test('Mindestbestand unterschritten → Agent-Hinweis; Zugang behebt ihn', async () => {
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'STOCK_BELOW_MIN'), 'Hinweis vorhanden');

@@ -242,6 +242,7 @@ async function handleApi(request, env, ctx, url) {
   // Ersatzteillager
   if (path === '/api/stock' && m === 'GET') {
     const items = await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
     if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
     return json({ items });
   }
