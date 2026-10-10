@@ -233,7 +233,7 @@ export async function listUsers(env, actor) {
 export async function setupFirstOwner(env, body) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (count.n > 0) throw new HttpError(410, 'setup_done', 'Einrichtung bereits abgeschlossen.');
-  if (!env.SETUP_CODE || !timingSafeEqual(String(body.setup_code || ''), env.SETUP_CODE)) {
+  if (!env.SETUP_CODE || !timingSafeEqual(String(body.setup_code || '').trim(), env.SETUP_CODE)) {
     throw new HttpError(401, 'invalid_setup_code', 'Einrichtungscode falsch.');
   }
   const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();

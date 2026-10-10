@@ -26,7 +26,7 @@ async function api(method, path, body, extra = {}) {
   let res;
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
   catch { throw new Error(t('offline')); }
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite')) { S.me = null; location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { S.me = null; location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   if (!res.ok) { const e = new Error((data && data.message) || `${t('error')} ${res.status}`); e.code = data && data.error; e.status = res.status; throw e; }
@@ -141,13 +141,14 @@ async function viewSetup() {
   const st = await api('GET', '/api/setup/status');
   if (!st.needs_setup) { location.hash = '#/login'; return; }
   render(`<div class="center"><form id="f" class="narrow panel"><h1>${esc(t('setup'))}</h1>
-    <label for="c">${esc(t('setup_code'))}</label><input id="c" required autocomplete="off">
-    <label for="u">${esc(t('username'))}</label><input id="u" required autocapitalize="none" pattern="[a-z0-9._-]{3,64}">
+    <label for="c">${esc(t('setup_code'))}</label><input id="c" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <label for="u">${esc(t('username'))}<span class="hint">${esc(t('username_rule'))}</span></label><input id="u" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="y.cevik">
     <label for="n">${esc(t('display_name'))}</label><input id="n" required>
-    <div class="actions"><button class="btn block">${esc(t('create_owner'))}</button></div></form></div>`);
+    <div class="actions"><button class="btn block">${esc(t('create_owner'))}</button></div><p class="small muted">${esc(t('setup_next'))}</p></form></div>`);
+  $('#u').oninput = () => { const el = $('#u'); const v = el.value.toLowerCase().replace(/\s+/g, '.').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[^a-z0-9._-]/g, ''); if (v !== el.value) el.value = v; };
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/setup', { setup_code: $('#c').value, username: $('#u').value.trim().toLowerCase(), display_name: $('#n').value }); location.hash = '#/invite/' + r.invite_token; }
+    try { const r = await api('POST', '/api/setup', { setup_code: $('#c').value.trim(), username: $('#u').value.trim().toLowerCase(), display_name: $('#n').value.trim() }); location.hash = '#/invite/' + r.invite_token; }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -743,7 +744,7 @@ async function viewUsers() {
   const roles = S.me.role === 'owner' ? ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'] : ['driver', 'workshop', 'viewer'];
   render(`<h1>${esc(t('users'))}</h1><div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
-      <label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('username'))}</label><input name="username" required pattern="[a-z0-9._-]{3,64}" autocapitalize="none">
+      <label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('username'))}</label><input name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
       <label>${esc(t('role'))}</label><select name="role" id="rs">${roles.map((r) => `<option value="${r}">${esc(t('role_' + r))}</option>`).join('')}</select>
       <div id="wsrow" hidden><label>${esc(t('workshop'))}</label><select name="workshop_site">${S.meta.workshops.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select></div>
       ${S.me.role === 'owner' ? `<label>${esc(t('environment'))}</label><select name="environment"><option value="test">${esc(t('env_testname'))}</option><option value="production">${esc(t('env_prod'))}</option></select>` : ''}
