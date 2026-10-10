@@ -163,10 +163,28 @@ export function berlinDate(iso = nowIso()) {
 }
 
 // Zeitpunkt für Agent-Meldungen (stabiler Text statt „seit X Min.“ – unveränderte Befunde müssen nicht neu geschrieben werden)
-let BERLIN_DT_FMT = null;
+// Schnell: Zeitzonenversatz je UTC-Stunde zwischenspeichern (Sommer-/Winterzeit wechselt immer zur vollen UTC-Stunde),
+// danach reine Rechnung statt Intl je Wert (CSV-Export mit Tausenden Zeitstempeln im CPU-Budget eines Worker-Aufrufs).
+let BERLIN_HOUR_FMT = null;
+const BERLIN_OFFSET = new Map();
+function berlinOffsetMs(ms) {
+  const key = Math.floor(ms / 3600000);
+  let off = BERLIN_OFFSET.get(key);
+  if (off === undefined) {
+    if (!BERLIN_HOUR_FMT) BERLIN_HOUR_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hourCycle: 'h23' });
+    const h = Number(BERLIN_HOUR_FMT.format(new Date(key * 3600000)));
+    off = (((h - new Date(key * 3600000).getUTCHours()) % 24) + 24) % 24 * 3600000;
+    if (BERLIN_OFFSET.size > 50000) BERLIN_OFFSET.clear();
+    BERLIN_OFFSET.set(key, off);
+  }
+  return off;
+}
+const p2 = (n) => (n < 10 ? '0' + n : String(n));
 export function berlinDateTime(iso) {
-  if (!BERLIN_DT_FMT) BERLIN_DT_FMT = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  return BERLIN_DT_FMT.format(new Date(iso)).replace(',', '');
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return '';
+  const d = new Date(ms + berlinOffsetMs(ms));
+  return `${p2(d.getUTCDate())}.${p2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
 }
 
 // Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)

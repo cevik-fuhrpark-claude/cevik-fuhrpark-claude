@@ -46,6 +46,11 @@ for (let k = 0; k < 20; k++) {
   await timed('Prüftermine Übersicht', () => owner.get('/api/maintenance'));
   await timed('Reifen Flotte', () => owner.get('/api/tires/fleet'));
   await timed('Vorgangssuche', () => owner.get('/api/cases?q=LT'));
+  await timed('Fahrzeug-Zeitleiste', () => owner.get(`/api/vehicles/${vehicles[k % vehicles.length].id}/timeline`));
+  await timed('Datenqualität', () => owner.get('/api/admin/data-quality'));
+  await timed('Werkstatt-Auslastung 26 Wo.', () => owner.get('/api/reports/workshop-load?weeks=26'));
+  await timed('Nutzungsstatistik', () => owner.get('/api/admin/usage?days=365'));
+  if (k < 3) await timed('Vorgänge CSV-Export', () => owner.get('/api/cases?format=csv'));
 }
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
