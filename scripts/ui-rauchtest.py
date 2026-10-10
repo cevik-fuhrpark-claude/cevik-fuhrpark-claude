@@ -17,6 +17,22 @@ ROUTES = {
     'workshop': ['', 'cases', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'wsload', 'help'],
     'driver': ['', 'cases', 'new', 'check', 'more', 'fines', 'help'],
 }
+# Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
+A11Y = """() => {
+  const out = [];
+  const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  for (const el of document.querySelectorAll('#app input:not([type=hidden]), #app select, #app textarea')) {
+    if (!visible(el)) continue;
+    const named = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.closest('label') || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || el.title;
+    if (!named) out.push(`Feld ohne Beschriftung: ${el.outerHTML.slice(0, 80)}`);
+  }
+  for (const el of document.querySelectorAll('#app img')) if (!el.hasAttribute('alt')) out.push(`Bild ohne alt: ${el.outerHTML.slice(0, 80)}`);
+  for (const el of document.querySelectorAll('#app button, #app a[href]')) {
+    if (!visible(el)) continue;
+    if (!(el.textContent || '').trim() && !el.getAttribute('aria-label') && !el.title && !el.querySelector('img[alt]:not([alt=\"\"])')) out.push(`Schaltfläche/Link ohne Text: ${el.outerHTML.slice(0, 80)}`);
+  }
+  return out;
+}"""
 SIZES = [('handy', 390, 844), ('tablet', 820, 1180), ('pc', 1440, 900)]
 
 problems = []
@@ -67,6 +83,10 @@ with sync_playwright() as p:
                     problems.append(f'{where}: Fehlermeldung „{err.first.text_content()}“')
                 if not pg.locator('h1').count():
                     problems.append(f'{where}: keine Überschrift')
+                if name == 'handy':
+                    a11y = pg.evaluate(A11Y)
+                    if a11y:
+                        problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
                 over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
                 if over > 2:
                     problems.append(f'{where}: Seite {over}px breiter als der Bildschirm')
