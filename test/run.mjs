@@ -38,6 +38,13 @@ await test('Erst-Einrichtung nur mit korrektem Code', async () => {
   eq(r.status, 200);
   const weak = await owner.post('/api/invite/accept', { token: r.data.invite_token, password: 'kurz' });
   eq(weak.status, 400, 'Schwaches Passwort:');
+  // naheliegende Passwörter: Name, Firmenname, Allerweltswörter, Tastaturfolgen, Wiederholungen (ohne externe Abfrage)
+  for (const pw of ['Passwort123', 'Yilmaz-Cevik-2026', 'Cevik-Mobility-1', 'Fuhrpark2026!', 'qwertz12345', 'aaaaaaaa11', 'Ab1234567890', 'Sommer2026!!']) {
+    const x = await owner.post('/api/invite/accept', { token: r.data.invite_token, password: pw });
+    eq(x.status, 400, pw); eq(x.data.error, 'common_password', pw);
+  }
+  const { validatePassword } = await import('../src/auth.js');
+  for (const pw of ['Grüne-Tanne-48', 'Kx9#pQ2mZ7', 'Зелена-ялина-48', 'Mein-Fuhrpark-ist-toll-7']) validatePassword(pw, ['yilmaz', 'Yilmaz Cevik']);
   const a = await owner.post('/api/invite/accept', { token: r.data.invite_token, password: 'Sicheres-Passwort-2026' });
   eq(a.status, 200); eq(a.data.user.role, 'owner');
   eq((await anon.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'x2', display_name: 'X' })).status, 410, 'Zweite Einrichtung:');

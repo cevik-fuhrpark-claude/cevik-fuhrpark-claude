@@ -95,11 +95,39 @@ export async function logout(env, user) {
   return cookieHeader('', 0);
 }
 
-export function validatePassword(pw) {
+// Naheliegende Bestandteile (lokale Liste, keine externe Abfrage): Allerweltswörter, Firma/App, Jahreszeiten, Tastaturfolgen
+const COMMON_WORDS = ['passwort', 'password', 'passwd', 'kennwort', 'geheim', 'secret', 'cevik', 'mobility', 'fuhrpark', 'flotte', 'fleet',
+  'werkstatt', 'admin', 'administrator', 'root', 'user', 'benutzer', 'login', 'anmelden', 'welcome', 'willkommen', 'hallo', 'hello',
+  'test', 'testtest', 'start', 'sommer', 'winter', 'herbst', 'fruehling', 'frühling', 'summer', 'spring', 'autumn', 'januar', 'februar',
+  'iloveyou', 'ichliebedich', 'schatz', 'master', 'monkey', 'dragon', 'letmein', 'football', 'fussball', 'fußball', 'lkw', 'truck',
+  'trucker', 'fahrer', 'driver', 'dortmund', 'bayern', 'deutschland', 'germany', 'ukraine', 'europa', 'firma', 'company', 'claude',
+  'пароль', 'привіт', 'україна', 'kyiv', 'kiew', 'parol'];
+const KEY_ROWS = ['abcdefghijklmnopqrstuvwxyz', 'qwertzuiopüasdfghjklöäyxcvbnm', 'qwertyuiopasdfghjklzxcvbnm', 'абвгґдеєжзиіїйклмнопрстуфхцчшщьюя', 'йцукенгшщзхїфівапролджєячсмитьбю'];
+const isSeq = (x) => x.length >= 3 && KEY_ROWS.some((r) => r.includes(x) || r.includes([...x].reverse().join('')));
+// Buchstabenkern ohne naheliegende Bestandteile; bleiben < 3 Buchstaben übrig, ist das Passwort leicht zu erraten
+export function passwordCore(pw, names = []) {
+  let core = pw.toLowerCase().replace(/[^a-zäöüßа-яіїєґ]/g, '');
+  const parts = [...COMMON_WORDS, ...names.flatMap((n) => String(n || '').toLowerCase().split(/[^a-zäöüßа-яіїєґ]+/)).filter((x) => x.length >= 3)]
+    .sort((a, b) => b.length - a.length);
+  for (const w of parts) core = core.split(w).join('');
+  // Tastatur-/Alphabetfolgen (≥ 3 Zeichen, auch rückwärts) entfernen
+  let out = ''; let i = 0;
+  while (i < core.length) {
+    let j = i + 3;
+    if (j <= core.length && isSeq(core.slice(i, j))) { while (j < core.length && isSeq(core.slice(i, j + 1))) j++; i = j; continue; }
+    out += core[i]; i++;
+  }
+  return out;
+}
+
+export function validatePassword(pw, names = []) {
   if (typeof pw !== 'string' || pw.length < 10) throw bad('weak_password', 'Passwort muss mindestens 10 Zeichen haben.');
   if (pw.length > 200) throw bad('weak_password', 'Passwort ist zu lang.');
   if (!/[A-Za-zÄÖÜäöüßА-Яа-яІіЇїЄєҐґ]/.test(pw) || !/[0-9]/.test(pw)) {
     throw bad('weak_password', 'Passwort braucht Buchstaben und Ziffern.');
+  }
+  if (new Set(pw.toLowerCase()).size < 5 || passwordCore(pw, names).length < 3) {
+    throw bad('common_password', 'Passwort ist zu leicht zu erraten (z. B. Name, Firmenname, „Passwort123“, Tastaturfolgen, Wiederholungen). Bitte ein eigenes Wort oder einen kurzen Satz wählen.');
   }
 }
 
@@ -125,7 +153,7 @@ export async function inviteInfo(env, token) {
 
 export async function acceptInvite(env, request, body) {
   const { row, hash } = await inviteInfo(env, body.token);
-  validatePassword(body.password);
+  validatePassword(body.password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.password);
   const now = nowIso();
   await env.DB.batch([
@@ -144,7 +172,7 @@ export async function changePassword(env, user, body) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   const { hash } = await hashPassword(String(body.old_password || ''), row.password_salt);
   if (!timingSafeEqual(hash, row.password_hash || '')) throw new HttpError(401, 'invalid_login', 'Altes Passwort falsch.');
-  validatePassword(body.new_password);
+  validatePassword(body.new_password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.new_password);
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, nowIso(), user.id),
