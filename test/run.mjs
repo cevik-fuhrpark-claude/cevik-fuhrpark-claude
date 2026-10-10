@@ -636,6 +636,20 @@ await test('Sicherung nur für Inhaber, ohne Passwörter/Token/Schlüssel, mit a
   ok(r.data.data.users.every((u) => !('password_hash' in u)), 'keine Hashes');
 });
 
+console.log('Oberfläche (statisch)');
+await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in DE/UK/EN vorhanden', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  ok(!/\son[a-z]+=["']/i.test(app) && !/\son[a-z]+=["']/i.test(html), 'Inline-Handler verstoßen gegen die CSP (script-src self)');
+  ok(!/<script>(?!\s*<\/script>)/.test(html), 'kein Inline-Skript');
+  const { STRINGS } = await import('../public/i18n.js');
+  const used = new Set([...app.matchAll(/\bt\('([a-z0-9_äöü]+)'\)/gi)].map((m) => m[1]));
+  const missing = [...used].filter((k) => !(k in STRINGS.de));
+  eq(missing.join(','), '', 'fehlende deutsche Texte');
+  for (const lang of ['uk', 'en']) { const miss = Object.keys(STRINGS.de).filter((k) => !(k in STRINGS[lang])); eq(miss.join(','), '', `fehlende Übersetzungen ${lang}`); }
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

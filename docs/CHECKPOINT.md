@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 46 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 47 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -73,6 +73,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Belegte Daten vorbereitet (nur Dateien im Repository, nichts produktiv eingespielt): `seed/anhaenger_belegt.csv` (23 Anhänger mit FIN von TÜV-NORD-Rechnungen „ANH“ bzw. KÜS-Rechnungen + Anhängerkennzeichen der Stammliste), `seed/prueftermine_belegt.csv` (61 Zeilen: 29 Lkw + 32 Anhänger, je letzte HU/SP/Tacho). Trockenlauf gegen Stammliste: 61 übernehmbar, 2 Prüffälle (SZ-YC 5548 FIN-Abweichung). **Einspiel-Reihenfolge nach Ersteinrichtung:** Stammliste → Anhänger (Einstellungen → Fahrzeugstamm importieren) → Prüftermine (Mehr → Prüftermine, Vorschau prüfen, Übernehmen).
 - [x] Fahrzeug-Stammdaten in der App: „Fahrzeug anlegen“ (Liste) und „Stammdaten bearbeiten“ (Fahrzeugakte) für Inhaber/Fuhrparkleitung; „Außer Betrieb nehmen“ mit Pflichtgrund (nur ohne offene Vorgänge, Audit-Log), Liste „Außer Betrieb“, Reaktivieren. Hinweis: ein erneuter Stammlisten-Import aktiviert enthaltene Fahrzeuge wieder. 46 Tests grün.
 - [x] Ruhige Sammel-Erinnerung des Fuhrparkagenten: neue Befunde `MAINTENANCE_DUE/OVERDUE`, `FINE_DUE_SOON/OVERDUE` erzeugen je Lauf **eine** nicht dringende Benachrichtigung an Fuhrparkleitung/Inhaber („2× Prüftermin bald fällig, 1× …“, ohne Kennzeichen/Details im Push-Text); unveränderte Befunde lösen keine Wiederholung aus. 46 Tests grün, Abfragebudget Agent ≤ 31.
+- [x] Barrierefreiheit: alle Formularfelder programmatisch beschriftet (automatische Verknüpfung Label↔Feld, aria-label für Tabellen-/Dateifelder), Sprunglink „Zum Inhalt springen“, benannte Hauptnavigation; geprüft auf 15 Ansichten (0 unbeschriftete Felder). Neuer statischer Test: keine Inline-Handler (CSP) und vollständige DE/UK/EN-Texte. 47 Tests grün.
 
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
@@ -86,5 +87,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **vorbereitet**: `seed/prueftermine_belegt.csv` (31 Zeilen, letzte HU/SP/Tacho je Lkw aus 22 TÜV-NORD-/KÜS-/Kienzle-Rechnungen in Drive, Stand 10.10.2026; 29 passen per FIN zur Stammliste). Enthält bewusst **nur „Letzte Prüfung“** – die Rechnungen nennen keinen nächsten Termin. Import (Mehr → Prüftermine) legt die Prüfungen „ohne Termin“ an; Fälligkeiten entstehen erst mit bestätigtem Intervall oder Plakette. **Nächster Schritt nach Antwort des Auftraggebers** (siehe Offene Fragen): Intervalle als Spalte `Intervall Monate` ergänzen bzw. Plakettenmonate eintragen. Nicht übernommen: Anhänger (nicht im Fahrzeugstamm), Kienzle-Rechnung AR121628+ (Kennzeichen „SC-YC“ verdruckt, keine FIN), Mirsso RE3267/RE3382 (kein Fahrzeug genannt), Bildrechnungen ohne lesbaren Text.
 9. Kopplungshistorie Lkw↔Anhänger (wer zog wann welchen Anhänger) – erst sinnvoll mit Telematik/Tourenplan als Quelle; bis dahin gilt die Stammliste.
-10. Eigene Verbesserungen (ohne Freigabe möglich): Barrierefreiheit (Tastatur/Screenreader) systematisch prüfen.
+10. Eigene Verbesserungen (ohne Freigabe möglich): Fokus nach Seitenwechsel auf Überschrift setzen; Kontrastprüfung der Statusfarben (WCAG AA); Druckansicht der Fahrzeugakte (PDF über Browser) für Prüfer/Behörden.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

@@ -179,3 +179,8 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 .topbar .brand { white-space: nowrap; }
 @media (max-width: 420px) { .topbar .brand small { display: none; } }
 .small, .muted { overflow-wrap: anywhere; }
+
+/* [CLAUDE] Barrierefreiheit: Sprunglink zum Inhalt, nur bei Tastaturfokus sichtbar */
+.skip { position: absolute; left: -9999px; top: 0; z-index: 100; background: var(--signal); color: #111; padding: 10px 14px; font-weight: 700; }
+.skip:focus { left: 8px; top: 8px; }
+#main:focus { outline: none; }

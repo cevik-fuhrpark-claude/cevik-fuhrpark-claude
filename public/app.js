@@ -63,7 +63,7 @@ function frame(content, active) {
   else if (S.me.role !== 'driver') tabs.push(['#/vehicles', 'truck', t('nav_vehicles'), 'vehicles']);
   else tabs.push(['#/check', 'truck', t('nav_check'), 'check']);
   tabs.push(['#/more', 'more', t('nav_more'), 'more']);
-  return `
+  return `<a class="skip" href="#main">${esc(t('skip_to_content'))}</a>
   <header class="topbar">
     <div class="brand">CEVIK ${esc(t('app'))} <small>[CLAUDE]</small></div>
     <div class="spacer"></div>
@@ -71,15 +71,34 @@ function frame(content, active) {
     <a href="#/inbox" aria-label="${esc(t('notifications'))}" style="position:relative;color:#fff;display:flex">${ICON.bell}${S.unread ? `<span class="badge" style="position:absolute;top:-6px;right:-10px">${S.unread}</span>` : ''}</a>
   </header>
   ${env === 'test' ? `<div class="testband">${esc(t('env_test'))}</div>` : ''}
-  <nav class="tabbar">${tabs.map(([href, icon, label, key]) => `<a href="${href}" class="${key === active ? 'active' : ''}${key === 'new' ? ' report' : ''}">${key === 'new' ? `<span class="dot">${ICON[icon]}</span>` : ICON[icon]}<span>${esc(label)}</span></a>`).join('')}</nav>
-  <main id="main">${content}</main>`;
+  <nav class="tabbar" aria-label="${esc(t('navigation'))}">${tabs.map(([href, icon, label, key]) => `<a href="${href}" class="${key === active ? 'active' : ''}${key === 'new' ? ' report' : ''}">${key === 'new' ? `<span class="dot">${ICON[icon]}</span>` : ICON[icon]}<span>${esc(label)}</span></a>`).join('')}</nav>
+  <main id="main" tabindex="-1">${content}</main>`;
 }
 
 function render(html, active) {
   document.getElementById('app').innerHTML = S.me ? frame(html, active) : `<main>${html}</main>`;
+  const sk = $('.skip'); if (sk) sk.onclick = (e) => { e.preventDefault(); $('#main').focus(); };
   const es = $('#envsel');
   if (es) es.onchange = () => { S.viewEnv = es.value; localStorage.setItem('cfp_env', es.value); route(); };
   window.scrollTo(0, 0);
+}
+
+// Barrierefreiheit: Beschriftungen, die als vorangehendes <label> ohne for-Bezug geschrieben sind, programmatisch verknüpfen;
+// Felder ohne Beschriftung erhalten den Platzhalter als zugänglichen Namen. Läuft nach jeder DOM-Änderung in #app.
+let fieldSeq = 0;
+function labelFix(root) {
+  for (const el of root.querySelectorAll('input:not([type=hidden]),select,textarea')) {
+    if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.closest('label')) continue;
+    if (el.id && root.querySelector(`label[for="${CSS.escape(el.id)}"]`)) continue;
+    const prev = el.previousElementSibling;
+    if (prev && prev.tagName === 'LABEL' && !prev.htmlFor) { if (!el.id) el.id = `f${++fieldSeq}`; prev.htmlFor = el.id; continue; }
+    if (el.placeholder) el.setAttribute('aria-label', el.placeholder);
+  }
+}
+{
+  let queued = false;
+  const app = document.getElementById('app');
+  if (app && typeof MutationObserver !== 'undefined') new MutationObserver(() => { if (queued) return; queued = true; queueMicrotask(() => { queued = false; labelFix(app); }); }).observe(app, { childList: true, subtree: true });
 }
 
 // ---------- Router ----------
@@ -465,9 +484,9 @@ async function viewVehicle(id) {
   if (d.inspections.length) html += `<h2>${esc(t('inspections'))}</h2><div class="list">${d.inspections.map((i) => `<div class="row"><span class="chip ${i.result === 'ok' ? 'ok' : 'kritisch'}">${i.result === 'ok' ? 'OK' : esc(t('defect'))}</span><span class="title">${esc(i.kind === 'abfahrt' ? t('departure_check') : t('inspection'))}</span><span>${i.odometer_km ? Number(i.odometer_km).toLocaleString('de-DE') + ' km' : ''}</span><span class="sub">${fmtDT(i.created_at)} · ${esc(i.performed_by_name)}</span></div>`).join('')}</div>`;
   if (isMgr()) {
     html += `<h2>${esc(t('drivers'))}</h2>${d.drivers.length ? `<div class="list">${d.drivers.map((r) => `<div class="row"><span>${esc(r.display_name)}</span><span class="small muted">${fmtD(r.valid_from)} – ${r.valid_to ? fmtD(r.valid_to) : ''}</span>${!r.valid_to ? `<button class="btn secondary" data-end="${esc(r.id)}">${esc(t('end'))}</button>` : '<span></span>'}</div>`).join('')}</div>` : ''}
-      <form id="df" class="actions"><select name="user_id" id="drvsel" style="max-width:300px"></select><button class="btn secondary">${esc(t('assign_driver'))}</button></form>`;
+      <form id="df" class="actions"><select name="user_id" id="drvsel" style="max-width:300px" aria-label="${esc(t('assign_driver'))}"></select><button class="btn secondary">${esc(t('assign_driver'))}</button></form>`;
   }
-  html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf" class="actions"><input name="km" inputmode="numeric" required style="max-width:200px"><button class="btn secondary">${esc(t('save'))}</button></form></details>`;
+  html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf" class="actions"><input name="km" inputmode="numeric" required style="max-width:200px" aria-label="${esc(t('km'))}"><button class="btn secondary">${esc(t('save'))}</button></form></details>`;
   if (canMaint) html += `<section class="panel"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
   render(html, isMgr() ? 'master' : 'vehicles');
 
@@ -720,7 +739,7 @@ async function viewMaint() {
   } else {
     html += `<div class="list">${rows.map((r) => `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : r.status === 'faellig' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)} · ${r.next_due_date ? fmtD(r.next_due_date) : '–'}</span><span class="chip ${cls[r.status]}">${esc(t('ms_' + r.status))}${r.days !== null ? ` (${r.days})` : ''}</span><span class="sub">${esc(r.evidence)}${r.site ? ' · ' + esc(r.site) : ''}</span></a>`).join('') || `<p class="muted">${esc(t('none_due'))}</p>`}</div>`;
   }
-  if (isMgr()) html += `<section class="panel"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,text/csv"><div id="mimpr"></div></section>`;
+  if (isMgr()) html += `<section class="panel"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,text/csv" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>`;
   render(html, 'more');
   $$('[data-mf]').forEach((b) => (b.onclick = () => { S.maintFilter = b.dataset.mf; viewMaint(); }));
   $('#mcsv').onclick = async () => { try { download(await api('GET', '/api/maintenance?format=csv'), `fuhrpark-prueftermine_${ov.today}.csv`); } catch (err) { toast(err.message, true); } };
@@ -785,10 +804,10 @@ async function viewSettings() {
   const s = await api('GET', '/api/settings');
   const v = s.values;
   const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="decimal" value="${esc(v[k] ?? '')}">`;
-  const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
+  const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
   render(`<h1>${esc(t('settings'))}</h1><form id="sf" class="panel">${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('fine_warn_days', t('response_due') + ' – ' + t('warn_days'))}<h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
-    <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,text/csv"><div id="csvr"></div></section>
-    <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted">Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger</p><input type="file" id="tcsv" accept=".csv,text/csv"><div id="tcsvr"></div></section>
+    <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,text/csv" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
+    <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted">Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger</p><input type="file" id="tcsv" accept=".csv,text/csv" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('backup'))}</h2><p class="small muted">${esc(t('backup_hint'))}</p><button type="button" class="btn secondary" id="bkp">${esc(t('backup_download'))}</button></section>`, 'more');
   $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${new Date().toISOString().slice(0, 10)}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
   $('#tcsv').onchange = async () => { const f = $('#tcsv').files[0]; if (!f) return; try { const r = await api('POST', '/api/tires/import', await f.text(), { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${r.imported} · ${r.skipped_no_vehicle.length} ohne passendes Fahrzeug · ${r.kept_verified} geprüft behalten</p>`; } catch (err) { toast(err.message, true); } };
