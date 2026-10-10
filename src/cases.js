@@ -59,6 +59,13 @@ export async function listCases(env, user, envName, query) {
   else if (query.status === 'closed') where.push(`c.status IN ('fahrzeug_freigegeben','abgelehnt')`);
   else if (query.status && STATUSES.includes(query.status)) { where.push('c.status = ?'); args.push(query.status); }
   if (query.vehicle_id) { where.push('c.vehicle_id = ?'); args.push(query.vehicle_id); }
+  // Filter „Mangel erneut festgestellt“: Vermerk der Abfahrtskontrolle in den letzten N Tagen (1–30)
+  if (query.repeat_days !== undefined && query.repeat_days !== '') {
+    const d = Number(query.repeat_days);
+    if (!Number.isInteger(d) || d < 1 || d > 30) throw bad('invalid_repeat_days', 'repeat_days: 1–30 Tage');
+    where.push(`EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding' AND e.created_at > ?)`);
+    args.push(new Date(Date.now() - d * 86400000).toISOString());
+  }
   // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
   const q = String(query.q || '').trim().slice(0, 60);
   if (q.length >= 2) {

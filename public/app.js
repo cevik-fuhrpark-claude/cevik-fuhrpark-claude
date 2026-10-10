@@ -124,7 +124,7 @@ function labelFix(root) {
 // ---------- Router ----------
 const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
-  [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
+  [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
@@ -339,7 +339,7 @@ async function fleetTodo() {
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
-  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}</details>`).join('')}`;
+  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}</details>`).join('')}`;
 }
 
 const recentRepeat = (c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000;
@@ -352,22 +352,27 @@ function caseList(list, empty) {
     <span class="sub">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}</span></a>`).join('')}</div>`;
 }
 
+// Filter der Vorgangsliste: offen/abgeschlossen/alle bzw. „Mangel erneut festgestellt“ (offen, letzte 3 Tage)
+const caseFilterQ = (f) => (f === 'repeat' ? 'status=open&repeat_days=3' : `status=${f === 'all' ? '' : f}`);
 async function viewCases() {
-  const f = new URLSearchParams(location.hash.split('?')[1] || '').get('f') || sessionStorage.getItem('cfp_cf') || 'open';
+  const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
+  if (hf) try { sessionStorage.setItem('cfp_cf', hf); } catch {}
+  let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
+  if (!['open', 'closed', 'all', 'repeat'].includes(f) || (f === 'repeat' && S.me.role === 'driver')) f = 'open';
   const q = S.caseQ || '';
-  const list = (await api('GET', `/api/cases?status=${f === 'all' ? '' : f}${q.length >= 2 ? '&q=' + encodeURIComponent(q) : ''}`)).cases;
+  const list = (await api('GET', `/api/cases?${caseFilterQ(f)}${q.length >= 2 ? '&q=' + encodeURIComponent(q) : ''}`)).cases;
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">
-    <div class="seg-tabs">${['open', 'closed', 'all'].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k))}</a>`).join('')}</div>
+    <div class="seg-tabs">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat'])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k === 'repeat' ? 'filter_repeat' : k))}</a>`).join('')}</div>
     <div id="cl">${caseList(list)}</div>
     ${S.me.role !== 'driver' ? `<div class="actions"><button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button></div>` : ''}`, 'cases');
-  const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { download(await api('GET', `/api/cases?format=csv&status=${f === 'all' ? '' : f}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}`), `fuhrpark-vorgaenge_${new Date().toISOString().slice(0, 10)}.csv`); } catch (err) { toast(err.message, true); } };
+  const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { download(await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}`), `fuhrpark-vorgaenge_${new Date().toISOString().slice(0, 10)}.csv`); } catch (err) { toast(err.message, true); } };
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); viewCases(); }));
   let timer = null;
   const cq = $('#cq');
   cq.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {
     S.caseQ = cq.value.trim();
-    try { const l = (await api('GET', `/api/cases?status=${f === 'all' ? '' : f}${S.caseQ.length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}`)).cases; $('#cl').innerHTML = caseList(l); } catch (err) { toast(err.message, true); }
+    try { const l = (await api('GET', `/api/cases?${caseFilterQ(f)}${S.caseQ.length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}`)).cases; $('#cl').innerHTML = caseList(l); } catch (err) { toast(err.message, true); }
   }, 300); };
 }
 

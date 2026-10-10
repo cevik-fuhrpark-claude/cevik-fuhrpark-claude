@@ -1650,6 +1650,21 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   eq((await users.fleet.post(`/api/cases/${fa.case.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: fav.version, payload: { workshop_site: 'DORTMUND' }, note: 'Bremsleuchte prüfen' })).status, 200);
   ok((await users.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === fa.case.id)?.last_repeat_at, 'Werkstatt Dortmund sieht „erneut festgestellt“');
   ok(!(await users.wsMuc.get('/api/cases?status=open')).data.cases.some((x) => x.id === fa.case.id), 'andere Werkstatt sieht den Auftrag nicht');
+  // Filter „Mangel erneut festgestellt“ (Backlog 52): nur Vorgänge mit Vermerk im Zeitraum, Rollenrechte bleiben
+  const rf = (await users.fleet.get('/api/cases?status=open&repeat_days=3')).data.cases;
+  ok(rf.some((x) => x.id === fa.case.id) && rf.every((x) => x.last_repeat_at), 'Filter liefert nur wiederholte Mängel');
+  ok(rf.length < (await users.fleet.get('/api/cases?status=open')).data.cases.length, 'Filter schränkt ein');
+  ok((await users.ws.get('/api/cases?status=open&repeat_days=3')).data.cases.some((x) => x.id === fa.case.id), 'Werkstatt Dortmund: im Filter');
+  ok(!(await users.wsMuc.get('/api/cases?status=open&repeat_days=3')).data.cases.some((x) => x.id === fa.case.id), 'Werkstatt München: nicht im Filter');
+  for (const bad of ['0', '31', 'x', '1.5']) eq((await users.fleet.get('/api/cases?repeat_days=' + bad)).status, 400, 'ungültiger Zeitraum ' + bad);
+  const old = new Date(Date.now() - 5 * 86400000).toISOString();
+  const evs = (await env.DB.prepare(`SELECT id, created_at FROM case_events WHERE case_id=? AND action='repeat_finding'`).bind(fa.case.id).all()).results;
+  await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='repeat_finding'`).bind(old, fa.case.id).run();
+  ok(!(await users.fleet.get('/api/cases?status=open&repeat_days=3')).data.cases.some((x) => x.id === fa.case.id), 'Vermerk vor 5 Tagen: nicht im 3-Tage-Filter');
+  ok((await users.fleet.get('/api/cases?status=open&repeat_days=7')).data.cases.some((x) => x.id === fa.case.id), '… aber im 7-Tage-Filter');
+  for (const e of evs) await env.DB.prepare('UPDATE case_events SET created_at=? WHERE id=?').bind(e.created_at, e.id).run();
+  const rcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&status=open&repeat_days=3')).data);
+  eq(rcsv.trim().split('\r\n').length - 1, rf.length, 'CSV mit gleichem Filter');
   // sicherheitsrelevant, offener Vorgang ohne Sperre → eigener (kritischer, gesperrter) Vorgang
   const a3 = await chk(true);
   ok(a3.data.followups[0].id !== a1.data.followups[0].id, 'sicherheitsrelevant → neuer Vorgang');

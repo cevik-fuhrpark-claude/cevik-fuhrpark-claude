@@ -13,9 +13,9 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
     'owner': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
-    'workshop': ['', 'cases', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
-    'driver': ['', 'cases', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
+    'fleet': ['', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
+    'workshop': ['', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
+    'driver': ['', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
     'dispatch': ['', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
