@@ -207,6 +207,7 @@ async function handleApi(request, env, ctx, url) {
     return json(rep);
   }
 
+  if (path === '/api/reports/workshop-load' && m === 'GET') return json(await reports.workshopLoad(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/reports/kpi' && m === 'GET') return json(await reports.kpiReport(env, user, envName, Object.fromEntries(url.searchParams)));
 
   // Ersatzteillager

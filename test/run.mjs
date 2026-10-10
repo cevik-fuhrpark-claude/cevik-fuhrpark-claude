@@ -936,6 +936,21 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   for (const v of ['WDB96340310999001', 'WDB96340310999002']) eq((await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Datenqualität' })).status, 200);
 });
 
+await test('Werkstatt-Auslastung je Standort/Kalenderwoche ohne Personenbezug; Werkstatt sieht nur eigenen Standort', async () => {
+  const { isoWeek } = await import('../src/reports.js');
+  eq(isoWeek('2026-01-01'), '2026-W01'); eq(isoWeek('2027-01-03'), '2026-W53'); eq(isoWeek('2021-01-04'), '2021-W01');
+  const r = await users.fleet.get('/api/reports/workshop-load?weeks=4');
+  eq(r.status, 200); eq(r.data.weeks.length, 4);
+  const sumHours = r.data.sites.reduce((s, x) => s + x.weeks.reduce((a, w) => a + w.hours, 0), 0);
+  const from = r.data.from;
+  const db = (await env.DB.prepare(`SELECT COALESCE(SUM(w.hours),0) AS h FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE c.environment='test' AND w.work_date >= ?`).bind(from).first()).h;
+  ok(Math.abs(sumHours - db) < 0.01, `Stundensumme stimmt (${sumHours} = ${db})`);
+  ok(!JSON.stringify(r.data).includes('user_id') && !JSON.stringify(r.data).includes('display_name'), 'keine Personen');
+  const ws = await users.ws.get('/api/reports/workshop-load');
+  eq(ws.status, 200); ok(ws.data.sites.every((x) => x.site === 'DORTMUND'), 'nur eigener Standort');
+  eq((await users.driver.get('/api/reports/workshop-load')).status, 403);
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

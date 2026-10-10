@@ -173,3 +173,45 @@ export async function kpiReport(env, user, envName, query = {}) {
   return { from, to, environment: envName, by_priority, vehicles,
     definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“' } };
 }
+
+// ---- Werkstatt-Auslastung je Standort und Kalenderwoche (ohne Auswertung je Person) ----
+// Stunden = Summe erfasster Arbeitszeit der Aufträge des Standorts (Arbeitstag), übernommen = workshop_ack_at, freigegeben = closed_at.
+export function isoWeek(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = (d.getUTCDay() + 6) % 7; // Mo=0
+  d.setUTCDate(d.getUTCDate() - day + 3); // Donnerstag der Woche
+  const y = d.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const w = 1 + Math.round(((d - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+  return `${y}-W${String(w).padStart(2, '0')}`;
+}
+const OPEN_WS = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
+export async function workshopLoad(env, user, envName, query = {}) {
+  if (!['owner', 'fleet', 'viewer', 'workshop'].includes(user.role)) throw forbidden();
+  const weeks = Math.min(Math.max(Number(query.weeks) || 8, 1), 52);
+  const today = berlinDate();
+  const startDate = new Date(Date.parse(today + 'T00:00:00Z') - ((new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7) * 86400000 - (weeks - 1) * 7 * 86400000).toISOString().slice(0, 10);
+  const siteFilter = user.role === 'workshop' ? user.workshop_site : null;
+  const sf = siteFilter ? ' AND c.workshop_site=?' : '';
+  const args = (extra) => (siteFilter ? [envName, extra, siteFilter] : [envName, extra]);
+  const [hours, acks, closed, open, sites] = await Promise.all([
+    env.DB.prepare(`SELECT c.workshop_site AS site, w.work_date AS d, SUM(w.hours) AS h FROM work_entries w JOIN cases c ON c.id=w.case_id
+      WHERE c.environment=? AND w.work_date >= ?${sf} GROUP BY c.workshop_site, w.work_date`).bind(...args(startDate)).all(),
+    env.DB.prepare(`SELECT c.workshop_site AS site, c.workshop_ack_at AS t FROM cases c WHERE c.environment=? AND c.workshop_ack_at >= ?${sf}`).bind(...args(startDate)).all(),
+    env.DB.prepare(`SELECT c.workshop_site AS site, c.closed_at AS t FROM cases c WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at >= ?${sf} AND c.workshop_site IS NOT NULL`).bind(...args(startDate)).all(),
+    env.DB.prepare(`SELECT c.workshop_site AS site, c.status, COUNT(*) AS n FROM cases c WHERE c.environment=? AND c.status IN (${OPEN_WS.map(() => '?').join(',')})${sf} GROUP BY c.workshop_site, c.status`)
+      .bind(envName, ...OPEN_WS, ...(siteFilter ? [siteFilter] : [])).all(),
+    env.DB.prepare('SELECT code, name FROM workshops WHERE active=1').all(),
+  ]);
+  const weekList = []; for (let i = 0; i < weeks; i++) weekList.push(isoWeek(new Date(Date.parse(startDate + 'T00:00:00Z') + i * 7 * 86400000).toISOString().slice(0, 10)));
+  const bySite = new Map();
+  const site = (code) => { const k = code || 'ohne'; if (!bySite.has(k)) bySite.set(k, { site: k, weeks: Object.fromEntries(weekList.map((w) => [w, { hours: 0, acknowledged: 0, released: 0 }])), open: {} }); return bySite.get(k); };
+  for (const s of sites.results) if (!siteFilter || s.code === siteFilter) site(s.code);
+  for (const r of hours.results) { const w = site(r.site).weeks[isoWeek(r.d)]; if (w) w.hours = Math.round((w.hours + r.h) * 100) / 100; }
+  for (const r of acks.results) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.acknowledged++; }
+  for (const r of closed.results) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.released++; }
+  for (const r of open.results) site(r.site).open[r.status] = r.n;
+  const names = new Map(sites.results.map((s) => [s.code, s.name]));
+  return { environment: envName, from: startDate, weeks: weekList, open_statuses: OPEN_WS,
+    sites: [...bySite.values()].map((s) => ({ ...s, name: names.get(s.site) || s.site, weeks: weekList.map((w) => ({ week: w, ...s.weeks[w] })) })) };
+}

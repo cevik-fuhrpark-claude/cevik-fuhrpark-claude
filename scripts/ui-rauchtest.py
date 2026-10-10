@@ -12,9 +12,9 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'audit', 'usage', 'quality', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'quality', 'help'],
-    'workshop': ['', 'cases', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'help'],
+    'owner': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'settings', 'help', 'new', 'check'],
+    'fleet': ['', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'stock', 'fines', 'users', 'quality', 'wsload', 'help'],
+    'workshop': ['', 'cases', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'wsload', 'help'],
     'driver': ['', 'cases', 'new', 'check', 'more', 'fines', 'help'],
 }
 SIZES = [('handy', 390, 844), ('tablet', 820, 1180), ('pc', 1440, 900)]
