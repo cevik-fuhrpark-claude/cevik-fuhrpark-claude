@@ -107,7 +107,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/help$/, viewHelp], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -222,7 +222,7 @@ async function viewHome() {
   const cases = (await api('GET', '/api/cases?status=open&limit=8')).cases;
   let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
   if (S.me.role === 'driver') {
-    html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a>`;
+    html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p>`;
     html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
   } else {
     if (d.vehicles) {
@@ -886,12 +886,19 @@ async function viewAudit(more) {
   const am = $('#amore'); if (am) am.onclick = () => viewAudit(true);
 }
 
+// ---------- Hilfe (Schritt für Schritt, DE/UK/EN) ----------
+function viewHelp() {
+  const sec = (n) => `<section class="panel"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
+  render(`<h1>${esc(t('help'))}</h1>${['report', 'prio', 'check', 'push', 'offline'].map(sec).join('')}`, 'more');
+}
+
 // ---------- Mehr / Benutzer / Einstellungen ----------
 function viewMore() {
   render(`<h1>${esc(t('nav_more'))}</h1><div class="list">
     ${S.me.role !== 'driver' ? `<a class="row" href="#/vehicles"><span>${ICON.truck}</span><span class="title">${esc(t('vehicles'))}</span><span></span></a>` : ''}
     <a class="row" href="#/check"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>
     <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
+    <a class="row" href="#/help"><span>?</span><span class="title">${esc(t('help'))}</span><span></span></a>
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('fines'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('my_fines'))}</span><span></span></a>` : ''}
     ${S.me.role !== 'driver' ? `<a class="row" href="#/maintenance"><span>📅</span><span class="title">${esc(t('inspections_due'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/kpi"><span>⏱</span><span class="title">${esc(t('kpi'))}</span><span></span></a>` : ''}
