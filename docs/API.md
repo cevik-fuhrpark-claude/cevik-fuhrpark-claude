@@ -12,6 +12,7 @@ Parameter `environment=production|test` (Standard: production).
 | `GET /api/integration/v1/vehicles` | Fahrzeugstamm (ID `VIN:<FIN>`, Kennzeichen, Standort, Anhänger) |
 | `GET /api/integration/v1/cases?since=<ISO>` | Vorgänge mit Status, Priorität, Sperre, Zeitstempeln, Version (max. 1000, aufsteigend nach `updated_at`) |
 | `GET /api/integration/v1/findings` | Offene Befunde des Fuhrparkagenten |
+| `GET /api/integration/v1/costs?environment=&from=JJJJ-MM&to=JJJJ-MM&vehicle_id=` | Kosten je Fahrzeug und Monat (belegt / geschätzt / Anzahl unbewertet; max. 36 Monate) |
 | `GET /api/integration/v1/master` | Management-Panel als Daten (Fälle, Befunde, Master-Eingang) |
 | `POST /api/integration/v1/telematics` | Telematik-Einspeisung (siehe unten) |
 
@@ -71,3 +72,6 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 | `return_for_rework` | fleet/owner | abschlusskontrolle → in_reparatur | Grund |
 | `technical_release` | fleet/owner (Mensch) | abschlusskontrolle → fahrzeug_freigegeben | Kontrollnachweis + `confirm`; hebt Sperre auf |
 | `comment` | alle mit Zugriff | – | Text |
+
+## Kostenbericht (App)
+`GET /api/reports/costs?from=JJJJ-MM&to=JJJJ-MM[&vehicle_id=][&format=csv]` – Rollen Inhaber, Fuhrparkleitung, Lesezugriff. CSV: Semikolon, Dezimalkomma, UTF-8 mit BOM (Excel), Formel-Injektion neutralisiert; jeder Export wird im Audit-Log vermerkt.

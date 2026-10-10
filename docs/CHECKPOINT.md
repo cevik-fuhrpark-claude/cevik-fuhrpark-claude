@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 40 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 41 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -64,6 +64,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Reifenmanagement (Migration 0002): Reifengrößen je Achse mit Prüfstatus (Import `seed/reifen_quelldaten.csv` aus Drive-Datei „Fuhrpark Cevik Mobility GmbH Dortmund (1).xlsx“, nur FIN-Treffer, geprüfte Werte bleiben), Messung/Wechsel/Reparatur/Sichtprüfung je Position, gesetzliches Mindestprofil 1,6 mm (StVZO § 36) → Agent-Befund `TIRE_BELOW_MINIMUM`, optionale Warnschwelle `tire_warn_tread_mm`. 33 Tests grün.
 - [x] Ersatzteillager (Migration 0003): Artikel je Werkstatt, Zugang/Entnahme/Korrektur (Korrektur mit Grund), kein negativer Bestand, Entnahme direkt im Vorgang (`add_part` mit `stock_item_id`, Preis aus Lager), Mindestbestand → Agent-Hinweis `STOCK_BELOW_MIN` (keine automatische Bestellung). 36 Tests grün.
 - [x] Bußgelder, Anhörungen & Zeugenfragebögen (Migration 0004): Schreiben erfassen (Kennzeichen → Fahrzeug, doppeltes Aktenzeichen abgewiesen), Fahrerkandidaten zum Tatzeitpunkt aus Fahrzeugzuordnung und Abfahrtskontrollen, Bestätigung nur mit Nachweis, Fahrer informieren (Push) und Kenntnisnahme, Status mit Begründung, Schreiben als PDF/Foto anhängen (nur Fuhrpark und betroffener Fahrer lesen). Fristen ausschließlich laut Schreiben; Agent-Befunde `FINE_OVERDUE`, `FINE_DUE_SOON` (Vorlauf `fine_warn_days`), `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`. 40 Tests grün, UI mobil geprüft.
+- [x] Kosten je Fahrzeug/Monat: Bericht und CSV-Export (Excel-tauglich) in der App unter Mehr → „Kosten je Fahrzeug“, Integrationsendpunkt `/v1/costs`. Gleiche Regeln wie die Vorgangsbewertung (unbewertet ≠ 0 €, Schätzungen getrennt, keine Doppelzählung bei Fremdleistung); Test prüft Summengleichheit. 41 Tests grün.
 
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
@@ -73,6 +74,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen (HU/SP/UVV/Tacho) – Quellen aus Postfach/Drive sichten, nur belegte Termine eintragen.
-7. Kosten je Fahrzeug/Monat, Export für Controlling (CSV), Integrationsendpunkt.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).
 9. Lasttest (100+ LKW), Backup-/Restore-Anleitung (D1 Time Travel, KV-Export).

@@ -1,6 +1,7 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
 import { json, readJson, HttpError, nowIso, uuid, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
+import { costReport } from './reports.js';
 
 function checkToken(request, env) {
   if (!env.INTEGRATION_TOKEN) throw new HttpError(503, 'integration_disabled', 'Integrations-API ist nicht aktiviert (Secret INTEGRATION_TOKEN fehlt).');
@@ -31,6 +32,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;
     return json({ schema_version: '1.0', findings: rows });
   }
+  if (p === '/v1/costs' && m === 'GET') return json({ schema_version: '1.0', ...(await costReport(env, null, envParam(url), Object.fromEntries(url.searchParams))) });
   if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung

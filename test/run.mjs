@@ -481,5 +481,33 @@ await test('Überschrittene Frist → Agent-Befund; Status erledigt schließt ih
   ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_OVERDUE' && f.subject_key === FINE), 'Befund erledigt');
 });
 
+console.log('Kostenbericht');
+await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein; Rechte; CSV für Excel', async () => {
+  const list = (await users.fleet.get('/api/cases')).data.cases;
+  let actual = 0; let estimate = 0; let unvalued = 0;
+  for (const c of list) { const d = (await users.fleet.get(`/api/cases/${c.id}`)).data; actual += d.costs.actual_net; estimate += d.costs.estimate_net; unvalued += d.costs.unvalued_items; }
+  const r = await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12');
+  eq(r.status, 200);
+  eq(r.data.totals.actual_net, Math.round(actual * 100) / 100, 'Summe belegt');
+  eq(r.data.totals.estimate_net, Math.round(estimate * 100) / 100, 'Summe geschätzt');
+  eq(r.data.totals.unvalued_items, unvalued, 'Unbewertete Positionen');
+  ok(r.data.rows.length > 0 && r.data.rows.every((x) => x.plate && /^\d{4}-\d{2}$/.test(x.month)), 'Zeilen mit Kennzeichen und Monat');
+  eq((await users.driver.get('/api/reports/costs')).status, 403);
+  eq((await users.ws.get('/api/reports/costs')).status, 403);
+  eq((await users.fleet.get('/api/reports/costs?from=2026-13')).status, 400);
+  eq((await users.fleet.get('/api/reports/costs?from=2020-01&to=2026-12')).status, 400, 'max. 36 Monate');
+  const csv = await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12&format=csv');
+  eq(csv.status, 200); ok((csv.headers.get('content-type') || '').startsWith('text/csv'));
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  ok(text.startsWith('﻿Kennzeichen;'), 'BOM + Kopfzeile');
+  eq(text.trim().split('\r\n').length, r.data.rows.length + 1);
+  const { costReportCsv } = await import('../src/reports.js');
+  const inj = costReportCsv({ rows: [{ plate: '=HYPERLINK("x")', vehicle_id: 'VIN:X', site: 'A;B', month: '2026-10', cases_opened: 1, hours: 1.5, work_net: null, parts_actual_net: 10.5, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, actual_net: 10.5, estimate_net: 0, unvalued_items: 1, complete: false }] });
+  ok(inj.includes(`"'=HYPERLINK(""x"")"`), 'Formel neutralisiert'); ok(inj.includes('"A;B"')); ok(inj.includes(';1,5;;10,5;'), 'Dezimalkomma, leere Arbeitszeit ohne Satz');
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const api = await anon.req('GET', '/api/integration/v1/costs?environment=test&from=2026-01&to=2026-12', undefined, H);
+  eq(api.status, 200); eq(api.data.totals.actual_net, r.data.totals.actual_net);
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 if (failed) { console.log('Fehlgeschlagen:', failures.join(' | ')); process.exit(1); }

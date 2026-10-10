@@ -11,6 +11,7 @@ import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
 import * as stock from './stock.js';
 import * as fines from './fines.js';
+import * as reports from './reports.js';
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -145,6 +146,16 @@ async function handleApi(request, env, ctx, url) {
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await tires.importTireSpecs(env, user, text));
+  }
+
+  // Kostenbericht je Fahrzeug/Monat
+  if (path === '/api/reports/costs' && m === 'GET') {
+    const rep = await reports.costReport(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'reports.costs.export', null, { from: rep.from, to: rep.to, environment: envName });
+      return new Response(reports.costReportCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten_${envName}_${rep.from}_${rep.to}.csv"` } });
+    }
+    return json(rep);
   }
 
   // Ersatzteillager
