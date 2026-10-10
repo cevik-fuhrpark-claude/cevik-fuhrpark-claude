@@ -2,7 +2,7 @@
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate } from './util.js';
 import { audit } from './auth.js';
-import { MAINT_KINDS } from './vehicles.js';
+import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
 const WRITE_ROLES = ['owner', 'fleet'];
@@ -233,12 +233,15 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, matched_by: p.matchedBy, action });
     if (action === 'neu') {
       result.created++;
+      const ruleId = uuid();
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at)
-        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?)`).bind(uuid(), p.vehicle_id, p.kind, p.interval, last, next, p.evidence, user.id, now, now));
+        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?)`).bind(ruleId, p.vehicle_id, p.kind, p.interval, last, next, p.evidence, user.id, now, now));
+      if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else if (action === 'aktualisiert') {
       result.updated++;
       stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=COALESCE(?, interval_months), evidence=?, updated_at=? WHERE id=?`)
         .bind(next, last || cur.last_done_date, p.interval, p.evidence, now, cur.id));
+      if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;
   }
   result.skipped.sort((a, b) => a.line - b.line);

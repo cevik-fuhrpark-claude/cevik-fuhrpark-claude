@@ -873,6 +873,30 @@ await test('Prüfungen mit Kilometer-Intervall: Fälligkeit aus letztem km-Stand
   await owner.put('/api/settings', { maintenance_warn_km: null });
 });
 
+await test('Wartungshistorie: jede Durchführung bleibt erhalten (erfasst, erledigt, Import), in Akte und Zeitleiste', async () => {
+  const vp = `/api/vehicles/${encodeURIComponent(V2)}`;
+  const r = await users.fleet.post(`${vp}/maintenance`, { kind: 'Inspektion', last_done_date: '2025-03-01', interval_months: 6, evidence: 'Werkstattrechnung Test 1' });
+  eq(r.status, 201);
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: '2025-09-02', evidence: 'Werkstattrechnung Test 2' })).status, 200);
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: '2026-03-03', evidence: 'Werkstattrechnung Test 3' })).status, 200);
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: '2026-03-03', evidence: 'Werkstattrechnung Test 3 korrigiert' })).status, 200, 'gleiches Datum aktualisiert statt doppelt');
+  const d = (await users.fleet.get(vp)).data;
+  const h = d.maintenance_history.filter((x) => x.rule_id === r.data.id);
+  eq(h.length, 3, 'drei Durchführungen');
+  eq(h.map((x) => x.done_date).join(','), '2026-03-03,2025-09-02,2025-03-01');
+  eq(h[0].evidence, 'Werkstattrechnung Test 3 korrigiert'); eq(h[2].source, 'erfasst'); eq(h[0].source, 'erledigt');
+  const tl = (await users.fleet.get(`${vp}/timeline?types=maintenance`)).data.items.filter((x) => x.maintenance_kind === 'Inspektion');
+  eq(tl.length, 3, 'Zeitleiste zeigt alle');
+  const vin = V2.slice(4);
+  const imp = await users.fleet.req('POST', '/api/maintenance/import', `FIN;Art;Letzte Prüfung;Intervall Monate;Nachweis\n${vin};Inspektion;01.09.2026;6;Importbeleg Test`, { 'content-type': 'text/csv' });
+  eq(imp.status, 200);
+  const h2 = (await users.fleet.get(vp)).data.maintenance_history.filter((x) => x.rule_id === r.data.id);
+  ok(h2.length === 4 && h2[0].source === 'import' && h2[0].done_date === '2026-09-01', 'Import ergänzt Historie');
+  const bk = (await owner.get('/api/admin/backup', { 'x-cfp-env': 'test' }));
+  const bkj = bk.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(bk.data)) : bk.data;
+  ok(JSON.stringify(bkj).includes('Werkstattrechnung Test 2'), 'in der Sicherung');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

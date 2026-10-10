@@ -5,7 +5,7 @@ import { audit } from './auth.js';
 
 const TABLES = [
   'workshops', 'vehicles', 'driver_vehicles', 'case_counters', 'cases', 'case_events', 'work_entries', 'parts', 'open_items', 'external_costs',
-  'files', 'inspections', 'maintenance_rules', 'odometer_readings', 'tire_specs', 'tire_events', 'stock_items', 'stock_movements',
+  'files', 'inspections', 'maintenance_rules', 'maintenance_events', 'odometer_readings', 'tire_specs', 'tire_events', 'stock_items', 'stock_movements',
   'fines', 'fine_events', 'fine_counters', 'agent_findings', 'master_inbox', 'notifications', 'telematics_latest', 'telematics_mappings', '_migrations',
 ];
 const ROW_LIMIT = 200000;

@@ -44,6 +44,8 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT 50`).bind(vehicleId, envName).all()).results;
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
+  const maintenanceHistory = (await env.DB.prepare(`SELECT e.rule_id, e.kind, e.done_date, e.done_km, e.evidence, e.source, e.created_at, u.display_name AS recorded_by_name
+    FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC LIMIT 200`).bind(vehicleId).all()).results;
   const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 20').bind(vehicleId).all()).results;
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
@@ -58,7 +60,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.doc_valid_until, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
     : [];
-  const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers, coupled, documents };
+  const out = { vehicle: v, cases: caseRows, inspections, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
   }
@@ -81,7 +83,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note });
   for (const r of d.drivers) { add('driver_from', r.valid_from, { by: r.display_name, evidence: r.evidence }); add('driver_to', r.valid_to, { by: r.display_name }); }
   for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
-  for (const m of d.maintenance) add('maintenance', m.last_done_date, { maintenance_kind: m.kind, km: m.last_done_km, next_due: m.next_due_date, evidence: m.evidence });
+  for (const m of d.maintenance_history) add('maintenance', m.done_date, { maintenance_kind: m.kind, km: m.done_km, evidence: m.evidence, by: m.recorded_by_name });
   if (user.role !== 'driver') {
     const tires = (await env.DB.prepare(`SELECT created_at, position, event_type, tread_mm, odometer_km, case_id FROM tire_events WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 300`)
       .bind(vehicleId, envName).all()).results;
@@ -196,6 +198,13 @@ export async function endAssignment(env, user, assignmentId) {
   return { ok: true };
 }
 
+// Historie: jede Durchführung als eigener Eintrag (gleiche Regel + gleiches Datum nur einmal)
+export function maintEventStmt(env, e) {
+  return env.DB.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,done_km,evidence,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(rule_id, done_date) DO UPDATE SET done_km=COALESCE(excluded.done_km, maintenance_events.done_km), evidence=excluded.evidence`)
+    .bind(uuid(), e.rule_id, e.vehicle_id, e.kind, e.done_date, e.done_km ?? null, e.evidence, e.source, e.user_id ?? null, nowIso());
+}
+
 export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
@@ -211,8 +220,10 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   for (const d of [lastDate, nextDue]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   const id = uuid();
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, months, km, lastDate, lastKm, nextDue, evidence, user.id, now, now).run();
+  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, months, km, lastDate, lastKm, nextDue, evidence, user.id, now, now)];
+  if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
+  await env.DB.batch(stmts);
   return { id, next_due_date: nextDue };
 }
 
@@ -226,8 +237,10 @@ export async function completeMaintenance(env, user, ruleId, body) {
   const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km' })) : null;
   if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   const next = str(body.next_due_date, { max: 10 }) || (r.interval_months ? addMonths(date, r.interval_months) : null);
-  await env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=? WHERE id=?')
-    .bind(date, km, next, evidence, nowIso(), ruleId).run();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=? WHERE id=?').bind(date, km, next, evidence, nowIso(), ruleId),
+    maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
+  ]);
   if (km !== null) {
     await env.DB.prepare('INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)')
       .bind(uuid(), r.vehicle_id, km, `${date}T12:00:00.000Z`, `wartung:${r.kind}`, user.id, nowIso()).run();

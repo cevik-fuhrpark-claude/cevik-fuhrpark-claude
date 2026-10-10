@@ -133,5 +133,13 @@ export const MIGRATIONS = [
    "ALTER TABLE odometer_readings ADD COLUMN note TEXT NULL",
    "CREATE INDEX IF NOT EXISTS idx_odometer_vehicle_time ON odometer_readings(vehicle_id, measured_at)"
   ]
+ },
+ {
+  "id": "0014_maintenance_events",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS maintenance_events (\n  id TEXT PRIMARY KEY,\n  rule_id TEXT NOT NULL REFERENCES maintenance_rules(id),\n  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),\n  kind TEXT NOT NULL,\n  done_date TEXT NOT NULL,               -- JJJJ-MM-TT laut Nachweis\n  done_km INTEGER NULL,\n  evidence TEXT NOT NULL,\n  source TEXT NOT NULL CHECK (source IN ('bestand','erfasst','erledigt','import')),\n  recorded_by TEXT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL,\n  UNIQUE (rule_id, done_date)\n)",
+   "CREATE INDEX IF NOT EXISTS idx_maint_events_vehicle ON maintenance_events(vehicle_id, done_date)",
+   "INSERT OR IGNORE INTO maintenance_events(id, rule_id, vehicle_id, kind, done_date, done_km, evidence, source, recorded_by, created_at)\n  SELECT lower(hex(randomblob(16))), id, vehicle_id, kind, last_done_date, last_done_km, evidence, 'bestand', NULL, updated_at\n  FROM maintenance_rules WHERE last_done_date IS NOT NULL"
+  ]
  }
 ];
