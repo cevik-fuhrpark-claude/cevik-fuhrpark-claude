@@ -179,3 +179,18 @@ export async function driverFindings(env, environment, settings = null) {
   }
   return out;
 }
+
+// Fristenliste als CSV (nur Inhaber/Fuhrparkleitung; Aufruf wird protokolliert). Nur gespeicherte Daten, leere Zelle = nicht erfasst.
+export function driversCsv(list, tachoByDriver, cell) {
+  const DOV = { ok: 'in Ordnung', hinweis: 'Hinweis', kritisch: 'kritisch' };
+  const DCK = { ok: 'aktuell', faellig: 'fällig', bald: 'bald fällig', fehlt: 'keine erfasst', mangel: 'Mangel' };
+  const TST = { ueberfaellig: 'überfällig', bald: 'bald fällig', ok: 'in Ordnung', keine: 'keine Auslesung erfasst' };
+  const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status'];
+  for (const d of list) {
+    const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';
+    const tc = tachoByDriver.get(d.id);
+    lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', d.status.check.result || '',
+      d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', `${DOV[d.status.overall]}${d.status.check.status !== 'ok' ? ' · Kontrolle ' + DCK[d.status.check.status] : ''}${tc && tc.status !== 'ok' ? ' · Auslesung ' + TST[tc.status] : ''}`].join(';'));
+  }
+  return lines.join('\r\n') + '\r\n';
+}

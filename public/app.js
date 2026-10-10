@@ -1005,10 +1005,12 @@ async function viewDrivers() {
     <details class="panel"><summary>${esc(t('new_driver'))}</summary><form id="ndf"><label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('personnel_no'))}</label><input name="personnel_no"><label>${esc(t('site'))}</label><input name="site">
       <label>${esc(t('app_account'))}</label><select name="user_id"><option value="">${esc(t('no_account'))}</option>${users.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)} (${esc(u.username)})</option>`).join('')}</select>
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+    <div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="dcsv">${esc(t('driver_csv'))}</button></div>
     <p><label style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label></p>
     <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${esc(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${[...crit.map((i) => `${t('dk2_' + i.kind)}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || `<p class="muted">–</p>`}</div>`;
   render(html, 'more');
   const ia = $('#dinact'); if (ia) ia.onchange = () => { S.drvInactive = ia.checked; viewDrivers(); };
+  $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv'), `fuhrpark-fahrer-fristen_${new Date().toISOString().slice(0, 10)}.csv`); } catch (err) { toast(err.message, true); } };
   const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', '/api/drivers', b); location.hash = '#/drivers/' + r.id; } catch (err) { toast(err.message, true); } };
 }
 async function viewDriver(id) {
@@ -1344,7 +1346,7 @@ function viewHelp() {
   const r = S.me.role;
   const parts = ['report', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws');
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'drivers');
   if (r === 'dispatch') parts.unshift('dispo');
   render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}`, 'more');
 }

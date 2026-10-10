@@ -1367,6 +1367,9 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   await users.fleet.post('/api/agent/run');
   f = (await users.fleet.get('/api/master')).data.findings;
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
+  eq((await users.driver.get('/api/drivers?format=csv')).status, 403, 'Fahrer: keine Fristenliste');
+  const dcsv = new TextDecoder().decode((await users.fleet.get('/api/drivers?format=csv')).data);
+  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;2027-03-31;2031-05-31;;2026-01-10;in_ordnung;;/.test(dcsv) && dcsv.includes(`in_ordnung;;${ago(0)};${ago(-28)};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
   const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
   eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
   eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');

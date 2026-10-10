@@ -249,7 +249,17 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/movements$/)) && m === 'POST') return json(await stock.addMovement(env, user, envName, mm[1], await readJson(request)), 201);
 
   // Fahrerakte
-  if (path === '/api/drivers' && m === 'GET') return json({ drivers: await drivers.listDrivers(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/drivers' && m === 'GET') {
+    const q = Object.fromEntries(url.searchParams);
+    const list = await drivers.listDrivers(env, user, envName, q);
+    if (q.format === 'csv') {
+      if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
+      const tr = await tacho.tachoRows(env, envName, await tacho.warnDays(env));
+      await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName });
+      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${new Date().toISOString().slice(0, 10)}.csv"` } });
+    }
+    return json({ drivers: list });
+  }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') return json(await drivers.driverDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'PATCH') return json(await drivers.updateDriver(env, user, envName, mm[1], await readJson(request)));

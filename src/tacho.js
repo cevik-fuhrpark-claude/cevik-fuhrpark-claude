@@ -28,7 +28,7 @@ export function tachoStatus(last, periodDays, today, warnDays) {
   return { last, due, days: left, status: left < 0 ? 'ueberfaellig' : left <= warnDays ? 'bald' : 'ok' };
 }
 
-async function warnDays(env) {
+export async function warnDays(env) {
   const r = await env.DB.prepare(`SELECT value FROM settings WHERE key='tacho_warn_days'`).first();
   return warnDaysOf(new Map(r ? [['tacho_warn_days', r.value]] : []));
 }
