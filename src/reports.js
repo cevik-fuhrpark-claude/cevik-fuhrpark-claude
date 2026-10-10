@@ -70,7 +70,9 @@ export async function costReport(env, user, envName, query = {}) {
     else if (e.valuation === 'estimate') r.external_estimate_net += e.amount_net;
     else r.external_actual_net += e.amount_net;
   }
-  const plates = new Map((await env.DB.prepare('SELECT id, plate, site FROM vehicles').all()).results.map((v) => [v.id, v]));
+  const plates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
+  // ruhende Fahrzeuge (Inhaberentscheidung) zählen in keiner Auswertung
+  for (const [k, r] of rows) if ((plates.get(r.vehicle_id) || {}).eval_excluded) rows.delete(k);
   const out = [...rows.values()].map((r) => {
     const v = plates.get(r.vehicle_id) || {};
     const actual = r.work_net + r.parts_actual_net + r.external_actual_net;
@@ -122,8 +124,9 @@ export async function kpiReport(env, user, envName, query = {}) {
   const { from, to } = monthRange(query);
   const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
-  const cases = (await env.DB.prepare(`SELECT id, vehicle_id, priority, status, created_at, fleet_received_at, workshop_ack_at, closed_at FROM cases
-    WHERE environment=? AND created_at >= ? AND created_at < ?`).bind(envName, lo, hi).all()).results
+  const cases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
+    JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
+    WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results
     .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to; });
   const ids = cases.map((c) => c.id);
   const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)

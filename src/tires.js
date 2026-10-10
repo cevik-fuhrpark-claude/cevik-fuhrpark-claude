@@ -151,7 +151,7 @@ export async function fleetTires(env, user, envName, query = {}) {
   const staleDays = Math.min(Math.max(Math.round(Number(query.stale_days) || 90), 1), 3650);
   const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
   const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
-  const vehicles = (await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE active=1 ORDER BY plate').all()).results;
+  const vehicles = (await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE active=1 AND eval_excluded=0 ORDER BY plate').all()).results;
   // je Fahrzeug+Position letzte Profilmessung (Wechsel ohne Messung setzt den Messwert zurück)
   const ev = (await env.DB.prepare(`SELECT vehicle_id, position, event_type, tread_mm, created_at FROM tire_events WHERE environment=? ORDER BY created_at DESC`).bind(envName).all()).results;
   const latest = new Map();

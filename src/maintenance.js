@@ -85,9 +85,9 @@ export async function maintenanceOverview(env, user) {
   const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first();
   const warnDays = Number(warnRow && warnRow.value) || 30;
   const today = berlinDate();
-  const vehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1').all()).results;
+  const vehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1 AND eval_excluded=0').all()).results;
   const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.last_done_date, m.next_due_date, m.evidence, m.updated_at
-    FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
+    FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results;
   const vmap = new Map(vehicles.map((v) => [v.id, v]));
   const rows = rules.map((r) => {
     const v = vmap.get(r.vehicle_id) || {};

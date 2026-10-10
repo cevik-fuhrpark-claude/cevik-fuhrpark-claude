@@ -117,6 +117,18 @@ export async function upsertVehicle(env, user, body) {
 }
 
 // Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent
+// Ruhend: im Bestand, aber aus allen Auswertungen (Kosten, Kennzahlen, Prüf-/Reifen-/Dokumentbefunde) herausgenommen
+export async function setVehicleEvaluation(env, user, envName, vehicleId, body) {
+  if (!isManager(user)) throw forbidden();
+  const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!v) throw notFound();
+  const excluded = body.excluded === true || body.excluded === 1;
+  const reason = str(body.reason, { required: excluded, max: 300, field: 'Grund' });
+  await env.DB.prepare('UPDATE vehicles SET eval_excluded=?, eval_excluded_reason=?, updated_at=? WHERE id=?').bind(excluded ? 1 : 0, excluded ? reason : null, nowIso(), vehicleId).run();
+  await audit(env, user.id, excluded ? 'vehicle.eval_exclude' : 'vehicle.eval_include', vehicleId, { plate: v.plate, reason });
+  return { ok: true, excluded };
+}
+
 export async function setVehicleActive(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id=?').bind(vehicleId).first();

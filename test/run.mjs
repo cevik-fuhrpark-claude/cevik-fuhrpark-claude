@@ -769,6 +769,26 @@ await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster get
   eq(r.status, 200, 'normaler Betrieb nicht betroffen');
 });
 
+console.log('Ruhende Fahrzeuge');
+await test('Ruhendes Fahrzeug: bleibt sichtbar, zählt nicht in Kosten/Fahrzeugzahl/Prüfbefunden; nur Fuhrpark/Inhaber, Grund Pflicht', async () => {
+  const before = (await users.fleet.get('/api/master')).data.vehicles_total;
+  const costsBefore = (await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12')).data;
+  const withCost = costsBefore.rows.find((r) => r.actual_net > 0 || r.unvalued_items > 0);
+  ok(withCost, 'Kostenzeile vorhanden');
+  const V = withCost.vehicle_id;
+  eq((await users.ws.post(`/api/vehicles/${V}/evaluation`, { excluded: true, reason: 'x' })).status, 403);
+  eq((await users.fleet.post(`/api/vehicles/${V}/evaluation`, { excluded: true })).status, 400, 'Grund Pflicht');
+  eq((await users.fleet.post(`/api/vehicles/${V}/evaluation`, { excluded: true, reason: 'Reparatur oder Verkauf offen' })).status, 200);
+  eq((await users.fleet.get('/api/master')).data.vehicles_total, before - 1);
+  const costsAfter = (await users.fleet.get('/api/reports/costs?from=2026-01&to=2026-12')).data;
+  ok(!costsAfter.rows.some((r) => r.vehicle_id === V), 'nicht im Kostenbericht');
+  ok((await users.fleet.get('/api/vehicles')).data.vehicles.some((v) => v.id === V && v.eval_excluded === 1), 'bleibt in der Fahrzeugliste');
+  await users.fleet.post('/api/agent/run');
+  ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.vehicle_id === V && !f.case_id), 'keine fahrzeugbezogenen Befunde');
+  eq((await users.fleet.post(`/api/vehicles/${V}/evaluation`, { excluded: false })).status, 200);
+  eq((await users.fleet.get('/api/master')).data.vehicles_total, before);
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

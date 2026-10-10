@@ -200,6 +200,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
     }
 
+    // Ruhende Fahrzeuge (Inhaberentscheidung): keine fahrzeugbezogenen Bewertungsbefunde; vorgangsbezogene Sicherheitsbefunde bleiben
+    const excludedVeh = new Set((await env.DB.prepare('SELECT id FROM vehicles WHERE eval_excluded=1').all()).results.map((r) => r.id));
+    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && !findings[i].case_id && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
+
     // ---- Befunde persistieren (Sammel-Upsert), Erledigtes schließen, Übergaben an Master ----
     const now = nowIso();
     const seen = new Set();
@@ -319,7 +323,7 @@ export async function masterPanel(env, environment) {
   const lastRun = await env.DB.prepare('SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1').bind(environment).first();
   const counts = {};
   for (const c of cases) counts[c.status] = (counts[c.status] || 0) + 1;
-  const vehicles = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1').first()).n;
+  const vehicles = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND eval_excluded=0').first()).n;
   const lockedVehicles = (await env.DB.prepare(`SELECT COUNT(DISTINCT vehicle_id) AS n FROM cases WHERE environment=? AND safety_lock=1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).first()).n;
   const inWorkshop = (await env.DB.prepare(`SELECT COUNT(DISTINCT vehicle_id) AS n FROM cases WHERE environment=? AND status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).first()).n;
   const decisionsOpen = inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen').length;
