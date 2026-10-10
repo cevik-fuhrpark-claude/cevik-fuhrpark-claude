@@ -1436,6 +1436,24 @@ await test('Datenqualität: Fahrerakte und Auslesungen (ohne Führerschein, Kart
   eq((await users.fleet.patch(`/api/drivers/${nd.data.id}`, { active: false })).status, 200);
 });
 
+await test('Anmeldungen eines Benutzers beenden (Geräteverlust): Rechte, Sitzungen + Push-Geräte, Protokoll, Übersicht', async () => {
+  const second = new Client(worker, env, 'fahrer2');
+  eq((await second.post('/api/login', { username: 'test.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200);
+  const list = (await users.fleet.get('/api/users')).data.users;
+  const drv = list.find((u) => u.username === 'test.fahrer');
+  ok(drv.sessions >= 2 && drv.last_seen, 'Anzahl aktiver Anmeldungen sichtbar');
+  eq((await users.ws.post(`/api/users/${drv.id}/revoke-sessions`)).status, 403, 'Werkstatt darf nicht');
+  const ownerId = (await owner.get('/api/me')).data.user?.id || (await owner.get('/api/me')).data.id;
+  eq((await users.fleet.post(`/api/users/${ownerId}/revoke-sessions`)).status, 403, 'Fuhrparkleitung nicht beim Inhaber');
+  eq((await users.fleet.post(`/api/users/${users.fleet.id}/revoke-sessions`)).status, 400, 'nicht sich selbst');
+  const r = await users.fleet.post(`/api/users/${drv.id}/revoke-sessions`);
+  eq(r.status, 200); ok(r.data.sessions >= 2);
+  eq((await second.get('/api/me')).status, 401, 'zweites Gerät abgemeldet');
+  eq((await users.driver.get('/api/me')).status, 401, 'erstes Gerät abgemeldet');
+  eq((await owner.get('/api/admin/audit?action=user.revoke_sessions')).data.entries.length, 1, 'Protokoll');
+  eq((await users.driver.post('/api/login', { username: 'test.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200, 'neu anmelden möglich');
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');

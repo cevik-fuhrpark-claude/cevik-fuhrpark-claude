@@ -255,10 +255,11 @@ export async function resetInvite(env, actor, userId) {
 export async function listUsers(env, actor) {
   if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
   const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password,
-    CASE WHEN la.locked_until > ? THEN la.locked_until END AS locked_until`;
+    CASE WHEN la.locked_until > ?1 THEN la.locked_until END AS locked_until,
+    (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS sessions, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS last_seen`;
   const q = actor.role === 'owner'
     ? env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username ORDER BY u.environment, u.role, u.display_name`).bind(nowIso())
-    : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=? ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment);
+    : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=?2 ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment);
   return (await q.all()).results;
 }
 
@@ -271,6 +272,23 @@ export async function unlockUser(env, actor, userId) {
   const r = await env.DB.prepare('DELETE FROM login_attempts WHERE key=?').bind(target.username).run();
   await audit(env, actor.id, 'user.unlock', userId, null);
   return { ok: true, unlocked: r.meta.changes > 0 };
+}
+
+// Alle Anmeldungen eines Benutzers beenden (z. B. Gerät verloren): Sitzungen löschen und Push-Geräte abmelden,
+// damit keine Hinweise mehr auf dem verlorenen Gerät erscheinen. Gleiche Rechte wie „Sperre aufheben“; eigene Sitzungen über „Mein Konto“.
+export async function revokeUserSessions(env, actor, userId) {
+  const target = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(userId).first();
+  if (!target) throw new HttpError(404, 'not_found', 'Benutzer nicht gefunden.');
+  if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
+  if (target.id === actor.id) throw bad('validation', 'Eigene Anmeldungen bitte unter „Mein Konto“ beenden.');
+  if (actor.role === 'fleet' && (target.environment !== actor.environment || !FLEET_MAY_CREATE.includes(target.role))) throw forbidden();
+  const now = nowIso();
+  const [s, p] = await env.DB.batch([
+    env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId),
+    env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').bind(now, userId),
+  ]);
+  await audit(env, actor.id, 'user.revoke_sessions', userId, { sessions: s.meta.changes, push_devices: p.meta.changes });
+  return { ok: true, sessions: s.meta.changes, push_devices: p.meta.changes };
 }
 
 // Erst-Einrichtung: nur solange noch kein Benutzer existiert und mit SETUP_CODE (Cloudflare-Secret)

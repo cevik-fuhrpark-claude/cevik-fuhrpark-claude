@@ -149,6 +149,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/users\/([\w-]+)$/)) && m === 'PATCH') return json(await auth.updateUser(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/invite$/)) && m === 'POST') return json(await auth.resetInvite(env, user, mm[1]));
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/unlock$/)) && m === 'POST') return json(await auth.unlockUser(env, user, mm[1]));
+  if ((mm = path.match(/^\/api\/users\/([\w-]+)\/revoke-sessions$/)) && m === 'POST') return json(await auth.revokeUserSessions(env, user, mm[1]));
 
   // Fahrzeuge
   if (path === '/api/vehicles' && m === 'GET') {
