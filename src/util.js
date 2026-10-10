@@ -246,3 +246,9 @@ export function icsCalendar(name, events, stamp = new Date().toISOString()) {
   lines.push('END:VCALENDAR');
   return lines.map(fold).join('\r\n') + '\r\n';
 }
+
+// Einstellung des Inhabers: Testkonten dürfen gemeinsame Stammdaten (ohne Test/Betrieb-Trennung) nur lesen
+export async function testMasterReadonly(env) {
+  const r = await env.DB.prepare(`SELECT value FROM settings WHERE key='test_master_readonly'`).first();
+  return !!r && r.value === '1';
+}

@@ -856,6 +856,29 @@ await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Übers
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Sperrzeit' })).status, 200);
 });
 
+await test('Einstellung „Testkonten: Stammdaten nur lesen“: Standard aus; an → Testkonten ändern keine gemeinsamen Stammdaten, km nur an der Kontrolle', async () => {
+  const vp = `/api/vehicles/${encodeURIComponent(V1)}`;
+  const kmBefore = (await owner.get(vp)).data.odometer[0].km;
+  eq((await users.fleet.post(`${vp}/odometer`, { km: kmBefore + 10 })).status, 201, 'Standard: erlaubt (bisheriges Verhalten)');
+  eq((await users.fleet.put('/api/settings', { test_master_readonly: '1' })).status, 403, 'nur Inhaber');
+  eq((await owner.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  try {
+    const r = await users.fleet.post(`${vp}/odometer`, { km: kmBefore + 20 });
+    eq(r.status, 403); eq(r.data.error, 'test_readonly');
+    eq((await users.fleet.post('/api/vehicles', { plate: 'RO-T 1', vin: 'WDB96340310555503' })).status, 403, 'Fahrzeug anlegen');
+    eq((await users.ws.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 1000, last_done_km: 1, evidence: 'x' })).status, 403, 'Prüfregel');
+    eq((await users.fleet.post(`${vp}/active`, { active: false, reason: 'x' })).status, 403, 'außer Betrieb');
+    eq((await users.prodFleet.post(`${vp}/odometer`, { km: kmBefore + 30 })).status, 201, 'Betriebskonto unverändert');
+    eq((await owner.post(`${vp}/odometer`, { km: kmBefore + 40 })).status, 201, 'Inhaber unverändert');
+    const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+    const ck = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })), odometer_km: kmBefore + 50 });
+    eq(ck.status, 201, 'Kontrolle selbst geht'); eq(ck.data.km_test_only, true);
+    eq((await owner.get(vp)).data.odometer[0].km, kmBefore + 40, 'km aus Testkontrolle nicht in der Akte');
+    ok((await users.fleet.get('/api/cases')).status === 200 && (await users.fleet.get(vp)).status === 200, 'Lesen weiter möglich');
+  } finally { eq((await owner.put('/api/settings', { test_master_readonly: null })).status, 200); }
+  eq((await users.fleet.post(`${vp}/odometer`, { km: kmBefore + 60 })).status, 201, 'aus → wieder erlaubt');
+});
+
 await test('Sperre/Aufhebung erreicht die dem Fahrzeug zugeordneten Fahrer (ohne Zugriff auf den fremden Vorgang)', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'ZF-SP 2', vin: 'WDB96340310555502', site: 'Dortmund' })).status, 201);
   const VZ = 'VIN:WDB96340310555502';

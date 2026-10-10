@@ -1,5 +1,5 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly } from './util.js';
 import { notifyCaseEvent } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -679,11 +679,13 @@ export async function submitInspection(env, ctx, user, envName, body) {
     const last = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId).first();
     if (last && odo < last.km) kmRejected = { km: odo, previous_km: last.km, previous_at: last.measured_at };
   }
+  // Testumgebung mit „Stammdaten nur lesen“: km bleibt an der Kontrolle, nicht in der gemeinsamen Fahrzeugakte
+  const kmTestOnly = odo !== null && !kmRejected && envName === 'test' && user.role !== 'owner' && await testMasterReadonly(env);
   {
     const stmts = [env.DB.prepare(`INSERT OR IGNORE INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
       defects.length ? 'maengel' : 'ok', str(body.note, { max: 2000 }), now)];
-    if (odo !== null && !kmRejected) {
+    if (odo !== null && !kmRejected && !kmTestOnly) {
       stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)`)
         .bind(uuid(), vehicleId, odo, now, `kontrolle:${kind}`, user.id, now));
     }
@@ -701,7 +703,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
     }
     await env.DB.batch(stmts);
   }
-  return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected };
+  return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected, km_test_only: kmTestOnly };
 }
 
 // ---------- Dateien ----------

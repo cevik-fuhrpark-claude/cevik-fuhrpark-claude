@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly } from './util.js';
 import * as auth from './auth.js';
 import { personExport } from './privacy.js';
 import * as cases from './cases.js';
@@ -69,9 +69,18 @@ function requireRole(user, roles) {
 }
 
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
+  'workshop_hourly_rate_net', 'test_master_readonly', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
+
+// Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
+// Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
+const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
+  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/];
+async function guardSharedWrite(env, user, path, m) {
+  if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
+  if (await testMasterReadonly(env)) throw new HttpError(403, 'test_readonly', 'Testkonto: gemeinsame Stammdaten (Fahrzeuge, Prüftermine, km-Stände, Reifen) sind nur lesbar – Einstellung des Inhabers.');
+}
 
 async function handleApi(request, env, ctx, url) {
   let path = url.pathname;
@@ -108,6 +117,7 @@ async function handleApi(request, env, ctx, url) {
   if (!user) throw new HttpError(401, 'unauthenticated', 'Bitte anmelden.');
   const envName = auth.effectiveEnv(user, request);
   usageEnv.set(request, envName);
+  await guardSharedWrite(env, user, path, m);
   const { _session, ...me } = user;
 
   if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user) });
