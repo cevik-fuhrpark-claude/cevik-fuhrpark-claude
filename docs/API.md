@@ -70,6 +70,8 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
 | Systemzustand | `GET /api/health` (ohne Anmeldung, nur `ok`/Zeit), `GET /healthz` |
 | Stammwerte für die App | `GET /api/meta` (Werkstätten, Checkliste, Prioritäten, Status, Prüfarten, Dokumentarten, Reifenpositionen, Bußgeldarten, VAPID-Schlüssel) |
+| Reifen je Fahrzeug | `GET /api/vehicles/:id/tires`, `POST /api/vehicles/:id/tires/events {event_type: messung|wechsel|reparatur|sichtpruefung, position, tread_mm?, …}` (Messung/Sichtprüfung auch Fahrer für zugeordnete Fahrzeuge), `POST /api/vehicles/:id/tires/specs {axle, size, verified?}` (owner/fleet/workshop) |
+| Bewertung aussetzen | `POST /api/vehicles/:id/evaluation {excluded: true, reason}` bzw. `{excluded: false}` (owner/fleet) – Fahrzeug „ruhend“: aus allen Auswertungen ausgenommen, Protokoll |
 | Reifengrößen-Import | `POST /api/tires/import[?dry_run=1]` (owner, CSV: Quelle;Kennzeichen;FIN;Reifen Lenkachse;…) → `counts`, `kept_verified`, `skipped_no_vehicle` |
 | Datensicherung | `GET /api/admin/backup` (owner): JSON aller Fachtabellen ohne Geheimnisse (siehe `docs/BETRIEB.md`) |
 | Fahrerakte | `GET /api/drivers[?inactive=1]` (owner/fleet alle; driver nur eigene Akte; sonst 403), `POST /api/drivers {display_name, personnel_no?, site?, user_id?, note?}`, `GET/PATCH /api/drivers/:id` (Detail mit `status`, `tacho`, `tacho_downloads`), `POST /api/drivers/:id/documents {kind: fuehrerschein|fahrerkarte|code95|unterweisung|sonstiges, valid_until?, evidence, …}`, `POST /api/drivers/:id/license-checks {checked_on, result, note?}` |
@@ -78,7 +80,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Kommentar gezielt | Befehl `comment` mit `payload.notify ⊆ ['reporter','fleet','workshop']` (leer = alle Beteiligten) |
 | Fahrzeugimport | `POST /api/vehicles/import[?dry_run=1]` (owner, CSV): Vorschau `preview[] {line, plate, action neu/geändert/unverändert, changes[]}`, `counts`, `skipped[]`; leere Zellen/fehlende Spalten behalten vorhandene Werte |
 | Bußgelder Export | `GET /api/fines?format=csv[&with_driver=1]` (owner/fleet/viewer; Fahrer nur owner/fleet), `GET /api/fines?format=ics` (offene Antwortfristen, ohne Namen) |
-| Lager | `GET /api/stock?format=csv`; Inventur `POST /api/stock/inventory[?dry_run=1] {site, counts: [{item_id, counted}], note?}` → `differences[]`, `booked` |
+| Lager | `GET/POST /api/stock`, `GET/PATCH /api/stock/:id`, `POST /api/stock/:id/movements {type: zugang|entnahme|korrektur, qty, note?}` (Korrektur nur mit Grund, kein negativer Bestand); `GET /api/stock?format=csv`; Inventur `POST /api/stock/inventory[?dry_run=1] {site, counts: [{item_id, counted}], note?}` → `differences[]`, `booked` |
 | Fahrzeuge als CSV | `GET /api/vehicles?format=csv[&inactive=1]` (nicht driver) |
 | Vorgänge als CSV | `GET /api/cases?format=csv&status=&q=` (nicht driver): gleiche Filter/Rechte wie die Liste, bis 5000 Zeilen, Formelschutz, Audit `reports.cases.export` |
 | Werkstatt-Auslastung | `GET /api/reports/workshop-load?weeks=1..52` (owner/fleet/viewer; workshop nur eigener Standort): je Standort `weeks[] {week JJJJ-Www, hours, acknowledged, released}`, `open {status: n}` – ohne Personenbezug |

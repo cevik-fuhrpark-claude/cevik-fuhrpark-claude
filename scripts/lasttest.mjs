@@ -1,5 +1,5 @@
 // [CLAUDE] Lasttest (lokal, synthetische Daten, nur In-Memory-DB): 150 LKW, viele Vorgänge, Messung der Antwortzeiten
-// Aufruf: node --experimental-sqlite scripts/lasttest.mjs [fahrzeuge] [vorgaenge]
+// Aufruf: node --experimental-sqlite scripts/lasttest.mjs [fahrzeuge] [vorgaenge] [fahrer]
 // Hinweis: misst die Anwendungslogik auf SQLite; D1 im Betrieb hat zusätzliche Netzlatenz je Abfrage (typisch einige ms).
 import worker from '../src/worker.js';
 import { makeEnv, Client, QSTAT } from '../test/harness.mjs';
@@ -51,6 +51,26 @@ for (let k = 0; k < 20; k++) {
   await timed('Werkstatt-Auslastung 26 Wo.', () => owner.get('/api/reports/workshop-load?weeks=26'));
   await timed('Nutzungsstatistik', () => owner.get('/api/admin/usage?days=365'));
   if (k < 3) await timed('Vorgänge CSV-Export', () => owner.get('/api/cases?format=csv'));
+}
+// Fahrerakte + Auslesungen (synthetisch): Fahrer mit Fahrerkarte, Führerschein, Kontrolle, Auslesungen; Massenspeicher je Lkw
+const N_DRV = Number(process.argv[4] || 200);
+const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const drvIds = [];
+for (let i = 0; i < N_DRV; i++) {
+  const d = must(await owner.post('/api/drivers', { display_name: `Lastfahrer ${i}`, personnel_no: `LT-${i}` }), 'Fahrer');
+  drvIds.push(d.data.id);
+  must(await owner.post(`/api/drivers/${d.data.id}/documents`, { kind: 'fahrerkarte', valid_until: day(-(i % 60) * 20), evidence: 'Lasttest' }), 'Fahrerkarte');
+  must(await owner.post(`/api/drivers/${d.data.id}/documents`, { kind: 'fuehrerschein', valid_until: day(-(i % 50) * 30 + 10), evidence: 'Lasttest' }), 'Führerschein');
+  must(await owner.post(`/api/drivers/${d.data.id}/license-checks`, { checked_on: day(i % 200), result: 'in_ordnung' }), 'Kontrolle');
+  if (i % 4) must(await owner.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: d.data.id, downloaded_on: day(i % 40), evidence: 'Lasttest' }), 'Auslesung Karte');
+}
+for (const [i, v] of vehicles.entries()) must(await owner.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: day(i % 100), evidence: 'Lasttest' }), 'Auslesung Massenspeicher');
+must(await owner.put('/api/settings', { license_check_months: 6 }), 'Einstellung');
+console.log(`${N_DRV} Fahrer mit Nachweisen und Auslesungen angelegt`);
+for (let k = 0; k < 10; k++) {
+  await timed('Fahrerliste', () => owner.get('/api/drivers'));
+  await timed('Fahrerakte', () => owner.get(`/api/drivers/${drvIds[(k * 37) % drvIds.length]}`));
+  await timed('Auslesungen Übersicht', () => owner.get('/api/tacho'));
 }
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 

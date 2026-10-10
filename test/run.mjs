@@ -1372,6 +1372,18 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   eq((await owner.put('/api/settings', { tacho_warn_days: '' })).status, 200);
 });
 
+await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
+  const lits = [...w.matchAll(/path === '(\/api\/[^']+)'/g)].map((m) => m[1]);
+  const rx = [...w.matchAll(/path\.match\(\/\^(\\\/api[^$]*)\$\//g)].map((m) => m[1].replace(/\\\//g, '/').replace(/\([^)]*\)/g, ':id').replace(/\\/g, ''));
+  const all = [...new Set([...lits, ...rx])];
+  ok(all.length > 60, `Router-Pfade erkannt (${all.length})`);
+  const segs = (p) => p.split('/').filter((x) => x && x !== 'api' && !x.startsWith(':'));
+  const miss = all.filter((p) => !doc.includes(p) && !(doc.includes('/api/' + segs(p)[0]) && segs(p).slice(1).every((x) => doc.includes(x))));
+  eq(miss.join(', '), '', 'undokumentierte Pfade');
+});
+
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen

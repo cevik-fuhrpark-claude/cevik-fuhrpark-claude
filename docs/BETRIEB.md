@@ -68,6 +68,9 @@ SQLite-Nachbildung; D1 im Betrieb zusätzlich wenige ms je Abfrage).
 Ergänzt 10.10.2026, 17 Uhr (gleiche Daten): Fahrzeug-Zeitleiste ≈ 5 ms (18 Abfragen), Datenqualität ≈ 4 ms, Werkstatt-Auslastung 26 Wochen ≈ 9 ms,
 Nutzungsstatistik ≈ 3 ms, Vorgänge-CSV mit 3000 Zeilen ≈ 160 ms (überwiegend Datenbank; Zeitstempel-Formatierung auf Rechnung mit
 zwischengespeichertem Zeitzonenversatz umgestellt, 12 000 Werte ≈ 10 ms statt ≈ 27 ms), Fuhrparkagent ≈ 175 ms / 36 Abfragen. Erster Lauf mit 3051 neuen Befunden: 41 Anweisungen (Sammelblöcke à 1000 Befunde, ≈ 0,6 MB je Block; vorher 47 bei Blöcken à 400 – Abstand zur Grenze von 50 vergrößert).
+Ergänzt 10.10.2026, 18 Uhr (zusätzlich 200 Fahrer mit Fahrerkarte, Führerschein, Kontrolle, Auslesungen; Auslesung je Lkw; Aufruf
+`scripts/lasttest.mjs 150 3000 200`): Fahrerliste ≈ 14 ms / 6 Abfragen, Fahrerakte ≈ 2 ms / 7, Auslesungen-Übersicht ≈ 6 ms / 5,
+Fuhrparkagent ≈ 200 ms / 40 Abfragen (Fahrer- und Auslesebefunde mit konstanter Abfragezahl).
 
 Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
 mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt
@@ -82,7 +85,7 @@ wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 
 
 ## UI-Rauchtest (vor größeren Änderungen)
 `sh scripts/restart-dev.sh && python3 scripts/ui-rauchtest.py [Screenshot-Ordner]` – ruft jede Ansicht für Inhaber, Fuhrparkleitung,
-Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (192 Ansichten, inkl. Disposition) und meldet JavaScript-Fehler, rote Fehlermeldungen,
+Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (213 Ansichten, inkl. Disposition, Fahrerakte und Auslesungen) und meldet JavaScript-Fehler, rote Fehlermeldungen,
 fehlende Überschriften, waagrechtes Scrollen sowie (Handybreite) Felder ohne Beschriftung, Bilder ohne Alternativtext und Schaltflächen/Links ohne Text. Braucht Python-Playwright, nur lokale synthetische Daten. Stand 10.10.2026: 0 Auffälligkeiten.
 
 ## Nutzungsstatistik (Einführungsphase)
