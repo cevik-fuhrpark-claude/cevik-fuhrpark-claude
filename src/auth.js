@@ -132,6 +132,8 @@ export async function acceptInvite(env, request, body) {
     env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, now, row.user_id),
     env.DB.prepare('UPDATE invites SET used_at=? WHERE token_hash=?').bind(now, hash),
     env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(row.user_id),
+    // neues Passwort gesetzt: eine bestehende Fehlversuch-Sperre aufheben
+    env.DB.prepare('DELETE FROM login_attempts WHERE key=(SELECT username FROM users WHERE id=?)').bind(row.user_id),
   ]);
   const cookie = await createSession(env, row.user_id, request);
   const user = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(row.user_id).first();
@@ -252,10 +254,23 @@ export async function resetInvite(env, actor, userId) {
 
 export async function listUsers(env, actor) {
   if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
+  const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password,
+    CASE WHEN la.locked_until > ? THEN la.locked_until END AS locked_until`;
   const q = actor.role === 'owner'
-    ? env.DB.prepare('SELECT id,username,display_name,role,environment,workshop_site,employee_number,active,created_at,(password_hash IS NOT NULL) AS has_password FROM users ORDER BY environment, role, display_name')
-    : env.DB.prepare('SELECT id,username,display_name,role,environment,workshop_site,employee_number,active,created_at,(password_hash IS NOT NULL) AS has_password FROM users WHERE environment=? ORDER BY role, display_name').bind(actor.environment);
+    ? env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username ORDER BY u.environment, u.role, u.display_name`).bind(nowIso())
+    : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=? ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment);
   return (await q.all()).results;
+}
+
+// Fehlversuch-Sperre vorzeitig aufheben (gleiche Rechte wie neue Einladung)
+export async function unlockUser(env, actor, userId) {
+  const target = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(userId).first();
+  if (!target) throw new HttpError(404, 'not_found', 'Benutzer nicht gefunden.');
+  if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
+  if (actor.role === 'fleet' && (target.environment !== actor.environment || !FLEET_MAY_CREATE.includes(target.role))) throw forbidden();
+  const r = await env.DB.prepare('DELETE FROM login_attempts WHERE key=?').bind(target.username).run();
+  await audit(env, actor.id, 'user.unlock', userId, null);
+  return { ok: true, unlocked: r.meta.changes > 0 };
 }
 
 // Erst-Einrichtung: nur solange noch kein Benutzer existiert und mit SETUP_CODE (Cloudflare-Secret)

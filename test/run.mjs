@@ -785,6 +785,12 @@ await test('Protokoll nur für Inhaber: Anmeldungen, Sperren, Exporte, Filter; k
   // Sperre nach Fehlversuchen wird protokolliert
   const x = new Client(worker, env, 'x');
   for (let i = 0; i < 8; i++) await x.post('/api/login', { username: 'test.dispo', password: 'falsch-falsch-1' });
+  const ul = (await owner.get('/api/users')).data.users.find((u) => u.username === 'test.dispo');
+  ok(ul.locked_until, 'Benutzerliste zeigt Sperre');
+  eq((await users.ws.post(`/api/users/${ul.id}/unlock`)).status, 403);
+  eq((await owner.post(`/api/users/${ul.id}/unlock`)).data.unlocked, true);
+  ok(!(await owner.get('/api/users')).data.users.find((u) => u.username === 'test.dispo').locked_until, 'Sperre aufgehoben');
+  eq((await new Client(worker, env).post('/api/login', { username: 'test.dispo', password: 'Sicheres-Passwort-2026' })).status, 200, 'Anmeldung wieder möglich');
   const r = await owner.get('/api/admin/audit?limit=500');
   eq(r.status, 200);
   const acts = r.data.entries.map((e) => e.action);

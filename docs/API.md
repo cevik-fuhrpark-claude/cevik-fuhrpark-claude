@@ -65,6 +65,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Prüfungen nach km | Regel mit `interval_km` + `last_done_km` → `GET /api/maintenance` liefert `next_due_km`, `current_km`, `km_remaining`, `km_status`; Gesamtstatus = strengerer aus Datum und km. Vorwarnung nur mit Einstellung `maintenance_warn_km`. Erledigen einer km-Regel verlangt `done_km`. Agent: `MAINTENANCE_DUE/OVERDUE` mit Subjekt `<regel>|km` |
 | Kilometerstand | `POST /api/vehicles/<id>/odometer` `{km, measured_on?: JJJJ-MM-TT (nicht Zukunft, leer = jetzt), note?}` – kleiner als ein früherer oder größer als ein späterer Wert → 409 `km_not_plausible`, außer mit Begründung `note` |
 | Fahrzeug-Zeitleiste | `GET /api/vehicles/<id>/timeline?types=case,case_closed,inspection,odometer,driver_from,driver_to,document,tire,maintenance,fine&limit=` – alle gespeicherten Ereignisse absteigend, gleiche Rechte wie die Fahrzeugakte (Bußgelder nur owner/fleet) |
+| Sperre aufheben | `POST /api/users/<id>/unlock` (owner; fleet für eigene Rollen/Umgebung); `GET /api/users` liefert `locked_until` |
 | Eigene Anmeldungen | `GET /api/me/sessions` (Gerät aus Browser-Kennung, zuletzt aktiv, `current`), `DELETE /api/me/sessions/<16-stellige Kennung>`, `POST /api/me/sessions/revoke-others` – protokolliert als `session.revoke*` |
 | Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
 | Kommentar gezielt | Befehl `comment` mit `payload.notify ⊆ ['reporter','fleet','workshop']` (leer = alle Beteiligten) |
