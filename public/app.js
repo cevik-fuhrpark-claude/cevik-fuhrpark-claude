@@ -1503,7 +1503,7 @@ function viewHelp() {
   const r = S.me.role;
   const parts = ['report', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'stock');
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'drivers', 'stock');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'defects', 'drivers', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
   if (r === 'dispatch') parts.unshift('dispo');
   render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}<p class="small muted">${esc(t('app_version'))}: ${esc(S.appVersion || '–')}</p>`, 'more');
