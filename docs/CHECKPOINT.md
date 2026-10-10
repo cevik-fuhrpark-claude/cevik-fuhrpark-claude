@@ -73,9 +73,12 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 ## Offene Fragen an den Auftraggeber
 - Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
+- **Prüfintervalle (10.10.2026, gepusht):** Die Prüfrechnungen belegen nur das Prüfdatum, keinen nächsten Termin. Soll die App die nächste Fälligkeit aus festen Intervallen berechnen (Vorschlag zur Bestätigung: HU 12 Monate, SP 6 Monate, Tachograph 24 Monate, UVV 12 Monate), oder werden die Plakettenmonate je Fahrzeug nachgereicht?
+- **FIN-Abweichung SZ-YC 5548:** Stammliste `YV2XTW056GB769768`, TÜV-Rechnungen 5354987055/5356025425 `YV2XTW0A6GB769768`. Welche FIN ist richtig? (Bis zur Klärung keine Prüftermine für dieses Fahrzeug importiert.)
 
 ## Backlog (in dieser Reihenfolge)
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
-6. Prüftermine aus Belegen: Werkzeug fertig (Import unter Mehr → Prüftermine). **Nächster Schritt:** Postfächer/Drive lesend nach HU/SP/UVV/Tacho-Belegen sichten und daraus `seed/prueftermine_belegt.csv` (nur Termine mit eindeutigem Beleg, Nachweis = Dokument/Datum) vorbereiten; Import erst durch Inhaber/Fuhrparkleitung nach Ersteinrichtung.
+6. Prüftermine aus Belegen – **vorbereitet**: `seed/prueftermine_belegt.csv` (31 Zeilen, letzte HU/SP/Tacho je Lkw aus 22 TÜV-NORD-/KÜS-/Kienzle-Rechnungen in Drive, Stand 10.10.2026; 29 passen per FIN zur Stammliste). Enthält bewusst **nur „Letzte Prüfung“** – die Rechnungen nennen keinen nächsten Termin. Import (Mehr → Prüftermine) legt die Prüfungen „ohne Termin“ an; Fälligkeiten entstehen erst mit bestätigtem Intervall oder Plakette. **Nächster Schritt nach Antwort des Auftraggebers** (siehe Offene Fragen): Intervalle als Spalte `Intervall Monate` ergänzen bzw. Plakettenmonate eintragen. Nicht übernommen: Anhänger (nicht im Fahrzeugstamm), Kienzle-Rechnung AR121628+ (Kennzeichen „SC-YC“ verdruckt, keine FIN), Mirsso RE3267/RE3382 (kein Fahrzeug genannt), Bildrechnungen ohne lesbaren Text.
+9. Anhänger als eigene Prüfobjekte: Anhänger haben eigene HU/SP (TÜV-Rechnungen enthalten 40+ Anhängerzeilen mit FIN). Fahrzeugstamm um Fahrzeugart Lkw/Anhänger erweitern, Kopplung Lkw↔Anhänger mit Historie, Prüftermine/Lückenliste auch für Anhänger.
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

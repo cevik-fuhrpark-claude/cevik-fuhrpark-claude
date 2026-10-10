@@ -177,33 +177,44 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (ir) { interval = Number(ir.replace(',', '.')); if (!Number.isInteger(interval) || interval < 1 || interval > 120) return skip(`Intervall ungültig: ${ir}`); }
     let next = due.date;
     if (!next && last.date && interval) next = addMonths(last.date, interval);
-    if (!next) return skip('Kein Termin: „Nächster Termin“ oder „Letzte Prüfung“ + Intervall angeben');
-    if (last.date && last.date > next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
+    if (!next && !last.date) return skip('Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben');
+    if (next && last.date && last.date > next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
     const ev = due.month_only ? `${evidence} (Plakette ${get(cells, ci.due)}: fällig bis Monatsende)` : evidence;
     const key = `${v.id}|${kind}`;
+    const sortKey = next || last.date;
     const prev = planned.get(key);
-    if (prev && prev.next >= next) return skip(`Doppelt in der Datei (Zeile ${prev.line} hat gleichen oder späteren Termin)`);
-    planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy });
+    if (prev && prev.sortKey >= sortKey) return skip(`Doppelt in der Datei (Zeile ${prev.line} ist gleich oder neuer)`);
+    if (prev) result.skipped.push({ line: prev.line, plate: prev.plate, reason: `Ersetzt durch Zeile ${line} (neuerer Beleg)` });
+    planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy, sortKey });
   });
 
   const now = nowIso();
   const stmts = [];
   for (const p of [...planned.values()].sort((a, b) => a.line - b.line)) {
     const cur = ruleOf.get(`${p.vehicle_id}|${p.kind}`);
-    let action;
+    const skipRow = (reason) => result.skipped.push({ line: p.line, plate: p.plate, reason });
+    let action; let next = p.next; let last = p.last;
     if (!cur) action = 'neu';
-    else if (cur.next_due_date && cur.next_due_date > p.next) { result.skipped.push({ line: p.line, plate: p.plate, reason: `Vorhandener Termin ${cur.next_due_date} ist neuer – nicht überschrieben` }); continue; }
-    else if (cur.next_due_date === p.next) action = 'unverändert';
-    else action = 'aktualisiert';
-    result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, next_due_date: p.next, previous_due_date: cur ? cur.next_due_date : null, matched_by: p.matchedBy, action });
+    else if (p.next) {
+      if (cur.next_due_date && cur.next_due_date > p.next) { skipRow(`Vorhandener Termin ${cur.next_due_date} ist neuer – nicht überschrieben`); continue; }
+      if (cur.last_done_date && p.last && cur.last_done_date > p.last) last = cur.last_done_date;
+      action = cur.next_due_date === p.next && (!p.last || cur.last_done_date === last) ? 'unverändert' : 'aktualisiert';
+    } else {
+      // Nur letzte Prüfung belegt: Termin ergibt sich ausschließlich aus einem bereits hinterlegten Intervall
+      if (cur.last_done_date && cur.last_done_date > p.last) { skipRow(`Vorhandene letzte Prüfung ${cur.last_done_date} ist neuer – nicht überschrieben`); continue; }
+      const iv = p.interval || cur.interval_months;
+      next = iv ? addMonths(p.last, iv) : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
+      action = cur.last_done_date === p.last && cur.next_due_date === next ? 'unverändert' : 'aktualisiert';
+    }
+    result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, matched_by: p.matchedBy, action });
     if (action === 'neu') {
       result.created++;
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at)
-        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?)`).bind(uuid(), p.vehicle_id, p.kind, p.interval, p.last, p.next, p.evidence, user.id, now, now));
+        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?)`).bind(uuid(), p.vehicle_id, p.kind, p.interval, last, next, p.evidence, user.id, now, now));
     } else if (action === 'aktualisiert') {
       result.updated++;
-      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=COALESCE(?, last_done_date), interval_months=COALESCE(?, interval_months), evidence=?, updated_at=? WHERE id=?`)
-        .bind(p.next, p.last, p.interval, p.evidence, now, cur.id));
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=COALESCE(?, interval_months), evidence=?, updated_at=? WHERE id=?`)
+        .bind(next, last || cur.last_done_date, p.interval, p.evidence, now, cur.id));
     } else result.unchanged++;
   }
   result.skipped.sort((a, b) => a.line - b.line);

@@ -81,5 +81,5 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 ## Prüftermin-Import (CSV)
 Kopfzeile mit `Kennzeichen` und/oder `FIN`, `Art` (HU, SP, UVV, Tachograph … ; Aliase TÜV, Sicherheitsprüfung, Tacho, Fahrtenschreiber),
 `Nächster Termin` (JJJJ-MM-TT, TT.MM.JJJJ oder Plakette MM/JJJJ → fällig bis Monatsende, im Nachweis vermerkt) **oder** `Letzte Prüfung` + `Intervall Monate`,
-`Nachweis` (Pflicht je Zeile). Zuordnung über FIN, sonst nur über eindeutiges Kennzeichen. Ein vorhandener späterer Termin wird nie überschrieben;
+`Nachweis` (Pflicht je Zeile). Nur `Letzte Prüfung` ohne Termin/Intervall ist erlaubt (Rechnung ohne Fälligkeit): die Prüfung wird „ohne Termin“ gespeichert, ein bereits hinterlegtes Intervall wird angewendet – es wird nie ein Termin erfunden. Zuordnung über FIN, sonst nur über eindeutiges Kennzeichen. Ein vorhandener späterer Termin wird nie überschrieben;
 gleiche Termine bleiben unverändert (Import ist wiederholbar). `?dry_run=1` liefert die Vorschau ohne zu speichern. Jeder Import/Export im Audit-Log.
