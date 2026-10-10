@@ -8,7 +8,7 @@ const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/
 export const CHECKS = {
   duplicate_plate: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
   missing_site: 'luecke', no_km: 'luecke', km_stale: 'hinweis', missing_inspection: 'luecke',
-  missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
+  km_inspection_rejected: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
 };
@@ -17,7 +17,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
-  const [veh, kms, rules, assigns, invites, drv, acc, vu] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
     env.DB.prepare('SELECT DISTINCT vehicle_id, kind FROM maintenance_rules WHERE next_due_date IS NOT NULL').all(),
@@ -32,6 +32,10 @@ export async function dataQuality(env, user, envName, query = {}) {
       FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=1`).bind(envName).all(),
     env.DB.prepare(`SELECT u.id, u.display_name FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id)`).bind(envName).all(),
     env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL`).bind(envName).all(),
+    // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung
+    env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,
+      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km
+      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?) WHERE prev_km IS NOT NULL AND odometer_km < prev_km ORDER BY created_at DESC LIMIT 200`).bind(envName, staleBefore).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -64,6 +68,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (trucks.length > 1) add('trailer_multi', v, trucks.join(', '));
     if (!trucks.length) add('trailer_without_truck', v);
   }
+  const vById = new Map(vs.map((v) => [v.id, v]));
+  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, `${k.odometer_km} km (${k.created_at.slice(0, 10)}) < ${k.prev_km} km`); }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
   const withVu = new Set(vu.results.map((r) => r.vehicle_id));
   for (const v of vs) if (v.kind === 'lkw' && !withVu.has(v.id)) add('vu_no_download', v);

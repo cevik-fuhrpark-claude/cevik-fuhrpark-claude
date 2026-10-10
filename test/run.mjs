@@ -1527,6 +1527,9 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   const r2 = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: before[0].km + 50 });
   eq(r2.data.km_rejected, null);
   eq((await owner.get(`/api/vehicles/${V1}`)).data.odometer[0].km, before[0].km + 50);
+  const dq = (await users.fleet.get('/api/admin/data-quality')).data;
+  ok(dq.items.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === V1 && /^1000 km/.test(i.detail)), 'Datenqualität zeigt die Kontrolle mit zu kleinem km-Stand');
+  ok(!dq.items.some((i) => i.check === 'km_inspection_rejected' && i.detail.startsWith(`${before[0].km + 50} km`)), 'plausibler Wert nicht gemeldet');
 });
 
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
