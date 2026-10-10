@@ -419,7 +419,7 @@ async function viewNew() {
   const others = vs.filter((v) => !v.assigned);
   const pick = (arr) => `<div class="vehpick">${arr.map((v) => `<label><input type="radio" name="veh" value="${esc(v.id)}" required>${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>`;
   const ws = S.meta.workshops;
-  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}<form id="f">
+  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}<form id="f" novalidate>
     <label for="vq">${esc(t('choose_vehicle'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     ${mine.length ? `<h3>${esc(t('my_vehicles'))}</h3>${pick(mine)}<details><summary>${esc(t('other_vehicles'))}</summary>${pick(others)}</details>` : pick(vs)}
     <label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('what_wrong_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>
@@ -436,7 +436,9 @@ async function viewNew() {
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const veh = $('input[name=veh]:checked');
-    if (!veh) { toast(t('choose_vehicle'), true); return; }
+    // Prüfung in der App-Sprache (Browser-Meldungen wären in der Gerätesprache)
+    if (!veh) { toast(t('choose_vehicle'), true); $('#vq').focus(); return; }
+    if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); $('#d').focus(); return; }
     $('#sb').disabled = true;
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
