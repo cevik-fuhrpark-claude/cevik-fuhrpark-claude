@@ -508,6 +508,7 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
   ok(cs.data.cases.length >= 3);
   const av = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H);
   eq(av.status, 200); ok(av.data.vehicles.length > 0 && av.data.vehicles.every((v) => ['gesperrt', 'werkstatt', 'meldung_offen', 'einsatzbereit_lt_system'].includes(v.availability)), 'Verfügbarkeit je Fahrzeug');
+  ok(av.data.vehicles.every((v) => 'last_departure_check_at' in v && 'last_departure_check_result' in v && !('performed_by' in v)), 'letzte Abfahrtskontrolle ohne Namen');
   // 500 Einträge in einem Aufruf: Abfragebudget unabhängig von der Menge
   const many = Array.from({ length: 500 }, (_, i) => ({ external_id: `BULK-${i}`, vin: i % 2 ? 'WMA15SZZ2HM722774' : null, plate: `XX-BULK ${i}`, gps_time: new Date(Date.parse('2026-10-10T09:00:00Z') + i * 1000).toISOString(), km: 812600 + i, lat: 51, lon: 7 }));
   const q0 = QSTAT.n;
