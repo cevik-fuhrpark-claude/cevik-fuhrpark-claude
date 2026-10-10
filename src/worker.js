@@ -1,0 +1,267 @@
+// [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
+import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid } from './util.js';
+import * as auth from './auth.js';
+import * as cases from './cases.js';
+import * as veh from './vehicles.js';
+import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
+import { getVapid } from './push.js';
+import { retryFailedPush, notifyUsers } from './notify.js';
+import { MIGRATIONS } from './schema.js';
+import { integrationRouter } from './integration.js';
+
+const migratedDbs = new WeakSet();
+export async function ensureSchema(env) {
+  if (migratedDbs.has(env.DB)) return;
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)').run();
+  const done = new Set((await env.DB.prepare('SELECT id FROM _migrations').all()).results.map((r) => r.id));
+  for (const m of MIGRATIONS) {
+    if (done.has(m.id)) continue;
+    await env.DB.batch([
+      ...m.statements.map((s) => env.DB.prepare(s)),
+      env.DB.prepare('INSERT INTO _migrations(id, applied_at) VALUES (?, ?)').bind(m.id, nowIso()),
+    ]);
+  }
+  migratedDbs.add(env.DB);
+}
+
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'same-origin',
+  'x-frame-options': 'DENY',
+  'permissions-policy': 'geolocation=(), microphone=()',
+  'strict-transport-security': 'max-age=31536000',
+};
+
+function withHeaders(res, extra = {}) {
+  const h = new Headers(res.headers);
+  for (const [k, v] of Object.entries({ ...SECURITY_HEADERS, ...extra })) h.set(k, v);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
+// Schutz gegen CSRF: schreibende API-Aufrufe brauchen eigenen Header und gleiche Herkunft
+function checkCsrf(request) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
+  if (request.headers.get('x-cfp') !== '1') throw forbidden('Ungültige Anfrage (CSRF-Schutz).');
+  const origin = request.headers.get('origin');
+  if (origin && origin !== new URL(request.url).origin) throw forbidden('Ungültige Herkunft.');
+}
+
+function requireRole(user, roles) {
+  if (!roles.includes(user.role)) throw forbidden();
+}
+
+const SETTINGS_KEYS = [
+  'workshop_hourly_rate_net', 'maintenance_warn_days',
+  ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
+];
+
+async function handleApi(request, env, ctx, url) {
+  const path = url.pathname;
+  const m = request.method;
+  checkCsrf(request);
+
+  if (path === '/api/health') return json({ ok: true, time: nowIso() });
+
+  // ---- Integration (Unternehmensbetriebssystem, n8n) per Bearer-Token ----
+  if (path.startsWith('/api/integration/')) return integrationRouter(request, env, ctx, url);
+
+  // ---- Öffentlich: Einrichtung, Einladung, Login ----
+  if (path === '/api/setup/status' && m === 'GET') {
+    const n = (await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first()).n;
+    return json({ needs_setup: n === 0, setup_code_configured: !!env.SETUP_CODE });
+  }
+  if (path === '/api/setup' && m === 'POST') return json(await auth.setupFirstOwner(env, await readJson(request)));
+  if (path.startsWith('/api/invite/') && m === 'GET') {
+    const { row } = await auth.inviteInfo(env, decodeURIComponent(path.split('/')[3]));
+    return json({ username: row.username, display_name: row.display_name, role: row.role, environment: row.environment });
+  }
+  if (path === '/api/invite/accept' && m === 'POST') {
+    const r = await auth.acceptInvite(env, request, await readJson(request));
+    return json({ user: r.user }, 200, { 'set-cookie': r.cookie });
+  }
+  if (path === '/api/login' && m === 'POST') {
+    const r = await auth.login(env, request, await readJson(request));
+    return json({ user: r.user }, 200, { 'set-cookie': r.cookie });
+  }
+
+  // ---- Ab hier: angemeldet ----
+  const user = await auth.getSessionUser(env, request);
+  if (!user) throw new HttpError(401, 'unauthenticated', 'Bitte anmelden.');
+  const envName = auth.effectiveEnv(user, request);
+  const { _session, ...me } = user;
+
+  if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user) });
+  if (path === '/api/me' && m === 'GET') {
+    const row = await env.DB.prepare('SELECT language FROM users WHERE id=?').bind(user.id).first();
+    return json({ user: { ...me, language: row.language }, active_environment: envName });
+  }
+  if (path === '/api/me' && m === 'PATCH') {
+    const b = await readJson(request);
+    if (b.language && ['de', 'uk', 'en'].includes(b.language)) await env.DB.prepare('UPDATE users SET language=?, updated_at=? WHERE id=?').bind(b.language, nowIso(), user.id).run();
+    return json({ ok: true });
+  }
+  if (path === '/api/me/password' && m === 'POST') return json(await auth.changePassword(env, user, await readJson(request)));
+
+  if (path === '/api/meta' && m === 'GET') {
+    const workshops = (await env.DB.prepare('SELECT code, name FROM workshops WHERE active=1').all()).results;
+    let vapid = null;
+    try { vapid = (await getVapid(env)).publicKey; } catch {}
+    return json({ workshops, checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
+      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, vapid_public_key: vapid, app_name: env.APP_NAME });
+  }
+
+  // Benutzer
+  if (path === '/api/users' && m === 'GET') return json({ users: await auth.listUsers(env, user) });
+  if (path === '/api/users' && m === 'POST') return json(await auth.createUser(env, user, await readJson(request)), 201);
+  let mm;
+  if ((mm = path.match(/^\/api\/users\/([\w-]+)$/)) && m === 'PATCH') return json(await auth.updateUser(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/users\/([\w-]+)\/invite$/)) && m === 'POST') return json(await auth.resetInvite(env, user, mm[1]));
+
+  // Fahrzeuge
+  if (path === '/api/vehicles' && m === 'GET') return json({ vehicles: await veh.listVehicles(env, user, envName) });
+  if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request)), 201);
+  if (path === '/api/vehicles/import' && m === 'POST') {
+    const text = await request.text();
+    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    return json(await veh.importVehiclesCsv(env, user, text));
+  }
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, mm[1]));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));
+
+  // Vorgänge
+  if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') return json(await cases.runCommand(env, ctx, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/files$/)) && m === 'POST') return json(await cases.uploadFile(env, user, envName, mm[1], request), 201);
+  if ((mm = path.match(/^\/api\/files\/([\w-]+)$/)) && m === 'GET') return cases.downloadFile(env, user, envName, mm[1]);
+  if (path === '/api/inspections' && m === 'POST') return json(await cases.submitInspection(env, ctx, user, envName, await readJson(request)), 201);
+
+  // Benachrichtigungen & Push
+  if (path === '/api/notifications' && m === 'GET') {
+    const rows = (await env.DB.prepare(`SELECT id, case_id, kind, urgent, title, body, created_at, push_status, device_received_at, opened_at, acknowledged_at
+      FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100`).bind(user.id).all()).results;
+    return json({ notifications: rows, unread: rows.filter((r) => !r.opened_at && !r.acknowledged_at).length });
+  }
+  if ((mm = path.match(/^\/api\/notifications\/([\w-]+)\/(received|opened|ack)$/)) && m === 'POST') {
+    const col = { received: 'device_received_at', opened: 'opened_at', ack: 'acknowledged_at' }[mm[2]];
+    const now = nowIso();
+    const extra = mm[2] === 'ack' ? ', opened_at=COALESCE(opened_at, ?)' : '';
+    const st = env.DB.prepare(`UPDATE notifications SET ${col}=COALESCE(${col}, ?)${extra} WHERE id=? AND user_id=?`);
+    await (mm[2] === 'ack' ? st.bind(now, now, mm[1], user.id) : st.bind(now, mm[1], user.id)).run();
+    return json({ ok: true });
+  }
+  if (path === '/api/notifications/read-all' && m === 'POST') {
+    await env.DB.prepare('UPDATE notifications SET opened_at=COALESCE(opened_at, ?) WHERE user_id=?').bind(nowIso(), user.id).run();
+    return json({ ok: true });
+  }
+  if (path === '/api/push/subscribe' && m === 'POST') {
+    const b = await readJson(request);
+    const endpoint = str(b.endpoint, { required: true, max: 1000, field: 'endpoint' });
+    if (!/^https:\/\//.test(endpoint)) throw new HttpError(400, 'validation', 'Ungültiger Push-Endpunkt.');
+    const p256dh = str(b.keys?.p256dh, { required: true, max: 200 });
+    const authKey = str(b.keys?.auth, { required: true, max: 100 });
+    const now = nowIso();
+    await env.DB.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,device_label,created_at) VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth, device_label=excluded.device_label, revoked_at=NULL`)
+      .bind(uuid(), user.id, endpoint, p256dh, authKey, str(b.device_label, { max: 80 }), now).run();
+    return json({ ok: true });
+  }
+  if (path === '/api/push/unsubscribe' && m === 'POST') {
+    const b = await readJson(request);
+    await env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE endpoint=? AND user_id=?').bind(nowIso(), String(b.endpoint || ''), user.id).run();
+    return json({ ok: true });
+  }
+  if (path === '/api/push/devices' && m === 'GET') {
+    return json({ devices: (await env.DB.prepare('SELECT id, device_label, created_at, last_success_at FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL').bind(user.id).all()).results });
+  }
+  if (path === '/api/push/test' && m === 'POST') {
+    const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: 'Testbenachrichtigung', body: 'Push funktioniert auf diesem Gerät.', eventKey: `test:${user.id}:${Date.now()}` });
+    const row = await env.DB.prepare('SELECT push_status, push_last_error FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
+    return json({ created: n, push_status: row?.push_status, error: row?.push_last_error });
+  }
+
+  // Dashboard / Management / Agent
+  if (path === '/api/dashboard' && m === 'GET') return json(await dashboard(env, user, envName));
+  if (path === '/api/master' && m === 'GET') { requireRole(user, ['owner', 'fleet']); return json(await masterPanel(env, envName)); }
+  if ((mm = path.match(/^\/api\/master\/([a-f0-9]{64})\/decision$/)) && m === 'POST') {
+    requireRole(user, ['owner', 'fleet']);
+    return json(await decideMasterItem(env, user, envName, mm[1], await readJson(request)));
+  }
+  if (path === '/api/agent/run' && m === 'POST') { requireRole(user, ['owner', 'fleet']); return json(await runFleetAgent(env, ctx, envName, `manuell:${user.username}`)); }
+
+  // Einstellungen (nur Inhaber)
+  if (path === '/api/settings' && m === 'GET') {
+    requireRole(user, ['owner']);
+    const rows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTINGS_KEYS.map(() => '?').join(',')})`).bind(...SETTINGS_KEYS).all()).results;
+    return json({ keys: SETTINGS_KEYS, values: Object.fromEntries(rows.map((r) => [r.key, r.value])) });
+  }
+  if (path === '/api/settings' && m === 'PUT') {
+    requireRole(user, ['owner']);
+    const b = await readJson(request);
+    for (const [k, v] of Object.entries(b)) {
+      if (!SETTINGS_KEYS.includes(k)) continue;
+      const val = v === null || v === '' ? '' : String(Number(v));
+      if (val !== '' && !Number.isFinite(Number(val))) continue;
+      await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`)
+        .bind(k, val, user.id, nowIso()).run();
+    }
+    await auth.audit(env, user.id, 'settings.update', null, b);
+    return json({ ok: true });
+  }
+
+  throw notFound('Unbekannter API-Pfad.');
+}
+
+async function dashboard(env, user, envName) {
+  const open = await cases.listCases(env, user, envName, { status: 'open', limit: 200 });
+  const out = {
+    environment: envName,
+    open_cases: open.length,
+    critical: open.filter((c) => c.priority === 'kritisch').length,
+    locked: open.filter((c) => c.safety_lock).length,
+    by_status: open.reduce((a, c) => ((a[c.status] = (a[c.status] || 0) + 1), a), {}),
+  };
+  if (user.role === 'workshop') {
+    out.inbox = open.filter((c) => c.access === 'full' && c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at).length;
+    out.in_progress = open.filter((c) => c.access === 'full' && ['in_reparatur', 'wartet_teile'].includes(c.status)).length;
+    out.preview = open.filter((c) => c.access === 'preview').length;
+  }
+  if (['owner', 'fleet', 'dispatch'].includes(user.role)) {
+    const vs = await veh.listVehicles(env, user, envName);
+    out.vehicles = { total: vs.length, gesperrt: vs.filter((v) => v.availability === 'gesperrt').length, werkstatt: vs.filter((v) => v.availability === 'werkstatt').length,
+      meldung_offen: vs.filter((v) => v.availability === 'meldung_offen').length, einsatzbereit: vs.filter((v) => v.availability === 'einsatzbereit_lt_system').length };
+  }
+  if (['owner', 'fleet'].includes(user.role)) {
+    out.findings = (await env.DB.prepare(`SELECT severity, COUNT(*) AS n FROM agent_findings WHERE environment=? AND status='offen' GROUP BY severity`).bind(envName).all()).results;
+  }
+  return out;
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    try {
+      await ensureSchema(env);
+      if (url.pathname === '/healthz') return withHeaders(json({ ok: true }));
+      if (url.pathname.startsWith('/api/')) return withHeaders(await handleApi(request, env, ctx, url));
+      if (env.ASSETS) return withHeaders(await env.ASSETS.fetch(request), { 'content-security-policy': "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });
+      return withHeaders(json({ error: 'not_found' }, 404));
+    } catch (e) {
+      return withHeaders(errorResponse(e));
+    }
+  },
+  async scheduled(event, env, ctx) {
+    await ensureSchema(env);
+    for (const e of ['production', 'test']) {
+      try { await runFleetAgent(env, ctx, e, 'cron'); } catch (err) { console.error('Agent', e, err); }
+    }
+    try { await retryFailedPush(env); } catch (err) { console.error('Push-Retry', err); }
+    await env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(nowIso()).run();
+  },
+};

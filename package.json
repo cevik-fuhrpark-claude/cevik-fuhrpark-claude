@@ -1,0 +1,9 @@
+{
+  "name": "cevik-fuhrpark-claude",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-schema.mjs",
+    "test": "node scripts/build-schema.mjs && node --experimental-sqlite --no-warnings test/run.mjs"
+  }
+}

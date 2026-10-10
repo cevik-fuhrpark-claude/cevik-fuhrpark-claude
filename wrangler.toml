@@ -1,0 +1,36 @@
+# [CLAUDE] Cevik Fuhrpark – Cloudflare Worker
+name = "cevik-fuhrpark-claude"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/setup", "/healthz"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cevik-fuhrpark-claude-db"
+database_id = "7b907fcf-5f11-4300-9091-f915179bd365"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "ed9ee50f6c09411d8b1be0711de32300"
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true
+
+[vars]
+APP_NAME = "CEVIK Fuhrpark [CLAUDE]"
+# Kontakt für Web-Push (VAPID subject)
+PUSH_CONTACT = "mailto:fuhrpark@cevik-mobility.de"

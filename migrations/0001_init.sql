@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   environment TEXT NOT NULL CHECK (environment IN ('test','production')),
   workshop_site TEXT NULL,               -- nur für Rolle workshop: zuständige Werkstatt
   employee_number TEXT NULL,
+  language TEXT NOT NULL DEFAULT 'de' CHECK (language IN ('de','uk','en')),
   password_hash TEXT NULL,
   password_salt TEXT NULL,
   active INTEGER NOT NULL DEFAULT 1,
@@ -114,6 +115,8 @@ CREATE TABLE IF NOT EXISTS cases (
   workshop_ack_at TEXT NULL,
   workshop_ack_by TEXT NULL,
   planned_date TEXT NULL,
+  origin TEXT NOT NULL DEFAULT 'meldung' CHECK (origin IN ('meldung','kontrolle','wartung','agent')),
+  parent_case_id TEXT NULL REFERENCES cases(id),
   request_key TEXT NOT NULL,
   content_hash TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1,
@@ -197,7 +200,8 @@ CREATE TABLE IF NOT EXISTS external_costs (
 
 CREATE TABLE IF NOT EXISTS files (
   id TEXT PRIMARY KEY,
-  case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  case_id TEXT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  inspection_id TEXT NULL,
   environment TEXT NOT NULL,
   r2_key TEXT NOT NULL UNIQUE,
   filename TEXT NOT NULL,
@@ -208,6 +212,23 @@ CREATE TABLE IF NOT EXISTS files (
   created_at TEXT NOT NULL,
   UNIQUE (case_id, sha256)
 );
+
+-- Standardisierte Fahrzeugkontrollen (nach Reparatur, Abfahrtskontrolle)
+CREATE TABLE IF NOT EXISTS inspections (
+  id TEXT PRIMARY KEY,
+  environment TEXT NOT NULL,
+  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),
+  case_id TEXT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('nach_reparatur','abfahrt')),
+  template_version TEXT NOT NULL,
+  performed_by TEXT NOT NULL REFERENCES users(id),
+  odometer_km INTEGER NULL,
+  items TEXT NOT NULL,                   -- JSON: [{key, result: ok|mangel|na, note, file_ids[], followup_case_id}]
+  result TEXT NOT NULL CHECK (result IN ('ok','maengel')),
+  note TEXT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inspections_vehicle ON inspections(vehicle_id, created_at);
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY,
@@ -333,4 +354,44 @@ CREATE TABLE IF NOT EXISTS audit_log (
   target TEXT NULL,
   detail TEXT NULL,
   created_at TEXT NOT NULL
+);
+
+-- Hilfstabelle: Versions-Guard für atomare Befehle (bleibt leer)
+CREATE TABLE IF NOT EXISTS cmd_guard (ok INTEGER NOT NULL CHECK (ok = 1));
+
+-- Telematik: letzter bekannter Stand je Fahrzeug und Quelle (Einspeisung über Integrations-API, z. B. aus n8n)
+CREATE TABLE IF NOT EXISTS telematics_latest (
+  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),
+  provider TEXT NOT NULL,
+  external_id TEXT NULL,
+  match_basis TEXT NOT NULL CHECK (match_basis IN ('vin','confirmed_mapping')),
+  gps_time TEXT NULL,
+  received_at TEXT NOT NULL,
+  lat REAL NULL,
+  lon REAL NULL,
+  km REAL NULL,
+  speed REAL NULL,
+  ignition INTEGER NULL,
+  PRIMARY KEY (vehicle_id, provider)
+);
+
+-- Nicht eindeutig zuordenbare Quellsätze bleiben Prüffälle (keine Kennzeichen-Raterei)
+CREATE TABLE IF NOT EXISTS telematics_unmatched (
+  provider TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  source_plate TEXT NULL,
+  source_vin TEXT NULL,
+  candidate_vehicle_id TEXT NULL,
+  last_seen TEXT NOT NULL,
+  PRIMARY KEY (provider, external_id)
+);
+
+CREATE TABLE IF NOT EXISTS telematics_mappings (
+  provider TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),
+  evidence TEXT NOT NULL,
+  confirmed_by TEXT NOT NULL,
+  confirmed_at TEXT NOT NULL,
+  PRIMARY KEY (provider, external_id)
 );
