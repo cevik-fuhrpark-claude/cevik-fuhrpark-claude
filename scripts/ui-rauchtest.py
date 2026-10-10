@@ -79,6 +79,36 @@ with sync_playwright() as p:
     if cid:
         for r in ('owner', 'fleet'):  # Werkstatt sieht den Vorgang erst nach Zuweisung
             ROUTES[r] += [f'cases/{cid}', f'inspect/{cid}']
+        ROUTES['driver'] += [f'cases/{cid}']
+    # Zweiter Vorgang, der Werkstatt zugewiesen und in Reparatur (Detailansicht + Kontrollformular aus Werkstattsicht)
+    cs2 = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Bremslicht defekt', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': 'rt-2'}])
+    cid2 = (cs2.get('d') or {}).get('id')
+    if cid2:
+        ws_site = api('GET', '/api/meta')['d']['workshops'][0]['code']
+        def cmd(pg, c, action, payload=None, note=None):
+            v = pg.evaluate(JS, ['GET', f'/api/cases/{c}', None])['d']['case']['version']
+            return pg.evaluate(JS, ['POST', f'/api/cases/{c}/commands', {'action': action, 'command_id': f'rt-{action}-{c}', 'expected_version': v, 'note': note, 'payload': payload or {}}])
+        cmd(adm, cid2, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
+        cmd(pages['workshop'], cid2, 'acknowledge')
+        r = cmd(pages['workshop'], cid2, 'start_repair')
+        if r['s'] == 200:
+            ROUTES['workshop'] += [f'cases/{cid2}', f'inspect/{cid2}']
+        else:
+            problems.append(f'Vorbereitung Werkstattvorgang: {r}')
+    # Bußgeld und Lagerartikel für die Detailansichten
+    fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
+    if fn['s'] in (200, 201):
+        for r in ('owner', 'fleet'):
+            ROUTES[r] += [f"fines/{fn['d']['id']}"]
+    else:
+        problems.append(f'Vorbereitung Bußgeld: {fn}')
+    st = pages['workshop'].evaluate(JS, ['POST', '/api/stock', {'name': 'Rauchtest Bremsbelag', 'part_number': 'RT-1', 'initial_qty': 3, 'min_qty': 1}])
+    if st['s'] in (200, 201):
+        sid = st['d'].get('id') or st['d'].get('item', {}).get('id')
+        ROUTES['workshop'] += [f'stock/{sid}']
+        ROUTES['owner'] += [f'stock/{sid}']
+    else:
+        problems.append(f'Vorbereitung Lager: {st}')
 
     for role, pg in pages.items():
         errors = []
