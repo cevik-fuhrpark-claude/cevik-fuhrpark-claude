@@ -90,10 +90,13 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Fotos im Offline-Ausgang: bei Funkloch werden bis zu 10 komprimierte Fotos in IndexedDB gespeichert und nach dem Nachsenden der Meldung automatisch angehängt, danach gelöscht (Playwright offline→online: 1 Vorgang, 2 Fotos).
 - [x] Leistung: Kostenbericht/Kennzahlen 20× schneller (Intl-Datumsformat zwischengespeichert – wichtig für das CPU-Budget je Worker-Aufruf); Lasttest um Kennzahlen, Prüftermine, Reifen-Flotte, Suche erweitert (`docs/BETRIEB.md`).
 
+## Entscheidungen des Auftraggebers
+- 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
+- 10.10.2026: Inhaber-Konto eingerichtet, Fahrzeugstamm und Reifengrößen durch den Auftraggeber importiert.
+
 ## Offene Fragen an den Auftraggeber
-- Ersteinrichtung (Inhaber-Konto) und Testkonten anlegen – Anleitung im Chat vom 10.10.2026.
+- Testkonten (Fahrer/Werkstatt) anlegen – optional, für den Rundgang.
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
-- **Prüfintervalle (10.10.2026, gepusht):** Die Prüfrechnungen belegen nur das Prüfdatum, keinen nächsten Termin. Soll die App die nächste Fälligkeit aus festen Intervallen berechnen (Vorschlag zur Bestätigung: HU 12 Monate, SP 6 Monate, Tachograph 24 Monate, UVV 12 Monate), oder werden die Plakettenmonate je Fahrzeug nachgereicht?
 - **Anhänger-Kennzeichen abweichend:** FIN VAK656EBDG1613170 steht auf TÜV-Rechnungen als „SZ KC5514“ (2×) und „SZ YC5514“ (1×), Stammliste „SZ-YC 5514“; FIN VAK654D0C01407532 auf TÜV-Rechnung „SZ YC5518“, Stammliste „SZ-KC 5518“. Seed nutzt das Kennzeichen der jüngsten Prüfrechnung – bitte richtiges Kennzeichen bestätigen (davon hängt die Kopplung zum Lkw ab). Fremdkennzeichen DAH-AC558 (KÜS 18.07.2026) nicht übernommen.
 - **FIN-Abweichung SZ-YC 5548:** Stammliste `YV2XTW056GB769768`, TÜV-Rechnungen 5354987055/5356025425 `YV2XTW0A6GB769768`. Welche FIN ist richtig? (Bis zur Klärung keine Prüftermine für dieses Fahrzeug importiert.)
 
