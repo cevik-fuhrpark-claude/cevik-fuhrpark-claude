@@ -86,7 +86,26 @@ export async function costReport(env, user, envName, query = {}) {
   }).sort((a, b) => (a.plate || a.vehicle_id).localeCompare(b.plate || b.vehicle_id) || a.month.localeCompare(b.month));
   const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
     { actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0 });
-  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  // Kosten je Kilometer: gefahrene km im Zeitraum aus erster und letzter Ablesung (mind. 2 Ablesungen, kein Rückgang); sonst ohne Wert
+  const kmRows = (await env.DB.prepare(`SELECT o.vehicle_id, COUNT(*) AS n,
+      (SELECT o2.km FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id AND o2.measured_at >= ?1 AND o2.measured_at < ?2 ORDER BY o2.measured_at ASC LIMIT 1) AS km_first,
+      (SELECT o3.km FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= ?1 AND o3.measured_at < ?2 ORDER BY o3.measured_at DESC LIMIT 1) AS km_last
+    FROM odometer_readings o WHERE o.measured_at >= ?1 AND o.measured_at < ?2 GROUP BY o.vehicle_id`).bind(lo, hi).all()).results;
+  const kmOf = new Map(kmRows.map((k) => [k.vehicle_id, k]));
+  const perVehicle = new Map();
+  for (const r of out) {
+    const v = perVehicle.get(r.vehicle_id) || { vehicle_id: r.vehicle_id, plate: r.plate, site: r.site, actual_net: 0, estimate_net: 0, unvalued_items: 0 };
+    v.actual_net += r.actual_net; v.estimate_net += r.estimate_net; v.unvalued_items += r.unvalued_items; perVehicle.set(r.vehicle_id, v);
+  }
+  for (const k of kmRows) if (!perVehicle.has(k.vehicle_id) && plates.has(k.vehicle_id) && !plates.get(k.vehicle_id).eval_excluded && (!vehicleFilter || k.vehicle_id === vehicleFilter)) {
+    const v = plates.get(k.vehicle_id); perVehicle.set(k.vehicle_id, { vehicle_id: k.vehicle_id, plate: v.plate, site: v.site, actual_net: 0, estimate_net: 0, unvalued_items: 0 });
+  }
+  const vehicles = [...perVehicle.values()].map((v) => {
+    const k = kmOf.get(v.vehicle_id);
+    const km = k && k.n >= 2 && k.km_last >= k.km_first ? k.km_last - k.km_first : null;
+    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, cost_per_km: km ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
+  }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
+  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
 }
 
 // CSV für Excel (DE): Semikolon, Dezimalkomma, UTF-8 mit BOM; Formel-Injektion wird neutralisiert

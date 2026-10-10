@@ -1109,6 +1109,18 @@ await test('Kommentar gezielt benachrichtigen (nur Werkstatt / nur Meldende), St
   ok(w.has(users.driver.id) && w.has(users.fleet.id), 'Standard: alle Beteiligten');
 });
 
+await test('Kosten je km: gefahrene km aus erster/letzter Ablesung im Zeitraum, ohne Rückgang; sonst kein Wert', async () => {
+  const r = await users.fleet.get('/api/reports/costs');
+  eq(r.status, 200); ok(Array.isArray(r.data.vehicles));
+  const v1 = r.data.vehicles.find((v) => v.vehicle_id === V1);
+  const rows = (await env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at').bind(V1).all()).results;
+  const exp = rows.length >= 2 && rows[rows.length - 1].km >= rows[0].km ? rows[rows.length - 1].km - rows[0].km : null;
+  eq(v1.km, exp, 'km = letzte − erste Ablesung');
+  if (exp) eq(v1.cost_per_km, Math.round((v1.actual_net / exp) * 1000) / 1000);
+  const v2 = r.data.vehicles.find((v) => v.vehicle_id === V2);
+  ok(!v2 || v2.km === null, 'Rückgang (Tachotausch) → kein km-Wert');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];
