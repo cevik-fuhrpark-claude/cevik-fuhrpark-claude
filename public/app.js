@@ -421,14 +421,32 @@ async function viewDepartureCheck() {
 }
 
 // ---------- Fahrzeuge ----------
+function vehicleForm(v = {}) {
+  const f = (name, label, val, extra = '') => `<label>${esc(label)}</label><input name="${name}" value="${esc(val ?? '')}" ${extra}>`;
+  return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="17" autocapitalize="characters"')}
+    ${f('plate', t('plate_label'), v.plate, 'required maxlength="20" autocapitalize="characters"')}
+    <label>${esc(t('vehicle_kind'))}</label><select name="kind">${['lkw', 'anhaenger'].map((k) => `<option value="${k}"${(v.kind || 'lkw') === k ? ' selected' : ''}>${esc(t('vk_' + k))}</option>`).join('')}</select>
+    ${f('site', t('site'), v.site)}${f('manufacturer', t('manufacturer'), v.manufacturer)}${f('model', t('model_label'), v.model)}${f('build_year', t('year'), v.build_year, 'inputmode="numeric" maxlength="4"')}
+    ${f('trailer_plate', t('trailer') + ' (' + t('plate_label') + ')', v.trailer_plate, 'maxlength="20" autocapitalize="characters"')}${f('master_status', t('master_status'), v.master_status)}
+    ${f('source', t('evidence'), v.vin ? '' : '', 'maxlength="200"')}`;
+}
+async function saveVehicleForm(form) {
+  const b = Object.fromEntries(new FormData(form));
+  for (const k in b) if (b[k] === '') delete b[k];
+  return api('POST', '/api/vehicles', b);
+}
 async function viewVehicles() {
-  const vs = (await api('GET', '/api/vehicles')).vehicles;
+  const inact = !!S.vehInactive && isMgr();
+  const vs = (await api('GET', '/api/vehicles' + (inact ? '?inactive=1' : ''))).vehicles;
   const f = S.vehKind || 'all';
   const nT = vs.filter((v) => v.kind === 'anhaenger').length;
-  render(`<h1>${esc(t('vehicles'))}</h1><input id="q" placeholder="SZ-…" aria-label="Suche" style="margin-bottom:12px">
+  render(`<h1>${esc(t('vehicles'))}${inact ? ` · ${esc(t('inactive_vehicles'))}` : ''}</h1>${isMgr() ? `<details class="panel"><summary>${esc(t('new_vehicle'))}</summary><form id="nvf">${vehicleForm()}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+    <p><label style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="inact" ${inact ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_vehicles'))}</label></p>` : ''}<input id="q" placeholder="SZ-…" aria-label="Suche" style="margin-bottom:12px">
     ${nT ? `<div class="actions" role="tablist" style="margin-top:0">${[['all', t('filter_all'), vs.length], ['lkw', t('vk_lkw'), vs.length - nT], ['anhaenger', t('vk_anhaenger'), nT]].map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-vk="${k}" role="tab" aria-selected="${f === k}">${esc(l)} (${n})</button>`).join('')}</div>` : ''}
     <div class="list" id="vl">${vs.filter((v) => f === 'all' || v.kind === f).map((v) => `<a class="row ${v.availability === 'gesperrt' ? 'p-kritisch' : v.availability === 'werkstatt' ? 'p-mittel' : ''}" href="#/vehicles/${esc(v.id)}" data-s="${esc((v.plate + ' ' + (v.site || '') + ' ' + (v.vin || '') + ' ' + (v.trailer_plate || '') + ' ' + (v.truck_plate || '')).toLowerCase())}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.build_year || '')}</span><span class="chip ${v.availability === 'gesperrt' ? 'gesperrt' : ''}">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.site || '')}${v.trailer_plate ? ' · ' + esc(t('trailer')) + ' ' + esc(v.trailer_plate) : ''}${v.truck_plate ? ' · ' + esc(t('truck')) + ' ' + esc(v.truck_plate) : ''}${v.next_due ? ' · ' + esc(t('next_due')) + ' ' + fmtD(v.next_due) : ''}${v.last_km ? ' · ' + Number(v.last_km).toLocaleString('de-DE') + ' km' : ''}</span></a>`).join('')}</div>`, 'vehicles');
   $$('[data-vk]').forEach((b) => (b.onclick = () => { S.vehKind = b.dataset.vk; viewVehicles(); }));
+  const ia = $('#inact'); if (ia) ia.onchange = () => { S.vehInactive = ia.checked; viewVehicles(); };
+  const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { toast(err.message, true); } };
   $('#q').oninput = () => { const q = $('#q').value.toLowerCase().replace(/\s/g, ''); $$('#vl a').forEach((a) => (a.hidden = q && !a.dataset.s.replace(/\s/g, '').includes(q))); };
 }
 async function viewVehicle(id) {
@@ -437,6 +455,8 @@ async function viewVehicle(id) {
   const canMaint = isMgr() || S.me.role === 'workshop';
   let html = `<p><a href="#/vehicles">‹ ${esc(t('back'))}</a></p><div>${plate(v.plate, { big: true, locked: d.cases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)) })}</div>
     <h1 style="margin-top:12px">${esc(t('vehicle_file'))}</h1><section class="panel"><dl class="kv"><dt>${esc(t('vin'))}</dt><dd>${esc(v.vin)}</dd><dt>${esc(t('manufacturer'))}</dt><dd>${esc(v.manufacturer || '–')} ${esc(v.model || '')}</dd><dt>${esc(t('year'))}</dt><dd>${esc(v.build_year || '–')}</dd><dt>${esc(t('site'))}</dt><dd>${esc(v.site || '–')}</dd><dt>${esc(t('vehicle_kind'))}</dt><dd>${esc(t('vk_' + (v.kind || 'lkw')))}</dd>${v.kind === 'anhaenger' ? `<dt>${esc(t('truck'))}</dt><dd>${(d.coupled || []).map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>`).join(', ') || '–'}</dd>` : `<dt>${esc(t('trailer'))}</dt><dd>${(d.coupled || []).length ? d.coupled.map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>`).join(', ') : esc(v.trailer_plate || '–')}</dd>`}<dt>${esc(t('km'))}</dt><dd>${d.odometer[0] ? Number(d.odometer[0].km).toLocaleString('de-DE') + ' km · ' + fmtD(d.odometer[0].measured_at) : '–'}</dd></dl></section>`;
+  if (!v.active) html += `<div class="panel alert">${esc(t('vehicle_inactive'))}</div>`;
+  if (isMgr()) html += `<details class="panel"><summary>${esc(t('edit_master'))}</summary><form id="evf">${vehicleForm(v)}<div class="actions"><button class="btn">${esc(t('save'))}</button>${v.active ? `<button type="button" class="btn secondary" id="deact">${esc(t('deactivate_vehicle'))}</button>` : `<button type="button" class="btn secondary" id="react">${esc(t('activate_vehicle'))}</button>`}</div></form></details>`;
   if (d.costs) html += `<section class="panel"><h3>${esc(t('costs'))}</h3><dl class="kv"><dt>Ist</dt><dd>${eur(d.costs.actual_net)}</dd><dt>${esc(t('estimate'))}</dt><dd>${eur(d.costs.estimate_net)}</dd><dt>${esc(t('unvalued'))}</dt><dd>${d.costs.unvalued_items}</dd></dl></section>`;
   html += `<h2>${esc(t('maintenance'))}</h2>${d.maintenance.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('last_done'))}</th><th>${esc(t('next_due'))}</th>${canMaint ? '<th></th>' : ''}</tr></thead><tbody>${d.maintenance.map((m) => { const days = m.next_due_date ? Math.round((Date.parse(m.next_due_date) - Date.now()) / 86400000) : null; return `<tr><td>${esc(m.kind)}</td><td>${fmtD(m.last_done_date)}</td><td>${m.next_due_date ? `<span class="chip ${days < 0 ? 'kritisch' : days < 30 ? 'mittel' : ''}">${fmtD(m.next_due_date)}</span>` : '–'}</td>${canMaint ? `<td><button class="btn secondary" data-done="${esc(m.id)}">${esc(t('done'))}</button></td>` : ''}</tr><tr><td colspan="${canMaint ? 4 : 3}" class="small muted" style="border-top:0;padding-top:0">${esc(t('evidence'))}: ${esc(m.evidence)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}`;
   if (canMaint) html += `<details class="panel"><summary>${esc(t('add_rule'))}</summary><form id="mf"><label>${esc(t('kind'))}</label><select name="kind">${S.meta.maintenance_kinds.map((k) => `<option>${esc(k)}</option>`).join('')}</select><label>${esc(t('last_done'))}</label><input type="date" name="last_done_date"><label>${esc(t('interval_months'))}</label><input name="interval_months" inputmode="numeric"><label>${esc(t('next_due'))}</label><input type="date" name="next_due_date"><label>${esc(t('evidence'))}</label><input name="evidence" required><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
@@ -452,6 +472,9 @@ async function viewVehicle(id) {
   render(html, isMgr() ? 'master' : 'vehicles');
 
   renderTires(id, $('#tires'));
+  const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const react = $('#react'); if (react) react.onclick = async () => { try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const mf = $('#mf'); if (mf) mf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(mf)); try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/maintenance`, b); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   $$('[data-done]').forEach((b) => (b.onclick = async () => {
     const date = prompt(t('date') + ' (JJJJ-MM-TT)', new Date().toISOString().slice(0, 10)); if (!date) return;

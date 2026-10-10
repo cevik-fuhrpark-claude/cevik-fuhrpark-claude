@@ -1,5 +1,5 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, isValidVin, addMonths } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths } from './util.js';
 import { audit } from './auth.js';
 import { vehicleCosts } from './cases.js';
 
@@ -7,14 +7,15 @@ const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Sonstiges'];
 
-export async function listVehicles(env, user, envName) {
+export async function listVehicles(env, user, envName, query = {}) {
+  const active = query.inactive === '1' && isManager(user) ? 0 : 1;
   const rows = (await env.DB.prepare(`SELECT v.*,
       (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS open_cases,
       (SELECT MAX(c.safety_lock) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
       (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')) AS in_workshop,
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
       (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL) AS next_due
-    FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).bind(envName, envName, envName).all()).results;
+    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, active).all()).results;
   const byPlate = new Map(rows.map((v) => [normPlate(v.plate), v]));
   const pulledBy = new Map();
   for (const v of rows) if (v.kind === 'lkw' && v.trailer_plate) { const tr = byPlate.get(normPlate(v.trailer_plate)); if (tr && tr.kind === 'anhaenger') pulledBy.set(tr.id, v); }
@@ -108,6 +109,22 @@ export async function upsertVehicle(env, user, body) {
   await upsertVehicleRows(env, [row]);
   await audit(env, user.id, 'vehicle.upsert', row.id, { plate: row.plate });
   return { id: row.id };
+}
+
+// Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent
+export async function setVehicleActive(env, user, envName, vehicleId, body) {
+  if (!isManager(user)) throw forbidden();
+  const v = await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!v) throw notFound();
+  const active = body.active === true || body.active === 1;
+  const reason = str(body.reason, { required: !active, max: 300, field: 'Grund' });
+  if (!active) {
+    const open = await env.DB.prepare(`SELECT COUNT(*) AS n FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(vehicleId).first();
+    if (open.n) throw conflict('open_cases', `Fahrzeug hat noch ${open.n} offene Vorgänge (alle Umgebungen) – zuerst abschließen.`);
+  }
+  await env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, nowIso(), vehicleId).run();
+  await audit(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason });
+  return { ok: true, active };
 }
 
 export async function assignDriver(env, user, envName, vehicleId, body) {

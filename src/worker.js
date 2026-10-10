@@ -125,7 +125,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/invite$/)) && m === 'POST') return json(await auth.resetInvite(env, user, mm[1]));
 
   // Fahrzeuge
-  if (path === '/api/vehicles' && m === 'GET') return json({ vehicles: await veh.listVehicles(env, user, envName) });
+  if (path === '/api/vehicles' && m === 'GET') return json({ vehicles: await veh.listVehicles(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request)), 201);
   if (path === '/api/vehicles/import' && m === 'POST') {
     const text = await request.text();
@@ -133,6 +133,7 @@ async function handleApi(request, env, ctx, url) {
     return json(await veh.importVehiclesCsv(env, user, text));
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/active$/)) && m === 'POST') return json(await veh.setVehicleActive(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
