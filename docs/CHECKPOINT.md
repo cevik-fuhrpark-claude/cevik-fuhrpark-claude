@@ -104,12 +104,12 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 10.10.2026: **Zugmaschine und Anhänger sind fest gekoppelt und wechseln nicht.** Die Kopplung laut Stammliste ist maßgeblich; keine Kopplungshistorie nötig (Backlog 9 entfällt).
 - 10.10.2026: Prüftermine (29 Lkw) vom Inhaber importiert; 2 SP laut Rechnungen überfällig (SZ-YC 5550, SZ-YC 5517).
 
+- 10.10.2026: Anhänger-Kennzeichen gelten laut Stammliste (SZ-YC 5514 zu SZ-YC 5513, SZ-KC 5518 zu SZ-YC 5517); `seed/anhaenger_belegt.csv` (23 Anhänger) und Prüftermin-Datei korrigiert und übergeben. FIN SZ-YC 5548 trägt der Inhaber selbst nach.
+
 ## Offene Fragen an den Auftraggeber
 - **Datenschutz (neu 10.10.2026):** Entwurf `docs/DATENSCHUTZ_ENTWURF.md` prüfen – Aufbewahrungsfristen je Bereich festlegen (bisher keine automatische Löschung), Mitarbeiterinformation in der Hilfe ja/nein, Ansprechpartner. Erst danach Löschfristen bzw. Hilfetext umsetzen.
 - Testkonten (Fahrer/Werkstatt) anlegen – optional, für den Rundgang.
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
-- **Anhänger-Kennzeichen abweichend:** FIN VAK656EBDG1613170 steht auf TÜV-Rechnungen als „SZ KC5514“ (2×) und „SZ YC5514“ (1×), Stammliste „SZ-YC 5514“; FIN VAK654D0C01407532 auf TÜV-Rechnung „SZ YC5518“, Stammliste „SZ-KC 5518“. Seed nutzt das Kennzeichen der jüngsten Prüfrechnung – bitte richtiges Kennzeichen bestätigen (davon hängt die Kopplung zum Lkw ab). Fremdkennzeichen DAH-AC558 (KÜS 18.07.2026) nicht übernommen.
-- **FIN-Abweichung SZ-YC 5548:** Stammliste `YV2XTW056GB769768`, TÜV-Rechnungen 5354987055/5356025425 `YV2XTW0A6GB769768`. Welche FIN ist richtig? (Bis zur Klärung keine Prüftermine für dieses Fahrzeug importiert.)
 
 ## Backlog (in dieser Reihenfolge)
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
