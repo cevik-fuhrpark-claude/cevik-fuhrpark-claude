@@ -507,6 +507,13 @@ await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitun
   eq(o.data.positions.find((p) => p.position === 'VA-L').status, 'unter_minimum');
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'Agent meldet Reifen');
+  const ft = await users.fleet.get('/api/tires/fleet');
+  eq(ft.status, 200);
+  const r1 = ft.data.rows.find((x) => x.vehicle_id === V1); const r2 = ft.data.rows.find((x) => x.vehicle_id === V2);
+  eq(r1.status, 'unter_minimum'); eq(r1.min_tread_mm, 1.2); eq(r1.below_min, 1); eq(ft.data.rows[0].vehicle_id, V1, 'schlechtester zuerst');
+  eq(r2.measured_positions, 0); eq(r2.status, 'unbekannt'); ok(ft.data.totals.never_measured >= 1);
+  eq((await users.driver.get('/api/tires/fleet')).status, 403);
+  eq((await users.prodFleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1).measured_positions, 0, 'Umgebungen getrennt');
 });
 await test('Reifenwechsel nur mit Größe; danach ist der alte Messwert nicht mehr maßgeblich', async () => {
   eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L' })).status, 400);
@@ -514,6 +521,7 @@ await test('Reifenwechsel nur mit Größe; danach ist der alte Messwert nicht me
   const o = await users.fleet.get(`/api/vehicles/${V1}/tires`);
   const p = o.data.positions.find((x) => x.position === 'VA-L');
   eq(p.last_event, 'wechsel'); eq(p.tread_mm, null, 'Nach Wechsel kein alter Messwert'); eq(p.status, 'unbekannt');
+  eq((await users.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1).status, 'unbekannt', 'Flottenübersicht nach Wechsel');
   await users.fleet.post('/api/agent/run');
   ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'Befund nach Wechsel erledigt');
   eq((await users.prodFleet.get(`/api/vehicles/${V1}/tires`)).data.history.length, 0, 'Testmessungen nicht im Betrieb');

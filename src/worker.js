@@ -164,6 +164,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires$/)) && m === 'GET') return json(await tires.tireOverview(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/events$/)) && m === 'POST') return json(await tires.addTireEvent(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
+  if (path === '/api/tires/fleet' && m === 'GET') return json(await tires.fleetTires(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/tires/import' && m === 'POST') {
     await rateLimit(env, 'import', user.id);
     const text = await request.text();

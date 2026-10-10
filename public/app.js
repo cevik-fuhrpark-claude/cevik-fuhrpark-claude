@@ -107,7 +107,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/help$/, viewHelp], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -892,6 +892,20 @@ function viewHelp() {
   render(`<h1>${esc(t('help'))}</h1>${['report', 'prio', 'check', 'push', 'offline'].map(sec).join('')}`, 'more');
 }
 
+// ---------- Reifen über die Flotte ----------
+async function viewFleetTires() {
+  const r = await api('GET', '/api/tires/fleet');
+  const f = S.tireFilter || 'attention';
+  const sel = { attention: (x) => x.status === 'unter_minimum' || x.status === 'warnung', never: (x) => x.measured_positions === 0, stale: (x) => x.stale && x.measured_positions > 0, all: () => true }[f];
+  const rows = r.rows.filter(sel);
+  const cls = { unter_minimum: 'kritisch', warnung: 'mittel', ok: 'ok', unbekannt: '' };
+  const tabs = [['attention', `${t('ts_unter_minimum')} / ${t('ts_warnung')}`, r.totals.below_min + r.totals.warn], ['stale', t('tires_stale').replace('{d}', r.stale_days), r.totals.stale], ['never', t('tires_never'), r.totals.never_measured], ['all', t('filter_all'), r.totals.vehicles]];
+  render(`<h1>${esc(t('fleet_tires'))}</h1><p class="small muted">${esc(t('tires_rule').replace('{min}', String(r.legal_min_tread_mm).replace('.', ',')).replace('{warn}', r.warn_tread_mm === null ? '–' : String(r.warn_tread_mm).replace('.', ',')))}</p>
+    <div class="actions" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
+    <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(String(x.min_tread_mm).replace('.', ',')) + ' mm'}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span><span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${x.measured_positions} ${esc(t('positions'))}`, x.below_min && `${x.below_min}× < ${String(r.legal_min_tread_mm).replace('.', ',')} mm`, x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
+  $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
+}
+
 // ---------- Mehr / Benutzer / Einstellungen ----------
 function viewMore() {
   render(`<h1>${esc(t('nav_more'))}</h1><div class="list">
@@ -900,6 +914,7 @@ function viewMore() {
     <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
     <a class="row" href="#/help"><span>?</span><span class="title">${esc(t('help'))}</span><span></span></a>
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('fines'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('my_fines'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'workshop', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/tires"><span>◎</span><span class="title">${esc(t('fleet_tires'))}</span><span></span></a>` : ''}
     ${S.me.role !== 'driver' ? `<a class="row" href="#/maintenance"><span>📅</span><span class="title">${esc(t('inspections_due'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/kpi"><span>⏱</span><span class="title">${esc(t('kpi'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/costs"><span>€</span><span class="title">${esc(t('costs_report'))}</span><span></span></a>` : ''}

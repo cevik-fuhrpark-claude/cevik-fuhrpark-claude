@@ -143,3 +143,40 @@ export async function tireFindings(env, environment) {
   }
   return out;
 }
+
+// Flottenübersicht Reifen: je aktivem Fahrzeug schlechtester Status, kleinste Profiltiefe, Alter der ältesten letzten Messung.
+// Nur gemessene Werte; ohne Messung = „kein Messwert“ (nie geschätzt).
+export async function fleetTires(env, user, envName, query = {}) {
+  if (!['owner', 'fleet', 'workshop', 'viewer'].includes(user.role)) throw forbidden();
+  const staleDays = Math.min(Math.max(Math.round(Number(query.stale_days) || 90), 1), 3650);
+  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
+  const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
+  const vehicles = (await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE active=1 ORDER BY plate').all()).results;
+  // je Fahrzeug+Position letzte Profilmessung (Wechsel ohne Messung setzt den Messwert zurück)
+  const ev = (await env.DB.prepare(`SELECT vehicle_id, position, event_type, tread_mm, created_at FROM tire_events WHERE environment=? ORDER BY created_at DESC`).bind(envName).all()).results;
+  const latest = new Map();
+  for (const e of ev) {
+    const k = `${e.vehicle_id}|${e.position}`;
+    if (latest.has(k)) continue;
+    if (e.tread_mm !== null) latest.set(k, { vehicle_id: e.vehicle_id, position: e.position, tread_mm: e.tread_mm, at: e.created_at });
+    else if (e.event_type === 'wechsel') latest.set(k, { vehicle_id: e.vehicle_id, position: e.position, tread_mm: null, at: e.created_at });
+  }
+  const now = Date.now();
+  const rank = { unter_minimum: 3, warnung: 2, ok: 1, unbekannt: 0 };
+  const rows = vehicles.map((v) => {
+    const pos = [...latest.values()].filter((x) => x.vehicle_id === v.id && x.tread_mm !== null);
+    let status = 'unbekannt'; let minTread = null; let oldest = null; let below = 0; let warned = 0;
+    for (const p of pos) {
+      const st = p.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && p.tread_mm < warn ? 'warnung' : 'ok';
+      if (st === 'unter_minimum') below++; if (st === 'warnung') warned++;
+      if (rank[st] > rank[status]) status = st;
+      if (minTread === null || p.tread_mm < minTread) minTread = p.tread_mm;
+      if (!oldest || p.at < oldest) oldest = p.at;
+    }
+    const ageDays = oldest ? Math.floor((now - Date.parse(oldest)) / 86400000) : null;
+    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
+  }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
+  const count = (f) => rows.filter(f).length;
+  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, stale_days: staleDays, rows,
+    totals: { vehicles: rows.length, below_min: count((r) => r.status === 'unter_minimum'), warn: count((r) => r.status === 'warnung'), never_measured: count((r) => r.measured_positions === 0), stale: count((r) => r.stale && r.measured_positions > 0) } };
+}
