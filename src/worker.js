@@ -139,6 +139,10 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance' && m === 'GET') {
     const ov = await maint.maintenanceOverview(env, user);
+    if (url.searchParams.get('format') === 'ics') {
+      await auth.audit(env, user.id, 'maintenance.export_ics', null, { rows: ov.rows.length });
+      return new Response(maint.maintenanceIcs(ov), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
+    }
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length });
       return new Response(maint.maintenanceCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.csv"` } });

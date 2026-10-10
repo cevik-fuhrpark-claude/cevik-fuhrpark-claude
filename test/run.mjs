@@ -349,6 +349,11 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
   ok(text.startsWith('﻿Kennzeichen;'), 'BOM + Kopfzeile');
   ok(text.includes('SZ-KC 5515;VIN:WDB9630051L917317;Dortmund;HU;;;;kein Termin hinterlegt;'), 'Lücke im Export');
+  const ics = await users.fleet.get('/api/maintenance?format=ics');
+  eq(ics.status, 200); ok((ics.headers.get('content-type') || '').startsWith('text/calendar'));
+  const cal = new TextDecoder().decode(ics.data);
+  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:20261020') && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D'), 'Kalender mit HU-Termin und Erinnerung');
+  ok(cal.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75), 'Zeilen auf 75 Oktette gefaltet');
   const H = { authorization: 'Bearer integration-token-xyz' };
   const api = await anon.req('GET', '/api/integration/v1/maintenance', undefined, H);
   eq(api.status, 200); eq(api.data.rows.length, r.data.rows.length);

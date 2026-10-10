@@ -225,3 +225,26 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   }
   return result;
 }
+
+// Kalenderdatei (iCalendar, RFC 5545) mit allen belegten Prüfterminen als ganztägige Termine + Erinnerung (Vorlauf = maintenance_warn_days)
+export function maintenanceIcs(ov, stamp = new Date().toISOString()) {
+  const esc = (x) => String(x ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const enc = new TextEncoder();
+  const fold = (line) => { // max. 75 Oktette je Zeile, Folgezeilen beginnen mit Leerzeichen; Zeichen werden nie zerteilt
+    const out = []; let cur = ''; let n = 0;
+    for (const ch of line) { const b = enc.encode(ch).length; if (n + b > 75) { out.push(cur); cur = ' '; n = 1; } cur += ch; n += b; }
+    out.push(cur); return out.join('\r\n');
+  };
+  const d8 = (d) => d.replace(/-/g, '');
+  const next = (d) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+  const ts = stamp.replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Cevik Mobility//CLAUDE Fuhrpark//DE', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Fuhrpark Prüftermine'];
+  for (const r of ov.rows) {
+    if (!r.next_due_date) continue;
+    lines.push('BEGIN:VEVENT', `UID:${r.id}@cevik-fuhrpark-claude`, `DTSTAMP:${ts}`, `DTSTART;VALUE=DATE:${d8(r.next_due_date)}`, `DTEND;VALUE=DATE:${d8(next(r.next_due_date))}`,
+      `SUMMARY:${esc(`${r.kind} fällig – ${r.plate || r.vehicle_id}`)}`, `DESCRIPTION:${esc(`Nachweis: ${r.evidence}${r.last_done_date ? ` · letzte Prüfung ${r.last_done_date}` : ''}`)}`,
+      'TRANSP:TRANSPARENT', 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(`${r.kind} ${r.plate || ''}`)}`, `TRIGGER:-P${ov.warn_days}D`, 'END:VALARM', 'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
