@@ -4,7 +4,11 @@ Basis-URL: die Worker-Adresse (z. B. `https://cevik-fuhrpark-claude.<konto>.work
 Alle Antworten JSON. Fehler: `{ "error": "<code>", "message": "<Text>" }` mit HTTP 400/401/403/404/409/410/413/429/500.
 
 ## 1. Integrations-API (Unternehmensbetriebssystem, n8n)
-Authentifizierung: `Authorization: Bearer <INTEGRATION_TOKEN>` (Cloudflare-Secret; ohne Secret antwortet die API mit 503).
+Authentifizierung: `Authorization: Bearer <Token>` (Cloudflare-Secrets; ohne Secret antwortet die API mit 503):
+- `INTEGRATION_TOKEN` – lesen und Telematik schreiben.
+- optional `INTEGRATION_TOKEN_NEXT` – gleiche Rechte; für einen Token-Wechsel ohne Ausfall: neues Token als `_NEXT` setzen, n8n umstellen, dann `INTEGRATION_TOKEN` ersetzen und `_NEXT` löschen.
+- optional `INTEGRATION_TOKEN_READ` – nur lesen (schreibende Aufrufe → 403 `read_only_token`).
+Tokens müssen mindestens 16 Zeichen haben.
 Parameter `environment=production|test` (Standard: production).
 
 | Methode & Pfad | Zweck |
@@ -25,7 +29,7 @@ Parameter `environment=production|test` (Standard: production).
 ```
 Regeln: Zuordnung nur über FIN oder bestätigtes Mapping (`telematics_mappings`). Nur Kennzeichen → Prüffall in
 `telematics_unmatched`, keine Zuordnung. Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen.
-Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben. Max. 500 Einträge je Aufruf.
+Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben. Max. 500 Einträge je Aufruf; die Verarbeitung braucht unabhängig von der Menge ≤ 10 Datenbankanweisungen.
 
 ### Agenten-Übergabe (Fuhrparkagent → Master)
 Jede Übergabe ist ein Ereignis mit `schema_version 1.0`, eindeutiger `event_id` (SHA-256 aus Befund, Fingerprint, Erstauftreten),

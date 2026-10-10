@@ -498,6 +498,22 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
   eq(old.data.rejected, 1, 'Älterer GPS-Stand überschreibt nicht');
   const cs = await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, H);
   ok(cs.data.cases.length >= 3);
+  // 500 Einträge in einem Aufruf: Abfragebudget unabhängig von der Menge
+  const many = Array.from({ length: 500 }, (_, i) => ({ external_id: `BULK-${i}`, vin: i % 2 ? 'WMA15SZZ2HM722774' : null, plate: `XX-BULK ${i}`, gps_time: new Date(Date.parse('2026-10-10T09:00:00Z') + i * 1000).toISOString(), km: 812600 + i, lat: 51, lon: 7 }));
+  const q0 = QSTAT.n;
+  const bulk = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: many }, H);
+  eq(bulk.status, 200); eq(bulk.data.matched, 250); eq(bulk.data.unmatched, 250);
+  ok(QSTAT.n - q0 <= 20, `≤ 20 Abfragen für 500 Einträge (${QSTAT.n - q0})`);
+  eq(bulk.data.odometer_written, 250);
+  eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: many.slice(1, 2) }, H)).data.odometer_written, 0, 'gleicher Stand nicht doppelt');
+  // Token-Wechsel und Nur-Lese-Token
+  env.INTEGRATION_TOKEN_NEXT = 'integration-token-next-123'; env.INTEGRATION_TOKEN_READ = 'integration-token-read-456';
+  try {
+    eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer integration-token-next-123' })).status, 200, 'neues Token gilt parallel');
+    const R = { authorization: 'Bearer integration-token-read-456' };
+    eq((await anon.req('GET', '/api/integration/v1/findings', undefined, R)).status, 200, 'Lesen erlaubt');
+    eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [] }, R)).status, 403, 'Schreiben verboten');
+  } finally { delete env.INTEGRATION_TOKEN_NEXT; delete env.INTEGRATION_TOKEN_READ; }
 });
 await test('Deaktivierung entwertet Sitzung sofort', async () => {
   const r = await owner.patch(`/api/users/${users.driver2.id}`, { active: false });
