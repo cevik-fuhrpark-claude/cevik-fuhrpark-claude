@@ -157,7 +157,7 @@ export async function importVehiclesCsv(env, user, text) {
     if (!isValidVin(vin)) { result.skipped.push({ plate: cells[ci.plate], reason: 'FIN ungültig/fehlt' }); continue; }
     await upsertVehicle(env, user, {
       vin, plate: cells[ci.plate], site: ci.site >= 0 ? cells[ci.site] : null, master_status: ci.status >= 0 ? cells[ci.status] : null,
-      manufacturer: ci.man >= 0 ? cells[ci.man] : null, build_year: ci.year >= 0 && /^\d{4}$/.test(cells[ci.year]) ? cells[ci.year] : null,
+      manufacturer: ci.man >= 0 ? cells[ci.man] : null, build_year: ci.year >= 0 && /^\d{4}(\.0+)?$/.test(cells[ci.year]) ? parseInt(cells[ci.year], 10) : null,
       trailer_plate: ci.trailer >= 0 ? cells[ci.trailer] : null, source: 'CSV-Import Fuhrpark Stammliste',
     });
     result.imported++;

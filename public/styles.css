@@ -1,0 +1,172 @@
+/* [CLAUDE] Cevik Fuhrpark – Werkstatt-Oberfläche: große Ziele für Handschuhe, Kennzeichen als Leitelement */
+:root {
+  --paper: #eef1ef;
+  --surface: #ffffff;
+  --ink: #18222b;
+  --steel: #556472;
+  --rule: #d3dad8;
+  --signal: #f2b01e;       /* Warnweste / Rundumleuchte: primäre Aktionen */
+  --signal-ink: #2a1f00;
+  --stop: #c4291f;         /* Sperre, kritisch */
+  --stop-bg: #fbe9e7;
+  --go: #23774a;           /* Freigabe */
+  --go-bg: #e5f3ea;
+  --mid: #b86a00;
+  --mid-bg: #fff2dc;
+  --eu: #1f3f99;
+  --test: #6b3fa0;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --din: 'Bahnschrift', 'DIN Alternate', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121a20; --surface: #1b252d; --ink: #e8eef0; --steel: #9fb0bb; --rule: #2d3a44;
+    --stop-bg: #3a1714; --go-bg: #12301f; --mid-bg: #3a2a0c; --mid: #f0a540; --go: #5cc58b; --stop: #ff6b5e;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--body); -webkit-text-size-adjust: 100%; }
+body { min-height: 100vh; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--din); font-weight: 600; letter-spacing: 0.01em; line-height: 1.2; margin: 0 0 0.5rem; }
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.25rem; margin-top: 1.5rem; }
+h3 { font-size: 1.05rem; }
+p { margin: 0 0 0.75rem; max-width: 70ch; }
+.muted { color: var(--steel); }
+.small { font-size: 0.875rem; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+
+/* Rahmen */
+.topbar { position: sticky; top: 0; z-index: 10; background: var(--ink); color: #fff; display: flex; align-items: center; gap: 12px; padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); }
+.topbar .brand { font-family: var(--din); font-size: 1.15rem; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.topbar .brand small { font-weight: 400; opacity: 0.7; font-size: 0.8rem; }
+.topbar .spacer { flex: 1; }
+.topbar select, .topbar button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: var(--radius-s); padding: 6px 8px; font: inherit; font-size: 0.9rem; }
+.testband { background: repeating-linear-gradient(135deg, var(--test) 0 14px, #7d52b3 14px 28px); color: #fff; text-align: center; font-weight: 600; font-family: var(--din); padding: 6px 12px; letter-spacing: 0.02em; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+
+.tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(5, 1fr); padding-bottom: env(safe-area-inset-bottom); }
+.tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 10px; text-decoration: none; color: var(--steel); font-size: 0.75rem; min-height: 60px; justify-content: center; position: relative; }
+.tabbar a svg { width: 24px; height: 24px; }
+.tabbar a.active { color: var(--ink); font-weight: 600; }
+.tabbar a.active::before { content: ''; position: absolute; top: 0; left: 25%; right: 25%; height: 3px; background: var(--signal); }
+.tabbar a.report { color: var(--signal-ink); }
+.tabbar a.report span.dot { background: var(--signal); border-radius: 999px; width: 44px; height: 44px; display: grid; place-items: center; margin-top: -18px; box-shadow: 0 0 0 4px var(--surface); }
+.badge { position: absolute; top: 4px; right: calc(50% - 22px); background: var(--stop); color: #fff; border-radius: 999px; font-size: 0.7rem; min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 5px; }
+
+@media (min-width: 900px) {
+  body { padding-bottom: 0; padding-left: 220px; }
+  .tabbar { top: 0; bottom: 0; right: auto; width: 220px; display: flex; flex-direction: column; border-top: none; border-right: 1px solid var(--rule); padding-top: 72px; }
+  .tabbar a { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 12px 20px; font-size: 0.95rem; min-height: 0; }
+  .tabbar a.active::before { top: 8px; bottom: 8px; left: 0; right: auto; width: 4px; height: auto; }
+  .tabbar a.report span.dot { margin: 0; width: 32px; height: 32px; box-shadow: none; }
+  .badge { position: static; margin-left: auto; }
+  .topbar { margin-left: -220px; padding-left: 236px; }
+}
+
+/* Kennzeichen (EU-Schild) als wiederkehrendes Leitelement */
+.plate { display: inline-flex; align-items: stretch; border: 2px solid #111; border-radius: 5px; background: #fff; color: #111; font-family: var(--din); font-weight: 600; font-size: 1.05rem; line-height: 1; overflow: hidden; white-space: nowrap; vertical-align: middle; }
+.plate .eu { background: var(--eu); color: #fff; font-size: 0.55rem; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 3px 3px 2px; min-width: 16px; }
+.plate .eu::before { content: '★'; color: #f5cf2a; font-size: 0.6rem; margin-bottom: auto; }
+.plate .num { padding: 5px 8px 4px; letter-spacing: 0.04em; }
+.plate.big { font-size: 1.6rem; border-width: 3px; }
+.plate.big .eu { font-size: 0.7rem; min-width: 22px; }
+.plate.locked { border-color: var(--stop); box-shadow: 0 0 0 3px var(--stop-bg); }
+
+/* Listen */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.row { background: var(--surface); border: 1px solid var(--rule); border-left: 6px solid var(--rule); border-radius: var(--radius-s); padding: 12px 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: center; text-decoration: none; color: inherit; min-height: 64px; }
+.row:hover { border-color: var(--steel); }
+.row.p-kritisch { border-left-color: var(--stop); }
+.row.p-mittel { border-left-color: var(--mid); }
+.row.p-niedrig { border-left-color: var(--steel); }
+.row .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sub { grid-column: 2 / 4; color: var(--steel); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 600; background: var(--paper); border: 1px solid var(--rule); white-space: nowrap; }
+.chip.kritisch, .chip.gesperrt { background: var(--stop-bg); color: var(--stop); border-color: transparent; }
+.chip.mittel { background: var(--mid-bg); color: var(--mid); border-color: transparent; }
+.chip.ok, .chip.fahrzeug_freigegeben { background: var(--go-bg); color: var(--go); border-color: transparent; }
+.chip.test { background: var(--test); color: #fff; border-color: transparent; }
+
+/* Kennzahlen: Zustand der Flotte als ein Balken statt Kartenraster */
+.fleetbar { display: flex; height: 18px; border-radius: 4px; overflow: hidden; background: var(--rule); margin: 8px 0 6px; }
+.fleetbar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0 16px; }
+.stats div { font-family: var(--din); }
+.stats b { font-size: 1.8rem; display: block; line-height: 1.1; }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-m); padding: 16px; margin-bottom: 12px; }
+.panel.alert { border-color: var(--stop); background: var(--stop-bg); }
+.panel.good { border-color: var(--go); background: var(--go-bg); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.kv dt { color: var(--steel); }
+.kv dd { margin: 0; }
+
+/* Formulare */
+label { display: block; font-weight: 600; margin: 14px 0 6px; }
+label .hint { font-weight: 400; color: var(--steel); display: block; font-size: 0.875rem; }
+input, select, textarea { width: 100%; font: inherit; padding: 12px; border: 1.5px solid var(--rule); border-radius: var(--radius-s); background: var(--surface); color: var(--ink); min-height: 48px; }
+textarea { min-height: 110px; resize: vertical; }
+input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height: 0; accent-color: var(--ink); }
+.check { display: flex; align-items: center; gap: 10px; font-weight: 400; }
+.btn { appearance: none; border: 0; border-radius: var(--radius-s); padding: 12px 18px; font: 600 1rem var(--body); background: var(--signal); color: var(--signal-ink); min-height: 48px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+.btn.secondary { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+.btn.danger { background: var(--stop); color: #fff; }
+.btn.go { background: var(--go); color: #fff; }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+/* Große Auswahl (Dringlichkeit, Fahrbereitschaft) */
+.choices { display: grid; gap: 8px; }
+.choice { display: flex; gap: 12px; align-items: flex-start; border: 2px solid var(--rule); border-radius: var(--radius-m); padding: 12px 14px; background: var(--surface); cursor: pointer; font-weight: 400; margin: 0; }
+.choice input { margin-top: 2px; }
+.choice b { display: block; }
+.choice:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.choice.c-kritisch:has(input:checked) { border-color: var(--stop); background: var(--stop-bg); box-shadow: none; }
+.vehpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.vehpick label { margin: 0; padding: 10px; border: 2px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-weight: 400; cursor: pointer; }
+.vehpick label:has(input:checked) { border-color: var(--ink); }
+.vehpick input { position: absolute; opacity: 0; pointer-events: none; }
+
+/* Checkliste */
+.checkitem { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--rule); align-items: center; }
+.seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: var(--radius-s); overflow: hidden; }
+.seg label { margin: 0; padding: 10px 12px; font-weight: 600; cursor: pointer; min-width: 52px; text-align: center; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--surface); }
+.seg label.bad:has(input:checked) { background: var(--stop); color: #fff; }
+.checkitem .detail { grid-column: 1 / 3; }
+
+/* Verlauf */
+.timeline { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--rule); }
+.timeline li { padding: 0 0 14px 16px; position: relative; }
+.timeline li::before { content: ''; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--steel); }
+.timeline time { color: var(--steel); font-size: 0.85rem; }
+
+.thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumbs a { display: block; width: 96px; height: 96px; border-radius: var(--radius-s); overflow: hidden; border: 1px solid var(--rule); background: var(--paper); display: grid; place-items: center; text-decoration: none; font-size: 0.8rem; }
+.thumbs img { width: 100%; height: 100%; object-fit: cover; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { color: var(--steel); font-weight: 600; }
+.scroll { overflow-x: auto; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom)); background: var(--ink); color: var(--surface); padding: 12px 18px; border-radius: var(--radius-s); z-index: 50; max-width: calc(100% - 32px); }
+.toast.err { background: var(--stop); color: #fff; }
+.center { min-height: 70vh; display: grid; place-items: center; }
+.narrow { max-width: 440px; width: 100%; }
+.seg-tabs { display: flex; gap: 4px; margin: 0 0 12px; flex-wrap: wrap; }
+.seg-tabs a { padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--rule); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+.seg-tabs a.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+@media (prefers-reduced-motion: no-preference) { .toast { animation: rise 0.2s ease-out; } @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } } }
