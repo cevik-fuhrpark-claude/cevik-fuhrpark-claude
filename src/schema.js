@@ -106,5 +106,11 @@ export const MIGRATIONS = [
    "ALTER TABLE files ADD COLUMN doc_note TEXT NULL",
    "CREATE INDEX IF NOT EXISTS idx_files_vehicle ON files(vehicle_id)"
   ]
+ },
+ {
+  "id": "0010_document_validity",
+  "statements": [
+   "ALTER TABLE files ADD COLUMN doc_valid_until TEXT NULL"
+  ]
  }
 ];

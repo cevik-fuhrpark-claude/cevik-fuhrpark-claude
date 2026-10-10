@@ -55,7 +55,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     ? all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw' }))
     : all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger' }));
   const documents = VEHICLE_DOC_READ.includes(user.role)
-    ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
+    ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.doc_valid_until, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
     : [];
   const out = { vehicle: v, cases: caseRows, inspections, maintenance, odometer, drivers, coupled, documents };
@@ -256,7 +256,9 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const kind = oneOf(query.kind || 'sonstiges', DOC_KINDS, 'Dokumentart');
-  const note = str(query.note ? decodeURIComponent(query.note) : null, { max: 200, field: 'Bemerkung' });
+  const note = str(query.note || null, { max: 200, field: 'Bemerkung' });
+  const validUntil = str(query.valid_until || null, { max: 10 });
+  if (validUntil && !/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
   const buf = new Uint8Array(await request.arrayBuffer());
   if (!buf.length) throw bad('empty', 'Leere Datei.');
   if (buf.length > 5 * 1024 * 1024) throw bad('too_large', 'Datei zu groß (max. 5 MB).');
@@ -271,8 +273,14 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
   const key = `${envName}/vehicles/${vehicleId}/${id}`;
   await env.FILES.put(key, buf, { metadata: { type, vehicle_id: vehicleId, env: envName } });
   const name = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'dokument'); } catch { return 'dokument'; } })().replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'dokument';
-  await env.DB.prepare(`INSERT INTO files(id,case_id,vehicle_id,doc_kind,doc_note,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, vehicleId, kind, note, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
-  await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length });
+  await env.DB.prepare(`INSERT INTO files(id,case_id,vehicle_id,doc_kind,doc_note,doc_valid_until,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
+  await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length, valid_until: validUntil });
   return { id, duplicate: false };
+}
+
+// Für den Fuhrparkagenten: je Fahrzeug und Dokumentart zählt das späteste Gültig-bis-Datum (neueres Dokument ersetzt älteres)
+export async function documentFindings(env, environment) {
+  return (await env.DB.prepare(`SELECT f.vehicle_id, f.doc_kind, MAX(f.doc_valid_until) AS valid_until, v.plate FROM files f JOIN vehicles v ON v.id=f.vehicle_id
+    WHERE f.environment=? AND f.case_id IS NULL AND f.doc_valid_until IS NOT NULL AND v.active=1 GROUP BY f.vehicle_id, f.doc_kind`).bind(environment).all()).results;
 }

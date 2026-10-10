@@ -34,7 +34,7 @@ Wiederholte Läufe erzeugen keine Dubletten. Ein übergeordneter Master-Agent ka
 
 Befundcodes: `CRITICAL_UNTRIAGED`, `TRIAGE_OVERDUE`, `TRIAGE_OPEN`, `WORKSHOP_ACK_MISSING`, `WORKSHOP_ACK_PENDING`,
 `NO_FLEET_RECIPIENT`, `NO_WORKSHOP_RECIPIENT`, `WAITING_PARTS`, `QC_PENDING`, `SAFETY_OPEN_ITEMS`, `VEHICLE_LOCKED`,
-`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`.
+`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`, `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN`, `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON`, `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`.
 
 ## 2. App-API (Sitzungscookie)
 Schreibende Aufrufe brauchen den Header `x-cfp: 1` und gleiche Herkunft. Umgebung = Umgebung des Benutzers;
@@ -45,7 +45,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Einrichtung | `GET /api/setup/status`, `POST /api/setup` (SETUP_CODE, nur ohne Benutzer) |
 | Anmeldung | `POST /api/login`, `POST /api/logout`, `GET/PATCH /api/me`, `POST /api/me/password`, `GET /api/invite/:token`, `POST /api/invite/accept` |
 | Benutzer | `GET/POST /api/users`, `PATCH /api/users/:id`, `POST /api/users/:id/invite` |
-| Fahrzeuge | `GET /api/vehicles[?inactive=1]`, `POST /api/vehicles` (Anlegen/Bearbeiten, `kind` lkw/anhaenger), `POST /api/vehicles/:id/documents?kind=&note=` (Rohdaten, Header `x-filename`), `POST /api/vehicles/:id/active` (`{active:false, reason}` = außer Betrieb, nur ohne offene Vorgänge), `POST /api/vehicles/import` (CSV), `GET /api/vehicles/:id`, `POST …/drivers`, `DELETE /api/assignments/:id`, `POST …/maintenance`, `POST /api/maintenance/:id/complete`, `POST …/odometer`, `POST …/ai` |
+| Fahrzeuge | `GET /api/vehicles[?inactive=1]`, `POST /api/vehicles` (Anlegen/Bearbeiten, `kind` lkw/anhaenger), `POST /api/vehicles/:id/documents?kind=&note=&valid_until=JJJJ-MM-TT` (Rohdaten, Header `x-filename`), `POST /api/vehicles/:id/active` (`{active:false, reason}` = außer Betrieb, nur ohne offene Vorgänge), `POST /api/vehicles/import` (CSV), `GET /api/vehicles/:id`, `POST …/drivers`, `DELETE /api/assignments/:id`, `POST …/maintenance`, `POST /api/maintenance/:id/complete`, `POST …/odometer`, `POST …/ai` |
 | Prüftermine | `GET /api/maintenance[?format=csv]` (alle außer Fahrer), `POST /api/maintenance/import[?dry_run=1]` (CSV, Inhaber/Fuhrparkleitung) |
 | Vorgänge | `GET /api/cases?status=open/closed&q=<Suche>&vehicle_id=&limit=`, `POST /api/cases`, `GET /api/cases/:id`, `POST /api/cases/:id/commands`, `POST /api/cases/:id/files`, `GET /api/files/:id` |
 | Kontrollen | `POST /api/inspections` (`kind`: `nach_reparatur` \| `abfahrt`) |

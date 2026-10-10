@@ -460,6 +460,18 @@ await test('Dokumentablage je Fahrzeug: Rechte, Dateityp, Dubletten, Download, U
   eq((await users.driver.get(`/api/files/${r.data.id}`)).status, 403, 'Fahrer lädt nicht herunter');
   eq((await users.prodFleet.get(`/api/vehicles/${V1}`)).data.documents.length, 0, 'Betrieb sieht Testdokument nicht');
   eq((await users.prodFleet.get(`/api/files/${r.data.id}`)).status, 404);
+  // Gültig-bis-Datum: nur angegebene Daten; abgelaufen → Befund; neueres Dokument derselben Art erledigt ihn
+  const pdf2 = new TextEncoder().encode('%PDF-1.4\n% Versicherung alt\n%%EOF');
+  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=31.12.2026`, pdf2, H)).status, 400, 'Datumsformat');
+  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=2026-01-31&note=${encodeURIComponent('100% Deckung')}`, pdf2, H)).status, 201);
+  eq((await users.fleet.get(`/api/vehicles/${V1}`)).data.documents.find((x) => x.doc_kind === 'versicherung').doc_note, '100% Deckung', 'Bemerkung mit %');
+  await users.fleet.post('/api/agent/run');
+  ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'DOCUMENT_EXPIRED'), 'abgelaufen erkannt');
+  ok((await users.fleet.get('/api/notifications')).data.notifications.some((n) => n.kind === 'agent_reminder' && /Dokument abgelaufen/.test(n.body)), 'Erinnerung');
+  const pdf3 = new TextEncoder().encode('%PDF-1.4\n% Versicherung neu\n%%EOF');
+  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=2099-01-31`, pdf3, H)).status, 201);
+  await users.fleet.post('/api/agent/run');
+  ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code.startsWith('DOCUMENT_')), 'durch neueres Dokument erledigt');
 });
 await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pflicht', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
