@@ -780,7 +780,7 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   for (const lang of ['uk', 'en']) { const miss = Object.keys(STRINGS.de).filter((k) => !(k in STRINGS[lang])); eq(miss.join(','), '', `fehlende Übersetzungen ${lang}`); }
   // Fest verdrahtete Texte in Beschriftungen/Spaltenköpfen/Elementen (außer Sprachnamen, TEST-Kennzeichnung, Dateiformat- und CSV-Spaltenhinweisen)
   const allow = new Set(['Deutsch', 'English', 'TEST', 'OK', 'Українська']);
-  const hard = [...app.matchAll(/<(label|th|button|h[1-3]|span|p|summary|option|legend)[^>]*>([A-Za-zÄÖÜäöüß][^<>${}]{2,})</g)].map((m) => m[2].trim())
+  const hard = [...app.matchAll(/<(label|th|td|dt|dd|li|b|a|div|button|h[1-4]|span|p|summary|option|legend)[^>]*>([A-Za-zÄÖÜäöüß][^<>${}]{2,})</g)].map((m) => m[2].trim())
     .filter((x) => !allow.has(x) && !/^(PDF|Quelle;|Kennzeichen;)/.test(x));
   eq(hard.join(' | '), '', 'Texte ohne Übersetzung (t())');
 });

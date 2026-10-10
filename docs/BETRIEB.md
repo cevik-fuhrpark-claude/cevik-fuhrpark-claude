@@ -90,8 +90,15 @@ wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 
 
 ## UI-Rauchtest (vor größeren Änderungen)
 `sh scripts/restart-dev.sh && python3 scripts/ui-rauchtest.py [Screenshot-Ordner]` – ruft jede Ansicht für Inhaber, Fuhrparkleitung,
-Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (228 Ansichten, inkl. Disposition, Fahrerakte, Auslesungen und QR-Aufkleber) und meldet JavaScript-Fehler, rote Fehlermeldungen,
+Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (246 Ansichten, inkl. Disposition, Fahrerakte, Auslesungen, QR-Aufkleber, Vorgang und Kontrollformular) und meldet JavaScript-Fehler, abgebrochene Ansichten, rote Fehlermeldungen,
 fehlende Überschriften, waagrechtes Scrollen sowie (Handybreite) Felder ohne Beschriftung, Bilder ohne Alternativtext und Schaltflächen/Links ohne Text. Braucht Python-Playwright, nur lokale synthetische Daten. Stand 10.10.2026: 0 Auffälligkeiten.
+
+## UI-Ablauftest (Kernprozess per Klick)
+`sh scripts/restart-dev.sh && python3 scripts/ui-ablauf.py [Screenshot-Ordner]` – spielt den Kernprozess in Handybreite über die Oberfläche durch:
+Fahrer meldet → Fuhrparkleitung gibt Reparatur frei → Werkstatt übernimmt, repariert, erfasst Zeit → Kontrolle nach Reparatur im Formular
+(leeres Absenden wird abgefangen, ein Mangel erzeugt einen Folgeauftrag) → Abschlusskontrolle → technische Freigabe → Abfahrtskontrolle über
+den Aufkleber-Link. Prüft nach jedem Schritt den Status über die API und meldet JavaScript-Fehler. Anlass: Fehler „preId is not defined“
+(10.10.2026) – die Kontrolle nach Reparatur war in der Oberfläche nicht abschließbar, obwohl alle API-Tests grün waren.
 
 ## Nutzungsstatistik (Einführungsphase)
 „Mehr → Nutzung der App“ (nur Inhaber) zeigt, wie oft welche Funktion aufgerufen wurde und wo Fehler auftraten – je Tag und Umgebung.
