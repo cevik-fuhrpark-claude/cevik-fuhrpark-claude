@@ -28,7 +28,7 @@
 **Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.
 
 **Manuell (Inhaber):** „Mehr → Einstellungen → Sicherung herunterladen“ erzeugt eine JSON-Datei mit allen Fachdaten
-(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen, Reifen, Lager, Bußgelder, Befunde). Nicht enthalten: Passwörter,
+(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen inkl. Historie, Reifen, Lager, Bußgelder, Befunde, Telematik-Zuordnungen, Protokoll). Nicht enthalten: Passwörter,
 Sitzungen, Einladungs-/Integrations-Token, Push-Schlüssel und Dateiinhalte (nur deren Metadaten). Empfehlung: monatlich
 herunterladen und im eigenen Drive ablegen. Jeder Export steht im Audit-Log.
 

@@ -1023,6 +1023,18 @@ await test('Push-Einstellungen je Person: nicht dringende Arten stummschaltbar, 
   eq((await users.driver.put('/api/me/notify-prefs', { muted: [] })).data.muted.length, 0);
 });
 
+await test('Sicherung: jede Tabelle ist gesichert oder bewusst ausgenommen (neue Tabellen werden nicht vergessen)', async () => {
+  const { BACKUP_TABLES, EXCLUDED } = await import('../src/backup.js');
+  const tables = (await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all()).results.map((r) => r.name);
+  const missing = tables.filter((t) => !BACKUP_TABLES.includes(t) && !(t in EXCLUDED));
+  eq(missing.join(','), '', 'nicht zugeordnete Tabellen');
+  ok(BACKUP_TABLES.every((t) => tables.includes(t)), 'alle gesicherten Tabellen existieren');
+  const b = await owner.get('/api/admin/backup');
+  const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
+  ok(j.data.audit_log.length > 0 && 'telematics_unmatched' in j.data, 'neue Tabellen enthalten');
+  ok(!JSON.stringify(j).includes('password_hash') && !JSON.stringify(j.data.audit_log).includes('Sicheres-Passwort'), 'keine Geheimnisse');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

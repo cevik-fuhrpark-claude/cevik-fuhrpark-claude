@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 66 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 67 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -108,6 +108,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Fahrzeugakte zeigt letzten Telematik-Stand (Quelle FIN/Mapping, Zeitpunkt, km, Zündung, Position als OpenStreetMap-Link – keine eingebettete Karte) nur für Inhaber, Fuhrparkleitung, Disposition. 66 Tests grün.
 - [x] Hilfe je Rolle erweitert (DE/UK/EN): Werkstatt (Auftrag → Abschlusskontrolle), Fuhrparkleitung (Meldungen, Kontrolle/Freigabe, Prüftermine/km/Datenqualität), Disposition (Sperren, Ausfälle). UI-Rauchtest 174 Ansichten ohne Auffälligkeit.
 - [x] Lasttest um Zeitleiste, Datenqualität, Auslastung, Nutzungsstatistik, CSV-Export ergänzt (Ergebnisse in `docs/BETRIEB.md`); Zeitstempel-Formatierung ohne Intl je Wert (identische Ausgabe, über 3 Jahre inkl. Zeitumstellung geprüft). 66 Tests grün.
+- [x] Sicherung: zusätzlich `telematics_unmatched` und Protokoll (`audit_log`); Liste bewusst ausgenommener Tabellen mit Begründung; Test vergleicht mit dem Schema, damit neue Tabellen nicht vergessen werden. 67 Tests grün.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -129,5 +130,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin: Sicherung (JSON-Export) um die neuen Tabellen prüfen (`usage_daily` bewusst nicht, `maintenance_events` ja) und Test „Sicherung enthält jede Fachtabelle“ (Liste gegen Schema), damit neue Tabellen nicht vergessen werden. Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin: Vorgangsdetail – Verlauf (case_events) übersichtlicher als Zeitleiste mit Personen/Statuswechseln und Dauer je Status; danach Druckansicht/PDF eines Vorgangs (Werkstattauftrag) analog zur Fahrzeugakte. Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

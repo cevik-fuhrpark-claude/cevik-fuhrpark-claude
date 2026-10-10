@@ -6,8 +6,16 @@ import { audit } from './auth.js';
 const TABLES = [
   'workshops', 'vehicles', 'driver_vehicles', 'case_counters', 'cases', 'case_events', 'work_entries', 'parts', 'open_items', 'external_costs',
   'files', 'inspections', 'maintenance_rules', 'maintenance_events', 'odometer_readings', 'tire_specs', 'tire_events', 'stock_items', 'stock_movements',
-  'fines', 'fine_events', 'fine_counters', 'agent_findings', 'master_inbox', 'notifications', 'telematics_latest', 'telematics_mappings', '_migrations',
+  'fines', 'fine_events', 'fine_counters', 'agent_findings', 'master_inbox', 'notifications', 'telematics_latest', 'telematics_mappings', 'telematics_unmatched',
+  'audit_log', '_migrations',
 ];
+// Bewusst nicht in der Sicherung (Test prüft, dass jede Tabelle hier oder oben steht):
+export const EXCLUDED = {
+  users: 'eigene Abfrage ohne Passwort-Hash', settings: 'eigene Abfrage ohne Schlüssel', sessions: 'Anmeldesitzungen', invites: 'Einladungs-Token',
+  login_attempts: 'Fehlversuche (kurzlebig)', push_subscriptions: 'Geräteschlüssel', cmd_guard: 'technische Sperre', rate_limits: 'Mengenbegrenzung (kurzlebig)',
+  usage_daily: 'Nutzungsstatistik ohne Fachbezug', agent_runs: 'Laufprotokoll des Agenten (technisch)',
+};
+export const BACKUP_TABLES = TABLES;
 const ROW_LIMIT = 200000;
 
 export async function exportBackup(env, user) {
