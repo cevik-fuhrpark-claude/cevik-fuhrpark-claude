@@ -68,10 +68,14 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(await usersByRole(env, e, ['dispatch', 'fleet', 'owner'])); add(workshopUsers);
       break;
-    case 'comment':
-      add(reporter); add(await usersByRole(env, e, ['fleet', 'owner']));
-      if (c.status !== 'gemeldet') add(workshopUsers);
+    case 'comment': {
+      // Optional gezielt: payload.notify ⊆ ['reporter','fleet','workshop'] (Standard: alle Beteiligten)
+      const want = Array.isArray(ctxData.payload?.notify) && ctxData.payload.notify.length ? new Set(ctxData.payload.notify) : null;
+      if (!want || want.has('reporter')) add(reporter);
+      if (!want || want.has('fleet')) add(await usersByRole(env, e, ['fleet', 'owner']));
+      if ((!want || want.has('workshop')) && c.status !== 'gemeldet') add(workshopUsers);
       break;
+    }
   }
   const actorId = ctxData.actor?.id;
   return { list: list.filter((u) => u.id !== actorId), urgent };

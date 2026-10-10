@@ -66,6 +66,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Fahrzeug-Zeitleiste | `GET /api/vehicles/<id>/timeline?types=case,case_closed,inspection,odometer,driver_from,driver_to,document,tire,maintenance,fine&limit=` – alle gespeicherten Ereignisse absteigend, gleiche Rechte wie die Fahrzeugakte (Bußgelder nur owner/fleet) |
 | Eigene Anmeldungen | `GET /api/me/sessions` (Gerät aus Browser-Kennung, zuletzt aktiv, `current`), `DELETE /api/me/sessions/<16-stellige Kennung>`, `POST /api/me/sessions/revoke-others` – protokolliert als `session.revoke*` |
 | Protokoll | `GET /api/admin/audit?action=<Präfix>&before=<ISO>&limit=` (nur owner) |
+| Kommentar gezielt | Befehl `comment` mit `payload.notify ⊆ ['reporter','fleet','workshop']` (leer = alle Beteiligten) |
 | Fahrzeugimport | `POST /api/vehicles/import[?dry_run=1]` (owner, CSV): Vorschau `preview[] {line, plate, action neu/geändert/unverändert, changes[]}`, `counts`, `skipped[]`; leere Zellen/fehlende Spalten behalten vorhandene Werte |
 | Bußgelder Export | `GET /api/fines?format=csv[&with_driver=1]` (owner/fleet/viewer; Fahrer nur owner/fleet), `GET /api/fines?format=ics` (offene Antwortfristen, ohne Namen) |
 | Lager | `GET /api/stock?format=csv`; Inventur `POST /api/stock/inventory[?dry_run=1] {site, counts: [{item_id, counted}], note?}` → `differences[]`, `booked` |

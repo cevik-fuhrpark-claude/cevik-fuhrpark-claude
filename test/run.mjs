@@ -1095,6 +1095,20 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   eq(icsEscape('a;b,c\\d\nx'), 'a\\;b\\,c\\\\d\\nx');
 });
 
+await test('Kommentar gezielt benachrichtigen (nur Werkstatt / nur Meldende), Standard alle Beteiligten', async () => {
+  const c = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Kommentartest Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk(), workshop_site: 'DORTMUND' });
+  await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'receive', command_id: rk(), expected_version: 1 });
+  await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: 2, note: 'Spiegel tauschen', payload: { workshop_site: 'DORTMUND' } });
+  const who = async () => new Set((await env.DB.prepare(`SELECT user_id FROM notifications WHERE case_id=? AND kind='comment'`).bind(c.data.id).all()).results.map((r) => r.user_id));
+  eq((await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'comment', command_id: rk(), expected_version: 3, note: 'Nur an Werkstatt', payload: { notify: ['workshop'] } })).status, 200);
+  let w = await who();
+  ok(w.has(users.ws.id) && !w.has(users.driver.id), 'nur Werkstatt');
+  const v = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case.version;
+  await users.ws.post(`/api/cases/${c.data.id}/commands`, { action: 'comment', command_id: rk(), expected_version: v, note: 'Rückfrage an alle' });
+  w = await who();
+  ok(w.has(users.driver.id) && w.has(users.fleet.id), 'Standard: alle Beteiligten');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

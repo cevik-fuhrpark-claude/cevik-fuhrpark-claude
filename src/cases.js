@@ -328,6 +328,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   switch (action) {
     case 'comment':
       requireNote('Kommentar ist leer.');
+      if (Array.isArray(p.notify)) { const n = [...new Set(p.notify.filter((x) => ['reporter', 'fleet', 'workshop'].includes(x)))]; if (n.length) payload.notify = n; }
       notifyKind = 'comment';
       break;
     case 'receive':
