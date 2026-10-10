@@ -90,7 +90,7 @@ wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 
 
 ## UI-Rauchtest (vor größeren Änderungen)
 `sh scripts/restart-dev.sh && python3 scripts/ui-rauchtest.py [Screenshot-Ordner]` – ruft jede Ansicht für Inhaber, Fuhrparkleitung,
-Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (213 Ansichten, inkl. Disposition, Fahrerakte und Auslesungen) und meldet JavaScript-Fehler, rote Fehlermeldungen,
+Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (228 Ansichten, inkl. Disposition, Fahrerakte, Auslesungen und QR-Aufkleber) und meldet JavaScript-Fehler, rote Fehlermeldungen,
 fehlende Überschriften, waagrechtes Scrollen sowie (Handybreite) Felder ohne Beschriftung, Bilder ohne Alternativtext und Schaltflächen/Links ohne Text. Braucht Python-Playwright, nur lokale synthetische Daten. Stand 10.10.2026: 0 Auffälligkeiten.
 
 ## Nutzungsstatistik (Einführungsphase)

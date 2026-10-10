@@ -71,8 +71,8 @@ with sync_playwright() as p:
     api('POST', '/api/tacho/downloads', {'kind': 'fahrerkarte', 'driver_id': did, 'downloaded_on': '2026-09-01', 'evidence': 'Rauchtest Datei C_RT.ddd'})
     api('POST', '/api/tacho/downloads', {'kind': 'massenspeicher', 'vehicle_id': vid, 'downloaded_on': '2026-08-01', 'evidence': 'Rauchtest Datei M_RT.ddd'})
     for r in ('owner', 'fleet'):
-        ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho']
-    ROUTES['driver'] += ['drivers']
+        ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho', 'vehicles/qr', f'vehicles/qr/{vid}']
+    ROUTES['driver'] += ['drivers', f'new/{vid}']
     # Eine Meldung, damit Listen nicht leer sind
     pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegel locker', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-1'}])
 

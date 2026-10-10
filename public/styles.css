@@ -217,3 +217,9 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 /* [CLAUDE] QR-Code für Einladungslinks: feste Schwarz/Weiß-Darstellung, gut scanbar */
 .qr svg { width: min(240px, 70vw); height: auto; display: block; border-radius: 4px; }
 @media print { .qr svg { width: 50mm; } }
+/* [CLAUDE] QR-Aufkleber je Fahrzeug (Druckbogen) */
+.qrsheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.qrcard { display: flex; gap: 12px; align-items: center; background: #fff; color: #000; border: 1px dashed var(--rule); border-radius: var(--radius-m); padding: 10px; break-inside: avoid; }
+.qrcard .qr svg { width: 120px; }
+.qrcard p { margin: 4px 0; }
+@media print { .qrsheet { grid-template-columns: repeat(2, 1fr); gap: 6mm; } .qrcard { border: 1px dashed #999; } .qrcard .qr svg { width: 38mm; } }

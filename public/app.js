@@ -123,7 +123,7 @@ function labelFix(root) {
 // ---------- Router ----------
 const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
-  [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
+  [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
   [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
@@ -137,7 +137,7 @@ async function route() {
       catch (err) {
         // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
         const cached = err.offline ? offlineSession() : null;
-        if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
+        if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); if (!st.needs_setup && /^#\/(new\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
         S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
       }
       if (S.me.role === 'owner') S.viewEnv = localStorage.getItem('cfp_env') || null;
@@ -196,7 +196,7 @@ function viewLogin() {
   bindLang();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value }); S.me = null; location.hash = '#/'; route(); }
+    try { const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value }); S.me = null; let next = '#/'; try { next = sessionStorage.getItem('cfp_after_login') || '#/'; sessionStorage.removeItem('cfp_after_login'); } catch {} location.hash = next; route(); }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -419,7 +419,7 @@ async function vehiclesCached() {
 function outboxAdd(path, body, photos = 0) { const list = outboxGet(); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, photos, saved_at: new Date().toISOString() }); outboxSet(list); }
 
 // ---------- Neue Meldung ----------
-async function viewNew() {
+async function viewNew(preId) {
   const vs = await vehiclesCached();
   const mine = vs.filter((v) => v.assigned);
   const others = vs.filter((v) => !v.assigned);
@@ -437,6 +437,8 @@ async function viewNew() {
     <div class="actions"><button class="btn block" id="sb">${esc(t('send_report'))}</button></div></form>`, 'new');
   // Genau ein zugeordnetes Fahrzeug: vorauswählen (Fahrer kann jederzeit ein anderes wählen)
   if (mine.length === 1) { const r = $(`input[name=veh][value="${CSS.escape(mine[0].id)}"]`); if (r) r.checked = true; }
+  // Aufruf über Fahrzeug-QR-Aufkleber: dieses Fahrzeug vorauswählen
+  if (preId) { const r = $(`input[name=veh][value="${CSS.escape(preId)}"]`); if (r) { r.checked = true; const det = r.closest('details'); if (det) det.open = true; r.closest('label').scrollIntoView({ block: 'center' }); } else toast(t('qr_vehicle_unknown'), true); }
   const key = uid();
   $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => (l.hidden = q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q))); if (q) $$('details').forEach((d) => (d.open = true)); };
   $('#f').onsubmit = async (e) => {
@@ -705,7 +707,7 @@ async function viewVehicles() {
     ${nT ? `<div class="actions" role="tablist" style="margin-top:0">${[['all', t('filter_all'), vs.length], ['lkw', t('vk_lkw'), vs.length - nT], ['anhaenger', t('vk_anhaenger'), nT]].map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-vk="${k}" role="tab" aria-selected="${f === k}">${esc(l)} (${n})</button>`).join('')}</div>` : ''}
     ${S.me.role !== 'driver' ? `<div class="actions" style="flex-wrap:wrap;margin-top:0">${sites.length > 1 ? `<select id="vsite" aria-label="${esc(t('site'))}" style="max-width:220px"><option value="">${esc(t('site'))}: ${esc(t('filter_all'))}</option>${sites.map((x) => `<option${x === site ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : ''}
       ${[['all', t('filter_all'), base.length], ...AV.map((k) => [k, t('av_' + k), base.filter((v) => v.availability === k).length])].map(([k, l, n]) => `<button type="button" class="btn ${av === k ? '' : 'secondary'}" data-av="${k}">${esc(l)} (${n})</button>`).join('')}</div>` : ''}
-    ${S.me.role !== 'driver' ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="vcsv">${esc(t('export_csv'))}</button></div>` : ''}
+    ${S.me.role !== 'driver' ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="vcsv">${esc(t('export_csv'))}</button>${isMgr() ? `<a class="btn secondary" href="#/vehicles/qr">${esc(t('qr_sheet'))}</a>` : ''}</div>` : ''}
     <div class="list" id="vl">${shown.map((v) => `<a class="row ${v.availability === 'gesperrt' ? 'p-kritisch' : v.availability === 'werkstatt' ? 'p-mittel' : ''}" href="#/vehicles/${esc(v.id)}" data-s="${esc((v.plate + ' ' + (v.site || '') + ' ' + (v.vin || '') + ' ' + (v.trailer_plate || '') + ' ' + (v.truck_plate || '')).toLowerCase())}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${v.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.build_year || '')}</span><span class="chip ${v.availability === 'gesperrt' ? 'gesperrt' : ''}">${esc(t('av_' + v.availability))}</span><span class="sub">${[v.site && esc(v.site), v.trailer_plate && esc(t('trailer')) + ' ' + esc(v.trailer_plate), v.truck_plate && esc(t('truck')) + ' ' + esc(v.truck_plate), v.next_due && esc(t('next_due')) + ' ' + fmtD(v.next_due), v.last_km && Number(v.last_km).toLocaleString('de-DE') + ' km'].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>`, 'vehicles');
   $$('[data-vk]').forEach((b) => (b.onclick = () => { S.vehKind = b.dataset.vk; viewVehicles(); }));
   $$('[data-av]').forEach((b) => (b.onclick = () => { S.vehAvail = b.dataset.av; viewVehicles(); }));
@@ -758,7 +760,7 @@ async function viewVehicle(id) {
     <h1 style="margin-top:12px">${esc(t('vehicle_file'))}</h1><section class="panel"><dl class="kv"><dt>${esc(t('vin'))}</dt><dd>${esc(v.vin)}</dd><dt>${esc(t('manufacturer'))}</dt><dd>${esc(v.manufacturer || '–')} ${esc(v.model || '')}</dd><dt>${esc(t('year'))}</dt><dd>${esc(v.build_year || '–')}</dd><dt>${esc(t('site'))}</dt><dd>${esc(v.site || '–')}</dd><dt>${esc(t('vehicle_kind'))}</dt><dd>${esc(t('vk_' + (v.kind || 'lkw')))}</dd>${v.kind === 'anhaenger' ? `<dt>${esc(t('truck'))}</dt><dd>${(d.coupled || []).map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>`).join(', ') || '–'}</dd>` : `<dt>${esc(t('trailer'))}</dt><dd>${(d.coupled || []).length ? d.coupled.map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>`).join(', ') : esc(v.trailer_plate || '–')}</dd>`}<dt>${esc(t('km'))}</dt><dd>${d.odometer[0] ? Number(d.odometer[0].km).toLocaleString('de-DE') + ' km · ' + fmtD(d.odometer[0].measured_at) : '–'}</dd></dl></section>`;
   if (!v.active) html += `<div class="panel alert">${esc(t('vehicle_inactive'))}</div>`;
   if (v.eval_excluded) html += `<div class="panel alert"><b>${esc(t('eval_excluded'))}</b> – ${esc(t('eval_excluded_hint'))}${v.eval_excluded_reason ? `<div class="small">${esc(v.eval_excluded_reason)}</div>` : ''}</div>`;
-  html += `<p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p><div class="actions noprint"><a class="btn secondary" href="#/vehicles/${esc(v.id)}/timeline">${esc(t('timeline'))}</a><button type="button" class="btn secondary" id="prt">${esc(t('print'))}</button></div>`;
+  html += `<p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p><div class="actions noprint"><a class="btn secondary" href="#/vehicles/${esc(v.id)}/timeline">${esc(t('timeline'))}</a>${isMgr() ? `<a class="btn secondary" href="#/vehicles/qr/${esc(v.id)}">${esc(t('qr_sticker'))}</a>` : ''}<button type="button" class="btn secondary" id="prt">${esc(t('print'))}</button></div>`;
   if (isMgr()) html += `<details class="panel"><summary>${esc(t('edit_master'))}</summary><form id="evf">${vehicleForm(v)}<div class="actions"><button class="btn">${esc(t('save'))}</button>${v.active ? `<button type="button" class="btn secondary" id="deact">${esc(t('deactivate_vehicle'))}</button>` : `<button type="button" class="btn secondary" id="react">${esc(t('activate_vehicle'))}</button>`}<button type="button" class="btn secondary" id="evx">${esc(v.eval_excluded ? t('eval_include') : t('eval_exclude'))}</button></div></form></details>`;
   if (d.telematics && d.telematics.length) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tm_live'))}</h3>${d.telematics.map((x) => `<dl class="kv"><dt>${esc(t('tm_source'))}</dt><dd>${esc(x.provider)} (${esc(x.match_basis === 'vin' ? 'FIN' : t('tm_mappings'))})</dd><dt>${esc(t('tm_time'))}</dt><dd>${fmtDT(x.gps_time || x.received_at)}</dd>${x.km !== null ? `<dt>${esc(t('km'))}</dt><dd>${fmtKm(x.km)}</dd>` : ''}${x.ignition !== null ? `<dt>${esc(t('tm_ignition'))}</dt><dd>${esc(t(x.ignition ? 'tm_on' : 'tm_off'))}</dd>` : ''}${x.lat !== null && x.lon !== null ? `<dt>${esc(t('tm_position'))}</dt><dd><a href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lon}#map=14/${x.lat}/${x.lon}" target="_blank" rel="noopener noreferrer">${x.lat.toFixed(4)}, ${x.lon.toFixed(4)}</a></dd>` : ''}</dl>`).join('')}</section>`;
   if (d.tacho) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tacho_vu'))}</h3><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${d.tacho.last ? fmtD(d.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${d.tacho.due ? fmtD(d.tacho.due) + ' ' : ''}<span class="chip ${TST[d.tacho.status]}">${esc(t('tst_' + d.tacho.status))}</span></dd></dl>
@@ -1059,6 +1061,21 @@ function vehInfo(vi, c) {
   if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due'))}</dt><dd>${vi.inspections_due.map((m) => `${esc(m.kind)} ${fmtD(m.next_due_date)}${m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}`).join('<br>')}</dd>`);
   if (vi.last_km) parts.push(`<dt>${esc(t('km'))}</dt><dd>${fmtKm(vi.last_km.km)} <span class="small muted">(${fmtD(vi.last_km.measured_at)})</span></dd>`);
   return `<details class="small" style="margin-top:8px"${vi.other_open_total || vi.inspections_due.some((m) => m.next_due_date < today) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
+}
+
+// ---------- QR-Aufkleber je Fahrzeug: Scan öffnet „Schaden melden“ mit vorausgewähltem Fahrzeug ----------
+async function viewQrSheet(oneId) {
+  if (!isMgr()) { location.hash = '#/'; return; }
+  const all = (await api('GET', '/api/vehicles')).vehicles;
+  const k = S.qrKind || 'lkw';
+  const list = oneId ? all.filter((v) => v.id === oneId) : all.filter((v) => k === 'all' || v.kind === k).sort((a, b) => a.plate.localeCompare(b.plate));
+  const card = (v) => { const link = `${location.origin}/#/new/${v.id}`; return `<div class="qrcard"><div class="qr">${qrSvg(link, { label: `${t('report_damage')} ${v.plate}` })}</div><div>${plate(v.plate)}<p class="small"><b>${esc(t('qr_sticker_text'))}</b></p><p class="small muted">${esc(t('qr_sticker_sub'))}</p></div></div>`; };
+  render(`<div class="noprint">${oneId ? `<p><a href="#/vehicles/${esc(oneId)}">‹ ${esc(t('back'))}</a></p>` : `<p><a href="#/vehicles">‹ ${esc(t('back'))}</a></p>`}<h1>${esc(t('qr_sheet'))}</h1><p class="small muted">${esc(t('qr_sheet_hint'))}</p>
+    ${oneId ? '' : `<div class="actions" style="flex-wrap:wrap">${[['lkw', t('vk_lkw')], ['anhaenger', t('vk_anhaenger')], ['all', t('filter_all')]].map(([key, l]) => `<button type="button" class="btn ${k === key ? '' : 'secondary'}" data-qk="${key}">${esc(l)}</button>`).join('')}</div>`}
+    <div class="actions"><button type="button" class="btn" id="qprt">${esc(t('print'))} (${list.length})</button></div></div>
+    <div class="qrsheet">${list.map(card).join('') || '<p class="muted">–</p>'}</div>`, 'more');
+  $$('[data-qk]').forEach((b) => (b.onclick = () => { S.qrKind = b.dataset.qk; viewQrSheet(); }));
+  $('#qprt').onclick = () => window.print();
 }
 
 // ---------- Auslese-Fristen Fahrerkarte / Massenspeicher ----------
