@@ -625,6 +625,23 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
   eq(api.status, 200); eq(api.data.totals.actual_net, r.data.totals.actual_net);
 });
 
+await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den Vorgängen überein; Rechte', async () => {
+  const ym = new Date().toISOString().slice(0, 7);
+  const r = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`);
+  eq(r.status, 200);
+  const all = r.data.by_priority.find((x) => x.priority === 'alle');
+  const list = (await users.fleet.get('/api/cases?limit=500')).data.cases;
+  eq(all.created, list.length, 'Anzahl Vorgänge');
+  eq(all.released, list.filter((c) => c.status === 'fahrzeug_freigegeben').length, 'freigegeben');
+  eq(all.created, all.released + all.rejected + all.open);
+  eq(r.data.by_priority.filter((x) => x.priority !== 'alle').reduce((n, x) => n + x.created, 0), all.created, 'Summe Prioritäten');
+  ok(all.triage.n > 0 && all.triage.median_h >= 0 && all.triage.p90_h >= all.triage.median_h, 'Erstbewertung');
+  ok(all.created_to_release.n === all.released, 'Durchlaufzeit nur für freigegebene');
+  ok(r.data.vehicles.length > 0 && r.data.vehicles.every((v) => v.plate && v.workshop_h >= 0), 'je Fahrzeug');
+  eq((await users.driver.get('/api/reports/kpi')).status, 403);
+  eq((await users.fleet.get('/api/reports/kpi?from=2026-13')).status, 400);
+});
+
 console.log('Datensicherung');
 await test('Sicherung nur für Inhaber, ohne Passwörter/Token/Schlüssel, mit allen Fachtabellen', async () => {
   eq((await users.fleet.get('/api/admin/backup')).status, 403);

@@ -104,3 +104,69 @@ export function costReportCsv(rep) {
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
+
+// [CLAUDE] Kennzahlen Instandhaltung: Reaktions- und Durchlaufzeiten je Priorität, Teile-Wartezeit, Werkstattzeit je Fahrzeug.
+// Grundlage sind ausschließlich gespeicherte Zeitstempel (Vorgang + Ereignisprotokoll); fehlende Zeitstempel = nicht gezählt, nie geschätzt.
+const H = 3600000;
+const r1 = (x) => (x === null ? null : Math.round(x * 10) / 10);
+function quantile(arr, q) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  const pos = (s.length - 1) * q; const lo = Math.floor(pos); const hi = Math.ceil(pos);
+  return s[lo] + (s[hi] - s[lo]) * (pos - lo);
+}
+const stat = (arr) => ({ n: arr.length, median_h: r1(quantile(arr, 0.5)), p90_h: r1(quantile(arr, 0.9)) });
+
+export async function kpiReport(env, user, envName, query = {}) {
+  if (!READ_ROLES.includes(user.role)) throw forbidden();
+  const { from, to } = monthRange(query);
+  const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
+  const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
+  const cases = (await env.DB.prepare(`SELECT id, vehicle_id, priority, status, created_at, fleet_received_at, workshop_ack_at, closed_at FROM cases
+    WHERE environment=? AND created_at >= ? AND created_at < ?`).bind(envName, lo, hi).all()).results
+    .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to; });
+  const ids = cases.map((c) => c.id);
+  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
+    .bind(JSON.stringify(ids)).all()).results : [];
+  const evBy = new Map();
+  for (const e of events) { if (!evBy.has(e.case_id)) evBy.set(e.case_id, []); evBy.get(e.case_id).push(e); }
+  const now = Date.now();
+  const groups = {}; const byVehicle = new Map();
+  const g = (k) => groups[k] || (groups[k] = { created: 0, released: 0, rejected: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
+  for (const c of cases) {
+    const evs = evBy.get(c.id) || [];
+    const t0 = Date.parse(c.created_at);
+    const approved = evs.find((e) => e.to_status === 'werkstatt_freigegeben');
+    // Teile-Wartezeit: Summe der Abschnitte im Status „wartet_teile“ (offener Abschnitt bis jetzt)
+    let wait = 0; let since = null;
+    for (const e of evs) {
+      if (e.to_status === 'wartet_teile' && since === null) since = Date.parse(e.created_at);
+      else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { wait += Date.parse(e.created_at) - since; since = null; }
+    }
+    if (since !== null) wait += now - since;
+    const workshop = approved && c.closed_at && c.status === 'fahrzeug_freigegeben' ? Date.parse(c.closed_at) - Date.parse(approved.created_at) : null;
+    for (const k of [c.priority, 'alle']) {
+      const x = g(k); x.created++;
+      if (c.status === 'fahrzeug_freigegeben') x.released++; else if (c.status === 'abgelehnt') x.rejected++; else x.open++;
+      if (c.fleet_received_at) x.triage.push((Date.parse(c.fleet_received_at) - t0) / H);
+      if (approved && c.workshop_ack_at) x.ack.push((Date.parse(c.workshop_ack_at) - Date.parse(approved.created_at)) / H);
+      if (c.status === 'fahrzeug_freigegeben' && c.closed_at) x.total.push((Date.parse(c.closed_at) - t0) / H);
+      x.parts_wait_h += wait / H;
+    }
+    const v = byVehicle.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, cases: 0, released: 0, workshop_h: 0, parts_wait_h: 0 };
+    v.cases++; if (c.status === 'fahrzeug_freigegeben') v.released++;
+    if (workshop !== null) v.workshop_h += workshop / H;
+    v.parts_wait_h += wait / H;
+    byVehicle.set(c.vehicle_id, v);
+  }
+  const plates = new Map((await env.DB.prepare('SELECT id, plate, kind FROM vehicles').all()).results.map((v) => [v.id, v]));
+  const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
+  const by_priority = order.filter((k) => groups[k]).map((k) => {
+    const x = groups[k];
+    return { priority: k, created: x.created, released: x.released, rejected: x.rejected, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
+  });
+  const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h) }))
+    .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
+  return { from, to, environment: envName, by_priority, vehicles,
+    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“' } };
+}

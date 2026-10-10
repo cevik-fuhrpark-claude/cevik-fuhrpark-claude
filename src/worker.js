@@ -180,6 +180,8 @@ async function handleApi(request, env, ctx, url) {
     return json(rep);
   }
 
+  if (path === '/api/reports/kpi' && m === 'GET') return json(await reports.kpiReport(env, user, envName, Object.fromEntries(url.searchParams)));
+
   // Ersatzteillager
   if (path === '/api/stock' && m === 'GET') return json({ items: await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/stock' && m === 'POST') return json(await stock.createItem(env, user, envName, await readJson(request)), 201);

@@ -83,3 +83,6 @@ Kopfzeile mit `Kennzeichen` und/oder `FIN`, `Art` (HU, SP, UVV, Tachograph … ;
 `Nächster Termin` (JJJJ-MM-TT, TT.MM.JJJJ oder Plakette MM/JJJJ → fällig bis Monatsende, im Nachweis vermerkt) **oder** `Letzte Prüfung` + `Intervall Monate`,
 `Nachweis` (Pflicht je Zeile). Nur `Letzte Prüfung` ohne Termin/Intervall ist erlaubt (Rechnung ohne Fälligkeit): die Prüfung wird „ohne Termin“ gespeichert, ein bereits hinterlegtes Intervall wird angewendet – es wird nie ein Termin erfunden. Zuordnung über FIN, sonst nur über eindeutiges Kennzeichen. Ein vorhandener späterer Termin wird nie überschrieben;
 gleiche Termine bleiben unverändert (Import ist wiederholbar). `?dry_run=1` liefert die Vorschau ohne zu speichern. Jeder Import/Export im Audit-Log.
+
+## Kennzahlen (App)
+`GET /api/reports/kpi?from=JJJJ-MM&to=JJJJ-MM` – Inhaber, Fuhrparkleitung, Lesezugriff. Je Priorität (`kritisch`/`mittel`/`niedrig`/`alle`): `created`, `released`, `rejected`, `open`, `triage`/`workshop_ack`/`created_to_release` als `{n, median_h, p90_h}`, `parts_wait_h`; `vehicles[]` mit `workshop_h` und `parts_wait_h`. Definitionen im Feld `definitions`.
