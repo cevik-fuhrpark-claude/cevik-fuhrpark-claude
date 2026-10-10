@@ -1260,7 +1260,15 @@ async function viewSettings() {
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted">Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger</p><input type="file" id="tcsv" accept=".csv,text/csv" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('backup'))}</h2><p class="small muted">${esc(t('backup_hint'))}</p><button type="button" class="btn secondary" id="bkp">${esc(t('backup_download'))}</button></section>`, 'more');
   $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${new Date().toISOString().slice(0, 10)}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
-  $('#tcsv').onchange = async () => { const f = $('#tcsv').files[0]; if (!f) return; try { const r = await api('POST', '/api/tires/import', await f.text(), { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${r.imported} · ${r.skipped_no_vehicle.length} ohne passendes Fahrzeug · ${r.kept_verified} geprüft behalten</p>`; } catch (err) { toast(err.message, true); } };
+  $('#tcsv').onchange = async () => {
+    const f = $('#tcsv').files[0]; if (!f) return;
+    const text = await f.text();
+    try {
+      const r = await api('POST', '/api/tires/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });
+      $('#tcsvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${r.counts.neu} ${esc(t('imp_new'))} · ${r.counts.geaendert} ${esc(t('imp_changed'))} · ${r.counts.unveraendert} ${esc(t('imp_same'))} · ${r.kept_verified} ${esc(t('tires_kept_verified'))} · ${r.skipped_no_vehicle.length} ${esc(t('tires_no_vehicle'))}</p><div class="actions"><button type="button" class="btn" id="tgo"${r.counts.neu + r.counts.geaendert ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
+      $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${g.imported}</p>`; } catch (err) { toast(err.message, true); } };
+    } catch (err) { toast(err.message, true); }
+  };
   $('#sf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k] === '' ? null : b[k].replace(',', '.'); try { await api('PUT', '/api/settings', b); toast('✓'); } catch (err) { toast(err.message, true); } };
   $('#csv').onchange = async () => {
     const f = $('#csv').files[0]; if (!f) return;

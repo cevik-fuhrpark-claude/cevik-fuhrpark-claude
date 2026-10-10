@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv } from './util.js';
 import { audit } from './auth.js';
 
 export const AXLES = ['lenkachse', 'liftachse', 'antriebsachse', 'anhaenger'];
@@ -90,20 +90,20 @@ export async function setTireSpec(env, user, vehicleId, body) {
 
 // Import Quelldatei (CSV: Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger)
 // Nur FIN-Treffer werden übernommen; bereits geprüfte Werte werden nicht überschrieben.
-export async function importTireSpecs(env, user, text) {
+export async function importTireSpecs(env, user, text, { dryRun = false } = {}) {
   if (user.role !== 'owner') throw forbidden('Nur der Inhaber darf importieren.');
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  const head = lines.shift().split(';').map((h) => h.trim().toLowerCase());
+  const lines = parseCsv(text);
+  if (lines.length < 2) throw bad('validation', 'CSV leer.');
+  const head = lines.shift().map((h) => h.trim().toLowerCase());
   const idx = (n) => head.findIndex((h) => h.startsWith(n));
   const ci = { src: idx('quelle'), fin: idx('fin'), lenk: idx('reifen lenk'), lift: idx('reifen lift'), antr: idx('reifen antrieb'), anh: idx('reifen anh') };
   if (ci.fin < 0) throw bad('validation', 'Spalte FIN fehlt.');
-  const res = { imported: 0, skipped_no_vehicle: [], kept_verified: 0 };
+  const res = { imported: 0, skipped_no_vehicle: [], kept_verified: 0, dry_run: dryRun };
   // Abfragebudget: Fahrzeuge und geprüfte Werte vorab laden, Schreibvorgang als Sammelanweisung
   const byVin = new Map((await env.DB.prepare('SELECT id, vin FROM vehicles').all()).results.map((v) => [v.vin, v.id]));
   const verified = new Set((await env.DB.prepare('SELECT vehicle_id, axle FROM tire_specs WHERE verified=1').all()).results.map((r) => `${r.vehicle_id}|${r.axle}`));
   const rows = new Map();
-  for (const line of lines) {
-    const c = line.split(';').map((x) => x.trim());
+  for (const c of lines) {
     const vin = normalizeVin(c[ci.fin]);
     const vid = byVin.get(vin);
     if (!vid) { res.skipped_no_vehicle.push(vin || '(leer)'); continue; }
@@ -115,6 +115,11 @@ export async function importTireSpecs(env, user, text) {
     }
   }
   const list = [...rows.values()];
+  // Vorschau: neu / geändert / unverändert gegenüber vorhandenen (ungeprüften) Größen
+  const current = new Map((await env.DB.prepare('SELECT vehicle_id, axle, size FROM tire_specs').all()).results.map((r) => [`${r.vehicle_id}|${r.axle}`, r.size]));
+  res.counts = { neu: 0, geaendert: 0, unveraendert: 0 };
+  for (const r of list) { const cur = current.get(`${r.v}|${r.a}`); if (cur === undefined) res.counts.neu++; else if (cur !== r.s) res.counts.geaendert++; else res.counts.unveraendert++; }
+  if (dryRun) { res.imported = 0; return res; }
   const stmts = [];
   for (let i = 0; i < list.length; i += 400) {
     stmts.push(env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,updated_at)

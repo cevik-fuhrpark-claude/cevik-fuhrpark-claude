@@ -197,7 +197,7 @@ async function handleApi(request, env, ctx, url) {
     await rateLimit(env, 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
-    return json(await tires.importTireSpecs(env, user, text));
+    return json(await tires.importTireSpecs(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
 
   if (path === '/api/telematics' && m === 'GET') return json(await telem.telematicsOverview(env, user));

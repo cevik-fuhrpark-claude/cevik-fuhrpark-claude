@@ -565,8 +565,12 @@ console.log('Reifenmanagement');
 await test('Reifengrößen-Import nur über FIN; geprüfte Werte bleiben erhalten', async () => {
   const csv = (await import('node:fs')).readFileSync(new URL('../seed/reifen_quelldaten.csv', import.meta.url), 'utf8');
   eq((await users.fleet.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' })).status, 403);
+  const pre = await owner.req('POST', '/api/tires/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(pre.status, 200); ok(pre.data.counts.neu >= 4 && pre.data.imported === 0, 'Vorschau ohne Übernahme');
+  eq((await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.specs.length, 0, 'Vorschau schreibt nichts');
   const r = await owner.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' });
-  eq(r.status, 200); ok(r.data.imported >= 4, 'Größen für Testfahrzeuge übernommen'); ok(r.data.skipped_no_vehicle.length > 10, 'Unbekannte FIN übersprungen');
+  eq(r.status, 200); ok(r.data.imported >= 4, 'Größen für Testfahrzeuge übernommen');
+  eq((await owner.req('POST', '/api/tires/import?dry_run=1', csv, { 'content-type': 'text/csv' })).data.counts.neu, 0, 'zweite Vorschau: nichts neu'); ok(r.data.skipped_no_vehicle.length > 10, 'Unbekannte FIN übersprungen');
   const o = await users.fleet.get(`/api/vehicles/${V1}/tires`);
   const lenk = o.data.specs.find((x) => x.axle === 'lenkachse');
   eq(lenk.size, '315/60 R22.5'); eq(lenk.verified, 0, 'Quellwert ungeprüft');
