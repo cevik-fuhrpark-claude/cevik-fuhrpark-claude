@@ -1262,7 +1262,20 @@ async function viewSettings() {
   $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${new Date().toISOString().slice(0, 10)}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
   $('#tcsv').onchange = async () => { const f = $('#tcsv').files[0]; if (!f) return; try { const r = await api('POST', '/api/tires/import', await f.text(), { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${r.imported} · ${r.skipped_no_vehicle.length} ohne passendes Fahrzeug · ${r.kept_verified} geprüft behalten</p>`; } catch (err) { toast(err.message, true); } };
   $('#sf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k] === '' ? null : b[k].replace(',', '.'); try { await api('PUT', '/api/settings', b); toast('✓'); } catch (err) { toast(err.message, true); } };
-  $('#csv').onchange = async () => { const f = $('#csv').files[0]; if (!f) return; try { const r = await api('POST', '/api/vehicles/import', await f.text(), { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${r.imported}${r.skipped.length ? ` · ${r.skipped.length} übersprungen: ${esc(r.skipped.map((s) => s.plate + ' (' + s.reason + ')').join(', '))}` : ''}</p>`; } catch (err) { toast(err.message, true); } };
+  $('#csv').onchange = async () => {
+    const f = $('#csv').files[0]; if (!f) return;
+    const text = await f.text();
+    const skipped = (r) => (r.skipped.length ? `<p class="small">${r.skipped.length} ${esc(t('skipped'))}: ${esc(r.skipped.map((x) => `${t('line')} ${x.line} ${x.plate || ''} (${x.reason})`).join(', '))}</p>` : '');
+    const FL = { plate: t('plate_label'), site: t('site'), manufacturer: t('manufacturer'), model: t('model_label'), build_year: t('year'), trailer_plate: t('trailer'), master_status: 'Status', kind: t('vehicle_kind') };
+    try {
+      const r = await api('POST', '/api/vehicles/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });
+      const changed = r.preview.filter((x) => x.action !== 'unverändert');
+      $('#csvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${r.counts.neu} ${esc(t('imp_new'))} · ${r.counts.geaendert} ${esc(t('imp_changed'))} · ${r.counts.unveraendert} ${esc(t('imp_same'))}</p>${skipped(r)}
+        ${changed.length ? `<div class="list">${changed.slice(0, 200).map((x) => `<div class="row ${x.action === 'neu' ? '' : 'p-mittel'}"><span class="chip">${esc(t('line'))} ${x.line}</span><span class="title">${esc(x.plate)}</span><span class="chip">${esc(x.action === 'neu' ? t('imp_new') : t('imp_changed'))}</span>${x.changes && x.changes.length ? `<span class="sub" style="white-space:normal">${x.changes.map((c) => `${esc(FL[c.field] || c.field)}: ${esc(c.from ?? '–')} → ${esc(c.to)}`).join(' · ')}</span>` : ''}</div>`).join('')}</div>` : ''}
+        <p class="small muted">${esc(t('imp_keep_hint'))}</p><div class="actions"><button type="button" class="btn" id="csvgo"${r.preview.length ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
+      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}`; S.vehCache = null; } catch (err) { toast(err.message, true); } };
+    } catch (err) { toast(err.message, true); }
+  };
 }
 
 // ---------- Start ----------

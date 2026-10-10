@@ -1,6 +1,6 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
-import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
@@ -53,29 +53,7 @@ export function parseDueDate(raw) {
   return { error: `Datum nicht erkannt: ${s} (JJJJ-MM-TT, TT.MM.JJJJ oder MM/JJJJ)` };
 }
 
-// CSV mit Anführungszeichen (RFC 4180, Trennzeichen ; oder ,)
-export function parseCsv(text) {
-  const src = String(text || '').replace(/^﻿/, '');
-  const firstLine = src.split(/\r?\n/, 1)[0] || '';
-  const sep = firstLine.includes(';') ? ';' : ',';
-  const rows = []; let row = []; let cell = ''; let q = false;
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (q) {
-      if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c;
-    } else if (c === '"' && cell === '') q = true;
-    else if (c === sep) { row.push(cell.trim()); cell = ''; }
-    else if (c === '\n' || c === '\r') {
-      if (c === '\r' && src[i + 1] === '\n') i++;
-      row.push(cell.trim()); cell = '';
-      if (row.some((x) => x !== '')) rows.push(row);
-      row = [];
-    } else cell += c;
-  }
-  row.push(cell.trim());
-  if (row.some((x) => x !== '')) rows.push(row);
-  return rows;
-}
+export { parseCsv } from './util.js';
 
 // Kilometer-Intervall: fällig bei letzter Durchführung (km) + Intervall; nur wenn beides belegt ist.
 // Vorwarnung nur, wenn „maintenance_warn_km“ eingestellt ist (keine erfundene Schwelle) – sonst nur „überfällig“.

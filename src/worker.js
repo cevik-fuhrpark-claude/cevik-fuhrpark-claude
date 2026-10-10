@@ -154,7 +154,7 @@ async function handleApi(request, env, ctx, url) {
     await rateLimit(env, 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
-    return json(await veh.importVehiclesCsv(env, user, text));
+    return json(await veh.importVehiclesCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/)) && m === 'GET') return json(await veh.vehicleTimeline(env, user, envName, mm[1], Object.fromEntries(url.searchParams)));

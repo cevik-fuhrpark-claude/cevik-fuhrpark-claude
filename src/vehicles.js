@@ -1,5 +1,5 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ } from './cases.js';
@@ -131,7 +131,8 @@ export function normalizeVehicleKind(raw) {
 }
 
 // Sammel-Upsert über json_each: eine Anweisung je 400 Fahrzeuge (Abfragebudget je Aufruf)
-async function upsertVehicleRows(env, rows) {
+// keepExisting (Import): leere/fehlende Felder überschreiben vorhandene Werte nicht – ein Import löscht nie Stammdaten
+async function upsertVehicleRows(env, rows, { keepExisting = false } = {}) {
   const now = nowIso();
   if (rows.some((r) => !r.kind)) {
     const known = new Map((await env.DB.prepare('SELECT id, kind FROM vehicles').all()).results.map((v) => [v.id, v.kind]));
@@ -143,8 +144,8 @@ async function upsertVehicleRows(env, rows) {
     stmts.push(env.DB.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,model,build_year,trailer_plate,trailer_vin,master_status,source,kind,active,created_at,updated_at)
       SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, ${J('kind')}, 1, ?1, ?1
       FROM json_each(?2) WHERE 1
-      ON CONFLICT(id) DO UPDATE SET plate=excluded.plate, site=excluded.site, manufacturer=excluded.manufacturer, model=excluded.model, build_year=excluded.build_year,
-        trailer_plate=excluded.trailer_plate, trailer_vin=excluded.trailer_vin, master_status=excluded.master_status, source=excluded.source, kind=excluded.kind, active=1, updated_at=excluded.updated_at`)
+      ON CONFLICT(id) DO UPDATE SET ${['plate', 'site', 'manufacturer', 'model', 'build_year', 'trailer_plate', 'trailer_vin', 'master_status', 'source', 'kind']
+        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=1, updated_at=excluded.updated_at`)
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
   if (stmts.length) await env.DB.batch(stmts);
@@ -380,36 +381,51 @@ export async function addOdometer(env, user, vehicleId, body) {
 }
 
 // Stammdatenimport (CSV mit Kopfzeile: Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger)
-export async function importVehiclesCsv(env, user, text) {
+export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}) {
   if (user.role !== 'owner') throw forbidden('Nur der Inhaber darf Stammdaten importieren.');
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) throw bad('validation', 'CSV leer.');
-  const sep = lines[0].includes(';') ? ';' : ',';
-  const head = lines[0].split(sep).map((h) => h.trim().toLowerCase());
+  const table = parseCsv(text);
+  if (table.length < 2) throw bad('validation', 'CSV leer.');
+  const head = table[0].map((h) => h.trim().toLowerCase());
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']), kind: col(['fahrzeugart', 'art']), src: col(['quelle', 'nachweis']) };
+  const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']), kind: col(['fahrzeugart', 'art']), src: col(['quelle', 'nachweis']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
   if (head.some((h) => h.startsWith('reifen') || h === 'art' || h.startsWith('letzte'))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');
-  const result = { imported: 0, skipped: [] };
+  const result = { imported: 0, skipped: [], dry_run: dryRun, preview: [] };
   const rows = new Map();
-  for (const line of lines.slice(1)) {
-    const cells = line.split(sep).map((c) => c.trim());
+  const cell = (cells, i) => (i >= 0 && cells[i] !== undefined && cells[i] !== '' ? cells[i] : null);
+  table.slice(1).forEach((cells, idx) => {
+    const line = idx + 2;
     const vin = normalizeVin(cells[ci.vin]);
-    if (!isValidVin(vin)) { result.skipped.push({ plate: cells[ci.plate], reason: 'FIN ungültig/fehlt' }); continue; }
+    if (!isValidVin(vin)) { result.skipped.push({ line, plate: cells[ci.plate], reason: 'FIN ungültig/fehlt' }); return; }
     try {
+      const yearRaw = cell(cells, ci.year);
       const row = vehicleRow(user, {
-        vin, plate: cells[ci.plate], site: ci.site >= 0 ? cells[ci.site] : null, master_status: ci.status >= 0 ? cells[ci.status] : null,
-        manufacturer: ci.man >= 0 ? cells[ci.man] : null, build_year: ci.year >= 0 && /^\d{4}(\.0+)?$/.test(cells[ci.year]) ? parseInt(cells[ci.year], 10) : null,
-        trailer_plate: ci.trailer >= 0 ? cells[ci.trailer] : null, kind: ci.kind >= 0 ? cells[ci.kind] : null,
-        source: ci.kind >= 0 && ci.src >= 0 && cells[ci.src] ? `CSV-Import: ${cells[ci.src].slice(0, 180)}` : 'CSV-Import Fuhrpark Stammliste',
+        vin, plate: cells[ci.plate], site: cell(cells, ci.site), master_status: cell(cells, ci.status),
+        manufacturer: cell(cells, ci.man), model: cell(cells, ci.model), build_year: yearRaw && /^\d{4}(\.0+)?$/.test(yearRaw) ? parseInt(yearRaw, 10) : null,
+        trailer_plate: cell(cells, ci.trailer), kind: cell(cells, ci.kind),
+        source: ci.kind >= 0 && cell(cells, ci.src) ? `CSV-Import: ${cell(cells, ci.src).slice(0, 180)}` : 'CSV-Import Fuhrpark Stammliste',
       });
+      row._line = line;
       rows.set(row.id, row); // doppelte FIN: letzte Zeile gilt
-    } catch (e) { result.skipped.push({ plate: cells[ci.plate], reason: e.message }); }
-  }
+    } catch (e) { result.skipped.push({ line, plate: cells[ci.plate], reason: e.message }); }
+  });
   if (rows.size > 5000) throw bad('validation', 'Maximal 5000 Fahrzeuge je Import.');
-  await upsertVehicleRows(env, [...rows.values()]);
+  // Vorschau: neu / geändert (welche Felder) / unverändert – gleiche Regel wie beim Übernehmen (leere Felder behalten den Bestand)
+  const existing = new Map((await env.DB.prepare('SELECT * FROM vehicles WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify([...rows.keys()])).all()).results.map((v) => [v.id, v]));
+  const FIELDS = ['plate', 'site', 'manufacturer', 'model', 'build_year', 'trailer_plate', 'master_status', 'kind'];
+  for (const r of rows.values()) {
+    const ex = existing.get(r.id);
+    if (!ex) { result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: 'neu' }); continue; }
+    const changes = FIELDS.filter((f) => r[f] !== null && r[f] !== undefined && String(r[f]) !== String(ex[f] ?? '')).map((f) => ({ field: f, from: ex[f], to: r[f] }));
+    result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: changes.length || !ex.active ? 'geändert' : 'unverändert', changes, reactivated: !ex.active });
+  }
+  result.preview.sort((a, b) => a.line - b.line);
+  result.counts = { neu: result.preview.filter((p) => p.action === 'neu').length, geaendert: result.preview.filter((p) => p.action === 'geändert').length, unveraendert: result.preview.filter((p) => p.action === 'unverändert').length };
+  if (dryRun) return result;
+  for (const r of rows.values()) delete r._line;
+  await upsertVehicleRows(env, [...rows.values()], { keepExisting: true });
   result.imported = rows.size;
-  await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length });
+  await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length, ...result.counts });
   return result;
 }
 

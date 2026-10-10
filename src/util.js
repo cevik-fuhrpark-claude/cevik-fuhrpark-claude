@@ -197,3 +197,27 @@ export async function rateLimit(env, action, userId) {
     RETURNING count`).bind(`${action}:${userId}`, win).first();
   if (row && row.count > max) throw new HttpError(429, 'rate_limited', `Zu viele Vorgänge in kurzer Zeit (max. ${max} je ${Math.round(windowSec / 60)} Min.). Bitte später erneut versuchen.`);
 }
+
+// CSV mit Anführungszeichen (RFC 4180, Trennzeichen ; oder ,)
+export function parseCsv(text) {
+  const src = String(text || '').replace(/^﻿/, '');
+  const firstLine = src.split(/\r?\n/, 1)[0] || '';
+  const sep = firstLine.includes(';') ? ';' : ',';
+  const rows = []; let row = []; let cell = ''; let q = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) {
+      if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c;
+    } else if (c === '"' && cell === '') q = true;
+    else if (c === sep) { row.push(cell.trim()); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(cell.trim()); cell = '';
+      if (row.some((x) => x !== '')) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell.trim());
+  if (row.some((x) => x !== '')) rows.push(row);
+  return rows;
+}

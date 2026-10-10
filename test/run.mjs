@@ -1058,6 +1058,25 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 7 }, { item_id: it.id, counted: 7 }] })).status, 400, 'doppelt');
 });
 
+await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten löschen keine Stammdaten, Anführungszeichen', async () => {
+  const H = { 'content-type': 'text/csv' };
+  eq((await owner.post('/api/vehicles', { plate: 'IM-P 1', vin: 'WDB96340310888001', site: 'Dortmund', manufacturer: 'Mercedes-Benz', model: 'Actros 1845' })).status, 201);
+  const csv = 'Kennzeichen;FIN;Fahrzeugart;Quelle\nIM-P 1;WDB96340310888001;Lkw;"Beleg A; mit Semikolon"\nIM-P 2;WDB96340310888002;Anhänger;Beleg B\nIM-X;UNGUELTIG;Lkw;x';
+  const pre = await owner.req('POST', '/api/vehicles/import?dry_run=1', csv, H);
+  eq(pre.status, 200); eq(pre.data.dry_run, true);
+  eq(pre.data.counts.neu, 1); eq(pre.data.counts.unveraendert, 1); eq(pre.data.skipped.length, 1);
+  eq((await owner.get('/api/vehicles/VIN:WDB96340310888002')).status, 404, 'Vorschau legt nichts an');
+  const go = await owner.req('POST', '/api/vehicles/import', csv, H);
+  eq(go.data.imported, 2);
+  const v1 = (await owner.get('/api/vehicles/VIN:WDB96340310888001')).data.vehicle;
+  eq(v1.manufacturer, 'Mercedes-Benz', 'Hersteller bleibt'); eq(v1.model, 'Actros 1845', 'Modell bleibt'); eq(v1.site, 'Dortmund', 'Standort bleibt');
+  eq(v1.source, 'CSV-Import: Beleg A; mit Semikolon', 'Anführungszeichen korrekt gelesen');
+  const ch = await owner.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;FIN;Standort\nIM-P 1 NEU;WDB96340310888001;München', H);
+  const row = ch.data.preview[0];
+  eq(row.action, 'geändert'); ok(row.changes.some((c) => c.field === 'plate' && c.to === 'IM-P 1 NEU') && row.changes.some((c) => c.field === 'site' && c.from === 'Dortmund'), 'Änderungen benannt');
+  for (const v of ['WDB96340310888001', 'WDB96340310888002']) await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Import' });
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];
