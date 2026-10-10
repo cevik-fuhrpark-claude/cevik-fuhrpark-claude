@@ -397,9 +397,11 @@ async function viewCase(id) {
   const c = d.case;
   const A = d.allowed_actions;
   const prioLine = c.reported_priority !== c.priority ? ` <span class="muted small">(${esc(t('reported_prio'))}: ${esc(t('prio_' + c.reported_priority))})</span>` : '';
-  let html = `<p><a href="#/cases">‹ ${esc(t('back'))}</a></p>
+  let html = `<p class="noprint"><a href="#/cases">‹ ${esc(t('back'))}</a></p>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(d.vehicle.plate, { big: true, locked: c.safety_lock })}<span class="chip ${c.status === 'fahrzeug_freigegeben' ? 'ok' : esc(c.priority)}">${esc(t('st_' + c.status))}</span>${c.environment === 'test' ? '<span class="chip test">TEST</span>' : ''}</div>
     <h1 style="margin-top:12px">${esc(c.case_no)}</h1>
+    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <div class="actions noprint"><button type="button" class="btn secondary" id="cprt">${esc(t('print'))}</button></div>
     ${c.safety_lock ? `<div class="panel alert"><b>${esc(t('locked'))}</b> – ${esc(c.safety_lock_reason || '')}</div>` : ''}
     ${d.access === 'preview' ? `<div class="panel">${esc(t('preview_hint'))}</div>` : ''}
     <section class="panel"><p style="white-space:pre-wrap;font-size:1.05rem">${esc(c.description)}</p>
@@ -444,10 +446,21 @@ async function viewCase(id) {
       ${d.external_costs && d.external_costs.length ? `<table>${d.external_costs.map((x) => `<tr><td>${esc(x.supplier)} ${esc(x.invoice_no || '')}</td><td>${x.amount_net === null ? esc(t('unvalued')) : eur(x.amount_net)}</td></tr>`).join('')}</table>` : ''}</section>`;
   }
 
+  // Dauer je Status (aus dem Verlauf: gespeicherte Statuswechsel, aktueller Status bis jetzt)
+  {
+    const spans = []; let cur = 'gemeldet'; let since = c.created_at;
+    for (const e of d.events) if (e.to_status && e.to_status !== cur) { spans.push([cur, Date.parse(e.created_at) - Date.parse(since)]); cur = e.to_status; since = e.created_at; }
+    const closed = ['fahrzeug_freigegeben', 'abgelehnt'].includes(cur);
+    if (!closed) spans.push([cur, Date.now() - Date.parse(since)]);
+    const sum = {}; for (const [st, ms] of spans) sum[st] = (sum[st] || 0) + Math.max(0, ms);
+    const dur = (ms) => { const h = ms / 3600000; return h < 1 ? `${Math.round(ms / 60000)} ${t('min_short')}` : h < 48 ? `${(Math.round(h * 10) / 10).toString().replace('.', ',')} ${t('h_short')}` : `${(Math.round((h / 24) * 10) / 10).toString().replace('.', ',')} ${t('days')}`; };
+    if (Object.keys(sum).length > 1 || closed) html += `<h2>${esc(t('time_per_status'))}</h2><dl class="kv">${Object.entries(sum).map(([st, ms]) => `<dt>${esc(t('st_' + st))}${!closed && st === cur ? ` (${esc(t('current'))})` : ''}</dt><dd>${dur(ms)}</dd>`).join('')}</dl>`;
+  }
   // Verlauf + Kommentar
   html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name ? ' · ' + esc(e.actor_name) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap">${esc(e.note)}</div>` : ''}${e.payload && e.payload.from && e.payload.to ? `<div class="small muted">${esc(e.payload.from)} → ${esc(e.payload.to)}</div>` : ''}</li>`).join('')}</ol>`;
   if (A.includes('comment')) html += `<form id="cf"><label for="ct">${esc(t('act_comment'))}</label><textarea id="ct" required></textarea><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>`;
   render(html, 'cases');
+  $('#cprt').onclick = () => window.print();
 
   const cmd = async (action, note, payload = {}) => {
     try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: uid(), expected_version: c.version, note, payload }); toast('✓'); viewCase(c.id); }
