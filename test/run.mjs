@@ -755,6 +755,30 @@ await test('Protokoll nur für Inhaber: Anmeldungen, Sperren, Exporte, Filter; k
   ok(older.data.entries.length === 1 && older.data.entries[0].created_at <= r.data.entries[0].created_at, 'Blättern');
 });
 
+await test('Nutzungsstatistik ohne Personenbezug: nur Inhaber, IDs ersetzt, Fehler gezählt, Umgebungen getrennt', async () => {
+  const { featureOf, areaOf } = await import('../src/usage.js');
+  eq(featureOf('POST', '/api/cases/0b8c3c1e-1111-4222-8333-944455556666/commands'), 'POST cases/:id/commands');
+  eq(featureOf('GET', '/api/vehicles/VIN:WDB96340310123456'), 'GET vehicles/:id');
+  eq(areaOf('POST agent/run'), 'master');
+  eq((await users.fleet.get('/api/admin/usage')).status, 403);
+  await users.fleet.get('/api/cases/00000000-0000-4000-8000-000000000000'); // 404 → Fehler gezählt
+  const r = await owner.get('/api/admin/usage?days=7', { 'x-cfp-env': 'test' });
+  eq(r.status, 200); eq(r.data.environment, 'test');
+  const f = (k) => r.data.features.find((x) => x.feature === k);
+  ok(f('GET cases') && f('GET cases').calls > 0, 'Vorgangsliste gezählt');
+  ok(f('GET cases/:id') && f('GET cases/:id').errors >= 1, 'Fehler gezählt');
+  ok(r.data.features.every((x) => !/[0-9a-f]{8}-|\d{3,}/.test(x.feature)), 'keine IDs in Funktionsnamen');
+  const raw = JSON.stringify((await env.DB.prepare('SELECT * FROM usage_daily').all()).results);
+  const ids = (await env.DB.prepare('SELECT id, username FROM users').all()).results;
+  ok(ids.every((u) => !raw.includes(u.id) && !raw.includes(u.username)), 'keine Benutzer-ID/-namen gespeichert');
+  ok(!(await env.DB.prepare("SELECT 1 FROM pragma_table_info('usage_daily') WHERE name IN ('user_id','role','ip')").first()), 'keine Personenspalten');
+  ok(r.data.total_calls === r.data.daily.reduce((s, d) => s + d.calls, 0), 'Summen stimmen');
+  const prod = await users.prodFleet.get('/api/cases');
+  eq(prod.status, 200);
+  const rows = (await env.DB.prepare("SELECT environment, SUM(calls) AS n FROM usage_daily GROUP BY environment").all()).results;
+  ok(rows.some((x) => x.environment === 'production') && rows.some((x) => x.environment === 'test'), 'Umgebungen getrennt');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

@@ -118,7 +118,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/stock$/, viewStock], [/^#\/fines$/, viewFines], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/help$/, viewHelp], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   const h = location.hash || '#/';
@@ -938,6 +938,24 @@ async function viewAudit(more) {
   const am = $('#amore'); if (am) am.onclick = () => viewAudit(true);
 }
 
+// ---------- Nutzungsstatistik (Inhaber, ohne Personenbezug) ----------
+async function viewUsage() {
+  const days = S.usageDays || 30;
+  const r = await api('GET', `/api/admin/usage?days=${days}`);
+  const AREA = { cases: 'nav_cases', vehicles: 'vehicles', tires: 'fleet_tires', stock: 'stock', fines: 'fines', maintenance: 'inspections_due', reports: 'area_reports',
+    master: 'nav_master', notifications: 'notifications', admin: 'area_admin', account: 'nav_profile', dashboard: 'nav_home', checks: 'departure_check', other: 'area_other' };
+  const max = Math.max(1, ...r.daily.map((d) => d.calls));
+  render(`<h1>${esc(t('usage'))}</h1><p class="small muted">${esc(t('usage_hint'))}</p>
+    <div class="actions" style="flex-wrap:wrap">${[7, 30, 90, 365].map((d) => `<button type="button" class="btn ${d === days ? '' : 'secondary'}" data-ud="${d}">${d} ${esc(t('days'))}</button>`).join('')}</div>
+    <div class="stats"><div><b>${r.total_calls}</b>${esc(t('calls'))}</div><div><b>${r.daily.length}</b>${esc(t('days_used'))}</div><div><b${r.areas.some((a) => a.errors) ? ' style="color:var(--stop)"' : ''}>${r.areas.reduce((s, a) => s + a.errors, 0)}</b>${esc(t('errors_count'))}</div></div>
+    ${r.daily.length ? `<div class="panel" aria-hidden="true" style="display:flex;align-items:flex-end;gap:2px;height:70px;padding:8px">${r.daily.map((d) => `<span title="${esc(fmtD(d.day))}: ${d.calls}" style="flex:1;min-width:2px;max-width:28px;background:var(--steel);height:${Math.max(4, Math.round((d.calls / max) * 100))}%"></span>`).join('')}</div>` : ''}
+    <div class="scroll"><table><thead><tr><th>${esc(t('area_col'))}</th><th>${esc(t('calls'))}</th><th>${esc(t('errors_count'))}</th></tr></thead><tbody>
+    ${r.areas.map((a) => `<tr><td><b>${esc(t(AREA[a.area] || 'area_other'))}</b></td><td>${a.calls}</td><td>${a.errors ? `<span class="chip kritisch">${a.errors}</span>` : '0'}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">–</td></tr>`}</tbody></table></div>
+    <details><summary>${esc(t('functions_detail'))} (${r.features.length})</summary><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('function_col'))}</th><th>${esc(t('calls'))}</th><th>${esc(t('errors_count'))}</th><th>${esc(t('last_used'))}</th></tr></thead><tbody>
+    ${r.features.map((f) => `<tr><td><code>${esc(f.feature)}</code></td><td>${f.calls}</td><td>${f.errors}</td><td>${fmtD(f.last_day)}</td></tr>`).join('')}</tbody></table></div></details>`, 'more');
+  $$('[data-ud]').forEach((b) => (b.onclick = () => { S.usageDays = Number(b.dataset.ud); viewUsage(); }));
+}
+
 // ---------- Hilfe (Schritt für Schritt, DE/UK/EN) ----------
 function viewHelp() {
   const sec = (n) => `<section class="panel"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
@@ -972,6 +990,7 @@ function viewMore() {
     ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/costs"><span>€</span><span class="title">${esc(t('costs_report'))}</span><span></span></a>` : ''}
     ${['owner', 'fleet', 'workshop'].includes(S.me.role) ? `<a class="row" href="#/stock"><span>▦</span><span class="title">${esc(t('stock'))}</span><span></span></a>` : ''}
     ${isMgr() ? `<a class="row" href="#/users"><span>👤</span><span class="title">${esc(t('users'))}</span><span></span></a>` : ''}
+    ${S.me.role === 'owner' ? `<a class="row" href="#/usage"><span>📊</span><span class="title">${esc(t('usage'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/audit"><span>🔒</span><span class="title">${esc(t('audit'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/settings"><span>⚙</span><span class="title">${esc(t('settings'))}</span><span></span></a>` : ''}
   </div>

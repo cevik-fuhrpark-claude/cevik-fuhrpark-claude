@@ -120,5 +120,11 @@ export const MIGRATIONS = [
    "ALTER TABLE vehicles ADD COLUMN eval_excluded_reason TEXT NULL",
    "UPDATE vehicles SET eval_excluded=1, eval_excluded_reason='Reparatur oder Verkauf offen (Entscheidung Inhaber 10.10.2026)'\n  WHERE vin IN ('WDB9300561L373648','WDB9630051L903288','WDB9630051L909054','WDB9300561L373649','WDB9300561L373441','WJMA62AT20C378145','WDB96300510318431')"
   ]
+ },
+ {
+  "id": "0012_usage_stats",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS usage_daily (\n  day TEXT NOT NULL,                    -- JJJJ-MM-TT (Berliner Zeit)\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  feature TEXT NOT NULL,                -- z. B. 'POST cases/:id/commands'\n  calls INTEGER NOT NULL DEFAULT 0,\n  errors INTEGER NOT NULL DEFAULT 0,    -- Antworten mit Status >= 400\n  PRIMARY KEY (day, environment, feature)\n)"
+  ]
  }
 ];

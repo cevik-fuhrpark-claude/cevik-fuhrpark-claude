@@ -14,6 +14,10 @@ import * as fines from './fines.js';
 import * as reports from './reports.js';
 import { exportBackup } from './backup.js';
 import * as maint from './maintenance.js';
+import { recordUsage, usageReport } from './usage.js';
+
+// Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
+const usageEnv = new WeakMap();
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -95,6 +99,7 @@ async function handleApi(request, env, ctx, url) {
   const user = await auth.getSessionUser(env, request);
   if (!user) throw new HttpError(401, 'unauthenticated', 'Bitte anmelden.');
   const envName = auth.effectiveEnv(user, request);
+  usageEnv.set(request, envName);
   const { _session, ...me } = user;
 
   if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user) });
@@ -174,6 +179,7 @@ async function handleApi(request, env, ctx, url) {
     return json(await tires.importTireSpecs(env, user, text));
   }
 
+  if (path === '/api/admin/usage' && m === 'GET') return json(await usageReport(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/audit' && m === 'GET') return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });
 
   // Datensicherung (Inhaber)
@@ -326,7 +332,12 @@ export default {
     try {
       await ensureSchema(env);
       if (url.pathname === '/healthz') return withHeaders(json({ ok: true }));
-      if (url.pathname.startsWith('/api/')) return withHeaders(await handleApi(request, env, ctx, url));
+      if (url.pathname.startsWith('/api/')) {
+        let res;
+        try { res = await handleApi(request, env, ctx, url); } catch (e) { res = errorResponse(e); }
+        if (usageEnv.has(request)) recordUsage(env, ctx, usageEnv.get(request), request.method, url.pathname, res.status);
+        return withHeaders(res);
+      }
       if (env.ASSETS) return withHeaders(await env.ASSETS.fetch(request), { 'content-security-policy': "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });
       return withHeaders(json({ error: 'not_found' }, 404));
     } catch (e) {
