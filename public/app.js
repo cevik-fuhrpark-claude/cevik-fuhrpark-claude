@@ -620,7 +620,7 @@ async function viewVehicle(id) {
     html += `<h2>${esc(t('drivers'))}</h2>${d.drivers.length ? `<div class="list">${d.drivers.map((r) => `<div class="row"><span>${esc(r.display_name)}</span><span class="small muted">${fmtD(r.valid_from)} – ${r.valid_to ? fmtD(r.valid_to) : ''}</span>${!r.valid_to ? `<button class="btn secondary" data-end="${esc(r.id)}">${esc(t('end'))}</button>` : '<span></span>'}</div>`).join('')}</div>` : ''}
       <form id="df" class="actions"><select name="user_id" id="drvsel" style="max-width:300px" aria-label="${esc(t('assign_driver'))}"></select><button class="btn secondary">${esc(t('assign_driver'))}</button></form>`;
   }
-  html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf" class="actions"><input name="km" inputmode="numeric" required style="max-width:200px" aria-label="${esc(t('km'))}"><button class="btn secondary">${esc(t('save'))}</button></form></details>`;
+  html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${new Date().toISOString().slice(0, 10)}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (canMaint) html += `<section class="panel noprint"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
   render(html, isMgr() ? 'master' : 'vehicles');
 
@@ -640,7 +640,11 @@ async function viewVehicle(id) {
     const ev = prompt(t('evidence')); if (!ev) return;
     try { await api('POST', `/api/maintenance/${b.dataset.done}/complete`, { done_date: date, evidence: ev }); viewVehicle(id); } catch (err) { toast(err.message, true); }
   }));
-  const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value }); if (r.warning) toast(r.warning, true); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => {
+    e.preventDefault();
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }); if (r.warning) toast(r.warning, true); viewVehicle(id); }
+    catch (err) { toast(err.message, true); if (err.code === 'km_not_plausible') { $('#kmnote').hidden = false; kf.note.required = true; kf.note.focus(); } }
+  };
   const df = $('#df');
   if (df) {
     const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active);
@@ -950,7 +954,7 @@ async function viewTimeline(id) {
       case 'case': return [x.priority === 'kritisch' ? 'p-kritisch' : '', `${esc(t('tl_case'))}: ${esc(x.text)}`, `<span class="chip ${esc(x.priority)}">${esc(t('prio_' + x.priority))}</span> ${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'case_closed': return ['', `${esc(t('tl_case_closed'))}`, `${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'inspection': return [x.result === 'maengel' ? 'p-mittel' : '', `${esc(t(x.inspection_kind === 'abfahrt' ? 'departure_check' : 'inspection'))}: ${esc(t(x.result === 'ok' ? 'ok' : 'defect'))}`, `${esc(x.by || '')}${km(x.km)}${caseLink(x)}`];
-      case 'odometer': return ['', `${esc(t('km'))}${km(x.km)}`, esc(x.source || '')];
+      case 'odometer': return [x.note ? 'p-mittel' : '', `${esc(t('km'))}${km(x.km)}`, `${esc(x.source || '')}${x.note ? ' · ' + esc(x.note) : ''}`];
       case 'driver_from': return ['', `${esc(t('tl_driver_from'))}: ${esc(x.by)}`, esc(x.evidence || '')];
       case 'driver_to': return ['', `${esc(t('tl_driver_to'))}: ${esc(x.by)}`, ''];
       case 'document': return ['', `${esc(t('dk_' + (x.doc_kind || 'sonstiges')))}: <a href="${fileUrl(x.file_id)}" target="_blank" rel="noopener">${esc(x.text)}</a>`, x.valid_until ? `${esc(t('valid_until'))} ${fmtD(x.valid_until)}` : ''];

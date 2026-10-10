@@ -1,5 +1,5 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate } from './util.js';
 import { audit } from './auth.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ } from './cases.js';
 import { sha256Hex } from './util.js';
@@ -44,7 +44,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT 50`).bind(vehicleId, envName).all()).results;
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
-  const odometer = (await env.DB.prepare('SELECT km, measured_at, source FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 20').bind(vehicleId).all()).results;
+  const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 20').bind(vehicleId).all()).results;
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
         WHERE d.vehicle_id=? AND u.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
@@ -78,7 +78,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     if (c.closed_at) add('case_closed', c.closed_at, { case_id: c.id, case_no: c.case_no, status: c.status });
   }
   for (const i of d.inspections) add('inspection', i.created_at, { inspection_kind: i.kind, result: i.result, km: i.odometer_km, case_id: i.case_id, by: i.performed_by_name });
-  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source });
+  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note });
   for (const r of d.drivers) { add('driver_from', r.valid_from, { by: r.display_name, evidence: r.evidence }); add('driver_to', r.valid_to, { by: r.display_name }); }
   for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
   for (const m of d.maintenance) add('maintenance', m.last_done_date, { maintenance_kind: m.kind, km: m.last_done_km, next_due: m.next_due_date, evidence: m.evidence });
@@ -237,12 +237,39 @@ export async function completeMaintenance(env, user, ruleId, body) {
 export async function addOdometer(env, user, vehicleId, body) {
   if (!['owner', 'fleet', 'workshop', 'driver', 'dispatch'].includes(user.role)) throw forbidden();
   const km = Math.round(num(body.km, { min: 0, max: 5000000, field: 'Kilometerstand' }));
-  const last = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId).first();
-  const warning = last && km < last.km ? `Kilometerstand kleiner als letzter Wert (${last.km} km) – bitte prüfen (Zählerwechsel?).` : null;
+  // Ablesedatum optional (nachträgliche Erfassung), nie in der Zukunft; ohne Datum = jetzt
   const now = nowIso();
-  await env.DB.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)')
-    .bind(uuid(), vehicleId, km, now, `manuell:${user.role}`, user.id, now).run();
-  return { ok: true, warning };
+  let measuredAt = now;
+  if (body.measured_on) {
+    const d = String(body.measured_on);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d)) || d < '2000-01-01') throw bad('validation', 'Ablesedatum ungültig (JJJJ-MM-TT).');
+    const today = berlinDate();
+    if (d > today) throw bad('validation', 'Ablesedatum darf nicht in der Zukunft liegen.');
+    if (d < today) measuredAt = `${d}T12:00:00.000Z`;
+  }
+  const note = str(body.note, { max: 300 });
+  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!v) throw notFound('Fahrzeug nicht gefunden.');
+  // Plausibilität gegen die zeitlich benachbarten Werte: davor nicht größer, danach nicht kleiner – sonst nur mit Begründung
+  const [prev, next] = await Promise.all([
+    env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId, measuredAt).first(),
+    env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC LIMIT 1').bind(vehicleId, measuredAt).first(),
+  ]);
+  const problems = [];
+  const de = (iso) => iso.slice(0, 10).split('-').reverse().join('.');
+  if (prev && km < prev.km) problems.push(`kleiner als ${prev.km} km vom ${de(prev.measured_at)}`);
+  if (next && km > next.km) problems.push(`größer als ${next.km} km vom ${de(next.measured_at)}`);
+  if (problems.length && !note) {
+    throw conflict('km_not_plausible', `Kilometerstand ${km} km ist ${problems.join(' und ')}. Bitte prüfen oder Begründung angeben (z. B. Tachotausch).`, { previous: prev, next });
+  }
+  try {
+    await env.DB.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES (?,?,?,?,?,?,?,?)')
+      .bind(uuid(), vehicleId, km, measuredAt, `manuell:${user.role}`, user.id, now, note).run();
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e && e.message))) throw conflict('km_duplicate', 'Für diesen Tag ist bereits ein Kilometerstand von dieser Rolle erfasst.');
+    throw e;
+  }
+  return { ok: true, measured_at: measuredAt, warning: problems.length ? `Abweichung mit Begründung gespeichert: ${problems.join(' und ')}.` : null };
 }
 
 // Stammdatenimport (CSV mit Kopfzeile: Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger)

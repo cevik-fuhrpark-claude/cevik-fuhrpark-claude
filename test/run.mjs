@@ -827,6 +827,26 @@ await test('Zeitleiste der Fahrzeugakte: chronologisch, Filter, gleiche Rechte w
   ok(!prod.data.items.some((x) => x.type === 'case'), 'Betrieb ohne Testvorgänge');
 });
 
+await test('Kilometerstand: Ablesedatum (nicht Zukunft), Plausibilität gegen Nachbarwerte nur mit Begründung', async () => {
+  const p = `/api/vehicles/${encodeURIComponent(V2)}/odometer`;
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  eq((await users.fleet.post(p, { km: 500000, measured_on: day(20) })).status, 201);
+  eq((await users.fleet.post(p, { km: 501000, measured_on: day(10) })).status, 201);
+  const back = await users.fleet.post(p, { km: 500500, measured_on: day(15) });
+  eq(back.status, 201, 'Wert dazwischen passt'); eq(back.data.measured_at, day(15) + 'T12:00:00.000Z');
+  const low = await users.fleet.post(p, { km: 499000, measured_on: day(5) });
+  eq(low.status, 409); eq(low.data.error, 'km_not_plausible'); ok(/501000/.test(low.data.message), 'nennt Vergleichswert');
+  const high = await users.fleet.post(p, { km: 600000, measured_on: day(18) });
+  eq(high.status, 409, 'größer als späterer Wert');
+  const withNote = await users.fleet.post(p, { km: 1200, measured_on: day(5), note: 'Tachotausch laut Werkstattrechnung' });
+  eq(withNote.status, 201); ok(withNote.data.warning, 'Hinweis bei Begründung');
+  eq((await users.fleet.post(p, { km: 1300, measured_on: day(-1) })).status, 400, 'Zukunft abgewiesen');
+  eq((await users.fleet.post(p, { km: 1300, measured_on: '2026-02-30x' })).status, 400);
+  eq((await users.fleet.post(p, { km: 1250, measured_on: day(5), note: 'x' })).status, 409, 'Doppelerfassung gleicher Tag/Rolle');
+  const d = await users.fleet.get(`/api/vehicles/${encodeURIComponent(V2)}`);
+  ok(d.data.odometer.some((o) => o.note === 'Tachotausch laut Werkstattrechnung'), 'Begründung in der Akte');
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

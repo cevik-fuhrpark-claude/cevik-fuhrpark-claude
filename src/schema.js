@@ -126,5 +126,12 @@ export const MIGRATIONS = [
   "statements": [
    "CREATE TABLE IF NOT EXISTS usage_daily (\n  day TEXT NOT NULL,                    -- JJJJ-MM-TT (Berliner Zeit)\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  feature TEXT NOT NULL,                -- z. B. 'POST cases/:id/commands'\n  calls INTEGER NOT NULL DEFAULT 0,\n  errors INTEGER NOT NULL DEFAULT 0,    -- Antworten mit Status >= 400\n  PRIMARY KEY (day, environment, feature)\n)"
   ]
+ },
+ {
+  "id": "0013_odometer_note",
+  "statements": [
+   "ALTER TABLE odometer_readings ADD COLUMN note TEXT NULL",
+   "CREATE INDEX IF NOT EXISTS idx_odometer_vehicle_time ON odometer_readings(vehicle_id, measured_at)"
+  ]
  }
 ];
