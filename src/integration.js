@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, uuid, normalizeVin, timingSafeEqual, bad } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
 import { costReport } from './reports.js';
 import { maintenanceOverview } from './maintenance.js';
@@ -83,7 +83,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const plateOf = new Map(plates.results.map((r) => [r.k, r.id]));
     const lastGps = new Map(latest.results.map((r) => [r.vehicle_id, r.gps_time]));
     // Gesammelte Schreibzugriffe: je Tabelle EINE Anweisung über json_each (jede Anweisung zählt zum Abfragebudget)
-    const unmatched = new Map(); const latestRows = new Map(); const odo = [];
+    const unmatched = new Map(); const latestRows = new Map(); const odo = new Map();
     for (const { it, ext, vin, plate } of rows) {
       if (!ext) { res.rejected++; continue; }
       let vehicleId = null; let basis = null;
@@ -99,13 +99,19 @@ export async function integrationRouter(request, env, ctx, url) {
         continue;
       }
       // Keine Rückschritte: ältere GPS-Zeit überschreibt keinen neueren Stand (auch innerhalb desselben Aufrufs)
+      // GPS-Zeit mehr als 10 Minuten in der Zukunft (Geräteuhr falsch): verwerfen, sonst blockiert sie spätere echte Stände
+      if (gps && Date.parse(gps) > Date.now() + 600000) { res.rejected++; continue; }
       const prev = lastGps.get(vehicleId);
       if (prev && gps && gps < prev) { res.rejected++; continue; }
       if (gps) lastGps.set(vehicleId, gps);
       const km = Number.isFinite(Number(it.km)) && Number(it.km) >= 0 ? Number(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
         speed: Number.isFinite(Number(it.speed)) ? Number(it.speed) : null, ign: it.ignition === undefined || it.ignition === null ? null : (it.ignition ? 1 : 0) });
-      if (km !== null && gps) odo.push({ id: uuid(), v: vehicleId, km: Math.round(km), t: gps });
+      if (km !== null && gps) {
+        // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
+        const day = gps.slice(0, 10); const key = `${vehicleId}|${day}`; const cur = odo.get(key);
+        if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps });
+      }
       res.matched++;
     }
     const X = (k) => `json_extract(value,'$.${k}')`;
@@ -120,11 +126,17 @@ export async function integrationRouter(request, env, ctx, url) {
         lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     const odoPos = stmts.length;
-    if (odo.length) stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
-      SELECT ${X('id')}, ${X('v')}, ${X('km')}, ${X('t')}, ?1, NULL, ?2 FROM json_each(?3)`).bind(`telematik:${provider}`, now, JSON.stringify(odo)));
+    // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage);
+    // der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
+    if (odo.size) stmts.push(env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
+      SELECT ${X('id')}, ${X('v')}, ${X('km')}, ${X('t')}, ?1, NULL, ?2 FROM json_each(?3)
+      WHERE ${X('km')} >= COALESCE((SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1), 0)
+      ON CONFLICT(id) DO UPDATE SET km=excluded.km, measured_at=excluded.measured_at, created_at=excluded.created_at
+        WHERE excluded.measured_at > odometer_readings.measured_at AND excluded.km >= odometer_readings.km
+      ON CONFLICT DO NOTHING`).bind(`telematik:${provider}`, now, JSON.stringify([...odo.values()])));
     if (stmts.length) {
       const out = await env.DB.batch(stmts);
-      if (odo.length) res.odometer_written = (out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0;
+      if (odo.size) res.odometer_written = (out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0;
     }
     return json({ ok: true, ...res });
   }

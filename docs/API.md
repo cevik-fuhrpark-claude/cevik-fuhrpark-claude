@@ -30,7 +30,7 @@ Parameter `environment=production|test` (Standard: production).
 ```
 Regeln: Zuordnung nur über FIN oder bestätigtes Mapping (`telematics_mappings`). Nur Kennzeichen → Prüffall in
 `telematics_unmatched`, keine Zuordnung. Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen.
-Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben. Max. 500 Einträge je Aufruf; die Verarbeitung braucht unabhängig von der Menge ≤ 10 Datenbankanweisungen.
+Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben – **je Fahrzeug und Tag ein Wert** (der jüngste) und nur, wenn er nicht kleiner ist als der zuvor erfasste km-Stand (`odometer_written` zählt neue/aktualisierte Tageswerte). GPS-Zeiten mehr als 10 Minuten in der Zukunft werden verworfen (`rejected`). Max. 500 Einträge je Aufruf; die Verarbeitung braucht unabhängig von der Menge ≤ 10 Datenbankanweisungen.
 
 ### Agenten-Übergabe (Fuhrparkagent → Master)
 Jede Übergabe ist ein Ereignis mit `schema_version 1.0`, eindeutiger `event_id` (SHA-256 aus Befund, Fingerprint, Erstauftreten),

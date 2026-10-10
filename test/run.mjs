@@ -507,8 +507,24 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
   const bulk = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: many }, H);
   eq(bulk.status, 200); eq(bulk.data.matched, 250); eq(bulk.data.unmatched, 250);
   ok(QSTAT.n - q0 <= 20, `≤ 20 Abfragen für 500 Einträge (${QSTAT.n - q0})`);
-  eq(bulk.data.odometer_written, 250);
+  eq(bulk.data.odometer_written, 1, 'je Fahrzeug und Tag ein km-Stand (der jüngste)');
   eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: many.slice(1, 2) }, H)).data.odometer_written, 0, 'gleicher Stand nicht doppelt');
+  const telRows = async () => (await owner.get(`/api/vehicles/VIN:WMA15SZZ2HM722774`)).data.odometer.filter((o) => o.source === 'telematik:webfleet');
+  const day = (await telRows()).filter((o) => o.measured_at.startsWith('2026-10-10'));
+  eq(day.length, 1); eq(day[0].km, 812600 + 499, 'jüngster Wert des Tages');
+  // jüngere GPS-Zeit, aber kleinerer km-Stand (Gerätefehler/Tausch): nicht übernommen
+  const lower = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'BULK-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-10T12:00:00Z', km: 100 }] }, H);
+  eq(lower.data.matched, 1); eq(lower.data.odometer_written, 0, 'kleinerer km-Stand nicht in die Akte');
+  // Tagesgrenze und Vortag (zweites Fahrzeug, zurückliegende Tage)
+  eq((await owner.post('/api/vehicles', { plate: 'TT-TEL 1', vin: 'WDB96340310777777', site: 'Dortmund' })).status < 300, true, 'Testfahrzeug Telematik');
+  const tel = (gps, km) => anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-TT', vin: 'WDB96340310777777', gps_time: gps, km }] }, H);
+  eq((await tel('2026-10-07T10:00:00Z', 500000)).data.odometer_written, 1);
+  eq((await tel('2026-10-08T06:00:00Z', 400)).data.odometer_written, 0, 'am Folgetag nicht kleiner als der Vortag');
+  eq((await tel('2026-10-08T07:00:00Z', 500100)).data.odometer_written, 1, 'Folgetag mit größerem Wert');
+  eq((await owner.get('/api/vehicles/VIN:WDB96340310777777')).data.odometer.filter((o) => o.source === 'telematik:webfleet' && o.measured_at < '2026-10-09').length, 2, 'zwei Tage → zwei Zeilen');
+  // GPS-Zeit in der Zukunft (Uhrfehler am Gerät) wird verworfen
+  const fut = await tel(new Date(Date.now() + 3600000).toISOString(), 500200);
+  eq(fut.data.rejected, 1, 'Zukunftszeit verworfen'); eq(fut.data.odometer_written, 0);
   // Token-Wechsel und Nur-Lese-Token
   env.INTEGRATION_TOKEN_NEXT = 'integration-token-next-123'; env.INTEGRATION_TOKEN_READ = 'integration-token-read-456';
   try {
