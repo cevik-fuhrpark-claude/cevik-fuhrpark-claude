@@ -354,6 +354,8 @@ async function viewNew() {
     <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('photos_now_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('send_report'))}</button></div></form>`, 'new');
+  // Genau ein zugeordnetes Fahrzeug: vorauswählen (Fahrer kann jederzeit ein anderes wählen)
+  if (mine.length === 1) { const r = $(`input[name=veh][value="${CSS.escape(mine[0].id)}"]`); if (r) r.checked = true; }
   const key = uid();
   $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => (l.hidden = q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q))); if (q) $$('details').forEach((d) => (d.open = true)); };
   $('#f').onsubmit = async (e) => {
