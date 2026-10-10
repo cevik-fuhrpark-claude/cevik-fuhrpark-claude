@@ -48,7 +48,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 78 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
+`npm test` → 79 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit). Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -126,6 +126,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Fest verdrahtete Texte übersetzt („Teilenummer“, „Nr.“, „Status“, „Gerät“) und statischer Test gegen neue unübersetzte Beschriftungen. 78 Tests grün.
 - [x] Sprache: ohne gespeicherte Wahl gilt die Gerätesprache (Ukrainisch/Englisch, sonst Deutsch); häufige Server-Fehler (Anmeldung, Sperre, Passwort, Einladung, Dateigröße/-typ, Mengenbegrenzung, Versionskonflikt, km) werden in UK/EN angezeigt (Playwright: falsches Passwort auf ukrainischem Gerät → ukrainische Meldung). 78 Tests grün.
 - [x] Meldeformular prüft Fahrzeugwahl und Beschreibung (≥ 5 Zeichen) in der App-Sprache statt mit Browser-Meldungen in der Gerätesprache (Playwright UK geprüft).
+- [x] Arbeitszeit erfassen: Tätigkeitsvorschläge (häufigste Beschreibungen der eigenen Werkstatt, 12 Monate; `GET /api/work-suggestions`) als Auswahlliste – ohne neue Tabelle. 79 Tests grün.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.
@@ -163,5 +164,5 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
-10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin (ohne Überschneidung mit der Fahrerakte): Werkstatt – Vorlage „Standard-Arbeiten“ (häufige Tätigkeiten als Auswahl beim Erfassen der Arbeitszeit, je Werkstatt pflegbar). Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
+10. Eigene Verbesserungen (ohne Freigabe möglich): Datenschutz-Entwurf liegt vor (`docs/DATENSCHUTZ_ENTWURF.md`, wartet auf Freigabe). **Nächster Schritt:** Ruhezeiten für nicht dringende Pushs (z. B. nachts sammeln und morgens zustellen) – nur mit vom Auftraggeber festgelegten Zeiten; bis dahin (ohne Überschneidung mit der Fahrerakte): Teile erfassen – Vorschläge aus Lagerartikeln und früheren Teilen (Bezeichnung/Teilenummer) analog Tätigkeiten. Hinweis: personenbezogene Arbeitszeitauswertung je Mitarbeiter bewusst nicht gebaut (nur nach Freigabe/Betriebsrat).
 8. E-Mail-Benachrichtigung als Rückfallebene (nur bestätigte Empfänger, erst nach Freigabe).

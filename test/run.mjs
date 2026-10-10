@@ -1134,6 +1134,14 @@ await test('Kosten je km: gefahrene km aus erster/letzter Ablesung im Zeitraum, 
   ok(!v2 || v2.km === null, 'Rückgang (Tachotausch) → kein km-Wert');
 });
 
+await test('Tätigkeitsvorschläge aus bisherigen Arbeiten der eigenen Werkstatt', async () => {
+  const r = await users.ws.get('/api/work-suggestions');
+  eq(r.status, 200); ok(Array.isArray(r.data.suggestions) && r.data.suggestions.length > 0, 'Vorschläge vorhanden');
+  const own = (await env.DB.prepare(`SELECT DISTINCT w.description AS d FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE c.workshop_site='DORTMUND' AND c.environment='test'`).all()).results.map((x) => x.d);
+  ok(r.data.suggestions.every((x) => own.includes(x)), 'nur eigene Werkstatt');
+  eq((await users.driver.get('/api/work-suggestions')).status, 403);
+});
+
 await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster getrennt je Aktion', async () => {
   const { rateLimit, LIMITS } = await import('../src/util.js');
   const saved = LIMITS.import; LIMITS.import = [2, 3600];

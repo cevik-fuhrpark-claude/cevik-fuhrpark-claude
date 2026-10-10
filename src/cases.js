@@ -81,6 +81,16 @@ export async function listCases(env, user, envName, query) {
   return rows.map((r) => ({ ...shapeCase(r, user), access: caseAccess(user, r) }));
 }
 
+// Vorschläge für Tätigkeiten: häufigste bisherige Beschreibungen der eigenen Werkstatt (nur Text, keine Personen)
+export async function workSuggestions(env, user, envName) {
+  if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
+  const site = user.role === 'workshop' ? user.workshop_site : null;
+  const rows = (await env.DB.prepare(`SELECT w.description AS d, COUNT(*) AS n, MAX(w.created_at) AS last FROM work_entries w JOIN cases c ON c.id=w.case_id
+    WHERE c.environment=? ${site ? 'AND c.workshop_site=?' : ''} AND w.created_at > ? GROUP BY w.description ORDER BY n DESC, last DESC LIMIT 40`)
+    .bind(...(site ? [envName, site] : [envName]), new Date(Date.now() - 365 * 86400000).toISOString()).all()).results;
+  return { suggestions: rows.map((r) => r.d) };
+}
+
 // CSV-Export der Vorgangsliste (gleiche Filter und Rechte wie die Liste), Excel-tauglich (UTF-8 mit BOM, Semikolon)
 const PRIO_DE = { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' };
 export function casesCsv(rows, csvCell, fmt) {

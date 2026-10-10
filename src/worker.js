@@ -283,6 +283,7 @@ async function handleApi(request, env, ctx, url) {
     }
     return json({ cases: await cases.listCases(env, user, envName, q) });
   }
+  if (path === '/api/work-suggestions' && m === 'GET') return json(await cases.workSuggestions(env, user, envName));
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await cases.runCommand(env, ctx, user, envName, mm[1], b)); }
