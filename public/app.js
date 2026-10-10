@@ -1380,7 +1380,7 @@ async function viewAudit(more) {
   const det = (d) => (d && typeof d === 'object' ? Object.entries(d).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ') : d || '');
   render(`<h1>${esc(t('audit'))}</h1><p class="small muted">${esc(t('audit_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${groups.map(([k, l]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-af="${esc(k)}">${esc(l)}</button>`).join('')}</div>
-    <div class="list">${S.auditRows.map((e) => `<div class="row ${e.action === 'login.locked' ? 'p-kritisch' : ''}"><span class="chip">${fmtDT(e.created_at)}</span><span class="title">${esc(e.action)}</span><span></span><span class="sub" style="white-space:normal">${esc(e.actor_name || t('au_system'))}${e.detail ? ' · ' + esc(det(e.detail)) : ''}</span></div>`).join('') || '<p class="muted">–</p>'}</div>
+    <div class="list">${S.auditRows.map((e) => `<div class="row ${['login.locked', 'login.ip_limited'].includes(e.action) ? 'p-kritisch' : ''}"><span class="chip">${fmtDT(e.created_at)}</span><span class="title">${esc(e.action)}</span><span></span><span class="sub" style="white-space:normal">${esc(e.actor_name || t('au_system'))}${e.detail ? ' · ' + esc(det(e.detail)) : ''}</span></div>`).join('') || '<p class="muted">–</p>'}</div>
     ${r.entries.length === 100 ? `<div class="actions"><button type="button" class="btn secondary" id="amore">${esc(t('load_more'))}</button></div>` : ''}`, 'more');
   $$('[data-af]').forEach((b) => (b.onclick = () => { S.auditFilter = b.dataset.af; viewAudit(); }));
   const am = $('#amore'); if (am) am.onclick = () => viewAudit(true);

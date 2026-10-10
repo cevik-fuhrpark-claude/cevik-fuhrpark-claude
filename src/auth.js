@@ -60,10 +60,26 @@ async function createSession(env, userId, request) {
 const LOCK_AFTER = 8;
 const LOCK_MINUTES = 15;
 
+// Fehlanmeldungen je Netzadresse (gegen Durchprobieren vieler Benutzernamen): Schlüssel = gekürzter Hash der IP, Fenster 15 Min.
+// Grenze großzügig, weil ein Betriebshof oft eine gemeinsame Adresse hat; die Sperre je Benutzer (8 Fehlversuche) bleibt davon unberührt.
+export const IP_FAIL_LIMIT = { max: 60, windowSec: 900 };
+async function ipKey(request) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unbekannt';
+  return 'loginfail:' + (await sha256Hex('cfp-ip:' + ip)).slice(0, 24);
+}
+
 export async function login(env, request, body) {
   const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();
   const password = str(body.password, { required: true, max: 200, field: 'Passwort' });
-  const att = await env.DB.prepare('SELECT * FROM login_attempts WHERE key = ?').bind(username).first();
+  const ik = await ipKey(request);
+  const win = Math.floor(Date.now() / 1000 / IP_FAIL_LIMIT.windowSec) * IP_FAIL_LIMIT.windowSec;
+  const [att, ipRow] = await Promise.all([
+    env.DB.prepare('SELECT * FROM login_attempts WHERE key = ?').bind(username).first(),
+    env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(ik, win).first(),
+  ]);
+  if (ipRow && ipRow.count >= IP_FAIL_LIMIT.max) {
+    throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
+  }
   if (att && att.locked_until && att.locked_until > nowIso()) {
     throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
   }
@@ -81,6 +97,10 @@ export async function login(env, request, body) {
     await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)
       ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, updated_at=excluded.updated_at`)
       .bind(username, locked ? 0 : failures, locked, nowIso()).run();
+    const ipc = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
+      ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
+      RETURNING count`).bind(ik, win).first();
+    if (ipc && ipc.count === IP_FAIL_LIMIT.max) await audit(env, null, 'login.ip_limited', null, { failures: ipc.count, minutes: IP_FAIL_LIMIT.windowSec / 60 });
     if (locked) await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
     throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   }
@@ -361,4 +381,15 @@ export async function listAudit(env, user, query = {}) {
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE a.created_at < ? ${prefix ? "AND a.action LIKE ? ESCAPE '\\'" : ''} ORDER BY a.created_at DESC LIMIT ?`)
     .bind(...(prefix ? [before, prefix.replace(/[%_\\]/g, (c) => '\\' + c) + '%', limit] : [before, limit])).all()).results;
   return rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
+}
+
+// Kurzlebige Tabellen aufräumen (Cron): abgelaufene Sitzungen, alte Zählerfenster, alte Fehlversuche ohne aktive Sperre
+export async function cleanupShortLived(env) {
+  const now = nowIso();
+  const dayAgo = new Date(Date.now() - 86400000).toISOString();
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
+    env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(Math.floor(Date.now() / 1000) - 2 * 86400),
+    env.DB.prepare('DELETE FROM login_attempts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until < ?)').bind(dayAgo, now),
+  ]);
 }

@@ -461,7 +461,7 @@ export default {
     if (!testRun) {
       try { await retryFailedPush(env); } catch (err) { console.error('Push-Retry', err); }
     } else {
-      await env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(nowIso()).run();
+      await auth.cleanupShortLived(env);
     }
   },
 };

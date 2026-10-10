@@ -567,6 +567,34 @@ await test('Deaktivierung entwertet Sitzung sofort', async () => {
   eq(r.status, 200);
   eq((await users.driver2.get('/api/me')).status, 401);
 });
+await test('Fehlanmeldungen je Netzadresse begrenzt (viele Benutzernamen), andere Adressen unberührt; Aufräumen kurzlebiger Tabellen', async () => {
+  const auth = await import('../src/auth.js');
+  const saved = auth.IP_FAIL_LIMIT.max; auth.IP_FAIL_LIMIT.max = 3;
+  try {
+    const H = { 'cf-connecting-ip': '203.0.113.7' };
+    const c = new Client(worker, env);
+    for (const u of ['gibts.nicht1', 'gibts.nicht2', 'gibts.nicht3']) eq((await c.post('/api/login', { username: u, password: 'falsch-falsch-1' }, H)).status, 401);
+    const blocked = await c.post('/api/login', { username: 'test.fahrer', password: 'Sicheres-Passwort-2026' }, H);
+    eq(blocked.status, 429, 'gesperrte Adresse'); eq(blocked.data.error, 'locked');
+    eq((await new Client(worker, env).post('/api/login', { username: 'test.fahrer', password: 'Sicheres-Passwort-2026' }, { 'cf-connecting-ip': '198.51.100.9' })).status, 200, 'andere Adresse');
+    const keys = (await env.DB.prepare("SELECT key FROM rate_limits WHERE key LIKE 'loginfail:%'").all()).results.map((r) => r.key);
+    ok(keys.length >= 1 && keys.every((k) => !k.includes('203.0.113')), 'IP nur als Hash gespeichert');
+    ok((await owner.get('/api/admin/audit?action=login.ip_limited')).data.entries.length >= 1, 'protokolliert (ohne IP)');
+    ok(!JSON.stringify((await owner.get('/api/admin/audit?action=login.ip_limited')).data.entries).includes('203.0.113'), 'Protokoll ohne IP');
+  } finally { auth.IP_FAIL_LIMIT.max = saved; }
+  // Aufräumen: alte Zählerfenster und alte Fehlversuche ohne Sperre werden gelöscht, aktive Sperren bleiben
+  const old = new Date(Date.now() - 3 * 86400000).toISOString();
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO rate_limits(key, window_start, count) VALUES (?,?,?)').bind('loginfail:alt', Math.floor(Date.now() / 1000) - 5 * 86400, 9),
+    env.DB.prepare('INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)').bind('alt.versuch', 2, null, old),
+    env.DB.prepare('INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)').bind('alt.gesperrt', 0, new Date(Date.now() + 600000).toISOString(), old),
+  ]);
+  await auth.cleanupShortLived(env);
+  eq((await env.DB.prepare("SELECT COUNT(*) AS n FROM rate_limits WHERE key='loginfail:alt'").first()).n, 0);
+  eq((await env.DB.prepare("SELECT COUNT(*) AS n FROM login_attempts WHERE key='alt.versuch'").first()).n, 0);
+  eq((await env.DB.prepare("SELECT COUNT(*) AS n FROM login_attempts WHERE key='alt.gesperrt'").first()).n, 1, 'aktive Sperre bleibt');
+  await env.DB.prepare("DELETE FROM login_attempts WHERE key='alt.gesperrt'").run();
+});
 await test('Login-Sperre nach wiederholten Fehlversuchen', async () => {
   const c = new Client(worker, env, 'x');
   for (let i = 0; i < 8; i++) await c.post('/api/login', { username: 'test.dispo', password: 'falsch-falsch-1' });
