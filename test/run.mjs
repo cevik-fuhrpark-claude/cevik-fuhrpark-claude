@@ -995,6 +995,16 @@ await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte
   eq(mine.data.vehicles.length, 1); eq(mine.data.vehicles[0].id, V2);
   ok('locked' in mine.data.vehicles[0] && Array.isArray(mine.data.vehicles[0].my_open_cases) && Array.isArray(mine.data.vehicles[0].next_inspections), 'Felder');
   eq((await users.fleet.get('/api/me/vehicles')).status, 403, 'nur Fahrer');
+  // bekannte offene Mängel am eigenen Fahrzeug: auch fremde Meldungen, aber ohne Namen und ohne Link
+  const other = await users.fleet.post('/api/cases', { vehicle_id: V2, description: 'Spiegelhalter rechts locker (Fuhrpark)', priority: 'niedrig', request_key: rk() });
+  eq(other.status, 201);
+  const kd = (await users.driver.get('/api/me/vehicles')).data.vehicles[0].known_defects;
+  const k = kd.find((x) => x.case_no === other.data.case_no);
+  ok(k && k.id === null && k.mine === false, 'fremde Meldung ohne Link');
+  ok(!JSON.stringify(kd).includes('reporter') && !JSON.stringify(kd).includes('display_name'), 'keine Namen');
+  ok(!(await users.driver.get('/api/me/vehicles')).data.vehicles[0].my_open_cases.some((c) => c.case_no === other.data.case_no), 'nicht unter eigenen Meldungen');
+  const oc = (await users.fleet.get(`/api/cases/${other.data.id}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${oc.id}/commands`, { action: 'reject', command_id: rk(), expected_version: oc.version, note: 'Testdaten' })).status, 200);
   const v2 = (await users.fleet.get(`/api/vehicles/${V2}`)).data.drivers.find((x) => x.user_id === users.driver.id && !x.valid_to);
   eq((await users.prodFleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 404, 'Betrieb kann Test-Zuordnung nicht beenden');
   eq((await users.fleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 200);

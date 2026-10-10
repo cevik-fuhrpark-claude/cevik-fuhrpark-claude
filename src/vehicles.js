@@ -251,8 +251,10 @@ export async function myVehicles(env, user, envName) {
   const [locks, mine, rules, kms] = await Promise.all([
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
-    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, description, created_at FROM cases WHERE environment=? AND reporter_id=? AND vehicle_id IN (SELECT value FROM json_each(?))
-      AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(envName, user.id, ids).all(),
+    // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
+    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, reporter_id=? AS mine
+      FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
+      AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND next_due_date IS NOT NULL ORDER BY next_due_date`).bind(ids).all(),
     env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at FROM odometer_readings o WHERE o.vehicle_id IN (SELECT value FROM json_each(?1))
       AND o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id)`).bind(ids).all(),
@@ -262,7 +264,9 @@ export async function myVehicles(env, user, envName) {
   return {
     vehicles: vs.map((v) => ({
       ...v, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
-      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id),
+      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, ...c }) => c),
+      known_defects: mine.results.filter((c) => c.vehicle_id === v.id).slice(0, 10).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
+        description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine })),
       next_inspections: rules.results.filter((r) => r.vehicle_id === v.id).slice(0, 4).map(({ kind, next_due_date }) => ({ kind, next_due_date })),
       last_km: kmMap.get(v.id) || null,
     })),

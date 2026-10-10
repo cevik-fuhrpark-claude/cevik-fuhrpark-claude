@@ -248,3 +248,6 @@ Object.assign(STRINGS.en, { recurring_defects: 'Recurring defects (90 days)', re
 Object.assign(STRINGS.de, { act_repeat_finding: 'Erneut festgestellt' });
 Object.assign(STRINGS.uk, { act_repeat_finding: 'Виявлено повторно' });
 Object.assign(STRINGS.en, { act_repeat_finding: 'Found again' });
+Object.assign(STRINGS.de, { known_defects: 'Bereits gemeldet (offen)' });
+Object.assign(STRINGS.uk, { known_defects: 'Уже повідомлено (відкрито)' });
+Object.assign(STRINGS.en, { known_defects: 'Already reported (open)' });

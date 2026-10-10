@@ -59,7 +59,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Management | `GET /api/dashboard`, `GET /api/master`, `POST /api/master/:eventId/decision`, `POST /api/agent/run` |
 | Einstellungen | `GET/PUT /api/settings` (nur owner) |
 | Push-Einstellungen | `GET /api/me/notify-prefs` → `{kinds, muted}`, `PUT {muted: [...]}` – nur nicht dringende Arten; stumm → `push_status='disabled'`, In-App bleibt |
-| Fahrer: mein Fahrzeug | `GET /api/me/vehicles` (nur driver): zugeordnete Fahrzeuge mit `locked`, `open_cases_total`, `my_open_cases`, `next_inspections`, `last_km` |
+| Fahrer: mein Fahrzeug | `GET /api/me/vehicles` (nur driver): zugeordnete Fahrzeuge mit `locked`, `open_cases_total`, `my_open_cases`, `known_defects` (alle offenen Vorgänge des Fahrzeugs ohne Namen; `id` nur bei eigenen), `next_inspections`, `last_km` |
 | Fahrerzuordnung | `POST /api/vehicles/<id>/drivers {user_id, end_previous?, evidence?}` – 409 `already_assigned`; `DELETE /api/assignments/<id>` nur eigene Umgebung |
 | Wartungshistorie | Fahrzeugakte liefert `maintenance_history` (Datum, km, Nachweis, Quelle bestand/erfasst/erledigt/import, Person); Zeitleiste Typ `maintenance` je Durchführung |
 | Prüfungen nach km | Regel mit `interval_km` + `last_done_km` → `GET /api/maintenance` liefert `next_due_km`, `current_km`, `km_remaining`, `km_status`; Gesamtstatus = strengerer aus Datum und km. Vorwarnung nur mit Einstellung `maintenance_warn_km`. Erledigen einer km-Regel verlangt `done_km`. Agent: `MAINTENANCE_DUE/OVERDUE` mit Subjekt `<regel>|km` |
