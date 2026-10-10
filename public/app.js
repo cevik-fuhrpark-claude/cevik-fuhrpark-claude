@@ -628,6 +628,7 @@ function checklistHtml() {
     <span class="seg" role="radiogroup" aria-labelledby="cl_${esc(i.key)}"><label><input type="radio" name="${esc(i.key)}" value="ok" required>${esc(t('ok'))}</label><label class="bad"><input type="radio" name="${esc(i.key)}" value="mangel">${esc(t('defect'))}</label><label><input type="radio" name="${esc(i.key)}" value="na">${esc(t('na'))}</label></span>
     <div class="detail" hidden><input name="${esc(i.key)}__note" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label></div></div>`).join('');
 }
+const kmWarn = (r) => (r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', r.km_rejected.km).replace('{prev}', r.km_rejected.previous_km) : '');
 function bindChecklist(form) {
   $$('.checkitem', form).forEach((row) => {
     $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
@@ -662,7 +663,7 @@ async function viewInspection(caseId) {
     e.preventDefault();
     try {
       const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null });
-      toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}`);
+      toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected);
       location.hash = '#/cases/' + caseId;
     } catch (err) { toast(err.message, true); }
   };
@@ -690,7 +691,7 @@ async function viewDepartureCheck(preId) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
         try { failed += await uploadCasePhotos(r.followups[0].id, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
       }
-      toast(`${t('check_saved')}${files.length && !r.followups.length ? ' · ' + t('check_photos_skipped') : ''}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
+      toast(`${t('check_saved')}${files.length && !r.followups.length ? ' · ' + t('check_photos_skipped') : ''}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
       location.hash = r.followups.length ? '#/cases/' + r.followups[0].id : '#/';
     } catch (err) {
       $('#sb').disabled = false;

@@ -640,23 +640,30 @@ export async function submitInspection(env, ctx, user, envName, body) {
     followups.push(res);
   }
   const itemsJson = JSON.stringify(CHECKLIST.map((i) => byKey.get(i.key)));
+  // km-Stand aus der Kontrolle nur in die Fahrzeugakte, wenn er nicht kleiner als der letzte erfasste ist (Tippfehler würden
+  // km-Fälligkeiten und €/km verfälschen). Er bleibt an der Kontrolle gespeichert; Korrektur mit Begründung über die Fahrzeugakte.
+  let kmRejected = null;
+  if (odo !== null) {
+    const last = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId).first();
+    if (last && odo < last.km) kmRejected = { km: odo, previous_km: last.km, previous_at: last.measured_at };
+  }
   {
     const stmts = [env.DB.prepare(`INSERT OR IGNORE INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
       defects.length ? 'maengel' : 'ok', str(body.note, { max: 2000 }), now)];
-    if (odo !== null) {
+    if (odo !== null && !kmRejected) {
       stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)`)
         .bind(uuid(), vehicleId, odo, now, `kontrolle:${kind}`, user.id, now));
     }
     if (c) {
       stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         VALUES (?,?,?,?,?,'inspection',?,?,?,?,?,?,?)`).bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, c.version, c.version,
-        defects.length ? `${defects.length} Mangel/Mängel festgestellt` : 'Kontrolle ohne Mängel',
+        (defects.length ? `${defects.length} Mangel/Mängel festgestellt` : 'Kontrolle ohne Mängel') + (kmRejected ? ` · km-Stand ${odo} kleiner als zuletzt erfasst (${kmRejected.previous_km}) – nicht in die Fahrzeugakte übernommen` : ''),
         JSON.stringify({ inspection_id: id, followups: followups.map((f) => f.case_no) }), now));
     }
     await env.DB.batch(stmts);
   }
-  return { id, result: defects.length ? 'maengel' : 'ok', followups };
+  return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected };
 }
 
 // ---------- Dateien ----------

@@ -1512,6 +1512,23 @@ await test('Abfahrtskontrolle mit Mangel: Fahrer kann Fotos an den Folgeauftrag 
   eq((await users.fleet.post(`/api/cases/${c.case.id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.case.version, note: 'Testdaten' })).status, 200);
 });
 
+await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespeichert, km nicht in die Fahrzeugakte', async () => {
+  const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const items = keys.map((k) => ({ key: k, result: 'ok' }));
+  const before = (await owner.get(`/api/vehicles/${V1}`)).data.odometer;
+  ok(before.length && before[0].km > 1000, 'Ausgangs-km vorhanden');
+  const r = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: 1000 });
+  eq(r.status, 201);
+  eq(r.data.km_rejected && r.data.km_rejected.previous_km, before[0].km, 'Rückmeldung mit letztem km-Stand');
+  const after = (await owner.get(`/api/vehicles/${V1}`)).data;
+  eq(after.odometer[0].km, before[0].km, 'kein neuer (kleinerer) km-Stand');
+  ok((await users.fleet.get(`/api/vehicles/${V1}`)).data.inspections.some((i) => i.odometer_km === 1000), 'km bleibt an der Kontrolle sichtbar');
+  // plausibler (größerer) Wert wird übernommen
+  const r2 = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: before[0].km + 50 });
+  eq(r2.data.km_rejected, null);
+  eq((await owner.get(`/api/vehicles/${V1}`)).data.odometer[0].km, before[0].km + 50);
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
