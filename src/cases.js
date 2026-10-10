@@ -1,6 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate } from './util.js';
 import { notifyCaseEvent } from './notify.js';
+import { prepareCaseWithdrawal } from './stock.js';
 
 export const PRIORITIES = ['niedrig', 'mittel', 'kritisch'];
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
@@ -367,15 +368,23 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'add_part': {
-      const name = str(p.name, { required: true, max: 200, field: 'Teil' });
       const qty = num(p.quantity ?? 1, { min: 0.01, max: 100000, field: 'Menge' });
-      const price = num(p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true });
-      const valuation = price === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const pid = uuid();
-      extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, str(p.part_number, { max: 80 }), qty, str(p.unit, { max: 20 }) || 'Stk',
-        price, valuation, str(p.supplier, { max: 120 }), str(p.document_ref, { max: 200 }), now));
-      payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation };
+      let stockItem = null;
+      if (p.stock_item_id) {
+        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid);
+        stockItem = w.item;
+        extra.push(w.stmt);
+      }
+      const name = stockItem ? stockItem.name : str(p.name, { required: true, max: 200, field: 'Teil' });
+      const rawPrice = p.unit_price_net === undefined || p.unit_price_net === '' || p.unit_price_net === null ? (stockItem ? stockItem.unit_price_net : null) : p.unit_price_net;
+      const price = num(rawPrice, { min: 0, max: 1000000, field: 'Preis', nullable: true });
+      const valuation = price === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
+      extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
+        stockItem ? stockItem.unit : (str(p.unit, { max: 20 }) || 'Stk'), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { max: 120 }),
+        str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now));
+      payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null };
       break;
     }
     case 'add_open_item': {

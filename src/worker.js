@@ -9,6 +9,7 @@ import { retryFailedPush, notifyUsers } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
+import * as stock from './stock.js';
 
 const migratedDbs = new WeakSet();
 export async function ensureSchema(env) {
@@ -144,6 +145,13 @@ async function handleApi(request, env, ctx, url) {
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await tires.importTireSpecs(env, user, text));
   }
+
+  // Ersatzteillager
+  if (path === '/api/stock' && m === 'GET') return json({ items: await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/stock' && m === 'POST') return json(await stock.createItem(env, user, envName, await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'PATCH') return json(await stock.updateItem(env, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/movements$/)) && m === 'POST') return json(await stock.addMovement(env, user, envName, mm[1], await readJson(request)), 201);
 
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') return json({ cases: await cases.listCases(env, user, envName, Object.fromEntries(url.searchParams)) });

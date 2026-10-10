@@ -3,6 +3,7 @@
 import { nowIso, uuid, sha256Hex } from './util.js';
 import { notifyUsers } from './notify.js';
 import { tireFindings } from './tires.js';
+import { stockFindings } from './stock.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -152,6 +153,13 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         severity: t.severity, owner_role: 'fleet', requires_decision: t.severity === 'kritisch' ? 1 : 0,
         message: `${t.plate} ${t.position}: Profiltiefe ${t.tread_mm} mm (Grenze ${t.limit} mm, gemessen ${t.created_at.slice(0, 10)}).`,
         next_action: t.severity === 'kritisch' ? 'Reifen vor weiterer Fahrt prüfen/tauschen lassen.' : 'Reifenwechsel einplanen.' });
+    }
+
+    // Ersatzteile unter Mindestbestand
+    for (const it of await stockFindings(env, environment)) {
+      add({ code: 'STOCK_BELOW_MIN', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
+        message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.`,
+        next_action: 'Nachbestellung prüfen (Bestellung nur nach Freigabe).' });
     }
 
     // ---- Befunde persistieren (Upsert), Erledigtes schließen, Übergaben an Master ----

@@ -1,0 +1,112 @@
+// [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf } from './util.js';
+
+const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
+
+function siteScope(user, site) {
+  if (isMgr(user)) return site || null;
+  if (user.role === 'workshop') {
+    if (site && site !== user.workshop_site) throw forbidden('Nur das Lager der eigenen Werkstatt.');
+    return user.workshop_site;
+  }
+  throw forbidden();
+}
+
+export async function onHand(env, itemId) {
+  const r = await env.DB.prepare('SELECT COALESCE(SUM(qty),0) AS q FROM stock_movements WHERE item_id=?').bind(itemId).first();
+  return Math.round(r.q * 1000) / 1000;
+}
+
+export async function listStock(env, user, envName, query) {
+  const site = siteScope(user, query.site);
+  const rows = (await env.DB.prepare(`SELECT i.*, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand
+    FROM stock_items i WHERE i.environment=? AND i.active=1 ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`)
+    .bind(...(site ? [envName, site] : [envName])).all()).results;
+  return rows.map((r) => ({ ...r, on_hand: Math.round(r.on_hand * 1000) / 1000, below_min: r.min_qty !== null && r.on_hand < r.min_qty }));
+}
+
+async function loadItem(env, user, envName, id) {
+  const it = await env.DB.prepare('SELECT * FROM stock_items WHERE id=? AND environment=?').bind(id, envName).first();
+  if (!it) throw notFound('Artikel nicht gefunden.');
+  if (user.role === 'workshop' && it.site !== user.workshop_site) throw notFound('Artikel nicht gefunden.');
+  if (!isMgr(user) && user.role !== 'workshop') throw forbidden();
+  return it;
+}
+
+export async function itemDetail(env, user, envName, id) {
+  const it = await loadItem(env, user, envName, id);
+  const movements = (await env.DB.prepare(`SELECT m.*, u.display_name AS user_name, c.case_no FROM stock_movements m JOIN users u ON u.id=m.user_id
+    LEFT JOIN cases c ON c.id=m.case_id WHERE m.item_id=? ORDER BY m.created_at DESC LIMIT 200`).bind(id).all()).results;
+  return { item: { ...it, on_hand: await onHand(env, id) }, movements };
+}
+
+export async function createItem(env, user, envName, body) {
+  const site = siteScope(user, body.site);
+  if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.');
+  const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
+  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  const id = uuid();
+  const now = nowIso();
+  try {
+    await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80 }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
+      str(body.unit, { max: 20 }) || 'Stk', num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true }), str(body.location, { max: 80 }),
+      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }), user.id, now, now).run();
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
+    throw e;
+  }
+  const initial = num(body.initial_qty, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true });
+  if (initial) await addMovement(env, user, envName, id, { type: 'zugang', qty: initial, note: 'Anfangsbestand', unit_price_net: body.unit_price_net });
+  return { id };
+}
+
+export async function updateItem(env, user, envName, id, body) {
+  const it = await loadItem(env, user, envName, id);
+  const fields = {
+    name: body.name !== undefined ? str(body.name, { required: true, max: 200, field: 'Bezeichnung' }) : it.name,
+    part_number: body.part_number !== undefined ? str(body.part_number, { max: 80 }) : it.part_number,
+    min_qty: body.min_qty !== undefined ? num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true }) : it.min_qty,
+    location: body.location !== undefined ? str(body.location, { max: 80 }) : it.location,
+    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }) : it.unit_price_net,
+    active: body.active === undefined ? it.active : (body.active ? 1 : 0),
+  };
+  await env.DB.prepare('UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=? WHERE id=?')
+    .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), id).run();
+  return { ok: true };
+}
+
+export async function addMovement(env, user, envName, id, body) {
+  const it = await loadItem(env, user, envName, id);
+  const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
+  let qty = num(body.qty, { min: -1e6, max: 1e6, field: 'Menge' });
+  if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
+  if (type === 'korrektur' && !str(body.note, { max: 500 })) throw bad('validation', 'Korrektur braucht einen Grund.');
+  if (type === 'entnahme') qty = -qty;
+  if (qty < 0 && (await onHand(env, id)) + qty < 0) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, id)} ${it.unit}).`);
+  const price = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true });
+  const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
+    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120 }), str(body.document_ref, { max: 200 }),
+    str(body.note, { max: 500 }), user.id, nowIso())];
+  if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
+  await env.DB.batch(stmts);
+  return { ok: true, on_hand: await onHand(env, id) };
+}
+
+// Für den Werkstattbefehl add_part: liefert Artikel + Statement für die Entnahme (in derselben Transaktion)
+export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, partId) {
+  const it = await env.DB.prepare('SELECT * FROM stock_items WHERE id=? AND environment=? AND active=1').bind(itemId, envName).first();
+  if (!it) throw bad('validation', 'Lagerartikel nicht gefunden.');
+  if (it.site !== c.workshop_site) throw bad('validation', 'Lagerartikel gehört nicht zur zuständigen Werkstatt.');
+  if (user.role === 'workshop' && it.site !== user.workshop_site) throw forbidden();
+  const avail = await onHand(env, itemId);
+  if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
+  const stmt = env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,part_id,unit_price_net,note,user_id,created_at)
+    VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net, `Vorgang ${c.case_no}`, user.id, nowIso());
+  return { item: it, stmt };
+}
+
+export async function stockFindings(env, environment) {
+  return (await listStock(env, { role: 'owner' }, environment, {})).filter((i) => i.below_min);
+}

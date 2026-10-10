@@ -51,5 +51,15 @@ export const MIGRATIONS = [
    "CREATE TABLE IF NOT EXISTS tire_events (\n  id TEXT PRIMARY KEY,\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  vehicle_id TEXT NOT NULL REFERENCES vehicles(id),\n  position TEXT NOT NULL,                       -- z. B. VA-L, HA-R-aussen, AH2-L\n  event_type TEXT NOT NULL CHECK (event_type IN ('messung','wechsel','reparatur','sichtpruefung')),\n  tread_mm REAL NULL CHECK (tread_mm IS NULL OR (tread_mm >= 0 AND tread_mm <= 30)),\n  pressure_bar REAL NULL CHECK (pressure_bar IS NULL OR (pressure_bar >= 0 AND pressure_bar <= 15)),\n  size TEXT NULL,\n  brand TEXT NULL,\n  dot TEXT NULL,                                -- DOT-Code (Herstellwoche/-jahr)\n  odometer_km INTEGER NULL,\n  case_id TEXT NULL REFERENCES cases(id),\n  note TEXT NULL,\n  recorded_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL\n)",
    "CREATE INDEX IF NOT EXISTS idx_tire_events_vehicle ON tire_events(environment, vehicle_id, position, created_at)"
   ]
+ },
+ {
+  "id": "0003_stock",
+  "statements": [
+   "CREATE TABLE IF NOT EXISTS stock_items (\n  id TEXT PRIMARY KEY,\n  environment TEXT NOT NULL CHECK (environment IN ('test','production')),\n  site TEXT NOT NULL REFERENCES workshops(code),\n  part_number TEXT NULL,\n  name TEXT NOT NULL,\n  unit TEXT NOT NULL DEFAULT 'Stk',\n  min_qty REAL NULL,                      -- Mindestbestand (leer = keine Meldung)\n  location TEXT NULL,                     -- Lagerort/Regal\n  unit_price_net REAL NULL,               -- letzter bekannter Einkaufspreis (leer = unbewertet)\n  active INTEGER NOT NULL DEFAULT 1,\n  created_by TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n)",
+   "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_unique ON stock_items(environment, site, COALESCE(part_number, ''), name)",
+   "CREATE TABLE IF NOT EXISTS stock_movements (\n  id TEXT PRIMARY KEY,\n  environment TEXT NOT NULL,\n  item_id TEXT NOT NULL REFERENCES stock_items(id),\n  type TEXT NOT NULL CHECK (type IN ('zugang','entnahme','korrektur')),\n  qty REAL NOT NULL,                      -- vorzeichenbehaftet: Zugang +, Entnahme -\n  case_id TEXT NULL REFERENCES cases(id),\n  part_id TEXT NULL,\n  unit_price_net REAL NULL,\n  supplier TEXT NULL,\n  document_ref TEXT NULL,\n  note TEXT NULL,\n  user_id TEXT NOT NULL REFERENCES users(id),\n  created_at TEXT NOT NULL\n)",
+   "CREATE INDEX IF NOT EXISTS idx_stock_mov_item ON stock_movements(item_id, created_at)",
+   "ALTER TABLE parts ADD COLUMN stock_item_id TEXT NULL"
+  ]
  }
 ];

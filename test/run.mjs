@@ -398,5 +398,44 @@ await test('Reifenwechsel nur mit Größe; danach ist der alte Messwert nicht me
   eq((await users.prodFleet.get(`/api/vehicles/${V1}/tires`)).data.history.length, 0, 'Testmessungen nicht im Betrieb');
 });
 
+console.log('Ersatzteillager');
+let ITEM;
+await test('Lagerartikel je Werkstatt; Werkstatt sieht nur eigenes Lager', async () => {
+  const r = await users.ws.post('/api/stock', { name: 'Bremsbelagsatz VA', part_number: 'BB-123', min_qty: 2, location: 'Regal A3', unit_price_net: '84,50', initial_qty: 3 });
+  eq(r.status, 201); ITEM = r.data.id;
+  eq((await users.ws.post('/api/stock', { name: 'Bremsbelagsatz VA', part_number: 'BB-123' })).status, 409, 'Dublette');
+  eq((await users.wsMuc.post('/api/stock', { name: 'X', site: 'DORTMUND' })).status, 403, 'Fremdes Lager');
+  eq((await users.wsMuc.get(`/api/stock/${ITEM}`)).status, 404);
+  eq((await users.driver.get('/api/stock')).status, 403);
+  const l = await users.ws.get('/api/stock'); eq(l.data.items.length, 1); eq(l.data.items[0].on_hand, 3);
+  eq((await users.prodFleet.get('/api/stock')).data.items.length, 0, 'Testlager nicht im Betrieb');
+});
+await test('Entnahme aus Vorgang bucht Bestand ab, übernimmt Preis; zu wenig Bestand wird abgewiesen', async () => {
+  const c = await users.driver.post('/api/cases', { vehicle_id: V2, description: 'Bremsbeläge verschlissen', priority: 'mittel', driveability: 'eingeschraenkt', workshop_site: 'DORTMUND', request_key: rk() });
+  let d = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case;
+  let r = await users.fleet.post(`/api/cases/${d.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: d.version, payload: { workshop_site: 'DORTMUND' }, note: 'Beläge tauschen' });
+  r = await users.ws.post(`/api/cases/${d.id}/commands`, { action: 'start_repair', command_id: rk(), expected_version: r.data.version });
+  const tooMuch = await users.ws.post(`/api/cases/${d.id}/commands`, { action: 'add_part', command_id: rk(), expected_version: r.data.version, payload: { stock_item_id: ITEM, quantity: 5 } });
+  eq(tooMuch.status, 400); eq(tooMuch.data.error, 'insufficient_stock');
+  const okp = await users.ws.post(`/api/cases/${d.id}/commands`, { action: 'add_part', command_id: rk(), expected_version: r.data.version, payload: { stock_item_id: ITEM, quantity: 2 } });
+  eq(okp.status, 200);
+  const det = await users.fleet.get(`/api/cases/${d.id}`);
+  const part = det.data.parts[0];
+  eq(part.name, 'Bremsbelagsatz VA'); eq(part.unit_price_net, 84.5); eq(part.stock_item_id, ITEM);
+  const item = await users.ws.get(`/api/stock/${ITEM}`);
+  eq(item.data.item.on_hand, 1); ok(item.data.movements.some((m) => m.case_no === det.data.case.case_no), 'Bewegung mit Vorgangsnummer');
+});
+await test('Mindestbestand unterschritten → Agent-Hinweis; Zugang behebt ihn', async () => {
+  await users.fleet.post('/api/agent/run');
+  ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'STOCK_BELOW_MIN'), 'Hinweis vorhanden');
+  eq((await users.ws.post(`/api/stock/${ITEM}/movements`, { type: 'korrektur', qty: 1 })).status, 400, 'Korrektur ohne Grund');
+  eq((await users.ws.post(`/api/stock/${ITEM}/movements`, { type: 'entnahme', qty: 5 })).status, 400, 'Negativer Bestand');
+  const z = await users.ws.post(`/api/stock/${ITEM}/movements`, { type: 'zugang', qty: 4, unit_price_net: 79, supplier: 'Testlieferant', document_ref: 'LS-1' });
+  eq(z.status, 201); eq(z.data.on_hand, 5);
+  eq((await users.ws.get(`/api/stock/${ITEM}`)).data.item.unit_price_net, 79, 'Letzter Einkaufspreis');
+  await users.fleet.post('/api/agent/run');
+  ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'STOCK_BELOW_MIN'), 'Hinweis erledigt');
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 if (failed) { console.log('Fehlgeschlagen:', failures.join(' | ')); process.exit(1); }
