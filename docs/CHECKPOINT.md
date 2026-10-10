@@ -141,7 +141,10 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - Produktiv seit 10.10.2026 ca. 17:20 MESZ (Migration 0016 live geprüft: 68 Fahrzeuge mit zGM-Klasse, keine falschen SP-Zusätze mehr, 58 Neuberechnungen im Audit-Log). Vorfall: erste Fassung der Migration nutzte lange LIKE-Muster, die D1 ablehnt → App ca. 17:09–17:20 MESZ mit „Interner Fehler“; behoben durch instr(). Lehre: in Migrationen keine LIKE-Muster > 50 Zeichen.
 - Ergebnis mit echten Daten: 1 SP überfällig (SZ-YC 5517, fällig 08/2026); SZ-YC 5550/5551 nicht mehr überfällig (HU 07/2026 → SP 01/2027); 13 SP „Frist ungeklärt“, weil keine HU belegt ist (letzte HU-Rechnung fehlt im Drive).
 
+- 10.10.2026 17:37: **Freigabe Fahrerdaten & YellowFox (Inhaber: „Ja ich gebe alles frei“):** Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen, Führerscheinkontrolle), Auslese-Fristen Fahrerkarte/Fahrtenschreiber, Lenk-/Ruhezeiten und Verstöße über YellowFox-API. Bedingungen: nur lesend gegenüber YellowFox, Sichtbarkeit nur Inhaber/Fuhrparkleitung, Fahrer nur eigene Daten, zuerst Testumgebung. Eigener YellowFox-API-Zugang für diese App empfohlen (Kosten ggf. Entscheidung Inhaber). Zugangsdaten trägt der Inhaber selbst als Cloudflare-Secret ein. Übergabedoku der bestehenden YellowFox-Anbindung kommt vom Inhaber aus dem ChatGPT-Projekt (ChatGPT-Projekt selbst wird nicht verändert).
+
 ## Offene Fragen an den Auftraggeber
+- **YellowFox-Übergabedoku** aus dem ChatGPT-Projekt (Prompt im Chat 10.10.2026 übergeben): Basis-URL, Anmeldeart, Endpunkte, Beispielantworten, Fahrzeug-/Fahrer-Zuordnung, gebuchte Module.
 - **Führerscheinkontrolle (neu 10.10.2026):** Soll die App die regelmäßige Führerscheinkontrolle der Fahrer führen (Klassen, Ablaufdatum, Kontrolldatum, Prüfer; Erinnerung)? Das sind sensible Personaldaten – nur mit Freigabe. Wenn ja: Kontrollintervall (Monate) vorgeben.
 - **Geteilte Werkstatt-Tablets (neu 10.10.2026):** Automatische Abmeldung nach wie vielen Minuten ohne Nutzung (derzeit 30 Tage Sitzung)? Nur für Rolle Werkstatt oder für alle?
 - **SZ-YC 5539 doppelt:** Stammliste FIN `WDB96340510318431` (aktiv) und Dortmunder Datei FIN `WDB96300510318431` (ruhend) – vermutlich dasselbe Fahrzeug mit Tippfehler. Welche FIN ist richtig?
@@ -151,6 +154,9 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - GPS-Anbindung: Weg 1 (n8n) oder Weg 2 (eigene API-Zugänge) – „später entscheiden“.
 
 ## Backlog (in dieser Reihenfolge)
+0. **Fahrerakte (Stufe 1) – IN ARBEIT durch interaktive Sitzung 10.10.2026, nicht parallel bearbeiten:** Fahrer (auch ohne App-Konto), Führerschein/Fahrerkarte/Code 95/Unterweisungen mit belegtem Gültig-bis, Führerscheinkontrolle, Erinnerungen, Rechte.
+0b. Auslese-Fristen Fahrerkarte/Fahrtenschreiber (Stufe 2, Fristen vor Umsetzung am Gesetzestext prüfen).
+0c. Lenk-/Ruhezeiten & Verstöße über YellowFox (Stufe 3) – wartet auf Übergabedoku und Secret.
 1. Gehosteter Rundgang (Fahrer → Fuhrpark → Werkstatt → Freigabe), sobald der Auftraggeber die Ersteinrichtung erledigt und Testkonten angelegt hat.
 5. Telematik-Anbindung (nach Freigabe): n8n-Workflow „[CLAUDE] Telematik → Fuhrpark“ oder eigene API-Zugänge.
 6. Prüftermine aus Belegen – **von Claude erledigt**: Intervalle am 10.10.2026 bestätigt, `seed/prueftermine_mit_intervall.csv` (63 Zeilen) übergeben; Import liegt beim Inhaber (Mehr → Prüftermine → importieren, Vorschau prüfen). Nicht übernommen: Kienzle AR121628+, Mirsso RE3267/RE3382, DAH-AC558, SZ-YC 5548 (FIN-Abweichung, siehe Offene Fragen).
