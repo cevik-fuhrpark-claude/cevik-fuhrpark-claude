@@ -278,6 +278,17 @@ async function viewCases() {
 const outboxKey = () => `cfp_outbox_${S.me.id}_${S.me.environment}`;
 function outboxGet() { try { return JSON.parse(localStorage.getItem(outboxKey()) || '[]'); } catch { return []; } }
 function outboxSet(list) { try { localStorage.setItem(outboxKey(), JSON.stringify(list)); } catch {} }
+// Fotos für den Offline-Ausgang in IndexedDB (Blobs; localStorage wäre zu klein)
+function idb() { return new Promise((res, rej) => { const r = indexedDB.open('cfp_outbox', 1); r.onupgradeneeded = () => r.result.createObjectStore('photos'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function idbDo(mode, fn) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('photos', mode); const st = tx.objectStore('photos'); const out = fn(st); tx.oncomplete = () => res(out && 'result' in out ? out.result : undefined); tx.onerror = () => rej(tx.error); }); }
+const photosPut = (key, list) => idbDo('readwrite', (st) => st.put(list, key));
+const photosGet = (key) => idbDo('readonly', (st) => st.get(key));
+const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
+async function uploadCasePhotos(caseId, list) {
+  let failed = 0;
+  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (err.offline) throw err; failed++; } }
+  return failed;
+}
 let flushing = false;
 async function flushOutbox() {
   if (!S.me || flushing) return;
@@ -286,7 +297,16 @@ async function flushOutbox() {
   const rest = [];
   try {
     for (const item of list) {
-      try { const r = await api('POST', item.path || '/api/cases', item.body); toast(item.path === '/api/inspections' ? t('check_saved') : `${t('report_sent')}: ${r.case_no}`); }
+      try {
+        const r = await api('POST', item.path || '/api/cases', item.body);
+        let failed = 0;
+        if (item.photos) {
+          const list = await photosGet(item.body.request_key).catch(() => null);
+          if (list && list.length) failed = await uploadCasePhotos(r.id, list);
+          await photosDel(item.body.request_key).catch(() => {});
+        }
+        toast(item.path === '/api/inspections' ? t('check_saved') : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
+      }
       catch (err) { if (err.offline) { rest.push(item); continue; } toast(`${t('outbox_failed')}: ${err.message}`, true); }
     }
   } finally { outboxSet(rest); flushing = false; }
@@ -303,7 +323,7 @@ async function vehiclesCached() {
   try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability })))); } catch {} return vs; }
   catch (err) { if (!err.offline) throw err; let vs = null; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; return vs; }
 }
-function outboxAdd(path, body) { const list = outboxGet(); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, saved_at: new Date().toISOString() }); outboxSet(list); }
+function outboxAdd(path, body, photos = 0) { const list = outboxGet(); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, photos, saved_at: new Date().toISOString() }); outboxSet(list); }
 
 // ---------- Neue Meldung ----------
 async function viewNew() {
@@ -337,15 +357,17 @@ async function viewNew() {
       let failed = 0;
       for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${r.id}/files`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
-        catch { failed++; }
+        try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
       }
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + t('photos_failed').replace('{n}', failed) : ''}`, !!failed);
       location.hash = '#/cases/' + r.id;
     } catch (err) {
       if (err.offline) {
-        outboxAdd('/api/cases', body);
-        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${($('#ph').files || []).length ? `<p>${esc(t('photos_offline'))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
+        const files = [...($('#ph').files || [])].slice(0, 10);
+        let stored = 0;
+        if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
+        outboxAdd('/api/cases', body, stored);
+        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(t('photos_stored').replace('{n}', stored))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
       }
       toast(err.message, true); $('#sb').disabled = false;
