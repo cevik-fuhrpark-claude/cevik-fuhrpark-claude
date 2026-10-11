@@ -331,6 +331,9 @@ Object.assign(STRINGS.en, { my_ws_hint: 'as entered by the workshop – coordina
 Object.assign(STRINGS.de, { plan_other_dates: 'Fahrzeug auch geplant am' });
 Object.assign(STRINGS.uk, { plan_other_dates: 'Транспорт також заплановано на' });
 Object.assign(STRINGS.en, { plan_other_dates: 'Vehicle also planned on' });
-Object.assign(STRINGS.de, { no_planned_date: 'kein Termin geplant' });
-Object.assign(STRINGS.uk, { no_planned_date: 'термін не заплановано' });
-Object.assign(STRINGS.en, { no_planned_date: 'no date planned' });
+Object.assign(STRINGS.de, { no_planned_date: 'nicht eingeplant' });
+Object.assign(STRINGS.uk, { no_planned_date: 'не заплановано' });
+Object.assign(STRINGS.en, { no_planned_date: 'not scheduled' });
+Object.assign(STRINGS.de, { due_no_plan: 'Fällig, nicht eingeplant' });
+Object.assign(STRINGS.uk, { due_no_plan: 'Строк настав, не заплановано' });
+Object.assign(STRINGS.en, { due_no_plan: 'Due, not scheduled' });
