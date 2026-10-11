@@ -18,6 +18,8 @@ ROUTES = {
     'workshop': ['', 'search', 'plan', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check'],
     'dispatch': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
+    # Lesezugriff (z. B. Büro/Steuerberatung): nur lesen, keine Meldungen/Kontrollen
+    'viewer': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'fines', 'wsload', 'help', 'help?s=kpi'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
 A11Y = """() => {
@@ -130,10 +132,11 @@ with sync_playwright() as p:
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
+    ROUTES['viewer'] += [f'vehicles/{vid}']
     # kodierte Fahrzeug-ID (wie aus encodeURIComponent-Links) und Sprung zu einer (hier unbekannten) Durchführung
     ROUTES['workshop'] += [f"vehicles/{vid.replace(':', '%3A')}", f"vehicles/{vid.replace(':', '%3A')}?ev=unbekannt"]
     pages = {'owner': adm}
-    for role, extra in [('fleet', {}), ('workshop', {'workshop_site': 'DORTMUND'}), ('driver', {}), ('dispatch', {})]:
+    for role, extra in [('fleet', {}), ('workshop', {'workshop_site': 'DORTMUND'}), ('driver', {}), ('dispatch', {}), ('viewer', {})]:
         u = api('POST', '/api/users', {'username': f'rt.{role}', 'display_name': f'Rauchtest {role}', 'role': role, 'environment': 'production', **extra})
         if u['s'] != 201:
             sys.exit(f'Benutzer {role}: {u}')
@@ -163,6 +166,7 @@ with sync_playwright() as p:
     if cid:
         for r in ('owner', 'fleet'):  # Werkstatt sieht den Vorgang erst nach Zuweisung
             ROUTES[r] += [f'cases/{cid}', f'inspect/{cid}']
+        ROUTES['viewer'] += [f'cases/{cid}']
         ROUTES['driver'] += [f'cases/{cid}']
         # Versicherungsfall am ersten Vorgang (Abschnitt im Vorgang + Übersicht „Versicherungsfälle“)
         cl = api('PUT', f'/api/cases/{cid}/claim', {'insurer': 'Rauchtest-Versicherung', 'claim_no': 'RT-S-1', 'reported_on': datetime.date.today().isoformat(), 'deductible_net': '500', 'evidence': 'Rauchtest Schadenmeldung'})
