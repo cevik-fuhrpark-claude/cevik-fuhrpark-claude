@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 103 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 108 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -253,6 +253,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: **Tausenderpunkt-Hinweis am Feld:** Preis-/Mengen-/Stundenfelder (`inputmode=decimal`) melden „2.000“ sofort als mehrdeutig in der App-Sprache und verhindern das Absenden (gleiches Muster wie der Server, statischer Test); „2.000,00“ und „2000“ gehen. Playwright: Meldung erscheint, kein PUT gesendet. 107 Tests grün.
 - 11.10.2026: **Versicherungsfälle nachfassen:** Agent-Befund `CLAIM_OPEN_LONG` (Hinweis, Link zum Vorgang, in der ruhigen Sammel-Erinnerung) für gemeldete/in Prüfung befindliche Fälle, deren Meldedatum älter ist als die Einstellung „Versicherungsfälle – nachfassen nach Tagen“ (`claim_followup_days`, **leer = aus**, keine eigene Frist; ohne Einstellung keine zusätzliche Abfrage). Lasttest Worst Case: Agent 38 Abfragen. Hilfe DE/UK/EN. 107 Tests grün.
 - 11.10.2026: „Heute zu tun“ (Inhaber/Fuhrparkleitung) um **„Versicherungsfälle nachfassen“** ergänzt; Übersicht Versicherungsfälle markiert diese Fälle (`followup_due`, `followup_days` in `GET /api/claims`). Nur mit Einstellung. 107 Tests grün, Rauchtest 333 + 13 ohne Auffälligkeit, 390 px/PC geprüft.
+- 11.10.2026: **Leistung Kalenderdateien:** Lasttest um Prüfregeln mit Plan-Terminen und beide Kalender (.ics) erweitert – dabei gefunden: Zeilenfaltung brauchte ≈ 600 ms CPU für 900 Termine (TextEncoder je Zeichen; Risiko für das CPU-Limit je Worker-Aufruf). Jetzt Byte-Länge aus dem Zeichencode + ASCII-Schnellweg: ≈ 20× schneller, Ausgabe bei 6000 Zufallszeilen identisch; Regressionstest (≤ 75 Oktette, Entfalten = Original, Laufzeit). 108 Tests grün.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

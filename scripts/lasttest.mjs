@@ -108,6 +108,15 @@ for (let k = 0; k < 10; k++) {
   await timed('Verträge Handlungsbedarf', () => owner.get('/api/contracts?filter=aktion'));
 }
 await timed('Verträge CSV-Export', () => owner.get('/api/contracts?format=csv'));
+// Prüfregeln mit geplantem Werkstatttermin (synthetisch, direkt in der DB): je Lkw UVV und Tachograph, fällig in −10 … +80 Tagen, jede zweite eingeplant
+{ const me = (await owner.get('/api/me')).data.user.id; const now = new Date().toISOString();
+  const st = env.DB.prepare(`INSERT INTO maintenance_rules (id, vehicle_id, kind, interval_months, next_due_date, planned_date, evidence, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  await env.DB.batch(vehicles.flatMap((v, i) => ['UVV', 'Tachograph'].map((kind, j) => st.bind(`lt-mr-${i}-${j}`, v.id, kind, kind === 'UVV' ? 12 : 24, day(10 - ((i * 7 + j * 13) % 90)), (i + j) % 2 ? day(-((i % 30) + 1)) : null, 'Lasttest', me, now, now)))); }
+for (let k = 0; k < 5; k++) {
+  await timed('Prüftermin-Kalender (.ics)', () => owner.get('/api/maintenance?format=ics'));
+  await timed('Werkstattplan-Kalender (.ics)', () => owner.get('/api/workshop/plan?days=60&format=ics'));
+  await timed('Prüftermine mit Plan', () => owner.get('/api/maintenance'));
+}
 // Versicherungsfälle (synthetisch): 600 Vorgänge mit Fall, Meldedatum über 200 Tage gestreut, jeder zweite mit Erstattung
 for (const [i, id] of ids.slice(0, 600).entries()) {
   const rep = i % 200; const body = { insurer: 'Lasttest Versicherung', claim_no: `LT-S-${i}`, reported_on: day(rep), deductible_net: 500, evidence: 'Lasttest' };

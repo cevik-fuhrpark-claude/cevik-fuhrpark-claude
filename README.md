@@ -19,7 +19,7 @@ Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · 
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Sicherung |
 
 ```bash
-npm test                                            # 103 Abnahmetests (Node ≥ 22)
+npm test                                            # 108 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

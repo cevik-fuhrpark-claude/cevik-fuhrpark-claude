@@ -2304,6 +2304,18 @@ await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format
   eq((await users.fleet.post('/api/vehicles/VIN:WDB96340310555641/odometer', { km: '123.456' })).status, 201);
   eq((await users.fleet.get('/api/vehicles/VIN:WDB96340310555641')).data.odometer[0].km, 123456);
 });
+await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji), Entfalten ergibt Original; 900 Termine schnell', async () => {
+  const { icsCalendar } = await import('../src/util.js');
+  const long = 'Werkstatttermin Ölwechsel – SZ-YC 5513 · Привіт світ 😀 '.repeat(4); const ascii = 'A'.repeat(200);
+  const out = icsCalendar('Kalender', [{ uid: 'a', date: '2026-02-28', summary: long, description: ascii, alarmDays: 3 }], '2026-10-11T06:00:00Z');
+  const enc = new TextEncoder();
+  ok(out.split('\r\n').every((l) => enc.encode(l).length <= 75), 'max. 75 Oktette je Zeile');
+  const unfolded = out.replace(/\r\n /g, '');
+  ok(unfolded.includes('SUMMARY:' + long.replace(/,/g, '\\,')) && unfolded.includes('DESCRIPTION:' + ascii) && unfolded.includes('DTEND;VALUE=DATE:20260301'), 'Entfalten ergibt Original');
+  const ev = Array.from({ length: 900 }, (_, i) => ({ uid: 'x' + i, date: '2026-10-01', summary: long, description: 'Status: freigegeben · Werkstatt Dortmund', alarmDays: 3 }));
+  const t0 = performance.now(); icsCalendar('Last', ev); const ms = performance.now() - t0;
+  ok(ms < 250, `900 Termine in ${ms.toFixed(0)} ms (vorher ≈ 600 ms)`);
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
