@@ -2260,6 +2260,11 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   ok(tl.some((x) => x.claim_event === 'reimbursed' && x.at === day(0) && x.reimbursed_net === 2000), 'Zeitleiste: Erstattung');
   eq((await users.ws.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Werkstatt: keine Versicherungsfälle');
   eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
+  // Fahrzeugakte: Zusammenfassung Versicherungsfälle (nur Leitung)
+  const akte = (await users.fleet.get(`/api/vehicles/${V}`)).data;
+  eq(akte.claims_summary.total, 1); eq(akte.claims_summary.open, 0); eq(akte.claims_summary.reimbursed_net, 2000);
+  ok(!('claims_summary' in (await users.ws.get(`/api/vehicles/${V}`)).data), 'Werkstatt ohne Versicherungsfälle');
+  eq((await users.prodFleet.get(`/api/vehicles/${V}`)).data.claims_summary.total, 0, 'Umgebung');
   // Kostenbericht: Erstattungen getrennt, nicht von den Instandhaltungskosten abgezogen; nur Leitung
   const m = day(0).slice(0, 7);
   const rep = (await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&vehicle_id=${V}`)).data;
