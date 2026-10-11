@@ -89,6 +89,25 @@ for (let k = 0; k < 10; k++) {
   await timed('Fahrerakte', () => owner.get(`/api/drivers/${drvIds[(k * 37) % drvIds.length]}`));
   await timed('Auslesungen Übersicht', () => owner.get('/api/tacho'));
 }
+// Fahrzeugverträge (synthetisch): je Fahrzeug Leasing mit km-Kontingent + Versicherung; Enddaten so gestreut, dass viele Agent-Befunde
+// (abgelaufen, läuft aus, Kündigungstag, km über/Prognose) gleichzeitig entstehen – Worst Case für das Abfragebudget des Fuhrparkagenten.
+{ const st = env.DB.prepare(`INSERT INTO odometer_readings (id, vehicle_id, km, measured_at, source, recorded_by, created_at) VALUES (?,?,?,?,?,?,?)`);
+  const me = (await owner.get('/api/me')).data.user.id;
+  await env.DB.batch(vehicles.map((v, i) => st.bind(`lt-km-${i}`, v.id, 100000 + i * 900, new Date(Date.now() - 86400000).toISOString(), 'manual', me, new Date().toISOString())));
+  for (const [i, v] of vehicles.entries()) {
+    await timed('Vertrag anlegen', () => owner.post(`/api/vehicles/${v.id}/contracts`, { kind: 'leasing', partner: 'Lasttest Leasing', start_date: day(400), end_date: day(-((i % 30) * 10 - 40)), notice_months: 3, km_allowance: 100000 + (i % 3) * 20000, start_km: i % 2 ? 50000 : 100000, monthly_rate_net: 1000 + i, evidence: 'Lasttest' }).then((r) => must(r, 'Vertrag')));
+    await timed('Vertrag anlegen', () => owner.post(`/api/vehicles/${v.id}/contracts`, { kind: 'versicherung', partner: 'Lasttest Versicherung', start_date: day(300), end_date: day(-(i % 90)), evidence: 'Lasttest' }).then((r) => must(r, 'Vertrag')));
+  }
+  console.log(`${vehicles.length * 2} Verträge angelegt`);
+}
+const contractCsv = ['Kennzeichen;Vertragsart;Vertragspartner;Beginn;Ende;Nachweis',
+  ...vehicles.map((v, i) => `${v.plate};Wartungsvertrag;Lasttest Service;01.01.2026;31.12.2027;Lasttest ${i}`)].join('\n');
+await timed('Verträge-Import Vorschau', () => owner.req('POST', '/api/contracts/import?dry_run=1', contractCsv, { 'content-type': 'text/csv' }).then((r) => must(r, 'Vertragsimport')));
+for (let k = 0; k < 10; k++) {
+  await timed('Verträge Übersicht', () => owner.get('/api/contracts'));
+  await timed('Verträge Handlungsbedarf', () => owner.get('/api/contracts?filter=aktion'));
+}
+await timed('Verträge CSV-Export', () => owner.get('/api/contracts?format=csv'));
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
