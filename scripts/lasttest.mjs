@@ -37,7 +37,11 @@ for (let i = 0; i < N_CASES; i++) {
 }
 console.log(`${N_CASES} Vorgänge in ${((performance.now() - t0) / 1000).toFixed(1)} s angelegt`);
 
+// geplante Werkstatttermine (synthetisch, direkt in der DB): jeder 5. Vorgang freigegeben mit Termin in den nächsten 30 Tagen bzw. überschritten
+{ const base = Date.now(); const st = env.DB.prepare(`UPDATE cases SET status='werkstatt_freigegeben', workshop_ack_at=?, planned_date=? WHERE id=?`);
+  await env.DB.batch(ids.filter((_, i) => i % 5 === 0).map((id, j) => st.bind(new Date(base).toISOString(), new Date(base + ((j % 40) - 5) * 86400000).toISOString().slice(0, 10), id))); }
 for (let k = 0; k < 20; k++) {
+  await timed('Werkstattplan 30 Tage', () => owner.get('/api/workshop/plan?days=30'));
   await timed('Vorgangsliste', () => owner.get('/api/cases'));
   await timed('Vorgangsdetail', () => owner.get(`/api/cases/${ids[(k * 97) % ids.length]}`));
   await timed('Fahrzeugliste', () => owner.get('/api/vehicles'));
