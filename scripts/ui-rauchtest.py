@@ -111,7 +111,11 @@ with sync_playwright() as p:
     vin = 'WDB96340310123456'
     vid = 'VIN:' + vin
     api('POST', '/api/vehicles', {'plate': 'RT-AB 101', 'vin': vin, 'site': 'Dortmund'})
-    api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'HU', 'last_done_date': '2026-01-10', 'interval_months': 12, 'evidence': 'Rauchtest'})
+    hu = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'HU', 'last_done_date': '2026-01-10', 'interval_months': 12, 'evidence': 'Rauchtest'})
+    # Geplanter Prüftermin zusätzlich zum geplanten Werkstattauftrag (+2 Tage, unten): Disposition/Werkstattplan zeigen „Fahrzeug auch geplant am …“
+    pl = api('POST', f"/api/maintenance/{(hu.get('d') or {}).get('id')}/plan", {'planned_date': (datetime.date.today() + datetime.timedelta(days=5)).isoformat()})
+    if pl['s'] != 200:
+        problems.append(f'Vorbereitung Prüftermin planen: {pl}')
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     pages = {'owner': adm}
