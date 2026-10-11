@@ -304,6 +304,18 @@ with sync_playwright() as p:
     steps.append('Werkstatt setzt Termin für den Folgeauftrag direkt im Werkstattplan (Vorschlag nur auf Klick)')
     shot(wsp, 'werkstattplan_gesetzt')
 
+    # 9. Fahrer sieht den geplanten Werkstatttermin auf „Mein Fahrzeug“ (in seiner Sprache, ohne deutsche Reste)
+    go(drv, '')
+    drv.wait_for_timeout(400)
+    loc = {'uk': 'uk-UA', 'en': 'en-GB'}.get(DRV_LANG, 'de-DE')
+    fmt = drv.evaluate("([iso, loc]) => new Date(iso + 'T12:00:00Z').toLocaleDateString(loc)", [sug, loc])
+    dd = drv.locator('dl.kv dd b')
+    if not dd.count() or fmt not in dd.first.text_content():
+        fail(f'Fahrer-Startseite: geplanter Werkstatttermin {fmt} fehlt')
+    check_view(drv, 'driver', 'Fahrer-Startseite mit Werkstatttermin')
+    shot(drv, 'fahrer_werkstatttermin')
+    steps.append('Fahrer sieht den geplanten Werkstatttermin auf „Mein Fahrzeug“')
+
     for role, (pg, errs) in pages.items():
         if errs:
             fail(f'JavaScript-Fehler bei {role}: {errs[:2]}')
