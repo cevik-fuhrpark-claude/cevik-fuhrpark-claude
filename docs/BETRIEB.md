@@ -86,6 +86,10 @@ Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten
 mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt
 zuvor ≈ 9000 bei 3000 offenen Vorgängen). Ein Test prüft bei jedem Lauf, dass jeder API-Aufruf ≤ 50 Abfragen braucht.
 Betrieb und Testumgebung laufen in getrennten Cron-Aufrufen (`*/15` bzw. `7,37`).
+Push-Zustellung schreibt Ergebnisse mit höchstens 3 Anweisungen je Zustellung – unabhängig von Empfänger- und Gerätezahl
+(vorher 1 je Hinweis + 1 je Gerät). Hinweis: Jeder Push ist ein eigener Netzaufruf an den Push-Dienst; Cloudflare begrenzt auch
+diese (Gratis-Tarif 50 je Aufruf). Bei sehr vielen Geräten je Ereignis (> ≈ 40) wäre eine Verteilung über eine Warteschlange nötig.
+Fehlersuche: `CFP_QTRACE=1 npm test` listet die Anweisungen des größten Aufrufs.
 
 **Agent-Profil:** `node --experimental-sqlite scripts/agentprofil.mjs 150 3000` misst je Lauf Zeit, Abfragen und geschriebene Zeilen und
 listet die teuersten Funktionen. Ergebnis 10.10.2026 (3000 offene Vorgänge, 3051 Befunde): erster Lauf ≈ 300 ms / 5055 Zeilen,

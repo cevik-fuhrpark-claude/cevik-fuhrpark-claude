@@ -292,6 +292,32 @@ await test('T15: abgemeldetes Gerät wird entwertet, Fehler sichtbar statt „zu
   eq(t2.data.push_status, 'no_subscription');
 });
 
+await test('Push-Zustellung: höchstens 3 Schreibanweisungen, egal wie viele Empfänger/Geräte; Status je Hinweis korrekt', async () => {
+  const { notifyUsers } = await import('../src/notify.js');
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const auth = () => b64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  for (let i = 0; i < 6; i++) eq((await users.driver.post('/api/push/subscribe', { endpoint: `https://push.example/ok/many-${i}`, keys: { p256dh: await key(), auth: auth() } })).status, 200);
+  await users.driver.post('/api/push/subscribe', { endpoint: 'https://push.example/gone/many', keys: { p256dh: await key(), auth: auth() } });
+  await users.driver2.post('/api/push/subscribe', { endpoint: 'https://push.example/fail/many', keys: { p256dh: await key(), auth: auth() } });
+  const ids = [users.driver.id, users.driver2.id, users.dispatch.id];
+  const q0 = QSTAT.n; const w0 = QSTAT.written;
+  const n = await notifyUsers(env, null, 'test', ids, { kind: 'agent', title: 'Mehrgeräte-Test', body: 'x', eventKey: 'many-dev-' + rk(), urgent: true });
+  eq(n, 3);
+  ok(QSTAT.n - q0 <= 6, `Anweisungen gesamt ${QSTAT.n - q0} (Einfügen 2, Geräte 1, Schreiben ≤ 3)`);
+  const rows = env.DB.db.prepare(`SELECT user_id, push_status, push_attempts, push_last_error, push_accepted_at FROM notifications WHERE title='Mehrgeräte-Test'`).all();
+  const by = Object.fromEntries(rows.map((r) => [r.user_id, r]));
+  eq(by[users.driver.id].push_status, 'accepted'); eq(by[users.driver.id].push_attempts, 1); ok(by[users.driver.id].push_accepted_at, 'Annahmezeit');
+  eq(by[users.driver2.id].push_status, 'failed'); ok(/HTTP 500/.test(by[users.driver2.id].push_last_error), 'Fehler sichtbar'); eq(by[users.driver2.id].push_accepted_at, null);
+  eq(by[users.dispatch.id].push_status, 'no_subscription'); eq(by[users.dispatch.id].push_attempts, 0);
+  const subs = env.DB.db.prepare(`SELECT endpoint, revoked_at, last_success_at FROM push_subscriptions WHERE endpoint LIKE '%many%'`).all();
+  ok(subs.filter((x) => /ok\/many/.test(x.endpoint)).every((x) => x.last_success_at && !x.revoked_at), '6 Geräte erfolgreich');
+  ok(subs.find((x) => /gone/.test(x.endpoint)).revoked_at, 'abgemeldetes Gerät entwertet');
+  ok(!subs.find((x) => /fail/.test(x.endpoint)).revoked_at, 'Fehler ≠ abgemeldet');
+  ok(QSTAT.written - w0 >= 3 + 7, 'Zeilen tatsächlich geschrieben');
+  // Aufräumen: Mehrgeräte-Abos würden spätere Tests (Pushzählungen) verfälschen
+  env.DB.db.prepare(`DELETE FROM push_subscriptions WHERE endpoint LIKE '%many%'`).run();
+});
+
 console.log('Fuhrparkagent → Master → Kontrollpanel (T17, T18)');
 let firstHandoffs;
 await test('T17: Agent erkennt kritische unbewertete… Fälle und übergibt idempotent an Master', async () => {
@@ -2354,6 +2380,7 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
   console.log('     größte Aufrufe: ' + worst.map((w) => `${w.method} ${w.path} = ${w.n}`).join(' · '));
+  if (worst[0].sql) console.log(worst[0].sql.map((q, i) => `       ${i + 1}. ${q}`).join('\n')); // CFP_QTRACE=1 npm test
   ok(worst[0].n <= 50, `${worst[0].method} ${worst[0].path} braucht ${worst[0].n} Abfragen`);
 });
 

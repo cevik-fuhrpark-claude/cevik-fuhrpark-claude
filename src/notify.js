@@ -155,39 +155,45 @@ export async function deliverPush(env, notifications) {
     if (!subsByUser.has(s.user_id)) subsByUser.set(s.user_id, []);
     subsByUser.get(s.user_id).push(s);
   }
-  const writes = [];
+  // Abfragebudget: höchstens 3 Schreibanweisungen je Zustellung, unabhängig von Empfänger- und Gerätezahl
+  // (vorher 1 je Hinweis + 1 je Gerät – ein kritischer Fall an viele Konten mit mehreren Geräten konnte die Grenze von 50 sprengen)
+  const states = []; // { id, s: Status, a: 1 = Zustellversuch (zählt Versuche, setzt Fehler/Annahmezeit), e, t }
+  const okSubs = new Set();
   const revoked = new Set();
   const mutedByUser = new Map();
   if (notifications.some((n) => !n.urgent && n.kind)) {
     for (const u of (await env.DB.prepare('SELECT id, push_muted FROM users WHERE push_muted IS NOT NULL AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
   }
   for (const n of notifications) {
-    if (!n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind)) {
-      writes.push(env.DB.prepare(`UPDATE notifications SET push_status='disabled' WHERE id=?`).bind(n.id));
-      continue;
-    }
+    if (!n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
-    if (subs.length === 0) {
-      writes.push(env.DB.prepare(`UPDATE notifications SET push_status='no_subscription' WHERE id=?`).bind(n.id));
-      continue;
-    }
+    if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
     let accepted = false; let lastErr = null;
     for (const s of subs) {
       const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent }, { urgent: n.urgent });
       if (res.status === 'accepted') {
         accepted = true;
-        writes.push(env.DB.prepare('UPDATE push_subscriptions SET last_success_at=? WHERE id=?').bind(nowIso(), s.id));
+        okSubs.add(s.id);
       } else if (res.status === 'gone') {
         revoked.add(s.id);
-        writes.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE id=?').bind(nowIso(), s.id));
         lastErr = `Gerät abgemeldet (${res.http})`;
       } else {
         lastErr = `HTTP ${res.http} ${res.error || ''}`.trim();
       }
     }
-    writes.push(env.DB.prepare(`UPDATE notifications SET push_status=?, push_attempts=push_attempts+1, push_last_error=?, push_accepted_at=? WHERE id=?`)
-      .bind(accepted ? 'accepted' : 'failed', accepted ? null : lastErr, accepted ? nowIso() : null, n.id));
+    states.push({ id: n.id, s: accepted ? 'accepted' : 'failed', a: 1, e: accepted ? null : lastErr, t: accepted ? nowIso() : null });
   }
+  const now = nowIso();
+  const writes = [];
+  if (states.length) {
+    writes.push(env.DB.prepare(`UPDATE notifications SET push_status=j.s, push_attempts=push_attempts + j.a,
+      push_last_error=CASE WHEN j.a=1 THEN j.e ELSE notifications.push_last_error END,
+      push_accepted_at=CASE WHEN j.a=1 THEN j.t ELSE notifications.push_accepted_at END
+      FROM (SELECT json_extract(value,'$.id') AS id, json_extract(value,'$.s') AS s, json_extract(value,'$.a') AS a,
+        json_extract(value,'$.e') AS e, json_extract(value,'$.t') AS t FROM json_each(?)) AS j WHERE notifications.id=j.id`).bind(JSON.stringify(states)));
+  }
+  if (okSubs.size) writes.push(env.DB.prepare('UPDATE push_subscriptions SET last_success_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify([...okSubs])));
+  if (revoked.size) writes.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify([...revoked])));
   if (writes.length) await env.DB.batch(writes);
 }
 

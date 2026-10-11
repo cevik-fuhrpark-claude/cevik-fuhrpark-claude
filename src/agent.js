@@ -344,7 +344,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       await notifyUsers(env, ctx, environment, await recipients(), { kind: 'agent_reminder', title: 'Fuhrparkagent: neue Termine/Fristen', body, eventKey: `agent-reminder:${runId}`, caseId: null, urgent: false });
     }
 
-    const openCount = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM agent_findings WHERE environment=? AND status='offen'`).bind(environment).first()).n;
+    // Nach dem Sammel-Upsert sind genau die in diesem Lauf gefundenen Befunde offen, alle anderen erledigt – keine Zählabfrage nötig
+    const openCount = unique.length;
     await env.DB.prepare('UPDATE agent_runs SET finished_at=?, findings_open=?, handoffs=? WHERE id=?').bind(nowIso(), openCount, handoffs, runId).run();
     return { run_id: runId, findings_open: openCount, handoffs };
   } catch (e) {

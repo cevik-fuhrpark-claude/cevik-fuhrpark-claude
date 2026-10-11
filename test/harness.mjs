@@ -2,11 +2,11 @@
 import { DatabaseSync } from 'node:sqlite';
 
 // Zähler ausgeführter SQL-Anweisungen (für Abfragebudget je Aufruf im Lasttest)
-export const QSTAT = { n: 0, written: 0, perRequest: [] };
+export const QSTAT = { n: 0, written: 0, perRequest: [], trace: process.env.CFP_QTRACE ? [] : null };
 class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
   bind(...args) { return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a))); }
-  _prep() { QSTAT.n++; return this.db.prepare(this.sql); }
+  _prep() { QSTAT.n++; if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
   async first(col) {
     const r = this._prep().get(...this.args);
     if (!r) return null;
@@ -88,10 +88,10 @@ export class Client {
     let b = body;
     if (body !== undefined && !(body instanceof Uint8Array) && typeof body !== 'string') { b = JSON.stringify(body); h['content-type'] = 'application/json'; }
     const ctx = makeCtx();
-    const q0 = QSTAT.n;
+    const q0 = QSTAT.n; const t0 = QSTAT.trace ? QSTAT.trace.length : 0;
     const res = await this.worker.fetch(new Request('https://app.test' + path, { method, headers: h, body: b }), this.env, ctx);
     await ctx.flush();
-    QSTAT.perRequest.push({ method, path: path.split('?')[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ':id').replace(/VIN:[A-Z0-9]+/g, ':vin'), n: QSTAT.n - q0 });
+    QSTAT.perRequest.push({ method, path: path.split('?')[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ':id').replace(/VIN:[A-Z0-9]+/g, ':vin'), n: QSTAT.n - q0, sql: QSTAT.trace ? QSTAT.trace.slice(t0) : undefined });
     const sc = res.headers.get('set-cookie');
     if (sc) { const v = sc.split(';')[0]; this.cookie = v.endsWith('=') ? '' : v; }
     const ct = res.headers.get('content-type') || '';

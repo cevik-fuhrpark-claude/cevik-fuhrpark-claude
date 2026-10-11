@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 109 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 110 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -262,6 +262,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: Neue Prüfarten **Feuerlöscher, Verbandkasten, Ladungssicherung** (Ausrüstung je Fahrzeug; Intervall/Termin nur laut Eingabe bzw. Plakette, keine Vorgabe der App, keine Pflichtprüfung in der Lückenliste), Import-Aliase (Feuerloescher, Verbandskasten, Spanngurte, Zurrgurte …). 109 Tests grün.
 - **Sitzungsende 11.10.2026 ca. 07:15 UTC** (Sitzung ab 06:15 UTC): Versicherungsfälle ausgebaut (Zeitleiste, Erstattungen im Kostenbericht, Datenqualität Unfall ohne Fall, Nachfassen per Einstellung + Heute zu tun, Akte-Zusammenfassung, Vorgänge-CSV-Spalten, Schreiben verknüpfen – Migration 0023), Tausenderpunkt-Prüfung am Feld, Kalenderdateien 20× schneller, Unfall-Hinweise im Meldeformular, Prüfarten Feuerlöscher/Verbandkasten/Ladungssicherung, Lasttest/Rauchtest erweitert. 109 Tests grün, Rauchtest hell/dunkel/UK ohne Auffälligkeit, Zeitreise 8/8. **Nächster Schritt:** Antworten auf die offenen Fragen prüfen; ohne Antwort Punkt 10 (Ideen siehe Backlog 72–73; 72 nur nach Zustimmung).
 - 11.10.2026: Backlog 70/71 erledigt: Hilfe „Unfall melden“ für alle Rollen und Ausrüstungsprüfungen in der Hilfe „Prüftermine“ (DE/UK/EN); Fahrer-Startseite markiert abgelaufene Prüfungen/Ausrüstung („abgelaufen – Fuhrparkleitung informieren“). Rauchtest UK und EN je 333 + 13 ohne Auffälligkeit, 390 px geprüft.
+
+- 11.10.2026 (Sitzung ab 08:15 UTC): **Abfragebudget Push-Zustellung:** Statusschreiben je Zustellung jetzt höchstens 3 Sammelanweisungen (Hinweis-Status, erfolgreiche Geräte, abgemeldete Geräte) statt 1 je Hinweis + 1 je Gerät – ein kritischer Fall an viele Konten mit mehreren Geräten (bzw. die Push-Wiederholung mit 20 Hinweisen) konnte die Grenze von 50 Abfragen je Aufruf überschreiten. Fuhrparkagent spart die Zählabfrage am Ende (offen = Befunde dieses Laufs). Neuer Test (7 Geräte, 3 Empfänger: angenommen/fehlgeschlagen/kein Gerät, Gerät entwertet); `CFP_QTRACE=1 npm test` zeigt die Anweisungen des größten Aufrufs. 110 Tests grün, Lasttest bestanden (Agent 37), `pruefen.sh --schnell` grün.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
