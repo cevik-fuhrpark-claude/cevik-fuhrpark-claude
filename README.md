@@ -6,7 +6,7 @@ Eigenständig entwickelt von Claude als Vergleichsprojekt; getrennt vom ChatGPT-
 **Funktionen:** digitale Fahrzeugakte · Schadensmeldung per Handy mit Foto · Prioritäten niedrig/mittel/kritisch mit
 Sicherheitssperre · Werkstatt-Eingang, Übernahme, Arbeitszeit, Teile, Fremdrechnungen, Restarbeiten · Pflicht-Fahrzeugkontrolle
 nach Reparatur (Mängel werden automatisch Folgeaufträge) · Abfahrtskontrolle · technische Freigabe nur durch Menschen ·
-Wartung/HU/SP/UVV mit Nachweis, Prüftermin-Übersicht mit Lückenliste und belegtem CSV-Import · Kilometerstände · Kosten je Vorgang und Fahrzeug (unbewertet statt 0 €) ·
+Wartung/HU/SP/UVV mit Nachweis, Prüftermin-Übersicht mit Lückenliste und belegtem CSV-Import · Kilometerstände · Fahrzeugverträge (Leasing/Miete/Versicherung: Kündigungstag, km-Kontingent) · Kosten je Vorgang und Fahrzeug (unbewertet statt 0 €) ·
 Push-Benachrichtigungen mit Zustell-/Lesequittung · Fuhrparkagent + Management-Panel · KI-Analyse der Schadenshistorie ·
 Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
 
@@ -19,7 +19,8 @@ Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · 
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Sicherung |
 
 ```bash
-npm test                                            # 58 Abnahmetests (Node ≥ 22)
+npm test                                            # 103 Abnahmetests (Node ≥ 22)
+sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
 Deployment: Push auf `main` → Cloudflare Workers Builds (`node scripts/build-schema.mjs`, `npx wrangler deploy`).

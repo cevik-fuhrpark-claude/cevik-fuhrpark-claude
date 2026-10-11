@@ -224,7 +224,9 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   }
   await env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, nowIso(), vehicleId).run();
   await audit(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason });
-  return { ok: true, active };
+  // Hinweis: laufende Verträge (Leasing/Miete/Versicherung …) bleiben bestehen – Rückgabe/Kündigung separat klären
+  const running = active ? 0 : (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicle_contracts WHERE vehicle_id=? AND ended_on IS NULL').bind(vehicleId).first()).n;
+  return { ok: true, active, running_contracts: running };
 }
 
 export async function assignDriver(env, user, envName, vehicleId, body) {

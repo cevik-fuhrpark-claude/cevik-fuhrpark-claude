@@ -2094,7 +2094,8 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   let dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
   ok(dq.some((i) => i.check === 'contract_km_no_reading' && i.vehicle_id === V2), 'Kontingent ohne km-Stand');
   ok(!dq.some((i) => i.check === 'contract_km_no_reading' && i.vehicle_id === V), 'mit km-Stand kein Befund');
-  eq((await owner.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Test Vertrag' })).status, 200);
+  const deact = await owner.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Test Vertrag' });
+  eq(deact.status, 200); eq(deact.data.running_contracts, 1, 'Hinweis laufende Verträge');
   dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
   ok(dq.some((i) => i.check === 'contract_vehicle_inactive' && i.vehicle_id === V2 && i.severity === 'fehler'), 'Vertrag an Fahrzeug außer Betrieb');
   eq((await owner.post(`/api/vehicles/${V2}/active`, { active: true })).status, 200);
