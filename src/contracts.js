@@ -2,7 +2,7 @@
 // Grundsätze: Alle Angaben nur laut Vertrag (Pflicht-Nachweis); die App berechnet nur, was sich daraus ergibt
 // (spätester Kündigungstag = Vertragsende − Kündigungsfrist; km seit Übernahme; lineare Prognose, deutlich als Prognose gekennzeichnet).
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell } from './maintenance.js';
 
@@ -201,4 +201,101 @@ export async function contractFindings(env, settings) {
       message: `${c.plate}: ${label} – bei gleicher Fahrleistung voraussichtlich ${fmt(s.km.forecast_driven)} km bis Vertragsende (Kontingent ${fmt(c.km_allowance)} km; Prognose).`, next_action: 'Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.' });
   }
   return out;
+}
+
+// ---------- Sammelimport (CSV, „;“ oder „,“) mit Vorschau ----------
+// Spalten (Groß/Klein egal, Anfang genügt): Kennzeichen und/oder FIN, Vertragsart, Vertragspartner, Vertragsnummer, Beginn, Ende,
+// Kündigungsfrist (Monate), km-Kontingent, km bei Übernahme, Monatsrate, Nachweis (sonst `source` für alle Zeilen), Bemerkung.
+// Nur eindeutige Fahrzeuge (FIN, sonst eindeutiges Kennzeichen); vorhandene Verträge (gleiches Fahrzeug, Art und Vertragsnummer
+// bzw. ohne Nummer gleicher Partner und Beginn) bleiben unverändert – der Import überschreibt nie.
+const MAX_IMPORT = 500;
+const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+const normVin = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const KIND_ALIASES = { leasing: 'leasing', leasingvertrag: 'leasing', miete: 'miete', mietvertrag: 'miete', vermietung: 'miete', rental: 'miete', finanzierung: 'finanzierung', kredit: 'finanzierung', darlehen: 'finanzierung',
+  versicherung: 'versicherung', 'kfz-versicherung': 'versicherung', haftpflicht: 'versicherung', vollkasko: 'versicherung', teilkasko: 'versicherung', wartung: 'wartung', wartungsvertrag: 'wartung', service: 'wartung', 'full-service': 'wartung', sonstiges: 'sonstiges', sonstige: 'sonstiges', vertrag: 'sonstiges' };
+export function contractKindOf(raw) { return KIND_ALIASES[String(raw || '').trim().toLowerCase()] || null; }
+export function parseDay(raw) {
+  const t = String(raw || '').trim(); let m;
+  const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
+  if (!t) return '';
+  if (ISO.test(t)) return iso(t);
+  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  return null;
+}
+// Deutsche Zahlen: „1.234,50“, „100.000“, „1234,5“, „1 234“, „€ 999“ → Zahl; leer → null; sonst NaN
+export function parseDeNum(raw) {
+  let t = String(raw || '').replace(/[€\s ]|EUR|km/gi, '');
+  if (!t) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+}
+
+export async function importContracts(env, user, text, { dryRun = false, source = '' } = {}) {
+  if (!isMgr(user)) throw forbidden();
+  const table = parseCsv(text);
+  if (table.length < 2) throw bad('validation', 'CSV leer.');
+  if (table.length - 1 > MAX_IMPORT) throw bad('validation', `Maximal ${MAX_IMPORT} Zeilen je Import.`);
+  const head = table[0].map((h) => h.toLowerCase().trim());
+  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin']), kind: col(['vertragsart', 'art', 'typ']),
+    partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'nummer', 'nr']),
+    start: col(['vertragsbeginn', 'beginn', 'start']), end: col(['vertragsende', 'ende', 'laufzeitende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
+    allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung']), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
+    rate: col(['monatsrate', 'rate']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
+  const fallbackEv = str(source, { max: 300, field: 'Quelle' });
+  if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
+  if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');
+  if (ci.partner < 0) throw bad('validation', 'Spalte „Vertragspartner“ erforderlich.');
+  if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
+
+  const [vehRes, exRes] = await Promise.all([
+    env.DB.prepare('SELECT id, vin, plate FROM vehicles').all(),
+    env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date FROM vehicle_contracts').all(),
+  ]);
+  const vehicles = vehRes.results;
+  const byVin = new Map(vehicles.map((v) => [normVin(v.vin), v]));
+  const byPlate = new Map(); for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
+  const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${no.toLowerCase()}` : `${vid}|${kind}|${String(partner || '').toLowerCase()}|${start || ''}`);
+  const existing = new Set(exRes.results.map((c) => keyOf(c.vehicle_id, c.kind, c.contract_no, c.partner, c.start_date)));
+  const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
+  const rows = []; const skipped = []; const seen = new Set();
+  table.slice(1).forEach((cells, idx) => {
+    const line = idx + 2;
+    const skip = (reason) => skipped.push({ line, reason });
+    const vin = normVin(get(cells, ci.vin));
+    const v = vin ? byVin.get(vin) : get(cells, ci.plate) ? byPlate.get(normPlate(get(cells, ci.plate))) : undefined;
+    if (v === 'mehrdeutig') return skip(`Kennzeichen nicht eindeutig: ${get(cells, ci.plate)}`);
+    if (!v) return skip(`Fahrzeug nicht gefunden: ${get(cells, ci.vin) || get(cells, ci.plate) || '–'}`);
+    const kind = contractKindOf(get(cells, ci.kind));
+    if (!kind) return skip(`Vertragsart unbekannt: ${get(cells, ci.kind) || '–'}`);
+    const body = { kind, partner: get(cells, ci.partner), contract_no: get(cells, ci.no), evidence: get(cells, ci.ev) || fallbackEv, note: get(cells, ci.note) };
+    for (const [k, c] of [['start_date', ci.start], ['end_date', ci.end]]) {
+      const d = parseDay(get(cells, c));
+      if (d === null) return skip(`Datum nicht erkannt: ${get(cells, c)}`);
+      body[k] = d || null;
+    }
+    for (const [k, c] of [['notice_months', ci.notice], ['km_allowance', ci.allowance], ['start_km', ci.start_km], ['monthly_rate_net', ci.rate]]) {
+      const n = parseDeNum(get(cells, c));
+      if (Number.isNaN(n)) return skip(`Zahl nicht erkannt: ${get(cells, c)}`);
+      body[k] = n;
+    }
+    let f;
+    try { f = readBody(body); } catch (e) { return skip(e.message); }
+    const key = keyOf(v.id, f.kind, f.contract_no, f.partner, f.start_date);
+    if (seen.has(key)) return skip('doppelt in der Datei');
+    seen.add(key);
+    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status: existing.has(key) ? 'vorhanden' : 'neu' });
+  });
+  const fresh = rows.filter((r) => r.status === 'neu');
+  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows: rows.slice(0, 300), skipped: skipped.slice(0, 300) };
+  if (dryRun || !fresh.length) return result;
+  const now = nowIso();
+  const items = fresh.map((r) => ({ id: uuid(), v: r.vehicle_id, kind: r.kind, partner: r.partner, no: r.contract_no, sd: r.start_date, ed: r.end_date, nm: r.notice_months, ka: r.km_allowance, sk: r.start_km, rate: r.monthly_rate_net, ev: r.evidence, note: r.note }));
+  const J = (k) => `json_extract(value,'$.${k}')`;
+  await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at)
+    SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2 FROM json_each(?3)`)
+    .bind(user.id, now, JSON.stringify(items)).run();
+  await audit(env, user.id, 'contract.import', null, result.counts);
+  return result;
 }

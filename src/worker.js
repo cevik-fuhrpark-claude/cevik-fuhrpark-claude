@@ -200,6 +200,12 @@ async function handleApi(request, env, ctx, url) {
     }
     return json(ov);
   }
+  if (path === '/api/contracts/import' && m === 'POST') {
+    await rateLimit(env, 'import', user.id);
+    const text = await request.text();
+    if (text.length > 300000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    return json(await contracts.importContracts(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));
+  }
   if ((mm = path.match(/^\/api\/contracts\/([\w-]+)$/)) && m === 'PATCH') return json(await contracts.updateContract(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/contracts\/([\w-]+)\/end$/)) && m === 'POST') return json(await contracts.endContract(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);

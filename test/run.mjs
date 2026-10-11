@@ -2087,6 +2087,41 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   const tl = (await users.fleet.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items;
   ok(tl.some((x) => x.contract_event === 'end' && x.at === day(-1)) && tl.filter((x) => x.contract_event === 'start').length === 3, 'Zeitleiste Verträge');
   eq((await users.ws.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items.length, 0, 'Werkstatt: keine Verträge in der Zeitleiste');
+  // Datenqualität: Kontingent ohne km-Stand, laufender Vertrag an Fahrzeug außer Betrieb
+  eq((await owner.post('/api/vehicles', { plate: 'VT-LS 2', vin: 'WDB96340310555602', site: 'Dortmund' })).status, 201);
+  const V2 = 'VIN:WDB96340310555602';
+  eq((await users.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'miete', partner: 'Miet-AG', start_date: day(-10), km_allowance: 50000, start_km: 0, evidence: 'MV 1' })).status, 201);
+  let dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
+  ok(dq.some((i) => i.check === 'contract_km_no_reading' && i.vehicle_id === V2), 'Kontingent ohne km-Stand');
+  ok(!dq.some((i) => i.check === 'contract_km_no_reading' && i.vehicle_id === V), 'mit km-Stand kein Befund');
+  eq((await owner.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Test Vertrag' })).status, 200);
+  dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
+  ok(dq.some((i) => i.check === 'contract_vehicle_inactive' && i.vehicle_id === V2 && i.severity === 'fehler'), 'Vertrag an Fahrzeug außer Betrieb');
+  eq((await owner.post(`/api/vehicles/${V2}/active`, { active: true })).status, 200);
+  // Sammelimport mit Vorschau: deutsche Zahlen/Daten, nur eindeutige Fahrzeuge, vorhandene bleiben, Fehler mit Zeilennummer
+  const csvIn = '\ufeffKennzeichen;FIN;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);km-Kontingent;km bei Übernahme;Monatsrate;Nachweis\r\n'
+    + 'VT-LS 2;;Leasing;Import-Leasing;IL-1;01.02.2026;31.01.2030;3;"200.000";12.345;"1.099,90";Leasingvertrag IL-1\r\n'
+    + 'VT-LS 1;;Leasing;Muster-Leasing GmbH;L-4711;;;;;;;Doppelt\r\n'
+    + ';WDB96340310555602;Versicherung;Import-Versicherung;;;31.12.2026;;;;;\r\n'
+    + 'XX-NIX 9;;Leasing;Y;;;;;;;;Z\r\n'
+    + 'VT-LS 2;;Kauf;Y;;;;;;;;Z\r\n'
+    + 'VT-LS 2;;Miete;Y;;31.02.2026;;;;;;Z\r\n'
+    + 'VT-LS 2;;Miete;Y;;;;;100000;;;Z\r\n';
+  const imp = (q) => users.prodFleet.req('POST', '/api/contracts/import' + q, csvIn, { 'content-type': 'text/csv' });
+  let ir = await imp('?dry_run=1');
+  eq(ir.status, 200); eq(JSON.stringify(ir.data.counts), JSON.stringify({ neu: 1, vorhanden: 1, uebersprungen: 5 }), 'Vorschau');
+  const r2 = ir.data.rows.find((x) => x.line === 2);
+  eq(r2.start_date, '2026-02-01'); eq(r2.end_date, '2030-01-31'); eq(r2.km_allowance, 200000); eq(r2.start_km, 12345); eq(r2.monthly_rate_net, 1099.9); eq(r2.notice_months, 3);
+  eq(JSON.stringify(ir.data.skipped.map((x) => x.line)), JSON.stringify([4, 5, 6, 7, 8]), 'übersprungene Zeilen');
+  eq((await users.fleet.get(`/api/vehicles/${V2}`)).data.contracts.length, 1, 'Vorschau ändert nichts');
+  ir = await imp('?source=' + encodeURIComponent('Ordner Verträge 2026')); if (ir.status !== 200) throw new Error(JSON.stringify(ir.data));
+  eq(JSON.stringify(ir.data.counts), JSON.stringify({ neu: 2, vorhanden: 1, uebersprungen: 4 }), 'Übernahme mit Quelle für leere Nachweise');
+  const v2c = (await users.fleet.get(`/api/vehicles/${V2}`)).data.contracts;
+  ok(v2c.some((c) => c.kind === 'versicherung' && c.evidence === 'Ordner Verträge 2026') && v2c.some((c) => c.contract_no === 'IL-1' && c.monthly_rate_net === 1099.9), 'importiert');
+  eq((await imp('?source=x')).data.counts.neu, 0, 'idempotent');
+  eq((await users.ws.req('POST', '/api/contracts/import?dry_run=1', csvIn, { 'content-type': 'text/csv' })).status, 403);
+  const { parseDeNum } = await import('../src/contracts.js');
+  eq(parseDeNum('1.234,50 €'), 1234.5); eq(parseDeNum('100.000'), 100000); eq(parseDeNum('12,5'), 12.5); eq(parseDeNum(''), null); ok(Number.isNaN(parseDeNum('-5')) && Number.isNaN(parseDeNum('abc')), 'ungültig');
   // Testkonten nur lesen (Schalter des Inhabers) gilt auch für Verträge
   eq((await owner.put('/api/settings', { test_master_readonly: '1' })).status, 200);
   try { eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'sonstiges', partner: 'Z', evidence: 'Z' })).status, 403, 'test_readonly'); }

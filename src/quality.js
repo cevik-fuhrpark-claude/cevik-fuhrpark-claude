@@ -11,6 +11,8 @@ export const CHECKS = {
   km_inspection_rejected: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
+  // Fahrzeugverträge
+  contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke', leasing_doc_no_contract: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -35,7 +37,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
     env.DB.prepare('SELECT DISTINCT vehicle_id, kind FROM maintenance_rules WHERE next_due_date IS NOT NULL').all(),
@@ -56,6 +58,13 @@ export async function dataQuality(env, user, envName, query = {}) {
       FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?) WHERE prev_km IS NOT NULL AND odometer_km < prev_km ORDER BY created_at DESC LIMIT 200`).bind(envName, staleBefore).all(),
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
+    // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
+    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.km_allowance, c.start_date, v.plate, v.active,
+      (SELECT MAX(o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id) AS last_km_at
+      FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND v.eval_excluded=0`).all(),
+    // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
+    env.DB.prepare(`SELECT DISTINCT f.vehicle_id FROM files f WHERE f.environment=? AND f.case_id IS NULL AND f.doc_kind='leasing'
+      AND NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=f.vehicle_id AND c.kind IN ('leasing','miete','finanzierung'))`).bind(envName).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -94,6 +103,13 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
   const withVu = new Set(vu.results.map((r) => r.vehicle_id));
   for (const v of vs) if (v.kind === 'lkw' && !withVu.has(v.id)) add('vu_no_download', v);
+  const CK_DE = { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' };
+  for (const c of ctr.results) {
+    const v = { id: c.vehicle_id, plate: c.plate };
+    if (!c.active) add('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`);
+    else if (c.km_allowance && (!c.last_km_at || (c.start_date && c.last_km_at.slice(0, 10) < c.start_date))) add('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`);
+  }
+  for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {
     if (d.user_id && !d.u_active) addD('driver_account_inactive', d);
