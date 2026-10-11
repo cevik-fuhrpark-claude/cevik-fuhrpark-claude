@@ -2833,6 +2833,30 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   eq((await agentF()).length, 0, 'Agent-Befund erledigt');
   ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === ev.id), 'kein Mangel-ohne-Auftrag-Hinweis');
+  const dqAgain = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR);
+  eq((await dqAgain()).length, 0, 'Nachprüfung ohne Mängel → kein Wiederholungsmangel');
+  // zweite Runde: neue Prüfung mit Mängeln → Auftrag → Freigabe → Nachprüfung erneut mit gefährlichen Mängeln → Datenqualität
+  const VR2 = 'VIN:WDB96340310666667';
+  eq((await owner.post('/api/vehicles', { plate: 'NP-XY 67', vin: 'WDB96340310666667', site: 'Dortmund' })).status, 201);
+  const rule2 = await users.fleet.post(`/api/vehicles/${VR2}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'NP-Test 2' });
+  eq((await users.fleet.post(`/api/maintenance/${rule2.data.id}/complete`, { done_date: day(-4), evidence: 'UVV-Protokoll 5503', result: 'erhebliche_maengel' })).status, 200);
+  const ev3 = (await users.fleet.get(`/api/vehicles/${VR2}`)).data.maintenance_history.find((h) => h.evidence === 'UVV-Protokoll 5503');
+  const o3 = await users.fleet.post(`/api/maintenance/events/${ev3.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
+  eq(o3.status, 201);
+  const cmd3 = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${o3.data.id}`)).data.case;
+    return u.post(`/api/cases/${o3.data.id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  { const r = await cmd3(users.ws, 'start_repair'); eq(r.status, 200, JSON.stringify(r.data)); }
+  eq((await cmd3(users.ws, 'record_work', { hours: 1, description: 'Mängel laut UVV beseitigt' })).status, 200);
+  eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: o3.data.id, request_key: rk(), items })).status, 201);
+  { const r = await cmd3(users.ws, 'request_quality_check', {}, 'erledigt'); eq(r.status, 200, JSON.stringify(r.data)); }
+  { const r = await cmd3(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(r.status, 200, JSON.stringify(r.data)); }
+  eq((await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2).length, 0, 'vor der Nachprüfung kein Befund');
+  { const r = await users.fleet.post(`/api/maintenance/${rule2.data.id}/complete`, { done_date: day(0), evidence: 'UVV-Nachprüfung 5504', result: 'gefaehrliche_maengel' }); eq(r.status, 200, JSON.stringify(r.data)); }
+  const ag = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2);
+  ok(ag.length === 1 && ag[0].severity === 'luecke' && ag[0].detail.includes('gefährliche Mängel') && ag[0].detail.includes(o3.data.case_no), 'Wiederholungsmangel: ' + JSON.stringify(ag));
+  eq((await owner.get('/api/admin/data-quality', { 'x-cfp-env': 'production' })).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2).length, 0, 'Betrieb sieht Testauftrag nicht');
 });
 
 await test('Integrations-API /v1/maintenance: additiv Prüfmängel ohne Auftrag und ausstehende Nachprüfungen je Umgebung; /v1/cases mit maintenance_event_id', async () => {
