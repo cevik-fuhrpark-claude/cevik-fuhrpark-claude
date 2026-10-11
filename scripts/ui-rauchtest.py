@@ -13,8 +13,8 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'help'],
+    'owner': ['', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'settings', 'help', 'new', 'check'],
+    'fleet': ['', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help'],
     'workshop': ['', 'plan', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
     'dispatch': ['', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
@@ -146,6 +146,10 @@ with sync_playwright() as p:
         for r in ('owner', 'fleet'):  # Werkstatt sieht den Vorgang erst nach Zuweisung
             ROUTES[r] += [f'cases/{cid}', f'inspect/{cid}']
         ROUTES['driver'] += [f'cases/{cid}']
+        # Versicherungsfall am ersten Vorgang (Abschnitt im Vorgang + Übersicht „Versicherungsfälle“)
+        cl = api('PUT', f'/api/cases/{cid}/claim', {'insurer': 'Rauchtest-Versicherung', 'claim_no': 'RT-S-1', 'reported_on': datetime.date.today().isoformat(), 'deductible_net': '500', 'evidence': 'Rauchtest Schadenmeldung'})
+        if cl['s'] != 200:
+            problems.append(f'Vorbereitung Versicherungsfall: {cl}')
     # Zweiter Vorgang, der Werkstatt zugewiesen und in Reparatur (Detailansicht + Kontrollformular aus Werkstattsicht)
     cs2 = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Bremslicht defekt', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': 'rt-2'}])
     cid2 = (cs2.get('d') or {}).get('id')
