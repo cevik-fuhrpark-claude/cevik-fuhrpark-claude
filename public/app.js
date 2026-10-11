@@ -1466,9 +1466,12 @@ async function viewPlan() {
   const r = await api('GET', `/api/workshop/plan?days=${days}${site ? '&site=' + encodeURIComponent(site) : ''}`);
   const loc = S.lang === 'uk' ? 'uk-UA' : S.lang === 'en' ? 'en-GB' : 'de-DE';
   const wd = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString(loc, { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  // weiterer geplanter Tag desselben Fahrzeugs → Hinweis zum Zusammenlegen (nur Anzeige)
+  const other = (i) => i.other_dates && i.other_dates.length ? `<span class="otherdates">${esc(t('plan_other_dates'))}: ${i.other_dates.map(fmtD).join(', ')}</span>` : '';
+  const subs = (...xs) => { const x = xs.filter(Boolean); return x.length ? `<span class="sub" style="white-space:normal">${x.join(' · ')}</span>` : ''; };
   const row = (i) => i.type === 'case'
-    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${esc(i.description)}</span><span class="chip">${esc(t('st_' + i.status))}</span>${mgr && !site ? `<span class="sub">${esc(wsName(i.workshop_site))}</span>` : ''}</a>`
-    : `<a class="row" href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(i.kind)}</span><span class="chip">${i.next_due_date ? esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span></a>`;
+    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${esc(i.description)}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(mgr && !site && esc(wsName(i.workshop_site)), other(i))}</a>`
+    : `<a class="row" href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(i.kind)}</span><span class="chip">${i.next_due_date ? esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span>${subs(other(i))}</a>`;
   let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">

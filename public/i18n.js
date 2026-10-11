@@ -328,3 +328,6 @@ Object.assign(STRINGS.en, { ws_planned_today: 'Planned for today' });
 Object.assign(STRINGS.de, { my_ws_hint: 'laut Werkstatt – Abstimmung mit der Disposition' });
 Object.assign(STRINGS.uk, { my_ws_hint: 'за даними майстерні – узгодьте з диспетчерською' });
 Object.assign(STRINGS.en, { my_ws_hint: 'as entered by the workshop – coordinate with dispatch' });
+Object.assign(STRINGS.de, { plan_other_dates: 'Fahrzeug auch geplant am' });
+Object.assign(STRINGS.uk, { plan_other_dates: 'Транспорт також заплановано на' });
+Object.assign(STRINGS.en, { plan_other_dates: 'Vehicle also planned on' });

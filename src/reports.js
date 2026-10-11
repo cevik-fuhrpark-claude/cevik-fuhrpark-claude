@@ -327,6 +327,12 @@ export async function workshopPlan(env, user, envName, query = {}) {
     else if (c.planned_date <= to) put(c.planned_date, item);
   }
   for (const m of mt.results) put(m.planned_date, { type: 'maintenance', ...m });
+  // weitere geplante Tage desselben Fahrzeugs (ab heute, im Zeitraum): Hinweis zum Zusammenlegen – das Fahrzeug fiele sonst mehrfach aus
+  const vDates = new Map();
+  for (const [d, items] of byDay) for (const i of items) { if (!vDates.has(i.vehicle_id)) vDates.set(i.vehicle_id, new Set()); vDates.get(i.vehicle_id).add(d); }
+  const others = (i, own) => [...(vDates.get(i.vehicle_id) || [])].filter((d) => d !== own).sort();
+  for (const [d, items] of byDay) for (const i of items) i.other_dates = others(i, d);
+  for (const i of [...overdue, ...unplanned]) i.other_dates = others(i, null);
   return { today, from: today, to, site, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned };
 }
 

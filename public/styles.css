@@ -262,3 +262,4 @@ table.paper td:last-child { min-width: 30%; }
 .planset { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 6px 6px; }
 .planset label { margin: 0; }
 .planset input[type=date] { width: auto; min-width: 10.5em; }
+.row .otherdates { font-weight: 600; }
