@@ -264,6 +264,13 @@ with sync_playwright() as p:
             ROUTES[r] += [f"fines/{fn['d']['id']}"]
     else:
         problems.append(f'Vorbereitung Bußgeld: {fn}')
+    # zweites Schreiben mit Tatzeit nach der Fahrerzuordnung: Detail zeigt Fahrerkandidaten (Begründung in der App-Sprache)
+    fn2 = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-2', 'offense_type': 'geschwindigkeit', 'offense_at': (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=5)).strftime('%Y-%m-%dT%H:%M:%SZ'), 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': (datetime.date.today() + datetime.timedelta(days=30)).isoformat()})
+    if fn2['s'] in (200, 201):
+        for r in ('owner', 'fleet'):
+            ROUTES[r] += [f"fines/{fn2['d']['id']}"]
+    else:
+        problems.append(f'Vorbereitung Bußgeld 2: {fn2}')
     st = pages['workshop'].evaluate(JS, ['POST', '/api/stock', {'name': 'Rauchtest Bremsbelag', 'part_number': 'RT-1', 'initial_qty': 3, 'min_qty': 1}])
     if st['s'] in (200, 201):
         sid = st['d'].get('id') or st['d'].get('item', {}).get('id')

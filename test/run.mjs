@@ -814,6 +814,7 @@ await test('Erfassung nur durch Fuhrpark; Kennzeichen-Zuordnung; Aktenzeichen-Du
 await test('Fahrerermittlung: Kandidat aus Fahrzeugzuordnung, Bestätigung nur mit Nachweis, Fahrer erst nach Information sichtbar', async () => {
   const d = await users.fleet.get(`/api/fines/${FINE}`);
   ok(d.data.candidates.some((c) => c.user_id === users.driver.id && c.basis === 'zuordnung'), 'Zugeordneter Fahrer als Kandidat');
+  { const c = d.data.candidates.find((x) => x.basis === 'zuordnung'); ok(/^\d{4}-\d{2}-\d{2}$/.test(c.since) && c.evidence.startsWith('Fahrzeugzuordnung seit ' + c.since), 'Kandidat: Zuordnungsdatum strukturiert, Nachweistext unverändert deutsch'); }
   eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung' } })).status, 400, 'Ohne Nachweis');
   eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung', evidence: 'Fahrzeugzuordnung + Tourenplan KW 41' } })).status, 200);
   eq((await users.driver.get(`/api/fines/${FINE}`)).status, 404, 'Noch nicht informiert');
