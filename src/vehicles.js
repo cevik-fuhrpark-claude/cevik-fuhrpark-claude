@@ -1,6 +1,6 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
@@ -379,15 +379,13 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
     cls = fromKg;
   }
   const ez = body.first_registration ? str(body.first_registration, { max: 10 }) : null;
-  if (ez && (!/^\d{4}-\d{2}-\d{2}$/.test(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
+  if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
   await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=?').bind(cls, kg, ez, source, nowIso(), vehicleId).run();
   await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez }, source });
   const sync = await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
   return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
 }
 
-// echtes Kalenderdatum JJJJ-MM-TT (31.02. u. Ä. abgewiesen)
-const isCalendarDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
 // Prüfergebnisse, bei denen Fuhrparkleitung, Inhaber und Disposition sofort (dringend, nicht abschaltbar) informiert werden
 const URGENT_RESULTS = { gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
 export async function completeMaintenance(env, user, ruleId, body, { ctx = null, envName = null } = {}) {
@@ -441,7 +439,7 @@ export async function addOdometer(env, user, vehicleId, body) {
   let measuredAt = now;
   if (body.measured_on) {
     const d = String(body.measured_on);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d)) || d < '2000-01-01') throw bad('validation', 'Ablesedatum ungültig (JJJJ-MM-TT).');
+    if (!isCalendarDate(d) || d < '2000-01-01') throw bad('validation', 'Ablesedatum ungültig (JJJJ-MM-TT).');
     const today = berlinDate();
     if (d > today) throw bad('validation', 'Ablesedatum darf nicht in der Zukunft liegen.');
     if (d < today) measuredAt = `${d}T12:00:00.000Z`;
@@ -545,7 +543,7 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
   const kind = oneOf(query.kind || 'sonstiges', DOC_KINDS, 'Dokumentart');
   const note = str(query.note || null, { max: 200, field: 'Bemerkung' });
   const validUntil = str(query.valid_until || null, { max: 10 });
-  if (validUntil && !/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
+  if (validUntil && !isCalendarDate(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
   const buf = new Uint8Array(await request.arrayBuffer());
   if (!buf.length) throw bad('empty', 'Leere Datei.');
   if (buf.length > 5 * 1024 * 1024) throw bad('too_large', 'Datei zu groß (max. 5 MB).');

@@ -158,6 +158,12 @@ export function parseCookies(header) {
   return out;
 }
 
+// echtes Kalenderdatum JJJJ-MM-TT (z. B. 30.02. oder 31.04. abgewiesen – Date.parse nimmt Tage bis 31 an)
+export function isCalendarDate(d) {
+  if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const x = new Date(d + 'T00:00:00Z');
+  return !Number.isNaN(x.getTime()) && x.toISOString().slice(0, 10) === d;
+}
 export function addMonths(dateStr, months) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const day = d.getUTCDate();

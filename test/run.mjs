@@ -2977,6 +2977,15 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   eq(av2.availability, 'gesperrt', 'Auftrag aus verkehrsunsicher sperrt');
 });
 
+await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {
+  const VD = 'VIN:WDB96340310888883';
+  eq((await owner.post('/api/vehicles', { plate: 'KD-XY 83', vin: 'WDB96340310888883', site: 'Dortmund' })).status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VD}/contracts`, { kind: 'leasing', partner: 'KD', start_date: '2026-01-01', end_date: '2027-04-31', evidence: 'KD' })).status, 400, 'Vertrag 31.04.');
+  eq((await users.fleet.post(`/api/vehicles/${VD}/contracts`, { kind: 'leasing', partner: 'KD', start_date: '2026-01-01', end_date: '2027-04-30', evidence: 'KD' })).status, 201, 'gültiges Datum');
+  eq((await users.fleet.post(`/api/vehicles/${VD}/odometer`, { km: 1000, measured_on: '2026-02-30' })).status, 400, 'km-Stand 30.02.');
+  eq((await users.fleet.get('/api/maintenance/history?from=2026-02-30')).status, 400, 'Nachweisliste 30.02.');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

@@ -1,14 +1,14 @@
 // [CLAUDE] Fahrerakte: Fahrer (auch ohne App-Konto), Nachweise mit Gültig-bis laut Dokument, Führerscheinkontrollen, Erinnerungen.
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
 export const CHECK_RESULTS = ['in_ordnung', 'maengel', 'nicht_vorgelegt'];
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
 const date = (v, field, { required = false, notFuture = false } = {}) => {
   const d = str(v, { max: 10, required, field });
   if (!d) return null;

@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -652,7 +652,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const hours = num(p.hours, { min: 0.05, max: 24, field: 'Stunden' });
       const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
       const date = str(p.work_date, { max: 10 }) || berlinDate();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad('validation', 'Datum ungültig.');
+      if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
       const wid = uuid();
       extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at) VALUES (?,?,?,?,?,?,?)')
         .bind(wid, c.id, user.id, date, hours, desc, now));

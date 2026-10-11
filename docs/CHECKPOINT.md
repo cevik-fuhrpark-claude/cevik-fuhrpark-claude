@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 122 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 123 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -317,6 +317,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: **Sofort-Hinweis bei Prüfung mit gefährlichen Mängeln / verkehrsunsicher**: Wird so ein Ergebnis an einer aktuellen Prüfung (≤ 1 Monat, neueste ihrer Art) eingetragen, erhalten Inhaber, Fuhrparkleitung und Disposition der aktiven Umgebung sofort einen dringenden, nicht abschaltbaren Hinweis (`inspection_defect`, Text mit Kennzeichen, Prüfart, Datum, „nicht einplanen“ bei verkehrsunsicher; einmal je Prüfung, nicht an die erfassende Person, nicht beim Nachtragen alter Berichte). Disposition-Startseite: Abschnitt **„Prüfung nicht bestanden – noch kein Auftrag“** (gefährlich/verkehrsunsicher ohne Vorgang; mit Auftrag greift wie bisher Sperre/„Nicht einplanen“). Durchführungsdatum in der Zukunft bzw. ungültige Daten (30.02.) werden abgewiesen. Keine automatische Sperre und keine Änderung der Verfügbarkeit „laut System“ (Entscheidung bleibt bei der Leitung). Hilfe Disposition DE/UK/EN, API-Doku. 122 Tests grün, `pruefen.sh --schnell` grün, 390 px/Tablet/PC geprüft.
 - 11.10.2026: Prüfregel anlegen: „letzte Durchführung“ nicht in der Zukunft und nur echte Kalenderdaten (Server + Datumsfelder mit Höchstwert heute, auch HU/SP-Formular). Zeitreise 8/8, 122 Tests grün.
 - 11.10.2026: Integrations-API `/v1/availability` additiv `failed_inspection` (jüngste Prüfung mit gefährlichen Mängeln/verkehrsunsicher ohne Vorgang seitdem; Information, `availability` unverändert). 122 Tests grün.
+- 11.10.2026: **Datumsprüfung vereinheitlicht** (`isCalendarDate` in `util.js`): Verträge, Versicherungsfälle, Fahrerakte, Auslesungen, Bußgeld-Fristen, Arbeitszeit, km-Ablesedatum, Erstzulassung, Dokument „gültig bis“, Nachweisliste nehmen nur echte Kalenderdaten an – vorher wurden z. B. 31.04. oder 30.02. gespeichert (JavaScript rollt sie still auf den Folgemonat). 123 Tests grün, `pruefen.sh --schnell` grün.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

@@ -1,7 +1,7 @@
 // [CLAUDE] Versicherungsfälle je Vorgang (z. B. Unfall, Glasbruch, Sturm): nur Inhaber/Fuhrparkleitung.
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { csvCell } from './maintenance.js';
 
@@ -9,7 +9,7 @@ export const CLAIM_STATUS = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt'
 export const OPEN_STATUS = ['gemeldet', 'in_pruefung'];
 const STATUS_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 'reguliert', abgelehnt: 'abgelehnt', zurueckgezogen: 'zurückgezogen' };
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
 const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
 function day(v, field, required = false) {

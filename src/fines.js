@@ -1,5 +1,5 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, isCalendarDate } from './util.js';
 import { notifyUsers } from './notify.js';
 
 export const FINE_KINDS = ['anhoerung', 'zeugenfragebogen', 'bussgeldbescheid', 'verwarnung', 'maut', 'sonstiges'];
@@ -88,7 +88,7 @@ export async function createFine(env, user, envName, body) {
   if (Number.isNaN(Date.parse(offenseAt))) throw bad('validation', 'Tatzeit ungültig.');
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10 });
-  if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
+  if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
   const veh = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1').all()).results.find((v) => normPlate(v.plate) === normPlate(plate));
   const reference = str(body.reference, { max: 80 });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
@@ -155,7 +155,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         if (p.amount_eur !== undefined) set.amount_eur = num(p.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true });
         if (p.response_due !== undefined) {
           const due = str(p.response_due, { max: 10 });
-          if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
+          if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
           set.response_due = due;
         }
         if (p.reference !== undefined) set.reference = str(p.reference, { max: 80 });
