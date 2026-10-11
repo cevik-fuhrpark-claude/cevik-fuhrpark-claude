@@ -3120,8 +3120,22 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(links.length >= 8, 'Seitenhilfe-Links: ' + links.length);
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
-  ok(/if \(r === 'viewer'\) return \['kpi', 'push'\];/.test(app), 'Lesezugriff: keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
-  ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>');
+  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].help_viewer_t && STRINGS[lang].help_viewer_s.split('|').length === 7, `help_viewer ${lang}`);
+  ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>&q=<Suchbegriff>');
+  {
+    const start = app.indexOf('const routes = [');
+    const routes = new Function(app.slice(start, app.indexOf('\n];', start) + 3).replace(/,\s*view\w+\]/g, ', null]') + '; return routes;')();
+    const re = routes.find(([r]) => r.test('#/help'))[0];
+    eq(JSON.stringify([...'#/help?s=dates&q=pr%C3%BCf%20hu'.match(re)].slice(1)), JSON.stringify(['dates', 'pr%C3%BCf%20hu']), 'Abschnitt + Suchbegriff');
+    eq('#/help?q=lager'.match(re)[2], 'lager', 'nur Suchbegriff');
+    eq('#/help'.match(re)[1], undefined, 'ohne Parameter');
+    // Router übergibt fehlende optionale Gruppen als undefined (nicht „undefined“) und kaputte %-Folgen roh
+    const routeArg = new Function(app.slice(app.indexOf('const routeArg = '), app.indexOf('\n', app.indexOf('const routeArg = '))) + '; return routeArg;')();
+    eq(routeArg(undefined), undefined); eq(routeArg('pr%C3%BCf'), 'prüf'); eq(routeArg('%E0%A4%A'), '%E0%A4%A');
+    ok(/await fn\(\.\.\.m\.slice\(1\)\.map\(routeArg\)\)/.test(app), 'route() nutzt routeArg');
+  }
+  ok(/#\/help\?s=\$\{h\.name\}&q=\$\{encodeURIComponent\(q\)\}/.test(app), 'Globale Suche übergibt den Suchbegriff an die Hilfe');
   const searchSrc = app.slice(app.indexOf('async function viewSearch('), app.indexOf('\n}\n', app.indexOf('async function viewSearch(')));
   ok(/helpMatches\(helpSections\(S\.me\.role\)/.test(searchSrc) && searchSrc.includes('id="ghelp"'), 'Globale Suche findet Hilfe-Abschnitte der eigenen Rolle');
   ok(searchSrc.includes('b.title_hit - a.title_hit'), 'Suche: Titeltreffer zuerst');
