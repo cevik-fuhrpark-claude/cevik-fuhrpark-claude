@@ -291,7 +291,7 @@ async function viewHome() {
     catch { try { const c = JSON.parse(localStorage.getItem(mvKey) || 'null'); if (c) { mv = c.vehicles; mvOffline = c.at; } } catch {} }
     if (mvOffline || cases === null) html += `<div class="panel alert">${esc(t('offline_view'))}${mvOffline ? ` (${esc(t('as_of'))} ${fmtDT(mvOffline)})` : ''}</div>`;
     if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => `<section class="panel ${v.locked ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${v.open_cases_total} ${esc(t('open'))}</span>` : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}</div>
-      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${v.next_inspections.map((r) => `<dt>${esc(r.kind)}</dt><dd>${fmtD(r.next_due_date)}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}</section>`).join('')}`;
+      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${v.next_inspections.map((r) => `<dt>${esc(r.kind)}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}</section>`).join('')}`;
     if (cases) html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
   } else {
     if (d.vehicles) {
@@ -1738,7 +1738,7 @@ async function viewUsage() {
 function viewHelp() {
   const sec = (n) => `<section class="panel"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
   const r = S.me.role;
-  const parts = ['report', 'prio', 'check', 'push', 'offline'];
+  const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'stock');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'defects', 'drivers', 'contracts', 'claims', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
