@@ -256,3 +256,9 @@ table.paper td.box { text-align: center; font-size: 1.2rem; width: 3.2em; }
 table.paper td:last-child { min-width: 30%; }
 @media print { table.paper th, table.paper td { border-color: #555; padding: 4px; } }
 .known { margin-top: 8px; } .known summary { font-weight: 600; cursor: pointer; } .known ul { margin: 6px 0 0 18px; padding: 0; } .known li { margin: 4px 0; }
+
+/* Werkstattplan: Termin direkt setzen */
+.planitem { display: flex; flex-direction: column; gap: 6px; }
+.planset { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 6px 6px; }
+.planset label { margin: 0; }
+.planset input[type=date] { width: auto; min-width: 10.5em; }

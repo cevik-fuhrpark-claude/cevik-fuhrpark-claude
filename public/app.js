@@ -1450,10 +1450,39 @@ async function viewPlan() {
       ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${n} ${esc(t('days'))}</option>`).join('')}</select></div>
       <button type="button" class="btn secondary" id="plprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
-  if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `)).join('')}</div>`;
+  // Termin direkt im Plan setzen (Backlog 60): nur für Aufträge, die der Vorgangsbefehl set_planned_date zulässt.
+  // „Vorschlag“ füllt nur das Feld (Werktag mit den wenigsten geplanten Aufträgen) – gespeichert wird erst mit „Termin setzen“.
+  const canEdit = ['owner', 'fleet', 'workshop'].includes(S.me.role);
+  const setForm = (i) => i.can_plan
+    ? `<div class="planset noprint"><label for="pd-${esc(i.id)}">${esc(t('planned'))}</label><input type="date" id="pd-${esc(i.id)}" min="${esc(r.today)}" value=""><button type="button" class="btn secondary" data-psug="${esc(i.id)}" title="${esc(t('plan_suggest_hint'))}">${esc(t('plan_suggest'))}</button><button type="button" class="btn" data-pset="${esc(i.id)}">${esc(t('plan_set'))}</button></div>`
+    : canEdit ? `<p class="small muted noprint planset">${esc(t('plan_need_ack'))}</p>` : '';
+  const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}</div>` : base;
+  if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;
   html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(row).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
-  if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map(row).join('')}</div>`;
+  if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   render(html, 'more');
+  const all = [...r.overdue, ...r.unplanned];
+  const suggest = (i) => {
+    // Werktage ab morgen im Zeitraum; Zähler = geplante Aufträge derselben Werkstatt an diesem Tag
+    const load = new Map(r.days.map((d) => [d.date, d.items.filter((x) => x.type === 'case' && x.workshop_site === i.workshop_site).length]));
+    let best = null;
+    for (let n = 1; n <= days + 7; n++) {
+      const d = new Date(Date.parse(r.today + 'T00:00:00Z') + n * 86400000);
+      if ([0, 6].includes(d.getUTCDay())) continue;
+      const ds = [d.getUTCFullYear(), String(d.getUTCMonth() + 1).padStart(2, '0'), String(d.getUTCDate()).padStart(2, '0')].join('-'); const c = load.get(ds) || 0;
+      if (!best || c < best.c) best = { ds, c };
+      if (ds >= r.to && best) break;
+    }
+    return best && best.ds;
+  };
+  $$('[data-psug]').forEach((b) => (b.onclick = () => { const i = all.find((x) => x.id === b.dataset.psug); const f = $('#pd-' + CSS.escape(i.id)); f.value = suggest(i) || ''; f.focus(); }));
+  $$('[data-pset]').forEach((b) => (b.onclick = async () => {
+    const i = all.find((x) => x.id === b.dataset.pset); const f = $('#pd-' + CSS.escape(i.id));
+    if (!f.value) { toast(t('plan_pick_date'), true); f.focus(); return; }
+    b.disabled = true;
+    try { await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: uid(), expected_version: i.version, note: null, payload: { planned_date: f.value } }); toast('✓'); viewPlan(); }
+    catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
+  }));
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };
   $('#pdays').onchange = () => { S.planDays = Number($('#pdays').value); viewPlan(); };
   $('#plprt').onclick = () => window.print();

@@ -1951,8 +1951,22 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
+  eq(p.unplanned.find((i) => i.id === cid).can_plan, false, 'Disposition darf nicht direkt planen');
+  // Termin direkt aus dem Plan setzen (Backlog 60): Version und can_plan aus dem Plan genügen
+  const up = (await users.ws.get('/api/workshop/plan')).data.unplanned.find((i) => i.id === cid);
+  eq(up.can_plan, true, 'Werkstatt darf planen');
+  eq(up.version, (await users.ws.get(`/api/cases/${cid}`)).data.case.version, 'Version im Plan');
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: up.version, payload: { planned_date: day(2) } })).status, 200);
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: up.version, payload: { planned_date: day(4) } })).status, 409, 'veraltete Version aus dem Plan');
+  ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(2))?.items.some((i) => i.id === cid), 'direkt gesetzter Termin am Tag');
+  eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
+  // noch nicht übernommener Auftrag: im Plan „ohne Termin“, aber nicht direkt planbar
+  const cid2 = (await users.fleet.post('/api/cases', { vehicle_id: VP, description: 'Werkstattplan-Test: Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const c2 = (await users.fleet.get(`/api/cases/${cid2}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid2}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: c2.version, note: 'Spiegel', payload: { workshop_site: 'DORTMUND' } })).status, 200);
+  eq((await users.fleet.get('/api/workshop/plan')).data.unplanned.find((i) => i.id === cid2)?.can_plan, false, 'vor Übernahme nicht planbar');
   const ev = (await users.fleet.get(`/api/cases/${cid}`)).data.events.filter((e) => e.action === 'set_planned_date');
-  eq(ev.length, 2, 'im Verlauf');
+  eq(ev.length, 4, 'im Verlauf');
   eq((await users.driver.get('/api/workshop/plan')).status, 403, 'Fahrer');
   // geplanter Prüftermin erscheint am Tag
   const rule = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Werkstattplan-Test' });

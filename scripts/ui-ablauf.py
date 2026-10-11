@@ -7,7 +7,7 @@
 # Fahrer arbeitet auf Ukrainisch (CFP_DRV_LANG=uk|en|de, Standard uk) im Handy (390 px), Werkstatt auf dem Tablet (820 px),
 # Fuhrparkleitung im Handy. Geprüft wird zusätzlich: keine deutschen Reste in der Fahreroberfläche, kein waagrechtes Scrollen.
 # Aufruf: python3 scripts/ui-ablauf.py [Ordner für Screenshots]   – nur synthetische Testdaten (Kennzeichen UA-…)
-import sys, os
+import datetime, sys, os
 from playwright.sync_api import sync_playwright
 
 B = os.environ.get('CFP_URL', 'http://localhost:8787')
@@ -269,6 +269,40 @@ with sync_playwright() as p:
     drv.wait_for_timeout(300)
     check_view(drv, 'driver', 'Fahrer-Startseite nach Kontrolle')
     steps.append('Fahrer: Abfahrtskontrolle über Aufkleber-Link ohne Mangel')
+
+    # 8. Werkstattplan: Folgeauftrag freigeben/übernehmen, Termin direkt in „Ohne Termin“ setzen (Vorschlag nur auf Klick)
+    fid = d['followups'][0]['id']
+    def apicmd(pg, action, payload=None, note=None):
+        v = pg.evaluate(JS, ['GET', f'/api/cases/{fid}', None])['d']['case']['version']
+        r = pg.evaluate(JS, ['POST', f'/api/cases/{fid}/commands', {'action': action, 'command_id': f'ua-{action}-{fid}', 'expected_version': v, 'note': note, 'payload': payload or {}}])
+        if r['s'] != 200:
+            fail(f'Vorbereitung Werkstattplan {action}: {r}')
+    if status(api, fid) == 'gemeldet':
+        apicmd(fl, 'approve_repair', {'workshop_site': ws_site}, 'Ablauftest Folgeauftrag')
+    apicmd(wsp, 'acknowledge')
+    go(wsp, 'plan')
+    if not wsp.locator(f'#pd-{fid}').count():
+        fail('Werkstattplan: Folgeauftrag ohne Termin hat kein Datumsfeld')
+    if wsp.input_value(f'#pd-{fid}'):
+        fail('Werkstattplan: Datum ohne Klick vorbelegt')
+    wsp.locator(f'[data-psug="{fid}"]').click()
+    sug = wsp.input_value(f'#pd-{fid}')
+    if not sug or datetime.date.fromisoformat(sug).weekday() > 4 or sug <= api('GET', '/api/workshop/plan')['d']['today']:
+        fail(f'Werkstattplan: Vorschlag {sug!r} ist kein künftiger Werktag')
+    if api('GET', f'/api/cases/{fid}')['d']['case'].get('planned_date'):
+        fail('Werkstattplan: Vorschlag wurde ohne „Termin setzen“ gespeichert')
+    check_view(wsp, 'workshop', 'Werkstattplan (Tablet)')
+    shot(wsp, 'werkstattplan_vorschlag')
+    wsp.locator(f'[data-pset="{fid}"]').click()
+    wsp.wait_for_timeout(800)
+    if wsp.locator('.toast.err').count():
+        fail('Werkstattplan: ' + wsp.locator('.toast.err').first.text_content())
+    if api('GET', f'/api/cases/{fid}')['d']['case'].get('planned_date') != sug:
+        fail('Werkstattplan: Termin nicht gespeichert')
+    if wsp.locator(f'#pd-{fid}').count() or not wsp.locator(f'a[href="#/cases/{fid}"]').count():
+        fail('Werkstattplan: Auftrag steht nach dem Setzen nicht am Tag')
+    steps.append('Werkstatt setzt Termin für den Folgeauftrag direkt im Werkstattplan (Vorschlag nur auf Klick)')
+    shot(wsp, 'werkstattplan_gesetzt')
 
     for role, (pg, errs) in pages.items():
         if errs:

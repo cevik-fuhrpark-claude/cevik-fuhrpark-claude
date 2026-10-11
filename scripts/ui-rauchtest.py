@@ -157,6 +157,15 @@ with sync_playwright() as p:
             ROUTES['workshop'] += [f'cases/{cid2}', f'inspect/{cid2}']
         else:
             problems.append(f'Vorbereitung Werkstattvorgang: {r}')
+        # Werkstattplan „Ohne Termin“: ein übernommener Auftrag (direkt planbar) und ein noch nicht übernommener
+        for key, desc, ack in (('rt-3', 'Rauchtest: Wischerblatt', True), ('rt-4', 'Rauchtest: Kennzeichenleuchte', False)):
+            cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': desc, 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': key}])
+            cxid = (cx.get('d') or {}).get('id')
+            if not cxid:
+                problems.append(f'Vorbereitung Werkstattplan: {cx}'); continue
+            cmd(adm, cxid, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
+            if ack:
+                cmd(pages['workshop'], cxid, 'acknowledge')
     # Bußgeld und Lagerartikel für die Detailansichten
     fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
     if fn['s'] in (200, 201):
