@@ -2964,6 +2964,17 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   // Push-Einstellungen: nicht abschaltbar
   const pr = await users.dispatch.get('/api/me/notify-prefs');
   ok(!JSON.stringify(pr.data).includes('inspection_defect'), 'nicht in den abschaltbaren Arten');
+  // Integrations-API /v1/availability: additiv failed_inspection (Information), Umgebungen getrennt
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H)).data.vehicles;
+  const fi = av.find((v) => v.id === VD).failed_inspection;
+  ok(fi && fi.result === 'verkehrsunsicher' && fi.kind === 'UVV' && fi.done_date === day(-1), 'failed_inspection: ' + JSON.stringify(fi));
+  ok(av.filter((v) => v.id !== VD).every((v) => 'failed_inspection' in v), 'Feld bei allen Fahrzeugen');
+  const o = await users.fleet.post(`/api/maintenance/events/${(await users.fleet.get(`/api/vehicles/${VD}`)).data.maintenance_history.find((h) => h.evidence === 'GM 2b').id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
+  eq(o.status, 201);
+  const av2 = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H)).data.vehicles.find((v) => v.id === VD);
+  eq(av2.failed_inspection, null, 'nach Auftrag: Sperre/Werkstatt statt Hinweis');
+  eq(av2.availability, 'gesperrt', 'Auftrag aus verkehrsunsicher sperrt');
 });
 
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
