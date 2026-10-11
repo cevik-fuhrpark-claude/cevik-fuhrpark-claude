@@ -322,3 +322,6 @@ Object.assign(STRINGS.en, { planned_ws_short: 'Workshop date', dispo_planned: 'P
 Object.assign(STRINGS.de, { todo_plan_passed: 'Werkstatttermin überschritten, Reparatur nicht begonnen' });
 Object.assign(STRINGS.uk, { todo_plan_passed: 'Термін у майстерні минув, ремонт не розпочато' });
 Object.assign(STRINGS.en, { todo_plan_passed: 'Workshop date passed, repair not started' });
+Object.assign(STRINGS.de, { ws_planned_today: 'Heute geplant' });
+Object.assign(STRINGS.uk, { ws_planned_today: 'Заплановано на сьогодні' });
+Object.assign(STRINGS.en, { ws_planned_today: 'Planned for today' });

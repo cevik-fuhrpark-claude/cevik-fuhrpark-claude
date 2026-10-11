@@ -256,6 +256,12 @@ async function workshopBoard() {
     ['ws_preview', open.filter((c) => c.status === 'gemeldet')],
   ];
   // Mangel bei der Abfahrtskontrolle erneut festgestellt (letzte 3 Tage) – zuerst, damit die Werkstatt ihn vorzieht
+  // Heute geplant und Termin überschritten (nicht begonnen) – oben, nur gespeicherte Termine
+  const today = bDate();
+  const passed = open.filter((c) => c.status === 'werkstatt_freigegeben' && c.planned_date && c.planned_date < today);
+  const todayL = open.filter((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) && c.planned_date === today);
+  if (todayL.length) lanes.unshift(['ws_planned_today', todayL]);
+  if (passed.length) lanes.unshift(['todo_plan_passed', passed]);
   const rep = open.filter((c) => c.status !== 'gemeldet' && recentRepeat(c));
   if (rep.length) lanes.unshift(['ws_repeat', rep]);
   let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
