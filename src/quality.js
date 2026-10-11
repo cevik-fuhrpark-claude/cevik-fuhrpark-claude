@@ -12,7 +12,7 @@ export const CHECKS = {
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
   // Fahrzeugverträge
-  contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke', leasing_doc_no_contract: 'hinweis',
+  contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke', leasing_doc_no_contract: 'hinweis', contract_no_document: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -59,7 +59,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
-    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.km_allowance, c.start_date, v.plate, v.active,
+    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.km_allowance, c.start_date, c.file_id, v.plate, v.active,
       (SELECT MAX(o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id) AS last_km_at
       FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND v.eval_excluded=0`).all(),
     // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
@@ -108,6 +108,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     const v = { id: c.vehicle_id, plate: c.plate };
     if (!c.active) add('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`);
     else if (c.km_allowance && (!c.last_km_at || (c.start_date && c.last_km_at.slice(0, 10) < c.start_date))) add('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`);
+    // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
+    if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) add('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`);
   }
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });

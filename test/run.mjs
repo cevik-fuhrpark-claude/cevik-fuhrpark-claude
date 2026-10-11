@@ -2155,7 +2155,11 @@ await test('Vertragsdokument: nur Dokument desselben Fahrzeugs und derselben Umg
   ok((await users.fleet.get('/api/contracts')).data.contracts.find((x) => x.id === c.data.id).file_id, 'Übersicht kennt Verknüpfung');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/contracts?format=csv&filter=alle')).data);
   ok(csv.split('\r\n')[0].endsWith(';Vertragsdokument verknüpft') && csv.split('\r\n').some((l) => l.startsWith('VT-DOC 1;Leasing;Doc-Leasing;D-1;') && l.endsWith(';ja')), 'CSV-Spalte');
+  let dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
+  ok(!dq.some((i) => i.check === 'contract_no_document' && i.vehicle_id === V), 'mit Dokument kein Hinweis');
   eq((await users.fleet.patch(`/api/contracts/${c.data.id}`, { file_id: null })).status, 200);
+  dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
+  ok(dq.some((i) => i.check === 'contract_no_document' && i.vehicle_id === V && i.severity === 'hinweis'), 'Hinweis: Vertrag ohne Dokument');
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id).file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.documents.filter((x) => x.id === f1).length, 1, 'Dokument bleibt');
   const au = (await owner.get('/api/admin/audit?action=contract')).data.entries.find((e) => e.action === 'contract.update' && e.target === c.data.id && /file_id/.test(JSON.stringify(e.detail)));
