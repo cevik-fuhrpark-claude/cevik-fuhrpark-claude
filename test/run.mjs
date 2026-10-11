@@ -941,6 +941,13 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   ok(!/\son[a-z]+=["']/i.test(app) && !/\son[a-z]+=["']/i.test(html), 'Inline-Handler verstoßen gegen die CSP (script-src self)');
   ok(!/<script>(?!\s*<\/script>)/.test(html), 'kein Inline-Skript');
+  // Jede direkt verdrahtete Schaltfläche ($('#id').onclick = …) steht in derselben Ansichtsfunktion im HTML (sonst bricht die Ansicht ab)
+  const unwired = [];
+  for (const c of app.split(/\n(?=(?:async )?function \w+\()/)) {
+    const fn = (c.match(/^(?:async )?function (\w+)/) || [])[1] || '(Anfang)';
+    for (const m of c.matchAll(/\$\('#([\w-]+)'\)\.on\w+ =/g)) if (!c.includes(`id="${m[1]}"`)) unwired.push(`${fn}: #${m[1]}`);
+  }
+  eq(unwired.join(', '), '', 'Handler ohne Element in derselben Ansicht');
   // Kalendertage in der Oberfläche nach Berliner Zeit (bDate/bYm), nicht UTC – sonst nachts bis 2 Uhr „gestern“ als Standarddatum
   eq((app.match(/toISOString\(\)\.slice\(0, (7|10)\)/g) || []).length, 1, 'nur bYm darf toISOString().slice für Kalenderdaten nutzen');
   // Statische Dateien kommen ohne Worker: Sicherheitsheader stehen in public/_headers und müssen zur Worker-CSP passen
