@@ -2206,6 +2206,66 @@ await test('Kostenbericht: Vertragsraten getrennt (je angefangenem Monat bis heu
   const integ = await anon.req('GET', `/api/integration/v1/costs?environment=test&from=${now}&to=${now}`, undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(integ.status, 200); eq(integ.data.contract_costs, undefined, 'Integrations-API ohne Vertragsraten');
 });
+await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben Fahrzeugs, Erstattung mit Datum, Saldo, Rechte, Umgebung, CSV', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'VT-IC 1', vin: 'WDB96340310555631', site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'VT-IC 2', vin: 'WDB96340310555632', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555631'; const W = 'VIN:WDB96340310555632';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const kv = (await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'versicherung', partner: 'Muster-Versicherung AG', contract_no: 'P-1', evidence: 'Police P-1' })).data.id;
+  const kw = (await users.fleet.post(`/api/vehicles/${W}/contracts`, { kind: 'versicherung', partner: 'Andere AG', evidence: 'Police W' })).data.id;
+  const kl = (await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'Leasing AG', evidence: 'LV' })).data.id;
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Unfall: Spiegel und Tür links beschädigt', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Unfallschaden')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Karosserie Muster', amount_net: 2500, covers_work_and_parts: true })).status, 200);
+  let d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  eq(d.claim, null); ok(d.insurance_contracts.some((k) => k.id === kv) && !d.insurance_contracts.some((k) => k.id === kl || k.id === kw), 'nur Versicherungsverträge des Fahrzeugs');
+  ok(!('claim' in (await users.ws.get(`/api/cases/${cid}`)).data), 'Werkstatt sieht keinen Versicherungsfall');
+  const P = `/api/cases/${cid}/claim`;
+  for (const u of [users.ws, users.dispatch, users.driver]) eq((await u.put(P, { insurer: 'X', reported_on: day(0), evidence: 'x' })).status, 403, 'nur Leitung');
+  eq((await users.fleet.put(P, { insurer: 'X', reported_on: day(0) })).status, 400, 'Nachweis Pflicht');
+  eq((await users.fleet.put(P, { insurer: 'X', evidence: 'x' })).status, 400, 'Meldedatum Pflicht');
+  eq((await users.fleet.put(P, { insurer: 'X', reported_on: day(1), evidence: 'x' })).status, 400, 'nicht Zukunft');
+  eq((await users.fleet.put(P, { reported_on: day(0), evidence: 'x' })).status, 400, 'Versicherer oder Vertrag');
+  eq((await users.fleet.put(P, { contract_id: kw, reported_on: day(0), evidence: 'x' })).status, 400, 'Vertrag eines anderen Fahrzeugs');
+  eq((await users.fleet.put(P, { contract_id: kl, reported_on: day(0), evidence: 'x' })).status, 400, 'kein Versicherungsvertrag');
+  eq((await users.fleet.put(P, { contract_id: kv, reported_on: day(-2), evidence: 'x', reimbursed_net: 100 })).status, 400, 'Erstattung nur mit Datum');
+  const c1 = await users.fleet.put(P, { contract_id: kv, claim_no: 'S-2026-77', reported_on: day(-2), deductible_net: '500,00', evidence: 'Schadenmeldung per Portal' });
+  eq(c1.status, 200); eq(c1.data.created, true);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  eq(d.claim.insurer, 'Muster-Versicherung AG', 'Versicherer aus Vertrag'); eq(d.claim.deductible_net, 500); eq(d.claim.status, 'gemeldet'); eq(d.claim.days_open, 2); eq(d.claim.open, true);
+  let ov = (await users.fleet.get('/api/claims')).data;
+  let r = ov.claims.find((x) => x.case_id === cid);
+  ok(r && r.plate === 'VT-IC 1', 'Übersicht offen'); eq(r.case_cost_net, 2500, 'Kosten aus belegter Fremdleistung'); eq(r.balance_net, null, 'ohne Erstattung kein Saldo');
+  eq((await users.prodFleet.get('/api/claims')).data.claims.some((x) => x.case_id === cid), false, 'Betrieb sieht Testfall nicht');
+  eq((await users.prodFleet.put(P, { insurer: 'X', reported_on: day(0), evidence: 'x' })).status, 404, 'fremde Umgebung');
+  eq((await users.ws.get('/api/claims')).status, 403);
+  // Regulierung: Erstattung mit Datum, nicht vor Meldung; abgelehnt ohne Erstattung
+  eq((await users.fleet.put(P, { status: 'reguliert', reimbursed_net: 2000, reimbursed_on: day(-3) })).status, 400, 'Erstattung vor Meldung');
+  eq((await users.fleet.put(P, { status: 'abgelehnt', reimbursed_net: 2000, reimbursed_on: day(0) })).status, 400, 'abgelehnt mit Erstattung');
+  eq((await users.fleet.put(P, { status: 'reguliert', reimbursed_net: '2.000', reimbursed_on: day(0) })).status, 400, 'Tausenderpunkt ist keine Zahl');
+  eq((await users.fleet.put(P, { status: 'reguliert', reimbursed_net: '2000', reimbursed_on: day(0), evidence: 'Abrechnung vom ' + day(0) })).status, 200);
+  ov = (await users.fleet.get('/api/claims?filter=alle')).data; r = ov.claims.find((x) => x.case_id === cid);
+  eq(r.balance_net, 500, 'Saldo = Kosten − Erstattung'); eq(r.days_open, null); ok(ov.reimbursed_sum_net >= 2000);
+  ok(!(await users.fleet.get('/api/claims')).data.claims.some((x) => x.case_id === cid), 'reguliert nicht mehr offen');
+  eq((await users.fleet.get('/api/claims?filter=reguliert')).data.counts.reguliert >= 1, true);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
+  ok(csv.startsWith('﻿Kennzeichen;Vorgang;Versicherer;') && csv.includes(';Muster-Versicherung AG;S-2026-77;') && csv.includes(';500;2000;') && csv.includes(';2500;500;'), 'CSV');
+  const au = (await owner.get('/api/admin/audit?action=claim')).data.entries;
+  ok(au.some((e) => e.action === 'claim.create') && au.some((e) => e.action === 'claim.update') && au.some((e) => e.action === 'claim.export'), 'Protokoll');
+});
+await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format „1.234,50“; km „120.000“ = 120000', async () => {
+  const { num } = await import('../src/util.js');
+  eq(num('1.234,50'), 1234.5); eq(num('2,5'), 2.5); eq(num('1.5'), 1.5); eq(num(' 300 '), 300); eq(num(12), 12); eq(num('0.250'), 0.25);
+  let e = null; try { num('2.000', { field: 'Preis' }); } catch (x) { e = x; } ok(e && /mehrdeutig/.test(e.message), 'mehrdeutig abgewiesen');
+  eq(num('120.000', { grouped: true }), 120000); eq(num('1.250.300', { grouped: true }), 1250300);
+  eq(num('', { nullable: true }), null);
+  // Ende-zu-Ende: km-Stand mit Tausenderpunkt wird richtig übernommen
+  eq((await owner.post('/api/vehicles', { plate: 'VT-NUM 1', vin: 'WDB96340310555641', site: 'Dortmund' })).status, 201);
+  eq((await users.fleet.post('/api/vehicles/VIN:WDB96340310555641/odometer', { km: '123.456' })).status, 201);
+  eq((await users.fleet.get('/api/vehicles/VIN:WDB96340310555641')).data.odometer[0].km, 123456);
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

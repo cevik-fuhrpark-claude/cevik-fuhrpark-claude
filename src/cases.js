@@ -1,4 +1,5 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
+import { claimForCase } from './claims.js';
 import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly } from './util.js';
 import { notifyCaseEvent } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
@@ -152,6 +153,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     files, open_items: openItems, inspections, followups, parent,
     allowed_actions: allowedActions(user, c, access),
   };
+  // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
+  if (user.role === 'owner' || user.role === 'fleet') Object.assign(detail, await claimForCase(env, c.id, c.vehicle_id));
   if (user.role !== 'driver') {
     // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
@@ -648,7 +651,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
     byKey.set(it.key, { key: it.key, result, note, safety_relevant: !!it.safety_relevant, followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null });
   }
   if (byKey.size !== keys.size) throw bad('incomplete', 'Bitte alle Prüfpunkte bewerten (OK / Mangel / entfällt).');
-  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand' }));
+  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
   const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
   const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);

@@ -314,9 +314,9 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
   const months = body.interval_months ? Math.round(num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' })) : null;
-  const km = body.interval_km ? Math.round(num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km' })) : null;
+  const km = body.interval_km ? Math.round(num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true })) : null;
   const lastDate = str(body.last_done_date, { max: 10 });
-  const lastKm = body.last_done_km ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km' })) : null;
+  const lastKm = body.last_done_km ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   const husp = kind === 'HU' || kind === 'SP';
   let nextDue = str(body.next_due_date, { max: 10 });
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
@@ -374,7 +374,7 @@ export async function completeMaintenance(env, user, ruleId, body) {
   const date = str(body.done_date, { required: true, max: 10, field: 'Datum' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
-  const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km' })) : null;
+  const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10 });
@@ -398,7 +398,7 @@ export async function completeMaintenance(env, user, ruleId, body) {
 
 export async function addOdometer(env, user, vehicleId, body) {
   if (!['owner', 'fleet', 'workshop', 'driver', 'dispatch'].includes(user.role)) throw forbidden();
-  const km = Math.round(num(body.km, { min: 0, max: 5000000, field: 'Kilometerstand' }));
+  const km = Math.round(num(body.km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   // Ablesedatum optional (nachträgliche Erfassung), nie in der Zukunft; ohne Datum = jetzt
   const now = nowIso();
   let measuredAt = now;

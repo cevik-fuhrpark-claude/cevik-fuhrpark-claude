@@ -21,6 +21,7 @@ import { recordUsage, usageReport } from './usage.js';
 import { dataQuality } from './quality.js';
 import * as telem from './telematics.js';
 import * as contracts from './contracts.js';
+import * as claims from './claims.js';
 
 // Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
 const usageEnv = new WeakMap();
@@ -375,6 +376,16 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await cases.runCommand(env, ctx, user, envName, mm[1], b)); }
+  // Versicherungsfall je Vorgang (nur Inhaber/Fuhrparkleitung)
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/claim$/)) && m === 'PUT') return json(await claims.saveClaim(env, user, envName, mm[1], await readJson(request)));
+  if (path === '/api/claims' && m === 'GET') {
+    const ov = await claims.claimOverview(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter });
+      return new Response(claims.claimsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${ov.today}.csv"` } });
+    }
+    return json(ov);
+  }
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/files$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await cases.uploadFile(env, user, envName, mm[1], request), 201); }
   if ((mm = path.match(/^\/api\/files\/([\w-]+)$/)) && m === 'GET') return cases.downloadFile(env, user, envName, mm[1]);
   if (path === '/api/inspections' && m === 'POST') return json(await cases.submitInspection(env, ctx, user, envName, await readJson(request)), 201);

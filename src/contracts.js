@@ -21,7 +21,7 @@ function date(v, field, { notFuture = false } = {}) {
   if (notFuture && d > berlinDate()) throw bad('validation', `${field}: darf nicht in der Zukunft liegen.`);
   return d;
 }
-const intOrNull = (v, field, max) => { const n = num(v, { min: 0, max, field, nullable: true }); if (n !== null && !Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`); return n; };
+const intOrNull = (v, field, max) => { const n = num(v, { min: 0, max, field, nullable: true, grouped: true }); if (n !== null && !Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`); return n; };
 
 export function warnDaysOf(settings) {
   const n = Number(settings && settings.get ? settings.get('contract_warn_days') : null);

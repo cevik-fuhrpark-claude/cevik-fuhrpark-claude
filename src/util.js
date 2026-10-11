@@ -122,9 +122,20 @@ export function oneOf(v, allowed, field) {
   return v;
 }
 
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false } = {}) {
+// Zahlen aus Formularen: Dezimalkomma; deutsches Format mit Tausenderpunkt und Komma („1.234,50“) wird verstanden.
+// Bei ganzzahligen Feldern (grouped: km, km-Kontingent) gilt „120.000“ als 120000. Sonst ist „2.000“ ohne Komma mehrdeutig (2 oder 2000?) und wird abgewiesen, statt still als 2 gespeichert zu werden.
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
-  const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
+  let n;
+  if (typeof v === 'number') n = v;
+  else {
+    let t = String(v).trim().replace(/[\s\u00a0]/g, '');
+    if ((t === '') && nullable) return null;
+    if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(t)) t = t.replace(/\./g, '');
+    else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
+    else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
+    n = Number(t.replace(',', '.'));
+  }
   if (!Number.isFinite(n) || n < min || n > max) throw bad('validation', `${field}: ungültige Zahl.`);
   return n;
 }
