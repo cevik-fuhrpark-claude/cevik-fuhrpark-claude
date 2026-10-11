@@ -2299,6 +2299,19 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   ok(!(await claimCodes()).includes(c2), '10 Tage < 14 → kein Befund');
   eq((await users.fleet.get('/api/claims')).data.claims.find((x) => x.case_id === c2).followup_due, false);
   eq((await owner.put('/api/settings', { claim_followup_days: null })).status, 200);
+  // Schreiben/Abrechnung als Datei des Vorgangs verknüpfen (nur Dateien dieses Vorgangs; weglassen = unverändert; null = aufheben)
+  const pdf = concatBytes(new TextEncoder().encode('%PDF-1.4\n'), crypto.getRandomValues(new Uint8Array(300)));
+  const fid = (await users.fleet.req('POST', `/api/cases/${cid}/files`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'abrechnung.pdf' })).data.id;
+  const fOther = (await users.fleet.req('POST', `/api/cases/${c2}/files`, concatBytes(new TextEncoder().encode('%PDF-1.4\n'), crypto.getRandomValues(new Uint8Array(300))), { 'content-type': 'application/pdf', 'x-filename': 'x.pdf' })).data.id;
+  eq((await users.fleet.put(P, { file_id: fOther })).status, 400, 'Datei eines anderen Vorgangs');
+  eq((await users.fleet.put(P, { file_id: fid })).status, 200);
+  let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
+  eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
+  eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft\r\n'), 'CSV-Spalte');
+  eq((await users.fleet.put(P, { file_id: null })).status, 200);
+  eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
+  eq((await users.fleet.put(P, { file_id: fid })).status, 200);
 });
 await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format „1.234,50“; km „120.000“ = 120000', async () => {
   const { num } = await import('../src/util.js');

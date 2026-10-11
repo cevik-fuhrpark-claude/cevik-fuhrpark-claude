@@ -54,18 +54,26 @@ export async function saveClaim(env, user, envName, caseId, body) {
     if (!f.insurer) f.insurer = k.partner;
   }
   if (!f.insurer) throw bad('validation', 'Versicherer angeben (oder Versicherungsvertrag wählen).');
+  // Schreiben/Abrechnung als Datei desselben Vorgangs verknüpfen (Feld weglassen = unverändert, leer/null = Verknüpfung aufheben)
+  if (body.file_id === undefined) f.file_id = ex ? ex.file_id : null;
+  else if (body.file_id === null || body.file_id === '') f.file_id = null;
+  else {
+    const file = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(body.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+    if (!file) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
+    f.file_id = file.id;
+  }
   const now = nowIso();
   if (!ex) {
     const id = uuid();
-    await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, user.id, now, now).run();
+    await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,file_id,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, user.id, now, now).run();
     await audit(env, user.id, 'claim.create', id, { case_no: c.case_no, insurer: f.insurer, status: f.status });
     return { id, created: true };
   }
   const changed = Object.keys(f).filter((k) => f[k] !== ex[k]);
   if (!changed.length) return { id: ex.id, changed: [] };
-  await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,updated_at=? WHERE id=?`)
-    .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, now, ex.id).run();
+  await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=?`)
+    .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, now, ex.id).run();
   await audit(env, user.id, 'claim.update', ex.id, { case_no: c.case_no, changed: Object.fromEntries(changed.map((k) => [k, { from: ex[k], to: f[k] }])) });
   return { id: ex.id, changed };
 }
@@ -74,9 +82,9 @@ const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_
 
 // Für die Vorgangsansicht (nur Leitung): Versicherungsfall + Versicherungsverträge des Fahrzeugs zur Auswahl (eine Abfrage)
 export async function claimForCase(env, caseId, vehicleId) {
-  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
-      FROM insurance_claims ic WHERE ic.case_id=?1
-    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
+  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
+      FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.case_id=ic.case_id WHERE ic.case_id=?1
+    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
       FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'`).bind(caseId, vehicleId).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
   const today = berlinDate();
@@ -123,11 +131,11 @@ export async function claimOverview(env, user, envName, query = {}) {
 
 export function claimsCsv(ov) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
-    'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung'];
+    'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung', 'Schreiben verknüpft'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
-    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note].map(csvCell).join(';'));
+    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.file_id ? 'ja' : 'nein'].map(csvCell).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

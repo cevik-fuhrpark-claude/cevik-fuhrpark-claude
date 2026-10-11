@@ -597,7 +597,7 @@ async function viewCase(id) {
       ${d.external_costs && d.external_costs.length ? `<table>${d.external_costs.map((x) => `<tr><td>${esc(x.supplier)} ${esc(x.invoice_no || '')}</td><td>${x.amount_net === null ? esc(t('unvalued')) : eur(x.amount_net)}</td></tr>`).join('')}</table>` : ''}</section>`;
   }
 
-  if (d.insurance_contracts) html += claimSection(d.claim, d.insurance_contracts);
+  if (d.insurance_contracts) html += claimSection(d.claim, d.insurance_contracts, d.files || []);
   // Dauer je Status (aus dem Verlauf: gespeicherte Statuswechsel, aktueller Status bis jetzt)
   {
     const spans = []; let cur = 'gemeldet'; let since = c.created_at;
@@ -635,12 +635,12 @@ async function viewCase(id) {
 const CLAIM_ST = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 const CLAIM_CLS = { gemeldet: 'mittel', in_pruefung: 'mittel', reguliert: 'ok', abgelehnt: 'kritisch', zurueckgezogen: '' };
 const claimChip = (st) => `<span class="chip ${CLAIM_CLS[st]}">${esc(t('cls_' + st))}</span>`;
-function claimSection(cl, contracts) {
+function claimSection(cl, contracts, files = []) {
   const v = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(String(cl[k])) : '');
   const money = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(String(cl[k]).replace('.', ',')) : '');
   const info = cl ? `<p style="margin-top:0">${claimChip(cl.status)} ${esc(cl.insurer)}${cl.claim_no ? ` · ${esc(t('claim_no'))} ${esc(cl.claim_no)}` : ''}</p>
     <dl class="kv"><dt>${esc(t('claim_reported'))}</dt><dd>${fmtD(cl.reported_on)}${cl.days_open !== null ? ` · ${esc(t('claim_days_open').replace('{n}', cl.days_open))}` : ''}</dd>${cl.deductible_net !== null ? `<dt>${esc(t('claim_deductible'))}</dt><dd>${eur(cl.deductible_net)}</dd>` : ''}${cl.reimbursed_net !== null ? `<dt>${esc(t('claim_reimbursed'))}</dt><dd>${eur(cl.reimbursed_net)} · ${fmtD(cl.reimbursed_on)}</dd>` : ''}</dl>
-    <p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
+    <p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
   return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf">
     <p class="small muted">${esc(t('claim_hint'))}</p>
     <label>${esc(t('claim_contract'))}</label><select name="contract_id"><option value="">${esc(t('claim_no_contract'))}</option>${contracts.map((k) => `<option value="${esc(k.id)}"${cl && cl.contract_id === k.id ? ' selected' : ''}>${esc(k.partner)}${k.contract_no ? ' · ' + esc(k.contract_no) : ''}${k.ended_on ? ` (${esc(t('cs_beendet'))})` : ''}</option>`).join('')}</select>
@@ -652,6 +652,7 @@ function claimSection(cl, contracts) {
     <label>${esc(t('claim_reimbursed'))}</label><input name="reimbursed_net" inputmode="decimal" value="${money('reimbursed_net')}">
     <label>${esc(t('claim_reimbursed_on'))}</label><input type="date" name="reimbursed_on" max="${bDate()}" value="${v('reimbursed_on')}">
     <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" value="${v('evidence')}"><label>${esc(t('note'))}</label><input name="note" maxlength="1000" value="${v('note')}">
+    <label>${esc(t('claim_file'))}<span class="hint">${esc(t('claim_file_hint'))}</span></label><select name="file_id"><option value="">–</option>${files.map((f) => `<option value="${esc(f.id)}"${cl && cl.file_id === f.id ? ' selected' : ''}>${esc(f.filename)}</option>`).join('')}</select>
     <div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details></section>`;
 }
 async function viewClaims() {

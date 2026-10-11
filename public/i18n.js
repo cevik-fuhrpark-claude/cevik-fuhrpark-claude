@@ -421,3 +421,6 @@ Object.assign(STRINGS.en, { todo_claims: 'Follow up insurance claims' });
 Object.assign(STRINGS.de, { vc_claims_rule: 'Erstattungen sind nicht von den Kosten abgezogen.' });
 Object.assign(STRINGS.uk, { vc_claims_rule: 'Відшкодування не віднімаються від витрат.' });
 Object.assign(STRINGS.en, { vc_claims_rule: 'Reimbursements are not deducted from the costs.' });
+Object.assign(STRINGS.de, { claim_file: 'Schreiben/Abrechnung', claim_file_hint: 'Datei dieses Vorgangs (oben unter „Fotos & Dokumente“ hochladen)' });
+Object.assign(STRINGS.uk, { claim_file: 'Лист/розрахунок', claim_file_hint: 'Файл цього звернення (завантажте вище в «Фото та документи»)' });
+Object.assign(STRINGS.en, { claim_file: 'Letter/settlement', claim_file_hint: 'File of this case (upload above under “Photos & documents”)' });
