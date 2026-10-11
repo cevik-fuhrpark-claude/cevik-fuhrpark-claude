@@ -18,7 +18,7 @@ import * as reports from './reports.js';
 import { exportBackup } from './backup.js';
 import * as maint from './maintenance.js';
 import { recordUsage, usageReport } from './usage.js';
-import { dataQuality } from './quality.js';
+import { dataQuality, myInspectionsWithoutResult } from './quality.js';
 import * as telem from './telematics.js';
 import * as contracts from './contracts.js';
 import * as claims from './claims.js';
@@ -143,6 +143,7 @@ async function handleApi(request, env, ctx, url) {
     await env.DB.prepare('UPDATE users SET push_muted=?, updated_at=? WHERE id=?').bind(muted.length ? JSON.stringify(muted) : null, nowIso(), user.id).run();
     return json({ kinds: MUTABLE_KINDS, muted });
   }
+  if (path === '/api/me/inspections-without-result' && m === 'GET') return json(await myInspectionsWithoutResult(env, user));
   if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
   if (path === '/api/me/sessions' && m === 'GET') return json({ sessions: await auth.listOwnSessions(env, user) });
   if (path === '/api/me/sessions/revoke-others' && m === 'POST') return json(await auth.revokeOtherSessions(env, user));

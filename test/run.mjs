@@ -3051,6 +3051,24 @@ await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in 
   eq((await users.fleet.get('/api/maintenance/history?from=2026-02-30')).status, 400, 'Nachweisliste 30.02.');
 });
 
+await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste Pflichtprüfungen ohne Ergebnis, verschwindet nach Nachtragen', async () => {
+  const VD = 'VIN:WDB96340310888886';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  eq((await owner.post('/api/vehicles', { plate: 'NR-XY 86', vin: 'WDB96340310888886', site: 'Dortmund' })).status, 201);
+  const mine = async (u) => (await u.get('/api/me/inspections-without-result')).data.items.filter((i) => i.vehicle_id === VD);
+  const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'SP', last_done_date: day(-200), interval_months: 6, evidence: 'NR86' });
+  eq(rule.status, 201, JSON.stringify(rule.data));
+  const done = await users.ws.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'SP-Bericht 86' });
+  eq(done.status, 200, JSON.stringify(done.data));
+  const hits = await mine(users.ws);
+  eq(hits.length, 1, 'Werkstatt sieht eigene Prüfung'); eq(hits[0].kind, 'SP'); eq(hits[0].done_date, day(-1));
+  eq((await mine(users.fleet)).length, 0, 'andere Person sieht sie nicht als eigene');
+  eq((await users.driver.get('/api/me/inspections-without-result')).status, 403, 'Fahrer nicht');
+  eq((await users.dispatch.get('/api/me/inspections-without-result')).status, 403, 'Dispo nicht');
+  eq((await users.ws.post(`/api/maintenance/events/${hits[0].id}/result`, { result: 'ohne_maengel', evidence: 'SP-Bericht 86' })).status, 200);
+  eq((await mine(users.ws)).length, 0, 'nach Nachtragen erledigt');
+});
+
 await test('Integrations-API /v1/data-quality: gleiche Anzahlen wie die App, ohne Personennamen, nur lesend', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   const app = (await users.fleet.get('/api/admin/data-quality')).data;

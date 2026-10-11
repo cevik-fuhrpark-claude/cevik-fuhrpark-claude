@@ -506,3 +506,6 @@ Object.assign(STRINGS.en, { res_add: 'Add inspection result', res_add_ph: 'e.g. 
 Object.assign(STRINGS.de, { dq_col_severity: 'Schweregrad', dq_col_check: 'Prüfung', dq_col_object: 'Fahrzeug / Person', dq_col_detail: 'Detail' });
 Object.assign(STRINGS.uk, { dq_col_severity: 'Рівень', dq_col_check: 'Перевірка', dq_col_object: 'Транспорт / особа', dq_col_detail: 'Деталі' });
 Object.assign(STRINGS.en, { dq_col_severity: 'Severity', dq_col_check: 'Check', dq_col_object: 'Vehicle / person', dq_col_detail: 'Detail' });
+Object.assign(STRINGS.de, { res_missing_mine: 'Prüfergebnis fehlt (von Ihnen erfasst)', res_missing_hint: 'Pflichtprüfungen der letzten 180 Tage ohne eingetragenes Ergebnis – bitte laut Prüfbericht nachtragen.', res_add_go: 'Ergebnis nachtragen' });
+Object.assign(STRINGS.uk, { res_missing_mine: 'Бракує результату огляду (внесено вами)', res_missing_hint: 'Обовʼязкові огляди за останні 180 днів без результату – додайте його згідно з протоколом огляду.', res_add_go: 'Додати результат' });
+Object.assign(STRINGS.en, { res_missing_mine: 'Inspection result missing (recorded by you)', res_missing_hint: 'Mandatory inspections in the last 180 days without a result – please add it from the inspection report.', res_add_go: 'Add result' });
