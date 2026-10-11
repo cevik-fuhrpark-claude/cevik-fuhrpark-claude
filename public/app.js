@@ -1753,7 +1753,7 @@ function viewHelp() {
   const r = S.me.role;
   const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'stock');
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'defects', 'drivers', 'contracts', 'claims', 'stock');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'dates', 'defects', 'kpi', 'drivers', 'contracts', 'claims', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
   if (r === 'dispatch') parts.unshift('dispo');
   if (r === 'driver') parts.unshift('myveh');
