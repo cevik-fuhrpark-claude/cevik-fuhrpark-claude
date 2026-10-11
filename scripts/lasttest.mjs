@@ -196,6 +196,8 @@ for (let k = 0; k < 5; k++) {
   await timed('API /v1/maintenance', () => integ('/v1/maintenance?environment=test'));
 }
 await timed('Datenqualität inkl. Prüfmängel', () => owner.get('/api/admin/data-quality'));
+await timed('API /v1/data-quality', () => integ('/v1/data-quality?environment=test'));
+await timed('Eigene Prüfungen ohne Ergebnis', () => owner.get('/api/me/inspections-without-result').then((r) => must(r, 'me/inspections-without-result')));
 { const idk = (await owner.get('/api/reports/kpi?from=' + kpiFrom)).data.inspection_defects || {};
   console.log(`Mängelbeseitigung (synthetisch): ${JSON.stringify(idk).slice(0, 200)}`); }
 await owner.put('/api/settings', { claim_followup_days: '30' }); // Worst Case: Nachfass-Befunde für Versicherungsfälle aktiv
