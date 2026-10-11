@@ -2627,6 +2627,10 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   const dup = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
   eq(dup.status, 409); eq(dup.data.error, 'order_exists');
   eq((await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id).open_order.case_no, o.data.case_no, 'Übersicht zeigt offenen Auftrag');
+  const plan = (await users.ws.get('/api/workshop/plan')).data;
+  const d3 = plan.days.find((x) => x.date === day(3));
+  ok(d3.items.some((i) => i.type === 'case' && i.id === o.data.id), 'Werkstattplan: Auftrag am Tag');
+  ok(!d3.items.some((i) => i.type === 'maintenance' && i.id === rule.data.id), 'Werkstattplan: Prüftermin nicht doppelt');
   ok((await users.fleet.get(`/api/vehicles/${VM}`)).data.cases.some((c) => c.id === o.data.id && c.maintenance_rule_id === rule.data.id), 'Fahrzeugakte kennt Verknüpfung');
   // Integrations-API bleibt unverändert (keine Auftragsdaten)
   const im = await anon.req('GET', '/api/integration/v1/maintenance', undefined, { authorization: 'Bearer integration-token-xyz' });
