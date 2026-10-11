@@ -128,6 +128,15 @@ with sync_playwright() as p:
     cs = api('POST', f"/api/maintenance/{(sp.get('d') or {}).get('id')}/complete", {'done_date': (datetime.date.today() - datetime.timedelta(days=2)).isoformat(), 'evidence': 'Rauchtest SP-Bericht'})
     if cs['s'] != 200:
         problems.append(f'Vorbereitung Prüfung ohne Ergebnis: {cs}')
+    # km-Regel mit Fahrleistungs-Prognose (zwei Ablesungen, 30 Tage Abstand): Prüftermine-Liste und Fahrzeugakte zeigen „Prognose: ca. …“
+    kvin = 'WDB96340310123499'; kvid = 'VIN:' + kvin
+    api('POST', '/api/vehicles', {'plate': 'RT-KM 1', 'vin': kvin, 'site': 'Dortmund'})
+    api('POST', f'/api/vehicles/{kvid}/maintenance', {'kind': 'Ölwechsel', 'interval_km': 20000, 'last_done_km': 100000, 'evidence': 'Rauchtest Prognose'})
+    for km, n in [(100000, 40), (103000, 10)]:
+        o = api('POST', f'/api/vehicles/{kvid}/odometer', {'km': km, 'measured_on': (datetime.date.today() - datetime.timedelta(days=n)).isoformat()})
+        if o['s'] != 201:
+            problems.append(f'Vorbereitung km-Prognose: {o}')
+    ROUTES['fleet'] += [f'vehicles/{kvid}']
     ROUTES['owner'] += ['quality?f=inspection_no_result']
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
@@ -327,6 +336,9 @@ with sync_playwright() as p:
                 # Datensparsamkeit: Lesezugriff sieht keine Fahrernamen (Melder „Rauchtest driver“) in Vorgängen und Fahrzeugakte
                 if role == 'viewer' and (r.startswith('cases/') or r.startswith('vehicles/')) and 'Rauchtest driver' in pg.inner_text('body'):
                     problems.append(f'{where}: Fahrername für Lesezugriff sichtbar')
+                # km-Prognose (Planungshilfe) wird in Fahrzeugakte und Prüftermin-Übersicht gezeigt
+                if role == 'fleet' and r == f'vehicles/{kvid}' and pg.locator('.km-fc').count() == 0:
+                    problems.append(f'{where}: km-Prognose fehlt')
                 over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
                 if over > 2:
                     problems.append(f'{where}: Seite {over}px breiter als der Bildschirm')

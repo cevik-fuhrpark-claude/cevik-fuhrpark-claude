@@ -3335,6 +3335,24 @@ await test('Zeitleiste: Filter steht in der Adresse (?f=), unbekannte/für die R
   // Bereichsprüfung in viewTimeline: nur bekannte Schlüssel, Leitungs-Bereiche nur für isMgr()
   ok(/hasOwnProperty\.call\(groups, fArg\) && \(!TL_MGR_ONLY\.includes\(fArg\) \|\| isMgr\(\)\)/.test(app), 'Filterprüfung');
 });
+await test('Prüf-/Wartungsarten werden in der App-Sprache angezeigt (gespeichert bleibt der deutsche Name)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { MAINT_KINDS } = await import('../src/vehicles.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  const m = app.match(/const MK_KEYS = (\{[^\n]*\});/);
+  ok(m, 'MK_KEYS vorhanden');
+  const keys = new Function('return ' + m[1])();
+  for (const k of MAINT_KINDS.filter((x) => !['HU', 'SP', 'UVV'].includes(x))) {
+    ok(keys[k], `Übersetzungsschlüssel für ${k}`);
+    for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang]['mk_' + keys[k]], `mk_${keys[k]} ${lang}`);
+    eq(STRINGS.de['mk_' + keys[k]], k, 'Deutsch = gespeicherter Name');
+  }
+  // Auswahllisten senden weiterhin den deutschen Namen (value), zeigen aber die Übersetzung
+  ok(!/maintenance_kinds[^\n]{0,40}<option>\$\{esc\(k\)\}/.test(app), 'keine Option ohne value');
+  // keine Anzeige der Prüfart ohne mk() in Prüfterminen/Fahrzeugakte
+  ok(!/\$\{esc\(((m|r|h|x|me|fi|pi|i)\.)?kind\)\}/.test(app.replace(/esc\(t\([^)]*\)\)/g, '')), 'Prüfart überall übersetzt');
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
