@@ -135,6 +135,22 @@ for (let k = 0; k < 5; k++) {
   await timed('Werkstattplan-Kalender (.ics)', () => owner.get('/api/workshop/plan?days=60&format=ics'));
   await timed('Prüftermine mit Plan', () => owner.get('/api/maintenance'));
 }
+// Werkstattaufträge aus Prüfterminen (60) und Kosten-Freigabegrenze: je Auftrag zwei Fremdleistungs-Schätzungen (zweite überschreitet),
+// jede zweite Überschreitung wird freigegeben – prüft Abfragebudget von Auftrag, Kostenprüfung und Kennzahl „Kostenfreigaben“
+await owner.put('/api/settings', { repair_cost_limit_net: 500 });
+for (let i = 0; i < 60; i++) {
+  const o = must(await timed('Auftrag aus Prüftermin', () => owner.post(`/api/maintenance/lt-mr-${i}-0/order`, { workshop_site: i % 2 ? 'DORTMUND' : 'MUENCHEN', request_key: `lt-mo-${i}` })), 'Auftrag aus Prüftermin').data;
+  const cmd = async (label, action, payload, note) => { const v = (await owner.get(`/api/cases/${o.id}`)).data.case.version;
+    return must(await timed(label, () => owner.post(`/api/cases/${o.id}/commands`, { action, command_id: `lt-c-${i}-${action}-${Math.random()}`, expected_version: v, payload, note })), action); };
+  await cmd('Kostenbuchung mit Grenze', 'add_external_cost', { supplier: 'Lasttest', amount_net: 400, valuation: 'estimate' }, 'Angebot');
+  await cmd('Kostenbuchung mit Grenze', 'add_external_cost', { supplier: 'Lasttest', amount_net: 300, valuation: 'estimate' }, 'Nachtrag');
+  if (i % 2) await cmd('Kosten freigeben', 'approve_costs', {}, 'Lasttest Freigabe');
+}
+for (let k = 0; k < 5; k++) await timed('Kennzahlen + Kostenfreig.', () => owner.get('/api/reports/kpi?from=' + new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7)));
+{ const ca = (await owner.get('/api/reports/kpi')).data.cost_approvals || {};
+  console.log(`Kostenfreigaben (synthetisch): ${JSON.stringify({ exceeded: ca.exceeded, approved: ca.approved, pending: ca.pending })}`);
+  if (CHECK && !(ca.exceeded >= 60 && ca.approved >= 30)) { console.error('Kennzahl Kostenfreigaben unvollständig – Lasttest prüfen'); process.exitCode = 1; } }
+await owner.put('/api/settings', { repair_cost_limit_net: '' });
 // Versicherungsfälle (synthetisch): 600 Vorgänge mit Fall, Meldedatum über 200 Tage gestreut, jeder zweite mit Erstattung
 for (const [i, id] of ids.slice(0, 600).entries()) {
   const rep = i % 200; const body = { insurer: 'Lasttest Versicherung', claim_no: `LT-S-${i}`, reported_on: day(rep), deductible_net: 500, evidence: 'Lasttest' };
