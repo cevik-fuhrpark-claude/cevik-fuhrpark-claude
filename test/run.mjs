@@ -1947,7 +1947,7 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   p = (await users.fleet.get('/api/workshop/plan')).data;
   ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
   const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Werkstattplan-Test')).data);
-  ok(csvT.split('\r\n')[0].endsWith(';Werkstatttermin') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + '\r\n'), 'CSV-Spalte Werkstatttermin');
+  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
@@ -2260,6 +2260,11 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   ok(tl.some((x) => x.claim_event === 'reimbursed' && x.at === day(0) && x.reimbursed_net === 2000), 'Zeitleiste: Erstattung');
   eq((await users.ws.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Werkstatt: keine Versicherungsfälle');
   eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
+  // Vorgänge-CSV: Versicherungsfall-Spalten nur für die Leitung
+  const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=VT-IC')).data);
+  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
+  const vcsvV = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/cases?format=csv&q=VT-IC')).data);
+  ok(!vcsvV.includes('Versicherer'), 'Disposition ohne Versicherungsspalten');
   // Fahrzeugakte: Zusammenfassung Versicherungsfälle (nur Leitung)
   const akte = (await users.fleet.get(`/api/vehicles/${V}`)).data;
   eq(akte.claims_summary.total, 1); eq(akte.claims_summary.open, 0); eq(akte.claims_summary.reimbursed_net, 2000);

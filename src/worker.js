@@ -367,7 +367,11 @@ async function handleApi(request, env, ctx, url) {
       const rows = await cases.listCases(env, user, envName, { ...q, limit: 5000, __export: true });
       await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, rows: rows.length, environment: envName });
       const fmt = (iso) => (iso ? berlinDateTime(iso) : '');
-      return new Response(cases.casesCsv(rows, maint.csvCell, fmt), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"` } });
+      // Versicherungsfall-Spalten nur für Inhaber/Fuhrparkleitung (eine Abfrage)
+      const claimMap = ['owner', 'fleet'].includes(user.role)
+        ? new Map((await env.DB.prepare('SELECT case_id, status, insurer, claim_no FROM insurance_claims WHERE environment=?').bind(envName).all()).results.map((r) => [r.case_id, r]))
+        : null;
+      return new Response(cases.casesCsv(rows, maint.csvCell, fmt, claimMap), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"` } });
     }
     return json({ cases: await cases.listCases(env, user, envName, q) });
   }
