@@ -2929,6 +2929,42 @@ await test('Prüfmangel ohne Auftrag ist überholt, sobald eine neuere Durchfüh
   eq(f[0].severity, 'kritisch');
 });
 
+await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dringender Hinweis an Leitung/Dispo (nicht an Erfassende, nicht für alte Berichte), Datum nicht in der Zukunft; Dispo sieht „Prüfung nicht bestanden“', async () => {
+  const VD = 'VIN:WDB96340310888882';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  eq((await owner.post('/api/vehicles', { plate: 'GM-XY 82', vin: 'WDB96340310888882', site: 'Dortmund' })).status, 201);
+  const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'GM-Test' });
+  const fut = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(2), evidence: 'GM 0' });
+  eq(fut.status, 400, 'Zukunftsdatum abgewiesen');
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: '2026-02-30', evidence: 'GM 0' })).status, 400, 'ungültiges Datum');
+  const notes = async (u) => (await u.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'inspection_defect' && n.body.includes('GM-XY 82'));
+  // alter Bericht nachgetragen → kein Alarm
+  const old = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-60), evidence: 'GM 1', result: 'verkehrsunsicher' });
+  eq(old.status, 200); eq(old.data.notified, 0, 'alter Bericht: kein Alarm');
+  eq((await notes(users.dispatch)).length, 0);
+  const cur = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'GM 2', result: 'verkehrsunsicher' });
+  eq(cur.status, 200); ok(cur.data.notified >= 1, 'Alarm versendet');
+  const nd = await notes(users.dispatch);
+  ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('verkehrsunsicher') && nd[0].body.includes('nicht einplanen'), 'Dispo dringend informiert: ' + JSON.stringify(nd[0] || null));
+  eq((await notes(users.fleet)).length, 0, 'Erfassende Person nicht');
+  eq((await notes(users.driver)).length, 0, 'Fahrer nicht');
+  eq((await notes(users.ws)).length, 0, 'Werkstatt nicht');
+  // erneutes Speichern derselben Prüfung → kein zweiter Hinweis
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'GM 2b', result: 'verkehrsunsicher' })).status, 200);
+  eq((await notes(users.dispatch)).length, 1, 'idempotent');
+  // Dispo liest die Prüfmängel ohne Auftrag (Startseite „Prüfung nicht bestanden“)
+  const dm = await users.dispatch.get('/api/maintenance');
+  eq(dm.status, 200);
+  ok(dm.data.defects_without_case.some((x) => x.vehicle_id === VD && x.result === 'verkehrsunsicher'), 'Dispo sieht Prüfmangel ohne Auftrag');
+  // erhebliche Mängel: kein Sofort-Alarm (Heute zu tun genügt)
+  const rule2 = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'Tachograph', last_done_date: day(-400), interval_months: 24, evidence: 'GM-Test' });
+  const er = await users.fleet.post(`/api/maintenance/${rule2.data.id}/complete`, { done_date: day(0), evidence: 'GM 3', result: 'erhebliche_maengel' });
+  eq(er.data.notified, 0, 'erhebliche Mängel ohne Sofort-Alarm');
+  // Push-Einstellungen: nicht abschaltbar
+  const pr = await users.dispatch.get('/api/me/notify-prefs');
+  ok(!JSON.stringify(pr.data).includes('inspection_defect'), 'nicht in den abschaltbaren Arten');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

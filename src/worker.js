@@ -235,7 +235,7 @@ async function handleApi(request, env, ctx, url) {
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await maint.importMaintenanceCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
-  if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request), { ctx, envName }));
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromMaintenance(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromInspectionDefect(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request)));

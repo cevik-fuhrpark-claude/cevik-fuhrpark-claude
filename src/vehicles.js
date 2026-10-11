@@ -6,6 +6,7 @@ import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRA
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
 import { sha256Hex, berlinDateTime } from './util.js';
 import { vehicleContracts } from './contracts.js';
+import { notifyUsers } from './notify.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -384,12 +385,15 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
 }
 
-export async function completeMaintenance(env, user, ruleId, body) {
+// Prüfergebnisse, bei denen Fuhrparkleitung, Inhaber und Disposition sofort (dringend, nicht abschaltbar) informiert werden
+const URGENT_RESULTS = { gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
+export async function completeMaintenance(env, user, ruleId, body, { ctx = null, envName = null } = {}) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const r = await env.DB.prepare('SELECT * FROM maintenance_rules WHERE id=?').bind(ruleId).first();
   if (!r) throw notFound();
   const date = str(body.done_date, { required: true, max: 10, field: 'Datum' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date + 'T00:00:00Z')) || new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) !== date) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
@@ -410,7 +414,20 @@ export async function completeMaintenance(env, user, ruleId, body) {
       // heute erledigt → jetziger Zeitpunkt (12:00 UTC läge morgens in der Zukunft und überdeckte spätere Ablesungen desselben Tages)
       .bind(uuid(), r.vehicle_id, km, date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`, `wartung:${r.kind}`, user.id, nowIso()).run();
   }
-  return { ok: true, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
+  // Gefährliche Mängel / verkehrsunsicher: sofort Leitung, Inhaber und Disposition der aktiven Umgebung informieren – nur für aktuelle
+  // Prüfungen (≤ 30 Tage, neueste dieser Prüfart), nicht beim Nachtragen alter Berichte. Einmal je Prüfung und Person (event_key).
+  let notified = 0;
+  if (result && URGENT_RESULTS[result] && envName && date >= addMonths(berlinDate(), -1)) {
+    const v = await env.DB.prepare(`SELECT v.plate, (SELECT COUNT(*) FROM maintenance_events e WHERE e.vehicle_id=v.id AND e.kind=? AND e.done_date > ?) AS newer
+      FROM vehicles v WHERE v.id=?`).bind(r.kind, date, r.vehicle_id).first();
+    if (v && !v.newer) {
+      const ids = (await env.DB.prepare(`SELECT id FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN ('owner','fleet','dispatch') AND id<>?`)
+        .bind(envName, user.id).all()).results.map((x) => x.id);
+      if (ids.length) notified = await notifyUsers(env, ctx, envName, ids, { kind: 'inspection_defect', title: 'Prüfung mit gefährlichen Mängeln', urgent: true,
+        body: `${v.plate} · ${r.kind} ${date}: ${URGENT_RESULTS[result]}${result === 'verkehrsunsicher' ? ' – nicht einplanen' : ''}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `inspdef:${ruleId}:${date}:${result}` });
+    }
+  }
+  return { ok: true, notified, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
 }
 
 export async function addOdometer(env, user, vehicleId, body) {
