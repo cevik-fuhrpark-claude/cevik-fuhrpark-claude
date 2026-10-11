@@ -1286,6 +1286,10 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   // Lkw mit Anhängerkennzeichen, das es nicht gibt; zweites Fahrzeug mit gleichem Kennzeichen (anders geschrieben)
   eq((await owner.post('/api/vehicles', { plate: 'DQ-XY 1', vin: 'WDB96340310999001', trailer_plate: 'DQ-AH 404' })).status, 201);
   eq((await owner.post('/api/vehicles', { plate: 'DQ XY1', vin: 'WDB96340310999002', site: 'Dortmund' })).status, 201);
+  // Prüfung mit erheblichen Mängeln ohne Vorgang danach → Hinweis; nach einer Meldung zum Fahrzeug nicht mehr
+  const dqDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 3 * 86400000));
+  const dqRule = await users.fleet.post('/api/vehicles/VIN:WDB96340310999002/maintenance', { kind: 'UVV', last_done_date: '2025-01-10', interval_months: 12, evidence: 'DQ-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${dqRule.data.id}/complete`, { done_date: dqDay, evidence: 'UVV-Protokoll DQ', result: 'erhebliche_maengel' })).status, 200);
   const before = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles').first()).n;
   const r = await users.fleet.get('/api/admin/data-quality');
   eq(r.status, 200);
@@ -1294,6 +1298,10 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   ok(has('trailer_unknown', 'WDB96340310999001'), 'unbekannter Anhänger');
   ok(has('missing_site', 'WDB96340310999001') && !has('missing_site', 'WDB96340310999002'), 'fehlender Standort');
   ok(has('no_km', 'WDB96340310999001'), 'kein km-Stand');
+  ok(r.data.items.find((i) => i.check === 'inspection_defects_no_case' && i.vehicle_id === 'VIN:WDB96340310999002')?.detail.includes('erhebliche Mängel'), 'Mängel ohne Vorgang');
+  const dqc = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310999002', description: 'UVV-Mängel beseitigen (DQ-Test)', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() }); eq(dqc.status, 201);
+  ok(!(await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'inspection_defects_no_case' && i.vehicle_id === 'VIN:WDB96340310999002'), 'nach Meldung erledigt');
+  eq((await users.fleet.post(`/api/cases/${dqc.data.id}/commands`, { action: 'reject', command_id: rk(), expected_version: 1, note: 'nur Datenqualitäts-Test' })).status, 200, 'Testvorgang schließen');
   ok(r.data.items.find((i) => i.check === 'missing_inspection' && i.vehicle_id === 'VIN:WDB96340310999001').detail.includes('HU'), 'fehlende Pflichtprüfung');
   eq(r.data.items[0].severity, 'fehler', 'Fehler zuerst');
   ok(r.data.items.find((i) => i.check === 'vin_similar' && i.vehicle_id === 'VIN:WDB96340310999001')?.detail === 'DQ XY1 · WDB96340310999002 · #17', 'FIN fast gleich (Stelle 17)');
