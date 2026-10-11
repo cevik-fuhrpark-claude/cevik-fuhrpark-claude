@@ -2105,6 +2105,19 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(5))?.items.some((i) => i.type === 'maintenance' && i.kind === 'UVV'), 'Prüftermin am Tag');
   const vr = await vrow(users.fleet);
   eq(vr.planned_inspection_date, day(5), 'Fahrzeugliste zeigt geplanten Prüftermin');
+  eq(vr.planned_inspection_kind, 'UVV', 'Fahrzeugliste nennt die Prüfart');
+  {
+    const r2 = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'Tachograph', last_done_date: day(-300), interval_months: 24, evidence: 'Werkstattplan-Test' });
+    eq((await users.fleet.post(`/api/maintenance/${r2.data.id}/plan`, { planned_date: day(5) })).status, 200);
+    const r3 = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'Bremsen', last_done_date: day(-30), interval_months: 12, evidence: 'Werkstattplan-Test' });
+    eq((await users.fleet.post(`/api/maintenance/${r3.data.id}/plan`, { planned_date: day(9) })).status, 200);
+    const a = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
+    eq(a.planned_inspection_date, day(5), 'Integrations-API: nächster Prüftermin');
+    eq(a.planned_inspection_kind.split(', ').sort().join(', '), 'Tachograph, UVV', 'Integrations-API: alle Prüfarten des Tages, spätere nicht');
+    eq((await users.fleet.post(`/api/maintenance/${r2.data.id}/plan`, { planned_date: '' })).status, 200);
+    eq((await users.fleet.post(`/api/maintenance/${r3.data.id}/plan`, { planned_date: '' })).status, 200);
+    eq((await vrow(users.fleet)).planned_inspection_kind, 'UVV', 'nach Entfernen wieder nur UVV');
+  }
   // Hinweis „Fahrzeug auch geplant am“: Auftrag an Tag 2 und Prüfung an Tag 5 desselben Fahrzeugs
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: day(2) })).status, 200);
   let pl = (await users.ws.get('/api/workshop/plan')).data;
