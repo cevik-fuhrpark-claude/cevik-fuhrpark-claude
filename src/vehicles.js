@@ -410,6 +410,37 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
 
 // Prüfergebnisse, bei denen Fuhrparkleitung, Inhaber und Disposition sofort (dringend, nicht abschaltbar) informiert werden
 const URGENT_RESULTS = { gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
+// Gefährliche Mängel / verkehrsunsicher: sofort Leitung, Inhaber und Disposition der aktiven Umgebung informieren – nur für aktuelle
+// Prüfungen (≤ 1 Monat, neueste dieser Prüfart), nicht beim Nachtragen alter Berichte. Einmal je Prüfung und Person (event_key).
+async function notifyInspectionDefect(env, ctx, envName, user, { vehicleId, kind, date, result, key }) {
+  if (!result || !URGENT_RESULTS[result] || !envName || date < addMonths(berlinDate(), -1)) return 0;
+  const v = await env.DB.prepare(`SELECT v.plate, (SELECT COUNT(*) FROM maintenance_events e WHERE e.vehicle_id=v.id AND e.kind=? AND e.done_date > ?) AS newer
+    FROM vehicles v WHERE v.id=?`).bind(kind, date, vehicleId).first();
+  if (!v || v.newer) return 0;
+  const ids = (await env.DB.prepare(`SELECT id FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN ('owner','fleet','dispatch') AND id<>?`)
+    .bind(envName, user.id).all()).results.map((x) => x.id);
+  if (!ids.length) return 0;
+  return notifyUsers(env, ctx, envName, ids, { kind: 'inspection_defect', title: 'Prüfung mit gefährlichen Mängeln', urgent: true,
+    body: `${v.plate} · ${kind} ${date}: ${URGENT_RESULTS[result]}${result === 'verkehrsunsicher' ? ' – nicht einplanen' : ''}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `inspdef:${key}:${date}:${result}` });
+}
+
+export const INSPECTION_RESULTS = ['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];
+// Prüfergebnis an einer gespeicherten Durchführung nachtragen (z. B. Bericht kam später) – nur wenn noch keines eingetragen ist, nie überschreiben.
+export async function addMaintenanceResult(env, user, eventId, body, { ctx = null, envName = null } = {}) {
+  if (!isManager(user) && user.role !== 'workshop') throw forbidden();
+  const e = await env.DB.prepare('SELECT id, rule_id, vehicle_id, kind, done_date, result FROM maintenance_events WHERE id=?').bind(eventId).first();
+  if (!e) throw notFound('Durchführung nicht gefunden.');
+  const result = oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis');
+  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis (z. B. Prüfbericht-Nr.)' });
+  if (e.result) throw conflict('result_exists', 'Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.');
+  const upd = await env.DB.prepare('UPDATE maintenance_events SET result=? WHERE id=? AND result IS NULL').bind(result, e.id).run();
+  if (!upd.meta || !upd.meta.changes) throw conflict('result_exists', 'Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.');
+  await audit(env, user.id, 'maintenance.result_add', e.vehicle_id, { kind: e.kind, done_date: e.done_date, result, evidence });
+  if (e.kind === 'HU' || e.kind === 'SP') await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [e.vehicle_id] });
+  const notified = await notifyInspectionDefect(env, ctx, envName, user, { vehicleId: e.vehicle_id, kind: e.kind, date: e.done_date, result, key: e.rule_id || e.id });
+  return { ok: true, result, notified };
+}
+
 export async function completeMaintenance(env, user, ruleId, body, { ctx = null, envName = null } = {}) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const r = await env.DB.prepare('SELECT * FROM maintenance_rules WHERE id=?').bind(ruleId).first();
@@ -423,7 +454,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10 });
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
-  const result = body.result ? oneOf(body.result, ['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'], 'Prüfergebnis') : null;
+  const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
   await env.DB.batch([
     env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
       .bind(date, km, next, evidence, nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
@@ -439,17 +470,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   }
   // Gefährliche Mängel / verkehrsunsicher: sofort Leitung, Inhaber und Disposition der aktiven Umgebung informieren – nur für aktuelle
   // Prüfungen (≤ 30 Tage, neueste dieser Prüfart), nicht beim Nachtragen alter Berichte. Einmal je Prüfung und Person (event_key).
-  let notified = 0;
-  if (result && URGENT_RESULTS[result] && envName && date >= addMonths(berlinDate(), -1)) {
-    const v = await env.DB.prepare(`SELECT v.plate, (SELECT COUNT(*) FROM maintenance_events e WHERE e.vehicle_id=v.id AND e.kind=? AND e.done_date > ?) AS newer
-      FROM vehicles v WHERE v.id=?`).bind(r.kind, date, r.vehicle_id).first();
-    if (v && !v.newer) {
-      const ids = (await env.DB.prepare(`SELECT id FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN ('owner','fleet','dispatch') AND id<>?`)
-        .bind(envName, user.id).all()).results.map((x) => x.id);
-      if (ids.length) notified = await notifyUsers(env, ctx, envName, ids, { kind: 'inspection_defect', title: 'Prüfung mit gefährlichen Mängeln', urgent: true,
-        body: `${v.plate} · ${r.kind} ${date}: ${URGENT_RESULTS[result]}${result === 'verkehrsunsicher' ? ' – nicht einplanen' : ''}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `inspdef:${ruleId}:${date}:${result}` });
-    }
-  }
+  const notified = await notifyInspectionDefect(env, ctx, envName, user, { vehicleId: r.vehicle_id, kind: r.kind, date, result, key: ruleId });
   return { ok: true, notified, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
 }
 

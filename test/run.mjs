@@ -2987,6 +2987,41 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   eq((await users.fleet.get(`/api/vehicles/${VD}`)).data.failed_inspection, null, 'Akte nach Auftrag ohne Warnung');
 });
 
+await test('Prüfergebnis nachtragen (nie überschreiben, Sofort-Hinweis wie beim Erfassen) und Datenqualität „Pflichtprüfung ohne Prüfergebnis“', async () => {
+  const VD = 'VIN:WDB96340310888884';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  eq((await owner.post('/api/vehicles', { plate: 'NR-XY 84', vin: 'WDB96340310888884', site: 'Dortmund' })).status, 201);
+  const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'NR-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-2), evidence: 'NR 1' })).status, 200);
+  const dq = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'inspection_no_result' && i.vehicle_id === VD);
+  const hits = await dq();
+  eq(hits.length, 1, 'nur die neueste Durchführung ohne Ergebnis: ' + JSON.stringify(hits));
+  eq(hits[0].severity, 'hinweis');
+  ok(hits[0].detail.startsWith('UVV ' + day(-2).split('-').reverse().join('.')), hits[0].detail);
+  const hist = (await users.fleet.get(`/api/vehicles/${VD}`)).data.maintenance_history;
+  const ev = hist.find((h) => h.evidence === 'NR 1'); const evOld = hist.find((h) => h.id !== ev.id);
+  eq(hits[0].event_id, ev.id);
+  const url = `/api/maintenance/events/${ev.id}/result`;
+  eq((await users.driver.post(url, { result: 'ohne_maengel', evidence: 'x' })).status, 403, 'Fahrer nicht');
+  eq((await users.dispatch.post(url, { result: 'ohne_maengel', evidence: 'x' })).status, 403, 'Dispo nicht');
+  eq((await users.fleet.post(url, { result: 'ohne_maengel' })).status, 400, 'Nachweis Pflicht');
+  eq((await users.fleet.post(url, { result: 'kaputt', evidence: 'x' })).status, 400, 'nur bekannte Ergebnisse');
+  eq((await users.fleet.post('/api/maintenance/events/gibt-es-nicht/result', { result: 'ohne_maengel', evidence: 'x' })).status, 404);
+  const r = await users.fleet.post(url, { result: 'gefaehrliche_maengel', evidence: 'Bericht 4711' });
+  eq(r.status, 200); ok(r.data.notified >= 1, 'aktuelle Prüfung: Sofort-Hinweis');
+  ok((await users.dispatch.get('/api/notifications')).data.notifications.some((n) => n.kind === 'inspection_defect' && n.body.includes('NR-XY 84')), 'Dispo informiert');
+  const again = await users.fleet.post(url, { result: 'ohne_maengel', evidence: 'Bericht 4712' });
+  eq(again.status, 409, 'nie überschreiben'); eq(again.data.error, 'result_exists');
+  const d = (await users.fleet.get(`/api/vehicles/${VD}`)).data;
+  eq(d.maintenance_history.find((h) => h.id === ev.id).result, 'gefaehrliche_maengel');
+  eq(d.failed_inspection && d.failed_inspection.event_id, ev.id, 'Akte: Prüfung nicht bestanden');
+  eq((await dq()).length, 0, 'Datenqualität erledigt');
+  // ältere Durchführung: Nachtragen erlaubt, aber kein Alarm (nicht die neueste)
+  const ro = await users.fleet.post(`/api/maintenance/events/${evOld.id}/result`, { result: 'verkehrsunsicher', evidence: 'Altbericht' });
+  eq(ro.status, 200); eq(ro.data.notified, 0, 'alte Prüfung: kein Alarm');
+  ok((await owner.get('/api/admin/audit?action=maintenance.result_add')).data.entries.length >= 2, 'Protokoll');
+});
+
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {
   const VD = 'VIN:WDB96340310888883';
   eq((await owner.post('/api/vehicles', { plate: 'KD-XY 83', vin: 'WDB96340310888883', site: 'Dortmund' })).status, 201);

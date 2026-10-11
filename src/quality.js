@@ -19,6 +19,8 @@ export const CHECKS = {
   inspection_defects_no_case: 'luecke',
   // Nachprüfung nach freigegebenem Mängelauftrag zeigt erneut erhebliche/gefährliche Mängel bzw. verkehrsunsicher (Wiederholungsmangel)
   reinspection_defects_again: 'luecke',
+  // in der App erfasste Pflichtprüfung (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – Ergebnis in der Fahrzeugakte nachtragen
+  inspection_no_result: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -43,7 +45,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
     env.DB.prepare('SELECT DISTINCT vehicle_id, kind FROM maintenance_rules WHERE next_due_date IS NOT NULL').all(),
@@ -86,7 +88,12 @@ export async function dataQuality(env, user, envName, query = {}) {
       JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND substr(c.closed_at,1,10) <= n.done_date
       AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
-      GROUP BY n.id ORDER BY n.done_date DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),
+      GROUP BY n.id ORDER BY n.done_date DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
+    env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+      WHERE v.active=1 AND v.eval_excluded=0 AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
+        AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
+      ORDER BY e.done_date DESC LIMIT 200`).bind(...REQUIRED_KINDS, new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10)).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -138,6 +145,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const d of defects.results) items.push({ check: 'inspection_defects_no_case', severity: CHECKS.inspection_defects_no_case, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]}` });
   for (const d of again.results) items.push({ check: 'reinspection_defects_again', severity: CHECKS.reinspection_defects_again, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id,
     detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]} · Mängelauftrag ${d.case_no} zur Prüfung vom ${d.first_date.split('-').reverse().join('.')}` });
+  for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}` });
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {

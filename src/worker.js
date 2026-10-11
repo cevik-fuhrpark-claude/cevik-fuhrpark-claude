@@ -78,7 +78,7 @@ const SETTINGS_KEYS = [
 // Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
 const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
-  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
+  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
   /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
@@ -237,6 +237,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request), { ctx, envName }));
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromMaintenance(env, ctx, user, envName, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/result$/)) && m === 'POST') return json(await veh.addMaintenanceResult(env, user, mm[1], await readJson(request), { ctx, envName }));
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromInspectionDefect(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
