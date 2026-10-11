@@ -10,7 +10,7 @@ export function helpMatches(sections, query) {
   for (const s of sections) {
     const all = helpNorm(s.title + ' ' + s.steps.join(' '));
     if (!words.every((w) => all.includes(w))) continue;
-    out.push({ name: s.name, steps: s.steps.map((x, i) => [i, helpNorm(x)]).filter(([, x]) => words.some((w) => x.includes(w))).map(([i]) => i) });
+    out.push({ name: s.name, title_hit: words.some((w) => helpNorm(s.title).includes(w)), steps: s.steps.map((x, i) => [i, helpNorm(x)]).filter(([, x]) => words.some((w) => x.includes(w))).map(([i]) => i) });
   }
   return out;
 }

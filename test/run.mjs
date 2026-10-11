@@ -3103,9 +3103,9 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   eq(helpNorm('  Straße  PRÜFUNG '), 'strasse prufung'); eq(helpNorm('Pruefung'), 'prufung');
   const secs = [{ name: 'a', title: 'Prüftermine', steps: ['HU alle 12 Monate', 'SP nach der HU', 'Nachweis hochladen'] }, { name: 'b', title: 'Lager', steps: ['Mindestbestand pflegen', 'Bestellvorschlag'] }];
   eq(helpMatches(secs, '   '), null, 'leere Suche = alles zeigen');
-  eq(JSON.stringify(helpMatches(secs, 'hu')), JSON.stringify([{ name: 'a', steps: [0, 1] }]), 'Treffer je Schritt');
-  eq(JSON.stringify(helpMatches(secs, 'prueftermine')), JSON.stringify([{ name: 'a', steps: [] }]), 'ue-Schreibweise findet ü');
-  eq(JSON.stringify(helpMatches(secs, 'PRUFTERMINE nachweis')), JSON.stringify([{ name: 'a', steps: [2] }]), 'alle Wörter, Titel zählt für den Abschnitt');
+  eq(JSON.stringify(helpMatches(secs, 'hu')), JSON.stringify([{ name: 'a', title_hit: false, steps: [0, 1] }]), 'Treffer je Schritt');
+  eq(JSON.stringify(helpMatches(secs, 'prueftermine')), JSON.stringify([{ name: 'a', title_hit: true, steps: [] }]), 'ue-Schreibweise findet ü');
+  eq(JSON.stringify(helpMatches(secs, 'PRUFTERMINE nachweis')), JSON.stringify([{ name: 'a', title_hit: true, steps: [2] }]), 'alle Wörter, Titel zählt für den Abschnitt');
   eq(JSON.stringify(helpMatches(secs, 'hu lager')), '[]', 'Wörter aus verschiedenen Abschnitten → kein Treffer');
   // echte Texte: jede Sprache findet ihren Abschnitt „Prüftermine“ über ein Wort aus dem eigenen Titel
   const sections = (lang) => ['dates', 'stock', 'report'].map((n) => ({ name: n, title: STRINGS[lang][`help_${n}_t`], steps: STRINGS[lang][`help_${n}_s`].split('|') }));
@@ -3123,6 +3123,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>');
   const searchSrc = app.slice(app.indexOf('async function viewSearch('), app.indexOf('\n}\n', app.indexOf('async function viewSearch(')));
   ok(/helpMatches\(helpSections\(S\.me\.role\)/.test(searchSrc) && searchSrc.includes('id="ghelp"'), 'Globale Suche findet Hilfe-Abschnitte der eigenen Rolle');
+  ok(searchSrc.includes('b.title_hit - a.title_hit'), 'Suche: Titeltreffer zuerst');
   ok(/'\/help\.js'/.test(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')), 'help.js im Offline-Cache');
 });
 

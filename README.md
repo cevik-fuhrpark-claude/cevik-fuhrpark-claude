@@ -8,7 +8,10 @@ Sicherheitssperre · Werkstatt-Eingang, Übernahme, Arbeitszeit, Teile, Fremdrec
 nach Reparatur (Mängel werden automatisch Folgeaufträge) · Abfahrtskontrolle · technische Freigabe nur durch Menschen ·
 Wartung/HU/SP/UVV mit Nachweis, Prüftermin-Übersicht mit Lückenliste und belegtem CSV-Import · Kilometerstände · Fahrzeugverträge (Leasing/Miete/Versicherung: Kündigungstag, km-Kontingent) · Kosten je Vorgang und Fahrzeug (unbewertet statt 0 €) ·
 Push-Benachrichtigungen mit Zustell-/Lesequittung · Fuhrparkagent + Management-Panel · KI-Analyse der Schadenshistorie ·
-Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
+Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen) und Auslesungen Fahrerkarte/Fahrtenschreiber · Bußgelder & Anhörungen ·
+Versicherungsfälle · Reifen je Fahrzeug · Ersatzteillager mit Bestellvorschlag · Werkstattplan und Disposition (Verfügbarkeit, Sperren) ·
+Kennzahlen Instandhaltung, Mängelstatistik, Kosten je Fahrzeug · Datenqualität (Lücken/Widersprüche, CSV) · Protokoll und Datensicherung ·
+Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
 
 **Technik:** Cloudflare Worker + D1 (EU) + KV (EU) + Workers AI, PWA ohne Framework, keine Laufzeitabhängigkeiten.
 
@@ -19,7 +22,7 @@ Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · 
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Sicherung |
 
 ```bash
-npm test                                            # 117 Abnahmetests (Node ≥ 22)
+npm test                                            # 130 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
