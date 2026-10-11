@@ -164,6 +164,40 @@ for (let k = 0; k < 10; k++) {
 }
 await timed('Versicherungsfälle CSV', () => owner.get('/api/claims?format=csv&filter=alle'));
 await timed('Datenqualität inkl. Unfall', () => owner.get('/api/admin/data-quality'));
+// Durchführungen mit Ergebnis (synthetisch, direkt in der DB): je Prüfregel 4 Durchführungen über 360 Tage, jede 3. mit erheblichen/gefährlichen
+// Mängeln, die Hälfte davon mit verknüpftem Mängelauftrag (teils freigegeben) – prüft Nachweisliste mit Unterabfragen, Prüfmängel ohne Auftrag,
+// ausstehende Nachprüfungen, Kennzahl „Mängelbeseitigung“ und die Integrations-API (/v1/kpi, /v1/maintenance/history)
+{ const me = (await owner.get('/api/me')).data.user.id; const now = new Date().toISOString();
+  const res = ['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'ohne_maengel', 'gefaehrliche_maengel', 'geringe_maengel'];
+  const st = env.DB.prepare(`INSERT INTO maintenance_events (id, rule_id, vehicle_id, kind, done_date, done_km, evidence, source, recorded_by, created_at, result) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+  const link = env.DB.prepare(`UPDATE cases SET maintenance_event_id=?, status=?, closed_at=? WHERE id=?`);
+  const ev = []; const links = []; let n = 0; let d = 0;
+  for (const [i, v] of vehicles.entries()) for (const [j, kind] of ['UVV', 'Tachograph'].entries()) for (let k = 0; k < 4; k++) {
+    const id = `lt-me-${i}-${j}-${k}`; const r = res[(i + j + k) % res.length];
+    ev.push(st.bind(id, `lt-mr-${i}-${j}`, v.id, kind, day(20 + k * 90 + (i % 30)), null, 'Lasttest', 'erfasst', me, now, r)); n++;
+    if (['erhebliche_maengel', 'gefaehrliche_maengel'].includes(r) && (d++ % 2) === 0) {
+      const cid = ids[600 + (links.length % (ids.length - 600))]; const rel = links.length % 3 === 0;
+      links.push(link.bind(id, rel ? 'fahrzeug_freigegeben' : 'werkstatt_freigegeben', rel ? new Date(Date.now() - (i % 20) * 86400000).toISOString() : null, cid));
+    }
+  }
+  await env.DB.batch(ev); await env.DB.batch(links);
+  console.log(`${n} Durchführungen (synthetisch), ${d} mit erheblichen Mängeln, ${links.length} mit Mängelauftrag`);
+}
+const kpiFrom = new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7);
+const IH = { authorization: 'Bearer integration-token-xyz' };
+const integ = (path) => owner.req('GET', '/api/integration' + path, undefined, IH).then((r) => must(r, path));
+for (let k = 0; k < 5; k++) {
+  await timed('Nachweisliste 12 Monate', () => owner.get('/api/maintenance/history?from=' + day(365)).then((r) => must(r, 'Nachweisliste')));
+  await timed('Nachweisliste CSV', () => owner.get('/api/maintenance/history?format=csv&from=' + day(365)).then((r) => must(r, 'Nachweisliste CSV')));
+  await timed('Prüftermine inkl. Mängel', () => owner.get('/api/maintenance'));
+  await timed('Kennzahlen inkl. Mängel', () => owner.get('/api/reports/kpi?from=' + kpiFrom));
+  await timed('API /v1/kpi', () => integ('/v1/kpi?environment=test&from=' + kpiFrom));
+  await timed('API /v1/maintenance/history', () => integ('/v1/maintenance/history?environment=test&from=' + day(365)));
+  await timed('API /v1/maintenance', () => integ('/v1/maintenance?environment=test'));
+}
+await timed('Datenqualität inkl. Prüfmängel', () => owner.get('/api/admin/data-quality'));
+{ const idk = (await owner.get('/api/reports/kpi?from=' + kpiFrom)).data.inspection_defects || {};
+  console.log(`Mängelbeseitigung (synthetisch): ${JSON.stringify(idk).slice(0, 200)}`); }
 await owner.put('/api/settings', { claim_followup_days: '30' }); // Worst Case: Nachfass-Befunde für Versicherungsfälle aktiv
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 

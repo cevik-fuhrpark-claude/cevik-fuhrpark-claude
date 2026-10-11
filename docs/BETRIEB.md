@@ -84,6 +84,8 @@ Ergänzt 11.10.2026, 06:45 UTC: 600 Versicherungsfälle (300 mit Erstattung): Fa
 Ergänzt 11.10.2026, 07:00 UTC: 300 Prüfregeln (UVV/Tachograph, jede zweite eingeplant) + 600 geplante Aufträge: Prüftermin-Kalender (.ics) ≈ 19 ms, Werkstattplan-Kalender 60 Tage ≈ 21 ms (vorher ≈ 245 bzw. 300 ms – Zeilenfaltung der Kalenderdatei rechnete Bytes je Zeichen mit TextEncoder; jetzt aus dem Zeichencode, Ausgabe identisch, Test).
 Ergänzt 11.10.2026, 11:40 UTC: 60 Werkstattaufträge aus Prüfterminen mit Kosten-Freigabegrenze (je 2 Fremdleistungs-Schätzungen, 30 Freigaben): Auftrag aus Prüftermin ≈ 2 ms / 27 Abfragen (Anlegen + Freigabe in einem Aufruf), Kostenbuchung mit Grenzprüfung ≈ 1 ms / 21, Kosten freigeben ≈ 1 ms / 17, Kennzahlen inkl. Kostenfreigaben ≈ 46 ms / 5.
 
+Ergänzt 11.10.2026, 15:45 UTC: 1200 Durchführungen mit Ergebnis (400 mit erheblichen/gefährlichen Mängeln, 200 mit Mängelauftrag, davon 67 freigegeben): Nachweisliste 12 Monate ≈ 19 ms / 3 Abfragen, als CSV ≈ 16 ms / 4, Prüftermine inkl. Prüfmängel/Nachprüfungen ≈ 10 ms / 12, Kennzahlen inkl. Mängelbeseitigung ≈ 54 ms / 6, Integrations-API `/v1/kpi` ≈ 54 ms / 4, `/v1/maintenance/history` ≈ 19 ms / 1, `/v1/maintenance` ≈ 7 ms / 9, Datenqualität ≈ 18 ms / 17, Fuhrparkagent ≈ 190 ms / 39.
+
 Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
 mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt
 zuvor ≈ 9000 bei 3000 offenen Vorgängen). Ein Test prüft bei jedem Lauf, dass jeder API-Aufruf ≤ 50 Abfragen braucht.
