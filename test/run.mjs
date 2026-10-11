@@ -3063,10 +3063,14 @@ await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste 
   const hits = await mine(users.ws);
   eq(hits.length, 1, 'Werkstatt sieht eigene Prüfung'); eq(hits[0].kind, 'SP'); eq(hits[0].done_date, day(-1));
   eq((await mine(users.fleet)).length, 0, 'andere Person sieht sie nicht als eigene');
+  const akte = (await users.ws.get(`/api/vehicles/${VD}`)).data.result_missing;
+  eq(JSON.stringify(akte), JSON.stringify([{ event_id: hits[0].id, kind: 'SP', done_date: day(-1) }]), 'Fahrzeugakte zeigt fehlendes Ergebnis');
+  eq(JSON.stringify((await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'inspection_no_result' && i.vehicle_id === VD).map((i) => i.event_id)), JSON.stringify([hits[0].id]), 'gleiche Regel wie Datenqualität');
   eq((await users.driver.get('/api/me/inspections-without-result')).status, 403, 'Fahrer nicht');
   eq((await users.dispatch.get('/api/me/inspections-without-result')).status, 403, 'Dispo nicht');
   eq((await users.ws.post(`/api/maintenance/events/${hits[0].id}/result`, { result: 'ohne_maengel', evidence: 'SP-Bericht 86' })).status, 200);
   eq((await mine(users.ws)).length, 0, 'nach Nachtragen erledigt');
+  eq((await users.ws.get(`/api/vehicles/${VD}`)).data.result_missing.length, 0, 'Akte nach Nachtragen leer');
 });
 
 await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route – auch mit encodeURIComponent(Fahrzeug-ID)', async () => {
