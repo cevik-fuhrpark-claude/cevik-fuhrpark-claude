@@ -1635,6 +1635,16 @@ async function viewKpi() {
     <dt>${esc(t('kpi_ca_wait'))}</dt><dd>${st(ca.to_approval)}</dd>
     ${ca.pending ? `<dt>${esc(t('kpi_ca_pending'))}</dt><dd><b style="color:var(--stop)">${ca.pending}</b></dd>` : ''}
     ${ca.closed_without ? `<dt>${esc(t('kpi_ca_closed'))}</dt><dd>${ca.closed_without}</dd>` : ''}</dl><p class="small muted">${esc(t('kpi_ca_rule'))}</p></section>`;
+  // Mängelbeseitigung aus Prüfungen (Prüfdatum im Zeitraum; Dauer in Tagen bis zur technischen Freigabe des Mängelauftrags)
+  const idf = r.inspection_defects;
+  const dD = (v) => `${String(v).replace('.', ',')} ${esc(t('days'))}`;
+  const stD = (x) => (x.n ? `${dD(x.median_d)} <span class="small muted">(P90 ${dD(x.p90_d)}, n=${x.n})</span>` : '–');
+  if (idf && idf.inspections) html += `<section class="panel" id="kpiid"><h3>${esc(t('kpi_id'))}</h3><dl class="kv">
+    <dt>${esc(t('kpi_id_insp'))}</dt><dd>${idf.inspections}</dd>
+    <dt>${esc(t('kpi_id_ordered'))}</dt><dd>${idf.ordered}${idf.without_order ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_without'))} ${idf.without_order}</b>` : ''}</dd>
+    <dt>${esc(t('kpi_released'))}</dt><dd>${idf.released}${idf.open ? ` · ${esc(t('kpi_open'))} ${idf.open}` : ''}</dd>
+    <dt>${esc(t('kpi_id_days'))}</dt><dd>${stD(idf.to_release_days)}</dd>
+    <dt>${esc(t('kpi_id_reinsp'))}</dt><dd>${idf.reinspected}${idf.defects_again ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_again'))} ${idf.defects_again}</b>` : ''}</dd></dl><p class="small muted">${esc(t('kpi_id_rule'))}</p></section>`;
   html += `<p class="small muted">${esc(t('kpi_rules'))}</p>`;
   render(html, 'more');
   const f = $('#kf2'); f.onsubmit = (e) => { e.preventDefault(); S.kpiFrom = f.from.value; S.kpiTo = f.to.value; S.kpiSite = f.site ? f.site.value : ''; viewKpi(); };

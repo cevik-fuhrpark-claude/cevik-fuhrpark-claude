@@ -2857,6 +2857,16 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   const ag = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2);
   ok(ag.length === 1 && ag[0].severity === 'luecke' && ag[0].detail.includes('gefährliche Mängel') && ag[0].detail.includes(o3.data.case_no), 'Wiederholungsmangel: ' + JSON.stringify(ag));
   eq((await owner.get('/api/admin/data-quality', { 'x-cfp-env': 'production' })).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2).length, 0, 'Betrieb sieht Testauftrag nicht');
+  // Kennzahlen: Mängelbeseitigung aus Prüfungen (Zeitraum deckt alle Prüfdaten dieses Tests ab)
+  const kq = `/api/reports/kpi?from=${day(-5).slice(0, 7)}&to=${day(0).slice(0, 7)}`;
+  const kd = (await users.fleet.get(kq)).data.inspection_defects;
+  ok(kd.inspections >= 3 && kd.ordered + kd.without_order === kd.inspections && kd.released + kd.open === kd.ordered, 'Summen stimmen: ' + JSON.stringify(kd));
+  ok(kd.released >= 2 && kd.to_release_days.n === kd.released && kd.to_release_days.median_d >= 0 && kd.to_release_days.p90_d <= 5, 'Dauer in Tagen');
+  ok(kd.reinspected >= 2 && kd.defects_again >= 1 && kd.without_order >= 1, 'Nachprüfung/erneut Mängel/ohne Auftrag');
+  const kdp = (await owner.get(kq, { 'x-cfp-env': 'production' })).data.inspection_defects;
+  eq(kdp.inspections, kd.inspections, 'Prüfungen sind gemeinsame Stammdaten'); ok(kdp.ordered <= kd.ordered - 2, 'Aufträge je Umgebung');
+  const kds = (await users.fleet.get(kq + '&site=DORTMUND')).data.inspection_defects;
+  eq(kds.without_order, null, 'mit Standortfilter keine Angabe ohne Auftrag'); ok(kds.ordered >= 2 && kds.inspections === kds.ordered, 'Standortfilter nur Prüfungen mit Auftrag dort');
 });
 
 await test('Integrations-API /v1/maintenance: additiv Prüfmängel ohne Auftrag und ausstehende Nachprüfungen je Umgebung; /v1/cases mit maintenance_event_id', async () => {
