@@ -1984,6 +1984,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   eq((await users.driver.get('/api/workshop/plan')).status, 403, 'Fahrer');
   // geplanter Prüftermin erscheint am Tag
   const rule = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Werkstattplan-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: '2026-02-30' })).status, 400, 'Prüftermin: ungültiges Datum');
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(900) })).status, 400, 'Prüftermin: zu weit in der Zukunft');
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(5) })).status, 200);
   ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(5))?.items.some((i) => i.type === 'maintenance' && i.kind === 'UVV'), 'Prüftermin am Tag');
   const vr = await vrow(users.fleet);
@@ -1998,6 +2000,7 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   pl = (await users.ws.get('/api/workshop/plan')).data;
   eq(pl.days.find((d) => d.date === day(5)).items.find((i) => i.type === 'maintenance' && i.vehicle_id === VP).other_dates.length, 0, 'nur ein Tag → kein Hinweis');
   eq(vr.planned_workshop_date, null, 'entfernter Werkstatttermin nicht mehr angezeigt');
+  eq((await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id).planned_date, day(5), 'Prüftermin-Übersicht: geplanter Termin auch für UVV');
   mv = await myV();
   eq(mv.planned_workshop_date, null, 'Mein Fahrzeug: entfernter Termin weg');
   eq(JSON.stringify(mv.planned_inspection), JSON.stringify({ kind: 'UVV', planned_date: day(5) }), 'Mein Fahrzeug: geplanter Prüftermin');

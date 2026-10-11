@@ -247,7 +247,7 @@ export async function vehicleCosts(env, envName, vehicleId) {
 const round2 = (n) => Math.round(n * 100) / 100;
 
 // Werkstatttermin: JJJJ-MM-TT, gültiges Datum, nicht mehr als 1 Jahr in der Vergangenheit/2 Jahre in der Zukunft
-function planDate(v) {
+export function planDate(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Termin im Format JJJJ-MM-TT.');
   const today = berlinDate();

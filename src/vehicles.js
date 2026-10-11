@@ -3,7 +3,7 @@ import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
-import { vehicleCosts, sniffType, VEHICLE_DOC_READ } from './cases.js';
+import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
 import { sha256Hex, berlinDateTime } from './util.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -329,8 +329,8 @@ export async function planMaintenance(env, user, ruleId, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const r = await env.DB.prepare('SELECT id, vehicle_id, kind FROM maintenance_rules WHERE id=?').bind(ruleId).first();
   if (!r) throw notFound();
-  const d = body.planned_date ? str(body.planned_date, { max: 10 }) : null;
-  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  // gleiche Prüfung wie Werkstatttermine: echtes Kalenderdatum, nicht mehr als 1 Jahr zurück / 2 Jahre voraus
+  const d = body.planned_date ? planDate(str(body.planned_date, { max: 10 })) : null;
   await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
   await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d });
   return { ok: true, planned_date: d };
