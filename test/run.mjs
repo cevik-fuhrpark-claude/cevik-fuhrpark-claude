@@ -1949,6 +1949,9 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   const rule = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Werkstattplan-Test' });
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(5) })).status, 200);
   ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(5))?.items.some((i) => i.type === 'maintenance' && i.kind === 'UVV'), 'Prüftermin am Tag');
+  const ics = new TextDecoder().decode((await users.ws.get('/api/workshop/plan?format=ics')).data);
+  ok(ics.startsWith('BEGIN:VCALENDAR') && ics.includes('DTSTART;VALUE=DATE:' + day(5).replace(/-/g, '')) && ics.includes('SUMMARY:Prüfung UVV – WP-LN 1'), 'Kalenderdatei');
+  ok(!/Bremsbeläge|Werkstattplan-Test/.test(ics), 'ohne Beschreibung/Nachweis');
 });
 
 console.log('Abfragebudget');

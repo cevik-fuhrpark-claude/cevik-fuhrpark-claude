@@ -1,7 +1,7 @@
 // [CLAUDE] Kostenbericht je Fahrzeug und Monat (Controlling). Gleiche Regeln wie caseCosts:
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
-import { bad, forbidden, berlinDate } from './util.js';
+import { bad, forbidden, berlinDate, icsCalendar } from './util.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -326,5 +326,17 @@ export async function workshopPlan(env, user, envName, query = {}) {
   }
   for (const m of mt.results) put(m.planned_date, { type: 'maintenance', ...m });
   return { today, from: today, to, site, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned };
+}
+
+// Kalenderdatei des Werkstattplans: nur Vorgangsnummer, Kennzeichen, Status/Prüfart – keine Beschreibung, keine Namen
+// (Kalender werden oft in fremde Clouds synchronisiert).
+export function workshopPlanIcs(plan, envName) {
+  const ev = [];
+  for (const d of plan.days) for (const i of d.items) {
+    ev.push(i.type === 'case'
+      ? { uid: `plan-case-${i.id}-${d.date}`, date: d.date, summary: `Werkstatt: ${i.case_no} – ${i.plate}${envName === 'test' ? ' (TEST)' : ''}`, description: `Status: ${i.status}${i.safety_lock ? ' · gesperrt' : ''}` }
+      : { uid: `plan-maint-${i.id}-${d.date}`, date: d.date, summary: `Prüfung ${i.kind} – ${i.plate}`, description: i.next_due_date ? `fällig bis ${i.next_due_date}` : '' });
+  }
+  return icsCalendar(`Werkstattplan${plan.site ? ' ' + plan.site : ''}`, ev);
 }
 

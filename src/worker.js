@@ -256,7 +256,11 @@ async function handleApi(request, env, ctx, url) {
     return json(rep);
   }
 
-  if (path === '/api/workshop/plan' && m === 'GET') return json(await reports.workshopPlan(env, user, envName, Object.fromEntries(url.searchParams)));
+  if (path === '/api/workshop/plan' && m === 'GET') {
+    const plan = await reports.workshopPlan(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'ics') return new Response(reports.workshopPlanIcs(plan, envName), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstattplan_${envName}_${berlinDate()}.ics"` } });
+    return json(plan);
+  }
   if (path === '/api/reports/workshop-load' && m === 'GET') return json(await reports.workshopLoad(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/reports/defects' && m === 'GET') return json(await reports.defectReport(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/reports/kpi' && m === 'GET') return json(await reports.kpiReport(env, user, envName, Object.fromEntries(url.searchParams)));
