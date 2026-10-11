@@ -2609,6 +2609,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
   ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung'), 'CSV: Kostenfreigabe ausstehend');
+  eq((await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.cases.find((c) => c.id === id).cost_approval_pending, 1, 'Integrations-API: Kostenfreigabe offen');
   // Fuhrparkagent: offene Kostenfreigabe als Befund (ohne Beträge), verschwindet nach Freigabe
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   const fnd = (await users.fleet.get('/api/master')).data.findings.find((f) => f.finding_code === 'COST_APPROVAL_PENDING' && f.case_id === id);
