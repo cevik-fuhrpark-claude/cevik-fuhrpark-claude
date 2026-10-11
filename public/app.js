@@ -296,7 +296,7 @@ async function workshopBoard() {
     const nr = (await api('GET', '/api/me/inspections-without-result')).items;
     if (nr.length) html += `<h2>${esc(t('res_missing_mine'))} <span class="chip">${nr.length}</span></h2><p class="small muted">${esc(t('res_missing_hint'))}</p><div class="list">${nr.map((r) => `<a class="row" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}?ev=${encodeURIComponent(r.id)}">${plate(r.plate)}<span class="title">${esc(r.kind)} · ${fmtD(r.done_date)}</span><span class="chip">${esc(t('res_add_go'))} ›</span></a>`).join('')}</div>`;
   } catch {}
-  return html + `<p><a href="#/cases">${esc(t('all'))}</a> · <a href="#/plan">${esc(t('wplan'))} ›</a></p>`;
+  return html + `<p><a href="#/cases">${esc(t('all'))}</a> · <a href="#/plan">${esc(t('wplan'))} ›</a></p>${helpLink('ws')}`;
 }
 async function viewHome() {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
@@ -339,6 +339,7 @@ async function viewHome() {
       if (S.me.role === 'dispatch') {
         const [dcs, dmo] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance').catch(() => null)]);
         html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : []);
+        html += helpLink('dispo');
       }
       if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned();
       html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
