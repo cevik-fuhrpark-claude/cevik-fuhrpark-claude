@@ -79,6 +79,7 @@ Fuhrparkagent ≈ 200 ms / 40 Abfragen (Fahrer- und Auslesebefunde mit konstante
 Ergänzt 10.10.2026, 21:45 UTC: Mängelstatistik über 365 Tage mit 15 000 synthetischen Abfahrtskontrollen (100 je Lkw, je 18 Prüfpunkte) ≈ 165 ms / 4 Abfragen (überwiegend JSON-Auswertung in der Datenbank).
 Ergänzt 11.10.2026, 02:45 UTC: 600 freigegebene Aufträge mit geplantem Werkstatttermin (−5 … +34 Tage): Werkstattplan 30 Tage ≈ 13 ms / 4 Abfragen, Fahrzeugliste mit geplanten Terminen ≈ 19 ms / 3 Abfragen (p95).
 Ergänzt 11.10.2026, 05:30 UTC: 300 Fahrzeugverträge (je Lkw Leasing mit km-Kontingent + Versicherung, Enddaten so gestreut, dass alle Vertragsbefunde gleichzeitig entstehen): Vertrag anlegen ≈ 1 ms / 5 Abfragen, Verträge-Übersicht ≈ 16 ms / 5, CSV-Export ≈ 6 ms / 6, Import-Vorschau 150 Zeilen ≈ 11 ms / 5, Datenqualität mit Vertragsprüfungen ≈ 11 ms / 14, Fuhrparkagent ≈ 200 ms / 36 Abfragen (Vertragsbefunde mit konstanter Abfragezahl).
+Ergänzt 11.10.2026, 06:45 UTC: 600 Versicherungsfälle (300 mit Erstattung): Fall erfassen ≈ 1 ms / 6 Abfragen, Übersicht ≈ 30 ms / 4, Kostenbericht inkl. Erstattungen ≈ 38 ms / 12, Zeitleiste ≈ 6 ms / 26, CSV ≈ 17 ms / 5, Datenqualität inkl. Unfall-Hinweis ≈ 18 ms / 15 (p95).
 
 Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
 mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt

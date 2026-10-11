@@ -150,6 +150,12 @@ with sync_playwright() as p:
         cl = api('PUT', f'/api/cases/{cid}/claim', {'insurer': 'Rauchtest-Versicherung', 'claim_no': 'RT-S-1', 'reported_on': datetime.date.today().isoformat(), 'deductible_net': '500', 'evidence': 'Rauchtest Schadenmeldung'})
         if cl['s'] != 200:
             problems.append(f'Vorbereitung Versicherungsfall: {cl}')
+        # Erstattung (Zeitleiste „Erstattung erhalten“, Kostenbericht „Versicherungserstattungen“)
+        cl = api('PUT', f'/api/cases/{cid}/claim', {'status': 'reguliert', 'reimbursed_net': '300', 'reimbursed_on': datetime.date.today().isoformat(), 'evidence': 'Rauchtest Abrechnung'})
+        if cl['s'] != 200:
+            problems.append(f'Vorbereitung Erstattung: {cl}')
+    # Meldung mit „Unfall“ ohne Versicherungsfall (Datenqualität: Hinweis mit Link auf den Vorgang)
+    pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: kleiner Unfall beim Rangieren', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': 'rt-unfall'}])
     # Zweiter Vorgang, der Werkstatt zugewiesen und in Reparatur (Detailansicht + Kontrollformular aus Werkstattsicht)
     cs2 = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Bremslicht defekt', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': 'rt-2'}])
     cid2 = (cs2.get('d') or {}).get('id')

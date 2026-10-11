@@ -1261,6 +1261,9 @@ async function viewCosts() {
     ${cc.without_start ? `<p class="small"><span class="chip mittel" style="white-space:normal">${esc(t('cc_without_start').replace('{n}', cc.without_start))}</span></p>` : ''}${cc.without_rate ? `<p class="small"><span class="chip mittel" style="white-space:normal">${esc(t('cc_without_rate').replace('{n}', cc.without_rate))}</span></p>` : ''}
     <p class="small muted">${esc(t('cc_rule').replace('{m}', cc.until_month))}</p></section>
     <div class="list">${cc.vehicles.length ? cc.vehicles.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.vehicle_id)}">${plate(v.plate || v.vehicle_id)}<span class="title">${eur(v.net)}</span><span></span><span class="sub" style="white-space:normal">${v.contracts.map((c) => `${esc(t('ck_' + c.kind))} · ${esc(c.partner)}: ${c.months} × ${eur(c.monthly_rate_net)}`).join(' · ')}</span></a>`).join('') : `<p class="muted">${esc(t('cc_none'))}</p>`}</div>`;
+  const cl = rep.claim_reimbursements;
+  if (cl) html += `<h2>${esc(t('cr_title'))}</h2><section class="panel"><dl class="kv"><dt>${esc(t('cr_sum'))}</dt><dd><b>${cl.total_net === null ? '–' : eur(cl.total_net)}</b></dd></dl><p class="small muted">${esc(t('cr_rule'))}</p></section>
+    <div class="list">${cl.items.length ? cl.items.map((x) => `<a class="row" href="#/cases/${encodeURIComponent(x.case_id)}">${plate(x.plate || x.vehicle_id)}<span class="title">${eur(x.reimbursed_net)}</span><span class="chip">${fmtD(x.reimbursed_on)}</span><span class="sub" style="white-space:normal">${esc(x.case_no)} · ${esc(x.insurer)}${x.claim_no ? ' · ' + esc(x.claim_no) : ''}</span></a>`).join('') : `<p class="muted">${esc(t('cr_none'))}</p>`}</div>`;
   render(html, 'more');
   const cr = $('#cr');
   cr.onsubmit = (e) => { e.preventDefault(); S.costFrom = cr.from.value; S.costTo = cr.to.value; viewCosts(); };
@@ -1561,7 +1564,7 @@ async function viewAudit(more) {
 // ---------- Zeitleiste der Fahrzeugakte ----------
 async function viewTimeline(id) {
   const f = S.tlFilter || '';
-  const groups = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'], tacho: ['tacho'], contract: ['contract'] };
+  const groups = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'], tacho: ['tacho'], contract: ['contract'], claim: ['claim'] };
   const r = await api('GET', `/api/vehicles/${encodeURIComponent(id)}/timeline?limit=500${f ? '&types=' + groups[f].join(',') : ''}`);
   const km = (n) => (n === null || n === undefined ? '' : ` · ${Number(n).toLocaleString('de-DE')} km`);
   const caseLink = (x) => (x.case_id ? ` · <a href="#/cases/${esc(x.case_id)}">${esc(x.case_no || t('details'))}</a>` : '');
@@ -1578,12 +1581,13 @@ async function viewTimeline(id) {
       case 'maintenance': return ['', `${esc(x.maintenance_kind)} ${esc(t('tl_done'))}`, `${esc(x.evidence || '')}${km(x.km)}${x.by ? ' · ' + esc(x.by) : ''}`];
       case 'tacho': return ['', esc(t('tl_tacho')), `${esc(x.evidence || '')}${x.by ? ' · ' + esc(x.by) : ''}`];
       case 'contract': return ['', `${esc(t('ck_' + x.contract_kind))}: ${esc(t(x.contract_event === 'end' ? 'tl_contract_end' : 'tl_contract_start'))}`, `${esc(x.partner)}${x.evidence ? ' · ' + esc(x.evidence) : ''}`];
+      case 'claim': return ['', `${esc(t('claim_title'))}: ${esc(t(x.claim_event === 'reimbursed' ? 'tl_claim_reimbursed' : 'tl_claim_reported'))}${x.claim_event === 'reimbursed' && x.reimbursed_net !== null ? ' · ' + eur(x.reimbursed_net) : ''}`, `${esc(x.insurer)}${x.claim_no ? ' · ' + esc(t('claim_no')) + ' ' + esc(x.claim_no) : ''}${x.claim_event === 'reported' ? ' · ' + esc(t('cls_' + x.status)) : ''}${caseLink(x)}`];
       case 'fine': return ['', `${esc(t('fk_' + x.fine_kind))}: <a href="#/fines/${esc(x.fine_id)}">${esc(x.fine_no)}</a>`, esc(t('fs_' + x.status))];
       default: return ['', esc(x.type), ''];
     }
   };
-  const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines'), tacho: t('tacho'), contract: t('ct_title') };
-  const visible = Object.keys(groups).filter((k) => !['fine', 'tacho', 'contract'].includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger');
+  const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines'), tacho: t('tacho'), contract: t('ct_title'), claim: t('claims') };
+  const visible = Object.keys(groups).filter((k) => !['fine', 'tacho', 'contract', 'claim'].includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger');
   render(`<p><a href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
     <h1 style="margin-top:12px">${esc(t('timeline'))}</h1><p class="small muted">${esc(t('timeline_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${visible.map((k) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tl="${esc(k)}">${esc(labels[k])}</button>`).join('')}</div>
@@ -1701,7 +1705,7 @@ async function viewQuality() {
   render(`<h1>${esc(t('dq'))}</h1><p class="small muted">${esc(t('dq_hint'))}</p>
     <div class="stats"><div><b>${r.vehicles_checked}</b>${esc(t('vehicles'))}</div><div><b style="${r.items.some((i) => i.severity === 'fehler') ? 'color:var(--stop)' : ''}">${r.items.filter((i) => i.severity === 'fehler').length}</b>${esc(t('dq_sev_fehler'))}</div><div><b>${r.items.filter((i) => i.severity !== 'fehler').length}</b>${esc(t('dq_sev_luecke'))} / ${esc(t('dq_sev_hinweis'))}</div></div>
     ${r.items.length ? `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${f ? 'secondary' : ''}" data-dq="">${esc(t('filter_all'))} (${r.items.length})</button>${checks.map((c) => `<button type="button" class="btn ${f === c ? '' : 'secondary'}" data-dq="${esc(c)}">${esc(t('dq_' + c))} (${r.counts[c]})</button>`).join('')}</div>` : `<div class="panel good"><b>${esc(t('dq_ok'))}</b></div>`}
-    <div class="list">${items.map((i) => { const href = i.vehicle_id ? `#/vehicles/${esc(i.vehicle_id)}` : i.driver_id ? `#/drivers/${esc(i.driver_id)}` : null; return `${href ? `<a class="row ${i.severity === 'fehler' ? 'p-kritisch' : i.severity === 'luecke' ? 'p-mittel' : ''}" href="${href}">` : `<div class="row">`}${i.plate ? plate(i.plate) : i.driver_id ? `<span class="chip">${esc(i.driver_name)}</span>` : `<span class="chip">${esc(t('users'))}</span>`}<span class="title" style="white-space:normal">${esc(t('dq_' + i.check))}</span><span class="chip ${sevCls[i.severity]}">${esc(t('dq_sev_' + i.severity))}</span>${i.detail ? `<span class="sub" style="white-space:normal">${esc(i.check === 'km_stale' ? fmtD(i.detail) : i.detail)}</span>` : ''}${href ? '</a>' : '</div>'}`; }).join('')}</div>`, 'more');
+    <div class="list">${items.map((i) => { const href = i.case_id ? `#/cases/${esc(i.case_id)}` : i.vehicle_id ? `#/vehicles/${esc(i.vehicle_id)}` : i.driver_id ? `#/drivers/${esc(i.driver_id)}` : null; return `${href ? `<a class="row ${i.severity === 'fehler' ? 'p-kritisch' : i.severity === 'luecke' ? 'p-mittel' : ''}" href="${href}">` : `<div class="row">`}${i.plate ? plate(i.plate) : i.driver_id ? `<span class="chip">${esc(i.driver_name)}</span>` : `<span class="chip">${esc(t('users'))}</span>`}<span class="title" style="white-space:normal">${esc(t('dq_' + i.check))}</span><span class="chip ${sevCls[i.severity]}">${esc(t('dq_sev_' + i.severity))}</span>${i.detail ? `<span class="sub" style="white-space:normal">${esc(i.check === 'km_stale' ? fmtD(i.detail) : i.detail)}</span>` : ''}${href ? '</a>' : '</div>'}`; }).join('')}</div>`, 'more');
   $$('[data-dq]').forEach((b) => (b.onclick = () => { S.dqFilter = b.dataset.dq; viewQuality(); }));
 }
 

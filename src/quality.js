@@ -13,6 +13,8 @@ export const CHECKS = {
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
   // Fahrzeugverträge
   contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke', leasing_doc_no_contract: 'hinweis', contract_no_document: 'hinweis',
+  // Versicherungsfälle
+  accident_no_claim: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -37,7 +39,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
     env.DB.prepare('SELECT DISTINCT vehicle_id, kind FROM maintenance_rules WHERE next_due_date IS NOT NULL').all(),
@@ -65,6 +67,11 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
     env.DB.prepare(`SELECT DISTINCT f.vehicle_id FROM files f WHERE f.environment=? AND f.case_id IS NULL AND f.doc_kind='leasing'
       AND NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=f.vehicle_id AND c.kind IN ('leasing','miete','finanzierung'))`).bind(envName).all(),
+    // Vorgänge der letzten 365 Tage, deren Beschreibung „Unfall“ nennt (DE/UK/EN), ohne erfassten Versicherungsfall – nur Hinweis (Wortsuche, keine Bewertung)
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.created_at FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
+      WHERE c.environment=? AND c.created_at >= ? AND c.status<>'abgelehnt' AND v.eval_excluded=0
+      AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR instr(lower(c.description),'дтп')>0 OR instr(lower(c.description),'аварі')>0 OR instr(c.description,'ДТП')>0 OR instr(c.description,'Аварі')>0)
+      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString()).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -111,6 +118,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
     if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) add('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`);
   }
+  for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.created_at.slice(0, 10)}` });
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {

@@ -2254,6 +2254,29 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   ok(csv.startsWith('﻿Kennzeichen;Vorgang;Versicherer;') && csv.includes(';Muster-Versicherung AG;S-2026-77;') && csv.includes(';500;2000;') && csv.includes(';2500;500;'), 'CSV');
   const au = (await owner.get('/api/admin/audit?action=claim')).data.entries;
   ok(au.some((e) => e.action === 'claim.create') && au.some((e) => e.action === 'claim.update') && au.some((e) => e.action === 'claim.export'), 'Protokoll');
+  // Zeitleiste der Fahrzeugakte: Meldung und Erstattung (nur Leitung, nur eigene Umgebung)
+  const tl = (await users.fleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items;
+  ok(tl.some((x) => x.claim_event === 'reported' && x.at === day(-2) && x.case_id === cid && x.claim_no === 'S-2026-77'), 'Zeitleiste: Meldung');
+  ok(tl.some((x) => x.claim_event === 'reimbursed' && x.at === day(0) && x.reimbursed_net === 2000), 'Zeitleiste: Erstattung');
+  eq((await users.ws.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Werkstatt: keine Versicherungsfälle');
+  eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
+  // Kostenbericht: Erstattungen getrennt, nicht von den Instandhaltungskosten abgezogen; nur Leitung
+  const m = day(0).slice(0, 7);
+  const rep = (await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&vehicle_id=${V}`)).data;
+  eq(rep.claim_reimbursements.total_net, 2000, 'Erstattung im Zeitraum'); eq(rep.claim_reimbursements.items[0].case_no, (await users.fleet.get(`/api/cases/${cid}`)).data.case.case_no);
+  eq(rep.vehicles[0].actual_net, 2500, 'Instandhaltungskosten unverändert');
+  const prev = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7) - 2, 1)).toISOString().slice(0, 7);
+  eq((await users.fleet.get(`/api/reports/costs?from=${prev}&to=${prev}&vehicle_id=${V}`)).data.claim_reimbursements.total_net, null, 'außerhalb des Zeitraums');
+  const viewer = await invite(owner, { username: 'test.lesen.ic', display_name: 'Test Lesezugriff IC', role: 'viewer', environment: 'test' });
+  eq((await viewer.get(`/api/reports/costs?from=${m}&to=${m}`)).data.claim_reimbursements, undefined, 'Lesezugriff ohne Erstattungen');
+  eq((await users.prodFleet.get(`/api/reports/costs?from=${m}&to=${m}`)).data.claim_reimbursements.items.some((x) => x.case_id === cid), false, 'Umgebung');
+  // Datenqualität: Vorgang nennt „Unfall“ (auch Ukrainisch), aber kein Versicherungsfall → Hinweis mit Link auf den Vorgang
+  const c2 = (await users.fleet.post('/api/cases', { vehicle_id: W, description: 'Невелике ДТП на парковці, бампер', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const c3 = (await users.fleet.post('/api/cases', { vehicle_id: W, description: 'Ölwechsel fällig', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const dq = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim');
+  ok(dq.some((i) => i.case_id === c2 && i.severity === 'hinweis' && i.plate === 'VT-IC 2'), 'Hinweis bei Unfall ohne Versicherungsfall');
+  ok(!dq.some((i) => i.case_id === cid || i.case_id === c3), 'mit Versicherungsfall bzw. ohne Unfall kein Hinweis');
+  eq((await users.prodFleet.get('/api/admin/data-quality')).data.items.some((i) => i.case_id === c2), false, 'Umgebung');
 });
 await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format „1.234,50“; km „120.000“ = 120000', async () => {
   const { num } = await import('../src/util.js');

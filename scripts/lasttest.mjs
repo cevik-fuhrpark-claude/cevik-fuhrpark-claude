@@ -108,6 +108,19 @@ for (let k = 0; k < 10; k++) {
   await timed('Verträge Handlungsbedarf', () => owner.get('/api/contracts?filter=aktion'));
 }
 await timed('Verträge CSV-Export', () => owner.get('/api/contracts?format=csv'));
+// Versicherungsfälle (synthetisch): 600 Vorgänge mit Fall, Meldedatum über 200 Tage gestreut, jeder zweite mit Erstattung
+for (const [i, id] of ids.slice(0, 600).entries()) {
+  const rep = i % 200; const body = { insurer: 'Lasttest Versicherung', claim_no: `LT-S-${i}`, reported_on: day(rep), deductible_net: 500, evidence: 'Lasttest' };
+  if (i % 2) Object.assign(body, { status: 'reguliert', reimbursed_net: 1000 + i, reimbursed_on: day(Math.max(0, rep - 30)) });
+  await timed('Versicherungsfall erfassen', () => owner.put(`/api/cases/${id}/claim`, body).then((r) => must(r, 'Versicherungsfall')));
+}
+for (let k = 0; k < 10; k++) {
+  await timed('Versicherungsfälle Übersicht', () => owner.get('/api/claims?filter=alle'));
+  await timed('Kostenbericht inkl. Erstatt.', () => owner.get('/api/reports/costs'));
+  await timed('Zeitleiste inkl. Vers.-Fälle', () => owner.get(`/api/vehicles/${vehicles[k % vehicles.length].id}/timeline`));
+}
+await timed('Versicherungsfälle CSV', () => owner.get('/api/claims?format=csv&filter=alle'));
+await timed('Datenqualität inkl. Unfall', () => owner.get('/api/admin/data-quality'));
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];

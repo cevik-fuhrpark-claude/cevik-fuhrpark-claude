@@ -107,7 +107,9 @@ export async function costReport(env, user, envName, query = {}) {
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, contract_costs, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
+  const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
+  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
 }
 
 // Monatsraten laut Vertrag je Fahrzeug im Zeitraum: je Kalendermonat, der ganz oder teilweise in der Laufzeit liegt
@@ -137,6 +139,17 @@ export async function contractCosts(env, from, to, vehicleFilter, plates) {
   }
   const vehicles = [...per.values()].map((e) => ({ ...e, net: r2(e.net) })).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   return { until_month: hiM, total_net: vehicles.length ? r2(total) : null, vehicles, without_start, without_rate };
+}
+
+// Erstattungen laut Abrechnung des Versicherers, deren Erstattungsdatum im Zeitraum liegt (Monat nach Berliner Kalender = Datum ohne Uhrzeit).
+// Nur eingetragene Beträge mit Datum; ruhende Fahrzeuge ausgenommen; Umgebung wie der Vorgang.
+export async function claimReimbursements(env, envName, from, to, vehicleFilter, plates) {
+  const rows = (await env.DB.prepare(`SELECT ic.case_id, c.case_no, ic.vehicle_id, ic.insurer, ic.claim_no, ic.reimbursed_net, ic.reimbursed_on
+    FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.environment=? AND ic.reimbursed_on >= ? AND ic.reimbursed_on <= ? AND ic.reimbursed_net IS NOT NULL${vehicleFilter ? ' AND ic.vehicle_id=?' : ''}
+    ORDER BY ic.reimbursed_on`).bind(...[envName, `${from}-01`, `${to}-31`, ...(vehicleFilter ? [vehicleFilter] : [])]).all()).results;
+  const items = rows.filter((r) => { const v = plates.get(r.vehicle_id); return v && !v.eval_excluded; })
+    .map((r) => ({ ...r, plate: plates.get(r.vehicle_id).plate }));
+  return { total_net: items.length ? r2(items.reduce((a, r) => a + r.reimbursed_net, 0)) : null, items };
 }
 
 // CSV für Excel (DE): Semikolon, Dezimalkomma, UTF-8 mit BOM; Formel-Injektion wird neutralisiert
