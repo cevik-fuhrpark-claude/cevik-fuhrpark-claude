@@ -2866,6 +2866,10 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   const kdp = (await owner.get(kq, { 'x-cfp-env': 'production' })).data.inspection_defects;
   eq(kdp.inspections, kd.inspections, 'Prüfungen sind gemeinsame Stammdaten'); ok(kdp.ordered <= kd.ordered - 2, 'Aufträge je Umgebung');
   const kds = (await users.fleet.get(kq + '&site=DORTMUND')).data.inspection_defects;
+  const ik = await anon.req('GET', `/api/integration/v1/kpi?from=${day(-5).slice(0, 7)}&to=${day(0).slice(0, 7)}&environment=test`, undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(ik.status, 200); eq(ik.data.schema_version, '1.0'); eq(JSON.stringify(ik.data.inspection_defects), JSON.stringify(kd), 'Integrations-API /v1/kpi = App');
+  eq((await anon.req('GET', '/api/integration/v1/kpi')).status, 401, 'ohne Token');
+  eq((await anon.req('GET', '/api/integration/v1/kpi?from=2026-13', undefined, { authorization: 'Bearer integration-token-xyz' })).status, 400);
   eq(kds.without_order, null, 'mit Standortfilter keine Angabe ohne Auftrag'); ok(kds.ordered >= 2 && kds.inspections === kds.ordered, 'Standortfilter nur Prüfungen mit Auftrag dort');
 });
 

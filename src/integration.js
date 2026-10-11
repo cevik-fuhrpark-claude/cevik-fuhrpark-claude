@@ -1,7 +1,7 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
 import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
-import { costReport } from './reports.js';
+import { costReport, kpiReport } from './reports.js';
 import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
 
@@ -52,6 +52,8 @@ export async function integrationRouter(request, env, ctx, url) {
     const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;
     return json({ schema_version: '1.0', findings: rows });
   }
+  // Kennzahlen Instandhaltung (nur Anzahlen/Dauern, keine Personen) – gleiche Berechnung wie in der App
+  if (p === '/v1/kpi' && m === 'GET') return json({ schema_version: '1.0', ...(await kpiReport(env, { role: 'owner' }, envParam(url), Object.fromEntries(url.searchParams))) });
   if (p === '/v1/costs' && m === 'GET') return json({ schema_version: '1.0', ...(await costReport(env, null, envParam(url), Object.fromEntries(url.searchParams))) });
   // Prüftermine (ohne Auftragsdaten) + additiv: Prüfmängel ohne Auftrag und ausstehende Nachprüfungen der gewählten Umgebung (ohne Personennamen)
   if (p === '/v1/maintenance' && m === 'GET') {
