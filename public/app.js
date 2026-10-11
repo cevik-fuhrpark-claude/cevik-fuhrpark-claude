@@ -546,7 +546,7 @@ function knownDefects(list) {
   if (!list || !list.length) return '';
   return `<details class="known"${list.length <= 3 ? ' open' : ''}><summary>${esc(t('known_defects'))} (${list.length})</summary><ul class="small">${list.map((k) => {
     const txt = `${k.check_item ? checkLabel(k.check_item) + ': ' : ''}${k.description.replace(/^\[Kontrolle [^\]]*\]\s*[a-z_]+:\s*/, '')}`;
-    return `<li><span class="chip ${esc(k.priority)}">${esc(t('prio_' + k.priority))}</span> ${k.id ? `<a href="#/cases/${esc(k.id)}">${esc(txt)}</a>` : esc(txt)} <span class="muted">· ${esc(t('st_' + k.status))} · ${fmtD(k.created_at)}${k.planned_date ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(k.planned_date) : ''}</span></li>`; }).join('')}</ul></details>`;
+    return `<li><span class="chip ${esc(k.priority)}">${esc(t('prio_' + k.priority))}</span> ${k.id ? `<a href="#/cases/${esc(k.id)}">${esc(txt)}</a>` : esc(txt)} <span class="muted">· ${esc(t('st_' + k.status))} · ${fmtD(k.created_at)}${k.planned_date ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(k.planned_date) : ''}${k.parts_expected_date ? ' · ' + esc(t('parts_eta')) + ' ' + fmtD(k.parts_expected_date) : ''}</span></li>`; }).join('')}</ul></details>`;
 }
 
 // ---------- Vorgang ----------
@@ -1552,6 +1552,10 @@ async function viewKpi() {
     <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}` : ''}</dd>
     <dt>${esc(t('kpi_triage'))}</dt><dd>${st(p.triage)}</dd><dt>${esc(t('kpi_ack'))}</dt><dd>${st(p.workshop_ack)}</dd><dt>${esc(t('kpi_total'))}</dt><dd>${st(p.created_to_release)}</dd><dt>${esc(t('kpi_parts'))}</dt><dd>${dur(p.parts_wait_h)}</dd></dl></section>`).join('') : `<p class="muted">–</p>`;
   if (r.vehicles.length) html += `<h2>${esc(t('kpi_vehicles'))}</h2><div class="list">${r.vehicles.slice(0, 20).map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.vehicle_id)}">${plate(v.plate || v.vehicle_id)}<span class="title">${esc(t('kpi_workshop'))}: ${dur(v.workshop_h)}</span><span class="chip">${v.cases}</span><span class="sub">${esc(t('kpi_parts'))}: ${dur(v.parts_wait_h)} · ${esc(t('kpi_released'))} ${v.released}${v.locked_h ? ` · <b style="color:var(--stop)">${esc(t('kpi_locked'))}: ${dur(v.locked_h)}</b>` : ''}</span></a>`).join('')}</div>`;
+  // Termintreue Teile-Liefertermine (nur Abschnitte „wartet auf Teile“ aus dem Zeitraum; Termin laut Werkstatt)
+  const pe = r.parts_eta;
+  const peLine = (x) => `${esc(t('kpi_pe_kept'))} ${x.kept} · ${esc(t('kpi_pe_late'))} ${x.late}${x.on_time_pct !== null ? ` (${x.on_time_pct} % ${esc(t('kpi_pe_on_time'))})` : ''}${x.late_days_median !== null ? ` · ${esc(t('kpi_pe_median'))} ${String(x.late_days_median).replace('.', ',')} ${esc(t('days'))}` : ''}${x.open_overdue ? ` · <b style="color:var(--stop)">${esc(t('kpi_pe_open'))} ${x.open_overdue}</b>` : ''}${x.without_eta ? ` · ${esc(t('kpi_pe_without'))} ${x.without_eta}` : ''}`;
+  if (pe && (pe.kept + pe.late + pe.without_eta + pe.open_overdue)) html += `<section class="panel" id="kpipe"><h3>${esc(t('kpi_pe'))}</h3><p>${peLine(pe)}</p>${pe.by_site.length > 1 ? `<dl class="kv">${pe.by_site.map((x) => `<dt>${esc(x.site === 'ohne' ? t('kpi_pe_nosite') : wsName(x.site))}</dt><dd>${peLine(x)}</dd>`).join('')}</dl>` : ''}<p class="small muted">${esc(t('kpi_pe_rule'))}</p></section>`;
   html += `<p class="small muted">${esc(t('kpi_rules'))}</p>`;
   render(html, 'more');
   const f = $('#kf2'); f.onsubmit = (e) => { e.preventDefault(); S.kpiFrom = f.from.value; S.kpiTo = f.to.value; viewKpi(); };
@@ -1622,7 +1626,7 @@ async function viewPlan() {
   const other = (i) => i.other_dates && i.other_dates.length ? `<span class="otherdates">${esc(t('plan_other_dates'))}: ${i.other_dates.map(fmtD).join(', ')}</span>` : '';
   const subs = (...xs) => { const x = xs.filter(Boolean); return x.length ? `<span class="sub" style="white-space:normal">${x.join(' · ')}</span>` : ''; };
   const row = (i) => i.type === 'case'
-    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${esc(i.description)}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(mgr && !site && esc(wsName(i.workshop_site)), other(i))}</a>`
+    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${esc(i.description)}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(mgr && !site && esc(wsName(i.workshop_site)), partsEta(i, '', true), i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, other(i))}</a>`
     : `<a class="row" href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(i.kind)}</span><span class="chip">${i.next_due_date ? esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span>${subs(other(i))}</a>`;
   let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -1643,19 +1647,22 @@ async function viewPlan() {
   render(html, 'more');
   const all = [...r.overdue, ...r.unplanned];
   const suggest = (i) => {
+    // Wartet der Auftrag auf Teile mit Liefertermin: frühestens an diesem Tag (Termin laut Werkstatt, die App schätzt nichts).
+    const minD = i.status === 'wartet_teile' && i.parts_expected_date > r.today ? i.parts_expected_date : '';
     // Hat dasselbe Fahrzeug ab morgen schon einen Termin (anderer Auftrag oder Prüfung) an einem Werktag: diesen vorschlagen –
     // das Fahrzeug fällt dann nur einmal aus. Sonst Werktag ab morgen mit den wenigsten geplanten Aufträgen derselben Werkstatt.
-    const same = r.days.filter((d) => d.date > r.today && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay())
+    const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay())
       && d.items.some((x) => x.vehicle_id === i.vehicle_id && x.id !== i.id && (x.type === 'maintenance' || x.workshop_site === i.workshop_site)))[0];
     if (same) return same.date;
     const load = new Map(r.days.map((d) => [d.date, d.items.filter((x) => x.type === 'case' && x.workshop_site === i.workshop_site).length]));
     let best = null;
-    for (let n = 1; n <= days + 7; n++) {
+    for (let n = 1; n <= days + 7 + (minD ? Math.max(0, Math.round((Date.parse(minD) - Date.parse(r.today)) / 86400000)) : 0); n++) {
       const d = new Date(Date.parse(r.today + 'T00:00:00Z') + n * 86400000);
       if ([0, 6].includes(d.getUTCDay())) continue;
       const ds = [d.getUTCFullYear(), String(d.getUTCMonth() + 1).padStart(2, '0'), String(d.getUTCDate()).padStart(2, '0')].join('-'); const c = load.get(ds) || 0;
+      if (ds < minD) continue;
       if (!best || c < best.c) best = { ds, c };
-      if (ds >= r.to && best) break;
+      if (ds >= r.to && ds >= minD && best) break;
     }
     return best && best.ds;
   };

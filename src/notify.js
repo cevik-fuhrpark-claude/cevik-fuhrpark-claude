@@ -174,8 +174,12 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
 
 // collapse: je Person nur ein Push (dringendster Hinweis, Text „· +N“), die übrigen Hinweise erhalten denselben Zustellstatus.
 // Für Sammelereignisse (Kontrolle mit mehreren Mängeln) – sonst ein Netzaufruf je Hinweis und Gerät (Cloudflare-Grenze je Aufruf).
-export async function deliverPush(env, notifications, { collapse = false } = {}) {
+// maxSends: Netzaufrufe (Geräte) je Zustellung – Cloudflare erlaubt im Gratis-Tarif 50 Unteranfragen je Aufruf. Dringende zuerst;
+// was darüber hinausgeht, bleibt „pending“ und wird vom Cron (retryFailedPush, nach 5 Min.) zugestellt statt den Aufruf abzubrechen.
+export const PUSH_MAX_SENDS = 40;
+export async function deliverPush(env, notifications, { collapse = false, maxSends = env.__pushMaxSends || PUSH_MAX_SENDS } = {}) {
   if (!notifications.length) return;
+  notifications = [...notifications].sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
   const all = notifications;
   const followers = new Map(); // Träger-ID -> weitere Hinweise derselben Person
   if (collapse) {
@@ -203,6 +207,7 @@ export async function deliverPush(env, notifications, { collapse = false } = {})
   const okSubs = new Set();
   const revoked = new Set();
   const mutedByUser = new Map();
+  let sends = 0; const deferred = new Set();
   if (all.some((n) => !n.urgent && n.kind)) {
     for (const u of (await env.DB.prepare('SELECT id, push_muted FROM users WHERE push_muted IS NOT NULL AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
   }
@@ -210,8 +215,10 @@ export async function deliverPush(env, notifications, { collapse = false } = {})
     if (!n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
     if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
+    if (sends + subs.length > maxSends) { deferred.add(n.id); continue; } // bleibt pending → Cron
     let accepted = false; let lastErr = null;
     for (const s of subs) {
+      sends++;
       const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent }, { urgent: n.urgent });
       if (res.status === 'accepted') {
         accepted = true;
@@ -225,6 +232,7 @@ export async function deliverPush(env, notifications, { collapse = false } = {})
     }
     states.push({ id: n.id, s: accepted ? 'accepted' : 'failed', a: 1, e: accepted ? null : lastErr, t: accepted ? nowIso() : null });
   }
+  // gesammelte Folgehinweise eines verschobenen Trägers bleiben ebenfalls pending (werden einzeln nachgeholt)
   for (const st of [...states]) for (const f of followers.get(st.id) || []) {
     // Stumm geschaltete Art gilt je Hinweis; sonst teilt der Hinweis das Ergebnis des gesammelten Pushs
     states.push(!f.urgent && f.kind && mutedByUser.get(f.user_id)?.has(f.kind) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id });
@@ -246,8 +254,10 @@ export async function deliverPush(env, notifications, { collapse = false } = {})
 // Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche
 export async function retryFailedPush(env) {
   const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id, kind FROM notifications
-    WHERE push_status='failed' AND push_attempts < 3 AND acknowledged_at IS NULL AND created_at > ? LIMIT 20`)
-    .bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()).all()).results;
+    WHERE acknowledged_at IS NULL AND created_at > ? AND ((push_status='failed' AND push_attempts < 3) OR (push_status='pending' AND created_at < ?))
+    ORDER BY urgent DESC, created_at LIMIT 20`)
+    // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
+    .bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString(), new Date(Date.now() - 5 * 60000).toISOString()).all()).results;
   await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })));
   return rows.length;
 }

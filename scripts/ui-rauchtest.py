@@ -201,6 +201,18 @@ with sync_playwright() as p:
                     ROUTES[rr] += [f'cases/{c6}']
             else:
                 problems.append(f'Vorbereitung Wartet auf Teile: {r}')
+            # Werkstatttermin heute, Teile erst morgen → Werkstattplan zeigt „Termin vor Liefertermin der Teile“
+            cmd(pages['workshop'], c6, 'set_planned_date', {'planned_date': datetime.date.today().isoformat()})
+        # Abgeschlossenes Warten auf Teile mit Liefertermin → Kennzahlen „Termintreue Teile-Liefertermine“ (eingehalten)
+        cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegelglas', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': 'rt-7'}])
+        c7 = (cx.get('d') or {}).get('id')
+        if c7:
+            cmd(adm, c7, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
+            cmd(pages['workshop'], c7, 'start_repair')
+            cmd(pages['workshop'], c7, 'wait_parts', {'parts_expected_date': (datetime.date.today() + datetime.timedelta(days=3)).isoformat()}, 'Rauchtest Glas bestellt')
+            r = cmd(pages['workshop'], c7, 'resume_repair')
+            if r['s'] != 200:
+                problems.append(f'Vorbereitung Termintreue Teile: {r}')
     # Bußgeld und Lagerartikel für die Detailansichten
     fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
     if fn['s'] in (200, 201):

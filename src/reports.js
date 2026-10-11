@@ -187,17 +187,21 @@ export async function kpiReport(env, user, envName, query = {}) {
   const { from, to } = monthRange(query);
   const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
-  const cases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
+  const cases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
     JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
     WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results
     .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to; });
   const ids = cases.map((c) => c.id);
-  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
+  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, CASE WHEN action IN ('wait_parts','set_parts_eta') THEN payload END AS parts_payload FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
     .bind(JSON.stringify(ids)).all()).results : [];
   const evBy = new Map();
   for (const e of events) { if (!evBy.has(e.case_id)) evBy.set(e.case_id, []); evBy.get(e.case_id).push(e); }
   const now = Date.now();
   const groups = {}; const byVehicle = new Map();
+  const today = berlinDate();
+  const pNew = () => ({ kept: 0, late: 0, without_eta: 0, open_overdue: 0, late_days: [] });
+  const parts = pNew(); const partsSites = new Map();
+  const partsBy = (site) => { const k = site || 'ohne'; if (!partsSites.has(k)) partsSites.set(k, pNew()); return partsSites.get(k); };
   const locks = new Map(); // je Fahrzeug Sperrabschnitte; überlappende Sperren mehrerer Vorgänge zählen einmal
   const addLock = (vid, a, b) => { if (b > a) { if (!locks.has(vid)) locks.set(vid, []); locks.get(vid).push([a, b]); } };
   const g = (k) => groups[k] || (groups[k] = { created: 0, released: 0, rejected: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
@@ -212,6 +216,26 @@ export async function kpiReport(env, user, envName, query = {}) {
       else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { wait += Date.parse(e.created_at) - since; since = null; }
     }
     if (since !== null) wait += now - since;
+    // Termintreue Teile: je Abschnitt „wartet auf Teile“ der zuletzt gesetzte Liefertermin (laut Werkstatt) gegen das Ende des Abschnitts
+    // (Reparatur fortgesetzt) nach Berliner Datum. Ohne Liefertermin nur gezählt; offener Abschnitt nur, wenn der Termin schon vorbei ist.
+    let seg = null;
+    const closeSeg = (endAt) => {
+      const pw = partsBy(c.workshop_site);
+      for (const x of [parts, pw]) {
+        if (!seg.eta) { x.without_eta++; continue; }
+        if (endAt === null) { if (seg.eta < today) x.open_overdue++; continue; }
+        const late = Math.round((Date.parse(berlinDate(endAt)) - Date.parse(seg.eta)) / 86400000);
+        if (late <= 0) x.kept++; else { x.late++; x.late_days.push(late); }
+      }
+      seg = null;
+    };
+    for (const e of evs) {
+      let pl = null; if (e.parts_payload) { try { pl = JSON.parse(e.parts_payload); } catch { pl = null; } }
+      if (e.to_status === 'wartet_teile' && seg === null) seg = { eta: (pl && pl.parts_expected_date) || null };
+      else if (seg && e.action === 'set_parts_eta') seg.eta = (pl && pl.to) || null;
+      else if (seg && e.to_status && e.to_status !== 'wartet_teile') closeSeg(e.created_at);
+    }
+    if (seg) closeSeg(null);
     // Sicherheitssperre: ab Meldung mit Sperre bzw. „Sperre setzen“ bis „Sperre aufheben“ oder technische Freigabe (offen bis jetzt)
     let lockFrom = null;
     for (const e of evs) {
@@ -251,8 +275,11 @@ export async function kpiReport(env, user, envName, query = {}) {
   });
   const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h) }))
     .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
-  return { from, to, environment: envName, by_priority, vehicles,
-    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum' } };
+  const pOut = (x) => ({ kept: x.kept, late: x.late, without_eta: x.without_eta, open_overdue: x.open_overdue,
+    on_time_pct: x.kept + x.late ? Math.round((100 * x.kept) / (x.kept + x.late)) : null, late_days_median: x.late_days.length ? r1(quantile(x.late_days, 0.5)) : null });
+  const parts_eta = { ...pOut(parts), by_site: [...partsSites.entries()].map(([site, x]) => ({ site, ...pOut(x) })).sort((a, b) => a.site.localeCompare(b.site)) };
+  return { from, to, environment: envName, by_priority, vehicles, parts_eta,
+    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)' } };
 }
 
 // ---- Werkstatt-Auslastung je Standort und Kalenderwoche (ohne Auswertung je Person) ----
@@ -354,7 +381,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
   const [cs, mt] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.workshop_ack_at, c.version, substr(c.description,1,80) AS description
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,80) AS description
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.kind AS vehicle_kind, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id

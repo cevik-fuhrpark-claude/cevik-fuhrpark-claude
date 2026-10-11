@@ -285,7 +285,7 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
-    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, reporter_id=? AS mine
+    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, parts_expected_date, reporter_id=? AS mine
       FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND (next_due_date IS NOT NULL OR planned_date IS NOT NULL) ORDER BY next_due_date IS NULL, next_due_date`).bind(ids).all(),
@@ -301,10 +301,12 @@ export async function myVehicles(env, user, envName) {
   return {
     vehicles: vs.map((v) => ({
       ...v, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
-      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, ...c }) => c),
+      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, parts_expected_date: _e, ...c }) => c),
       known_defects: mine.results.filter((c) => c.vehicle_id === v.id).slice(0, 10).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
         description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine,
-        planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null })),
+        planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
+        // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
+        parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null })),
       next_inspections: rules.results.filter((r) => r.vehicle_id === v.id && r.next_due_date).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null })),
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),

@@ -318,6 +318,38 @@ await test('Push-Zustellung: höchstens 3 Schreibanweisungen, egal wie viele Emp
   env.DB.db.prepare(`DELETE FROM push_subscriptions WHERE endpoint LIKE '%many%'`).run();
 });
 
+await test('Push-Zustellung: höchstens N Netzaufrufe je Aufruf (Cloudflare-Grenze), Rest bleibt „pending“ und kommt per Cron; dringende zuerst', async () => {
+  const { notifyUsers, retryFailedPush } = await import('../src/notify.js');
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const auth = () => b64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  for (const [u, n] of [[users.driver, 2], [users.driver2, 1]]) for (let i = 0; i < n; i++) eq((await u.post('/api/push/subscribe', { endpoint: `https://push.example/ok/budget-${u.id}-${i}`, keys: { p256dh: await key(), auth: auth() } })).status, 200);
+  env.__pushMaxSends = 2;
+  try {
+    const tag = 'Budget-Test ' + rk();
+    // driver2 zuerst (1 Gerät), driver bräuchte 2 weitere → über der Grenze → bleibt pending; dispatch ohne Gerät
+    eq(await notifyUsers(env, null, 'test', [users.driver2.id, users.driver.id, users.dispatch.id], { kind: 'agent', title: tag, body: 'x', eventKey: 'budget-' + rk() }), 3);
+    let by = Object.fromEntries(env.DB.db.prepare('SELECT user_id, push_status, push_attempts FROM notifications WHERE title=?').all(tag).map((r) => [r.user_id, r]));
+    eq(by[users.driver2.id].push_status, 'accepted'); eq(by[users.driver.id].push_status, 'pending', 'verschoben'); eq(by[users.driver.id].push_attempts, 0);
+    eq(by[users.dispatch.id].push_status, 'no_subscription');
+    // dringender Hinweis wird vorgezogen, auch wenn er später in der Liste steht
+    const tag2 = 'Budget-Dringend ' + rk();
+    const { deliverPush } = await import('../src/notify.js');
+    const mk = (uid, urgent) => { const id = crypto.randomUUID(); env.DB.db.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status) VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`).run(id, 'test', uid, null, 'b2-' + id, 'agent', urgent ? 1 : 0, tag2, 'x', new Date().toISOString()); return { id, user_id: uid, title: tag2, body: 'x', urgent, case_id: null, kind: 'agent' }; };
+    await deliverPush(env, [mk(users.driver2.id, false), mk(users.driver.id, true)]);
+    by = Object.fromEntries(env.DB.db.prepare('SELECT user_id, push_status FROM notifications WHERE title=?').all(tag2).map((r) => [r.user_id, r]));
+    eq(by[users.driver.id].push_status, 'accepted', 'dringend zuerst'); eq(by[users.driver2.id].push_status, 'pending');
+    // Cron holt verschobene Hinweise (pending > 5 Min.) nach
+    env.DB.db.prepare(`UPDATE notifications SET created_at=? WHERE title IN (?,?) AND push_status='pending'`).run(new Date(Date.now() - 6 * 60000).toISOString(), tag, tag2);
+    env.__pushMaxSends = undefined;
+    await retryFailedPush(env);
+    ok(env.DB.db.prepare(`SELECT push_status FROM notifications WHERE title IN (?,?)`).all(tag, tag2).every((r) => r.push_status !== 'pending'), 'nachgeholt');
+    eq(env.DB.db.prepare('SELECT push_status FROM notifications WHERE title=? AND user_id=?').get(tag, users.driver.id).push_status, 'accepted');
+  } finally {
+    env.__pushMaxSends = undefined;
+    env.DB.db.prepare(`DELETE FROM push_subscriptions WHERE endpoint LIKE '%budget-%'`).run();
+  }
+});
+
 console.log('Fuhrparkagent → Master → Kontrollpanel (T17, T18)');
 let firstHandoffs;
 await test('T17: Agent erkennt kritische unbewertete… Fälle und übergibt idempotent an Master', async () => {
@@ -2463,6 +2495,14 @@ await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in de
   eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VM).parts_expected_date, later, 'Fahrzeugliste');
   const av = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(av.data.vehicles.find((v) => v.id === VM).parts_expected_date, later, 'Integrations-API');
+  const pi = (await users.ws.get('/api/workshop/plan')).data.unplanned.find((x) => x.id === c.data.id);
+  eq(pi.parts_expected_date, later, 'Werkstattplan liefert Liefertermin');
+  // Fahrer des Fahrzeugs sieht den Liefertermin am bekannten Mangel („Mein Fahrzeug“)
+  const asg = await users.fleet.post(`/api/vehicles/${VM}/drivers`, { user_id: users.driver.id, end_previous: false });
+  eq(asg.status, 201);
+  const kd = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VM).known_defects.find((k) => k.case_no === c.data.case_no);
+  eq(kd.parts_expected_date, later, 'Fahrer sieht Liefertermin');
+  eq((await users.fleet.req('DELETE', `/api/assignments/${asg.data.id}`)).status, 200);
   eq((await cmd(users.ws, 'set_parts_eta', {})).status, 200, 'entfernen');
   eq((await users.fleet.get(`/api/cases/${c.data.id}`)).data.case.parts_expected_date, null);
   eq((await cmd(users.ws, 'set_parts_eta', { parts_expected_date: tomorrow })).status, 200);
@@ -2473,6 +2513,23 @@ await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in de
   // Ohne Liefertermin bleibt alles wie bisher
   eq((await cmd(users.ws, 'wait_parts', {}, 'Schrauben fehlen')).status, 200);
   eq((await users.fleet.get(`/api/cases/${c.data.id}`)).data.case.parts_expected_date, null);
+  // Kennzahl Termintreue: erster Abschnitt eingehalten (fortgesetzt vor dem Termin), offener ohne Termin nur gezählt
+  const bm = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()).slice(0, 7);
+  const kpi = async () => (await users.fleet.get(`/api/reports/kpi?from=${bm}&to=${bm}`)).data.parts_eta;
+  const k0 = await kpi();
+  ok(k0.kept >= 1 && k0.without_eta >= 1, 'eingehalten + ohne Termin gezählt');
+  ok(k0.by_site.some((x) => x.site === 'DORTMUND' && x.kept >= 1), 'je Werkstatt');
+  // Termin liegt (laut Verlauf) 3 Tage zurück → offen überschritten; nach Fortsetzen: überschritten um 3 Tage
+  eq((await cmd(users.ws, 'set_parts_eta', { parts_expected_date: tomorrow })).status, 200);
+  const past3 = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 3 * 86400000));
+  env.DB.db.prepare(`UPDATE case_events SET payload=? WHERE case_id=? AND action='set_parts_eta' AND created_at=(SELECT MAX(created_at) FROM case_events WHERE case_id=? AND action='set_parts_eta')`)
+    .run(JSON.stringify({ from: null, to: past3 }), c.data.id, c.data.id);
+  const k1 = await kpi();
+  eq(k1.open_overdue, k0.open_overdue + 1, 'offen überschritten'); eq(k1.without_eta, k0.without_eta - 1);
+  eq((await cmd(users.ws, 'resume_repair')).status, 200);
+  const k2 = await kpi();
+  eq(k2.late, k0.late + 1, 'überschritten'); eq(k2.open_overdue, k0.open_overdue);
+  ok(k2.late_days_median >= 3, 'Verspätung in Tagen'); ok(k2.on_time_pct < 100 && k2.on_time_pct > 0, 'Quote');
 });
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
