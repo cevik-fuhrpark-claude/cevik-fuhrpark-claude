@@ -122,8 +122,19 @@ export async function maintenanceOverview(env, user, envName = null) {
   }
   // offene Werkstattaufträge aus Prüfterminen (nur App-Ansicht mit Umgebung; Integrations-API unverändert)
   if (envName) {
-    const orders = new Map((await env.DB.prepare(`SELECT maintenance_rule_id AS rid, id, case_no, status FROM cases WHERE maintenance_rule_id IS NOT NULL AND environment=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(envName).all()).results.map((o) => [o.rid, { id: o.id, case_no: o.case_no, status: o.status }]));
-    for (const r of rows) r.open_order = orders.get(r.id) || null;
+    // + technisch freigegebene Aufträge der letzten 60 Tage, deren Prüfung danach nicht in der Akte eingetragen wurde (Nachweis fehlt)
+    const all = (await env.DB.prepare(`SELECT maintenance_rule_id AS rid, id, case_no, status, created_at, closed_at FROM cases WHERE maintenance_rule_id IS NOT NULL AND environment=?
+      AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at > ?)) ORDER BY closed_at DESC`).bind(envName, new Date(Date.now() - 60 * 86400000).toISOString()).all()).results;
+    const orders = new Map(); const released = new Map();
+    for (const o of all) {
+      if (o.status !== 'fahrzeug_freigegeben') orders.set(o.rid, { id: o.id, case_no: o.case_no, status: o.status });
+      else if (!released.has(o.rid)) released.set(o.rid, o);
+    }
+    for (const r of rows) {
+      r.open_order = orders.get(r.id) || null;
+      const o = released.get(r.id);
+      r.unrecorded_order = o && !r.open_order && !(r.last_done_date && r.last_done_date >= berlinDate(o.created_at)) ? { id: o.id, case_no: o.case_no, closed_at: o.closed_at } : null;
+    }
   }
   const count = (s) => rows.filter((r) => r.status === s).length;
   return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps,

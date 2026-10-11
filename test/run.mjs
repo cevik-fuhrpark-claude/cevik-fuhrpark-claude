@@ -2639,6 +2639,32 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   const cur = d.case;
   eq((await users.fleet.post(`/api/cases/${o.data.id}/commands`, { action: 'comment', command_id: rk(), expected_version: cur.version, note: 'erledigt laut Prüfbericht' })).status, 200);
   eq((await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id).open_order.id, o.data.id);
+  eq((await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id).unrecorded_order, null, 'offener Auftrag: kein Hinweis');
+});
+
+await test('Werkstattauftrag aus Prüftermin: nach technischer Freigabe ohne Eintragung in der Akte erscheint der Hinweis, nach Eintragung nicht mehr', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const rule = await users.fleet.post(`/api/vehicles/${VM}/maintenance`, { kind: 'Hydraulik/Aufbau', last_done_date: day(-400), interval_months: 12, evidence: 'Auftragstest 2' });
+  const o = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
+  eq(o.status, 201);
+  const id = o.data.id;
+  const cmd = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case;
+    return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 1, description: 'Hydraulik geprüft' })).status, 200);
+  const items = (await users.ws.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+  eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(users.ws, 'request_quality_check', {}, 'Hydraulik geprüft, dicht')).status, 200);
+  eq((await cmd(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  const row = async () => (await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id);
+  let r = await row();
+  eq(r.open_order, null); eq(r.unrecorded_order && r.unrecorded_order.id, id, 'Hinweis: Prüfung noch nicht eingetragen');
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(0), evidence: 'Prüfprotokoll Hydraulik' })).status, 200);
+  r = await row();
+  eq(r.unrecorded_order, null, 'nach Eintragung kein Hinweis');
 });
 
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
