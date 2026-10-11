@@ -220,6 +220,13 @@ with sync_playwright() as p:
                 problems.append(f'Vorbereitung Kostengrenze: {r}')
             for rr in ('owner', 'fleet', 'workshop'):
                 ROUTES[rr] += [f'cases/{c7}']
+        # Werkstattauftrag aus dem HU-Prüftermin (Fahrzeugakte zeigt Link, Vorgang zeigt Hinweis „Auftrag aus Prüftermin“)
+        mo = api('POST', f"/api/maintenance/{(hu.get('d') or {}).get('id')}/order", {'workshop_site': ws_site, 'note': 'Rauchtest HU', 'request_key': 'rt-mo-1'})
+        if mo['s'] != 201:
+            problems.append(f'Vorbereitung Auftrag aus Prüftermin: {mo}')
+        else:
+            for rr in ('owner', 'fleet', 'workshop'):
+                ROUTES[rr] += [f"cases/{mo['d']['id']}"]
     # Bußgeld und Lagerartikel für die Detailansichten
     fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
     if fn['s'] in (200, 201):

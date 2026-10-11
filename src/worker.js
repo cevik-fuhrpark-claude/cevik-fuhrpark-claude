@@ -212,7 +212,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/contracts\/([\w-]+)\/end$/)) && m === 'POST') return json(await contracts.endContract(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance' && m === 'GET') {
-    const ov = await maint.maintenanceOverview(env, user);
+    const ov = await maint.maintenanceOverview(env, user, envName);
     if (url.searchParams.get('format') === 'ics') {
       await auth.audit(env, user.id, 'maintenance.export_ics', null, { rows: ov.rows.length });
       return new Response(maint.maintenanceIcs(ov), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
@@ -230,6 +230,7 @@ async function handleApi(request, env, ctx, url) {
     return json(await maint.importMaintenanceCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromMaintenance(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));

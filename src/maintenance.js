@@ -77,7 +77,7 @@ function daysUntil(due, today) {
   return Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
 }
 
-export async function maintenanceOverview(env, user) {
+export async function maintenanceOverview(env, user, envName = null) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const cfg = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
   const warnDays = Number(cfg.get('maintenance_warn_days')) || 30;
@@ -119,6 +119,11 @@ export async function maintenanceOverview(env, user) {
   for (const v of vehicles.sort((a, b) => String(a.plate).localeCompare(String(b.plate)))) {
     const missing = (v.kind === 'anhaenger' ? REQUIRED_KINDS_TRAILER : REQUIRED_KINDS).filter((k) => !has.has(`${v.id}|${k}`));
     if (missing.length) gaps.push({ vehicle_id: v.id, plate: v.plate, site: v.site, vehicle_kind: v.kind, missing });
+  }
+  // offene Werkstattaufträge aus Prüfterminen (nur App-Ansicht mit Umgebung; Integrations-API unverändert)
+  if (envName) {
+    const orders = new Map((await env.DB.prepare(`SELECT maintenance_rule_id AS rid, id, case_no, status FROM cases WHERE maintenance_rule_id IS NOT NULL AND environment=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(envName).all()).results.map((o) => [o.rid, { id: o.id, case_no: o.case_no, status: o.status }]));
+    for (const r of rows) r.open_order = orders.get(r.id) || null;
   }
   const count = (s) => rows.filter((r) => r.status === s).length;
   return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps,

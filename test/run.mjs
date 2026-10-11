@@ -2608,6 +2608,39 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
 });
 
+await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, geplanter Termin übernommen, kein zweiter offener Auftrag, Erledigung erkannt', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const rule = await users.fleet.post(`/api/vehicles/${VM}/maintenance`, { kind: 'Bremsen', last_done_date: day(-400), interval_months: 12, evidence: 'Auftragstest' });
+  eq(rule.status, 201);
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  eq((await users.ws.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND' })).status, 403, 'Werkstatt legt keinen Auftrag an');
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'GIBTSNICHT' })).status, 400);
+  eq((await users.fleet.post('/api/maintenance/gibtsnicht/order', { workshop_site: 'DORTMUND' })).status, 404);
+  const o = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', note: 'Bremsprüfstand', request_key: rk() });
+  eq(o.status, 201); eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.planned_date, day(3), 'geplanter Prüftermin als Werkstatttermin');
+  let d = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
+  eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
+  ok(d.case.description.includes('Bremsen') && d.case.description.includes('Bremsprüfstand'), 'Beschreibung');
+  eq(d.maintenance_rule.kind, 'Bremsen'); eq(d.maintenance_rule.done_since_order, false);
+  ok((await users.ws.get('/api/notifications')).data.notifications.some((n) => n.case_id === o.data.id && n.kind === 'approved'), 'Werkstatt informiert');
+  const dup = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
+  eq(dup.status, 409); eq(dup.data.error, 'order_exists');
+  eq((await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id).open_order.case_no, o.data.case_no, 'Übersicht zeigt offenen Auftrag');
+  ok((await users.fleet.get(`/api/vehicles/${VM}`)).data.cases.some((c) => c.id === o.data.id && c.maintenance_rule_id === rule.data.id), 'Fahrzeugakte kennt Verknüpfung');
+  // Integrations-API bleibt unverändert (keine Auftragsdaten)
+  const im = await anon.req('GET', '/api/integration/v1/maintenance', undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(im.data.rows.find((r) => r.id === rule.data.id).open_order, undefined);
+  // Prüfung in der Akte erledigt → am Auftrag erkannt
+  eq((await users.ws.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(0), evidence: 'Prüfbericht Auftragstest' })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
+  eq(d.maintenance_rule.done_since_order, true);
+  // Auftrag ablehnen (schließen) → neuer Auftrag möglich
+  const cur = d.case;
+  eq((await users.fleet.post(`/api/cases/${o.data.id}/commands`, { action: 'comment', command_id: rk(), expected_version: cur.version, note: 'erledigt laut Prüfbericht' })).status, 200);
+  eq((await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.id === rule.data.id).open_order.id, o.data.id);
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

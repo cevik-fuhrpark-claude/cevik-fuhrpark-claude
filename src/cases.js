@@ -155,10 +155,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
     .map((i) => ({ ...i, items: JSON.parse(i.items) }));
   const followups = (await env.DB.prepare('SELECT id, case_no, status, priority, description FROM cases WHERE parent_case_id=?').bind(c.id).all()).results;
   const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=?').bind(c.parent_case_id).first() : null;
+  const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: reporter?.display_name || null,
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
-    files, open_items: openItems, inspections, followups, parent,
+    files, open_items: openItems, inspections, followups, parent, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
@@ -350,6 +351,33 @@ export function allowedActions(user, c, access) {
 }
 
 // ---------- Anlegen ----------
+
+// Werkstattauftrag aus einem Prüftermin bzw. einer Wartungsregel (Inhaber/Fuhrparkleitung): legt eine Meldung mit Herkunft „wartung“ an
+// und gibt sie direkt an die gewählte Werkstatt frei (normaler Befehl approve_repair, inkl. Hinweis an die Werkstatt). Geplanter Prüftermin
+// (ab heute) wird als Werkstatttermin übernommen. Je Regel und Umgebung höchstens ein offener Auftrag. Erledigt wird die Prüfung weiterhin
+// in der Fahrzeugakte mit Nachweis – der Auftrag ersetzt keinen Prüfnachweis.
+export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body = {}) {
+  if (!isManager(user)) throw forbidden();
+  const rule = await env.DB.prepare(`SELECT m.id, m.kind, m.vehicle_id, m.planned_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?`).bind(ruleId).first();
+  if (!rule) throw notFound('Prüftermin nicht gefunden.');
+  if (!rule.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+  const open = await env.DB.prepare(`SELECT id, case_no FROM cases WHERE maintenance_rule_id=? AND environment=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1`).bind(rule.id, envName).first();
+  if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
+  const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+  const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
+  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
+  const note = str(body.note, { max: 1000 });
+  const description = `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
+  const requestKey = str(body.request_key, { max: 64 }) || uuid();
+  const created = await createCase(env, ctx, user, envName, { vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey });
+  await env.DB.prepare(`UPDATE cases SET maintenance_rule_id=?, origin='wartung' WHERE id=?`).bind(rule.id, created.id).run();
+  const planned = rule.planned_date && rule.planned_date >= berlinDate() ? rule.planned_date : null;
+  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'mo-' + requestKey, expected_version: 1,
+    note: `Auftrag aus Prüftermin ${rule.kind}${note ? ': ' + note : ''}`, payload: { workshop_site: site, ...(planned ? { planned_date: planned } : {}) } });
+  return { id: created.id, case_no: created.case_no, status: r.status, planned_date: planned };
+}
+
 
 export async function createCase(env, ctx, user, envName, body) {
   return (await createCases(env, ctx, user, envName, [body]))[0];
