@@ -319,3 +319,6 @@ Object.assign(STRINGS.en, { plan_set: 'Set date', plan_suggest: 'Suggest', plan_
 Object.assign(STRINGS.de, { planned_ws_short: 'Werkstatttermin', dispo_planned: 'Geplante Termine (7 Tage)', dispo_planned_hint: 'Werkstatt- und Prüftermine, die Werkstatt bzw. Fuhrparkleitung eingetragen haben – Fahrzeug an diesem Tag nicht oder nur eingeschränkt einplanen.' });
 Object.assign(STRINGS.uk, { planned_ws_short: 'Термін у майстерні', dispo_planned: 'Заплановані терміни (7 днів)', dispo_planned_hint: 'Терміни майстерні та оглядів, внесені майстернею або керівництвом автопарку – у цей день не планувати транспорт або планувати з обмеженнями.' });
 Object.assign(STRINGS.en, { planned_ws_short: 'Workshop date', dispo_planned: 'Planned dates (7 days)', dispo_planned_hint: 'Workshop and inspection dates entered by the workshop or fleet management – do not plan the vehicle on that day, or only with restrictions.' });
+Object.assign(STRINGS.de, { todo_plan_passed: 'Werkstatttermin überschritten, Reparatur nicht begonnen' });
+Object.assign(STRINGS.uk, { todo_plan_passed: 'Термін у майстерні минув, ремонт не розпочато' });
+Object.assign(STRINGS.en, { todo_plan_passed: 'Workshop date passed, repair not started' });

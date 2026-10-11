@@ -166,6 +166,10 @@ with sync_playwright() as p:
             cmd(adm, cxid, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
             if ack:
                 cmd(pages['workshop'], cxid, 'acknowledge')
+        # Werkstatttermin gestern, Reparatur nicht begonnen („Heute zu tun“ Leitung, Plan „Termin überschritten“)
+        cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Termin verpasst', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-5'}])
+        if (cx.get('d') or {}).get('id'):
+            cmd(adm, cx['d']['id'], 'approve_repair', {'workshop_site': ws_site, 'planned_date': (datetime.date.today() - datetime.timedelta(days=1)).isoformat()}, 'Rauchtest Umfang')
     # Bußgeld und Lagerartikel für die Detailansichten
     fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
     if fn['s'] in (200, 201):
