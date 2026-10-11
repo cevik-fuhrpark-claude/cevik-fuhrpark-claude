@@ -476,3 +476,6 @@ Object.assign(STRINGS.en, { todo_defects_no_case: 'Inspection with major defects
 Object.assign(STRINGS.de, { kpi_no_site: 'ohne Werkstatt', kpi_site_hint: 'Gefiltert nach der Werkstatt des Vorgangs (aktuelle Zuordnung).' });
 Object.assign(STRINGS.uk, { kpi_no_site: 'без майстерні', kpi_site_hint: 'Фільтр за майстернею справи (поточне призначення).' });
 Object.assign(STRINGS.en, { kpi_no_site: 'no workshop', kpi_site_hint: 'Filtered by the case workshop (current assignment).' });
+Object.assign(STRINGS.de, { todo_reinspection: 'Mängel beseitigt – Nachprüfung eintragen', reinsp_hint: 'Die Nachprüfung/Wiedervorführung mit Ergebnis und Nachweis über „Erledigt“ bzw. bei HU/SP „Durchführung erfassen“ eintragen. Die Frist steht im Prüfbericht.' });
+Object.assign(STRINGS.uk, { todo_reinspection: 'Недоліки усунено – внесіть повторний огляд', reinsp_hint: 'Повторний огляд із результатом і підтвердженням внесіть через «Виконано» або для HU/SP «Записати проведення». Строк зазначено у звіті огляду.' });
+Object.assign(STRINGS.en, { todo_reinspection: 'Defects repaired – record the re-inspection', reinsp_hint: 'Record the re-inspection with result and evidence via “Done” or, for HU/SP, “Record inspection”. The deadline is stated in the inspection report.' });

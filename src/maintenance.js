@@ -87,6 +87,21 @@ export function defectsWithoutCaseQuery(env, envName) {
       ORDER BY e.done_date DESC LIMIT 200`).bind(new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), envName);
 }
 
+// Mängelauftrag aus Prüfung technisch freigegeben (≤ 365 Tage nach der Prüfung), kein weiterer offener Auftrag dazu und seitdem keine neuere
+// Durchführung derselben Prüfart am Fahrzeug eingetragen → Nachprüfung/Wiedervorführung mit Nachweis in der Akte eintragen. Keine Frist angenommen
+// (sie steht im Prüfbericht). Je Prüfung nur der zuletzt freigegebene Auftrag.
+export function reinspectionPendingQuery(env, envName) {
+  return env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence, c.id AS case_id, c.case_no, c.closed_at
+      FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+      JOIN cases c ON c.maintenance_event_id=e.id AND c.environment=? AND c.status='fahrzeug_freigegeben'
+      WHERE v.active=1 AND v.eval_excluded=0 AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
+      AND c.closed_at = (SELECT MAX(c3.closed_at) FROM cases c3 WHERE c3.maintenance_event_id=e.id AND c3.environment=c.environment AND c3.status='fahrzeug_freigegeben')
+      AND NOT EXISTS (SELECT 1 FROM cases c2 WHERE c2.maintenance_event_id=e.id AND c2.environment=c.environment AND c2.status NOT IN ('fahrzeug_freigegeben','abgelehnt'))
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
+        AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
+      ORDER BY c.closed_at LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10));
+}
+
 export async function maintenanceOverview(env, user, envName = null) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const cfg = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
@@ -148,8 +163,9 @@ export async function maintenanceOverview(env, user, envName = null) {
   }
   // Prüfmängel ohne Folgevorgang (nur App-Ansicht mit Umgebung; Lesezugriff ohne Nachweistext nicht nötig – gleiche Rechte wie die Übersicht)
   const defects = envName ? (await defectsWithoutCaseQuery(env, envName).all()).results : undefined;
+  const reinspection = envName ? (await reinspectionPendingQuery(env, envName).all()).results : undefined;
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}),
+  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}),
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 

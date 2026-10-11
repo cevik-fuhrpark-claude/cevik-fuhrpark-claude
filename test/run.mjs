@@ -2775,6 +2775,45 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   eq((await users.fleet.post(`/api/maintenance/events/${evMinor.id}/order`, { workshop_site: 'DORTMUND', priority: 'egal' })).status, 400, 'Validierung');
 });
 
+await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis (Übersicht, Agent), nach Eintragung der Nachprüfung erledigt; Fahrer ohne Zugriff', async () => {
+  const VR = 'VIN:WDB96340310666666';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  eq((await owner.post('/api/vehicles', { plate: 'NP-XY 66', vin: 'WDB96340310666666', site: 'Dortmund' })).status, 201);
+  const rule = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'NP-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-5), evidence: 'UVV-Protokoll 5501', result: 'erhebliche_maengel' })).status, 200);
+  const ev = (await users.fleet.get(`/api/vehicles/${VR}`)).data.maintenance_history.find((h) => h.evidence === 'UVV-Protokoll 5501');
+  const o = await users.fleet.post(`/api/maintenance/events/${ev.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
+  eq(o.status, 201);
+  const id = o.data.id;
+  const pend = async () => (await users.fleet.get('/api/maintenance')).data.reinspection_pending.filter((x) => x.id === ev.id);
+  eq((await pend()).length, 0, 'offener Auftrag → noch kein Hinweis');
+  const cmd = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case;
+    return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 2, description: 'Mängel laut UVV beseitigt' })).status, 200);
+  const items = (await users.ws.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+  eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(users.ws, 'request_quality_check', {}, 'Mängel beseitigt')).status, 200);
+  eq((await cmd(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  let p = await pend();
+  eq(p.length, 1, 'Hinweis nach Freigabe');
+  eq(p[0].case_id, id); eq(p[0].plate, 'NP-XY 66'); eq(p[0].result, 'erhebliche_maengel'); ok(p[0].closed_at, 'Freigabezeitpunkt');
+  eq((await users.driver.get('/api/maintenance')).status, 403, 'Fahrer kein Zugriff');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const agentF = () => users.fleet.get('/api/master').then((x) => x.data.findings.filter((f) => f.finding_code === 'REINSPECTION_PENDING' && f.vehicle_id === VR && f.status !== 'resolved'));
+  const fd = await agentF();
+  ok(fd.length === 1 && fd[0].severity === 'handeln' && fd[0].message.includes(o.data.case_no) && fd[0].next_action.includes('Nachweis'), 'Agent-Befund: ' + JSON.stringify(fd[0] || null));
+  ok(!/\d+ Tage|Monat/.test(fd[0].next_action.replace('Prüfbericht', '')), 'keine erfundene Frist');
+  // Nachprüfung eintragen (gleiche Prüfart, späteres Datum) → erledigt
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(0), evidence: 'UVV-Nachprüfung 5502', result: 'ohne_maengel' })).status, 200);
+  eq((await pend()).length, 0, 'nach Nachprüfung kein Hinweis');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  eq((await agentF()).length, 0, 'Agent-Befund erledigt');
+  ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === ev.id), 'kein Mangel-ohne-Auftrag-Hinweis');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
