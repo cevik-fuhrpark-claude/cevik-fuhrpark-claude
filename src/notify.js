@@ -12,7 +12,7 @@ const T = {
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
     safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit',
-    agent: 'Fuhrparkagent: Handlungsbedarf',
+    agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben',
   },
   uk: {
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
@@ -20,7 +20,7 @@ const T = {
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
     safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)',
-    agent: 'Агент автопарку: потрібні дії',
+    agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено',
   },
   en: {
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
@@ -28,13 +28,13 @@ const T = {
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
     safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', comment: 'New comment', open_item_safety: 'Safety-relevant open item',
-    agent: 'Fleet agent: action required',
+    agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved',
   },
 };
 
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
 export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'acknowledged', 'started', 'waiting_parts', 'resumed',
-  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder'];
+  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved'];
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
   const L = T[lang] ? lang : 'de';
@@ -84,6 +84,12 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       add(await usersByRole(env, e, ['fleet', 'owner']));
       if (kind === 'waiting_parts') add(await usersByRole(env, e, ['dispatch']));
       break;
+    case 'cost_limit':
+      add(await usersByRole(env, e, ['fleet', 'owner']));
+      break;
+    case 'cost_approved':
+      add(workshopUsers);
+      break;
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(await usersByRole(env, e, ['dispatch', 'fleet', 'owner'])); add(workshopUsers);
       add(await assignedDrivers(env, c));
@@ -98,7 +104,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     }
   }
   const actorId = ctxData.actor?.id;
-  return { list: list.filter((u) => u.id !== actorId), urgent };
+  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') ? false : urgent }; // Kostenhinweise nie dringend
 }
 
 // Hinweise anlegen (doppelte Ereignisse je Person werden ignoriert) und die tatsächlich neuen zurückgeben.

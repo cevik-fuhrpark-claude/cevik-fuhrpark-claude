@@ -2544,6 +2544,70 @@ await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in de
   eq(k2.late, k0.late + 1, 'überschritten'); eq(k2.open_overdue, k0.open_overdue);
   ok(k2.late_days_median >= 3, 'Verspätung in Tagen'); ok(k2.on_time_pct < 100 && k2.on_time_pct > 0, 'Quote');
 });
+await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert einmal und informiert Leitung; Werkstatt ohne Beträge; Freigabe gilt bis zum Betrag', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const c = await users.fleet.post('/api/cases', { vehicle_id: VM, description: 'Kostengrenze-Test: Kupplung', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(c.status, 201);
+  const id = c.data.id;
+  const cmd = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case;
+    return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Kupplung tauschen')).status, 200);
+  eq((await cmd(users.ws, 'start_repair')).status, 200);
+  // ohne Einstellung: keine Grenze, keine Markierung
+  eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
+  const r0 = await cmd(users.ws, 'add_part', { name: 'Kupplungsscheibe', quantity: 1, unit_price_net: 900 });
+  eq(r0.status, 200); ok(!r0.data.cost_limit_exceeded, 'ohne Grenze nichts');
+  let d = (await users.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.cost_over_limit_at, null); eq(d.cost_limit, undefined, 'ohne Einstellung keine Angabe');
+  ok(!d.allowed_actions.includes('approve_costs'));
+  // Grenze 1000 €: nächste Buchung über 1000 → markiert
+  eq((await owner.put('/api/settings', { repair_cost_limit_net: 1000 })).status, 200);
+  const nBefore = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'cost_limit' && n.case_id === id).length;
+  const r1 = await cmd(users.ws, 'add_part', { name: 'Ausrücklager', quantity: 1, unit_price_net: 150, valuation: 'estimate' });
+  eq(r1.status, 200); eq(r1.data.cost_limit_exceeded, true, 'Schätzung zählt mit');
+  d = (await users.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.cost_over_limit_at, 'markiert');
+  eq(d.cost_limit.limit_net, 1000); eq(d.cost_limit.approved_net, null);
+  ok(d.allowed_actions.includes('approve_costs'), 'Leitung darf freigeben');
+  const ev = d.events.find((e) => e.action === 'cost_limit_exceeded');
+  ok(ev && ev.payload.total_net === 1050 && ev.payload.limit_net === 1000, 'Verlauf mit Beträgen für die Leitung');
+  const nl = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'cost_limit' && n.case_id === id);
+  eq(nl.length, nBefore + 1, 'Leitung informiert'); eq(nl[0].urgent, 0, 'nicht dringend');
+  ok(!(await users.ws.get('/api/notifications')).data.notifications.some((n) => n.kind === 'cost_limit'), 'Werkstatt nicht');
+  // weitere Buchung: keine zweite Markierung/Benachrichtigung
+  const r2 = await cmd(users.ws, 'add_part', { name: 'Schrauben', quantity: 4, unit_price_net: 2.5 });
+  ok(!r2.data.cost_limit_exceeded, 'nur einmal');
+  eq((await users.fleet.get(`/api/cases/${id}`)).data.events.filter((e) => e.action === 'cost_limit_exceeded').length, 1);
+  // Werkstatt: sieht Markierung, aber keine Beträge, kann nicht freigeben
+  const dw = (await users.ws.get(`/api/cases/${id}`)).data;
+  ok(dw.case.cost_over_limit_at, 'Werkstatt sieht „ausstehend“');
+  eq(dw.case.cost_approved_net, undefined); eq(dw.cost_limit, undefined); eq(dw.costs, undefined);
+  eq(dw.events.find((e) => e.action === 'cost_limit_exceeded').payload, null, 'keine Beträge im Verlauf');
+  ok(!dw.allowed_actions.includes('approve_costs'));
+  eq((await cmd(users.ws, 'approve_costs', {}, 'selbst freigeben')).status, 403, 'Werkstatt darf nicht freigeben');
+  ok((await users.fleet.get('/api/cases?status=open')).data.cases.some((x) => x.id === id && x.cost_over_limit_at), 'Liste zeigt Markierung');
+  // Freigabe braucht Vermerk, gilt für den aktuellen Betrag
+  eq((await cmd(users.fleet, 'approve_costs', {}, '')).status, 400);
+  const ap = await cmd(users.fleet, 'approve_costs', {}, 'Rücksprache Werkstatt, Kupplung komplett');
+  eq(ap.status, 200);
+  d = (await users.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.cost_over_limit_at, null); eq(d.case.cost_approved_net, 1060); eq(d.cost_limit.approved_net, 1060);
+  eq((await cmd(users.fleet, 'approve_costs', {}, 'nochmal')).status, 403, 'nichts mehr freizugeben');
+  ok((await users.ws.get('/api/notifications')).data.notifications.some((n) => n.kind === 'cost_approved' && n.case_id === id), 'Werkstatt informiert');
+  // bis zum freigegebenen Betrag keine neue Markierung, darüber erneut
+  ok(!(await cmd(users.ws, 'add_part', { name: 'Dichtung', quantity: 1, unit_price_net: 0 })).data.cost_limit_exceeded, '≤ freigegebener Betrag');
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Getriebedienst', amount_net: 300, valuation: 'estimate' }, 'Angebot')).data.cost_limit_exceeded, true, 'über freigegebenem Betrag erneut');
+  d = (await users.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.cost_over_limit_at); eq(d.events.filter((e) => e.action === 'cost_limit_exceeded').length, 2);
+  // Fahrer (Meldender) sieht nichts davon
+  const drv = await users.driver.get(`/api/cases/${id}`);
+  if (drv.status === 200) { eq(drv.data.case.cost_over_limit_at, undefined); eq(drv.data.case.cost_approved_net, undefined); }
+  eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
+  ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

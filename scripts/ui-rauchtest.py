@@ -213,6 +213,13 @@ with sync_playwright() as p:
             r = cmd(pages['workshop'], c7, 'resume_repair')
             if r['s'] != 200:
                 problems.append(f'Vorbereitung Termintreue Teile: {r}')
+            # Kosten-Freigabegrenze (synthetisch 100 €): Teil 250 € → „Kostenfreigabe ausstehend“ (Leitung mit Beträgen, Werkstatt ohne)
+            api('PUT', '/api/settings', {'repair_cost_limit_net': 100})
+            r = cmd(pages['workshop'], c7, 'add_part', {'name': 'Rauchtest Spiegelglas', 'quantity': 1, 'unit_price_net': 250})
+            if r['s'] != 200 or not r['d'].get('cost_limit_exceeded'):
+                problems.append(f'Vorbereitung Kostengrenze: {r}')
+            for rr in ('owner', 'fleet', 'workshop'):
+                ROUTES[rr] += [f'cases/{c7}']
     # Bußgeld und Lagerartikel für die Detailansichten
     fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
     if fn['s'] in (200, 201):

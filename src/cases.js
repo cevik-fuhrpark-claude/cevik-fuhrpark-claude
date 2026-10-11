@@ -132,6 +132,8 @@ function shapeCase(c, user) {
   const out = { ...c };
   delete out.request_key;
   delete out.content_hash;
+  if (!canSeeCosts(user)) delete out.cost_approved_net;
+  if (user.role === 'driver') delete out.cost_over_limit_at;
   if (user.role === 'driver') {
     // Fahrer sehen ihren Status, aber keine internen Zuständigkeiten
     delete out.fleet_received_by;
@@ -155,7 +157,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=?').bind(c.parent_case_id).first() : null;
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: reporter?.display_name || null,
-    events: user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : events,
+    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
     files, open_items: openItems, inspections, followups, parent,
     allowed_actions: allowedActions(user, c, access),
   };
@@ -187,6 +189,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (canSeeCosts(user)) {
     detail.external_costs = (await env.DB.prepare('SELECT * FROM external_costs WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
     detail.costs = await caseCosts(env, c.id);
+    const lim = await costLimit(env);
+    if (lim !== null || c.cost_approved_net !== null || c.cost_over_limit_at) detail.cost_limit = { limit_net: lim, approved_net: c.cost_approved_net ?? null, over_since: c.cost_over_limit_at || null };
   }
   return detail;
 }
@@ -195,6 +199,37 @@ export async function getCaseDetail(env, user, envName, caseId) {
 async function hourlyRate(env) {
   const rateRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
   return rateRow && rateRow.value !== '' ? Number(rateRow.value) : null;
+}
+
+// Kosten-Freigabegrenze (Einstellung `repair_cost_limit_net`, netto; leer/0 = aus – die App setzt keine eigene Grenze)
+export async function costLimit(env) {
+  const r = await env.DB.prepare(`SELECT value FROM settings WHERE key='repair_cost_limit_net'`).first();
+  const n = r && r.value !== '' ? Number(r.value) : null;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+const COST_ACTIONS = ['record_work', 'add_part', 'add_external_cost'];
+// Nach einer Kostenbuchung: übersteigen die bewerteten Kosten (Ist + Schätzung; unbewertete Positionen zählen nicht) die Grenze bzw.
+// den zuletzt freigegebenen Betrag, wird der Auftrag einmalig markiert, im Verlauf vermerkt und die Fuhrparkleitung informiert.
+// Kein Statuswechsel, keine Sperre – die Werkstatt sieht „Kostenfreigabe ausstehend“ (ohne Beträge).
+async function checkCostLimit(env, ctx, user, envName, c) {
+  if (c.cost_over_limit_at) return false;
+  const limit = await costLimit(env);
+  if (limit === null) return false;
+  const k = await caseCosts(env, c.id);
+  const total = round2(k.actual_net + k.estimate_net);
+  const threshold = Math.max(limit, c.cost_approved_net || 0);
+  if (total <= threshold) return false;
+  const now = nowIso();
+  const payload = { total_net: total, limit_net: limit, approved_net: c.cost_approved_net ?? null, unvalued_items: k.unvalued_items };
+  const r = await env.DB.batch([
+    env.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id=? AND cost_over_limit_at IS NULL').bind(now, c.id),
+    env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at)
+      SELECT ?,?,?,?,?,'cost_limit_exceeded',?,?,NULL,?,? WHERE (SELECT cost_over_limit_at FROM cases WHERE id=?)=?`)
+      .bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, JSON.stringify(payload), now, c.id, now),
+  ]);
+  if (!r[0].meta || !r[0].meta.changes) return false; // parallel bereits markiert
+  await notifyCaseEvent(env, ctx, { ...c, cost_over_limit_at: now }, 'cost_limit', { actor: user, payload });
+  return true;
 }
 
 // Reine Bewertungslogik (gemeinsam für Vorgang und Fahrzeug): unbewertet ≠ 0 €, Schätzungen getrennt,
@@ -310,6 +345,7 @@ export function allowedActions(user, c, access) {
   }
   if (WORK_STATUSES.includes(c.status) && (ws || mgr)) a.push('record_work', 'add_part', 'add_open_item', 'resolve_open_item');
   if (WORK_STATUSES.includes(c.status) && mgr) a.push('add_external_cost');
+  if (mgr && c.cost_over_limit_at && OPEN_STATUSES.includes(c.status)) a.push('approve_costs');
   return a;
 }
 
@@ -603,6 +639,17 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       payload = { external_cost_id: eid, supplier, amount_net: amount, valuation };
       break;
     }
+    case 'approve_costs': {
+      // Kostenfreigabe über der eingestellten Grenze: gilt für den aktuellen Betrag; steigen die Kosten darüber, ist erneut eine Freigabe nötig
+      if (!c.cost_over_limit_at) throw bad('validation', 'Keine Kostenfreigabe ausstehend.');
+      requireNote('Bitte Freigabevermerk angeben (z. B. Umfang, Rücksprache).');
+      const k = await caseCosts(env, c.id);
+      const total = round2(k.actual_net + k.estimate_net);
+      set.cost_approved_net = total; set.cost_over_limit_at = null;
+      payload = { approved_net: total, limit_net: await costLimit(env), unvalued_items: k.unvalued_items };
+      notifyKind = 'cost_approved';
+      break;
+    }
     case 'request_quality_check': {
       const w = await env.DB.prepare('SELECT COUNT(*) AS n FROM work_entries WHERE case_id=?').bind(c.id).first();
       const x = await env.DB.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').bind(c.id).first();
@@ -662,7 +709,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   }
   const updated = await env.DB.prepare('SELECT * FROM cases WHERE id=?').bind(c.id).first();
   if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c });
-  return { ok: true, version: newVersion, status: toStatus };
+  const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
+  return { ok: true, version: newVersion, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}) };
 }
 
 // ---------- Fahrzeugkontrolle nach Reparatur / Abfahrtskontrolle ----------
