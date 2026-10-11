@@ -1304,7 +1304,7 @@ async function viewFines() {
   const list = (await api('GET', '/api/fines')).fines;
   const mgr = isMgr();
   const today = bDate();
-  let html = `<h1>${esc(mgr ? t('fines') : t('my_fines'))}</h1>`;
+  let html = `<h1>${esc(mgr ? t('fines') : t('my_fines'))}</h1>${helpLink(mgr ? 'fines' : 'myfines')}`;
   if (mgr) html += `<details class="panel"><summary>${esc(t('new_fine'))}</summary><form id="nf">
     <label>${esc(t('kind'))}</label><select name="kind">${S.meta.fine_kinds.map((k) => `<option value="${k}">${esc(t('fk_' + k))}</option>`).join('')}</select>
     <label>${esc(t('authority'))}</label><input name="authority" required><label>${esc(t('reference'))}</label><input name="reference">
@@ -1959,10 +1959,11 @@ function viewHelp(want) {
 function helpSections(r) {
   const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'drivers', 'contracts', 'claims', 'stock');
+  if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
   if (r === 'dispatch') parts.unshift('dispo');
-  if (r === 'driver') parts.unshift('myveh');
+  if (r === 'driver') parts.unshift('myveh', 'myfines');
   return parts;
 }
 
@@ -2033,7 +2034,7 @@ async function viewFleetTires() {
   const rows = r.rows.filter(sel);
   const cls = { unter_minimum: 'kritisch', warnung: 'mittel', ok: 'ok', unbekannt: '' };
   const tabs = [['attention', `${t('ts_unter_minimum')} / ${t('ts_warnung')}`, r.totals.below_min + r.totals.warn], ['stale', t('tires_stale').replace('{d}', r.stale_days), r.totals.stale], ['never', t('tires_never'), r.totals.never_measured], ['all', t('filter_all'), r.totals.vehicles]];
-  render(`<h1>${esc(t('fleet_tires'))}</h1><p class="small muted">${esc(t('tires_rule').replace('{min}', String(r.legal_min_tread_mm).replace('.', ',')).replace('{warn}', r.warn_tread_mm === null ? '–' : String(r.warn_tread_mm).replace('.', ',')))}</p>
+  render(`<h1>${esc(t('fleet_tires'))}</h1>${helpLink('tires')}<p class="small muted">${esc(t('tires_rule').replace('{min}', String(r.legal_min_tread_mm).replace('.', ',')).replace('{warn}', r.warn_tread_mm === null ? '–' : String(r.warn_tread_mm).replace('.', ',')))}</p>
     <div class="actions" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(String(x.min_tread_mm).replace('.', ',')) + ' mm'}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span><span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${x.measured_positions} ${esc(t('positions'))}`, x.below_min && `${x.below_min}× < ${String(r.legal_min_tread_mm).replace('.', ',')} mm`, x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
