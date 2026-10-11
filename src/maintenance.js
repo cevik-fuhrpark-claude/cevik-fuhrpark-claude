@@ -311,24 +311,34 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString()) {
 // nur gespeicherte Durchführungen aus der Wartungshistorie, Zeitraum nach Durchführungsdatum, optional Prüfart. Ändert nichts.
 const RESULT_DE = { ohne_maengel: 'ohne Mängel', geringe_maengel: 'geringe Mängel', erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
 const SOURCE_DE = { bestand: 'Bestand (Übernahme)', erfasst: 'erfasst', erledigt: 'als erledigt eingetragen', import: 'Import' };
-export async function maintenanceHistory(env, user, query = {}) {
+// Mängelauftrag und Nachprüfung je Durchführung (nur bei erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher): jüngster nicht abgelehnter
+// Auftrag der Umgebung mit Verknüpfung auf diese Durchführung; Nachprüfung = nächste spätere Durchführung derselben Prüfart am Fahrzeug.
+const DEFECT_SQL = `e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')`;
+const NEXT_EVENT_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT e2.${col} FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
+      AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)) ORDER BY e2.done_date, e2.created_at LIMIT 1) END`;
+const DEFECT_CASE_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT c.${col} FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?1 AND c.status<>'abgelehnt' ORDER BY c.created_at DESC LIMIT 1) END`;
+
+export async function maintenanceHistory(env, user, query = {}, envName = 'production') {
   if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
   const today = berlinDate();
   const from = query.from || `${today.slice(0, 4)}-01-01`; const to = query.to || today;
   for (const d of [from, to]) if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
   const kind = query.kind ? String(query.kind).slice(0, 40) : null;
-  const rows = (await env.DB.prepare(`SELECT e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at
+  const rows = (await env.DB.prepare(`SELECT e.id AS event_id, e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at,
+      ${DEFECT_CASE_SQL('id')} AS defect_case_id, ${DEFECT_CASE_SQL('case_no')} AS defect_case_no, ${DEFECT_CASE_SQL('status')} AS defect_case_status,
+      ${NEXT_EVENT_SQL('done_date')} AS reinspection_date, ${NEXT_EVENT_SQL('result')} AS reinspection_result
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN users u ON u.id=e.recorded_by
-    WHERE e.done_date >= ? AND e.done_date <= ? ${kind ? 'AND e.kind = ?' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5000`)
-    .bind(...(kind ? [from, to, kind] : [from, to])).all()).results;
+    WHERE e.done_date >= ?2 AND e.done_date <= ?3 ${kind ? 'AND e.kind = ?4' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5000`)
+    .bind(...(kind ? [envName, from, to, kind] : [envName, from, to])).all()).results;
   const by_kind = {};
   for (const r of rows) by_kind[r.kind] = (by_kind[r.kind] || 0) + 1;
   return { from, to, kind, rows, by_kind, truncated: rows.length === 5000 };
 }
 export function maintenanceHistoryCsv(h) {
-  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Fahrzeugart', 'Standort', 'Prüfart', 'Durchgeführt am', 'km bei Durchführung', 'Ergebnis', 'Nachweis', 'Herkunft', 'Erfasst von', 'Erfasst am'].join(';')];
+  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Fahrzeugart', 'Standort', 'Prüfart', 'Durchgeführt am', 'km bei Durchführung', 'Ergebnis', 'Nachweis', 'Herkunft', 'Erfasst von', 'Erfasst am', 'Mängelauftrag', 'Status Mängelauftrag', 'Nachprüfung am', 'Ergebnis Nachprüfung'].join(';')];
   for (const r of h.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), csvCell(r.kind), r.done_date, r.done_km ?? '',
-    RESULT_DE[r.result] || '', csvCell(r.evidence), SOURCE_DE[r.source] || csvCell(r.source), csvCell(r.recorded_by_name), (r.created_at || '').slice(0, 10)].join(';'));
+    RESULT_DE[r.result] || '', csvCell(r.evidence), SOURCE_DE[r.source] || csvCell(r.source), csvCell(r.recorded_by_name), (r.created_at || '').slice(0, 10),
+    csvCell(r.defect_case_no), csvCell(r.defect_case_status), r.reinspection_date || '', RESULT_DE[r.reinspection_result] || (r.reinspection_date ? 'ohne Angabe' : '')].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

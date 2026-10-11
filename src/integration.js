@@ -58,7 +58,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const [defects, reinspection] = await env.DB.batch([defectsWithoutCaseQuery(env, envParam(url)), reinspectionPendingQuery(env, envParam(url))]);
     return json({ schema_version: '1.0', ...(await maintenanceOverview(env, null)), environment: envParam(url), defects_without_case: defects.results, reinspection_pending: reinspection.results });
   }
-  if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, truncated: h.truncated, events: h.rows.map(({ recorded_by_name, ...r }) => r) }); }
+  if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams), envParam(url)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, environment: envParam(url), truncated: h.truncated, events: h.rows.map(({ recorded_by_name, ...r }) => r) }); }
   if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung

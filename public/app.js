@@ -1579,12 +1579,14 @@ async function viewMaint() {
   $$('[data-mf]').forEach((b) => (b.onclick = () => { S.maintFilter = b.dataset.mf; viewMaint(); }));
   $('#mics').onclick = async () => { try { download(await api('GET', '/api/maintenance?format=ics'), `fuhrpark-prueftermine_${ov.today}.ics`); } catch (err) { toast(err.message, true); } };
   $('#mprt').onclick = () => window.print();
+  // Mängelauftrag und Nachprüfung zu Prüfungen mit erheblichen Mängeln (nur gespeicherte Daten; ohne Nachprüfung „noch nicht eingetragen“)
+  const mhDefect = (r) => DEFECT_RESULTS.includes(r.result) ? `<br><span class="small">${esc(t('mh_order'))}: ${r.defect_case_no ? `${esc(r.defect_case_no)} (${esc(t('st_' + r.defect_case_status))})` : esc(t('mh_no_order'))} · ${esc(t('mh_reinsp'))}: ${r.reinspection_date ? `${fmtD(r.reinspection_date)}${r.reinspection_result ? ' – ' + esc(t('res_' + r.reinspection_result)) : ''}` : esc(t('mh_reinsp_none'))}</span>` : '';
   const mhf = $('#mhf');
   if (mhf) {
     const mhq = () => `from=${encodeURIComponent(mhf.from.value)}&to=${encodeURIComponent(mhf.to.value)}${mhf.kind.value ? '&kind=' + encodeURIComponent(mhf.kind.value) : ''}`;
     mhf.onsubmit = async (e) => { e.preventDefault(); try {
       const h = await api('GET', '/api/maintenance/history?' + mhq());
-      $('#mhres').innerHTML = `<p><b>${h.rows.length}</b> ${esc(t('mh_count'))}${Object.keys(h.by_kind).length ? ' · ' + Object.entries(h.by_kind).map(([k, n]) => `${esc(k)} ${n}`).join(' · ') : ''}</p>${h.rows.length ? `<div class="list">${h.rows.slice(0, 50).map((r) => `<a class="row" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)}</span><span class="chip">${fmtD(r.done_date)}</span><span class="sub" style="white-space:normal">${[r.done_km !== null ? r.done_km.toLocaleString('de-DE') + ' km' : '', r.result ? t('res_' + r.result) : '', r.evidence].filter(Boolean).map(esc).join(' · ')}</span></a>`).join('')}</div>${h.rows.length > 50 ? `<p class="small muted">${esc(t('mh_more'))}</p>` : ''}` : ''}`;
+      $('#mhres').innerHTML = `<p><b>${h.rows.length}</b> ${esc(t('mh_count'))}${Object.keys(h.by_kind).length ? ' · ' + Object.entries(h.by_kind).map(([k, n]) => `${esc(k)} ${n}`).join(' · ') : ''}</p>${h.rows.length ? `<div class="list">${h.rows.slice(0, 50).map((r) => `<a class="row" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)}</span><span class="chip">${fmtD(r.done_date)}</span><span class="sub" style="white-space:normal">${[r.done_km !== null ? r.done_km.toLocaleString('de-DE') + ' km' : '', r.result ? t('res_' + r.result) : '', r.evidence].filter(Boolean).map(esc).join(' · ')}${mhDefect(r)}</span></a>`).join('')}</div>${h.rows.length > 50 ? `<p class="small muted">${esc(t('mh_more'))}</p>` : ''}` : ''}`;
     } catch (err) { toast(err.message, true); } };
     $('#mhcsv').onclick = async () => { if (!mhf.reportValidity()) return; try { download(await api('GET', '/api/maintenance/history?format=csv&' + mhq()), `fuhrpark-durchgefuehrte-pruefungen_${mhf.from.value}_${mhf.to.value}.csv`); } catch (err) { toast(err.message, true); } };
   }

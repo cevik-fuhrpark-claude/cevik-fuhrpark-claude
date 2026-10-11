@@ -2802,6 +2802,11 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   eq(p.length, 1, 'Hinweis nach Freigabe');
   eq(p[0].case_id, id); eq(p[0].plate, 'NP-XY 66'); eq(p[0].result, 'erhebliche_maengel'); ok(p[0].closed_at, 'Freigabezeitpunkt');
   eq((await users.driver.get('/api/maintenance')).status, 403, 'Fahrer kein Zugriff');
+  // Nachweisliste „Durchgeführte Prüfungen“: Mängelauftrag und Stand der Nachprüfung je Prüfung (nur bei erheblichen Mängeln, je Umgebung)
+  const histRow = async (u, hdr) => (await u.get(`/api/maintenance/history?from=${day(-30)}&to=${day(0)}&kind=UVV`, hdr)).data.rows.find((x) => x.event_id === ev.id);
+  let hr = await histRow(users.fleet);
+  eq(hr.defect_case_no, o.data.case_no, 'Liste: Mängelauftrag'); eq(hr.defect_case_id, id); eq(hr.defect_case_status, 'fahrzeug_freigegeben'); eq(hr.reinspection_date, null, 'Liste: Nachprüfung offen');
+  eq((await histRow(owner, { 'x-cfp-env': 'production' })).defect_case_no, null, 'Betrieb sieht Auftrag der Testumgebung nicht');
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   const agentF = () => users.fleet.get('/api/master').then((x) => x.data.findings.filter((f) => f.finding_code === 'REINSPECTION_PENDING' && f.vehicle_id === VR && f.status !== 'resolved'));
   const fd = await agentF();
@@ -2812,6 +2817,19 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   eq((await pend()).length, 0, 'nach Nachprüfung kein Hinweis');
   const ri = (await users.fleet.get(`/api/cases/${id}`)).data.maintenance_event.reinspection;
   eq(ri && ri.done_date, day(0)); eq(ri.result, 'ohne_maengel'); eq(ri.evidence, 'UVV-Nachprüfung 5502');
+  hr = await histRow(users.fleet);
+  eq(hr.reinspection_date, day(0), 'Liste: Nachprüfung eingetragen'); eq(hr.reinspection_result, 'ohne_maengel');
+  const hrAll = (await users.fleet.get(`/api/maintenance/history?from=${day(-30)}&to=${day(0)}&kind=UVV`)).data.rows.filter((x) => x.vehicle_id === VR);
+  const nach = hrAll.find((x) => x.evidence === 'UVV-Nachprüfung 5502');
+  ok(nach && nach.defect_case_no === null && nach.reinspection_date === null, 'Prüfung ohne Mängel: keine Auftrags-/Nachprüfungsangaben');
+  const hc = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/maintenance/history?format=csv&from=${day(-30)}&to=${day(0)}&kind=UVV`)).data);
+  ok(hc.split('\r\n')[0].endsWith(';Mängelauftrag;Status Mängelauftrag;Nachprüfung am;Ergebnis Nachprüfung'), 'CSV-Kopf erweitert');
+  ok(hc.split('\r\n').some((l) => l.includes('UVV-Protokoll 5501') && l.endsWith(`;${o.data.case_no};fahrzeug_freigegeben;${day(0)};ohne Mängel`)), 'CSV-Zeile mit Auftrag und Nachprüfung');
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const iev = async (q) => (await anon.req('GET', `/api/integration/v1/maintenance/history?from=${day(-30)}&to=${day(0)}&kind=UVV${q}`, undefined, H)).data;
+  const ip = await iev('&environment=test');
+  eq(ip.environment, 'test'); eq(ip.events.find((x) => x.event_id === ev.id).defect_case_no, o.data.case_no, 'Integrations-API: Auftrag');
+  eq((await iev('')).events.find((x) => x.event_id === ev.id).defect_case_no, null, 'Integrations-API: Betrieb getrennt');
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   eq((await agentF()).length, 0, 'Agent-Befund erledigt');
   ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === ev.id), 'kein Mangel-ohne-Auftrag-Hinweis');
