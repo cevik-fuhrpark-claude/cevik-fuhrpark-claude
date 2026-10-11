@@ -2084,6 +2084,9 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await owner.get('/api/contracts?format=csv&filter=alle')).data);
   ok(csv.startsWith('﻿Kennzeichen;Vertragsart;') && csv.includes('VT-LS 1;Leasing;Muster-Leasing GmbH;L-4711;') && csv.includes(';1234,5;'), 'CSV');
   ok((await owner.get('/api/admin/audit?action=contract')).data.entries.some((e) => e.action === 'contract.end'), 'Protokoll');
+  const tl = (await users.fleet.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items;
+  ok(tl.some((x) => x.contract_event === 'end' && x.at === day(-1)) && tl.filter((x) => x.contract_event === 'start').length === 3, 'Zeitleiste Verträge');
+  eq((await users.ws.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items.length, 0, 'Werkstatt: keine Verträge in der Zeitleiste');
   // Testkonten nur lesen (Schalter des Inhabers) gilt auch für Verträge
   eq((await owner.put('/api/settings', { test_master_readonly: '1' })).status, 200);
   try { eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'sonstiges', partner: 'Z', evidence: 'Z' })).status, 403, 'test_readonly'); }

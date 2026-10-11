@@ -99,7 +99,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
 }
 
 // Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
-export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho'];
+export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
   const d = await vehicleDetail(env, user, envName, vehicleId);
   const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
@@ -124,6 +124,10 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT 200`)
       .bind(vehicleId, envName).all()).results;
     for (const x of d.tacho_downloads || []) add('tacho', x.downloaded_on, { evidence: x.evidence, by: x.created_by_name });
+    for (const c of d.contracts || []) {
+      add('contract', c.start_date || c.created_at, { contract_event: 'start', contract_kind: c.kind, partner: c.partner, evidence: c.evidence });
+      add('contract', c.ended_on, { contract_event: 'end', contract_kind: c.kind, partner: c.partner, evidence: c.end_note });
+    }
     for (const f of fines) add('fine', f.offense_at, { fine_id: f.id, fine_no: f.fine_no, fine_kind: f.kind, offense_type: f.offense_type, status: f.status });
   }
   // Datum ohne Uhrzeit (z. B. Prüfung „erledigt am“) als Tagesmitte einsortieren
