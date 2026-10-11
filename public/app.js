@@ -1957,6 +1957,8 @@ function viewHelp(want) {
 
 // Hilfe-Abschnitte je Rolle (Reihenfolge = Anzeige)
 function helpSections(r) {
+  // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
+  if (r === 'viewer') return ['kpi', 'push'];
   const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');

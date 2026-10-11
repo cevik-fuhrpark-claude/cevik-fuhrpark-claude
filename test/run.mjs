@@ -1058,7 +1058,7 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   eq(dupl.join(','), '', 'doppelte Textschlüssel (der spätere überschreibt still den früheren)');
   // Hilfe-Abschnitte werden dynamisch (help_<name>_t/_s) gebildet: jeder genannte Abschnitt muss in allen Sprachen mit gleicher Schrittzahl existieren
   const helpSrc = app.slice(app.indexOf('function helpSections('), app.indexOf('\n}\n', app.indexOf('function helpSections(')));
-  const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'more', 'app_version', 'help'].includes(k)));
+  const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer', 'more', 'app_version', 'help'].includes(k)));
   ok(helpParts.has('stock') && helpParts.has('privacy') && helpParts.has('myveh'), 'Hilfe: Lager, Datenauskunft, Mein Fahrzeug');
   for (const k of helpParts) for (const lang of ['de', 'uk', 'en']) {
     ok(STRINGS[lang][`help_${k}_t`] && STRINGS[lang][`help_${k}_s`], `Hilfe ${k} fehlt in ${lang}`);
@@ -3120,6 +3120,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(links.length >= 8, 'Seitenhilfe-Links: ' + links.length);
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
+  ok(/if \(r === 'viewer'\) return \['kpi', 'push'\];/.test(app), 'Lesezugriff: keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
   ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>');
   const searchSrc = app.slice(app.indexOf('async function viewSearch('), app.indexOf('\n}\n', app.indexOf('async function viewSearch(')));
   ok(/helpMatches\(helpSections\(S\.me\.role\)/.test(searchSrc) && searchSrc.includes('id="ghelp"'), 'Globale Suche findet Hilfe-Abschnitte der eigenen Rolle');
