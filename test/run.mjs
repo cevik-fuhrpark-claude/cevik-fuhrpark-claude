@@ -2252,7 +2252,9 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   ok(ics.includes(`UID:contract-${c1.data.id}-notice@`) && ics.includes(`DTSTART;VALUE=DATE:${lea.status.notice.by.replace(/-/g, '')}`), 'Kündigungstag');
   ok(ics.includes(`UID:contract-${c1.data.id}-end@`) && ics.includes(`UID:contract-${c2}-end@`), 'Vertragsenden');
   ok(!ics.includes(`contract-${c3}-`), 'beendeter Vertrag fehlt');
-  ok(!ics.includes('L-4711') && !ics.includes('1234'), 'ohne Vertragsnummer und Rate');
+  // Zeitstempel (DTSTAMP/UID) ausgenommen: um 12:34 Uhr enthielt DTSTAMP „1234“ (Test schlug uhrzeitabhängig fehl)
+  const icsBody = ics.split('\r\n').filter((l) => !/^(DTSTAMP|UID):/.test(l)).join('\n');
+  ok(!icsBody.includes('L-4711') && !icsBody.includes('1234'), 'ohne Vertragsnummer und Rate');
   ok(ics.includes('TRIGGER:-P60D'), 'Erinnerung = Vorwarnung');
   eq((await users.ws.get('/api/contracts?format=ics')).status, 403);
   const tl = (await users.fleet.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items;
