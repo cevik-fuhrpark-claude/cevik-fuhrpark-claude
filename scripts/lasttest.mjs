@@ -121,6 +121,7 @@ for (let k = 0; k < 10; k++) {
 }
 await timed('Versicherungsfälle CSV', () => owner.get('/api/claims?format=csv&filter=alle'));
 await timed('Datenqualität inkl. Unfall', () => owner.get('/api/admin/data-quality'));
+await owner.put('/api/settings', { claim_followup_days: '30' }); // Worst Case: Nachfass-Befunde für Versicherungsfälle aktiv
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];

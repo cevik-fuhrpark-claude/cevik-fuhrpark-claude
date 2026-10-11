@@ -126,3 +126,17 @@ export function claimsCsv(ov) {
     n(c.case_cost_net), n(c.balance_net), c.evidence, c.note].map(csvCell).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
+
+// Fuhrparkagent: Versicherungsfall länger als die eingestellte Nachfass-Frist offen (Einstellung `claim_followup_days`; leer = aus, keine eigene Frist).
+// Bezug ist das Meldedatum an den Versicherer; der Befundtext nennt das Datum (keine laufende Tageszahl → kein tägliches Neuschreiben).
+export async function claimFindings(env, environment, settings) {
+  const n = Number(settings && settings.get ? settings.get('claim_followup_days') : null);
+  if (!(n > 0)) return [];
+  const limit = new Date(Date.parse(berlinDate() + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+  const rows = (await env.DB.prepare(`SELECT ic.id, ic.case_id, ic.vehicle_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, c.case_no, v.plate
+    FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id
+    WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND ic.reported_on <= ?`).bind(environment, limit).all()).results;
+  return rows.map((r) => ({ code: 'CLAIM_OPEN_LONG', subject: r.id, case_id: r.case_id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 0,
+    message: `${r.case_no} (${r.plate}): Versicherungsfall bei ${r.insurer}${r.claim_no ? ', Schaden-Nr. ' + r.claim_no : ''} seit ${r.reported_on} ${STATUS_DE[r.status]} (Nachfassen nach ${n} Tagen eingestellt).`,
+    next_action: 'Beim Versicherer nach dem Stand fragen; Status bzw. Erstattung mit Nachweis im Vorgang eintragen.' }));
+}

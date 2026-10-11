@@ -2277,6 +2277,16 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   ok(dq.some((i) => i.case_id === c2 && i.severity === 'hinweis' && i.plate === 'VT-IC 2'), 'Hinweis bei Unfall ohne Versicherungsfall');
   ok(!dq.some((i) => i.case_id === cid || i.case_id === c3), 'mit Versicherungsfall bzw. ohne Unfall kein Hinweis');
   eq((await users.prodFleet.get('/api/admin/data-quality')).data.items.some((i) => i.case_id === c2), false, 'Umgebung');
+  // Fuhrparkagent: Nachfassen nur mit eingestellter Frist (leer = aus), Bezug Meldedatum, nur offene Fälle
+  eq((await users.fleet.put(`/api/cases/${c2}/claim`, { insurer: 'Andere AG', reported_on: day(-10), evidence: 'Meldung per Telefon, Vermerk' })).status, 200);
+  const claimCodes = async () => { eq((await users.fleet.post('/api/agent/run')).status, 200); return (await users.fleet.get('/api/master')).data.findings.filter((f) => f.finding_code === 'CLAIM_OPEN_LONG').map((f) => f.case_id); };
+  eq((await claimCodes()).length, 0, 'ohne Einstellung kein Befund');
+  eq((await owner.put('/api/settings', { claim_followup_days: '7' })).status, 200);
+  const fc = await claimCodes();
+  ok(fc.includes(c2) && !fc.includes(cid), 'offen seit 10 Tagen → Befund; regulierter Fall nicht');
+  eq((await owner.put('/api/settings', { claim_followup_days: '14' })).status, 200);
+  ok(!(await claimCodes()).includes(c2), '10 Tage < 14 → kein Befund');
+  eq((await owner.put('/api/settings', { claim_followup_days: null })).status, 200);
 });
 await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format „1.234,50“; km „120.000“ = 120000', async () => {
   const { num } = await import('../src/util.js');
