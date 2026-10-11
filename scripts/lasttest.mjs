@@ -40,6 +40,24 @@ console.log(`${N_CASES} Vorgänge in ${((performance.now() - t0) / 1000).toFixed
 // geplante Werkstatttermine (synthetisch, direkt in der DB): jeder 5. Vorgang freigegeben mit Termin in den nächsten 30 Tagen bzw. überschritten
 { const base = Date.now(); const st = env.DB.prepare(`UPDATE cases SET status='werkstatt_freigegeben', workshop_ack_at=?, planned_date=? WHERE id=?`);
   await env.DB.batch(ids.filter((_, i) => i % 5 === 0).map((id, j) => st.bind(new Date(base).toISOString(), new Date(base + ((j % 40) - 5) * 86400000).toISOString().slice(0, 10), id))); }
+// Teile-Abschnitte (synthetisch, direkt in die DB) für die Kennzahl „Termintreue Teile“: jeder 3. Vorgang 1–3× „wartet auf Teile“
+// mit/ohne Liefertermin, teils verschoben, Fortsetzung pünktlich oder verspätet; Ereignisse innerhalb der letzten 300 Tage
+{ const st = env.DB.prepare(`INSERT INTO case_events (id, case_id, environment, action, from_status, to_status, payload, created_at) VALUES (?,?,?,?,?,?,?,?)`);
+  const iso = (ms) => new Date(ms).toISOString(); const ymd = (ms) => iso(ms).slice(0, 10);
+  const batch = []; let n = 0;
+  for (const [i, id] of ids.entries()) {
+    if (i % 3) continue;
+    let t = Date.now() - (10 + (i % 280)) * 86400000;
+    for (let k = 0; k < 1 + (i % 3); k++) {
+      const eta = i % 7 === 0 ? null : t + (2 + (i % 5)) * 86400000;
+      batch.push(st.bind(`lt-ev-${n++}`, id, 'test', 'wait_parts', 'in_reparatur', 'wartet_teile', eta ? JSON.stringify({ parts_expected_date: ymd(eta) }) : null, iso(t)));
+      if (eta && i % 4 === 0) batch.push(st.bind(`lt-ev-${n++}`, id, 'test', 'set_parts_eta', null, null, JSON.stringify({ from: ymd(eta), to: ymd(eta + 2 * 86400000) }), iso(t + 3600000)));
+      t += (1 + ((i + k) % 9)) * 86400000;
+      batch.push(st.bind(`lt-ev-${n++}`, id, 'test', 'resume_repair', 'wartet_teile', 'in_reparatur', null, iso(t)));
+      t += 86400000;
+    }
+  }
+  await env.DB.batch(batch); console.log(`${n} Teile-Ereignisse (synthetisch) für die Kennzahl Termintreue`); }
 for (let k = 0; k < 20; k++) {
   await timed('Werkstattplan 30 Tage', () => owner.get('/api/workshop/plan?days=30'));
   await timed('Vorgangsliste', () => owner.get('/api/cases'));
@@ -134,6 +152,9 @@ await owner.put('/api/settings', { claim_followup_days: '30' }); // Worst Case: 
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
+{ const pe = (await owner.get('/api/reports/kpi?from=' + new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7))).data.parts_eta || {};
+  const tot = pe.total || pe; console.log(`Termintreue Teile (synthetisch): ${JSON.stringify({ kept: tot.kept, late: tot.late, without_eta: tot.without_eta, open_overdue: tot.open_overdue })}`);
+  if (CHECK && !((tot.kept || 0) + (tot.late || 0))) { console.error('Kennzahl Termintreue ohne Abschnitte – Lasttest-Daten prüfen'); process.exitCode = 1; } }
 console.log('\nAntwortzeiten (ms)          n     p50     p95     max   SQL max');
 for (const [k, a] of Object.entries(timings)) console.log(`${k.padEnd(26)} ${String(a.length).padStart(5)} ${pct(a, 0.5).toFixed(1).padStart(7)} ${pct(a, 0.95).toFixed(1).padStart(7)} ${Math.max(...a).toFixed(1).padStart(7)} ${String(Math.max(...queries[k])).padStart(9)}`);
 const list = (await owner.get('/api/cases')).data.cases;
