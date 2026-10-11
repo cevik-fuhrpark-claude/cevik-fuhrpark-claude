@@ -2814,6 +2814,31 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === ev.id), 'kein Mangel-ohne-Auftrag-Hinweis');
 });
 
+await test('Integrations-API /v1/maintenance: additiv Prüfmängel ohne Auftrag und ausstehende Nachprüfungen je Umgebung; /v1/cases mit maintenance_event_id', async () => {
+  const VI = 'VIN:WDB96340310555555';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  eq((await owner.post('/api/vehicles', { plate: 'IA-XY 55', vin: 'WDB96340310555555', site: 'Dortmund' })).status, 201);
+  const rule = await users.fleet.post(`/api/vehicles/${VI}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'IA-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-3), evidence: 'UVV-Protokoll 6601', result: 'gefaehrliche_maengel' })).status, 200);
+  const ev = (await users.fleet.get(`/api/vehicles/${VI}`)).data.maintenance_history.find((h) => h.evidence === 'UVV-Protokoll 6601');
+  let im = await anon.req('GET', '/api/integration/v1/maintenance?environment=test', undefined, H);
+  eq(im.status, 200); eq(im.data.environment, 'test');
+  ok(im.data.defects_without_case.some((x) => x.id === ev.id && x.plate === 'IA-XY 55'), 'Mangel ohne Auftrag (test)');
+  ok(Array.isArray(im.data.reinspection_pending) && Array.isArray(im.data.rows), 'Felder vorhanden, Bestand unverändert');
+  eq(im.data.rows.find((r) => r.id === rule.data.id)?.open_order, undefined, 'keine Auftragsdaten in rows');
+  const o = await users.fleet.post(`/api/maintenance/events/${ev.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
+  eq(o.status, 201);
+  im = await anon.req('GET', '/api/integration/v1/maintenance?environment=test', undefined, H);
+  ok(!im.data.defects_without_case.some((x) => x.id === ev.id), 'nach Auftrag entfällt');
+  im = await anon.req('GET', '/api/integration/v1/maintenance', undefined, H);
+  eq(im.data.environment, 'production');
+  ok(im.data.defects_without_case.some((x) => x.id === ev.id), 'Betrieb: Auftrag lag in Test → Hinweis bleibt (Umgebungen getrennt)');
+  ok(!JSON.stringify(im.data.defects_without_case).includes('recorded_by'), 'keine Personennamen');
+  const ic = await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, H);
+  eq(ic.data.cases.find((c) => c.id === o.data.id).maintenance_event_id, ev.id, '/v1/cases kennt Prüfung');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

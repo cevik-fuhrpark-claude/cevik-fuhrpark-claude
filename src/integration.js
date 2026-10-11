@@ -2,7 +2,7 @@
 import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
 import { costReport } from './reports.js';
-import { maintenanceOverview, maintenanceHistory } from './maintenance.js';
+import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
@@ -37,7 +37,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
     const rows = (await env.DB.prepare(`SELECT c.id, c.case_no, c.environment, c.vehicle_id, c.status, c.priority, c.reported_priority, c.reported_driveability, c.safety_lock,
       c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version,
-      c.planned_date, c.parts_expected_date, c.maintenance_rule_id, CASE WHEN c.cost_over_limit_at IS NOT NULL THEN 1 ELSE 0 END AS cost_approval_pending
+      c.planned_date, c.parts_expected_date, c.maintenance_rule_id, c.maintenance_event_id, CASE WHEN c.cost_over_limit_at IS NOT NULL THEN 1 ELSE 0 END AS cost_approval_pending
       FROM cases c WHERE c.environment=? AND c.updated_at > ? ORDER BY c.updated_at LIMIT 1000`).bind(envParam(url), since).all()).results;
     return json({ schema_version: '1.0', cases: rows });
   }
@@ -53,7 +53,11 @@ export async function integrationRouter(request, env, ctx, url) {
     return json({ schema_version: '1.0', findings: rows });
   }
   if (p === '/v1/costs' && m === 'GET') return json({ schema_version: '1.0', ...(await costReport(env, null, envParam(url), Object.fromEntries(url.searchParams))) });
-  if (p === '/v1/maintenance' && m === 'GET') return json({ schema_version: '1.0', ...(await maintenanceOverview(env, null)) });
+  // Prüftermine (ohne Auftragsdaten) + additiv: Prüfmängel ohne Auftrag und ausstehende Nachprüfungen der gewählten Umgebung (ohne Personennamen)
+  if (p === '/v1/maintenance' && m === 'GET') {
+    const [defects, reinspection] = await env.DB.batch([defectsWithoutCaseQuery(env, envParam(url)), reinspectionPendingQuery(env, envParam(url))]);
+    return json({ schema_version: '1.0', ...(await maintenanceOverview(env, null)), environment: envParam(url), defects_without_case: defects.results, reinspection_pending: reinspection.results });
+  }
   if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, truncated: h.truncated, events: h.rows.map(({ recorded_by_name, ...r }) => r) }); }
   if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
 
