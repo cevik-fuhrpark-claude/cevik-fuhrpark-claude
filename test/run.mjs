@@ -2973,11 +2973,18 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   const dl = (await users.dispatch.get('/api/vehicles')).data.vehicles.find((v) => v.id === VD);
   eq(JSON.stringify(dl.failed_inspection), JSON.stringify(fi), 'Fahrzeugliste (Dispo) gleich wie API');
   ok(!('failed_inspection' in ((await users.driver.get('/api/vehicles')).data.vehicles[0] || {})), 'Fahrer: Feld nicht enthalten');
+  // Fahrzeugakte: gleiche Aussage wie Liste/API (Warnung im Kopf), auch für Werkstatt/Dispo
+  for (const who of ['fleet', 'dispatch']) {
+    const fd = (await users[who].get(`/api/vehicles/${VD}`)).data.failed_inspection;
+    ok(fd && fd.kind === fi.kind && fd.done_date === fi.done_date && fd.result === fi.result && fd.event_id, who + ': Akte failed_inspection ' + JSON.stringify(fd));
+  }
+  eq((await users.fleet.get(`/api/vehicles/${(av.find((v) => v.id !== VD && !v.failed_inspection) || {}).id}`)).data.failed_inspection, null, 'andere Akte ohne Warnung');
   const o = await users.fleet.post(`/api/maintenance/events/${(await users.fleet.get(`/api/vehicles/${VD}`)).data.maintenance_history.find((h) => h.evidence === 'GM 2b').id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
   eq(o.status, 201);
   const av2 = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H)).data.vehicles.find((v) => v.id === VD);
   eq(av2.failed_inspection, null, 'nach Auftrag: Sperre/Werkstatt statt Hinweis');
   eq(av2.availability, 'gesperrt', 'Auftrag aus verkehrsunsicher sperrt');
+  eq((await users.fleet.get(`/api/vehicles/${VD}`)).data.failed_inspection, null, 'Akte nach Auftrag ohne Warnung');
 });
 
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {

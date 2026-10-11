@@ -56,12 +56,25 @@ export async function listVehicles(env, user, envName, query = {}) {
   return list;
 }
 
+// „Prüfung nicht bestanden“ für die Fahrzeugakte – gleiche Regel wie die Unterabfrage in listVehicles:
+// jüngste Prüfung (≤ 12 Monate) mit gefährlichen Mängeln/verkehrsunsicher, keine neuere derselben Art, kein Vorgang (außer abgelehnt) seitdem;
+// verkehrsunsicher vor gefährlichen Mängeln, dann neueste. Nur Information – ändert keine Verfügbarkeit.
+export function failedInspectionOf(v, events, cases, since) {
+  if (v.eval_excluded) return null;
+  const newer = (e2, e) => e2.kind === e.kind && e2.id !== e.id && (e2.done_date > e.done_date || (e2.done_date === e.done_date && e2.created_at > e.created_at));
+  const hits = events.filter((e) => e.done_date >= since && ['gefaehrliche_maengel', 'verkehrsunsicher'].includes(e.result)
+    && !events.some((e2) => newer(e2, e)) && !cases.some((c) => c.status !== 'abgelehnt' && c.created_at >= e.done_date));
+  hits.sort((a, b) => (b.result === 'verkehrsunsicher') - (a.result === 'verkehrsunsicher') || (b.done_date > a.done_date ? 1 : b.done_date < a.done_date ? -1 : 0));
+  return hits[0] ? { kind: hits[0].kind, done_date: hits[0].done_date, result: hits[0].result, event_id: hits[0].id } : null;
+}
+
 export async function vehicleDetail(env, user, envName, vehicleId) {
   if (user.role === 'driver') throw forbidden('Fahrzeugakten sind für Fahrer nicht freigegeben.');
   const v = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
   let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
+  const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
   if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT 50`).bind(vehicleId, envName).all()).results;
@@ -96,7 +109,8 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
   const husp = huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);
-  const out = { vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
+  const failedInspection = failedInspectionOf(v, maintenanceHistory, allCases, addMonths(berlinDate(), -12));
+  const out = { failed_inspection: failedInspection, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
     // Versicherungsfälle des Fahrzeugs (Umgebung wie die Vorgänge): Anzahl, offen, Summe eingetragener Erstattungen – nicht mit den Kosten verrechnet
