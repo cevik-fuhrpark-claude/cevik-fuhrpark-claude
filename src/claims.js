@@ -90,8 +90,11 @@ export async function claimForCase(env, caseId, vehicleId) {
 export async function claimOverview(env, user, envName, query = {}) {
   if (!isMgr(user)) throw forbidden();
   const filter = ['offen', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
-  const rateRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
-  const rate = rateRow && rateRow.value !== '' && Number.isFinite(Number(rateRow.value)) ? Number(rateRow.value) : null;
+  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','claim_followup_days')`).all()).results.map((r) => [r.key, r.value]));
+  const rv = sets.get('workshop_hourly_rate_net');
+  const rate = rv !== undefined && rv !== null && rv !== '' && Number.isFinite(Number(rv)) ? Number(rv) : null;
+  const fu = Number(sets.get('claim_followup_days'));
+  const followupDays = fu > 0 ? fu : null;
   const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
@@ -108,13 +111,14 @@ export async function claimOverview(env, user, envName, query = {}) {
     const complete = workNet !== null && (r.covered ? true : r.not_actual === 0);
     const cost = complete ? r2(workNet + (r.covered ? 0 : r.parts_net) + r.ext_net) : null;
     const { hours, not_actual, parts_net, ext_net, covered, ...rest } = r;
-    return { ...shape(rest, today), case_cost_net: cost, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
+    const sh = shape(rest, today);
+    return { ...sh, followup_due: followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
   });
   const counts = { offen: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
   for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; }
   if (filter === 'offen') list = list.filter((c) => c.open); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
   const reimb = list.filter((c) => c.reimbursed_net !== null);
-  return { today, filter, counts, claims: list, reimbursed_sum_net: reimb.length ? r2(reimb.reduce((s, c) => s + c.reimbursed_net, 0)) : null };
+  return { today, filter, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: reimb.length ? r2(reimb.reduce((s, c) => s + c.reimbursed_net, 0)) : null };
 }
 
 export function claimsCsv(ov) {

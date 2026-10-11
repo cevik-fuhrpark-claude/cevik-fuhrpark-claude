@@ -415,3 +415,6 @@ Object.assign(STRINGS.en, { num_ambiguous: 'Ambiguous: enter without thousands d
 Object.assign(STRINGS.de, { claim_followup: 'Versicherungsfälle – nachfassen nach Tagen ohne Regulierung (leer = aus)' });
 Object.assign(STRINGS.uk, { claim_followup: 'Страхові випадки – нагадати через днів без врегулювання (порожньо = вимк.)' });
 Object.assign(STRINGS.en, { claim_followup: 'Insurance claims – follow up after days without settlement (empty = off)' });
+Object.assign(STRINGS.de, { todo_claims: 'Versicherungsfälle nachfassen' });
+Object.assign(STRINGS.uk, { todo_claims: 'Страхові випадки – нагадати страховику' });
+Object.assign(STRINGS.en, { todo_claims: 'Follow up insurance claims' });

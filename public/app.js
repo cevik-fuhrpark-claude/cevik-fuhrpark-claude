@@ -345,13 +345,14 @@ async function dispoPlanned() {
 
 // Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
 async function fleetTodo() {
-  const [cs, ov, fs, tc, dr, ct] = await Promise.all([
+  const [cs, ov, fs, tc, dr, ct, cl] = await Promise.all([
     api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []),
     api('GET', '/api/maintenance').catch(() => null),
     api('GET', '/api/fines?status=open').then((r) => r.fines).catch(() => []),
     isMgr() ? api('GET', '/api/tacho').catch(() => null) : null,
     isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(() => []) : [],
     isMgr() ? api('GET', '/api/contracts?filter=aktion').then((r) => r.contracts).catch(() => []) : [],
+    isMgr() ? api('GET', '/api/claims?filter=offen').then((r) => r.claims.filter((c) => c.followup_due)).catch(() => []) : [],
   ]);
   const today = bDate();
   const in7 = bDate(7);
@@ -366,6 +367,7 @@ async function fleetTodo() {
     ['todo_driver_docs', dr.filter((d) => d.status.overall === 'kritisch'), (d) => `#/drivers/${d.id}`, (d) => `${d.display_name} · ${[...d.status.items.filter((i) => i.status === 'abgelaufen').map((i) => t('dk2_' + i.kind)), d.status.check.status === 'mangel' ? t('license_check') : ''].filter(Boolean).join(', ')}`, 'kritisch'],
     ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
       (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
+    ['todo_claims', cl, (c) => `#/cases/${c.case_id}`, (c) => `${c.case_no} · ${c.plate} · ${c.insurer} · ${t('claim_days_open').replace('{n}', c.days_open)}`, ''],
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
@@ -659,7 +661,7 @@ async function viewClaims() {
   let html = `<h1>${esc(t('claims'))}</h1><p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(x === 'offen' ? t('claim_f_open') : x === 'alle' ? t('filter_all') : t('cls_' + x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${r.reimbursed_sum_net !== null ? `<section class="panel"><dl class="kv"><dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd></dl></section>` : ''}
-    <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(t('claim_days_open').replace('{n}', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
+    <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(t('claim_days_open').replace('{n}', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button></div>`;
   render(html, 'more');
   $$('[data-clf]').forEach((b) => (b.onclick = () => { S.clFilter = b.dataset.clf; viewClaims(); }));

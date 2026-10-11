@@ -2284,8 +2284,10 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   eq((await owner.put('/api/settings', { claim_followup_days: '7' })).status, 200);
   const fc = await claimCodes();
   ok(fc.includes(c2) && !fc.includes(cid), 'offen seit 10 Tagen → Befund; regulierter Fall nicht');
+  ov = (await users.fleet.get('/api/claims')).data; eq(ov.followup_days, 7); ok(ov.claims.find((x) => x.case_id === c2).followup_due === true, 'Übersicht: nachfassen');
   eq((await owner.put('/api/settings', { claim_followup_days: '14' })).status, 200);
   ok(!(await claimCodes()).includes(c2), '10 Tage < 14 → kein Befund');
+  eq((await users.fleet.get('/api/claims')).data.claims.find((x) => x.case_id === c2).followup_due, false);
   eq((await owner.put('/api/settings', { claim_followup_days: null })).status, 200);
 });
 await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format „1.234,50“; km „120.000“ = 120000', async () => {
