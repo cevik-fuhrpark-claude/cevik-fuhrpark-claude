@@ -1057,7 +1057,7 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   const dupl = Object.entries(perLang).flatMap(([lang, b]) => { const seen = {}; return [...b.matchAll(/(?:^|[\s,{])([a-z0-9_]+): (?=['`])/g)].map((m) => m[1]).filter((k) => (seen[k] = (seen[k] || 0) + 1) > 1).map((k) => `${lang}.${k}`); });
   eq(dupl.join(','), '', 'doppelte Textschlüssel (der spätere überschreibt still den früheren)');
   // Hilfe-Abschnitte werden dynamisch (help_<name>_t/_s) gebildet: jeder genannte Abschnitt muss in allen Sprachen mit gleicher Schrittzahl existieren
-  const helpSrc = app.slice(app.indexOf('function viewHelp()'), app.indexOf('\n}\n', app.indexOf('function viewHelp()')));
+  const helpSrc = app.slice(app.indexOf('function helpSections('), app.indexOf('\n}\n', app.indexOf('function helpSections(')));
   const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'more', 'app_version', 'help'].includes(k)));
   ok(helpParts.has('stock') && helpParts.has('privacy') && helpParts.has('myveh'), 'Hilfe: Lager, Datenauskunft, Mein Fahrzeug');
   for (const k of helpParts) for (const lang of ['de', 'uk', 'en']) {
@@ -3086,8 +3086,37 @@ await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste 
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/'todo_result_missing', ov && ov\.result_missing/.test(app) && app.includes('#/quality?f=inspection_no_result'), '„Heute zu tun“: Gruppe mit Link auf Datenqualität-Filter');
-  ok(/ae\.matches\('input, select, textarea'\)/.test(app), 'Seitenwechsel: Fokus auf Überschrift überschreibt nicht das Ergebnisfeld beim Direktsprung ?ev=');
+  ok(/ae\.matches\('input, select, textarea[^']*'\)/.test(app), 'Seitenwechsel: Fokus auf Überschrift überschreibt nicht das Ergebnisfeld beim Direktsprung ?ev=');
   ok(/\[\/\^#\\\/quality\(\?:\\\?f=\(\\w\+\)\)\?\$\/, viewQuality\]/.test(app), 'Route #/quality?f=<Prüfung>');
+});
+
+await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverzeichnis, „Hilfe zu dieser Seite“ nur mit passendem Abschnitt', async () => {
+  const { helpMatches, helpNorm } = await import('../public/help.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq(helpNorm('  Straße  PRÜFUNG '), 'strasse prufung'); eq(helpNorm('Pruefung'), 'prufung');
+  const secs = [{ name: 'a', title: 'Prüftermine', steps: ['HU alle 12 Monate', 'SP nach der HU', 'Nachweis hochladen'] }, { name: 'b', title: 'Lager', steps: ['Mindestbestand pflegen', 'Bestellvorschlag'] }];
+  eq(helpMatches(secs, '   '), null, 'leere Suche = alles zeigen');
+  eq(JSON.stringify(helpMatches(secs, 'hu')), JSON.stringify([{ name: 'a', steps: [0, 1] }]), 'Treffer je Schritt');
+  eq(JSON.stringify(helpMatches(secs, 'prueftermine')), JSON.stringify([{ name: 'a', steps: [] }]), 'ue-Schreibweise findet ü');
+  eq(JSON.stringify(helpMatches(secs, 'PRUFTERMINE nachweis')), JSON.stringify([{ name: 'a', steps: [2] }]), 'alle Wörter, Titel zählt für den Abschnitt');
+  eq(JSON.stringify(helpMatches(secs, 'hu lager')), '[]', 'Wörter aus verschiedenen Abschnitten → kein Treffer');
+  // echte Texte: jede Sprache findet ihren Abschnitt „Prüftermine“ über ein Wort aus dem eigenen Titel
+  const sections = (lang) => ['dates', 'stock', 'report'].map((n) => ({ name: n, title: STRINGS[lang][`help_${n}_t`], steps: STRINGS[lang][`help_${n}_s`].split('|') }));
+  for (const lang of ['de', 'uk', 'en']) {
+    const w = STRINGS[lang].help_stock_t.split(/[\s:&,]+/).filter((x) => x.length > 4).pop();
+    ok(helpMatches(sections(lang), w).some((m) => m.name === 'stock'), `Suche ${lang}: ${w}`);
+    for (const k of ['help_search', 'help_toc', 'help_hits', 'help_none', 'help_page']) ok(STRINGS[lang][k], `${k} ${lang}`);
+    ok(STRINGS[lang].help_hits.includes('{n}'), 'Platzhalter {n}');
+  }
+  // „Hilfe zu dieser Seite“: jeder genannte Abschnitt existiert in den Hilfetexten; Route mit ?s=
+  const links = [...app.matchAll(/helpLink\('([a-z]+)'\)/g)].map((m) => m[1]);
+  ok(links.length >= 8, 'Seitenhilfe-Links: ' + links.length);
+  for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
+  ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
+  ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>');
+  ok(/'\/help\.js'/.test(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')), 'help.js im Offline-Cache');
 });
 
 await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route – auch mit encodeURIComponent(Fahrzeug-ID)', async () => {

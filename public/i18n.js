@@ -512,3 +512,6 @@ Object.assign(STRINGS.en, { res_missing_mine: 'Inspection result missing (record
 Object.assign(STRINGS.de, { todo_result_missing: 'Pflichtprüfung ohne Prüfergebnis', show_in_dq: 'In der Datenqualität anzeigen' });
 Object.assign(STRINGS.uk, { todo_result_missing: 'Обовʼязковий огляд без результату', show_in_dq: 'Показати в якості даних' });
 Object.assign(STRINGS.en, { todo_result_missing: 'Mandatory inspection without result', show_in_dq: 'Show in data quality' });
+Object.assign(STRINGS.de, { help_search: 'In der Hilfe suchen', help_toc: 'Inhalt', help_hits: '{n} passende Abschnitte – Treffer sind markiert', help_none: 'Keine Treffer – anderen Begriff versuchen.', help_page: 'Hilfe zu dieser Seite' });
+Object.assign(STRINGS.uk, { help_search: 'Пошук у довідці', help_toc: 'Зміст', help_hits: 'Знайдено розділів: {n} – збіги позначено', help_none: 'Нічого не знайдено – спробуйте інше слово.', help_page: 'Довідка до цієї сторінки' });
+Object.assign(STRINGS.en, { help_search: 'Search help', help_toc: 'Contents', help_hits: '{n} matching sections – matches are highlighted', help_none: 'No results – try another word.', help_page: 'Help for this page' });

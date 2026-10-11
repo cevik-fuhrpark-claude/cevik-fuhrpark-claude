@@ -2,6 +2,7 @@
 import { STRINGS, CHECK_LABELS } from './i18n.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv } from './csv.js';
+import { helpMatches } from './help.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase(); return l.startsWith('uk') ? 'uk' : l.startsWith('en') ? 'en' : 'de'; };
@@ -134,7 +135,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/plan$/, viewPlan], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   // Links mit encodeURIComponent(Fahrzeug-ID) enthalten „VIN%3A…“ – vor dem Abgleich mit den Routen auf „VIN:“ zurückführen
@@ -163,7 +164,7 @@ async function route() {
       // Screenreader/Tastatur: nach Seitenwechsel Fokus auf die Überschrift (nicht bei Neuaufbau derselben Seite)
       // – außer die Ansicht hat selbst ein Feld fokussiert (z. B. Direktsprung ?ev= zum Formular „Prüfergebnis nachtragen“)
       const ae = document.activeElement;
-      if (S.lastHash && S.lastHash !== h && !(ae && ae !== document.body && ae.matches('input, select, textarea') && ae.closest('#main, main'))) { const h1 = document.querySelector('#main h1, main h1'); if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); } }
+      if (S.lastHash && S.lastHash !== h && !(ae && ae !== document.body && ae.matches('input, select, textarea, [data-keepfocus]') && ae.closest('#main, main'))) { const h1 = document.querySelector('#main h1, main h1'); if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); } }
       S.lastHash = h;
       if (S.me && navigator.onLine !== false) flushOutbox();
       return;
@@ -507,7 +508,7 @@ async function viewNew(preId) {
   const others = vs.filter((v) => !v.assigned);
   const pick = (arr) => `<div class="vehpick">${arr.map((v) => `<label><input type="radio" name="veh" value="${esc(v.id)}" required>${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>`;
   const ws = S.meta.workshops;
-  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}<form id="f" novalidate>
+  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}${helpLink('report')}<form id="f" novalidate>
     <label for="vq">${esc(t('choose_vehicle'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     ${mine.length ? `<h3>${esc(t('my_vehicles'))}</h3>${pick(mine)}<details><summary>${esc(t('other_vehicles'))}</summary>${pick(others)}</details>` : pick(vs)}
     <div id="known"></div><label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('what_wrong_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>
@@ -705,7 +706,7 @@ async function viewClaims() {
   const f = S.clFilter || 'offen';
   const r = await api('GET', `/api/claims?filter=${f}`);
   const tabs = ['offen', 'alle', 'reguliert', 'abgelehnt'];
-  let html = `<h1>${esc(t('claims'))}</h1><p class="small muted">${esc(t('claims_hint'))}</p>
+  let html = `<h1>${esc(t('claims'))}</h1>${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(x === 'offen' ? t('claim_f_open') : x === 'alle' ? t('filter_all') : t('cls_' + x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${r.reimbursed_sum_net !== null ? `<section class="panel"><dl class="kv"><dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd></dl></section>` : ''}
     <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(t('claim_days_open').replace('{n}', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
@@ -826,7 +827,7 @@ async function viewInspection(caseId) {
 }
 async function viewDepartureCheck(preId) {
   const vs = await vehiclesCached();
-  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select><div id="known"></div>
+  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select><div id="known"></div>
     ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p>`, 'check');
@@ -1160,7 +1161,7 @@ function bindCtSection(id, reload) {
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
   const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}`);
-  render(`<h1>${esc(t('ct_title'))}</h1><p class="small muted">${esc(t('ct_hint'))}</p>
+  render(`<h1>${esc(t('ct_title'))}</h1>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
     <div class="actions noprint" style="margin-top:0"><select id="ctk" aria-label="${esc(t('ct_kind'))}" style="max-width:260px"><option value="">${esc(t('ct_all_kinds'))}</option>${CT_KINDS.map((x) => `<option value="${x}"${k === x ? ' selected' : ''}>${esc(t('ck_' + x))}</option>`).join('')}</select></div>
@@ -1232,7 +1233,7 @@ async function loadStockSelect(c) {
 async function viewStock() {
   const items = (await api('GET', '/api/stock')).items;
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
-  render(`<h1>${esc(t('stock'))}</h1>
+  render(`<h1>${esc(t('stock'))}</h1>${helpLink('stock')}
     <details class="panel"><summary>${esc(t('new_item'))}</summary><form id="nf">
       ${sites.length > 1 ? `<label>${esc(t('workshop'))}</label><select name="site">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
       <label>${esc(t('part_name'))}</label><input name="name" required><label>${esc(t('part_number'))}</label><input name="part_number">
@@ -1397,7 +1398,7 @@ async function viewDrivers() {
   if (!isMgr()) { if (list.length) { location.hash = '#/drivers/' + list[0].id; return; } render(`<h1>${esc(t('my_driver_file'))}</h1><p class="muted">${esc(t('no_driver_file'))}</p>`, 'more'); return; }
   let users = [];
   try { users = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active); } catch {}
-  const html = `<h1>${esc(t('drivers'))}</h1><p class="small muted">${esc(t('driver_privacy'))}</p>
+  const html = `<h1>${esc(t('drivers'))}</h1>${helpLink('drivers')}<p class="small muted">${esc(t('driver_privacy'))}</p>
     <details class="panel"><summary>${esc(t('new_driver'))}</summary><form id="ndf"><label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('personnel_no'))}</label><input name="personnel_no"><label>${esc(t('site'))}</label><input name="site">
       <label>${esc(t('app_account'))}</label><select name="user_id"><option value="">${esc(t('no_account'))}</option>${users.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)} (${esc(u.username)})</option>`).join('')}</select>
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
@@ -1615,7 +1616,7 @@ async function viewMaint() {
   const rows = ov.rows.filter(sel);
   const cls = { ueberfaellig: 'kritisch', faellig: 'mittel', ok: 'ok', ohne_termin: '', ungeklaert: 'mittel', nicht_pflichtig: '', erste_sp: '' };
   const tabs = [['due', `${t('ms_ueberfaellig')} + ${t('ms_faellig')}`, ov.totals.overdue + ov.totals.due], ['noplan', t('due_no_plan'), ov.rows.filter(noPlan).length], ['ueberfaellig', t('ms_ueberfaellig'), ov.totals.overdue], ['ungeklaert', t('ms_ungeklaert'), ov.totals.unclear || 0], ['all', t('filter_all'), ov.rows.length], ['gaps', t('gaps'), ov.totals.vehicles_with_gaps]];
-  let html = `<h1>${esc(t('inspections_due'))}</h1>
+  let html = `<h1>${esc(t('inspections_due'))}</h1>${helpLink('dates')}
     <section class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip ${ov.totals.overdue ? 'kritisch' : ''}">${esc(t('ms_ueberfaellig'))}: ${ov.totals.overdue}</span><span class="chip ${ov.totals.due ? 'mittel' : ''}">${esc(t('ms_faellig'))} (≤ ${ov.warn_days} ${esc(t('days'))}): ${ov.totals.due}</span><span class="chip ok">${esc(t('ms_ok'))}: ${ov.totals.ok}</span><span class="chip ${ov.totals.vehicles_with_gaps ? 'mittel' : ''}">${esc(t('gaps'))}: ${ov.totals.vehicles_with_gaps} / ${ov.totals.vehicles}</span></div>
     <div class="actions"><button type="button" class="btn secondary" id="mcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="mics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="mprt">${esc(t('print'))}</button></div></section>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -1671,7 +1672,7 @@ async function viewKpi() {
   let r;
   try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}`); } catch (err) { render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const st = (x) => (x.n ? `${dur(x.median_h)} <span class="small muted">(P90 ${dur(x.p90_h)}, n=${x.n})</span>` : '–');
-  let html = `<h1>${esc(t('kpi'))}</h1><form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+  let html = `<h1>${esc(t('kpi'))}</h1>${helpLink('kpi')}<form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     ${r.sites.length > 1 || r.site ? `<div><label>${esc(t('workshop'))}</label><select name="site"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...r.sites, ...(r.site ? [r.site] : [])])].map((x) => `<option value="${esc(x)}"${x === r.site ? ' selected' : ''}>${esc(x === 'ohne' ? t('kpi_no_site') : wsName(x))}</option>`).join('')}</select></div>` : ''}
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button></div></form>${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}`;
@@ -1938,16 +1939,58 @@ async function viewSearch() {
 }
 
 // ---------- Hilfe (Schritt für Schritt, DE/UK/EN) ----------
-function viewHelp() {
-  const sec = (n) => `<section class="panel"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
-  const r = S.me.role;
+function viewHelp(want) {
+  const sec = (n) => `<section class="panel helpsec" id="help-${n}"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
+  const parts = helpSections(S.me.role);
+  render(`<h1>${esc(t('help'))}</h1><div class="panel"><label for="hq">${esc(t('help_search'))}</label><input id="hq" type="search" autocomplete="off">${helpToc(parts)}</div>`
+    + parts.map(sec).join('') + `<p class="small muted">${esc(t('app_version'))}: ${esc(S.appVersion || '–')}</p>`, 'more');
+  const run = helpWire(parts, want);
+  let timer;
+  $('#hq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 150); };
+}
+
+// Hilfe-Abschnitte je Rolle (Reihenfolge = Anzeige)
+function helpSections(r) {
   const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'drivers', 'contracts', 'claims', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
   if (r === 'dispatch') parts.unshift('dispo');
   if (r === 'driver') parts.unshift('myveh');
-  render(`<h1>${esc(t('help'))}</h1>${parts.map(sec).join('')}<p class="small muted">${esc(t('app_version'))}: ${esc(S.appVersion || '–')}</p>`, 'more');
+  return parts;
+}
+
+// Link „Hilfe zu dieser Seite“ – nur wenn die Rolle den Abschnitt sieht
+const helpLink = (n) => (S.me && helpSections(S.me.role).includes(n) ? `<p class="small" style="margin:4px 0 12px"><a href="#/help?s=${n}">${esc(t('help_page'))} ›</a></p>` : '');
+
+// Hilfe: Trefferzeile + Inhaltsverzeichnis (Sprungmarken als Knöpfe – die Raute gehört dem Router)
+function helpToc(parts) {
+  return `<p id="hres" class="small muted" aria-live="polite" style="margin:6px 0 0"></p>
+    <details id="htoc"${innerWidth >= 700 ? " open" : ""}><summary>${esc(t('help_toc'))} (${parts.length})</summary><ul class="helptoc">${parts.map((n) => `<li data-hn="${n}"><button type="button" class="linkbtn" data-hgo="${n}">${esc(t(`help_${n}_t`))}</button></li>`).join('')}</ul></details>`;
+}
+
+function helpWire(parts, want) {
+  const sections = parts.map((n) => ({ name: n, title: t(`help_${n}_t`), steps: t(`help_${n}_s`).split('|') }));
+  const go = (n) => {
+    const el = document.getElementById(`help-${n}`); if (!el) return;
+    const h = el.querySelector('h2'); h.tabIndex = -1; h.dataset.keepfocus = '1';
+    el.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true });
+    el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
+  };
+  $$('[data-hgo]').forEach((b) => (b.onclick = () => go(b.dataset.hgo)));
+  const run = () => {
+    const res = helpMatches(sections, document.getElementById('hq').value);
+    for (const s of sections) {
+      const m = res && res.find((x) => x.name === s.name);
+      const el = document.getElementById(`help-${s.name}`);
+      el.hidden = !!res && !m;
+      $$('li', el).forEach((li, i) => li.classList.toggle('hit', !!m && m.steps.includes(i)));
+      const tl = $(`[data-hn="${s.name}"]`); if (tl) tl.hidden = el.hidden;
+    }
+    $('#hres').textContent = !res ? '' : res.length ? t('help_hits').replace('{n}', res.length) : t('help_none');
+  };
+  if (want && parts.includes(want)) go(want);
+  return run;
 }
 
 // ---------- Mängelstatistik der Kontrollen ----------
@@ -1956,7 +1999,7 @@ async function viewDefects() {
   const r = await api('GET', `/api/reports/defects?days=${days}${kind ? '&kind=' + kind : ''}`);
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
-  render(`<h1>${esc(t('defect_stats'))}</h1><p class="small muted">${esc(t('defect_stats_hint'))}</p>
+  render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${days} ${esc(t('days'))}${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       <div><label for="dd">${esc(t('period'))}</label><select id="dd">${[30, 90, 180, 365].map((d) => `<option value="${d}"${d === days ? ' selected' : ''}>${d} ${esc(t('days'))}</option>`).join('')}</select></div>

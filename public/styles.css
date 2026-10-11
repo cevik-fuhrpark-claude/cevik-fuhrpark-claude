@@ -265,3 +265,10 @@ table.paper td:last-child { min-width: 30%; }
 .planset label { margin: 0; }
 .planset input[type=date] { width: auto; min-width: 10.5em; }
 .row .otherdates { font-weight: 600; }
+/* [CLAUDE] Hilfe: Inhaltsverzeichnis, Suchtreffer, Sprungziel */
+.helptoc { margin: 6px 0 0; padding: 0; list-style: none; columns: 2 260px; column-gap: 24px; }
+.helptoc li { break-inside: avoid; margin: 2px 0; }
+.linkbtn { appearance: none; background: none; border: 0; padding: 6px 0; min-height: 36px; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: left; }
+.helpsec li.hit { background: var(--mid-bg); border-radius: 4px; box-shadow: -6px 0 0 var(--mid-bg); }
+.helpsec { scroll-margin-top: 72px; }
+.helpsec.flash { outline: 3px solid var(--signal); outline-offset: 2px; }
