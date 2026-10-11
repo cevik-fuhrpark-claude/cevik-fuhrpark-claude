@@ -409,3 +409,6 @@ Object.assign(STRINGS.en, { cr_title: 'Insurance reimbursements in period', cr_r
 Object.assign(STRINGS.de, { dq_accident_no_claim: 'Vorgang nennt „Unfall“ – kein Versicherungsfall' });
 Object.assign(STRINGS.uk, { dq_accident_no_claim: 'Згадано «ДТП» – немає страхового випадку' });
 Object.assign(STRINGS.en, { dq_accident_no_claim: 'Case mentions "accident" – no insurance claim' });
+Object.assign(STRINGS.de, { num_ambiguous: 'Mehrdeutig: bitte ohne Tausenderpunkt (z. B. 2000) oder mit Komma für Nachkommastellen (z. B. 2,5 oder 2.000,00) eingeben.' });
+Object.assign(STRINGS.uk, { num_ambiguous: 'Неоднозначно: введіть без крапки для тисяч (напр. 2000) або з комою для дробової частини (напр. 2,5 чи 2.000,00).' });
+Object.assign(STRINGS.en, { num_ambiguous: 'Ambiguous: enter without thousands dot (e.g. 2000) or with a comma for decimals (e.g. 2,5 or 2.000,00).' });

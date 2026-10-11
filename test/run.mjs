@@ -2284,6 +2284,9 @@ await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format
   let e = null; try { num('2.000', { field: 'Preis' }); } catch (x) { e = x; } ok(e && /mehrdeutig/.test(e.message), 'mehrdeutig abgewiesen');
   eq(num('120.000', { grouped: true }), 120000); eq(num('1.250.300', { grouped: true }), 1250300);
   eq(num('', { nullable: true }), null);
+  // Oberfläche meldet dasselbe Muster schon am Feld (gleicher Ausdruck wie der Server)
+  const fs = await import('node:fs'); const appSrc = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const utilSrc = fs.readFileSync(new URL('../src/util.js', import.meta.url), 'utf8');
+  ok(appSrc.includes('const AMBIG_NUM = /^-?[1-9]\\d{0,2}(\\.\\d{3})+$/;') && utilSrc.includes('/^-?[1-9]\\d{0,2}(\\.\\d{3})+$/.test(t)'), 'gleiches Muster App/Server');
   // Ende-zu-Ende: km-Stand mit Tausenderpunkt wird richtig übernommen
   eq((await owner.post('/api/vehicles', { plate: 'VT-NUM 1', vin: 'WDB96340310555641', site: 'Dortmund' })).status, 201);
   eq((await users.fleet.post('/api/vehicles/VIN:WDB96340310555641/odometer', { km: '123.456' })).status, 201);
