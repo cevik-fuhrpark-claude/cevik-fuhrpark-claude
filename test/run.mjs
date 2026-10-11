@@ -3213,6 +3213,20 @@ await test('Sammelabfrage Prüfungs-Listen (Agent, Übersicht) liefert dasselbe 
   }
 });
 
+await test('Hinweise: Filter alle/ungelesen/dringend mit Anzahlen (nur Anzeige), Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { STRINGS } = await import('../public/i18n.js');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const NF = (\{[^\n]*\});/);
+  ok(m, 'Filterdefinition');
+  const NF = new Function('return ' + m[1])();
+  const list = [{ urgent: 1 }, { opened_at: 'x' }, { acknowledged_at: 'x', urgent: 1 }, {}];
+  eq(list.filter(NF.all).length, 4); eq(list.filter(NF.unread).length, 2, 'ungelesen = weder geöffnet noch quittiert'); eq(list.filter(NF.urgent).length, 2);
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].nf_unread && STRINGS[lang].nf_urgent, `Texte ${lang}`);
+  const n = await users.fleet.get('/api/notifications');
+  eq(n.data.unread, n.data.notifications.filter(NF.unread).length, 'gleiche Regel wie der Zähler am Glockensymbol');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

@@ -1542,10 +1542,15 @@ async function viewTacho() {
 // ---------- Hinweise & Push ----------
 async function viewInbox() {
   const n = await api('GET', '/api/notifications');
+  // Filter (nur Anzeige): alle / ungelesen (weder geöffnet noch quittiert) / dringend
+  const NF = { all: () => true, unread: (x) => !x.opened_at && !x.acknowledged_at, urgent: (x) => !!x.urgent };
+  const nf = NF[S.inboxF] ? S.inboxF : 'all';
+  const shown = n.notifications.filter(NF[nf]);
   render(`<h1>${esc(t('notifications'))}</h1><section class="panel" id="push"></section>
     <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
-    ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>` : ''}
-    <div class="list">${n.notifications.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t('no_notifications'))}</p>`}</div>`, '');
+    ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
+    <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.notifications.filter(NF[k]).length})</a>`).join('')}</div>` : ''}
+    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t('no_notifications'))}</p>`}</div>`, '');
   pushPanel($('#push'));
   const np = $('#np');
   np.ontoggle = async () => {
@@ -1562,6 +1567,7 @@ async function viewInbox() {
   $$('[data-ack]').forEach((b) => (b.onclick = async () => { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); viewInbox(); }));
   $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).catch(() => {})));
   const ra = $('#ra'); if (ra) ra.onclick = async () => { await api('POST', '/api/notifications/read-all'); S.unread = 0; viewInbox(); };
+  $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; viewInbox(); }));
 }
 
 async function pushPanel(el) {
