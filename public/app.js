@@ -1586,6 +1586,9 @@ async function viewMaster() {
 }
 
 // ---------- Prüftermine (Fuhrpark gesamt) ----------
+// Druck/PDF: Prüfhistorie der Fahrzeugakte („Bisherige Durchführungen“) immer mitdrucken, danach wieder zuklappen
+window.addEventListener('beforeprint', () => { const mh = document.querySelector('#mhist'); if (mh && !mh.open) { mh.open = true; mh.dataset.printOpened = '1'; } });
+window.addEventListener('afterprint', () => { const mh = document.querySelector('#mhist'); if (mh && mh.dataset.printOpened) { mh.open = false; delete mh.dataset.printOpened; } });
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 async function viewMaint() {
   let ov;
