@@ -3023,6 +3023,25 @@ await test('Prüfergebnis nachtragen (nie überschreiben, Sofort-Hinweis wie bei
   ok((await owner.get('/api/admin/audit?action=maintenance.result_add')).data.entries.length >= 2, 'Protokoll');
 });
 
+await test('Datenqualität als CSV (Browser): Formelschutz, BOM, alle Prüfungen in DE/UK/EN beschriftet', async () => {
+  const { dataQualityCsv, csvCell } = await import('../public/csv.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  const { CHECKS } = await import('../src/quality.js');
+  for (const lang of ['de', 'uk', 'en']) {
+    const missing = [...Object.keys(CHECKS).map((c) => 'dq_' + c), 'dq_sev_fehler', 'dq_sev_luecke', 'dq_sev_hinweis', 'dq_col_severity', 'dq_col_check', 'dq_col_object', 'dq_col_detail'].filter((k) => !STRINGS[lang][k]);
+    eq(missing.join(','), '', lang + ': fehlende Beschriftungen');
+  }
+  eq(csvCell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"', 'Formelschutz + Maskierung');
+  eq(csvCell('-5'), "'-5"); eq(csvCell('a;b'), '"a;b"'); eq(csvCell(null), '');
+  const items = (await users.fleet.get('/api/admin/data-quality')).data.items;
+  ok(items.length > 0, 'Befunde vorhanden');
+  const tr = (k) => STRINGS.de[k] || k;
+  const csv = dataQualityCsv(items, tr);
+  ok(csv.startsWith('\ufeffSchweregrad;Prüfung;Fahrzeug / Person;Detail\r\n'), 'Kopfzeile/BOM');
+  eq(csv.trim().split('\r\n').length, items.length + 1, 'eine Zeile je Befund');
+  ok(!/;dq_/.test(csv), 'keine unübersetzten Schlüssel');
+});
+
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {
   const VD = 'VIN:WDB96340310888883';
   eq((await owner.post('/api/vehicles', { plate: 'KD-XY 83', vin: 'WDB96340310888883', site: 'Dortmund' })).status, 201);
