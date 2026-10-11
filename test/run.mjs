@@ -1959,6 +1959,11 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: up.version, payload: { planned_date: day(2) } })).status, 200);
   eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: up.version, payload: { planned_date: day(4) } })).status, 409, 'veraltete Version aus dem Plan');
   ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(2))?.items.some((i) => i.id === cid), 'direkt gesetzter Termin am Tag');
+  const vrow = async (u) => (await u.get('/api/vehicles')).data.vehicles.find((v) => v.id === VP);
+  eq((await vrow(users.dispatch)).planned_workshop_date, day(2), 'Fahrzeugliste zeigt Werkstatttermin');
+  const avl = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(avl.data.vehicles.find((v) => v.id === VP).planned_workshop_date, day(2), 'Integrations-API: Werkstatttermin');
+  eq((await anon.req('GET', '/api/integration/v1/availability?environment=production', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP).planned_workshop_date, null, 'Umgebung getrennt');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   // noch nicht übernommener Auftrag: im Plan „ohne Termin“, aber nicht direkt planbar
   const cid2 = (await users.fleet.post('/api/cases', { vehicle_id: VP, description: 'Werkstattplan-Test: Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
@@ -1972,6 +1977,9 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   const rule = await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Werkstattplan-Test' });
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(5) })).status, 200);
   ok((await users.ws.get('/api/workshop/plan')).data.days.find((d) => d.date === day(5))?.items.some((i) => i.type === 'maintenance' && i.kind === 'UVV'), 'Prüftermin am Tag');
+  const vr = await vrow(users.fleet);
+  eq(vr.planned_inspection_date, day(5), 'Fahrzeugliste zeigt geplanten Prüftermin');
+  eq(vr.planned_workshop_date, null, 'entfernter Werkstatttermin nicht mehr angezeigt');
   const ics = new TextDecoder().decode((await users.ws.get('/api/workshop/plan?format=ics')).data);
   ok(ics.startsWith('BEGIN:VCALENDAR') && ics.includes('DTSTART;VALUE=DATE:' + day(5).replace(/-/g, '')) && ics.includes('SUMMARY:Prüfung UVV – WP-LN 1'), 'Kalenderdatei');
   ok(!/Bremsbeläge|Werkstattplan-Test/.test(ics), 'ohne Beschreibung/Nachweis');
