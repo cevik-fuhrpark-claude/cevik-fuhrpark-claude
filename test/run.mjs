@@ -3253,6 +3253,7 @@ await test('Lesezugriff: Fahrernamen in Vorgängen, Fahrzeugakte, Zeitleiste und
   ok(!('reporter_name_note' in lv), 'kein freier Namensvermerk');
   const csv = await viewer.get('/api/cases?format=csv&status=all');
   eq(csv.status, 200); ok(!new TextDecoder().decode(csv.data).includes(name), 'CSV ohne Fahrernamen');
+  ok(new TextDecoder().decode(csv.data).includes('Fahrer/in (Name ausgeblendet)'), 'CSV: Hinweis statt leerer Zelle');
   ok(new TextDecoder().decode((await users.fleet.get('/api/cases?format=csv&status=all')).data).includes(name), 'CSV der Leitung mit Melder');
   const dv = await viewer.get(`/api/cases/${C1}`);
   eq(dv.data.reporter_name, null); eq(dv.data.reporter_name_hidden, true);
