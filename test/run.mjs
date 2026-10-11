@@ -1231,6 +1231,21 @@ await test('Wartungshistorie: jede Durchführung bleibt erhalten (erfasst, erled
   const bk = (await owner.get('/api/admin/backup', { 'x-cfp-env': 'test' }));
   const bkj = bk.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(bk.data)) : bk.data;
   ok(JSON.stringify(bkj).includes('Werkstattrechnung Test 2'), 'in der Sicherung');
+  // Flottenweite Nachweisliste „Durchgeführte Prüfungen“: Zeitraum, Prüfart, CSV mit Formelschutz, Rechte, Protokoll
+  const hl = await users.fleet.get('/api/maintenance/history?from=2025-01-01&to=2025-12-31&kind=Inspektion');
+  eq(hl.status, 200);
+  const mine = hl.data.rows.filter((x) => x.vehicle_id === V2);
+  eq(mine.map((x) => x.done_date).join(','), '2025-09-02,2025-03-01', 'nur Zeitraum 2025');
+  eq(mine[1].source, 'erfasst'); ok(hl.data.by_kind.Inspektion >= 2);
+  ok(!hl.data.rows.some((x) => x.kind !== 'Inspektion'), 'Filter Prüfart');
+  eq((await users.fleet.get('/api/maintenance/history?from=2026-01-01&to=2025-01-01')).status, 400, 'von nach bis');
+  eq((await users.fleet.get('/api/maintenance/history?from=01.01.2026')).status, 400, 'Datumsformat');
+  eq((await users.ws.get('/api/maintenance/history')).status, 403, 'Werkstatt nicht');
+  eq((await users.driver.get('/api/maintenance/history')).status, 403, 'Fahrer nicht');
+  const hcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/maintenance/history?format=csv&from=2025-01-01&to=2026-12-31&kind=Inspektion')).data);
+  ok(hcsv.startsWith('﻿Kennzeichen;FIN-Schlüssel;Fahrzeugart'), 'CSV-Kopf');
+  ok(hcsv.includes(';2026-09-01;') && hcsv.includes(';Import;') && hcsv.includes(';2025-09-02;'), 'CSV-Zeilen');
+  ok((await owner.get('/api/admin/audit?action=maintenance.history_export')).data.entries.length >= 1, 'Export protokolliert');
 });
 
 await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte Zuordnung, Umgebungen getrennt; „Mein Fahrzeug“', async () => {

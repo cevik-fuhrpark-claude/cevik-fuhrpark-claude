@@ -223,6 +223,12 @@ async function handleApi(request, env, ctx, url) {
     }
     return json(ov);
   }
+  if (path === '/api/maintenance/history' && m === 'GET') {
+    const h = await maint.maintenanceHistory(env, user, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') !== 'csv') return json(h);
+    await auth.audit(env, user.id, 'maintenance.history_export', null, { rows: h.rows.length, from: h.from, to: h.to, kind: h.kind });
+    return new Response(maint.maintenanceHistoryCsv(h), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-durchgefuehrte-pruefungen_${h.from}_${h.to}.csv"` } });
+  }
   if (path === '/api/maintenance/import' && m === 'POST') {
     await rateLimit(env, 'import', user.id);
     const text = await request.text();

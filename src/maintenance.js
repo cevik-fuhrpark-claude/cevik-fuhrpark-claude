@@ -278,3 +278,29 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString()) {
     description: `geplanter Werkstatttermin${r.next_due_date ? ` · fällig ${r.next_due_date}` : ''}` });
   return icsCalendar('Fuhrpark Prüftermine', events, stamp);
 }
+
+// [CLAUDE] Durchgeführte Prüfungen/Wartungen über die ganze Flotte (Nachweis z. B. für Prüfungen durch Behörden/Versicherer):
+// nur gespeicherte Durchführungen aus der Wartungshistorie, Zeitraum nach Durchführungsdatum, optional Prüfart. Ändert nichts.
+const RESULT_DE = { ohne_maengel: 'ohne Mängel', geringe_maengel: 'geringe Mängel', erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
+const SOURCE_DE = { bestand: 'Bestand (Übernahme)', erfasst: 'erfasst', erledigt: 'als erledigt eingetragen', import: 'Import' };
+export async function maintenanceHistory(env, user, query = {}) {
+  if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
+  const today = berlinDate();
+  const from = query.from || `${today.slice(0, 4)}-01-01`; const to = query.to || today;
+  for (const d of [from, to]) if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
+  const kind = query.kind ? String(query.kind).slice(0, 40) : null;
+  const rows = (await env.DB.prepare(`SELECT e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at
+    FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN users u ON u.id=e.recorded_by
+    WHERE e.done_date >= ? AND e.done_date <= ? ${kind ? 'AND e.kind = ?' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5000`)
+    .bind(...(kind ? [from, to, kind] : [from, to])).all()).results;
+  const by_kind = {};
+  for (const r of rows) by_kind[r.kind] = (by_kind[r.kind] || 0) + 1;
+  return { from, to, kind, rows, by_kind, truncated: rows.length === 5000 };
+}
+export function maintenanceHistoryCsv(h) {
+  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Fahrzeugart', 'Standort', 'Prüfart', 'Durchgeführt am', 'km bei Durchführung', 'Ergebnis', 'Nachweis', 'Herkunft', 'Erfasst von', 'Erfasst am'].join(';')];
+  for (const r of h.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), csvCell(r.kind), r.done_date, r.done_km ?? '',
+    RESULT_DE[r.result] || '', csvCell(r.evidence), SOURCE_DE[r.source] || csvCell(r.source), csvCell(r.recorded_by_name), (r.created_at || '').slice(0, 10)].join(';'));
+  return '﻿' + lines.join('\r\n') + '\r\n';
+}
