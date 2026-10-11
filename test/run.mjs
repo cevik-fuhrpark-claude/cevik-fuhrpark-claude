@@ -3016,6 +3016,7 @@ await test('Prüfergebnis nachtragen (nie überschreiben, Sofort-Hinweis wie bei
   eq(d.maintenance_history.find((h) => h.id === ev.id).result, 'gefaehrliche_maengel');
   eq(d.failed_inspection && d.failed_inspection.event_id, ev.id, 'Akte: Prüfung nicht bestanden');
   eq((await dq()).length, 0, 'Datenqualität erledigt');
+  eq((await users.fleet.get(`/api/vehicles/${VD}/timeline?types=maintenance`)).data.items.find((x) => x.evidence === 'NR 1').result, 'gefaehrliche_maengel', 'Zeitleiste mit Ergebnis');
   // ältere Durchführung: Nachtragen erlaubt, aber kein Alarm (nicht die neueste)
   const ro = await users.fleet.post(`/api/maintenance/events/${evOld.id}/result`, { result: 'verkehrsunsicher', evidence: 'Altbericht' });
   eq(ro.status, 200); eq(ro.data.notified, 0, 'alte Prüfung: kein Alarm');
