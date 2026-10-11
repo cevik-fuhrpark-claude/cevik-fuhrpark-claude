@@ -340,7 +340,8 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
   if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
-  for (const d of [lastDate, nextDue]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  for (const d of [lastDate, nextDue]) if (d && !isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const id = uuid();
   const now = nowIso();
   const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
@@ -385,6 +386,8 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
 }
 
+// echtes Kalenderdatum JJJJ-MM-TT (31.02. u. Ä. abgewiesen)
+const isCalendarDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
 // Prüfergebnisse, bei denen Fuhrparkleitung, Inhaber und Disposition sofort (dringend, nicht abschaltbar) informiert werden
 const URGENT_RESULTS = { gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
 export async function completeMaintenance(env, user, ruleId, body, { ctx = null, envName = null } = {}) {
@@ -392,7 +395,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const r = await env.DB.prepare('SELECT * FROM maintenance_rules WHERE id=?').bind(ruleId).first();
   if (!r) throw notFound();
   const date = str(body.done_date, { required: true, max: 10, field: 'Datum' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date + 'T00:00:00Z')) || new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) !== date) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (!isCalendarDate(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;

@@ -2937,6 +2937,7 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   const fut = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(2), evidence: 'GM 0' });
   eq(fut.status, 400, 'Zukunftsdatum abgewiesen');
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: '2026-02-30', evidence: 'GM 0' })).status, 400, 'ungültiges Datum');
+  eq((await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(3), interval_months: 12, evidence: 'GM-Zukunft' })).status, 400, 'Regel: letzte Durchführung nicht in der Zukunft');
   const notes = async (u) => (await u.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'inspection_defect' && n.body.includes('GM-XY 82'));
   // alter Bericht nachgetragen → kein Alarm
   const old = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-60), evidence: 'GM 1', result: 'verkehrsunsicher' });
