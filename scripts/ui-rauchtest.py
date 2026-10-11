@@ -330,9 +330,10 @@ with sync_playwright() as p:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
                 if LANG and name == 'handy':
                     # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
-                    de = pg.evaluate(r"""() => { const out = []; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
+                    # zusätzlich deutsche Fachwörter ohne Umlaut (z. B. „Inspektion“, „Sonstiges“ – so fiel die fehlende Übersetzung der Prüfarten auf)
+                    de = pg.evaluate(r"""() => { const out = []; const DEW = /\b(Inspektion|Sonstiges|Fahrzeug\w*|Vorgang|Vorgänge|Abfahrtskontrolle|Hinweise?|Bremsen|Reifen|Hydraulik|Verbandkasten|Ladungssicherung|Speichern|Abbrechen|Zuordnung|Einstellungen|Nachweis|erledigt|Kennzeichen|Ölwechsel|Feuerlöscher|Prognose|Fahrer|Meldung|Standort|Anhänger)\b/; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
                       while (w.nextNode()) { const x = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
-                        if (x && /[äöüßÄÖÜ]/.test(x) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
+                        if (x && (/[äöüßÄÖÜ]/.test(x) || DEW.test(x)) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
                     if de:
                         problems.append(f'{where}: deutscher Text in {LANG}: {de[:4]}')
                 # Datensparsamkeit: Lesezugriff sieht keine Fahrernamen (Melder „Rauchtest driver“) in Vorgängen und Fahrzeugakte

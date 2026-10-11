@@ -1630,6 +1630,8 @@ async function viewMaster() {
 window.addEventListener('beforeprint', () => { const mh = document.querySelector('#mhist'); if (mh && !mh.open) { mh.open = true; mh.dataset.printOpened = '1'; } });
 window.addEventListener('afterprint', () => { const mh = document.querySelector('#mhist'); if (mh && mh.dataset.printOpened) { mh.open = false; delete mh.dataset.printOpened; } });
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+// Gespeicherter Standard-Nachweis der Fahrerzuordnung (Server, deutsch) in der App-Sprache anzeigen; eigene Nachweise bleiben wörtlich
+const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_default') : e || '');
 // Planungshilfe: km-Prognose fällt in die nächsten 30 Tage (ändert keinen Status, nur Anzeige)
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
 async function viewMaint() {
@@ -1771,7 +1773,7 @@ async function viewTimeline(id, fArg) {
       case 'case_closed': return ['', `${esc(t('tl_case_closed'))}`, `${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'inspection': return [x.result === 'maengel' ? 'p-mittel' : '', `${esc(t(x.inspection_kind === 'abfahrt' ? 'departure_check' : 'inspection'))}: ${esc(t(x.result === 'ok' ? 'ok' : 'defect'))}`, `${esc(pnm(x.by, x.by_hidden) || '')}${km(x.km)}${caseLink(x)}`];
       case 'odometer': return [x.note ? 'p-mittel' : '', `${esc(t('km'))}${km(x.km)}`, `${esc(x.source || '')}${x.note ? ' · ' + esc(x.note) : ''}`];
-      case 'driver_from': return ['', `${esc(t('tl_driver_from'))}: ${esc(x.by)}`, esc(x.evidence || '')];
+      case 'driver_from': return ['', `${esc(t('tl_driver_from'))}: ${esc(x.by)}`, esc(evTr(x.evidence))];
       case 'driver_to': return ['', `${esc(t('tl_driver_to'))}: ${esc(x.by)}`, ''];
       case 'document': return ['', `${esc(t('dk_' + (x.doc_kind || 'sonstiges')))}: <a href="${fileUrl(x.file_id)}" target="_blank" rel="noopener">${esc(x.text)}</a>`, x.valid_until ? `${esc(t('valid_until'))} ${fmtD(x.valid_until)}` : ''];
       case 'tire': return [x.tread_mm !== null && x.tread_mm < 1.6 ? 'p-kritisch' : '', `${esc(t('tires'))} ${esc(x.position)}: ${esc(t('te_' + x.tire_event))}${x.tread_mm !== null ? ' · ' + esc(String(x.tread_mm).replace('.', ',')) + ' mm' : ''}`, `${km(x.km).replace(/^ · /, '')}${caseLink(x)}`];

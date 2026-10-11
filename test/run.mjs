@@ -1279,6 +1279,12 @@ await test('km-Fälligkeit: Prognose aus gespeicherten km-Ständen (nur Planungs
   eq(fcSoon({ km_forecast: { date: '2026-03-02' } }, '2026-01-30'), false);
   ok(/f === 'fc30' \? fcSoon\(r, ov\.today\)/.test(appSrc), 'Prüftermine nutzen fcSoon als Filter');
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].fc30_tab && STRINGS[lang].fc30_hint, `Filtertexte ${lang}`);
+  // Standard-Nachweis der Fahrerzuordnung (Server speichert deutsch) wird in der Zeitleiste übersetzt – Texte müssen übereinstimmen
+  const vehSrc = (await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
+  const defEv = (vehSrc.match(/\|\| '(Zuordnung durch [^']+)'/) || [])[1];
+  ok(defEv && appSrc.includes(`e === '${defEv}' ? t('ev_assign_default')`), 'App kennt den Standard-Nachweis des Servers');
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].ev_assign_default, `Zuordnungstext ${lang}`);
+  eq(STRINGS.de.ev_assign_default, defEv);
   eq((await users.fleet.post(`${vp}/active`, { active: false, reason: 'Testfahrzeug Prognose' })).status, 200, 'Testfahrzeug wieder außer Betrieb');
 });
 

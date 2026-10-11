@@ -1,7 +1,7 @@
 #!/bin/sh
 # [CLAUDE] Gesamtprüfung vor jedem Push: Tests, UI-Ablauftest, UI-Rauchtest (hell/dunkel/Ukrainisch) je mit frischem Dev-Server.
 # Bricht beim ersten Fehler mit Fehlercode ab (keine durch Pipes verdeckten Fehler). Aufruf: sh scripts/pruefen.sh [--schnell]
-# --schnell: nur Tests + Ablauftest + Rauchtest hell (≈ 5 Min.); ohne: zusätzlich Rauchtest dunkel und Ukrainisch und Zeitreise.
+# --schnell: nur Tests + Ablauftest + Rauchtest hell (≈ 5 Min.); ohne: zusätzlich Rauchtest dunkel, Ukrainisch, Englisch und Zeitreise.
 cd "$(dirname "$0")/.." || exit 1
 step() { echo "== $1"; }
 fail() { echo "FEHLER: $1"; exit 1; }
@@ -16,6 +16,7 @@ step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
   step "UI-Rauchtest Ukrainisch"; run_smoke CFP_LANG=uk
+  step "UI-Rauchtest Englisch"; run_smoke CFP_LANG=en
   step "Zeitreise"; sh scripts/zeitreise-test.sh > /tmp/cfp-zeit.log 2>&1 || { cat /tmp/cfp-zeit.log; fail "Zeitreise"; }; echo "8 Zeitpunkte grün"
 fi
 echo "Alles grün."
