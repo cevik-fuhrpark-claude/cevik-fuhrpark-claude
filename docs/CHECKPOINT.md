@@ -282,6 +282,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: „Heute zu tun“ (Leitung): **„Prüfauftrag erledigt – Prüfung in der Akte eintragen“** – technisch freigegebene Aufträge aus Prüfterminen (≤ 60 Tage), deren Prüfung danach nicht in der Fahrzeugakte eingetragen wurde (`GET /api/maintenance` → `unrecorded_order`). 117 Tests grün.
 - 11.10.2026: Werkstattplan zeigt einen Prüftermin nicht doppelt, wenn sein Werkstattauftrag am selben Tag geplant ist; an anderem Tag Hinweis „🔧 Werkstattauftrag S-…“. Hilfe Prüftermine ergänzt. Rauchtest hell/dunkel/UK je 360 + 19 ohne Auffälligkeit, Zeitreise 8/8. 117 Tests grün.
 - 11.10.2026: Integrations-API `/v1/cases` zusätzlich `planned_date`, `parts_expected_date`, `maintenance_rule_id` (additiv); Markierung „Kostenfreigabe ausstehend“ setzt `updated_at`. 117 Tests grün.
+- 11.10.2026: Werkstatt-Startseite: Bereich „Kostenfreigabe ausstehend“ (ohne Beträge). Rauchtest 360 + 19 ohne Auffälligkeit, 390 px/Tablet/PC geprüft.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

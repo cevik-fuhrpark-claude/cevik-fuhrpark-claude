@@ -264,6 +264,9 @@ async function workshopBoard() {
   const todayL = open.filter((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) && c.planned_date === today);
   if (todayL.length) lanes.unshift(['ws_planned_today', todayL]);
   // Teile heute/morgen erwartet (oder Liefertermin überschritten) – Wareneingang prüfen, dann „Reparatur fortsetzen“
+  // Kosten über der Freigabegrenze: vor größeren weiteren Arbeiten Freigabe der Fuhrparkleitung abwarten
+  const costWait = open.filter((c) => c.cost_over_limit_at);
+  if (costWait.length) lanes.unshift(['cost_approval_pending', costWait]);
   const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= bDate(1));
   if (partsDue.length) lanes.unshift(['ws_parts_due', partsDue]);
   if (passed.length) lanes.unshift(['todo_plan_passed', passed]);
