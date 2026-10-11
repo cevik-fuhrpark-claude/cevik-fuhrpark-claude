@@ -191,7 +191,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, envName, mm[1]));
   // Fahrzeugverträge (Leasing/Miete/Finanzierung/Versicherung/Wartung) – nur Inhaber/Fuhrparkleitung
-  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/contracts$/)) && m === 'POST') return json(await contracts.createContract(env, user, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/contracts$/)) && m === 'POST') return json(await contracts.createContract(env, user, mm[1], await readJson(request), envName), 201);
   if (path === '/api/contracts' && m === 'GET') {
     const ov = await contracts.contractOverview(env, user, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
@@ -206,7 +206,7 @@ async function handleApi(request, env, ctx, url) {
     if (text.length > 300000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await contracts.importContracts(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));
   }
-  if ((mm = path.match(/^\/api\/contracts\/([\w-]+)$/)) && m === 'PATCH') return json(await contracts.updateContract(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/contracts\/([\w-]+)$/)) && m === 'PATCH') return json(await contracts.updateContract(env, user, mm[1], await readJson(request), envName));
   if ((mm = path.match(/^\/api\/contracts\/([\w-]+)\/end$/)) && m === 'POST') return json(await contracts.endContract(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance' && m === 'GET') {

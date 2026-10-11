@@ -2129,6 +2129,38 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   finally { eq((await owner.put('/api/settings', { test_master_readonly: null })).status, 200); }
 });
 console.log('Abfragebudget');
+await test('Vertragsdokument: nur Dokument desselben Fahrzeugs und derselben Umgebung, bleibt beim Ändern ohne Feld, CSV-Spalte', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'VT-DOC 1', vin: 'WDB96340310555611', site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'VT-DOC 2', vin: 'WDB96340310555612', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555611'; const W = 'VIN:WDB96340310555612';
+  const H = { 'content-type': 'application/pdf', 'x-filename': encodeURIComponent('Leasingvertrag VT-DOC 1.pdf') };
+  const f1 = (await users.fleet.req('POST', `/api/vehicles/${V}/documents?kind=leasing`, new TextEncoder().encode('%PDF-1.4\n% Leasing DOC1\n%%EOF'), H)).data.id;
+  const f2 = (await users.fleet.req('POST', `/api/vehicles/${W}/documents?kind=leasing`, new TextEncoder().encode('%PDF-1.4\n% Leasing DOC2\n%%EOF'), H)).data.id;
+  const fp = (await users.prodFleet.req('POST', `/api/vehicles/${V}/documents?kind=leasing`, new TextEncoder().encode('%PDF-1.4\n% Leasing Betrieb\n%%EOF'), H)).data.id;
+  ok(f1 && f2 && fp, 'Dokumente hochgeladen');
+  const base = { kind: 'leasing', partner: 'Doc-Leasing', evidence: 'Leasingvertrag D-1' };
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { ...base, file_id: f2 })).status, 400, 'Dokument eines anderen Fahrzeugs');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { ...base, file_id: fp })).status, 400, 'Dokument der anderen Umgebung');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { ...base, file_id: 'gibt-es-nicht' })).status, 400, 'unbekanntes Dokument');
+  const c = await users.fleet.post(`/api/vehicles/${V}/contracts`, { ...base, file_id: f1 });
+  eq(c.status, 201);
+  let k = (await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id);
+  eq(k.file_id, f1); eq(k.file_name, 'Leasingvertrag VT-DOC 1.pdf'); eq(k.file_other_env, false);
+  // Betriebsansicht: Dokument liegt in Test → nicht verlinkt, nur Hinweis
+  k = (await users.prodFleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id);
+  eq(k.file_id, null, 'kein Link in anderer Umgebung'); eq(k.file_other_env, true);
+  // Ändern ohne Feld lässt die Verknüpfung, leer hebt sie auf (Dokument bleibt in der Ablage)
+  eq((await users.prodFleet.patch(`/api/contracts/${c.data.id}`, { contract_no: 'D-1' })).status, 200);
+  eq((await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id).file_id, f1, 'bleibt verknüpft');
+  ok((await users.fleet.get('/api/contracts')).data.contracts.find((x) => x.id === c.data.id).file_id, 'Übersicht kennt Verknüpfung');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/contracts?format=csv&filter=alle')).data);
+  ok(csv.split('\r\n')[0].endsWith(';Vertragsdokument verknüpft') && csv.split('\r\n').some((l) => l.startsWith('VT-DOC 1;Leasing;Doc-Leasing;D-1;') && l.endsWith(';ja')), 'CSV-Spalte');
+  eq((await users.fleet.patch(`/api/contracts/${c.data.id}`, { file_id: null })).status, 200);
+  eq((await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id).file_id, null, 'Verknüpfung aufgehoben');
+  eq((await users.fleet.get(`/api/vehicles/${V}`)).data.documents.filter((x) => x.id === f1).length, 1, 'Dokument bleibt');
+  const au = (await owner.get('/api/admin/audit?action=contract')).data.entries.find((e) => e.action === 'contract.update' && e.target === c.data.id && /file_id/.test(JSON.stringify(e.detail)));
+  ok(au, 'Änderung der Verknüpfung im Protokoll');
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

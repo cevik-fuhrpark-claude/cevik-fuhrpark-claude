@@ -83,15 +83,26 @@ function readBody(body, existing = {}) {
   return f;
 }
 
-export async function createContract(env, user, vehicleId, body) {
+// Vertragsdokument: nur ein Dokument aus der Ablage desselben Fahrzeugs (ohne Vorgang) in der Umgebung, in der gerade gearbeitet wird.
+// Leer/null = keine Verknüpfung. Das Dokument selbst bleibt unverändert in der Ablage.
+async function checkFile(env, vehicleId, envName, raw) {
+  const fid = str(raw, { max: 40, field: 'Vertragsdokument' });
+  if (!fid) return null;
+  const f = await env.DB.prepare('SELECT id FROM files WHERE id=? AND vehicle_id=? AND case_id IS NULL AND environment=?').bind(fid, vehicleId, envName || '').first();
+  if (!f) throw bad('validation', 'Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.');
+  return f.id;
+}
+
+export async function createContract(env, user, vehicleId, body, envName) {
   if (!isMgr(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
   const f = readBody(body);
+  const fileId = await checkFile(env, v.id, envName, body.file_id);
   const id = uuid(); const now = nowIso();
-  await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, v.id, f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, user.id, now, now).run();
-  await audit(env, user.id, 'contract.create', id, { vehicle: v.plate, kind: f.kind, partner: f.partner });
+  await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, v.id, f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, fileId, user.id, now, now).run();
+  await audit(env, user.id, 'contract.create', id, { vehicle: v.plate, kind: f.kind, partner: f.partner, file: fileId || undefined });
   return { id };
 }
 
@@ -101,15 +112,17 @@ async function loadContract(env, id) {
   return c;
 }
 
-export async function updateContract(env, user, id, body) {
+export async function updateContract(env, user, id, body, envName) {
   if (!isMgr(user)) throw forbidden();
   const c = await loadContract(env, id);
   if (c.ended_on) throw bad('contract_ended', 'Beendete Verträge werden nicht mehr geändert (Nachweis bleibt erhalten).');
   const f = readBody(body, c);
+  // Vertragsdokument nur ändern, wenn das Feld mitgeschickt wird (Import/ältere Oberflächen lassen es unverändert)
+  f.file_id = body.file_id !== undefined ? await checkFile(env, c.vehicle_id, envName, body.file_id) : c.file_id;
   const changed = Object.keys(f).filter((k) => f[k] !== c[k]);
   if (!changed.length) return { id, changed: [] };
-  await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?,partner=?,contract_no=?,start_date=?,end_date=?,notice_months=?,km_allowance=?,start_km=?,monthly_rate_net=?,evidence=?,note=?,updated_at=? WHERE id=?`)
-    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, nowIso(), id).run();
+  await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?,partner=?,contract_no=?,start_date=?,end_date=?,notice_months=?,km_allowance=?,start_km=?,monthly_rate_net=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=?`)
+    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, nowIso(), id).run();
   await audit(env, user.id, 'contract.update', id, { vehicle: c.plate, changed: Object.fromEntries(changed.map((k) => [k, { from: c[k], to: f[k] }])) });
   return { id, changed };
 }
@@ -128,11 +141,13 @@ export async function endContract(env, user, id, body) {
 }
 
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
-export async function vehicleContracts(env, vehicleId, latest, settings) {
-  const rows = (await env.DB.prepare(`SELECT c.*, u.display_name AS created_by_name FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
-    WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(vehicleId).all()).results;
+// Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
+export async function vehicleContracts(env, vehicleId, latest, settings, envName) {
+  const rows = (await env.DB.prepare(`SELECT c.*, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
+    LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
+    WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings);
-  return rows.map((c) => ({ ...c, status: contractStatus(c, latest, today, w) }));
+  return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w) }));
 }
 
 const ORDER = { handeln: 0, hinweis: 1, ok: 2, beendet: 3 };
@@ -165,13 +180,13 @@ export async function contractOverview(env, user, query = {}) {
 const ST_DE = { handeln: 'handeln', hinweis: 'Hinweis', ok: 'in Ordnung', beendet: 'beendet' };
 export function contractsCsv(ov) {
   const head = ['Kennzeichen', 'Vertragsart', 'Vertragspartner', 'Vertragsnummer', 'Beginn', 'Ende', 'Kündigungsfrist (Monate)', 'Kündigung spätestens', 'Monatsrate netto (EUR)',
-    'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung'];
+    'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung', 'Vertragsdokument verknüpft'];
   const lines = [head.join(';')];
   for (const c of ov.contracts) {
     const s = c.status;
     lines.push([c.plate, KIND_DE[c.kind], c.partner, c.contract_no, c.start_date, c.end_date, c.notice_months, s.notice ? s.notice.by : '',
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
-      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note].map(csvCell).join(';'));
+      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein'].map(csvCell).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

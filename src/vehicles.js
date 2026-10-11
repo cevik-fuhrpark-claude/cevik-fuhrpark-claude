@@ -87,7 +87,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
     // Verträge (Leasing/Miete/…): km-Auswertung mit dem letzten km-Stand der Akte
-    out.contracts = await vehicleContracts(env, vehicleId, odometer[0] || null, sets);
+    out.contracts = await vehicleContracts(env, vehicleId, odometer[0] || null, sets, envName);
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
       out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
