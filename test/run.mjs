@@ -3090,8 +3090,11 @@ await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route 
   const start = src.indexOf('const routes = [');
   const routes = new Function(src.slice(start, src.indexOf('\n];', start) + 3).replace(/,\s*view\w+\]/g, ', null]') + '; return routes;')();
   ok(/const h = \(location\.hash \|\| '#\/'\)\.replace\(\/%3A\/gi, ':'\)/.test(src), 'route() normalisiert %3A');
-  const tpls = [...new Set([...src.matchAll(/href="(#\/[^"]*)"/g)].map((m) => m[1]))];
-  ok(tpls.length > 40, 'Links gefunden: ' + tpls.length);
+  // href="#/…" sowie Sprungziele als Zeichenkette/Vorlage (`#/…`, '#/…' bzw. '#/cases/' + id), z. B. in „Heute zu tun“ oder location.hash
+  const strs = [...src.matchAll(/[`'](#\/[^`'"]*)[`'](\s*\+)?/g)].map((m) => m[1] + (m[2] && m[1].endsWith('/') ? '${id}' : ''));
+  ok(strs.length > 20, 'Sprungziele als Zeichenkette gefunden: ' + strs.length);
+  const tpls = [...new Set([...[...src.matchAll(/href="(#\/[^"]*)"/g)].map((m) => m[1]), ...strs])];
+  ok(tpls.length > 60, 'Links gefunden: ' + tpls.length);
   const sample = (tpl, norm) => {
     const vinCtx = /^#\/(vehicles|new|check|v|vehicles\/qr)\/\$\{/.test(tpl);
     let first = true;
