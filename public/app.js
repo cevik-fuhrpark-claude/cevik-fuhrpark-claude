@@ -287,6 +287,9 @@ async function workshopBoard() {
     const ov = await api('GET', '/api/maintenance');
     const soon = ov.rows.filter((r) => r.days !== null && r.days <= 14);
     if (soon.length) html += `<h2>${esc(t('inspections_due'))} (≤ 14 ${esc(t('days'))})</h2><div class="list">${soon.map((r) => `<a class="row ${r.days < 0 ? 'p-kritisch' : 'p-mittel'}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)} · ${fmtD(r.next_due_date)}</span><span class="chip ${r.days < 0 ? 'kritisch' : 'mittel'}">${esc(t('ms_' + r.status))}</span></a>`).join('')}</div>`;
+    // Prüfung mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, noch kein Auftrag: nur zur Info – die Fuhrparkleitung entscheidet
+    const dw = ov.defects_without_case || [];
+    if (dw.length) html += `<h2>${esc(t('ws_defects_pending'))} <span class="chip">${dw.length}</span></h2><p class="small muted">${esc(t('ws_defects_hint'))}</p><div class="list">${dw.map((x) => `<a class="row p-kritisch" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${esc(x.kind)} · ${fmtD(x.done_date)}</span><span class="chip kritisch">${esc(t('res_' + x.result))}</span></a>`).join('')}</div>`;
   } catch {}
   // selbst erfasste Pflichtprüfungen ohne Ergebnis (≤ 180 Tage, neueste ihrer Art) – Sprung direkt zum Formular in der Fahrzeugakte
   try {
@@ -1927,10 +1930,13 @@ async function viewSearch() {
       const lq = q.toLowerCase();
       const fs = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))).slice(0, 10) : [];
       const ss = canStock ? stockList.filter((i) => [i.name, i.part_number, i.location].some((x) => String(x || '').toLowerCase().includes(lq))).slice(0, 10) : [];
+      // Hilfe-Abschnitte der eigenen Rolle (gleiche Suche wie auf der Hilfeseite)
+      const hs = (helpMatches(helpSections(S.me.role).map((h) => ({ name: h, title: t(`help_${h}_t`), steps: t(`help_${h}_s`).split('|') })), q) || []).slice(0, 5);
       box.innerHTML = `<h2>${esc(t('nav_vehicles'))} <span class="chip">${vs.length}</span></h2>${vs.length ? `<div class="list">${vs.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.site || '')}</span><span class="chip">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.vin || '')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
         <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}</span></h2>${caseList(cs, '–')}`
         + (fs.length ? `<h2>${esc(t('fines'))} <span class="chip">${fs.length}</span></h2><div class="list" id="gfines">${fs.map((f) => `<a class="row" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))}</span><span class="chip">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)}${f.reference ? ' · ' + esc(f.reference) : ''}${f.authority ? ' · ' + esc(f.authority) : ''}</span></a>`).join('')}</div>` : '')
-        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${ss.length}</span></h2><div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '');
+        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${ss.length}</span></h2><div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '')
+        + (hs.length ? `<h2>${esc(t('help'))} <span class="chip">${hs.length}</span></h2><div class="list" id="ghelp">${hs.map((h) => `<a class="row" href="#/help?s=${h.name}"><span>?</span><span class="title">${esc(t(`help_${h.name}_t`))}</span><span></span></a>`).join('')}</div>` : '');
     } catch (err) { if (my === seq) box.innerHTML = `<div class="panel alert">${esc(err.message)}</div>`; }
   };
   $('#gq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 300); };

@@ -2741,6 +2741,7 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   const ov = await users.fleet.get('/api/maintenance');
   ok(ov.data.defects_without_case.some((x) => x.id === evBad.id && x.plate === 'MD-XY 77' && x.evidence === 'UVV-Protokoll 4712'), 'Übersicht: Mangel ohne Vorgang');
   ok(!ov.data.defects_without_case.some((x) => x.id === evMinor.id), 'geringe Mängel nicht');
+  ok((await users.ws.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === evBad.id), 'Werkstatt-Startseite: sieht Prüfmangel ohne Auftrag (nur lesend)');
   ok((await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'inspection_defects_no_case' && i.event_id === evBad.id), 'Datenqualität mit event_id');
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   const agentF = () => users.fleet.get('/api/master').then((x) => x.data.findings.filter((f) => f.finding_code === 'INSPECTION_DEFECTS_NO_CASE' && f.vehicle_id === VD && f.status !== 'resolved'));
@@ -2762,6 +2763,10 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   const dup = await users.fleet.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND' });
   eq(dup.status, 409); eq(dup.data.error, 'order_exists');
   ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === evBad.id), 'Übersicht: Hinweis entfällt');
+  ok(!(await users.ws.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === evBad.id), 'Werkstatt-Startseite: Hinweis entfällt, Auftrag steht in der Werkstattliste');
+  { const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(/ov\.defects_without_case \|\| \[\][\s\S]{0,200}ws_defects_pending/.test(app.slice(app.indexOf('async function workshopBoard'))), 'Werkstatt-Startseite zeigt Prüfmängel ohne Auftrag');
+    ok(!/ws_defects_pending[\s\S]{0,600}(data-order|\/order)/.test(app), 'ohne Auftragsknopf (nur lesend)'); }
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   eq((await agentF()).length, 0, 'Agent-Befund erledigt nach Auftrag');
   ok((await users.fleet.get(`/api/vehicles/${VD}`)).data.cases.some((x) => x.maintenance_event_id === evBad.id), 'Akte: Vorgang verknüpft');
@@ -3116,6 +3121,8 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
   ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>');
+  const searchSrc = app.slice(app.indexOf('async function viewSearch('), app.indexOf('\n}\n', app.indexOf('async function viewSearch(')));
+  ok(/helpMatches\(helpSections\(S\.me\.role\)/.test(searchSrc) && searchSrc.includes('id="ghelp"'), 'Globale Suche findet Hilfe-Abschnitte der eigenen Rolle');
   ok(/'\/help\.js'/.test(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')), 'help.js im Offline-Cache');
 });
 
