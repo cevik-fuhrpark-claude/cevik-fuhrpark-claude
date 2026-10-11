@@ -132,6 +132,8 @@ with sync_playwright() as p:
     kvin = 'WDB96340310123499'; kvid = 'VIN:' + kvin
     api('POST', '/api/vehicles', {'plate': 'RT-KM 1', 'vin': kvin, 'site': 'Dortmund'})
     api('POST', f'/api/vehicles/{kvid}/maintenance', {'kind': 'Ölwechsel', 'interval_km': 20000, 'last_done_km': 100000, 'evidence': 'Rauchtest Prognose'})
+    # zweite km-Regel, Prognose in ≈ 10 Tagen: Prüftermine zeigen den Filter „Prognose ≤ 30 Tage“
+    api('POST', f'/api/vehicles/{kvid}/maintenance', {'kind': 'Inspektion', 'interval_km': 4000, 'last_done_km': 100000, 'evidence': 'Rauchtest Prognose 30 Tage'})
     for km, n in [(100000, 40), (103000, 10)]:
         o = api('POST', f'/api/vehicles/{kvid}/odometer', {'km': km, 'measured_on': (datetime.date.today() - datetime.timedelta(days=n)).isoformat()})
         if o['s'] != 201:

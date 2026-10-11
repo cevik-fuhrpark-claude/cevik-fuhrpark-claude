@@ -1266,6 +1266,19 @@ await test('km-Fälligkeit: Prognose aus gespeicherten km-Ständen (nur Planungs
   ok(/km-Fälligkeit voraussichtlich \(Prognose\)/.test(csv) && csv.split('\r\n').some((l) => l.startsWith('KM-FC 1;') && l.endsWith(';' + exp)), 'CSV-Spalte mit Datum');
   const { STRINGS } = await import('../public/i18n.js');
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].km_forecast.includes('{d}') && ['{from}', '{to}', '{kpd}'].every((k) => STRINGS[lang].km_forecast_hint.includes(k)), `Texte ${lang}`);
+  // Filter „Prognose ≤ 30 Tage“ (Prüftermine): reine Anzeige-Funktion aus der App, Grenzen inklusiv
+  const appSrc = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fcLine = appSrc.slice(appSrc.indexOf('const fcSoon = '), appSrc.indexOf('\n', appSrc.indexOf('const fcSoon = ')));
+  const fcSoon = new Function(fcLine + '; return fcSoon;')();
+  const today = new Date().toISOString().slice(0, 10);
+  const inDays = Math.round((Date.parse(exp) - Date.parse(today)) / 86400000);
+  eq(fcSoon(x, today, inDays), true, 'Prognose genau am Grenztag zählt');
+  eq(fcSoon(x, today, inDays - 1), false, 'Prognose einen Tag nach der Grenze zählt nicht');
+  eq(fcSoon({ km_forecast: null }, today), false); eq(fcSoon({}, today), false);
+  eq(fcSoon({ km_forecast: { date: '2026-03-01' } }, '2026-01-30'), true, 'Monatswechsel/Februar: 30 Tage bis 01.03.');
+  eq(fcSoon({ km_forecast: { date: '2026-03-02' } }, '2026-01-30'), false);
+  ok(/f === 'fc30' \? fcSoon\(r, ov\.today\)/.test(appSrc), 'Prüftermine nutzen fcSoon als Filter');
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].fc30_tab && STRINGS[lang].fc30_hint, `Filtertexte ${lang}`);
   eq((await users.fleet.post(`${vp}/active`, { active: false, reason: 'Testfahrzeug Prognose' })).status, 200, 'Testfahrzeug wieder außer Betrieb');
 });
 
