@@ -15,7 +15,7 @@ Parameter `environment=production|test` (Standard: production).
 |---|---|
 | `GET /api/integration/v1/vehicles` | Fahrzeugstamm (ID `VIN:<FIN>`, Kennzeichen, `kind` lkw/anhaenger, Standort, Anhänger) |
 | `GET /api/integration/v1/cases?since=<ISO>` | Vorgänge mit Status, Priorität, Sperre, Zeitstempeln, Version (max. 1000, aufsteigend nach `updated_at`) |
-| `GET /api/integration/v1/availability` | Verfügbarkeit je Fahrzeug für die Tourenplanung (`gesperrt`/`werkstatt`/`meldung_offen`/`einsatzbereit_lt_system`, letzter km-Stand, nächste Prüfung, `last_departure_check_at`/`_result` ok/maengel ohne Namen, `planned_workshop_date`/`planned_inspection_date` = nächster geplanter Werkstatt-/Prüftermin ab heute, nur gespeicherte Termine) – keine Freigabe-Aussage |
+| `GET /api/integration/v1/availability` | Verfügbarkeit je Fahrzeug für die Tourenplanung (`gesperrt`/`werkstatt`/`meldung_offen`/`einsatzbereit_lt_system`, letzter km-Stand, nächste Prüfung, `last_departure_check_at`/`_result` ok/maengel ohne Namen, `planned_workshop_date`/`planned_inspection_date` = nächster geplanter Werkstatt-/Prüftermin ab heute, `parts_expected_date` = spätester Teile-Liefertermin laut Werkstatt bei „wartet auf Teile“, nur gespeicherte Termine) – keine Freigabe-Aussage |
 | `GET /api/integration/v1/findings` | Offene Befunde des Fuhrparkagenten |
 | `GET /api/integration/v1/costs?environment=&from=JJJJ-MM&to=JJJJ-MM&vehicle_id=` | Kosten je Fahrzeug und Monat (belegt / geschätzt / Anzahl unbewertet; max. 36 Monate); `vehicles[]` mit gefahrenen km und €/km |
 | `GET /api/integration/v1/maintenance` | Prüftermine aller aktiven Fahrzeuge (Status überfällig/bald fällig/in Ordnung) und Lückenliste HU/SP/UVV/Tachograph |
@@ -106,7 +106,8 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 | `reject` | fleet/owner | gemeldet → abgelehnt | Grund; nicht bei aktiver Sperre |
 | `acknowledge` | Werkstatt (Standort) | werkstatt_freigegeben (Übernahme) | – |
 | `start_repair` | Werkstatt | werkstatt_freigegeben → in_reparatur | – |
-| `wait_parts` / `resume_repair` | Werkstatt | in_reparatur ↔ wartet_teile | Teile-Vermerk |
+| `wait_parts` / `resume_repair` | Werkstatt | in_reparatur ↔ wartet_teile | Teile-Vermerk; optional `payload.parts_expected_date` (Liefertermin laut Lieferant, ab heute, ≤ 1 Jahr); `resume_repair` leert ihn |
+| `set_parts_eta` | Werkstatt, fleet/owner | wartet_teile (kein Statuswechsel, kein Push) | `payload.parts_expected_date` oder leer = entfernen |
 | `record_work`, `add_part`, `add_open_item`, `resolve_open_item` | Werkstatt, fleet/owner | Werkstattstatus | je Formular |
 | `add_external_cost` | fleet/owner | Werkstattstatus | Lieferant |
 | `request_quality_check` | Werkstatt | in_reparatur → abschlusskontrolle | Arbeiten dokumentiert, Kontrolle nach Reparatur, keine offenen sicherheitsrel. Restarbeiten |

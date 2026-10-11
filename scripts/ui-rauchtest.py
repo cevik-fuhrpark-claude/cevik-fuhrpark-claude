@@ -189,6 +189,18 @@ with sync_playwright() as p:
         cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Termin verpasst', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-5'}])
         if (cx.get('d') or {}).get('id'):
             cmd(adm, cx['d']['id'], 'approve_repair', {'workshop_site': ws_site, 'planned_date': (datetime.date.today() - datetime.timedelta(days=1)).isoformat()}, 'Rauchtest Umfang')
+        # Wartet auf Teile mit Liefertermin (Vorgang, Listen, Disposition „Nicht einplanen“, Heute zu tun)
+        cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Luftfederbalg', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-6'}])
+        c6 = (cx.get('d') or {}).get('id')
+        if c6:
+            cmd(adm, c6, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
+            cmd(pages['workshop'], c6, 'start_repair')
+            r = cmd(pages['workshop'], c6, 'wait_parts', {'parts_expected_date': (datetime.date.today() + datetime.timedelta(days=1)).isoformat()}, 'Rauchtest Balg bestellt')
+            if r['s'] == 200:
+                for rr in ('owner', 'fleet', 'workshop'):
+                    ROUTES[rr] += [f'cases/{c6}']
+            else:
+                problems.append(f'Vorbereitung Wartet auf Teile: {r}')
     # Bußgeld und Lagerartikel für die Detailansichten
     fn = api('POST', '/api/fines', {'kind': 'anhoerung', 'authority': 'Rauchtest Bußgeldstelle', 'reference': 'RT-AZ-1', 'offense_type': 'geschwindigkeit', 'offense_at': '2026-09-01T08:00:00Z', 'location': 'Rauchtest', 'plate_in_letter': 'RT-AB 101', 'amount_eur': 70, 'response_due': '2026-12-01'})
     if fn['s'] in (200, 201):

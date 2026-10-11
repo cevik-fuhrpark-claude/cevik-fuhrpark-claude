@@ -265,6 +265,16 @@ export function planDate(v) {
   return d;
 }
 
+// Liefertermin Teile: gültiges Datum, nicht in der Vergangenheit (Berliner Kalender), höchstens 1 Jahr voraus
+export function partsDate(v) {
+  const d = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Liefertermin im Format JJJJ-MM-TT.');
+  const today = berlinDate();
+  if (d < today) throw bad('parts_eta_past', 'Liefertermin liegt in der Vergangenheit.');
+  if (d > new Date(Date.parse(today) + 366 * 86400000).toISOString().slice(0, 10)) throw bad('validation', 'Liefertermin liegt mehr als ein Jahr in der Zukunft.');
+  return d;
+}
+
 export function allowedActions(user, c, access) {
   const a = [];
   if (!access || access === 'read' || access === 'preview') {
@@ -292,7 +302,7 @@ export function allowedActions(user, c, access) {
       if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date');
       break;
     case 'wartet_teile':
-      if (ws || mgr) a.push('resume_repair', 'set_planned_date');
+      if (ws || mgr) a.push('resume_repair', 'set_planned_date', 'set_parts_eta');
       break;
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
@@ -512,12 +522,25 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       toStatus = 'in_reparatur';
       notifyKind = 'started';
       break;
-    case 'wait_parts':
+    case 'wait_parts': {
       requireNote('Bitte angeben, auf welche Teile gewartet wird.');
+      // Liefertermin nur laut Lieferant/Werkstatt (optional) – die App schätzt nichts
+      const eta = p.parts_expected_date ? partsDate(p.parts_expected_date) : null;
+      set.parts_expected_date = eta;
+      if (eta) payload = { parts_expected_date: eta };
       toStatus = 'wartet_teile';
       notifyKind = 'waiting_parts';
       break;
+    }
+    case 'set_parts_eta': {
+      // Liefertermin setzen/verschieben/entfernen (leer); ohne Statuswechsel und ohne Push
+      const eta = p.parts_expected_date ? partsDate(p.parts_expected_date) : null;
+      if (eta === (c.parts_expected_date || null)) throw bad('validation', 'Liefertermin ist unverändert.');
+      set.parts_expected_date = eta; payload = { from: c.parts_expected_date || null, to: eta };
+      break;
+    }
     case 'resume_repair':
+      set.parts_expected_date = null; // Teile da – Liefertermin erledigt (bleibt im Verlauf)
       toStatus = 'in_reparatur';
       notifyKind = 'resumed';
       break;

@@ -969,6 +969,15 @@ await test('Sicherung nur für Inhaber, ohne Passwörter/Token/Schlüssel, mit a
 });
 
 console.log('Oberfläche (statisch)');
+await test('Oberflächen-Skripte sind syntaktisch gültig (ein Tippfehler, z. B. Apostroph in einem Text, legt sonst die ganze App lahm)', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const { execFileSync } = await import('node:child_process');
+  for (const f of readdirSync(new URL('../public/', import.meta.url)).filter((x) => x.endsWith('.js'))) {
+    try { execFileSync(process.execPath, ['--check', new URL('../public/' + f, import.meta.url).pathname], { stdio: 'pipe' }); }
+    catch (e) { const out = String(e.stderr || e); throw new Error(`public/${f}: ${(out.split('\n').find((l) => /SyntaxError/.test(l)) || 'Syntaxfehler').slice(0, 200)} (${(out.match(/:(\d+)\n/) || [])[1] ? 'Zeile ' + out.match(/:(\d+)\n/)[1] : ''})`); }
+  }
+  ok(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').length > 1000);
+});
 await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in DE/UK/EN vorhanden', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -2423,6 +2432,47 @@ await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji)
   const ev = Array.from({ length: 900 }, (_, i) => ({ uid: 'x' + i, date: '2026-10-01', summary: long, description: 'Status: freigegeben · Werkstatt Dortmund', alarmDays: 3 }));
   const t0 = performance.now(); icsCalendar('Last', ev); const ms = performance.now() - t0;
   ok(ms < 250, `900 Termine in ${ms.toFixed(0)} ms (vorher ≈ 600 ms)`);
+});
+await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in der Vergangenheit, änderbar, sichtbar für Disposition/Liste/API, beim Fortsetzen geleert', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const tomorrow = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + 86400000));
+  const later = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + 5 * 86400000));
+  const yesterday = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 86400000));
+  const c = await users.driver.post('/api/cases', { vehicle_id: VM, description: 'Luftfederbalg hinten undicht', priority: 'mittel', request_key: rk() });
+  eq(c.status, 201);
+  const cmd = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case;
+    return u.post(`/api/cases/${c.data.id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Balg tauschen')).status, 200);
+  eq((await cmd(users.ws, 'start_repair')).status, 200);
+  const past = await cmd(users.ws, 'wait_parts', { parts_expected_date: yesterday }, 'Luftfederbalg bestellt');
+  eq(past.status, 400); eq(past.data.error, 'parts_eta_past');
+  eq((await cmd(users.ws, 'wait_parts', { parts_expected_date: tomorrow }, 'Luftfederbalg bestellt')).status, 200);
+  let cs = (await users.fleet.get(`/api/cases/${c.data.id}`)).data;
+  eq(cs.case.status, 'wartet_teile'); eq(cs.case.parts_expected_date, tomorrow);
+  ok(cs.allowed_actions.includes('set_parts_eta'), 'Fuhrparkleitung darf ändern');
+  eq((await cmd(users.ws, 'set_parts_eta', { parts_expected_date: tomorrow })).status, 400, 'unverändert');
+  eq((await cmd(users.driver, 'set_parts_eta', { parts_expected_date: later })).status === 200, false, 'Fahrer nicht');
+  eq((await cmd(users.ws, 'set_parts_eta', { parts_expected_date: later })).status, 200);
+  cs = (await users.fleet.get(`/api/cases/${c.data.id}`)).data;
+  eq(cs.case.parts_expected_date, later);
+  const ev = cs.events.find((e) => e.action === 'set_parts_eta');
+  ok(ev && ev.payload.from === tomorrow && ev.payload.to === later, 'Verlauf von → nach');
+  ok((await users.dispatch.get('/api/cases?status=open')).data.cases.some((x) => x.id === c.data.id && x.parts_expected_date === later), 'Disposition sieht Termin');
+  eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VM).parts_expected_date, later, 'Fahrzeugliste');
+  const av = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(av.data.vehicles.find((v) => v.id === VM).parts_expected_date, later, 'Integrations-API');
+  eq((await cmd(users.ws, 'set_parts_eta', {})).status, 200, 'entfernen');
+  eq((await users.fleet.get(`/api/cases/${c.data.id}`)).data.case.parts_expected_date, null);
+  eq((await cmd(users.ws, 'set_parts_eta', { parts_expected_date: tomorrow })).status, 200);
+  eq((await cmd(users.ws, 'resume_repair')).status, 200);
+  cs = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case;
+  eq(cs.status, 'in_reparatur'); eq(cs.parts_expected_date, null, 'Teile da → Liefertermin erledigt');
+  eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VM).parts_expected_date, null);
+  // Ohne Liefertermin bleibt alles wie bisher
+  eq((await cmd(users.ws, 'wait_parts', {}, 'Schrauben fehlen')).status, 200);
+  eq((await users.fleet.get(`/api/cases/${c.data.id}`)).data.case.parts_expected_date, null);
 });
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
