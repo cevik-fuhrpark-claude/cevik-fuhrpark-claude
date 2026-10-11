@@ -3051,6 +3051,22 @@ await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in 
   eq((await users.fleet.get('/api/maintenance/history?from=2026-02-30')).status, 400, 'Nachweisliste 30.02.');
 });
 
+await test('Integrations-API /v1/data-quality: gleiche Anzahlen wie die App, ohne Personennamen, nur lesend', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const app = (await users.fleet.get('/api/admin/data-quality')).data;
+  const r = await anon.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, H);
+  eq(r.status, 200); eq(r.data.environment, 'test');
+  eq(JSON.stringify(r.data.counts), JSON.stringify(app.counts), 'Anzahlen wie in der App');
+  eq(r.data.by_severity.fehler + r.data.by_severity.luecke + r.data.by_severity.hinweis, app.items.length, 'Summe Schweregrade');
+  eq(r.data.items.length, app.items.filter((i) => i.vehicle_id).length, 'nur fahrzeugbezogene Befunde');
+  ok(r.data.items.every((i) => !('driver_name' in i)), 'kein Fahrername-Feld');
+  const names = ['Test Fahrer 1', 'Test Fahrer 2', 'Test Fuhrparkleitung', 'Test Werkstatt DO', 'Test Dispo'];
+  const body = JSON.stringify(r.data);
+  ok(names.every((n) => !body.includes(n)), 'keine Personennamen in der Antwort');
+  eq((await anon.req('GET', '/api/integration/v1/data-quality')).status, 401, 'ohne Token');
+  eq((await anon.req('POST', '/api/integration/v1/data-quality', {}, H)).status, 404, 'nur GET');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

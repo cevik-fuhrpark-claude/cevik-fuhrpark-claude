@@ -4,6 +4,7 @@ import { masterPanel } from './agent.js';
 import { costReport, kpiReport } from './reports.js';
 import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
+import { dataQuality, CHECKS } from './quality.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
 // und INTEGRATION_TOKEN_READ (nur lesen, z. B. für Auswertungen). Ergebnis: 'write' oder 'read'.
@@ -61,6 +62,17 @@ export async function integrationRouter(request, env, ctx, url) {
     return json({ schema_version: '1.0', ...(await maintenanceOverview(env, null)), environment: envParam(url), defects_without_case: defects.results, reinspection_pending: reinspection.results });
   }
   if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams), envParam(url)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, environment: envParam(url), truncated: h.truncated, events: h.rows.map(({ recorded_by_name, ...r }) => r) }); }
+  // Datenqualität: Anzahlen je Prüfung/Schweregrad + fahrzeugbezogene Befunde – ohne Personennamen (Fahrer-, Konto- und Einladungsbefunde nur als Anzahl)
+  if (p === '/v1/data-quality' && m === 'GET') {
+    const q = await dataQuality(env, { role: 'owner' }, envParam(url), Object.fromEntries(url.searchParams));
+    const by_severity = { fehler: 0, luecke: 0, hinweis: 0 };
+    for (const i of q.items) by_severity[i.severity]++;
+    const NAMED = new Set(['assignment_inactive_user']);
+    const items = q.items.filter((i) => i.vehicle_id).map((i) => ({ check: i.check, severity: i.severity, vehicle_id: i.vehicle_id, plate: i.plate,
+      event_id: i.event_id || null, case_id: i.case_id || null, detail: NAMED.has(i.check) ? null : i.detail }));
+    return json({ schema_version: '1.0', generated_at: q.generated_at, environment: q.environment, stale_days: q.stale_days, vehicles_checked: q.vehicles_checked,
+      checks: CHECKS, counts: q.counts, by_severity, items });
+  }
   if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung
