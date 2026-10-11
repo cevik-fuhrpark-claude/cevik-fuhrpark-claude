@@ -2609,6 +2609,17 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
   ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung'), 'CSV: Kostenfreigabe ausstehend');
+  // Kennzahl Kostenfreigaben: 2 Überschreitungen, 1 Freigabe, 1 ausstehend – nur Anzahl/Dauer, keine Beträge
+  const ym = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()).slice(0, 7);
+  const kp = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`);
+  eq(kp.status, 200);
+  const ca = kp.data.cost_approvals;
+  ok(ca.exceeded >= 2 && ca.approved >= 1 && ca.pending >= 1 && ca.cases >= 1, 'Kostenfreigaben gezählt: ' + JSON.stringify(ca));
+  eq(ca.exceeded, ca.approved + ca.pending + ca.closed_without, 'jede Überschreitung genau einmal eingeordnet');
+  ok(ca.to_approval.n === ca.approved && ca.to_approval.median_h >= 0, 'Dauer bis Freigabe');
+  ok(!/net|eur|amount/i.test(Object.keys(ca).join(',')), 'keine Beträge');
+  ok(kp.data.definitions.cost_approvals, 'Definition');
+  eq((await users.ws.get(`/api/reports/kpi?from=${ym}&to=${ym}`)).status, 403, 'Werkstatt keine Kennzahlen');
 });
 
 await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, geplanter Termin übernommen, kein zweiter offener Auftrag, Erledigung erkannt', async () => {
