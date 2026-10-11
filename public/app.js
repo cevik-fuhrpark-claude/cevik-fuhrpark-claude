@@ -135,7 +135,7 @@ function labelFix(root) {
 const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
-  [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
+  [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/plan$/, viewPlan], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
@@ -1742,9 +1742,14 @@ async function viewAudit(more) {
 }
 
 // ---------- Zeitleiste der Fahrzeugakte ----------
-async function viewTimeline(id) {
-  const f = S.tlFilter || '';
-  const groups = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'], tacho: ['tacho'], contract: ['contract'], claim: ['claim'] };
+// Filter steht in der Adresse (#/vehicles/<id>/timeline?f=<Bereich>): „Zurück“ aus einem Vorgang zeigt dieselbe Auswahl,
+// Links können direkt gefiltert öffnen; unbekannte oder für die Rolle nicht sichtbare Bereiche → „Alle“
+const TL_GROUPS = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'], tacho: ['tacho'], contract: ['contract'], claim: ['claim'] };
+const TL_MGR_ONLY = ['fine', 'tacho', 'contract', 'claim'];
+const tlHash = (id, f) => '#/vehicles/' + id + '/timeline' + (f ? '?f=' + f : '');
+async function viewTimeline(id, fArg) {
+  const groups = TL_GROUPS;
+  const f = fArg && Object.prototype.hasOwnProperty.call(groups, fArg) && (!TL_MGR_ONLY.includes(fArg) || isMgr()) ? fArg : '';
   const r = await api('GET', `/api/vehicles/${encodeURIComponent(id)}/timeline?limit=500${f ? '&types=' + groups[f].join(',') : ''}`);
   const km = (n) => (n === null || n === undefined ? '' : ` · ${Number(n).toLocaleString('de-DE')} km`);
   const caseLink = (x) => (x.case_id ? ` · <a href="#/cases/${esc(x.case_id)}">${esc(x.case_no || t('details'))}</a>` : '');
@@ -1767,13 +1772,20 @@ async function viewTimeline(id) {
     }
   };
   const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines'), tacho: t('tacho'), contract: t('ct_title'), claim: t('claims') };
-  const visible = Object.keys(groups).filter((k) => !['fine', 'tacho', 'contract', 'claim'].includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger');
+  const visible = Object.keys(groups).filter((k) => !TL_MGR_ONLY.includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger');
   render(`<p><a href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
     <h1 style="margin-top:12px">${esc(t('timeline'))}</h1><p class="small muted">${esc(t('timeline_hint'))}</p>
-    <div class="actions" style="flex-wrap:wrap">${visible.map((k) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tl="${esc(k)}">${esc(labels[k])}</button>`).join('')}</div>
+    <div class="actions" style="flex-wrap:wrap">${visible.map((k) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" aria-pressed="${f === k}" data-tl="${esc(k)}">${esc(labels[k])}</button>`).join('')}</div>
     <div class="list">${r.items.map((x) => { const [cls, title, sub] = line(x); return `<div class="row ${cls}"><span class="chip">${x.at.length === 10 ? fmtD(x.at) : fmtDT(x.at)}</span><span class="title" style="white-space:normal">${title}</span><span></span>${sub ? `<span class="sub" style="white-space:normal">${sub}</span>` : ''}</div>`; }).join('') || `<p class="muted">–</p>`}</div>
     ${r.total > r.items.length ? `<p class="small muted">${r.items.length} / ${r.total}</p>` : ''}`, 'vehicles');
-  $$('[data-tl]').forEach((b) => (b.onclick = () => { S.tlFilter = b.dataset.tl; viewTimeline(id); }));
+  // Filterwechsel ersetzt nur den Verlaufseintrag (kein neuer Eintrag je Klick), Fokus bleibt auf dem gewählten Knopf
+  $$('[data-tl]').forEach((b) => (b.onclick = async () => {
+    const k = b.dataset.tl;
+    try { history.replaceState(history.state, '', tlHash(id, k)); } catch { /* z. B. eingeschränkte Vorschau */ }
+    S.lastHash = (location.hash || '').replace(/%3A/gi, ':');
+    await viewTimeline(id, k);
+    const nb = document.querySelector(`[data-tl="${k}"]`); if (nb) nb.focus({ preventScroll: true });
+  }));
 }
 
 // ---------- Werkstatt-Auslastung (je Standort und Kalenderwoche, ohne Personenbezug) ----------

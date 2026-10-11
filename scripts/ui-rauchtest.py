@@ -131,8 +131,9 @@ with sync_playwright() as p:
     ROUTES['owner'] += ['quality?f=inspection_no_result']
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
-    ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
-    ROUTES['viewer'] += [f'vehicles/{vid}']
+    ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline', f'vehicles/{vid}/timeline?f=case']
+    # Lesezugriff: Leitungs-Bereich in der Adresse fällt auf „Alle“ zurück
+    ROUTES['viewer'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline?f=fine']
     # kodierte Fahrzeug-ID (wie aus encodeURIComponent-Links) und Sprung zu einer (hier unbekannten) Durchführung
     ROUTES['workshop'] += [f"vehicles/{vid.replace(':', '%3A')}", f"vehicles/{vid.replace(':', '%3A')}?ev=unbekannt"]
     pages = {'owner': adm}

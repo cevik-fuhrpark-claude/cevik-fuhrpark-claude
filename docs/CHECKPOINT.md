@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 134 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 135 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -354,6 +354,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: **Hinweise: Standardfilter „Ungelesen“**, solange ungelesene Hinweise vorhanden sind (sonst „Alle“); ein selbst gewählter Filter bleibt für die App-Sitzung. Leere Auswahl zeigt „Keine Hinweise in dieser Auswahl.“ (DE/UK/EN). Test erweitert, 390 px geprüft.
 - 11.10.2026: **Hilfe: Suchbegriff in der Adresse** – beim Tippen wird `#/help?q=<Begriff>` per `history.replaceState` gesetzt (kein neuer Verlaufseintrag, kein Neuaufbau); „Zurück“ aus einer anderen Seite zeigt die Hilfe mit demselben Suchbegriff und denselben Treffern. Leeres Feld → `#/help`. Per Playwright geprüft (390 px), Test ergänzt. 134 Tests grün.
 - **Sitzungsende 11.10.2026 ca. 21:55 UTC** (Sitzung ab 21:16 UTC): **Lesezugriff ohne Fahrernamen** in Vorgängen (inkl. CSV: „Fahrer/in (Name ausgeblendet)“), Fahrzeugakte, Zeitleiste und Reifenverlauf; Hinweise standardmäßig „Ungelesen“; Hilfe-Suchbegriff bleibt in der Adresse. 134 Tests grün, `pruefen.sh --schnell` grün (450 Ansichten), Rauchtest Ukrainisch 450 Ansichten ohne Auffälligkeit, 390 px/Tablet/PC geprüft. Keine neuen Antworten des Auftraggebers (Postfach geprüft). **Nächster Schritt:** Antworten auf offene Fragen prüfen; sonst eigene Verbesserungen (Ideen: Rauchtest dunkel nach den Viewer-Änderungen; Lesezugriff: Druckansicht Vorgang mit ausgeblendetem Namen per Playwright prüfen; Zeitleiste-Filter in die Adresse übernehmen wie bei der Hilfe). Vor jedem Push `sh scripts/pruefen.sh --schnell`.
+- 11.10.2026: **Zeitleiste: Filter in der Adresse** (`#/vehicles/<id>/timeline?f=<Bereich>`): Filterwechsel per `history.replaceState` (kein neuer Verlaufseintrag), „Zurück“ aus einem Vorgang zeigt dieselbe Auswahl; unbekannte oder für die Rolle verborgene Bereiche (z. B. Bußgelder für Lesezugriff) → „Alle“; globaler `S.tlFilter` entfällt (galt bisher fälschlich auch für andere Fahrzeuge); Filterknöpfe mit `aria-pressed`, Fokus bleibt auf dem gewählten Knopf. 135 Tests grün, `pruefen.sh --schnell` grün (456 Ansichten), Playwright Klick → Vorgang → Zurück geprüft (390 px/Tablet/PC).
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

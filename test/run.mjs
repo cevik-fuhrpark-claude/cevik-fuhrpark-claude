@@ -3278,6 +3278,25 @@ await test('Hilfe: Suchbegriff wird beim Tippen in die Adresse übernommen (repl
   eq(helpHash(''), '#/help'); eq(helpHash('hu nachweis'), '#/help?q=hu%20nachweis'); eq(helpHash('a&s=x#'), '#/help?q=a%26s%3Dx%23', 'Sonderzeichen kodiert');
   ok(/history\.replaceState\(history\.state, '', helpHash\(v\)\)/.test(app) && !/pushState/.test(app), 'ersetzt nur den Eintrag');
 });
+await test('Zeitleiste: Filter steht in der Adresse (?f=), unbekannte/für die Rolle verborgene Bereiche → „Alle“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const start = app.indexOf('const routes = [');
+  const routes = new Function(app.slice(start, app.indexOf('\n];', start) + 3).replace(/,\s*(view\w+)\]/g, ", '$1']") + '; return routes;')();
+  const hit = (h) => { for (const [re, fn] of routes) { const m = h.match(re); if (m) return JSON.stringify([fn, ...m.slice(1).map((x) => x ?? '-')]); } return null; };
+  const V = 'VIN:WDB96340310123456';
+  eq(hit(`#/vehicles/${V}/timeline`), JSON.stringify(['viewTimeline', V, '-']), 'ohne Filter');
+  eq(hit(`#/vehicles/${V}/timeline?f=case`), JSON.stringify(['viewTimeline', V, 'case']), 'mit Filter');
+  eq(hit(`#/vehicles/${V}/timeline?f=a&b`), null, 'keine fremden Zeichen');
+  const m = app.match(/const tlHash = (\(id, f\) => [^\n]*);/);
+  ok(m, 'tlHash vorhanden');
+  const tlHash = new Function('return ' + m[1])();
+  eq(tlHash(V, ''), `#/vehicles/${V}/timeline`); eq(tlHash(V, 'fine'), `#/vehicles/${V}/timeline?f=fine`);
+  ok(/history\.replaceState\(history\.state, '', tlHash\(id, k\)\)/.test(app), 'Filterwechsel ersetzt nur den Verlaufseintrag');
+  ok(!/S\.tlFilter/.test(app), 'kein globaler Filter mehr (galt sonst auch für andere Fahrzeuge)');
+  // Bereichsprüfung in viewTimeline: nur bekannte Schlüssel, Leitungs-Bereiche nur für isMgr()
+  ok(/hasOwnProperty\.call\(groups, fArg\) && \(!TL_MGR_ONLY\.includes\(fArg\) \|\| isMgr\(\)\)/.test(app), 'Filterprüfung');
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
