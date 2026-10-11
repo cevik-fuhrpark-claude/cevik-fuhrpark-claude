@@ -2609,6 +2609,10 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
   ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung'), 'CSV: Kostenfreigabe ausstehend');
+  // Fuhrparkagent: offene Kostenfreigabe als Befund (ohne Beträge), verschwindet nach Freigabe
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const fnd = (await users.fleet.get('/api/master')).data.findings.find((f) => f.finding_code === 'COST_APPROVAL_PENDING' && f.case_id === id);
+  ok(fnd && !/€|\d+[,.]\d\d/.test(fnd.message.replace(/\d{2}\.\d{2}\.\d{4}/g, '')), 'Befund ohne Beträge: ' + (fnd && fnd.message));
   // Kennzahl Kostenfreigaben: 2 Überschreitungen, 1 Freigabe, 1 ausstehend – nur Anzahl/Dauer, keine Beträge
   const ym = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()).slice(0, 7);
   const kp = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`);

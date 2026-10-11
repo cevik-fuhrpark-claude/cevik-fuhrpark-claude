@@ -108,6 +108,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',
           message: `${label}: Reparatur wartet auf Teile (${since(c.updated_at)}).`, next_action: 'Teilelieferung klären, Dispo informieren.' });
       }
+      // Kostenfreigabe ausstehend (Grenze überschritten): Zustand, keine Frist – ohne Beträge im Text
+      if (c.cost_over_limit_at) {
+        add({ code: 'COST_APPROVAL_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 1,
+          message: `${label}: Kosten-Freigabegrenze überschritten – Kostenfreigabe offen (${since(c.cost_over_limit_at)}).`, next_action: 'Kosten prüfen und freigeben oder mit der Werkstatt klären.' });
+      }
       if (c.status === 'abschlusskontrolle') {
         add({ code: 'QC_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
           message: `${label}: Reparatur gemeldet – Abschlusskontrolle und technische Freigabe durch einen Menschen offen.`,
