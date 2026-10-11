@@ -2740,6 +2740,10 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   ok(ov.data.defects_without_case.some((x) => x.id === evBad.id && x.plate === 'MD-XY 77' && x.evidence === 'UVV-Protokoll 4712'), 'Übersicht: Mangel ohne Vorgang');
   ok(!ov.data.defects_without_case.some((x) => x.id === evMinor.id), 'geringe Mängel nicht');
   ok((await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'inspection_defects_no_case' && i.event_id === evBad.id), 'Datenqualität mit event_id');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const agentF = () => users.fleet.get('/api/master').then((x) => x.data.findings.filter((f) => f.finding_code === 'INSPECTION_DEFECTS_NO_CASE' && f.vehicle_id === VD && f.status !== 'resolved'));
+  const fd = await agentF();
+  ok(fd.length === 1 && fd[0].severity === 'kritisch' && fd[0].message.includes('verkehrsunsicher'), 'Agent-Befund: ' + JSON.stringify(fd[0] || null));
   eq((await users.ws.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND' })).status, 403, 'Werkstatt nicht');
   eq((await users.fleet.post(`/api/maintenance/events/${evMinor.id}/order`, { workshop_site: 'DORTMUND' })).status, 400, 'geringe Mängel → kein Auftrag');
   eq((await users.fleet.post('/api/maintenance/events/gibtsnicht/order', { workshop_site: 'DORTMUND' })).status, 404);
@@ -2756,6 +2760,8 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   const dup = await users.fleet.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND' });
   eq(dup.status, 409); eq(dup.data.error, 'order_exists');
   ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === evBad.id), 'Übersicht: Hinweis entfällt');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  eq((await agentF()).length, 0, 'Agent-Befund erledigt nach Auftrag');
   ok((await users.fleet.get(`/api/vehicles/${VD}`)).data.cases.some((x) => x.maintenance_event_id === evBad.id), 'Akte: Vorgang verknüpft');
   // Werkstatt sieht den Auftrag
   ok((await users.ws.get(`/api/cases/${o.data.id}`)).status === 200, 'Werkstatt sieht Auftrag');
