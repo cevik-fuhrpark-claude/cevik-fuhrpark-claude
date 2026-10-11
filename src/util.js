@@ -280,3 +280,14 @@ export async function testMasterReadonly(env) {
   const r = await env.DB.prepare(`SELECT value FROM settings WHERE key='test_master_readonly'`).first();
   return !!r && r.value === '1';
 }
+
+// Datensparsamkeit Lesezugriff (viewer): Namen von Personen mit Rolle Fahrer werden ausgeblendet
+// (wer wann welches Fahrzeug kontrolliert/gemeldet hat, ist personenbeziehbar). Andere Namen (Werkstatt, Leitung) bleiben.
+// Setzt `<nameKey>` auf null und `<nameKey>_hidden` auf true; die Rollenspalte wird immer entfernt.
+export function hideDriverName(user, row, nameKey, roleKey) {
+  if (!row) return row;
+  const isDriver = row[roleKey] === 'driver';
+  delete row[roleKey];
+  if (user.role === 'viewer' && isDriver) { row[nameKey] = null; row[nameKey + '_hidden'] = true; }
+  return row;
+}

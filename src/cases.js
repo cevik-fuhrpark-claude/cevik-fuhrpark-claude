@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -78,7 +78,7 @@ export async function listCases(env, user, envName, query) {
   }
   const limit = Math.min(Number(query.limit) || 200, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`
-    SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name,
+    SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name, u.role AS reporter_role,
       (SELECT COUNT(*) FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen') AS open_items,
       (SELECT COUNT(*) FROM files f WHERE f.case_id=c.id) AS file_count,
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding') AS last_repeat_at
@@ -87,7 +87,7 @@ export async function listCases(env, user, envName, query) {
     ORDER BY CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END,
       CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, c.updated_at DESC
     LIMIT ?`).bind(...args, limit).all()).results;
-  return rows.map((r) => ({ ...shapeCase(r, user), access: caseAccess(user, r) }));
+  return rows.map((r) => ({ ...hideDriverName(user, shapeCase(r, user), 'reporter_name', 'reporter_role'), access: caseAccess(user, r) }));
 }
 
 // Vorschläge für Tätigkeiten: häufigste bisherige Beschreibungen der eigenen Werkstatt (nur Text, keine Personen)
@@ -135,6 +135,7 @@ function shapeCase(c, user) {
   delete out.content_hash;
   if (!canSeeCosts(user)) delete out.cost_approved_net;
   if (user.role === 'driver') delete out.cost_over_limit_at;
+  if (user.role === 'viewer') delete out.reporter_name_note; // freier Namensvermerk – Datensparsamkeit Lesezugriff
   if (user.role === 'driver') {
     // Fahrer sehen ihren Status, aber keine internen Zuständigkeiten
     delete out.fleet_received_by;
@@ -146,14 +147,15 @@ function shapeCase(c, user) {
 export async function getCaseDetail(env, user, envName, caseId) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   const vehicle = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
-  const reporter = await env.DB.prepare('SELECT display_name FROM users WHERE id=?').bind(c.reporter_id).first();
+  const reporter = await env.DB.prepare('SELECT display_name, role FROM users WHERE id=?').bind(c.reporter_id).first();
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }));
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at, uploaded_by FROM files WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
-  const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results;
-  const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, u.display_name AS performed_by_name FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
-    .map((i) => ({ ...i, items: JSON.parse(i.items) }));
+  const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, u.role AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
+    .map((o) => hideDriverName(user, o, 'created_by_name', 'created_by_role'));
+  const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
+    .map((i) => hideDriverName(user, { ...i, items: JSON.parse(i.items) }, 'performed_by_name', 'performed_by_role'));
   const followups = (await env.DB.prepare('SELECT id, case_no, status, priority, description FROM cases WHERE parent_case_id=?').bind(c.id).all()).results;
   const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=?').bind(c.parent_case_id).first() : null;
   // Prüfung des Mängelauftrags + jüngste spätere Durchführung derselben Prüfart am Fahrzeug (= eingetragene Nachprüfung)
@@ -164,8 +166,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (mevent) mevent.reinspection = mevent.reinspection ? JSON.parse(mevent.reinspection) : null;
   const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
   const detail = {
-    case: shapeCase(c, user), access, vehicle, reporter_name: reporter?.display_name || null,
-    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
+    case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
+    ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
+    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
     files, open_items: openItems, inspections, followups, parent, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
     allowed_actions: allowedActions(user, c, access),

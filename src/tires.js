@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName } from './util.js';
 import { audit } from './auth.js';
 
 export const AXLES = ['lenkachse', 'liftachse', 'antriebsachse', 'anhaenger'];
@@ -20,8 +20,9 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
-  const history = (await env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name FROM tire_events t JOIN users u ON u.id=t.recorded_by
-    WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT 200`).bind(envName, vehicleId).all()).results;
+  const history = (await env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, u.role AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
+    WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT 200`).bind(envName, vehicleId).all()).results
+    .map((e) => hideDriverName(user, e, 'recorded_by_name', 'recorded_by_role'));
   const latest = {};
   for (const e of history) {
     const cur = latest[e.position] || {};

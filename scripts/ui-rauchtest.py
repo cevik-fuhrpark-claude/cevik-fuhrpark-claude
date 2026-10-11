@@ -323,6 +323,9 @@ with sync_playwright() as p:
                         if (x && /[äöüßÄÖÜ]/.test(x) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
                     if de:
                         problems.append(f'{where}: deutscher Text in {LANG}: {de[:4]}')
+                # Datensparsamkeit: Lesezugriff sieht keine Fahrernamen (Melder „Rauchtest driver“) in Vorgängen und Fahrzeugakte
+                if role == 'viewer' and (r.startswith('cases/') or r.startswith('vehicles/')) and 'Rauchtest driver' in pg.inner_text('body'):
+                    problems.append(f'{where}: Fahrername für Lesezugriff sichtbar')
                 over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
                 if over > 2:
                     problems.append(f'{where}: Seite {over}px breiter als der Bildschirm')

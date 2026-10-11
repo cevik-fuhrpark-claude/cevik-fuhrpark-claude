@@ -3137,7 +3137,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
   ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
-  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].help_viewer_t && STRINGS[lang].help_viewer_s.split('|').length === 7, `help_viewer ${lang}`);
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].help_viewer_t && STRINGS[lang].help_viewer_s.split('|').length === 8, `help_viewer ${lang}`);
   ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>&q=<Suchbegriff>');
   {
     const start = app.indexOf('const routes = [');
@@ -3222,11 +3222,61 @@ await test('Hinweise: Filter alle/ungelesen/dringend mit Anzahlen (nur Anzeige),
   const NF = new Function('return ' + m[1])();
   const list = [{ urgent: 1 }, { opened_at: 'x' }, { acknowledged_at: 'x', urgent: 1 }, {}];
   eq(list.filter(NF.all).length, 4); eq(list.filter(NF.unread).length, 2, 'ungelesen = weder geöffnet noch quittiert'); eq(list.filter(NF.urgent).length, 2);
-  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].nf_unread && STRINGS[lang].nf_urgent, `Texte ${lang}`);
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].nf_unread && STRINGS[lang].nf_urgent && STRINGS[lang].nf_none, `Texte ${lang}`);
+  ok(/NF\[S\.inboxF\] \? S\.inboxF : n\.notifications\.some\(NF\.unread\) \? 'unread' : 'all'/.test(app), 'ohne Wahl: Ungelesen, solange vorhanden; gewählter Filter bleibt');
   const n = await users.fleet.get('/api/notifications');
   eq(n.data.unread, n.data.notifications.filter(NF.unread).length, 'gleiche Regel wie der Zähler am Glockensymbol');
 });
 
+await test('Lesezugriff: Fahrernamen in Vorgängen, Fahrzeugakte, Zeitleiste und Reifen ausgeblendet; Werkstatt-/Leitungsnamen bleiben', async () => {
+  const viewer = await invite(owner, { username: 'test.lesen.names', display_name: 'Test Lesezugriff Namen', role: 'viewer', environment: 'test' });
+  const name = 'Test Fahrer 1';
+  // Leitung sieht den Fahrer weiterhin
+  const fv = await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`);
+  ok(fv.data.inspections.some((i) => i.performed_by_name === name), 'Leitung sieht, wer kontrolliert hat');
+  ok(fv.data.inspections.every((i) => !('performed_by_role' in i)), 'Rollenspalte nicht ausgeliefert');
+  eq((await users.fleet.get(`/api/cases/${C1}`)).data.reporter_name, name);
+  // Lesezugriff: Fahrzeugakte
+  const vv = await viewer.get(`/api/vehicles/${encodeURIComponent(V1)}`);
+  eq(vv.status, 200);
+  ok(vv.data.inspections.some((i) => i.performed_by_name_hidden === true && i.performed_by_name === null), 'Kontrolle ohne Fahrernamen');
+  ok(!vv.data.last_check || vv.data.last_check.performed_by_name === null, 'letzte Abfahrtskontrolle ohne Namen');
+  ok(!JSON.stringify(vv.data).includes(name), 'Fahrername nirgends in der Fahrzeugakte');
+  // Zeitleiste
+  const tl = await viewer.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`);
+  eq(tl.status, 200);
+  ok(tl.data.items.some((x) => x.type === 'inspection' && x.by_hidden === true), 'Zeitleiste markiert ausgeblendet');
+  ok(!JSON.stringify(tl.data).includes(name), 'Fahrername nicht in der Zeitleiste');
+  // Vorgänge: Liste, CSV, Detail
+  const lv = (await viewer.get('/api/cases?status=all')).data.cases.find((c) => c.id === C1);
+  ok(lv && lv.reporter_name === null && lv.reporter_name_hidden === true && !('reporter_role' in lv), 'Liste ohne Melder');
+  ok(!('reporter_name_note' in lv), 'kein freier Namensvermerk');
+  const csv = await viewer.get('/api/cases?format=csv&status=all');
+  eq(csv.status, 200); ok(!new TextDecoder().decode(csv.data).includes(name), 'CSV ohne Fahrernamen');
+  ok(new TextDecoder().decode((await users.fleet.get('/api/cases?format=csv&status=all')).data).includes(name), 'CSV der Leitung mit Melder');
+  const dv = await viewer.get(`/api/cases/${C1}`);
+  eq(dv.data.reporter_name, null); eq(dv.data.reporter_name_hidden, true);
+  ok(dv.data.events.some((e) => e.actor_role === 'driver' && e.actor_name === null && e.actor_name_hidden), 'Verlauf: Fahrer ausgeblendet');
+  ok(dv.data.events.some((e) => e.actor_role !== 'driver' && e.actor_name), 'Verlauf: andere Namen bleiben');
+  ok(!JSON.stringify(dv.data).includes(name), 'Fahrername nirgends im Vorgang');
+  // Reifen
+  const tv = await viewer.get(`/api/vehicles/${encodeURIComponent(V1)}/tires`);
+  eq(tv.status, 200); ok(!JSON.stringify(tv.data).includes(name), 'Reifenverlauf ohne Fahrernamen');
+  ok((await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/tires`)).data.history.some((h) => h.recorded_by_name === name), 'Leitung sieht, wer gemessen hat');
+  // Disposition (Rolle mit Fahrerzuordnung) sieht Namen weiterhin
+  eq((await users.dispatch.get(`/api/cases/${C1}`)).data.reporter_name, name, 'Disposition unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].name_hidden_driver, `name_hidden_driver ${lang}`);
+});
+await test('Hilfe: Suchbegriff wird beim Tippen in die Adresse übernommen (replaceState, kein Verlaufseintrag)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const helpHash = (\(q\) => [^\n]*);/);
+  ok(m, 'helpHash vorhanden');
+  const helpHash = new Function('return ' + m[1])();
+  eq(helpHash(''), '#/help'); eq(helpHash('hu nachweis'), '#/help?q=hu%20nachweis'); eq(helpHash('a&s=x#'), '#/help?q=a%26s%3Dx%23', 'Sonderzeichen kodiert');
+  ok(/history\.replaceState\(history\.state, '', helpHash\(v\)\)/.test(app) && !/pushState/.test(app), 'ersetzt nur den Eintrag');
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
