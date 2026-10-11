@@ -3069,6 +3069,25 @@ await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste 
   eq((await mine(users.ws)).length, 0, 'nach Nachtragen erledigt');
 });
 
+await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route – auch mit encodeURIComponent(Fahrzeug-ID)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const start = src.indexOf('const routes = [');
+  const routes = new Function(src.slice(start, src.indexOf('\n];', start) + 3).replace(/,\s*view\w+\]/g, ', null]') + '; return routes;')();
+  ok(/const h = \(location\.hash \|\| '#\/'\)\.replace\(\/%3A\/gi, ':'\)/.test(src), 'route() normalisiert %3A');
+  const tpls = [...new Set([...src.matchAll(/href="(#\/[^"]*)"/g)].map((m) => m[1]))];
+  ok(tpls.length > 40, 'Links gefunden: ' + tpls.length);
+  const sample = (tpl, norm) => {
+    const vinCtx = /^#\/(vehicles|new|check|v|vehicles\/qr)\/\$\{/.test(tpl);
+    let first = true;
+    const h = tpl.replace(/\$\{([^}]*)\}/g, (_, e) => { const vin = vinCtx && first; first = false; return vin ? (e.includes('encodeURIComponent') ? 'VIN%3AWDB96340310123456' : 'VIN:WDB96340310123456') : 'abc-123'; });
+    return norm ? h.replace(/%3A/gi, ':') : h;
+  };
+  const bad = tpls.filter((tpl) => !routes.some(([re]) => re.test(sample(tpl, true))));
+  eq(bad.join(' | '), '', 'Links ohne Route');
+  ok(tpls.some((tpl) => !routes.some(([re]) => re.test(sample(tpl, false)))), 'Gegenprobe: ohne Normalisierung passen kodierte Fahrzeuglinks nicht');
+});
+
 await test('Integrations-API /v1/data-quality: gleiche Anzahlen wie die App, ohne Personennamen, nur lesend', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   const app = (await users.fleet.get('/api/admin/data-quality')).data;
