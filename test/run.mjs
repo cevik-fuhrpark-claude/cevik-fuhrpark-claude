@@ -2898,6 +2898,37 @@ await test('Integrations-API /v1/maintenance: additiv Prüfmängel ohne Auftrag 
   eq(ic.data.cases.find((c) => c.id === o.data.id).maintenance_event_id, ev.id, '/v1/cases kennt Prüfung');
 });
 
+await test('Prüfmangel ohne Auftrag ist überholt, sobald eine neuere Durchführung derselben Prüfart eingetragen ist (Nachprüfung außerhalb der App); erneute Mängel zählen an der neueren', async () => {
+  const VD = 'VIN:WDB96340310888881';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  eq((await owner.post('/api/vehicles', { plate: 'UH-XY 81', vin: 'WDB96340310888881', site: 'Dortmund' })).status, 201);
+  const uvv = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'UH-Test' });
+  const tacho = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'Tachograph', last_done_date: day(-400), interval_months: 24, evidence: 'UH-Test' });
+  eq((await users.fleet.post(`/api/maintenance/${uvv.data.id}/complete`, { done_date: day(-30), evidence: 'UH-UVV 1', result: 'erhebliche_maengel' })).status, 200);
+  eq((await users.fleet.post(`/api/maintenance/${tacho.data.id}/complete`, { done_date: day(-30), evidence: 'UH-Tacho 1', result: 'erhebliche_maengel' })).status, 200);
+  const hist = async () => (await users.fleet.get(`/api/vehicles/${VD}`)).data.maintenance_history;
+  const evU1 = (await hist()).find((h) => h.evidence === 'UH-UVV 1');
+  const evT1 = (await hist()).find((h) => h.evidence === 'UH-Tacho 1');
+  const dwc = async () => (await users.fleet.get('/api/maintenance')).data.defects_without_case.map((x) => x.id);
+  let ids = await dwc();
+  ok(ids.includes(evU1.id) && ids.includes(evT1.id), 'beide Prüfungen zunächst ohne Auftrag');
+  // UVV: Nachprüfung ohne Mängel eingetragen → erledigt; andere Prüfart (Tachograph) bleibt
+  eq((await users.fleet.post(`/api/maintenance/${uvv.data.id}/complete`, { done_date: day(-10), evidence: 'UH-UVV 2', result: 'ohne_maengel' })).status, 200);
+  ids = await dwc();
+  ok(!ids.includes(evU1.id), 'UVV überholt durch Nachprüfung');
+  ok(ids.includes(evT1.id), 'Tachograph (andere Prüfart) bleibt');
+  ok(!(await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'inspection_defects_no_case' && i.event_id === evU1.id), 'Datenqualität ebenso');
+  // Tachograph: Nachprüfung erneut mit Mängeln → Hinweis wandert zur neueren Prüfung
+  eq((await users.fleet.post(`/api/maintenance/${tacho.data.id}/complete`, { done_date: day(-5), evidence: 'UH-Tacho 2', result: 'gefaehrliche_maengel' })).status, 200);
+  const evT2 = (await hist()).find((h) => h.evidence === 'UH-Tacho 2');
+  ids = await dwc();
+  ok(!ids.includes(evT1.id) && ids.includes(evT2.id), 'erneute Mängel: neuere Prüfung zählt');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const f = (await users.fleet.get('/api/master')).data.findings.filter((x) => x.finding_code === 'INSPECTION_DEFECTS_NO_CASE' && x.vehicle_id === VD && x.status !== 'resolved');
+  eq(f.length, 1, 'Agent: genau ein Befund (neuere Tachograph-Prüfung)');
+  eq(f[0].severity, 'kritisch');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
