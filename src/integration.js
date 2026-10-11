@@ -2,7 +2,7 @@
 import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
 import { costReport } from './reports.js';
-import { maintenanceOverview } from './maintenance.js';
+import { maintenanceOverview, maintenanceHistory } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
@@ -54,6 +54,7 @@ export async function integrationRouter(request, env, ctx, url) {
   }
   if (p === '/v1/costs' && m === 'GET') return json({ schema_version: '1.0', ...(await costReport(env, null, envParam(url), Object.fromEntries(url.searchParams))) });
   if (p === '/v1/maintenance' && m === 'GET') return json({ schema_version: '1.0', ...(await maintenanceOverview(env, null)) });
+  if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, truncated: h.truncated, events: h.rows.map(({ recorded_by_name, ...r }) => r) }); }
   if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung

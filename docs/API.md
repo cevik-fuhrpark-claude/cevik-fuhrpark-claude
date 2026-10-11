@@ -19,6 +19,7 @@ Parameter `environment=production|test` (Standard: production).
 | `GET /api/integration/v1/findings` | Offene Befunde des Fuhrparkagenten |
 | `GET /api/integration/v1/costs?environment=&from=JJJJ-MM&to=JJJJ-MM&vehicle_id=` | Kosten je Fahrzeug und Monat (belegt / geschätzt / Anzahl unbewertet; max. 36 Monate); `vehicles[]` mit gefahrenen km und €/km |
 | `GET /api/integration/v1/maintenance` | Prüftermine aller aktiven Fahrzeuge (Status überfällig/bald fällig/in Ordnung) und Lückenliste HU/SP/UVV/Tachograph |
+| `GET /api/integration/v1/maintenance/history?from=&to=&kind=` | Durchgeführte Prüfungen (Wartungshistorie) im Zeitraum (Standard: Jahresbeginn bis heute, max. 5000) – ohne Namen der Erfassenden |
 | `GET /api/integration/v1/master` | Management-Panel als Daten (Fälle, Befunde, Master-Eingang) |
 | `POST /api/integration/v1/telematics` | Telematik-Einspeisung (siehe unten) |
 

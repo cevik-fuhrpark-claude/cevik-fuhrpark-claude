@@ -1246,6 +1246,10 @@ await test('Wartungshistorie: jede Durchführung bleibt erhalten (erfasst, erled
   ok(hcsv.startsWith('﻿Kennzeichen;FIN-Schlüssel;Fahrzeugart'), 'CSV-Kopf');
   ok(hcsv.includes(';2026-09-01;') && hcsv.includes(';Import;') && hcsv.includes(';2025-09-02;'), 'CSV-Zeilen');
   ok((await owner.get('/api/admin/audit?action=maintenance.history_export')).data.entries.length >= 1, 'Export protokolliert');
+  const ih = await anon.req('GET', '/api/integration/v1/maintenance/history?from=2025-01-01&to=2025-12-31&kind=Inspektion', undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(ih.status, 200); ok(ih.data.events.some((x) => x.vehicle_id === V2 && x.done_date === '2025-09-02'), 'Integrations-API Historie');
+  ok(!('recorded_by_name' in ih.data.events[0]), 'ohne Namen');
+  eq((await anon.req('GET', '/api/integration/v1/maintenance/history')).status, 401, 'ohne Token');
 });
 
 await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte Zuordnung, Umgebungen getrennt; „Mein Fahrzeug“', async () => {
