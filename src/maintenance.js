@@ -58,18 +58,47 @@ export { parseCsv } from './util.js';
 
 // Kilometer-Intervall: fällig bei letzter Durchführung (km) + Intervall; nur wenn beides belegt ist.
 // Vorwarnung nur, wenn „maintenance_warn_km“ eingestellt ist (keine erfundene Schwelle) – sonst nur „überfällig“.
-export async function latestKmByVehicle(env) {
-  const rows = (await env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at FROM odometer_readings o
+export async function latestKmByVehicle(env, { withBase = false } = {}) {
+  // withBase: zusätzlich die früheste Ablesung der 90 Tage vor der letzten (für die Fahrleistungs-Prognose) – gleiche Abfrage, kein Zusatzaufruf
+  const base = withBase ? `, (SELECT o3.km FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_km,
+    (SELECT o3.measured_at FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_at` : '';
+  const rows = (await env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at${base} FROM odometer_readings o
     WHERE o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id = o.vehicle_id)`).all()).results;
   return new Map(rows.map((r) => [r.vehicle_id, r]));
 }
-export function kmDue(rule, latest, warnKm) {
+
+// Fahrleistungs-Prognose für km-Fälligkeiten – nur Planungshilfe, nie verbindlich und ohne Einfluss auf Status/Agent.
+// Grundlage ausschließlich gespeicherte km-Stände: früheste und letzte Ablesung innerhalb von 90 Tagen, mindestens 14 Tage auseinander,
+// km gestiegen; letzte Ablesung höchstens 90 Tage alt (sonst veraltet). Ergebnis: Ø km/Tag und voraussichtliches Datum.
+export const KM_RATE_WINDOW_DAYS = 90;
+export const KM_RATE_MIN_SPAN_DAYS = 14;
+const dayOf = (x) => Date.parse(String(x).slice(0, 10) + 'T00:00:00Z');
+export function kmRate(latest, base, today) {
+  if (!latest || !base || base.km === null || base.km === undefined || !base.measured_at) return null;
+  const span = Math.round((dayOf(latest.measured_at) - dayOf(base.measured_at)) / 86400000);
+  if (!(span >= KM_RATE_MIN_SPAN_DAYS) || !(latest.km > base.km)) return null;
+  if (today && Math.round((dayOf(today) - dayOf(latest.measured_at)) / 86400000) > KM_RATE_WINDOW_DAYS) return null;
+  return { km_per_day: (latest.km - base.km) / span, from: String(base.measured_at).slice(0, 10), to: String(latest.measured_at).slice(0, 10), days: span };
+}
+export function kmForecastDate(remaining, rate, latestAt) {
+  if (!rate || !(remaining > 0)) return null;
+  const days = Math.ceil(remaining / rate.km_per_day);
+  if (days > 3 * 365) return null; // zu weit weg für eine belastbare Hochrechnung
+  return new Date(dayOf(latestAt) + days * 86400000).toISOString().slice(0, 10);
+}
+export function kmDue(rule, latest, warnKm, today = null) {
   if (!rule.interval_km || rule.last_done_km === null || rule.last_done_km === undefined) return null;
   const next = rule.last_done_km + rule.interval_km;
   if (!latest) return { next_due_km: next, current_km: null, km_measured_at: null, km_remaining: null, km_status: 'ohne_km' };
   const remaining = next - latest.km;
   const st = remaining < 0 ? 'ueberfaellig' : warnKm && remaining <= warnKm ? 'faellig' : 'ok';
-  return { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: remaining, km_status: st };
+  const out = { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: remaining, km_status: st };
+  if ('base_km' in latest) {
+    const rate = kmRate(latest, { km: latest.base_km, measured_at: latest.base_at }, today);
+    const fc = kmForecastDate(remaining, rate, latest.measured_at);
+    out.km_forecast = fc ? { date: fc, km_per_day: Math.round(rate.km_per_day), from: rate.from, to: rate.to } : null;
+  }
+  return out;
 }
 const RANK = { ueberfaellig: 4, ungeklaert: 3, faellig: 2, ok: 1, erste_sp: 1, nicht_pflichtig: 0, ohne_termin: 0 };
 
@@ -152,8 +181,8 @@ export async function maintenanceOverview(env, user, envName = null) {
   const cfg = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
   const warnDays = Number(cfg.get('maintenance_warn_days')) || 30;
   const warnKm = Number(cfg.get('maintenance_warn_km')) > 0 ? Number(cfg.get('maintenance_warn_km')) : null;
-  const latestKm = await latestKmByVehicle(env);
   const today = berlinDate();
+  const latestKm = await latestKmByVehicle(env, { withBase: true });
   const vehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1 AND eval_excluded=0').all()).results;
   const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.last_done_date, m.next_due_date, m.planned_date, m.evidence, m.updated_at
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results;
@@ -175,7 +204,7 @@ export async function maintenanceOverview(env, user, envName = null) {
     }
     const days = r.next_due_date ? daysUntil(r.next_due_date, today) : null;
     const dateStatus = days === null ? 'ohne_termin' : days < 0 ? 'ueberfaellig' : days <= warnDays ? 'faellig' : 'ok';
-    const kmd = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
+    const kmd = kmDue(r, latestKm.get(r.vehicle_id), warnKm, today);
     // Gesamtstatus: das Strengere aus Datum und Kilometern
     const status = kmd && kmd.km_status !== 'ohne_km' && RANK[kmd.km_status] > RANK[dateStatus] ? kmd.km_status : dateStatus;
     return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: r.last_done_date,
@@ -225,9 +254,9 @@ export const csvCell = (x) => {
 const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
 
 export function maintenanceCsv(ov) {
-  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km'].join(';')];
-  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? ''].join(';'));
-  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', ''].join(';'));
+  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)'].join(';')];
+  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : ''].join(';'));
+  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', '', ''].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

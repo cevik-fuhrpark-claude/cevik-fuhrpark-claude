@@ -7,7 +7,7 @@ import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js'
 import { sha256Hex, berlinDateTime, hideDriverName } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers } from './notify.js';
-import { REQUIRED_KINDS } from './maintenance.js';
+import { REQUIRED_KINDS, kmDue, KM_RATE_WINDOW_DAYS } from './maintenance.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -118,6 +118,13 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const newer = (a, b) => b.done_date > a.done_date || (b.done_date === a.done_date && b.created_at > a.created_at);
   const resultMissing = v.active && !v.eval_excluded ? maintenanceHistory.filter((e) => e.result === null && ['erfasst', 'erledigt'].includes(e.source) && REQUIRED_KINDS.includes(e.kind)
     && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
+  // Fahrleistungs-Prognose für km-Fälligkeiten (nur Planungshilfe, gleiche Regel wie die Prüftermin-Übersicht) – Abfrage nur bei km-Regeln
+  if (odometer[0] && maintenance.some((m) => m.interval_km && m.last_done_km !== null)) {
+    const b = await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first();
+    const latest = { km: odometer[0].km, measured_at: odometer[0].measured_at, base_km: b ? b.km : null, base_at: b ? b.measured_at : null };
+    const today = berlinDate();
+    for (const m of maintenance) if (m.interval_km && m.last_done_km !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
+  }
   const out = { failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);

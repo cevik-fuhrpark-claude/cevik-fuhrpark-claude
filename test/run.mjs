@@ -1231,6 +1231,44 @@ await test('Prüfungen mit Kilometer-Intervall: Fälligkeit aus letztem km-Stand
   await owner.put('/api/settings', { maintenance_warn_km: null });
 });
 
+await test('km-Fälligkeit: Prognose aus gespeicherten km-Ständen (nur Planungshilfe, Status unverändert), Grenzfälle ohne Prognose', async () => {
+  const { kmRate, kmForecastDate } = await import('../src/maintenance.js');
+  const T = '2026-10-11';
+  eq(kmRate({ km: 1000, measured_at: '2026-10-01' }, { km: 900, measured_at: '2026-09-25' }, T), null, '< 14 Tage Abstand');
+  eq(kmRate({ km: 1000, measured_at: '2026-10-01' }, { km: 1000, measured_at: '2026-08-01' }, T), null, 'kein Anstieg');
+  eq(kmRate({ km: 900, measured_at: '2026-10-01' }, { km: 1000, measured_at: '2026-08-01' }, T), null, 'Rückgang (Tachotausch)');
+  eq(kmRate({ km: 5000, measured_at: '2026-06-01' }, { km: 1000, measured_at: '2026-04-01' }, T), null, 'letzte Ablesung > 90 Tage alt');
+  eq(kmRate({ km: 1000, measured_at: '2026-10-01T08:00:00.000Z' }, null, T), null, 'nur eine Ablesung');
+  const r = kmRate({ km: 3000, measured_at: '2026-10-01T08:00:00.000Z' }, { km: 1000, measured_at: '2026-09-01T12:00:00.000Z' }, T);
+  eq(r.days, 30); eq(r.from, '2026-09-01'); eq(r.to, '2026-10-01');
+  eq(kmForecastDate(1000, r, '2026-10-01T08:00:00.000Z'), '2026-10-16', '1000 km bei 66,7 km/Tag → 15 Tage (aufgerundet)');
+  eq(kmForecastDate(0, r, '2026-10-01'), null, 'bereits fällig/überschritten: keine Prognose');
+  eq(kmForecastDate(10000000, r, '2026-10-01'), null, '> 3 Jahre: keine Prognose');
+  // Ende zu Ende: neues Fahrzeug, drei Ablesungen, km-Regel
+  eq((await owner.post('/api/vehicles', { plate: 'KM-FC 1', vin: 'WDB96340310444401', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310444401'; const vp = `/api/vehicles/${encodeURIComponent(V)}`;
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const r0 = await users.fleet.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 20000, last_done_km: 100000, evidence: 'Testnachweis Prognose' });
+  eq(r0.status, 201);
+  const row = async () => (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r0.data.id);
+  eq((await row()).km_forecast, undefined, 'ohne km-Stand keine Prognose');
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 106000, measured_on: day(2) })).status, 201);
+  eq((await row()).km_forecast, null, 'eine Ablesung: keine Prognose');
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 100000, measured_on: day(60) })).status, 201);
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 103000, measured_on: day(30) })).status, 201);
+  const x = await row();
+  eq(x.km_remaining, 14000); eq(x.status, 'ok', 'Status unverändert (Prognose zählt nicht)');
+  const exp = new Date(Date.parse(day(2) + 'T00:00:00Z') + Math.ceil(14000 / (6000 / 58)) * 86400000).toISOString().slice(0, 10);
+  eq(x.km_forecast.date, exp); eq(x.km_forecast.km_per_day, 103); eq(x.km_forecast.from, day(60)); eq(x.km_forecast.to, day(2));
+  const akte = (await users.fleet.get(vp)).data.maintenance.find((m) => m.id === r0.data.id);
+  eq(JSON.stringify(akte.km_forecast), JSON.stringify(x.km_forecast), 'Fahrzeugakte = Übersicht');
+  const csv = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
+  ok(/km-Fälligkeit voraussichtlich \(Prognose\)/.test(csv) && csv.split('\r\n').some((l) => l.startsWith('KM-FC 1;') && l.endsWith(';' + exp)), 'CSV-Spalte mit Datum');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].km_forecast.includes('{d}') && ['{from}', '{to}', '{kpd}'].every((k) => STRINGS[lang].km_forecast_hint.includes(k)), `Texte ${lang}`);
+  eq((await users.fleet.post(`${vp}/active`, { active: false, reason: 'Testfahrzeug Prognose' })).status, 200, 'Testfahrzeug wieder außer Betrieb');
+});
+
 await test('Wartungshistorie: jede Durchführung bleibt erhalten (erfasst, erledigt, Import), in Akte und Zeitleiste', async () => {
   const vp = `/api/vehicles/${encodeURIComponent(V2)}`;
   const r = await users.fleet.post(`${vp}/maintenance`, { kind: 'Inspektion', last_done_date: '2025-03-01', interval_months: 6, evidence: 'Werkstattrechnung Test 1' });
