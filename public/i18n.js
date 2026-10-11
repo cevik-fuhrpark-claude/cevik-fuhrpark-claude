@@ -390,3 +390,6 @@ Object.assign(STRINGS.en, { cc_title: 'Contract rates (as per contract, separate
 Object.assign(STRINGS.de, { dq_contract_no_document: 'Leasing-/Miet-/Finanzierungsvertrag ohne verknüpftes Vertragsdokument' });
 Object.assign(STRINGS.uk, { dq_contract_no_document: 'Договір лізингу/оренди/фінансування без прив’язаного документа' });
 Object.assign(STRINGS.en, { dq_contract_no_document: 'Leasing/rental/financing contract without a linked contract document' });
+Object.assign(STRINGS.de, { ct_ics_hint: 'Kündigungstage und Vertragsenden laufender Verträge als Kalenderdatei (ohne Raten und Vertragsnummern)' });
+Object.assign(STRINGS.uk, { ct_ics_hint: 'Дні розірвання та закінчення чинних договорів як файл календаря (без платежів і номерів договорів)' });
+Object.assign(STRINGS.en, { ct_ics_hint: 'Notice days and end dates of running contracts as a calendar file (without rates or contract numbers)' });

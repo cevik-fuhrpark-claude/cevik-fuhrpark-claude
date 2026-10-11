@@ -2,7 +2,7 @@
 // Grundsätze: Alle Angaben nur laut Vertrag (Pflicht-Nachweis); die App berechnet nur, was sich daraus ergibt
 // (spätester Kündigungstag = Vertragsende − Kündigungsfrist; km seit Übernahme; lineare Prognose, deutlich als Prognose gekennzeichnet).
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell } from './maintenance.js';
 
@@ -189,6 +189,21 @@ export function contractsCsv(ov) {
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein'].map(csvCell).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
+}
+
+// Kalenderdatei (.ics) für laufende Verträge: spätester Kündigungstag und Vertragsende ab heute, Erinnerung = Vorwarnung (Tage).
+// Ohne Raten, Vertragsnummern oder Personen (Kalender werden oft in fremde Clouds synchronisiert); nur belegte Daten.
+export function contractsIcs(ov) {
+  const ev = [];
+  for (const c of ov.contracts) {
+    if (c.ended_on) continue;
+    const s = c.status; const label = `${KIND_DE[c.kind]} ${c.plate} (${c.partner})`;
+    if (s.notice && s.notice.by >= ov.today) ev.push({ uid: `contract-${c.id}-notice`, date: s.notice.by, summary: `Kündigung spätestens: ${label}`,
+      description: `Laut Vertrag ${c.notice_months} Monat(e) vor Vertragsende ${c.end_date}. Form und Zugang der Kündigung laut Vertrag prüfen.`, alarmDays: ov.warn_days });
+    if (c.end_date && c.end_date >= ov.today) ev.push({ uid: `contract-${c.id}-end`, date: c.end_date, summary: `Vertragsende: ${label}`,
+      description: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären; danach Vertrag in der Fahrzeugakte beenden.', alarmDays: ov.warn_days });
+  }
+  return icsCalendar('Fuhrpark Verträge', ev.sort((a, b) => a.date.localeCompare(b.date)));
 }
 
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag

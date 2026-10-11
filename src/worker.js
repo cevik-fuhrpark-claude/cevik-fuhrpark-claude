@@ -198,6 +198,7 @@ async function handleApi(request, env, ctx, url) {
       await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter });
       return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.csv"` } });
     }
+    if (url.searchParams.get('format') === 'ics') return new Response(contracts.contractsIcs(ov), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.ics"` } });
     return json(ov);
   }
   if (path === '/api/contracts/import' && m === 'POST') {

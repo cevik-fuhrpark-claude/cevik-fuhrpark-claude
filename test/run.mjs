@@ -2084,6 +2084,16 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await owner.get('/api/contracts?format=csv&filter=alle')).data);
   ok(csv.startsWith('﻿Kennzeichen;Vertragsart;') && csv.includes('VT-LS 1;Leasing;Muster-Leasing GmbH;L-4711;') && csv.includes(';1234,5;'), 'CSV');
   ok((await owner.get('/api/admin/audit?action=contract')).data.entries.some((e) => e.action === 'contract.end'), 'Protokoll');
+  // Kalenderdatei: Kündigungstag + Ende laufender Verträge ab heute, ohne Rate/Vertragsnummer; beendete fehlen
+  const icsR = await users.fleet.get('/api/contracts?format=ics');
+  eq(icsR.status, 200); ok((icsR.headers.get('content-type') || '').startsWith('text/calendar'));
+  const ics = new TextDecoder().decode(icsR.data).replace(/\r\n /g, '');
+  ok(ics.includes(`UID:contract-${c1.data.id}-notice@`) && ics.includes(`DTSTART;VALUE=DATE:${lea.status.notice.by.replace(/-/g, '')}`), 'Kündigungstag');
+  ok(ics.includes(`UID:contract-${c1.data.id}-end@`) && ics.includes(`UID:contract-${c2}-end@`), 'Vertragsenden');
+  ok(!ics.includes(`contract-${c3}-`), 'beendeter Vertrag fehlt');
+  ok(!ics.includes('L-4711') && !ics.includes('1234'), 'ohne Vertragsnummer und Rate');
+  ok(ics.includes('TRIGGER:-P60D'), 'Erinnerung = Vorwarnung');
+  eq((await users.ws.get('/api/contracts?format=ics')).status, 403);
   const tl = (await users.fleet.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items;
   ok(tl.some((x) => x.contract_event === 'end' && x.at === day(-1)) && tl.filter((x) => x.contract_event === 'start').length === 3, 'Zeitleiste Verträge');
   eq((await users.ws.get(`/api/vehicles/${V}/timeline?types=contract`)).data.items.length, 0, 'Werkstatt: keine Verträge in der Zeitleiste');
