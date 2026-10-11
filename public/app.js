@@ -1782,7 +1782,9 @@ async function viewUsage() {
 async function viewSearch() {
   if (S.me.role === 'driver') { location.hash = '#/'; return; }
   render(`<h1>${esc(t('search_title'))}</h1><input id="gq" type="search" autocomplete="off" aria-label="${esc(t('search_title'))}" placeholder="${esc(t('search_ph'))}" value="${esc(S.lastSearch || '')}"><div id="gr"></div>`, '');
-  let vehicles = null; let timer = null; let seq = 0;
+  let vehicles = null; let fineList = null; let stockList = null; let timer = null; let seq = 0;
+  // Bußgelder nur Inhaber/Fuhrparkleitung/Lesezugriff, Lager nur Inhaber/Fuhrparkleitung/Werkstatt (eigenes Lager) – wie die Server-Rechte
+  const canFines = ['owner', 'fleet', 'viewer'].includes(S.me.role); const canStock = ['owner', 'fleet', 'workshop'].includes(S.me.role);
   const norm = (x) => String(x || '').toLowerCase().replace(/[\s-]/g, '');
   const run = async () => {
     const q = $('#gq').value.trim(); S.lastSearch = q; const my = ++seq; const box = $('#gr');
@@ -1792,9 +1794,16 @@ async function viewSearch() {
       const n = norm(q);
       const vs = vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate].some((x) => norm(x).includes(n))).slice(0, 10);
       const cs = (await api('GET', '/api/cases?limit=20&q=' + encodeURIComponent(q))).cases;
+      if (canFines && !fineList) fineList = (await api('GET', '/api/fines')).fines;
+      if (canStock && !stockList) stockList = (await api('GET', '/api/stock')).items;
       if (my !== seq) return;
+      const lq = q.toLowerCase();
+      const fs = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))).slice(0, 10) : [];
+      const ss = canStock ? stockList.filter((i) => [i.name, i.part_number, i.location].some((x) => String(x || '').toLowerCase().includes(lq))).slice(0, 10) : [];
       box.innerHTML = `<h2>${esc(t('nav_vehicles'))} <span class="chip">${vs.length}</span></h2>${vs.length ? `<div class="list">${vs.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.site || '')}</span><span class="chip">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.vin || '')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
-        <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}</span></h2>${caseList(cs, '–')}`;
+        <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}</span></h2>${caseList(cs, '–')}`
+        + (fs.length ? `<h2>${esc(t('fines'))} <span class="chip">${fs.length}</span></h2><div class="list" id="gfines">${fs.map((f) => `<a class="row" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))}</span><span class="chip">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)}${f.reference ? ' · ' + esc(f.reference) : ''}${f.authority ? ' · ' + esc(f.authority) : ''}</span></a>`).join('')}</div>` : '')
+        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${ss.length}</span></h2><div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '');
     } catch (err) { if (my === seq) box.innerHTML = `<div class="panel alert">${esc(err.message)}</div>`; }
   };
   $('#gq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 300); };
