@@ -2,7 +2,7 @@
 // Gespeichert werden nur Tag, Umgebung, Funktionspfad (IDs/Kennzeichen/Token ersetzt) und Anzahl – keine Person, keine Rolle, keine Inhalte.
 import { berlinDate, HttpError } from './util.js';
 
-const AREA = { cases: 'cases', vehicles: 'vehicles', tires: 'tires', stock: 'stock', fines: 'fines', maintenance: 'maintenance', reports: 'reports',
+const AREA = { cases: 'cases', vehicles: 'vehicles', contracts: 'vehicles', tires: 'tires', stock: 'stock', fines: 'fines', maintenance: 'maintenance', reports: 'reports',
   master: 'master', agent: 'master', notifications: 'notifications', push: 'notifications', users: 'admin', admin: 'admin', settings: 'admin',
   me: 'account', logout: 'account', meta: 'account', dashboard: 'dashboard', inspections: 'checks' };
 

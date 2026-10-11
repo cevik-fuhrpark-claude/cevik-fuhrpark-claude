@@ -5,6 +5,7 @@ import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
 import { sha256Hex, berlinDateTime } from './util.js';
+import { vehicleContracts } from './contracts.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -80,11 +81,13 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const telematics = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare('SELECT provider, match_basis, gps_time, received_at, lat, lon, km, speed, ignition FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
     : [];
-  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days')`).all()).results.map((r) => [r.key, r.value]));
+  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
   const husp = huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);
   const out = { vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
+    // Verträge (Leasing/Miete/…): km-Auswertung mit dem letzten km-Stand der Akte
+    out.contracts = await vehicleContracts(env, vehicleId, odometer[0] || null, sets);
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
       out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by

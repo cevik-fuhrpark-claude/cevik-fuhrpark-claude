@@ -8,6 +8,7 @@ import { fineFindings } from './fines.js';
 import { driverFindings } from './drivers.js';
 import { tachoFindings } from './tacho.js';
 import { documentFindings } from './vehicles.js';
+import { contractFindings } from './contracts.js';
 import { latestKmByVehicle, kmDue } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
@@ -30,7 +31,7 @@ function slaMinutes(settings, environment, kind, priority) {
 // (unabhängig von der Anzahl der Vorgänge) und schreibt Befunde blockweise über json_each.
 const CHUNK = 1000; // JSON-Parameter je Anweisung ≈ 0,5 MB (D1: max. 2 MB je Wert) – weniger Anweisungen je Lauf
 // Befunde, die als ruhige Erinnerung (nicht dringend) an Fuhrparkleitung/Inhaber gehen, sobald sie neu auftreten
-const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab', DRIVER_DOC_EXPIRED: 'Fahrernachweis abgelaufen', DRIVER_DOC_EXPIRES_SOON: 'Fahrernachweis läuft ab', LICENSE_CHECK_DUE: 'Führerscheinkontrolle fällig', LICENSE_CHECK_FAILED: 'Führerscheinkontrolle mit Mangel', TACHO_CARD_OVERDUE: 'Fahrerkarte nicht ausgelesen', TACHO_CARD_DUE: 'Fahrerkarte bald auslesen', TACHO_VU_OVERDUE: 'Massenspeicher nicht ausgelesen', TACHO_VU_DUE: 'Massenspeicher bald auslesen' };
+const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab', DRIVER_DOC_EXPIRED: 'Fahrernachweis abgelaufen', DRIVER_DOC_EXPIRES_SOON: 'Fahrernachweis läuft ab', LICENSE_CHECK_DUE: 'Führerscheinkontrolle fällig', LICENSE_CHECK_FAILED: 'Führerscheinkontrolle mit Mangel', TACHO_CARD_OVERDUE: 'Fahrerkarte nicht ausgelesen', TACHO_CARD_DUE: 'Fahrerkarte bald auslesen', TACHO_VU_OVERDUE: 'Massenspeicher nicht ausgelesen', TACHO_VU_DUE: 'Massenspeicher bald auslesen', CONTRACT_ENDED: 'Vertrag abgelaufen', CONTRACT_ENDS_SOON: 'Vertrag endet bald', CONTRACT_NOTICE_DUE: 'Kündigungsfrist Vertrag', CONTRACT_KM_OVER: 'km-Kontingent überschritten', CONTRACT_KM_FORECAST: 'km-Kontingent (Prognose)' };
 const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
@@ -216,6 +217,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       else if (days <= warnDays) add({ code: 'DOCUMENT_EXPIRES_SOON', subject: `${d.vehicle_id}|${d.doc_kind}`, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         message: `${d.plate}: ${label} gültig bis ${d.valid_until} (in ${days} Tag(en)).`, next_action: 'Verlängerung/Nachfolgedokument veranlassen.' });
     }
+
+    // Fahrzeugverträge (Leasing/Miete/…): Ende, Kündigungsfrist, km-Kontingent – nur laut eingetragenem Vertrag
+    for (const x of await contractFindings(env, settings)) add(x);
 
     // Reifen: letzte Profilmessung unter gesetzlichem Minimum bzw. konfigurierter Warnschwelle
     for (const t of await tireFindings(env, environment, settings)) {

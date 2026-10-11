@@ -4,7 +4,7 @@
 # Zusätzlich: Kontrast WCAG AA (Handy-Breite) und Druckansichten (A4).
 # Prüft je Ansicht: keine JavaScript-Fehler, keine Fehlermeldung (rote Meldung), keine waagrechte Scrollleiste der Seite,
 # Überschrift vorhanden. Nur synthetische Testdaten (Kennzeichen RT-…), nichts verlässt den Rechner.
-import sys, os
+import sys, os, datetime
 from playwright.sync_api import sync_playwright
 
 B = os.environ.get('CFP_URL', 'http://localhost:8787')
@@ -13,8 +13,8 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'help'],
+    'owner': ['', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'settings', 'help', 'new', 'check'],
+    'fleet': ['', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'help'],
     'workshop': ['', 'plan', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help'],
     'dispatch': ['', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
@@ -131,6 +131,11 @@ with sync_playwright() as p:
     api('POST', f'/api/drivers/{did}/documents', {'kind': 'fahrerkarte', 'valid_until': '2030-12-31', 'evidence': 'Rauchtest'})
     api('POST', '/api/tacho/downloads', {'kind': 'fahrerkarte', 'driver_id': did, 'downloaded_on': '2026-09-01', 'evidence': 'Rauchtest Datei C_RT.ddd'})
     api('POST', '/api/tacho/downloads', {'kind': 'massenspeicher', 'vehicle_id': vid, 'downloaded_on': '2026-08-01', 'evidence': 'Rauchtest Datei M_RT.ddd'})
+    # Verträge (synthetisch): Leasing mit km-Kontingent, Kündigungstag bald; Versicherung abgelaufen (Handlungsbedarf)
+    td = datetime.date.today()
+    api('POST', f'/api/vehicles/{vid}/contracts', {'kind': 'leasing', 'partner': 'Rauchtest-Leasing', 'contract_no': 'RT-L-1', 'start_date': (td - datetime.timedelta(days=100)).isoformat(),
+        'end_date': (td + datetime.timedelta(days=300)).isoformat(), 'notice_months': 9, 'km_allowance': 100000, 'start_km': 1000, 'monthly_rate_net': '999,5', 'evidence': 'Rauchtest Vertrag'})
+    api('POST', f'/api/vehicles/{vid}/contracts', {'kind': 'versicherung', 'partner': 'Rauchtest-Versicherung', 'end_date': (td - datetime.timedelta(days=2)).isoformat(), 'evidence': 'Rauchtest Police'})
     for r in ('owner', 'fleet'):
         ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho', 'vehicles/qr', f'vehicles/qr/{vid}']
     ROUTES['driver'] += ['drivers', f'new/{vid}', f'v/{vid}', f'check/{vid}']

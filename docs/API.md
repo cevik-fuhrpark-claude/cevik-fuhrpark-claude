@@ -39,7 +39,7 @@ Wiederholte Läufe erzeugen keine Dubletten. Ein übergeordneter Master-Agent ka
 
 Befundcodes: `CRITICAL_UNTRIAGED`, `TRIAGE_OVERDUE`, `TRIAGE_OPEN`, `WORKSHOP_ACK_MISSING`, `WORKSHOP_ACK_PENDING`,
 `NO_FLEET_RECIPIENT`, `NO_WORKSHOP_RECIPIENT`, `WAITING_PARTS`, `QC_PENDING`, `SAFETY_OPEN_ITEMS`, `VEHICLE_LOCKED`,
-`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`, `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN`, `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON`, `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`.
+`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`, `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN`, `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON`, `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`, `CONTRACT_ENDED`, `CONTRACT_ENDS_SOON`, `CONTRACT_NOTICE_DUE`, `CONTRACT_KM_OVER`, `CONTRACT_KM_FORECAST`.
 
 ## 2. App-API (Sitzungscookie)
 Schreibende Aufrufe brauchen den Header `x-cfp: 1` und gleiche Herkunft. Umgebung = Umgebung des Benutzers;
@@ -90,6 +90,7 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 | Telematik-Zuordnung | `GET /api/telematics` (owner/fleet): `unmatched`, `mappings`, `latest`; `POST /api/telematics/mappings {provider, external_id, vehicle_id, evidence}` (409 bei vorhandener Zuordnung); `DELETE /api/telematics/mappings?provider=&external_id=` |
 | Datenqualität | `GET /api/admin/data-quality?stale_days=90` (owner/fleet): `items[] {check, severity fehler/luecke/hinweis, vehicle_id, plate, detail}`, `counts` |
 | Nutzungsstatistik | `GET /api/admin/usage?days=1..366` (nur owner, aktuelle Ansicht Test/Betrieb): Aufrufe/Fehler je Bereich, Funktion und Tag – ohne Personenbezug |
+| Fahrzeugverträge | owner/fleet (sonst 403; Akte ohne `contracts`): `POST /api/vehicles/:id/contracts {kind: leasing|miete|finanzierung|versicherung|wartung|sonstiges, partner, evidence, contract_no?, start_date?, end_date?, notice_months? (nur mit end_date), km_allowance? (nur mit start_km), start_km?, monthly_rate_net?, note?}`, `PATCH /api/contracts/:id` (nicht nach Beenden), `POST /api/contracts/:id/end {ended_on? (nicht Zukunft), end_note}`; Fahrzeugakte `contracts[]` mit `status {overall handeln/hinweis/ok/beendet, end, notice {by = Ende − Frist}, km {driven, remaining, forecast_driven (linear, ab 30 Tagen)}}`; Übersicht `GET /api/contracts?filter=aktiv|aktion|beendet|alle&kind=[&format=csv]` → `counts`, `monthly_rate_sum_net` (nur hinterlegte Raten), `unrated`. Vorwarnung `contract_warn_days` (Standard 60). Agent: `CONTRACT_ENDED`, `CONTRACT_ENDS_SOON`, `CONTRACT_NOTICE_DUE`, `CONTRACT_KM_OVER`, `CONTRACT_KM_FORECAST`. Gemeinsame Stammdaten (Schalter `test_master_readonly` gilt) |
 
 ### Befehle auf Vorgängen
 `POST /api/cases/:id/commands` mit `{ action, command_id, expected_version, note, payload }`.

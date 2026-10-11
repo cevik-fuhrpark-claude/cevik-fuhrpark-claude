@@ -20,6 +20,7 @@ import * as maint from './maintenance.js';
 import { recordUsage, usageReport } from './usage.js';
 import { dataQuality } from './quality.js';
 import * as telem from './telematics.js';
+import * as contracts from './contracts.js';
 
 // Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
 const usageEnv = new WeakMap();
@@ -69,14 +70,15 @@ function requireRole(user, roles) {
 }
 
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days',
+  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days', 'contract_warn_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
 // Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
 const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
-  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/];
+  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
+  /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
   if (await testMasterReadonly(env)) throw new HttpError(403, 'test_readonly', 'Testkonto: gemeinsame Stammdaten (Fahrzeuge, Prüftermine, km-Stände, Reifen) sind nur lesbar – Einstellung des Inhabers.');
@@ -188,6 +190,18 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/documents$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await veh.uploadVehicleDocument(env, user, envName, mm[1], request, Object.fromEntries(url.searchParams)), 201); }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, envName, mm[1]));
+  // Fahrzeugverträge (Leasing/Miete/Finanzierung/Versicherung/Wartung) – nur Inhaber/Fuhrparkleitung
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/contracts$/)) && m === 'POST') return json(await contracts.createContract(env, user, mm[1], await readJson(request)), 201);
+  if (path === '/api/contracts' && m === 'GET') {
+    const ov = await contracts.contractOverview(env, user, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter });
+      return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.csv"` } });
+    }
+    return json(ov);
+  }
+  if ((mm = path.match(/^\/api\/contracts\/([\w-]+)$/)) && m === 'PATCH') return json(await contracts.updateContract(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/contracts\/([\w-]+)\/end$/)) && m === 'POST') return json(await contracts.endContract(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance' && m === 'GET') {
     const ov = await maint.maintenanceOverview(env, user);

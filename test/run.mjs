@@ -2020,6 +2020,75 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   ok(!new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics')).data).includes(`UID:${rule.data.id}-plan@`), 'vergangener Plan-Termin nicht im Kalender');
 });
 
+await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent mit Prognose, Agent-Befunde, Rechte, Beenden, CSV', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'VT-LS 1', vin: 'WDB96340310555601', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555601';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  // Pflichtangaben und Plausibilität
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'Muster-Leasing' })).status, 400, 'Nachweis Pflicht');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'kauf', partner: 'X', evidence: 'V1' })).status, 400, 'unbekannte Art');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'X', evidence: 'V1', start_date: day(10), end_date: day(5) })).status, 400, 'Ende vor Beginn');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'X', evidence: 'V1', end_date: '2027-02-30' })).status, 400, 'ungültiges Datum');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'X', evidence: 'V1', notice_months: 3 })).status, 400, 'Frist ohne Ende');
+  eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'X', evidence: 'V1', km_allowance: 100000 })).status, 400, 'Kontingent ohne Übernahme-km');
+  for (const u of [users.ws, users.dispatch, users.driver]) eq((await u.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'X', evidence: 'V1' })).status, 403, 'nur Leitung');
+  // Leasing: Beginn vor 100 Tagen, Ende in 300 Tagen, Kontingent 100 000 km, Übernahme bei 10 000 km; Kündigung 9 Monate vor Ende → in wenigen Tagen
+  const c1 = await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'Muster-Leasing GmbH', contract_no: 'L-4711', start_date: day(-100), end_date: day(300),
+    notice_months: 9, km_allowance: 100000, start_km: 10000, monthly_rate_net: '1234,5', evidence: 'Leasingvertrag L-4711 (Ordner Verträge)' });
+  eq(c1.status, 201);
+  // Versicherung: endet in 10 Tagen; Miete: seit gestern abgelaufen
+  const c2 = (await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'versicherung', partner: 'Muster-Versicherung', end_date: day(10), evidence: 'Police 99' })).data.id;
+  const c3 = (await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'miete', partner: 'Mietpartner', start_date: day(-60), end_date: day(-1), evidence: 'Mietvertrag' })).data.id;
+  let d = (await users.fleet.get(`/api/vehicles/${V}`)).data;
+  eq(d.contracts.length, 3);
+  let lea = d.contracts.find((c) => c.id === c1.data.id);
+  eq(lea.monthly_rate_net, 1234.5, 'Rate mit Dezimalkomma');
+  eq(lea.status.km.status, 'ohne_km', 'ohne km-Stand keine Auswertung');
+  ok(lea.status.notice.by < day(300) && lea.status.notice.status === 'bald', 'Kündigungstag bald');
+  eq(d.contracts.find((c) => c.id === c3).status.overall, 'handeln', 'abgelaufen');
+  ok(!(await users.ws.get(`/api/vehicles/${V}`)).data.contracts, 'Werkstatt sieht keine Verträge');
+  ok(!(await users.dispatch.get(`/api/vehicles/${V}`)).data.contracts, 'Disposition sieht keine Verträge');
+  // km: 40 000 km in 99 Tagen seit Übernahme → Prognose 40 000 × 400/99 ≈ 161 616 > 100 000
+  eq((await users.fleet.post(`/api/vehicles/${V}/odometer`, { km: 50000, measured_on: day(-1) })).status, 201);
+  lea = (await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((c) => c.id === c1.data.id);
+  eq(lea.status.km.driven, 40000); eq(lea.status.km.remaining, 60000);
+  eq(lea.status.km.forecast_driven, Math.round(40000 * 400 / 99), 'lineare Prognose');
+  eq(lea.status.km.status, 'prognose_ueber');
+  const { contractStatus } = await import('../src/contracts.js');
+  eq(contractStatus({ km_allowance: 1000, start_km: 0, start_date: '2026-01-01', end_date: '2027-01-01' }, { km: 500, measured_at: '2026-01-20T10:00:00Z' }, '2026-01-21', 60).km.forecast_driven, null, 'keine Prognose vor 30 Tagen');
+  eq(contractStatus({ km_allowance: 1000, start_km: 0 }, { km: 1200, measured_at: '2026-03-01T10:00:00Z' }, '2026-03-02', 60).km.status, 'ueber');
+  eq(contractStatus({ km_allowance: 1000, start_km: 5000, start_date: '2026-02-01' }, { km: 6000, measured_at: '2026-01-15T10:00:00Z' }, '2026-03-02', 60).km.status, 'ohne_km', 'km-Stand vor Vertragsbeginn zählt nicht');
+  eq(contractStatus({ end_date: '2026-03-01', ended_on: '2026-02-20' }, null, '2026-03-05', 60).overall, 'beendet');
+  // Agent-Befunde
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const codes = (await users.fleet.get('/api/master')).data.findings.filter((f) => f.vehicle_id === V).map((f) => f.finding_code);
+  for (const c of ['CONTRACT_ENDED', 'CONTRACT_ENDS_SOON', 'CONTRACT_NOTICE_DUE', 'CONTRACT_KM_FORECAST']) ok(codes.includes(c), c);
+  // Ändern (Audit, Nachweis Pflicht bleibt), Beenden mit Grund, danach keine Änderung mehr
+  eq((await users.fleet.patch(`/api/contracts/${c2}`, { end_date: day(375), evidence: 'Police 99, Verlängerung' })).status, 200);
+  eq((await users.fleet.patch(`/api/contracts/${c2}`, { evidence: '' })).status, 400, 'Nachweis bleibt Pflicht');
+  eq((await users.ws.patch(`/api/contracts/${c2}`, { partner: 'Y' })).status, 403);
+  eq((await users.fleet.post(`/api/contracts/${c3}/end`, {})).status, 400, 'Grund Pflicht');
+  eq((await users.fleet.post(`/api/contracts/${c3}/end`, { ended_on: day(1), end_note: 'x' })).status, 400, 'nicht in der Zukunft');
+  eq((await users.fleet.post(`/api/contracts/${c3}/end`, { ended_on: day(-1), end_note: 'Fahrzeug zurückgegeben' })).status, 200);
+  eq((await users.fleet.patch(`/api/contracts/${c3}`, { partner: 'Y' })).status, 400, 'beendet → keine Änderung');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const codes2 = (await users.fleet.get('/api/master')).data.findings.filter((f) => f.vehicle_id === V).map((f) => f.finding_code);
+  ok(!codes2.includes('CONTRACT_ENDED') && !codes2.includes('CONTRACT_ENDS_SOON'), 'erledigte Befunde geschlossen');
+  // Übersicht und CSV
+  const ov = (await users.fleet.get('/api/contracts?filter=aktion')).data;
+  ok(ov.contracts.some((c) => c.id === c1.data.id) && !ov.contracts.some((c) => c.id === c2 || c.id === c3), 'Filter Handlungsbedarf');
+  eq((await users.fleet.get('/api/contracts?filter=beendet')).data.contracts.filter((c) => c.vehicle_id === V).length, 1);
+  const all = (await users.fleet.get('/api/contracts')).data;
+  eq(all.unrated >= 1, true, 'Verträge ohne Rate gezählt'); ok(all.monthly_rate_sum_net >= 1234.5, 'Summe nur bewerteter Raten');
+  eq((await users.ws.get('/api/contracts')).status, 403);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await owner.get('/api/contracts?format=csv&filter=alle')).data);
+  ok(csv.startsWith('﻿Kennzeichen;Vertragsart;') && csv.includes('VT-LS 1;Leasing;Muster-Leasing GmbH;L-4711;') && csv.includes(';1234,5;'), 'CSV');
+  ok((await owner.get('/api/admin/audit?action=contract')).data.entries.some((e) => e.action === 'contract.end'), 'Protokoll');
+  // Testkonten nur lesen (Schalter des Inhabers) gilt auch für Verträge
+  eq((await owner.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  try { eq((await users.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'sonstiges', partner: 'Z', evidence: 'Z' })).status, 403, 'test_readonly'); }
+  finally { eq((await owner.put('/api/settings', { test_master_readonly: null })).status, 200); }
+});
 console.log('Abfragebudget');
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
