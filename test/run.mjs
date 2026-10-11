@@ -370,6 +370,14 @@ console.log('Kosten, Wartung, Integration, Sicherheit');
 await test('Stundensatz festlegen → Kosten bewertet; ohne Satz unbewertet', async () => {
   eq((await users.fleet.put('/api/settings', { workshop_hourly_rate_net: 95 })).status, 403);
   eq((await owner.put('/api/settings', { workshop_hourly_rate_net: 95 })).status, 200);
+  { // Ganzes Formular speichern: eine Schreibanweisung, Werte unverändert
+    const cur = (await owner.get('/api/settings')).data;
+    const all = Object.fromEntries(cur.keys.map((k) => [k, cur.values[k] ?? '']));
+    eq((await owner.put('/api/settings', all)).status, 200);
+    ok(QSTAT.perRequest.at(-1).n <= 8, `Einstellungen speichern: ${QSTAT.perRequest.at(-1).n} Abfragen für ${cur.keys.length} Felder`);
+    const after = (await owner.get('/api/settings')).data.values;
+    eq(after.workshop_hourly_rate_net, '95'); ok(cur.keys.every((k) => (after[k] ?? '') === (cur.values[k] ?? '')), 'Werte unverändert');
+  }
   const d = await users.fleet.get(`/api/cases/${C1}`);
   eq(d.data.costs.actual_net, 71.25); eq(d.data.costs.unvalued_items, 1, 'Teil weiter unbewertet');
 });
@@ -1770,6 +1778,46 @@ await test('Abfahrtskontrolle mit Mangel: Fahrer kann Fotos an den Folgeauftrag 
   eq((await users.fleet.post(`/api/cases/${c.case.id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.case.version, note: 'Testdaten' })).status, 200);
 });
 
+await test('Abfahrtskontrolle mit vielen Mängeln: Abfragezahl fest (vorher ≈ 14 je Mangel → ab 3 Mängeln über 50), je Person ein Push, Wiederholung idempotent', async () => {
+  const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const items = keys.map((k, i) => ({ key: k, result: 'mangel', note: 'Sammelmangel ' + i, safety_relevant: i === 0 }));
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310888888', plate: 'VT-MM 18', site: 'Dortmund' })).status, 201);
+  const VM = 'VIN:WDB96340310888888';
+  const key = rk();
+  env.pushLog.length = 0;
+  const r = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: VM, request_key: key, items });
+  const q = QSTAT.perRequest.at(-1).n;
+  eq(r.status, 201);
+  ok(q <= 30, `${keys.length} Mängel: ${q} Abfragen`);
+  const fresh = r.data.followups.filter((f) => !f.duplicate);
+  ok(fresh.length >= keys.length - 2, 'Folgeaufträge angelegt'); // ggf. offene Vorgänge aus früheren Tests als Vermerk
+  const nos = fresh.map((f) => Number(f.case_no.split('-')[2]));
+  ok(nos.every((n, i) => i === 0 || n === nos[i - 1] + 1) && new Set(nos).size === nos.length, 'fortlaufende, eindeutige Vorgangsnummern');
+  const first = (await users.fleet.get(`/api/cases/${fresh[0].id}`)).data.case;
+  eq(first.safety_lock, 1, 'sicherheitsrelevanter Mangel sperrt'); eq(first.check_item, keys[0]); eq(first.origin, 'kontrolle');
+  const nCount = env.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND kind='created' AND case_id IN (SELECT value FROM json_each(?))`).get(users.fleet.id, JSON.stringify(fresh.map((f) => f.id))).n;
+  eq(nCount, fresh.length, 'Fuhrparkleitung: je Folgeauftrag ein Hinweis in der App');
+  const pushes = env.pushLog.filter((p) => p.url === 'https://push.example/ok/1').length;
+  eq(pushes, 1, 'aber nur ein Push je Gerät');
+  const st = env.DB.db.prepare(`SELECT DISTINCT push_status FROM notifications WHERE user_id=? AND case_id IN (SELECT value FROM json_each(?))`).all(users.fleet.id, JSON.stringify(fresh.map((f) => f.id))).map((x) => x.push_status);
+  eq(st.join(), 'accepted', 'alle Hinweise teilen den Zustellstatus');
+  // Erneut senden (Funkloch): gleiche Folgeaufträge, nichts doppelt
+  const again = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: VM, request_key: key, items });
+  eq(again.data.duplicate, true);
+  // Zweite Kontrolle: alle Punkte bereits offen → nur Vermerke, keine neuen Vorgänge
+  const r2 = await users.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: VM, request_key: rk(), items });
+  ok(QSTAT.perRequest.at(-1).n <= 30, 'Vermerke ebenfalls gesammelt');
+  ok(r2.data.followups.every((f) => f.repeat), 'nur Vermerke');
+  const ev = env.DB.db.prepare(`SELECT COUNT(*) AS n FROM case_events WHERE action='repeat_finding' AND case_id=?`).get(fresh[0].id).n;
+  eq(ev, 1, 'Vermerk am offenen Vorgang');
+  // Aufräumen: Folgeaufträge ablehnen
+  for (const f of fresh) {
+    let c = (await users.fleet.get(`/api/cases/${f.id}`)).data;
+    if (c.case.safety_lock) { await users.fleet.post(`/api/cases/${f.id}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.case.version, note: 'Testende', payload: { confirm: true } }); c = (await users.fleet.get(`/api/cases/${f.id}`)).data; }
+    const rj = await users.fleet.post(`/api/cases/${f.id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.case.version, note: 'Testdaten' });
+    eq(rj.status, 200, JSON.stringify(rj.data));
+  }
+});
 await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespeichert, km nicht in die Fahrzeugakte', async () => {
   const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
   const items = keys.map((k) => ({ key: k, result: 'ok' }));

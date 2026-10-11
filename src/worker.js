@@ -457,12 +457,17 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/settings' && m === 'PUT') {
     requireRole(user, ['owner']);
     const b = await readJson(request);
+    // Eine Anweisung für alle Schlüssel (vorher eine je Schlüssel – das volle Formular hat > 30 Felder)
+    const pairs = [];
     for (const [k, v] of Object.entries(b)) {
       if (!SETTINGS_KEYS.includes(k)) continue;
       const val = v === null || v === '' ? '' : String(Number(v));
       if (val !== '' && !Number.isFinite(Number(val))) continue;
-      await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`)
-        .bind(k, val, user.id, nowIso()).run();
+      pairs.push([k, val]);
+    }
+    if (pairs.length) {
+      await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs)).run();
     }
     await auth.audit(env, user.id, 'settings.update', null, b);
     return json({ ok: true });

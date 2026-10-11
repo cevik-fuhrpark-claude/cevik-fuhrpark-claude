@@ -137,6 +137,32 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
   return created.length;
 }
 
+// Neue Meldungen gesammelt benachrichtigen (Folgeaufträge einer Kontrolle): Empfänger je gleicher Ausgangslage nur einmal
+// ermitteln, alle Hinweise mit einer Einfüge- und einer Zustellrunde – Abfragezahl unabhängig von der Anzahl der Meldungen.
+export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
+  if (cases.length === 1) return notifyCaseEvent(env, ctx, cases[0], 'created', { actor, vehicle: vehicles.get(cases[0].vehicle_id) });
+  const cache = new Map();
+  const now = nowIso();
+  const rows = []; const meta = new Map();
+  for (const c of cases) {
+    const urgentNow = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
+    const sig = [c.environment, c.vehicle_id, c.reporter_id, c.workshop_site || c.suggested_workshop_site || '', urgentNow ? 1 : 0, c.safety_lock ? 1 : 0].join('|');
+    if (!cache.has(sig)) cache.set(sig, await recipientsFor(env, c, 'created', { actor }));
+    const { list, urgent } = cache.get(sig);
+    const plate = vehicles.get(c.vehicle_id)?.plate || '';
+    for (const u of list) {
+      const lang = T[u.language] ? u.language : 'de';
+      const row = { id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned ? null : c.id, event_key: `${c.id}:created:${c.version}`, kind: 'created', urgent: urgent ? 1 : 0,
+        title: urgent ? T[lang].created_urgent : T[lang].created, body: `${c.case_no} · ${plate} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`, created_at: now };
+      rows.push(row); meta.set(row.id, urgent);
+    }
+  }
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: meta.get(r.id), case_id: r.case_id, kind: 'created' }));
+  const job = deliverPush(env, created, { collapse: true });
+  if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+  return created.length;
+}
+
 export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false }) {
   const now = nowIso();
   const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now }));
@@ -146,8 +172,24 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
   return created.length;
 }
 
-export async function deliverPush(env, notifications) {
+// collapse: je Person nur ein Push (dringendster Hinweis, Text „· +N“), die übrigen Hinweise erhalten denselben Zustellstatus.
+// Für Sammelereignisse (Kontrolle mit mehreren Mängeln) – sonst ein Netzaufruf je Hinweis und Gerät (Cloudflare-Grenze je Aufruf).
+export async function deliverPush(env, notifications, { collapse = false } = {}) {
   if (!notifications.length) return;
+  const all = notifications;
+  const followers = new Map(); // Träger-ID -> weitere Hinweise derselben Person
+  if (collapse) {
+    const byUser = new Map();
+    for (const n of notifications) { if (!byUser.has(n.user_id)) byUser.set(n.user_id, []); byUser.get(n.user_id).push(n); }
+    const carriers = [];
+    for (const list of byUser.values()) {
+      const carrier = list.find((n) => n.urgent) || list[0];
+      const rest = list.filter((n) => n !== carrier);
+      carriers.push(rest.length ? { ...carrier, body: `${carrier.body} · +${rest.length}` } : carrier);
+      if (rest.length) followers.set(carrier.id, rest);
+    }
+    notifications = carriers;
+  }
   // Abfragebudget: Geräte aller Empfänger in einer Abfrage laden, Statusänderungen gesammelt schreiben
   const userIds = [...new Set(notifications.map((n) => n.user_id))];
   const subsByUser = new Map();
@@ -161,7 +203,7 @@ export async function deliverPush(env, notifications) {
   const okSubs = new Set();
   const revoked = new Set();
   const mutedByUser = new Map();
-  if (notifications.some((n) => !n.urgent && n.kind)) {
+  if (all.some((n) => !n.urgent && n.kind)) {
     for (const u of (await env.DB.prepare('SELECT id, push_muted FROM users WHERE push_muted IS NOT NULL AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
   }
   for (const n of notifications) {
@@ -182,6 +224,10 @@ export async function deliverPush(env, notifications) {
       }
     }
     states.push({ id: n.id, s: accepted ? 'accepted' : 'failed', a: 1, e: accepted ? null : lastErr, t: accepted ? nowIso() : null });
+  }
+  for (const st of [...states]) for (const f of followers.get(st.id) || []) {
+    // Stumm geschaltete Art gilt je Hinweis; sonst teilt der Hinweis das Ergebnis des gesammelten Pushs
+    states.push(!f.urgent && f.kind && mutedByUser.get(f.user_id)?.has(f.kind) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id });
   }
   const now = nowIso();
   const writes = [];
