@@ -105,7 +105,38 @@ export async function costReport(env, user, envName, query = {}) {
     const km = k && k.n >= 2 && k.km_last >= k.km_first ? k.km_last - k.km_first : null;
     return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, cost_per_km: km ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
-  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
+  const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
+  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, contract_costs, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+}
+
+// Monatsraten laut Vertrag je Fahrzeug im Zeitraum: je Kalendermonat, der ganz oder teilweise in der Laufzeit liegt
+// (Beginn bis „Beendet am“ bzw. Vertragsende; ohne Ende bis heute), höchstens bis zum laufenden Monat – keine Abgrenzung angebrochener Monate,
+// keine künftigen Raten. Ohne Vertragsbeginn oder ohne Rate wird nichts gerechnet (nur gezählt) – nie 0 €.
+export const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)) + 1;
+export async function contractCosts(env, from, to, vehicleFilter, plates) {
+  const rows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, partner, start_date, end_date, ended_on, monthly_rate_net FROM vehicle_contracts${vehicleFilter ? ' WHERE vehicle_id=?' : ''}`)
+    .bind(...(vehicleFilter ? [vehicleFilter] : [])).all()).results;
+  const nowM = berlinDate().slice(0, 7);
+  const hiM = to < nowM ? to : nowM;
+  const per = new Map(); let without_start = 0; let without_rate = 0; let total = 0;
+  for (const c of rows) {
+    const v = plates.get(c.vehicle_id);
+    if (!v || v.eval_excluded) continue;
+    const endM = (c.ended_on || c.end_date || nowM).slice(0, 7);
+    if (c.start_date && (c.start_date.slice(0, 7) > hiM || endM < from)) continue; // Laufzeit außerhalb des Zeitraums
+    if (!c.start_date) { if (endM >= from) without_start++; continue; }
+    if (c.monthly_rate_net === null) { without_rate++; continue; }
+    const a = c.start_date.slice(0, 7) > from ? c.start_date.slice(0, 7) : from;
+    const b = endM < hiM ? endM : hiM;
+    const n = a <= b ? monthsBetween(a, b) : 0;
+    if (!n) continue;
+    const e = per.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, plate: v.plate, site: v.site, net: 0, contracts: [] };
+    e.net += n * c.monthly_rate_net; e.contracts.push({ id: c.id, kind: c.kind, partner: c.partner, months: n, monthly_rate_net: c.monthly_rate_net, net: r2(n * c.monthly_rate_net) });
+    per.set(c.vehicle_id, e); total += n * c.monthly_rate_net;
+  }
+  const vehicles = [...per.values()].map((e) => ({ ...e, net: r2(e.net) })).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
+  return { until_month: hiM, total_net: vehicles.length ? r2(total) : null, vehicles, without_start, without_rate };
 }
 
 // CSV für Excel (DE): Semikolon, Dezimalkomma, UTF-8 mit BOM; Formel-Injektion wird neutralisiert

@@ -2161,6 +2161,37 @@ await test('Vertragsdokument: nur Dokument desselben Fahrzeugs und derselben Umg
   const au = (await owner.get('/api/admin/audit?action=contract')).data.entries.find((e) => e.action === 'contract.update' && e.target === c.data.id && /file_id/.test(JSON.stringify(e.detail)));
   ok(au, 'Änderung der Verknüpfung im Protokoll');
 });
+await test('Kostenbericht: Vertragsraten getrennt (je angefangenem Monat bis heute), ohne Beginn/Rate nur gezählt, nur Leitung', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'VT-CC 1', vin: 'WDB96340310555621', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555621';
+  const ym = (n) => { const d = new Date(Date.UTC(+BERLIN_TODAY.slice(0, 4), +BERLIN_TODAY.slice(5, 7) - 1 + n, 15)); return d.toISOString().slice(0, 7); };
+  const now = ym(0);
+  const mk = (b) => users.fleet.post(`/api/vehicles/${V}/contracts`, { partner: 'CC-Partner', evidence: 'Vertrag CC', ...b });
+  eq((await mk({ kind: 'leasing', start_date: ym(-3) + '-20', monthly_rate_net: 1000 })).status, 201); // läuft: 4 Monate (−3 … 0)
+  const ended = (await mk({ kind: 'miete', start_date: ym(-5) + '-01', end_date: ym(6) + '-28', monthly_rate_net: 300 })).data.id;
+  eq((await users.fleet.post(`/api/contracts/${ended}/end`, { ended_on: ym(-1) + '-10', end_note: 'zurückgegeben' })).status, 200); // im Zeitraum −2 … −1 = 2 Monate
+  eq((await mk({ kind: 'versicherung', monthly_rate_net: 50 })).status, 201); // ohne Beginn
+  eq((await mk({ kind: 'wartung', start_date: ym(-1) + '-01' })).status, 201); // ohne Rate
+  eq((await mk({ kind: 'sonstiges', start_date: ym(2) + '-01', monthly_rate_net: 999 })).status, 201); // beginnt künftig → nicht gezählt
+  const r = await users.fleet.get(`/api/reports/costs?from=${ym(-2)}&to=${ym(3)}&vehicle_id=${encodeURIComponent(V)}`);
+  eq(r.status, 200);
+  const cc = r.data.contract_costs;
+  eq(cc.until_month, now, 'höchstens bis zum laufenden Monat');
+  const v = cc.vehicles.find((x) => x.vehicle_id === V);
+  eq(v.contracts.find((c) => c.kind === 'leasing').months, 3, 'Leasing im Zeitraum −2 … 0');
+  eq(v.contracts.find((c) => c.kind === 'miete').months, 2, 'beendet: bis „Beendet am“');
+  eq(v.net, 3 * 1000 + 2 * 300); eq(cc.total_net, 3600);
+  ok(!v.contracts.some((c) => c.kind === 'sonstiges'), 'künftige Raten nicht');
+  eq(cc.without_start, 1); eq(cc.without_rate, 1);
+  eq(r.data.totals.actual_net, 0, 'nicht in den Instandhaltungskosten');
+  const full = (await users.fleet.get(`/api/reports/costs?from=${ym(-12)}&to=${now}&vehicle_id=${encodeURIComponent(V)}`)).data.contract_costs.vehicles[0];
+  eq(full.contracts.find((c) => c.kind === 'leasing').months, 4, 'angebrochener Startmonat zählt voll');
+  const viewer = await invite(owner, { username: 'test.lesen.cc', display_name: 'Test Lesezugriff', role: 'viewer', environment: 'test' });
+  const vr = await viewer.get(`/api/reports/costs?from=${now}&to=${now}`);
+  eq(vr.status, 200); eq(vr.data.contract_costs, undefined, 'Lesezugriff ohne Vertragsraten');
+  const integ = await anon.req('GET', `/api/integration/v1/costs?environment=test&from=${now}&to=${now}`, undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(integ.status, 200); eq(integ.data.contract_costs, undefined, 'Integrations-API ohne Vertragsraten');
+});
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

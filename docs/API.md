@@ -114,7 +114,7 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 | `comment` | alle mit Zugriff | – | Text |
 
 ## Kostenbericht (App)
-`GET /api/reports/costs?from=JJJJ-MM&to=JJJJ-MM[&vehicle_id=][&format=csv]` – Rollen Inhaber, Fuhrparkleitung, Lesezugriff. CSV: Semikolon, Dezimalkomma, UTF-8 mit BOM (Excel), Formel-Injektion neutralisiert; jeder Export wird im Audit-Log vermerkt.
+`GET /api/reports/costs?from=JJJJ-MM&to=JJJJ-MM[&vehicle_id=][&format=csv]` – Rollen Inhaber, Fuhrparkleitung, Lesezugriff. CSV: Semikolon, Dezimalkomma, UTF-8 mit BOM (Excel), Formel-Injektion neutralisiert; jeder Export wird im Audit-Log vermerkt. Nur für Inhaber/Fuhrparkleitung zusätzlich `contract_costs {until_month, total_net, vehicles[{net, contracts[{kind, partner, months, monthly_rate_net, net}]}], without_start, without_rate}`: Monatsraten laut Vertrag je ganz oder teilweise belegtem Kalendermonat bis höchstens zum laufenden Monat – getrennt von den Instandhaltungskosten, nicht im CSV, nicht über die Integrations-API.
 
 ## Prüftermin-Import (CSV)
 Kopfzeile mit `Kennzeichen` und/oder `FIN`, `Art` (HU, SP, UVV, Tachograph … ; Aliase TÜV, Sicherheitsprüfung, Tacho, Fahrtenschreiber),
