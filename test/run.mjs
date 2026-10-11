@@ -2797,6 +2797,7 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
   eq((await cmd(users.ws, 'request_quality_check', {}, 'Mängel beseitigt')).status, 200);
   eq((await cmd(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  eq((await users.fleet.get(`/api/cases/${id}`)).data.maintenance_event.reinspection, null, 'Vorgang: noch keine Nachprüfung');
   let p = await pend();
   eq(p.length, 1, 'Hinweis nach Freigabe');
   eq(p[0].case_id, id); eq(p[0].plate, 'NP-XY 66'); eq(p[0].result, 'erhebliche_maengel'); ok(p[0].closed_at, 'Freigabezeitpunkt');
@@ -2809,6 +2810,8 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   // Nachprüfung eintragen (gleiche Prüfart, späteres Datum) → erledigt
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(0), evidence: 'UVV-Nachprüfung 5502', result: 'ohne_maengel' })).status, 200);
   eq((await pend()).length, 0, 'nach Nachprüfung kein Hinweis');
+  const ri = (await users.fleet.get(`/api/cases/${id}`)).data.maintenance_event.reinspection;
+  eq(ri && ri.done_date, day(0)); eq(ri.result, 'ohne_maengel'); eq(ri.evidence, 'UVV-Nachprüfung 5502');
   eq((await users.fleet.post('/api/agent/run')).status, 200);
   eq((await agentF()).length, 0, 'Agent-Befund erledigt');
   ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === ev.id), 'kein Mangel-ohne-Auftrag-Hinweis');

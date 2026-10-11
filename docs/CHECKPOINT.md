@@ -304,6 +304,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: Integrations-API `/v1/maintenance?environment=` additiv um `defects_without_case[]` und `reinspection_pending[]` (je Umgebung, ohne Namen); `/v1/cases` additiv `maintenance_event_id`. 120 Tests grün.
 - 11.10.2026: Werkstatt-Startseite hebt **„Mängelbeseitigung aus Prüfung – Nachprüfung folgt“** als eigenen Abschnitt hervor (offene Aufträge mit `maintenance_event_id`); Vorgangslisten markieren solche Aufträge. 390 px/PC geprüft.
 - 11.10.2026: Hilfe (Prüftermine, DE/UK/EN) um die Nachprüfungs-Erinnerung ergänzt; Lasttest bestanden (Agent 39 Abfragen).
+- 11.10.2026: Vorgang „Mängelbeseitigung aus Prüfung“ zeigt den Stand der Nachprüfung (`maintenance_event.reinspection {done_date, result, evidence}` = jüngste spätere Durchführung derselben Prüfart; grün nur ohne erhebliche Mängel), nach Freigabe ohne Nachprüfung den Hinweis. 120 Tests grün, 390 px geprüft.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
