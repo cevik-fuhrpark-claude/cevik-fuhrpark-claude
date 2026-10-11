@@ -44,16 +44,9 @@ export async function integrationRouter(request, env, ctx, url) {
   // Verfügbarkeit für Tourenplanung: gesperrt / Werkstatt / Meldung offen / laut System einsatzbereit (keine Freigabe-Aussage)
   if (p === '/v1/availability' && m === 'GET') {
     const list = await listVehicles(env, { role: 'owner' }, envParam(url));
-    // additiv: jüngste eingetragene Prüfung mit gefährlichen Mängeln/verkehrsunsicher ohne Vorgang seitdem (Information, keine Sperre)
-    const failed = new Map();
-    for (const d of (await defectsWithoutCaseQuery(env, envParam(url)).all()).results) {
-      if (!['gefaehrliche_maengel', 'verkehrsunsicher'].includes(d.result)) continue;
-      const cur = failed.get(d.vehicle_id);
-      if (!cur || d.result === 'verkehrsunsicher' && cur.result !== 'verkehrsunsicher' || d.result === cur.result && d.done_date > cur.done_date) failed.set(d.vehicle_id, { kind: d.kind, done_date: d.done_date, result: d.result });
-    }
     return json({ schema_version: '1.0', environment: envParam(url), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
-      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: failed.get(v.id) || null })) });
+      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem – Information */ });
   }
   if (p === '/v1/findings' && m === 'GET') {
     const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;

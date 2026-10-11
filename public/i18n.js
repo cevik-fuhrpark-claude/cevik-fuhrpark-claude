@@ -497,3 +497,6 @@ Object.assign(STRINGS.en, { mdone_hint: 'Enter the next due date only if it is s
 Object.assign(STRINGS.de, { dispo_insp_defects: 'Prüfung nicht bestanden – noch kein Auftrag', dispo_insp_hint: 'Laut eingetragener Prüfung; Fuhrparkleitung entscheidet über Reparatur und Freigabe.' });
 Object.assign(STRINGS.uk, { dispo_insp_defects: 'Огляд не пройдено – замовлення ще немає', dispo_insp_hint: 'Згідно з внесеним оглядом; керівник автопарку вирішує щодо ремонту та допуску.' });
 Object.assign(STRINGS.en, { dispo_insp_defects: 'Inspection failed – no order yet', dispo_insp_hint: 'According to the recorded inspection; fleet management decides on repair and release.' });
+Object.assign(STRINGS.de, { insp_failed_chip: 'Prüfung nicht bestanden' });
+Object.assign(STRINGS.uk, { insp_failed_chip: 'Огляд не пройдено' });
+Object.assign(STRINGS.en, { insp_failed_chip: 'Inspection failed' });

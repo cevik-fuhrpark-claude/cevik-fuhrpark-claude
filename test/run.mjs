@@ -2970,6 +2970,9 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   const fi = av.find((v) => v.id === VD).failed_inspection;
   ok(fi && fi.result === 'verkehrsunsicher' && fi.kind === 'UVV' && fi.done_date === day(-1), 'failed_inspection: ' + JSON.stringify(fi));
   ok(av.filter((v) => v.id !== VD).every((v) => 'failed_inspection' in v), 'Feld bei allen Fahrzeugen');
+  const dl = (await users.dispatch.get('/api/vehicles')).data.vehicles.find((v) => v.id === VD);
+  eq(JSON.stringify(dl.failed_inspection), JSON.stringify(fi), 'Fahrzeugliste (Dispo) gleich wie API');
+  ok(!('failed_inspection' in ((await users.driver.get('/api/vehicles')).data.vehicles[0] || {})), 'Fahrer: Feld nicht enthalten');
   const o = await users.fleet.post(`/api/maintenance/events/${(await users.fleet.get(`/api/vehicles/${VD}`)).data.maintenance_history.find((h) => h.evidence === 'GM 2b').id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
   eq(o.status, 201);
   const av2 = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H)).data.vehicles.find((v) => v.id === VD);
