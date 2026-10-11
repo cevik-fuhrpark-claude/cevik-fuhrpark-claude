@@ -123,6 +123,8 @@ with sync_playwright() as p:
         problems.append(f'Vorbereitung Prüfung mit Mängeln: {cp}')
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
+    # kodierte Fahrzeug-ID (wie aus encodeURIComponent-Links) und Sprung zu einer (hier unbekannten) Durchführung
+    ROUTES['workshop'] += [f"vehicles/{vid.replace(':', '%3A')}", f"vehicles/{vid.replace(':', '%3A')}?ev=unbekannt"]
     pages = {'owner': adm}
     for role, extra in [('fleet', {}), ('workshop', {'workshop_site': 'DORTMUND'}), ('driver', {}), ('dispatch', {})]:
         u = api('POST', '/api/users', {'username': f'rt.{role}', 'display_name': f'Rauchtest {role}', 'role': role, 'environment': 'production', **extra})
@@ -290,6 +292,9 @@ with sync_playwright() as p:
                     problems.append(f'{where}: Fehlermeldung „{err.first.text_content()}“')
                 if not pg.locator('h1').count():
                     problems.append(f'{where}: keine Überschrift')
+                # Route nicht gefunden → App springt auf die Startseite (außer die Ansicht selbst leitet bewusst weiter)
+                if r and pg.evaluate('location.hash') in ('', '#/') :
+                    problems.append(f'{where}: auf Startseite umgeleitet (Route fehlt?)')
                 if name == 'handy':
                     low = pg.evaluate(CONTRAST)
                     if low:
