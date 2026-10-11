@@ -1488,7 +1488,11 @@ async function viewPlan() {
   render(html, 'more');
   const all = [...r.overdue, ...r.unplanned];
   const suggest = (i) => {
-    // Werktage ab morgen im Zeitraum; Zähler = geplante Aufträge derselben Werkstatt an diesem Tag
+    // Hat dasselbe Fahrzeug ab morgen schon einen Termin (anderer Auftrag oder Prüfung) an einem Werktag: diesen vorschlagen –
+    // das Fahrzeug fällt dann nur einmal aus. Sonst Werktag ab morgen mit den wenigsten geplanten Aufträgen derselben Werkstatt.
+    const same = r.days.filter((d) => d.date > r.today && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay())
+      && d.items.some((x) => x.vehicle_id === i.vehicle_id && x.id !== i.id && (x.type === 'maintenance' || x.workshop_site === i.workshop_site)))[0];
+    if (same) return same.date;
     const load = new Map(r.days.map((d) => [d.date, d.items.filter((x) => x.type === 'case' && x.workshop_site === i.workshop_site).length]));
     let best = null;
     for (let n = 1; n <= days + 7; n++) {

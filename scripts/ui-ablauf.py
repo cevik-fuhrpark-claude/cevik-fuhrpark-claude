@@ -280,6 +280,14 @@ with sync_playwright() as p:
     if status(api, fid) == 'gemeldet':
         apicmd(fl, 'approve_repair', {'workshop_site': ws_site}, 'Ablauftest Folgeauftrag')
     apicmd(wsp, 'acknowledge')
+    # geplanter Prüftermin desselben Fahrzeugs an einem Werktag → Vorschlag soll ihn übernehmen (Fahrzeug fällt nur einmal aus)
+    today = datetime.date.fromisoformat(api('GET', '/api/workshop/plan')['d']['today'])
+    pday = today + datetime.timedelta(days=3)
+    while pday.weekday() > 4:
+        pday += datetime.timedelta(days=1)
+    rule = api('POST', f'/api/vehicles/{VID}/maintenance', {'kind': 'UVV', 'last_done_date': (today - datetime.timedelta(days=300)).isoformat(), 'interval_months': 12, 'evidence': 'Ablauftest UVV'})
+    if rule['s'] != 201 or api('POST', f"/api/maintenance/{rule['d']['id']}/plan", {'planned_date': pday.isoformat()})['s'] != 200:
+        fail(f'Vorbereitung Prüftermin: {rule}')
     go(wsp, 'plan')
     if not wsp.locator(f'#pd-{fid}').count():
         fail('Werkstattplan: Folgeauftrag ohne Termin hat kein Datumsfeld')
@@ -289,6 +297,8 @@ with sync_playwright() as p:
     sug = wsp.input_value(f'#pd-{fid}')
     if not sug or datetime.date.fromisoformat(sug).weekday() > 4 or sug <= api('GET', '/api/workshop/plan')['d']['today']:
         fail(f'Werkstattplan: Vorschlag {sug!r} ist kein künftiger Werktag')
+    if sug != pday.isoformat():
+        fail(f'Werkstattplan: Vorschlag {sug!r} übernimmt nicht den Prüftermin desselben Fahrzeugs ({pday})')
     if api('GET', f'/api/cases/{fid}')['d']['case'].get('planned_date'):
         fail('Werkstattplan: Vorschlag wurde ohne „Termin setzen“ gespeichert')
     check_view(wsp, 'workshop', 'Werkstattplan (Tablet)')
@@ -301,7 +311,7 @@ with sync_playwright() as p:
         fail('Werkstattplan: Termin nicht gespeichert')
     if wsp.locator(f'#pd-{fid}').count() or not wsp.locator(f'a[href="#/cases/{fid}"]').count():
         fail('Werkstattplan: Auftrag steht nach dem Setzen nicht am Tag')
-    steps.append('Werkstatt setzt Termin für den Folgeauftrag direkt im Werkstattplan (Vorschlag nur auf Klick)')
+    steps.append('Werkstatt setzt Termin für den Folgeauftrag direkt im Werkstattplan (Vorschlag nur auf Klick, übernimmt Prüftermin desselben Fahrzeugs)')
     shot(wsp, 'werkstattplan_gesetzt')
 
     # 9. Fahrer sieht den geplanten Werkstatttermin auf „Mein Fahrzeug“ (in seiner Sprache, ohne deutsche Reste)
