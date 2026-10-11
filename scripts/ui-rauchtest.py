@@ -116,6 +116,11 @@ with sync_playwright() as p:
     pl = api('POST', f"/api/maintenance/{(hu.get('d') or {}).get('id')}/plan", {'planned_date': (datetime.date.today() + datetime.timedelta(days=5)).isoformat()})
     if pl['s'] != 200:
         problems.append(f'Vorbereitung Prüftermin planen: {pl}')
+    # Prüfung mit erheblichen Mängeln ohne Folgevorgang: Fahrzeugakte zeigt „Auftrag Mängelbeseitigung“, Startseite „Heute zu tun“ den Hinweis
+    uvv = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'UVV', 'last_done_date': '2025-09-01', 'interval_months': 12, 'evidence': 'Rauchtest'})
+    cp = api('POST', f"/api/maintenance/{(uvv.get('d') or {}).get('id')}/complete", {'done_date': (datetime.date.today() - datetime.timedelta(days=3)).isoformat(), 'evidence': 'Rauchtest UVV-Protokoll', 'result': 'erhebliche_maengel'})
+    if cp['s'] != 200:
+        problems.append(f'Vorbereitung Prüfung mit Mängeln: {cp}')
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     pages = {'owner': adm}

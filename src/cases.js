@@ -156,11 +156,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
     .map((i) => ({ ...i, items: JSON.parse(i.items) }));
   const followups = (await env.DB.prepare('SELECT id, case_no, status, priority, description FROM cases WHERE parent_case_id=?').bind(c.id).all()).results;
   const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=?').bind(c.parent_case_id).first() : null;
+  const mevent = c.maintenance_event_id ? await env.DB.prepare('SELECT id, kind, done_date, result FROM maintenance_events WHERE id=?').bind(c.maintenance_event_id).first() : null;
   const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: reporter?.display_name || null,
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
     files, open_items: openItems, inspections, followups, parent, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
+    maintenance_event: mevent || null,
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
@@ -380,6 +382,36 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
 }
 
 
+// Werkstattauftrag zur Mängelbeseitigung aus einer gespeicherten Prüfung (Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher).
+// Wie der Auftrag aus Prüftermin: Meldung mit Herkunft „wartung“, direkt an die gewählte Werkstatt freigegeben. Je Durchführung und Umgebung
+// höchstens ein offener Auftrag. Fahrbereitschaft: bei „verkehrsunsicher“ ohne Angabe „nicht fahrbereit“ (StVZO Anl. VIIIa: Fahrzeug ist aus dem
+// Verkehr zu ziehen), sonst wie angegeben bzw. „unbekannt“ – es wird keine Einschätzung erfunden. Die Wiedervorführung/Nachprüfung ersetzt der Auftrag nicht.
+const ROLE_DE = { owner: 'Inhaber', fleet: 'Fuhrparkleitung', workshop: 'Werkstatt', dispatch: 'Disposition' };
+const DEFECT_RES = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
+export async function orderFromInspectionDefect(env, ctx, user, envName, eventId, body = {}) {
+  if (!isManager(user)) throw forbidden();
+  const ev = await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result, e.evidence, e.vehicle_id, v.active, v.plate FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id WHERE e.id=?`).bind(eventId).first();
+  if (!ev) throw notFound('Prüfung nicht gefunden.');
+  if (!DEFECT_RES[ev.result]) throw bad('validation', 'Die Prüfung hat kein Ergebnis mit erheblichen/gefährlichen Mängeln.');
+  if (!ev.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+  const open = await env.DB.prepare(`SELECT id, case_no FROM cases WHERE maintenance_event_id=? AND environment=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1`).bind(ev.id, envName).first();
+  if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
+  const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+  const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
+  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  const priority = oneOf(body.priority || (ev.result === 'erhebliche_maengel' ? 'mittel' : 'kritisch'), PRIORITIES, 'Priorität');
+  const driveability = oneOf(body.driveability || (ev.result === 'verkehrsunsicher' ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
+  const note = str(body.note, { max: 1000 });
+  const date = ev.done_date.split('-').reverse().join('.');
+  const description = `Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ${ev.evidence})${note ? ' – ' + note : ''}`;
+  const requestKey = str(body.request_key, { max: 64 }) || uuid();
+  const created = await createCase(env, ctx, user, envName, { vehicle_id: ev.vehicle_id, description, priority, driveability, workshop_site: site, request_key: requestKey });
+  await env.DB.prepare(`UPDATE cases SET maintenance_event_id=?, origin='wartung' WHERE id=?`).bind(ev.id, created.id).run();
+  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'md-' + requestKey, expected_version: 1,
+    note: `Mängelbeseitigung aus ${ev.kind} vom ${date}${note ? ': ' + note : ''}`, payload: { workshop_site: site, priority } });
+  return { id: created.id, case_no: created.case_no, status: r.status, priority, driveability };
+}
+
 export async function createCase(env, ctx, user, envName, body) {
   return (await createCases(env, ctx, user, envName, [body]))[0];
 }
@@ -444,7 +476,9 @@ export async function createCases(env, ctx, user, envName, bodies) {
     const safetyLock = x.reportedPriority === 'kritisch' || x.driveability === 'nicht_fahrbereit' ? 1 : 0;
     const caseNo = `${envName === 'test' ? 'T' : 'S'}-${year}-${String(counter.last_no - k + 1 + n).padStart(4, '0')}`;
     const id = uuid();
-    const lockReason = safetyLock ? (x.driveability === 'nicht_fahrbereit' ? 'Fahrer meldet: nicht fahrbereit (ungeprüft)' : 'Fahrer meldet: sicherheitskritisch (ungeprüft)') : null;
+    // Text nennt die meldende Rolle zutreffend (vorher stand auch bei Meldungen der Leitung/Werkstatt „Fahrer meldet“)
+    const by = user.role === 'driver' ? 'Fahrer meldet' : `Meldung ${ROLE_DE[user.role] || ''}`.trim();
+    const lockReason = safetyLock ? (x.driveability === 'nicht_fahrbereit' ? `${by}: nicht fahrbereit (ungeprüft)` : `${by}: sicherheitskritisch (ungeprüft)`) : null;
     rows.push({ id, case_no: caseNo, vehicle_id: x.vehicleId, reporter_name_note: x.reporterNote, description: x.description, location_note: x.location,
       priority: x.reportedPriority, driveability: x.driveability, safety_lock: safetyLock, lock_reason: lockReason, site: x.suggested, origin: x.origin,
       parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash });

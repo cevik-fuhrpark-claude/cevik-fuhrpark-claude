@@ -77,6 +77,16 @@ function daysUntil(due, today) {
   return Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
 }
 
+// Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
+// (nicht abgelehnter) Vorgang zum Fahrzeug angelegt wurde – Grundlage für Datenqualität und „Heute zu tun“. Keine Frist angenommen.
+export const DEFECT_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];
+export function defectsWithoutCaseQuery(env, envName) {
+  return env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+      WHERE v.active=1 AND v.eval_excluded=0 AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
+      AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND c.created_at >= e.done_date)
+      ORDER BY e.done_date DESC LIMIT 200`).bind(new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), envName);
+}
+
 export async function maintenanceOverview(env, user, envName = null) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const cfg = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
@@ -136,8 +146,10 @@ export async function maintenanceOverview(env, user, envName = null) {
       r.unrecorded_order = o && !r.open_order && !(r.last_done_date && r.last_done_date >= berlinDate(o.created_at)) ? { id: o.id, case_no: o.case_no, closed_at: o.closed_at } : null;
     }
   }
+  // Prüfmängel ohne Folgevorgang (nur App-Ansicht mit Umgebung; Lesezugriff ohne Nachweistext nicht nötig – gleiche Rechte wie die Übersicht)
+  const defects = envName ? (await defectsWithoutCaseQuery(env, envName).all()).results : undefined;
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps,
+  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}),
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 

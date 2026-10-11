@@ -1,7 +1,7 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
 import { forbidden, nowIso } from './util.js';
-import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER } from './maintenance.js';
+import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery } from './maintenance.js';
 
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
@@ -75,10 +75,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR instr(lower(c.description),'дтп')>0 OR instr(lower(c.description),'аварі')>0 OR instr(c.description,'ДТП')>0 OR instr(c.description,'Аварі')>0)
       AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString()).all(),
     // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher ohne Vorgang zum Fahrzeug seit dem Prüfdatum
-    env.DB.prepare(`SELECT e.vehicle_id, v.plate, e.kind, e.done_date, e.result FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
-      WHERE v.active=1 AND v.eval_excluded=0 AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
-      AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND c.created_at >= e.done_date)
-      ORDER BY e.done_date DESC LIMIT 200`).bind(new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), envName).all(),
+    defectsWithoutCaseQuery(env, envName).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -127,7 +124,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   }
   for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.created_at.slice(0, 10)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
-  for (const d of defects.results) add('inspection_defects_no_case', { id: d.vehicle_id, plate: d.plate }, `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]}`);
+  for (const d of defects.results) items.push({ check: 'inspection_defects_no_case', severity: CHECKS.inspection_defects_no_case, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]}` });
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {

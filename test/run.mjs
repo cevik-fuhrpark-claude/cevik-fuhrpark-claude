@@ -2718,6 +2718,49 @@ await test('Werkstattauftrag aus Prüftermin: nach technischer Freigabe ohne Ein
   eq(r.unrecorded_order, null, 'nach Eintragung kein Hinweis');
 });
 
+await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen Mängeln, Vorbelegung aus Ergebnis, kein zweiter offener Auftrag, Hinweis in Übersicht/Datenqualität entfällt', async () => {
+  const VD = 'VIN:WDB96340310777777';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  eq((await owner.post('/api/vehicles', { plate: 'MD-XY 77', vin: 'WDB96340310777777', site: 'Dortmund' })).status, 201);
+  const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'MD-Test' });
+  eq(rule.status, 201);
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-20), evidence: 'UVV-Protokoll 4711', result: 'geringe_maengel' })).status, 200);
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-2), evidence: 'UVV-Protokoll 4712', result: 'verkehrsunsicher' })).status, 200);
+  const akte = (await users.fleet.get(`/api/vehicles/${VD}`)).data;
+  const evMinor = akte.maintenance_history.find((h) => h.result === 'geringe_maengel');
+  const evBad = akte.maintenance_history.find((h) => h.result === 'verkehrsunsicher');
+  ok(evMinor?.id && evBad?.id, 'Durchführungen mit id in der Akte');
+  const ov = await users.fleet.get('/api/maintenance');
+  ok(ov.data.defects_without_case.some((x) => x.id === evBad.id && x.plate === 'MD-XY 77' && x.evidence === 'UVV-Protokoll 4712'), 'Übersicht: Mangel ohne Vorgang');
+  ok(!ov.data.defects_without_case.some((x) => x.id === evMinor.id), 'geringe Mängel nicht');
+  ok((await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'inspection_defects_no_case' && i.event_id === evBad.id), 'Datenqualität mit event_id');
+  eq((await users.ws.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND' })).status, 403, 'Werkstatt nicht');
+  eq((await users.fleet.post(`/api/maintenance/events/${evMinor.id}/order`, { workshop_site: 'DORTMUND' })).status, 400, 'geringe Mängel → kein Auftrag');
+  eq((await users.fleet.post('/api/maintenance/events/gibtsnicht/order', { workshop_site: 'DORTMUND' })).status, 404);
+  eq((await users.fleet.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'GIBTSNICHT' })).status, 400);
+  const o = await users.fleet.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND', note: 'Bremsleitung' });
+  eq(o.status, 201);
+  eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.priority, 'kritisch'); eq(o.data.driveability, 'nicht_fahrbereit');
+  const c = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
+  eq(c.case.origin, 'wartung');
+  ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
+  eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
+  eq(c.case.safety_lock, 1, 'verkehrsunsicher → gesperrt'); eq(c.case.safety_lock_reason, 'Meldung Fuhrparkleitung: nicht fahrbereit (ungeprüft)', 'Sperrgrund nennt die Rolle');
+  ok(!c.maintenance_rule, 'kein Prüftermin-Auftrag (Prüfung selbst ist erledigt)');
+  const dup = await users.fleet.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND' });
+  eq(dup.status, 409); eq(dup.data.error, 'order_exists');
+  ok(!(await users.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.id === evBad.id), 'Übersicht: Hinweis entfällt');
+  ok((await users.fleet.get(`/api/vehicles/${VD}`)).data.cases.some((x) => x.maintenance_event_id === evBad.id), 'Akte: Vorgang verknüpft');
+  // Werkstatt sieht den Auftrag
+  ok((await users.ws.get(`/api/cases/${o.data.id}`)).status === 200, 'Werkstatt sieht Auftrag');
+  // weitere Prüfung mit erheblichen Mängeln: eigener Auftrag möglich, Vorbelegung mittel/unbekannt
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'UVV-Nachprüfung 4713', result: 'erhebliche_maengel' })).status, 200);
+  const ev3 = (await users.fleet.get(`/api/vehicles/${VD}`)).data.maintenance_history.find((h) => h.evidence === 'UVV-Nachprüfung 4713');
+  const o2 = await users.fleet.post(`/api/maintenance/events/${ev3.id}/order`, { workshop_site: 'DORTMUND' });
+  eq(o2.status, 201); eq(o2.data.priority, 'mittel'); eq(o2.data.driveability, 'unbekannt');
+  eq((await users.fleet.post(`/api/maintenance/events/${evMinor.id}/order`, { workshop_site: 'DORTMUND', priority: 'egal' })).status, 400, 'Validierung');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
