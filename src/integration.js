@@ -36,7 +36,8 @@ export async function integrationRouter(request, env, ctx, url) {
   if (p === '/v1/cases' && m === 'GET') {
     const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
     const rows = (await env.DB.prepare(`SELECT c.id, c.case_no, c.environment, c.vehicle_id, c.status, c.priority, c.reported_priority, c.reported_driveability, c.safety_lock,
-      c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version
+      c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version,
+      c.planned_date, c.parts_expected_date, c.maintenance_rule_id
       FROM cases c WHERE c.environment=? AND c.updated_at > ? ORDER BY c.updated_at LIMIT 1000`).bind(envParam(url), since).all()).results;
     return json({ schema_version: '1.0', cases: rows });
   }

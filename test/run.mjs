@@ -2635,6 +2635,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   // Integrations-API bleibt unverändert (keine Auftragsdaten)
   const im = await anon.req('GET', '/api/integration/v1/maintenance', undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(im.data.rows.find((r) => r.id === rule.data.id).open_order, undefined);
+  eq((await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.cases.find((c) => c.id === o.data.id).maintenance_rule_id, rule.data.id, 'Integrations-API: Verknüpfung');
   // Prüfung in der Akte erledigt → am Auftrag erkannt
   eq((await users.ws.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(0), evidence: 'Prüfbericht Auftragstest' })).status, 200);
   d = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;

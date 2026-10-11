@@ -223,7 +223,7 @@ async function checkCostLimit(env, ctx, user, envName, c) {
   const now = nowIso();
   const payload = { total_net: total, limit_net: limit, approved_net: c.cost_approved_net ?? null, unvalued_items: k.unvalued_items };
   const r = await env.DB.batch([
-    env.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id=? AND cost_over_limit_at IS NULL').bind(now, c.id),
+    env.DB.prepare('UPDATE cases SET cost_over_limit_at=?, updated_at=? WHERE id=? AND cost_over_limit_at IS NULL').bind(now, now, c.id),
     env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at)
       SELECT ?,?,?,?,?,'cost_limit_exceeded',?,?,NULL,?,? WHERE (SELECT cost_over_limit_at FROM cases WHERE id=?)=?`)
       .bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, JSON.stringify(payload), now, c.id, now),
