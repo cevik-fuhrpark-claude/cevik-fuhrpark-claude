@@ -898,6 +898,12 @@ await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den
   ok(all.triage.n > 0 && all.triage.median_h >= 0 && all.triage.p90_h >= all.triage.median_h, 'Erstbewertung');
   ok(all.created_to_release.n === all.released, 'Durchlaufzeit nur für freigegebene');
   ok(r.data.vehicles.length > 0 && r.data.vehicles.every((v) => v.plate && v.workshop_h >= 0), 'je Fahrzeug');
+  // Filter je Werkstatt-Standort: Summe der Standorte = alle, unbekannter Standort = leer
+  ok(r.data.sites.length >= 1, 'Standorte im Zeitraum');
+  let sum = 0;
+  for (const st of r.data.sites) { const x = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&site=${st}`); eq(x.data.site, st); sum += (x.data.by_priority.find((p) => p.priority === 'alle') || { created: 0 }).created; }
+  eq(sum, r.data.by_priority.find((p) => p.priority === 'alle').created, 'Standorte ergeben zusammen alle Meldungen');
+  eq((await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&site=GIBTSNICHT`)).data.by_priority.length, 0, 'unbekannter Standort leer');
   eq((await users.driver.get('/api/reports/kpi')).status, 403);
   eq((await users.fleet.get('/api/reports/kpi?from=2026-13')).status, 400);
 });
