@@ -113,11 +113,11 @@ export async function partSuggestions(env, user, envName) {
 const PRIO_DE = { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' };
 export function casesCsv(rows, csvCell, fmt) {
   const head = ['Vorgang', 'Kennzeichen', 'Standort', 'Priorität', 'Status', 'Sicherheitssperre', 'Fahrbereit laut Meldung', 'Werkstatt', 'Beschreibung', 'Gemeldet am', 'Gemeldet von',
-    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien'];
+    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin'];
   const lines = [head.join(';')];
   for (const c of rows) lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
     csvCell(c.reported_driveability), csvCell(c.workshop_site), csvCell(c.description), fmt(c.created_at), csvCell(c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
-    c.open_items ?? '', c.file_count ?? ''].join(';'));
+    c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : ''].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

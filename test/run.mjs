@@ -1946,6 +1946,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: day(-1) })).status, 200);
   p = (await users.fleet.get('/api/workshop/plan')).data;
   ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
+  const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Werkstattplan-Test')).data);
+  ok(csvT.split('\r\n')[0].endsWith(';Werkstatttermin') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + '\r\n'), 'CSV-Spalte Werkstatttermin');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
