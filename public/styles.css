@@ -51,6 +51,7 @@ p { margin: 0 0 0.75rem; max-width: 70ch; }
 .topbar .brand small { font-weight: 400; opacity: 0.7; font-size: 0.8rem; }
 .topbar .spacer { flex: 1; }
 .topbar select, .topbar button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: var(--radius-s); padding: 6px 8px; font: inherit; font-size: 0.9rem; }
+.topbar a svg { width: 24px; height: 24px; flex: none; }
 .testband { background: repeating-linear-gradient(135deg, var(--test) 0 14px, #7d52b3 14px 28px); color: #fff; text-align: center; font-weight: 600; font-family: var(--din); padding: 6px 12px; letter-spacing: 0.02em; }
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 

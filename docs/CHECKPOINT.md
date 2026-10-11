@@ -284,6 +284,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: Integrations-API `/v1/cases` zusätzlich `planned_date`, `parts_expected_date`, `maintenance_rule_id` (additiv); Markierung „Kostenfreigabe ausstehend“ setzt `updated_at`. 117 Tests grün.
 - 11.10.2026: Werkstatt-Startseite: Bereich „Kostenfreigabe ausstehend“ (ohne Beträge). Rauchtest 360 + 19 ohne Auffälligkeit, 390 px/Tablet/PC geprüft.
 - 11.10.2026: Vorgänge-CSV: Spalte „Herkunft“ (alle) und „Kostenfreigabe ausstehend“ (Leitung). 117 Tests grün.
+- 11.10.2026: **Suche** (Lupe in der Kopfzeile, alle außer Fahrer, `#/search`): Fahrzeuge nach Kennzeichen/FIN/Anhänger und Vorgänge (Nummer, Text, Kennzeichen) in einer Ansicht. **Fehler behoben:** Glocken-Symbol in der Kopfzeile war unsichtbar (SVG ohne Größe, nur die Zahl sichtbar). Rauchtest 372 + 19 ohne Auffälligkeit, 390 px/PC geprüft.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

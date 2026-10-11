@@ -458,3 +458,6 @@ Object.assign(STRINGS.en, { mo_create: 'Create workshop order', mo_open: 'Worksh
 Object.assign(STRINGS.de, { todo_maint_unrecorded: 'Prüfauftrag erledigt – Prüfung in der Akte eintragen', released_short: 'freigegeben am' });
 Object.assign(STRINGS.uk, { todo_maint_unrecorded: 'Замовлення на огляд виконано – внесіть огляд у картку', released_short: 'допущено' });
 Object.assign(STRINGS.en, { todo_maint_unrecorded: 'Inspection order done – record the inspection in the vehicle file', released_short: 'released on' });
+Object.assign(STRINGS.de, { search_title: 'Suche', search_ph: 'Kennzeichen, FIN, Vorgangsnummer oder Text', search_hint: 'Mindestens 2 Zeichen – sucht Fahrzeuge (Kennzeichen, FIN, Anhänger) und Vorgänge.' });
+Object.assign(STRINGS.uk, { search_title: 'Пошук', search_ph: 'Номер авто, VIN, номер заявки або текст', search_hint: 'Щонайменше 2 символи – шукає транспорт (номер, VIN, причіп) і заявки.' });
+Object.assign(STRINGS.en, { search_title: 'Search', search_ph: 'Plate, VIN, case number or text', search_hint: 'At least 2 characters – searches vehicles (plate, VIN, trailer) and cases.' });
