@@ -2327,6 +2327,17 @@ await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format
   eq((await users.fleet.post('/api/vehicles/VIN:WDB96340310555641/odometer', { km: '123.456' })).status, 201);
   eq((await users.fleet.get('/api/vehicles/VIN:WDB96340310555641')).data.odometer[0].km, 123456);
 });
+await test('Prüfarten Ausrüstung: Feuerlöscher, Verbandkasten, Ladungssicherung (Intervall/Termin nur laut Eingabe), Aliase im Import', async () => {
+  const { normalizeKind } = await import('../src/maintenance.js');
+  eq(normalizeKind('Feuerloescher'), 'Feuerlöscher'); eq(normalizeKind('Verbandskasten'), 'Verbandkasten'); eq(normalizeKind('Spanngurte'), 'Ladungssicherung'); eq(normalizeKind('feuerlöscher'), 'Feuerlöscher');
+  ok((await users.fleet.get('/api/meta')).data.maintenance_kinds.includes('Feuerlöscher'), 'Meta');
+  eq((await owner.post('/api/vehicles', { plate: 'VT-FL 1', vin: 'WDB96340310555651', site: 'Dortmund' })).status, 201);
+  const r = await users.fleet.post('/api/vehicles/VIN:WDB96340310555651/maintenance', { kind: 'Feuerlöscher', last_done_date: '2025-11-03', interval_months: 24, evidence: 'Prüfplakette Feuerlöscher' });
+  eq(r.status, 201); eq(r.data.next_due_date, '2027-11-03', 'Termin aus eingetragenem Intervall');
+  const v = (await users.fleet.get('/api/vehicles/VIN:WDB96340310555651')).data;
+  ok(v.maintenance.some((m) => m.kind === 'Feuerlöscher'), 'in der Fahrzeugakte');
+  ok(!(await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.plate === 'VT-FL 1' && i.check === 'missing_inspection' && /Feuer/.test(i.detail)), 'keine Pflichtprüfung');
+});
 await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji), Entfalten ergibt Original; 900 Termine schnell', async () => {
   const { icsCalendar } = await import('../src/util.js');
   const long = 'Werkstatttermin Ölwechsel – SZ-YC 5513 · Привіт світ 😀 '.repeat(4); const ascii = 'A'.repeat(200);
