@@ -1,7 +1,7 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
 import { forbidden, nowIso } from './util.js';
-import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery } from './maintenance.js';
+import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
@@ -41,16 +41,8 @@ export function similarVins(list) {
   return out;
 }
 
-// Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen).
-// Mit recordedBy: nur selbst erfasste Durchführungen (Startseite „Prüfergebnis fehlt“).
-export function noResultQuery(env, recordedBy = null) {
-  return env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
-      WHERE v.active=1 AND v.eval_excluded=0 AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
-      ${recordedBy ? 'AND e.recorded_by = ?' : ''}
-      AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
-        AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
-      ORDER BY e.done_date DESC LIMIT 200`).bind(...REQUIRED_KINDS, new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10), ...(recordedBy ? [recordedBy] : []));
-}
+// noResultQuery liegt in maintenance.js (auch für „Heute zu tun“ der Übersicht); hier weiter exportiert
+export { noResultQuery };
 
 export async function myInspectionsWithoutResult(env, user) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();

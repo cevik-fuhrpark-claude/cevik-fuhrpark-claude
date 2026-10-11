@@ -77,6 +77,17 @@ function daysUntil(due, today) {
   return Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
 }
 
+// Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen).
+// Mit recordedBy: nur selbst erfasste Durchführungen (Startseite „Prüfergebnis fehlt“).
+export function noResultQuery(env, recordedBy = null) {
+  return env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+      WHERE v.active=1 AND v.eval_excluded=0 AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
+      ${recordedBy ? 'AND e.recorded_by = ?' : ''}
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
+        AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
+      ORDER BY e.done_date DESC LIMIT 200`).bind(...REQUIRED_KINDS, new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10), ...(recordedBy ? [recordedBy] : []));
+}
+
 // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
 // (nicht abgelehnter) Vorgang zum Fahrzeug angelegt wurde – Grundlage für Datenqualität und „Heute zu tun“. Keine Frist angenommen.
 // Ist danach bereits eine neuere Durchführung derselben Prüfart eingetragen (Nachprüfung, z. B. nach Reparatur außerhalb der App), gilt
@@ -168,8 +179,10 @@ export async function maintenanceOverview(env, user, envName = null) {
   // Prüfmängel ohne Folgevorgang (nur App-Ansicht mit Umgebung; Lesezugriff ohne Nachweistext nicht nötig – gleiche Rechte wie die Übersicht)
   const defects = envName ? (await defectsWithoutCaseQuery(env, envName).all()).results : undefined;
   const reinspection = envName ? (await reinspectionPendingQuery(env, envName).all()).results : undefined;
+  // Pflichtprüfung ohne Prüfergebnis (gleiche Regel wie Datenqualität `inspection_no_result`) – für „Heute zu tun“ der Leitung
+  const noResult = envName ? (await noResultQuery(env).all()).results : undefined;
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}),
+  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}),
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 
@@ -317,6 +330,7 @@ const RESULT_DE = { ohne_maengel: 'ohne Mängel', geringe_maengel: 'geringe Män
 const SOURCE_DE = { bestand: 'Bestand (Übernahme)', erfasst: 'erfasst', erledigt: 'als erledigt eingetragen', import: 'Import' };
 // Mängelauftrag und Nachprüfung je Durchführung (nur bei erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher): jüngster nicht abgelehnter
 // Auftrag der Umgebung mit Verknüpfung auf diese Durchführung; Nachprüfung = nächste spätere Durchführung derselben Prüfart am Fahrzeug.
+// result_addable: ohne Ergebnis und neueste ihrer Art am Fahrzeug – wie das Formular „Prüfergebnis nachtragen“ in der Fahrzeugakte (Direktsprung ?ev=).
 const DEFECT_SQL = `e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')`;
 const NEXT_EVENT_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT e2.${col} FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
       AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)) ORDER BY e2.done_date, e2.created_at LIMIT 1) END`;
@@ -331,7 +345,9 @@ export async function maintenanceHistory(env, user, query = {}, envName = 'produ
   const kind = query.kind ? String(query.kind).slice(0, 40) : null;
   const rows = (await env.DB.prepare(`SELECT e.id AS event_id, e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at,
       ${DEFECT_CASE_SQL('id')} AS defect_case_id, ${DEFECT_CASE_SQL('case_no')} AS defect_case_no, ${DEFECT_CASE_SQL('status')} AS defect_case_status,
-      ${NEXT_EVENT_SQL('done_date')} AS reinspection_date, ${NEXT_EVENT_SQL('result')} AS reinspection_result
+      ${NEXT_EVENT_SQL('done_date')} AS reinspection_date, ${NEXT_EVENT_SQL('result')} AS reinspection_result,
+      CASE WHEN e.result IS NULL AND NOT EXISTS (SELECT 1 FROM maintenance_events e3 WHERE e3.vehicle_id=e.vehicle_id AND e3.kind=e.kind AND e3.id<>e.id
+        AND (e3.done_date > e.done_date OR (e3.done_date = e.done_date AND e3.created_at > e.created_at))) THEN 1 ELSE 0 END AS result_addable
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN users u ON u.id=e.recorded_by
     WHERE e.done_date >= ?2 AND e.done_date <= ?3 ${kind ? 'AND e.kind = ?4' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5000`)
     .bind(...(kind ? [envName, from, to, kind] : [envName, from, to])).all()).results;

@@ -121,6 +121,13 @@ with sync_playwright() as p:
     cp = api('POST', f"/api/maintenance/{(uvv.get('d') or {}).get('id')}/complete", {'done_date': (datetime.date.today() - datetime.timedelta(days=3)).isoformat(), 'evidence': 'Rauchtest UVV-Protokoll', 'result': 'erhebliche_maengel'})
     if cp['s'] != 200:
         problems.append(f'Vorbereitung Prüfung mit Mängeln: {cp}')
+    # Pflichtprüfung ohne Ergebnis: „Heute zu tun“ der Leitung zeigt „Pflichtprüfung ohne Prüfergebnis“, Datenqualität mit Direktfilter
+    sp = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'SP', 'last_done_date': '2025-12-01', 'interval_months': 6, 'evidence': 'Rauchtest'})
+    cs = api('POST', f"/api/maintenance/{(sp.get('d') or {}).get('id')}/complete", {'done_date': (datetime.date.today() - datetime.timedelta(days=2)).isoformat(), 'evidence': 'Rauchtest SP-Bericht'})
+    if cs['s'] != 200:
+        problems.append(f'Vorbereitung Prüfung ohne Ergebnis: {cs}')
+    ROUTES['owner'] += ['quality?f=inspection_no_result']
+    ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     ROUTES['fleet'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
     # kodierte Fahrzeug-ID (wie aus encodeURIComponent-Links) und Sprung zu einer (hier unbekannten) Durchführung

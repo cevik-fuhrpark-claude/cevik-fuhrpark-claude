@@ -3066,11 +3066,22 @@ await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste 
   const akte = (await users.ws.get(`/api/vehicles/${VD}`)).data.result_missing;
   eq(JSON.stringify(akte), JSON.stringify([{ event_id: hits[0].id, kind: 'SP', done_date: day(-1) }]), 'Fahrzeugakte zeigt fehlendes Ergebnis');
   eq(JSON.stringify((await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'inspection_no_result' && i.vehicle_id === VD).map((i) => i.event_id)), JSON.stringify([hits[0].id]), 'gleiche Regel wie Datenqualität');
+  const ovMissing = async () => ((await users.fleet.get('/api/maintenance')).data.result_missing || []).filter((x) => x.vehicle_id === VD).map((x) => x.id);
+  eq(JSON.stringify(await ovMissing()), JSON.stringify([hits[0].id]), '„Heute zu tun“ der Leitung: Übersicht liefert result_missing (gleiche Regel)');
+  const histAdd = async () => (await users.fleet.get(`/api/maintenance/history?from=${day(-400)}&to=${day(0)}&kind=SP`)).data.rows.filter((x) => x.vehicle_id === VD).map((x) => [x.done_date, x.result_addable]);
+  eq(JSON.stringify(await histAdd()), JSON.stringify([[day(-1), 1], [day(-200), 0]]), 'Nachweisliste: nur neueste Durchführung ohne Ergebnis ist nachtragbar');
   eq((await users.driver.get('/api/me/inspections-without-result')).status, 403, 'Fahrer nicht');
   eq((await users.dispatch.get('/api/me/inspections-without-result')).status, 403, 'Dispo nicht');
   eq((await users.ws.post(`/api/maintenance/events/${hits[0].id}/result`, { result: 'ohne_maengel', evidence: 'SP-Bericht 86' })).status, 200);
   eq((await mine(users.ws)).length, 0, 'nach Nachtragen erledigt');
   eq((await users.ws.get(`/api/vehicles/${VD}`)).data.result_missing.length, 0, 'Akte nach Nachtragen leer');
+  eq((await ovMissing()).length, 0, 'Übersicht nach Nachtragen leer');
+  eq(JSON.stringify(await histAdd()), JSON.stringify([[day(-1), 0], [day(-200), 0]]), 'Nachweisliste nach Nachtragen ohne Direktsprung');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/'todo_result_missing', ov && ov\.result_missing/.test(app) && app.includes('#/quality?f=inspection_no_result'), '„Heute zu tun“: Gruppe mit Link auf Datenqualität-Filter');
+  ok(/ae\.matches\('input, select, textarea'\)/.test(app), 'Seitenwechsel: Fokus auf Überschrift überschreibt nicht das Ergebnisfeld beim Direktsprung ?ev=');
+  ok(/\[\/\^#\\\/quality\(\?:\\\?f=\(\\w\+\)\)\?\$\/, viewQuality\]/.test(app), 'Route #/quality?f=<Prüfung>');
 });
 
 await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route – auch mit encodeURIComponent(Fahrzeug-ID)', async () => {

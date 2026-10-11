@@ -134,7 +134,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/plan$/, viewPlan], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 async function route() {
   // Links mit encodeURIComponent(Fahrzeug-ID) enthalten „VIN%3A…“ – vor dem Abgleich mit den Routen auf „VIN:“ zurückführen
@@ -161,7 +161,9 @@ async function route() {
       if (!m) continue;
       await fn(...m.slice(1).map(decodeURIComponent));
       // Screenreader/Tastatur: nach Seitenwechsel Fokus auf die Überschrift (nicht bei Neuaufbau derselben Seite)
-      if (S.lastHash && S.lastHash !== h) { const h1 = document.querySelector('#main h1, main h1'); if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); } }
+      // – außer die Ansicht hat selbst ein Feld fokussiert (z. B. Direktsprung ?ev= zum Formular „Prüfergebnis nachtragen“)
+      const ae = document.activeElement;
+      if (S.lastHash && S.lastHash !== h && !(ae && ae !== document.body && ae.matches('input, select, textarea') && ae.closest('#main, main'))) { const h1 = document.querySelector('#main h1, main h1'); if (h1) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); } }
       S.lastHash = h;
       if (S.me && navigator.onLine !== false) flushOutbox();
       return;
@@ -396,6 +398,7 @@ async function fleetTodo() {
     ['todo_parts', cs.filter((c) => c.status === 'wartet_teile' && !(c.parts_expected_date && c.parts_expected_date < today)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}${c.parts_expected_date ? ' · ' + t('parts_eta') + ' ' + fmtD(c.parts_expected_date) : ''}`, ''],
     ['todo_defects_no_case', ov && ov.defects_without_case ? ov.defects_without_case : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${x.kind} ${fmtD(x.done_date)} · ${t('res_' + x.result)}`, 'kritisch'],
     ['todo_reinspection', ov && ov.reinspection_pending ? ov.reinspection_pending : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${x.kind} ${fmtD(x.done_date)} · ${t('res_' + x.result)} · ${x.case_no} ${t('released_short')} ${fmtD(x.closed_at)}`, 'mittel'],
+    ['todo_result_missing', ov && ov.result_missing ? ov.result_missing : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?ev=${encodeURIComponent(x.id)}`, (x) => `${x.plate} · ${x.kind} ${fmtD(x.done_date)}`, ''],
     ['todo_maint_unrecorded', ov ? ov.rows.filter((r) => r.unrecorded_order) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${r.kind} · ${r.unrecorded_order.case_no} ${t('released_short')} ${fmtD(r.unrecorded_order.closed_at)}`, 'mittel'],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${r.kind} · ${r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')} · ${r.planned_date && r.planned_date >= today ? t('planned') + ' ' + fmtD(r.planned_date) : t('no_planned_date')}`, 'mittel'],
     ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/tacho' }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald') : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
@@ -406,7 +409,7 @@ async function fleetTodo() {
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
-  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="#/plan">${esc(t('wplan'))} ›</a></p>` : ''}</details>`).join('')}`;
+  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="#/plan">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="#/quality?f=inspection_no_result">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
 }
 
 const recentRepeat = (c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000;
@@ -1639,7 +1642,7 @@ async function viewMaint() {
     const mhq = () => `from=${encodeURIComponent(mhf.from.value)}&to=${encodeURIComponent(mhf.to.value)}${mhf.kind.value ? '&kind=' + encodeURIComponent(mhf.kind.value) : ''}`;
     mhf.onsubmit = async (e) => { e.preventDefault(); try {
       const h = await api('GET', '/api/maintenance/history?' + mhq());
-      $('#mhres').innerHTML = `<p><b>${h.rows.length}</b> ${esc(t('mh_count'))}${Object.keys(h.by_kind).length ? ' · ' + Object.entries(h.by_kind).map(([k, n]) => `${esc(k)} ${n}`).join(' · ') : ''}</p>${h.rows.length ? `<div class="list">${h.rows.slice(0, 50).map((r) => `<a class="row" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(r.kind)}</span><span class="chip">${fmtD(r.done_date)}</span><span class="sub" style="white-space:normal">${[r.done_km !== null ? r.done_km.toLocaleString('de-DE') + ' km' : '', r.result ? t('res_' + r.result) : '', r.evidence].filter(Boolean).map(esc).join(' · ')}${mhDefect(r)}</span></a>`).join('')}</div>${h.rows.length > 50 ? `<p class="small muted">${esc(t('mh_more'))}</p>` : ''}` : ''}`;
+      $('#mhres').innerHTML = `<p><b>${h.rows.length}</b> ${esc(t('mh_count'))}${Object.keys(h.by_kind).length ? ' · ' + Object.entries(h.by_kind).map(([k, n]) => `${esc(k)} ${n}`).join(' · ') : ''}</p>${h.rows.length ? `<div class="list">${h.rows.slice(0, 50).map((r) => { const go = r.result_addable && isMgr(); const vhref = `#/vehicles/${encodeURIComponent(r.vehicle_id)}` + (go ? `?ev=${encodeURIComponent(r.event_id)}` : ''); return `<a class="row" href="${vhref}">${plate(r.plate)}<span class="title">${esc(r.kind)}</span><span class="chip">${fmtD(r.done_date)}</span>${go ? `<span class="chip mittel">${esc(t('res_add_go'))} ›</span>` : ''}<span class="sub" style="white-space:normal">${[r.done_km !== null ? r.done_km.toLocaleString('de-DE') + ' km' : '', r.result ? t('res_' + r.result) : '', r.evidence].filter(Boolean).map(esc).join(' · ')}${mhDefect(r)}</span></a>`; }).join('')}</div>${h.rows.length > 50 ? `<p class="small muted">${esc(t('mh_more'))}</p>` : ''}` : ''}`;
     } catch (err) { toast(err.message, true); } };
     $('#mhcsv').onclick = async () => { if (!mhf.reportValidity()) return; try { download(await api('GET', '/api/maintenance/history?format=csv&' + mhq()), `fuhrpark-durchgefuehrte-pruefungen_${mhf.from.value}_${mhf.to.value}.csv`); } catch (err) { toast(err.message, true); } };
   }
@@ -1858,7 +1861,10 @@ async function viewTelematics() {
 }
 
 // ---------- Datenqualität (Inhaber/Fuhrparkleitung) ----------
-async function viewQuality() {
+async function viewQuality(pre) {
+  // Direktsprung mit Prüffilter (#/quality?f=<Prüfung>, z. B. aus „Heute zu tun“): Schweregrad-Filter zurücksetzen
+  if (pre && pre !== S.dqPre) { S.dqFilter = pre; S.dqSev = ''; }
+  S.dqPre = pre || '';
   const r = await api('GET', '/api/admin/data-quality');
   const sevCls = { fehler: 'kritisch', luecke: 'mittel', hinweis: '' };
   // Filter nach Schweregrad (fehler/luecke/hinweis) und darin nach Prüfung; ein Prüffilter außerhalb des Schweregrads wird verworfen
