@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 113 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 117 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -286,6 +286,8 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: Vorgänge-CSV: Spalte „Herkunft“ (alle) und „Kostenfreigabe ausstehend“ (Leitung). 117 Tests grün.
 - 11.10.2026: **Suche** (Lupe in der Kopfzeile, alle außer Fahrer, `#/search`): Fahrzeuge nach Kennzeichen/FIN/Anhänger und Vorgänge (Nummer, Text, Kennzeichen) in einer Ansicht. **Fehler behoben:** Glocken-Symbol in der Kopfzeile war unsichtbar (SVG ohne Größe, nur die Zahl sichtbar). Rauchtest 372 + 19 ohne Auffälligkeit, 390 px/PC geprüft.
 
+- **Sitzungsende 11.10.2026 ca. 11:15 UTC** (Sitzung ab 10:15 UTC): Werkstatt-Startseite „Teile bis morgen erwartet“ und „Kostenfreigabe ausstehend“, Prüfart am nächsten Prüftermin (Liste/API), Lasttest Termintreue Teile, **Kosten-Freigabegrenze** (0025, aus bis Betrag eingetragen), **Werkstattauftrag aus Prüftermin** (0026) inkl. Werkstattplan ohne Doppelung und Erinnerung „Prüfung in der Akte eintragen“, Integrations-API `/v1/cases` erweitert, Vorgänge-CSV Herkunft/Kostenfreigabe, **Suche** in der Kopfzeile, Glocken-Symbol-Fehler behoben. 117 Tests grün, Rauchtest hell/dunkel/UK ohne Auffälligkeit, Zeitreise 8/8, Lasttest bestanden. **Nächster Schritt:** Antworten auf die offenen Fragen prüfen; ohne Antwort eigene Verbesserungen (Ideen: Kennzahl „Kostenfreigaben“ (Anzahl, Dauer bis Freigabe) in Kennzahlen Instandhaltung; Suche um Bußgeld-Aktenzeichen/Lagerartikel erweitern (nur mit Rechten); Lasttest um Auftrag aus Prüftermin und Kostenprüfung ergänzen). Vor jedem Push `sh scripts/pruefen.sh --schnell`.
+
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.
@@ -296,6 +298,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - **Letzte HU fehlt bei 13 Fahrzeugen** (nur SP belegt): Prüfberichte/Plaketten nachreichen, sonst bleibt die SP-Frist „ungeklärt“.
 - **Datenschutz (neu 10.10.2026):** Entwurf `docs/DATENSCHUTZ_ENTWURF.md` prüfen – Aufbewahrungsfristen je Bereich festlegen (bisher keine automatische Löschung), Mitarbeiterinformation in der Hilfe ja/nein, Ansprechpartner. Erst danach Löschfristen bzw. Hilfetext umsetzen.
 - Testkonten (Fahrer/Werkstatt) anlegen – optional, für den Rundgang.
+- **Kosten-Freigabegrenze (neu 11.10.2026, optional):** Funktion ist fertig, aber aus. Wenn gewünscht: Betrag je Auftrag (€ netto) unter Einstellungen eintragen oder nennen – die App gibt keinen Betrag vor.
 
 ## Backlog (in dieser Reihenfolge)
 0c. Lenk-/Ruhezeiten & Verstöße über YellowFox (Stufe 3) – wartet auf Übergabedoku und Secret.
