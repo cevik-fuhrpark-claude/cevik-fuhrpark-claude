@@ -3128,6 +3128,23 @@ await test('Integrations-API /v1/data-quality: gleiche Anzahlen wie die App, ohn
   eq((await anon.req('POST', '/api/integration/v1/data-quality', {}, H)).status, 404, 'nur GET');
 });
 
+await test('Sammelabfrage Prüfungs-Listen (Agent, Übersicht) liefert dasselbe wie die drei Einzelabfragen – je Umgebung, gleiche Reihenfolge', async () => {
+  const m = await import('../src/maintenance.js');
+  for (const envName of ['test', 'production']) {
+    const c = await m.maintenanceEventLists(env, envName);
+    const single = {
+      defects_without_case: (await m.defectsWithoutCaseQuery(env, envName).all()).results,
+      reinspection_pending: (await m.reinspectionPendingQuery(env, envName).all()).results,
+      result_missing: (await m.noResultQuery(env).all()).results,
+    };
+    for (const k of Object.keys(single)) {
+      const key = (r) => JSON.stringify(Object.keys(single[k][0] || r).map((f) => r[f] ?? null));
+      eq(JSON.stringify(c[k].map(key)), JSON.stringify(single[k].map(key)), `${envName}/${k}`);
+    }
+    ok(Object.values(single).some((l) => l.length), `${envName}: Testdaten vorhanden`);
+  }
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

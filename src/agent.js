@@ -10,7 +10,7 @@ import { tachoFindings } from './tacho.js';
 import { documentFindings } from './vehicles.js';
 import { contractFindings } from './contracts.js';
 import { claimFindings } from './claims.js';
-import { latestKmByVehicle, kmDue, defectsWithoutCaseQuery, reinspectionPendingQuery, noResultQuery } from './maintenance.js';
+import { latestKmByVehicle, kmDue, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
@@ -226,14 +226,15 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Prüfung mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher (≤ 365 Tage), seitdem kein Vorgang zum Fahrzeug – keine Frist angenommen
     const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
-    for (const d of (await defectsWithoutCaseQuery(env, environment).all()).results) {
+    const evLists = await maintenanceEventLists(env, environment); // eine D1-Abfrage für die drei Prüfungs-Listen
+    for (const d of evLists.defects_without_case) {
       add({ code: 'INSPECTION_DEFECTS_NO_CASE', subject: d.id, vehicle_id: d.vehicle_id, severity: d.result === 'erhebliche_maengel' ? 'handeln' : 'kritisch', owner_role: 'fleet', requires_decision: 1,
         message: `${d.plate}: ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} mit Ergebnis „${RES_DE[d.result]}“ – seitdem kein Vorgang/Auftrag.`,
         next_action: d.result === 'erhebliche_maengel' ? 'In der Fahrzeugakte „Auftrag Mängelbeseitigung“ anlegen; Nachprüfung belegen.' : 'Einsatzfähigkeit fachlich prüfen, ggf. sperren; Auftrag Mängelbeseitigung anlegen.' });
     }
 
     // Mängelauftrag freigegeben, Nachprüfung noch nicht in der Akte – keine Frist angenommen (steht im Prüfbericht)
-    for (const d of (await reinspectionPendingQuery(env, environment).all()).results) {
+    for (const d of evLists.reinspection_pending) {
       add({ code: 'REINSPECTION_PENDING', subject: d.id, vehicle_id: d.vehicle_id, case_id: d.case_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 0,
         message: `${d.plate}: Mängel aus ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} (${RES_DE[d.result]}) laut Auftrag ${d.case_no} beseitigt – Nachprüfung noch nicht eingetragen.`,
         next_action: 'Nachprüfung/Wiedervorführung durchführen lassen und mit Nachweis in der Fahrzeugakte eintragen (Frist laut Prüfbericht).' });
@@ -241,7 +242,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // In der App erfasste Pflichtprüfung (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`.
     // Ruhiger Hinweis ohne Push: ohne Ergebnis bliebe ein Prüfmangel (Auftrag, Sperre, Nachprüfung) unbemerkt.
-    for (const d of (await noResultQuery(env).all()).results) {
+    for (const d of evLists.result_missing) {
       add({ code: 'INSPECTION_RESULT_MISSING', subject: d.id, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 0,
         message: `${d.plate}: ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} ohne eingetragenes Prüfergebnis.`,
         next_action: 'Ergebnis laut Prüfbericht in der Fahrzeugakte nachtragen (Bisherige Durchführungen → Prüfergebnis nachtragen).' });
