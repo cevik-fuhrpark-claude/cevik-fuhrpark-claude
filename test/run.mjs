@@ -833,6 +833,22 @@ await test('Schreiben als PDF anhängen; Fahrer darf es lesen, anderer nicht', a
   eq((await users.driver.get(`/api/files/${up.data.id}`)).status, 200);
   eq((await users.ws.get(`/api/files/${up.data.id}`)).status, 404);
 });
+await test('Lesezugriff sieht Bußgelder ohne Fahreridentität und interne Notiz (wie CSV ohne Fahrer)', async () => {
+  const viewer = await invite(owner, { username: 'test.lesen.fine', display_name: 'Test Lesezugriff Fine', role: 'viewer', environment: 'test' });
+  const mgr = (await users.fleet.get('/api/fines')).data.fines.find((f) => f.id === FINE);
+  ok(mgr.driver_id && mgr.driver_name, 'Fuhrparkleitung sieht den Fahrer');
+  const l = (await viewer.get('/api/fines')).data.fines.find((f) => f.id === FINE);
+  ok(l, 'Lesezugriff sieht das Schreiben');
+  for (const k of ['driver_id', 'driver_name', 'driver_name_note', 'driver_evidence', 'driver_confirmed_by', 'note', 'created_by']) ok(!(k in l), `Liste ohne ${k}`);
+  eq(l.driver_hidden, true, 'Hinweis „Fahrer ermittelt“'); eq(l.status, mgr.status);
+  const d = await viewer.get(`/api/fines/${FINE}`);
+  eq(d.status, 200); eq(d.data.driver_name, null); ok(!('driver_evidence' in d.data.fine) && !('driver_id' in d.data.fine));
+  ok(!d.data.events && !d.data.candidates, 'kein Verlauf/keine Kandidaten'); eq(d.data.allowed_actions.length, 0);
+  ok(!JSON.stringify(d.data).includes(mgr.driver_name), 'Name nirgends in der Antwort');
+  const other = (await viewer.get('/api/fines')).data.fines.find((f) => f.id !== FINE);
+  eq(other.driver_hidden, false, 'ohne ermittelten Fahrer: kein Hinweis');
+  eq((await viewer.post(`/api/fines/${FINE}/commands`, { action: 'update', payload: {} })).status, 403, 'nur lesen');
+});
 await test('Überschrittene Frist → Agent-Befund; Status erledigt schließt ihn', async () => {
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_OVERDUE'), 'Frist überschritten');

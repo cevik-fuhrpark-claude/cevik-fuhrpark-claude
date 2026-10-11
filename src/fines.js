@@ -10,7 +10,12 @@ const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 
 function shape(f, user) {
-  if (isMgr(user) || user.role === 'viewer') return f;
+  if (isMgr(user)) return f;
+  if (user.role === 'viewer') {
+    // Lesezugriff (z. B. Buchhaltung/Steuerberatung): ohne Fahreridentität und interne Notiz – wie der CSV-Export ohne with_driver
+    const { driver_id, driver_name, driver_name_note, driver_evidence, driver_confirmed_by, note, created_by, ...rest } = f;
+    return { ...rest, driver_hidden: !!(driver_id || driver_name_note) };
+  }
   // Fahrer: nur eigene, ohne interne Nachweise
   const { driver_evidence, driver_confirmed_by, created_by, note, ...rest } = f;
   return rest;
@@ -61,7 +66,7 @@ export async function fineDetail(env, user, envName, id) {
   const events = (await env.DB.prepare(`SELECT e.*, u.display_name AS actor_name FROM fine_events e LEFT JOIN users u ON u.id=e.actor_id WHERE fine_id=? ORDER BY created_at`).bind(id).all()).results;
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at FROM files WHERE fine_id=? ORDER BY created_at').bind(id).all()).results;
   const driver = f.driver_id ? await env.DB.prepare('SELECT display_name FROM users WHERE id=?').bind(f.driver_id).first() : null;
-  const out = { fine: shape(f, user), files, driver_name: driver?.display_name || f.driver_name_note || null };
+  const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
   if (isMgr(user)) {
     out.events = events;
     out.candidates = await driverCandidates(env, envName, f);
