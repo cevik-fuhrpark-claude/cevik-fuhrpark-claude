@@ -255,5 +255,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 export function maintenanceIcs(ov, stamp = new Date().toISOString()) {
   const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: r.id, date: r.next_due_date, summary: `${r.kind} fällig – ${r.plate || r.vehicle_id}`,
     description: `Nachweis: ${r.evidence}${r.last_done_date ? ` · letzte Prüfung ${r.last_done_date}` : ''}`, alarm: `${r.kind} ${r.plate || ''}`, alarmDays: ov.warn_days }));
+  // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
+  const today = ov.today || berlinDate();
+  for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${r.id}-plan`, date: r.planned_date, summary: `Werkstatttermin ${r.kind} – ${r.plate || r.vehicle_id}`,
+    description: `geplanter Werkstatttermin${r.next_due_date ? ` · fällig ${r.next_due_date}` : ''}` });
   return icsCalendar('Fuhrpark Prüftermine', events, stamp);
 }

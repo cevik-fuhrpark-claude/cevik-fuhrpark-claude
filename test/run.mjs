@@ -977,8 +977,8 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   eq(dupl.join(','), '', 'doppelte Textschlüssel (der spätere überschreibt still den früheren)');
   // Hilfe-Abschnitte werden dynamisch (help_<name>_t/_s) gebildet: jeder genannte Abschnitt muss in allen Sprachen mit gleicher Schrittzahl existieren
   const helpSrc = app.slice(app.indexOf('function viewHelp()'), app.indexOf('\n}\n', app.indexOf('function viewHelp()')));
-  const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'more', 'app_version', 'help'].includes(k)));
-  ok(helpParts.has('stock') && helpParts.has('privacy'), 'Hilfe: Lager und Datenauskunft');
+  const helpParts = new Set([...helpSrc.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).filter((k) => `help_${k}_t` in STRINGS.de || !['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'more', 'app_version', 'help'].includes(k)));
+  ok(helpParts.has('stock') && helpParts.has('privacy') && helpParts.has('myveh'), 'Hilfe: Lager, Datenauskunft, Mein Fahrzeug');
   for (const k of helpParts) for (const lang of ['de', 'uk', 'en']) {
     ok(STRINGS[lang][`help_${k}_t`] && STRINGS[lang][`help_${k}_s`], `Hilfe ${k} fehlt in ${lang}`);
     eq(STRINGS[lang][`help_${k}_s`].split('|').length, STRINGS.de[`help_${k}_s`].split('|').length, `Hilfe ${k}: Schrittzahl ${lang}`);
@@ -2014,6 +2014,10 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   const ics = new TextDecoder().decode((await users.ws.get('/api/workshop/plan?format=ics')).data);
   ok(ics.startsWith('BEGIN:VCALENDAR') && ics.includes('DTSTART;VALUE=DATE:' + day(5).replace(/-/g, '')) && ics.includes('SUMMARY:Prüfung UVV – WP-LN 1'), 'Kalenderdatei');
   ok(!/Bremsbeläge|Werkstattplan-Test/.test(ics), 'ohne Beschreibung/Nachweis');
+  const mcal = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics')).data);
+  ok(mcal.includes(`UID:${rule.data.id}-plan@`) && mcal.includes('SUMMARY:Werkstatttermin UVV – WP-LN 1'), 'Prüftermin-Kalender enthält geplanten Werkstatttermin');
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(-2) })).status, 200);
+  ok(!new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics')).data).includes(`UID:${rule.data.id}-plan@`), 'vergangener Plan-Termin nicht im Kalender');
 });
 
 console.log('Abfragebudget');
