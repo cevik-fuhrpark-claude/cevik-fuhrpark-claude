@@ -3070,12 +3070,18 @@ await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste 
   eq(JSON.stringify(await ovMissing()), JSON.stringify([hits[0].id]), '„Heute zu tun“ der Leitung: Übersicht liefert result_missing (gleiche Regel)');
   const histAdd = async () => (await users.fleet.get(`/api/maintenance/history?from=${day(-400)}&to=${day(0)}&kind=SP`)).data.rows.filter((x) => x.vehicle_id === VD).map((x) => [x.done_date, x.result_addable]);
   eq(JSON.stringify(await histAdd()), JSON.stringify([[day(-1), 1], [day(-200), 0]]), 'Nachweisliste: nur neueste Durchführung ohne Ergebnis ist nachtragbar');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  const agentRM = () => users.fleet.get('/api/master').then((x) => x.data.findings.filter((f) => f.finding_code === 'INSPECTION_RESULT_MISSING' && f.vehicle_id === VD && f.status !== 'resolved'));
+  const rmF = await agentRM();
+  ok(rmF.length === 1 && rmF[0].severity === 'hinweis' && rmF[0].message.includes('SP vom') && rmF[0].next_action.includes('Prüfbericht'), 'Agent-Befund: ' + JSON.stringify(rmF[0] || null));
   eq((await users.driver.get('/api/me/inspections-without-result')).status, 403, 'Fahrer nicht');
   eq((await users.dispatch.get('/api/me/inspections-without-result')).status, 403, 'Dispo nicht');
   eq((await users.ws.post(`/api/maintenance/events/${hits[0].id}/result`, { result: 'ohne_maengel', evidence: 'SP-Bericht 86' })).status, 200);
   eq((await mine(users.ws)).length, 0, 'nach Nachtragen erledigt');
   eq((await users.ws.get(`/api/vehicles/${VD}`)).data.result_missing.length, 0, 'Akte nach Nachtragen leer');
   eq((await ovMissing()).length, 0, 'Übersicht nach Nachtragen leer');
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  eq((await agentRM()).length, 0, 'Agent-Befund nach Nachtragen erledigt');
   eq(JSON.stringify(await histAdd()), JSON.stringify([[day(-1), 0], [day(-200), 0]]), 'Nachweisliste nach Nachtragen ohne Direktsprung');
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

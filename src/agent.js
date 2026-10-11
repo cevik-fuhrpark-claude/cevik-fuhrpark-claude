@@ -10,7 +10,7 @@ import { tachoFindings } from './tacho.js';
 import { documentFindings } from './vehicles.js';
 import { contractFindings } from './contracts.js';
 import { claimFindings } from './claims.js';
-import { latestKmByVehicle, kmDue, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
+import { latestKmByVehicle, kmDue, defectsWithoutCaseQuery, reinspectionPendingQuery, noResultQuery } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
@@ -237,6 +237,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       add({ code: 'REINSPECTION_PENDING', subject: d.id, vehicle_id: d.vehicle_id, case_id: d.case_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 0,
         message: `${d.plate}: Mängel aus ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} (${RES_DE[d.result]}) laut Auftrag ${d.case_no} beseitigt – Nachprüfung noch nicht eingetragen.`,
         next_action: 'Nachprüfung/Wiedervorführung durchführen lassen und mit Nachweis in der Fahrzeugakte eintragen (Frist laut Prüfbericht).' });
+    }
+
+    // In der App erfasste Pflichtprüfung (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`.
+    // Ruhiger Hinweis ohne Push: ohne Ergebnis bliebe ein Prüfmangel (Auftrag, Sperre, Nachprüfung) unbemerkt.
+    for (const d of (await noResultQuery(env).all()).results) {
+      add({ code: 'INSPECTION_RESULT_MISSING', subject: d.id, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 0,
+        message: `${d.plate}: ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} ohne eingetragenes Prüfergebnis.`,
+        next_action: 'Ergebnis laut Prüfbericht in der Fahrzeugakte nachtragen (Bisherige Durchführungen → Prüfergebnis nachtragen).' });
     }
 
     // Fahrzeugverträge (Leasing/Miete/…): Ende, Kündigungsfrist, km-Kontingent – nur laut eingetragenem Vertrag
