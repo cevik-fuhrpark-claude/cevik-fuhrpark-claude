@@ -756,7 +756,6 @@ function viewCheckPaper() {
     <div class="paper-head">${line(t('signature'))}</div>
     <p class="small muted">${esc(t('paper_footer'))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>`, 'check');
   $('#pprt').onclick = () => window.print();
-  $('#pics').onclick = async () => { try { download(await api('GET', `/api/workshop/plan?days=${days}&format=ics${site ? '&site=' + encodeURIComponent(site) : ''}`), `werkstattplan_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
 }
 
 // ---------- Fahrzeuge ----------
@@ -1450,14 +1449,15 @@ async function viewPlan() {
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${n} ${esc(t('days'))}</option>`).join('')}</select></div>
-      <button type="button" class="btn secondary" id="pprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
+      <button type="button" class="btn secondary" id="plprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `)).join('')}</div>`;
   html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(row).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map(row).join('')}</div>`;
   render(html, 'more');
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };
   $('#pdays').onchange = () => { S.planDays = Number($('#pdays').value); viewPlan(); };
-  $('#pprt').onclick = () => window.print();
+  $('#plprt').onclick = () => window.print();
+  $('#pics').onclick = async () => { try { download(await api('GET', `/api/workshop/plan?days=${days}&format=ics${site ? '&site=' + encodeURIComponent(site) : ''}`), `werkstattplan_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
 }
 
 async function viewWsLoad() {
