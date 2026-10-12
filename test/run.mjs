@@ -2287,9 +2287,11 @@ await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung
     ['driver_vehicles', 'SELECT user_id FROM driver_vehicles WHERE vehicle_id=?', 1], ['push_subscriptions', 'SELECT id FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL', 1],
     ['agent_runs/env', 'SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1', 1], ['agent_runs', 'SELECT environment, error FROM agent_runs ORDER BY started_at DESC LIMIT 2', 0],
     ['master_inbox', 'UPDATE master_inbox SET processed_at=? WHERE environment=? AND processed_at IS NULL', 2],
-    ['cases/updated (0038)', 'SELECT c.id FROM cases c WHERE c.environment=?1 AND (c.updated_at > ?2 OR (?3 IS NOT NULL AND c.updated_at = ?2 AND c.id > ?3)) ORDER BY c.updated_at, c.id LIMIT ?4', 4]]) {
+    ['cases/updated (0038)', 'SELECT c.id FROM cases c WHERE c.environment=?1 AND (c.updated_at > ?2 OR (?3 IS NOT NULL AND c.updated_at = ?2 AND c.id > ?3)) ORDER BY c.updated_at, c.id LIMIT ?4', 4],
+    ['fines/jüngste (0039)', 'SELECT f.id FROM fines f WHERE f.environment=? ORDER BY f.created_at DESC, f.rowid DESC LIMIT 501', 1]]) {
     const plan = env.DB.db.prepare('EXPLAIN QUERY PLAN ' + sql).all(...Array(n).fill('x')).map((r) => r.detail).join(' | ');
     ok(/USING (COVERING )?INDEX/.test(plan) && !/^SCAN [a-z_]+$/m.test(plan.split(' | ').join('\n')), `${t}: ${plan}`);
+    if (t.startsWith('fines/')) ok(!/TEMP B-TREE/.test(plan), `${t}: ohne Sortierung aller Schreiben – ${plan}`);
   }
 });
 
