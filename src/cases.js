@@ -211,12 +211,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   return detail;
 }
 
-// Kostenbewertung: fehlende Sätze/Preise = unbewertet, niemals 0 €
-async function hourlyRate(env) {
-  const rateRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
-  return rateRow && rateRow.value !== '' ? Number(rateRow.value) : null;
-}
-
+// Kostenbewertung (computeCosts unten): fehlende Sätze/Preise = unbewertet, niemals 0 €
 // Kosten-Freigabegrenze (Einstellung `repair_cost_limit_net`, netto; leer/0 = aus – die App setzt keine eigene Grenze)
 export async function costLimit(env) {
   const r = await env.DB.prepare(`SELECT value FROM settings WHERE key='repair_cost_limit_net'`).first();
@@ -289,16 +284,20 @@ export async function caseCosts(env, caseId) {
 
 // Summe über alle Vorgänge eines Fahrzeugs mit 4 Abfragen (statt 4 je Vorgang)
 export async function vehicleCosts(env, envName, vehicleId) {
-  const rate = await hourlyRate(env);
-  const by = async (sql) => {
+  // Eine Sammelabfrage (Stundensatz + Stunden/Teile/Fremdleistungen aller Vorgänge des Fahrzeugs) statt vier
+  const J = 'JOIN cases c ON c.id=x.case_id WHERE c.environment=?1 AND c.vehicle_id=?2';
+  const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
+    (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours)) FROM work_entries x ${J}) AS w,
+    (SELECT json_group_array(json_object('case_id', x.case_id, 'quantity', x.quantity, 'unit_price_net', x.unit_price_net, 'valuation', x.valuation)) FROM parts x ${J}) AS p,
+    (SELECT json_group_array(json_object('case_id', x.case_id, 'amount_net', x.amount_net, 'valuation', x.valuation, 'covers_work_and_parts', x.covers_work_and_parts)) FROM external_costs x ${J}) AS e`)
+    .bind(envName, vehicleId).first();
+  const rate = r.rate === null || r.rate === '' ? null : Number(r.rate);
+  const by = (txt) => {
     const m = new Map();
-    for (const r of (await env.DB.prepare(sql).bind(envName, vehicleId).all()).results) { if (!m.has(r.case_id)) m.set(r.case_id, []); m.get(r.case_id).push(r); }
+    for (const x of JSON.parse(txt || '[]')) { if (!m.has(x.case_id)) m.set(x.case_id, []); m.get(x.case_id).push(x); }
     return m;
   };
-  const J = 'JOIN cases c ON c.id=x.case_id WHERE c.environment=? AND c.vehicle_id=?';
-  const work = await by(`SELECT x.case_id, x.hours FROM work_entries x ${J}`);
-  const parts = await by(`SELECT x.case_id, x.quantity, x.unit_price_net, x.valuation FROM parts x ${J}`);
-  const ext = await by(`SELECT x.case_id, x.amount_net, x.valuation, x.covers_work_and_parts FROM external_costs x ${J}`);
+  const work = by(r.w); const parts = by(r.p); const ext = by(r.e);
   let actual = 0; let estimate = 0; let unvalued = 0;
   for (const id of new Set([...work.keys(), ...parts.keys(), ...ext.keys()])) {
     const k = computeCosts(rate, work.get(id) || [], parts.get(id) || [], ext.get(id) || []);

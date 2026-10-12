@@ -3484,6 +3484,15 @@ await test('Vorgangsdetail: Kosten aus geladenen Positionen = eigenständige Kos
       await q('SELECT amount_net, valuation, covers_work_and_parts FROM external_costs WHERE case_id=?'));
     eq(JSON.stringify(await caseCosts(env, id)), JSON.stringify(ref), `Sammelabfrage = Einzelabfragen ${id}`);
   }
+  // Fahrzeugkosten (Akte): Sammelabfrage = Summe der Vorgangskosten je Fahrzeug
+  const { vehicleCosts } = await import('../src/cases.js');
+  const vids = (await env.DB.prepare(`SELECT DISTINCT vehicle_id FROM cases WHERE id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids)).all()).results.map((x) => x.vehicle_id);
+  for (const vid of vids) {
+    const cs = (await env.DB.prepare(`SELECT id FROM cases WHERE environment='test' AND vehicle_id=?`).bind(vid).all()).results;
+    let a = 0, e = 0, u = 0; for (const c of cs) { const k = await caseCosts(env, c.id); a += k.actual_net; e += k.estimate_net; u += k.unvalued_items; }
+    const vc = await vehicleCosts(env, 'test', vid);
+    eq(vc.actual_net, Math.round(a * 100) / 100, `Fahrzeug ${vid} belegt`); eq(vc.estimate_net, Math.round(e * 100) / 100, 'geschätzt'); eq(vc.unvalued_items, u, 'unbewertet');
+  }
 });
 
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
@@ -3505,6 +3514,7 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/(:vin|VIN[^/]+)$/));
   if (process.env.CFP_TOP) { const m = new Map(); for (const w of QSTAT.perRequest.slice(1)) { const k = w.method + " " + w.path; m.set(k, Math.max(m.get(k) || 0, w.n)); } console.log([...m].sort((a, b) => b[1] - a[1]).slice(0, 15).map((x) => x.join(" = ")).join("\n")); }
   console.log(`     Fahrzeugakte max. ${akteMax}, Zeitleiste max. ${tlMax} Abfragen`);
+  ok(akteMax <= 23, `Fahrzeugakte braucht ${akteMax} Abfragen`);
   ok(tlMax < akteMax && tlMax <= 18, `Zeitleiste braucht ${tlMax} Abfragen`);
   // Cron am Ende der Suite (alle Testdaten vorhanden): Agent + Push-Wiederholung bzw. Bereinigung in einem Aufruf
   const cronN = [];
