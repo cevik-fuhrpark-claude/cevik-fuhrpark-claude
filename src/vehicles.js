@@ -344,7 +344,7 @@ export async function myVehicles(env, user, envName) {
     if (p && p.id !== v.id) coupledOf.set(v.id, p);
   }
   const ids = JSON.stringify([...new Set([...vs.map((v) => v.id), ...[...coupledOf.values()].map((p) => p.id)])]);
-  const [locks, mine, rules, kms] = await Promise.all([
+  const [locks, mine, rules, kms, notes] = await Promise.all([
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
@@ -354,6 +354,8 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND (next_due_date IS NOT NULL OR planned_date IS NOT NULL) ORDER BY next_due_date IS NULL, next_due_date`).bind(ids).all(),
     env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at FROM odometer_readings o WHERE o.vehicle_id IN (SELECT value FROM json_each(?1))
       AND o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id)`).bind(ids).all(),
+    // Hinweise zum Fahrzeug, die ausdrücklich für Fahrer freigegeben sind (ohne Verfasser)
+    env.DB.prepare(`SELECT vehicle_id, text, created_at FROM vehicle_notes WHERE environment=? AND for_driver=1 AND archived_at IS NULL AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC, rowid DESC`).bind(envName, ids).all(),
   ]);
   const lockMap = new Map(locks.results.map((r) => [r.vehicle_id, r]));
   const kmMap = new Map(kms.results.map((r) => [r.vehicle_id, r]));
@@ -374,6 +376,7 @@ export async function myVehicles(env, user, envName) {
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: kmMap.get(v.id) || null,
+      notes: notes.results.filter((n) => n.vehicle_id === v.id).slice(0, 10).map(({ text, created_at }) => ({ text, created_at })),
       coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked }))(coupledOf.get(v.id)) : null,
     })),
   };

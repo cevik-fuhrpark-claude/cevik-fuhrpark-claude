@@ -1961,6 +1961,33 @@ await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, end
   await users.ws.patch(`/api/stock/${id}`, { active: false });
 });
 
+await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, für Fahrer nur freigegebene auf „Mein Fahrzeug“', async () => {
+  const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles; ok(mv.length, 'Fahrer hat ein Fahrzeug');
+  const viewer = await invite(owner, { username: 'test.lesen.notes', display_name: 'Test Lesezugriff Hinweise', role: 'viewer', environment: 'test' });
+  const VID = mv[0].id; const base = `/api/vehicles/${encodeURIComponent(VID)}/notes`.replace('%3A', ':');
+  eq((await users.driver.post(base, { text: 'Fahrer darf nicht' })).status, 403, 'Fahrer schreibt nicht');
+  eq((await users.driver.get(base)).status, 403, 'Fahrer liest keine Liste');
+  eq((await viewer.post(base, { text: 'Lesezugriff darf nicht' })).status, 403, 'Lesezugriff schreibt nicht');
+  eq((await users.fleet.post(base, { text: 'x' })).status, 400, 'zu kurz');
+  const a = await users.fleet.post(base, { text: 'Ladeetage oben hakt – bekannt, Termin folgt', for_driver: true }); eq(a.status, 201);
+  const b = await users.ws.post(base, { text: 'Ersatzschlüssel liegt im Büro Dortmund' }); eq(b.status, 201);
+  const l = (await users.dispatch.get(base)).data; eq(l.notes.length, 2); eq(l.can_write, true); eq(l.notes[0].text, 'Ersatzschlüssel liegt im Büro Dortmund', 'neueste zuerst');
+  eq((await viewer.get(base)).data.can_write, false);
+  eq((await users.prodFleet.get(base)).data.notes.length, 0, 'Testhinweise nicht im Betrieb');
+  const me = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID);
+  eq(me.notes.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'Fahrer sieht nur freigegebene, ohne Verfasser'); ok(!('created_by_name' in me.notes[0]));
+  eq((await users.driver.post(`${base}/${a.data.id}/archive`)).status, 403);
+  eq((await users.prodFleet.post(`${base}/${a.data.id}/archive`)).status, 404, 'andere Umgebung');
+  eq((await users.ws.post(`${base}/${a.data.id}/archive`)).status, 200);
+  eq((await users.ws.post(`${base}/${a.data.id}/archive`)).status, 404, 'nicht zweimal');
+  eq((await users.fleet.get(base)).data.notes.length, 1);
+  const ar = (await users.fleet.get(base + '?archived=1')).data.notes; eq(ar.length, 1); ok(ar[0].archived_at && ar[0].archived_by_name, 'Archiv mit Zeitpunkt und Person');
+  eq((await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'archiviert → beim Fahrer weg');
+  eq((await users.fleet.post('/api/vehicles/VIN:UNBEKANNT123/notes', { text: 'gibt es nicht' })).status, 404);
+  ok((await owner.get('/api/admin/audit?action=vehicle.note')).data.entries.length >= 3, 'protokolliert');
+  await users.ws.post(`${base}/${b.data.id}/archive`);
+});
+
 await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');

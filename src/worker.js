@@ -4,6 +4,7 @@ import * as auth from './auth.js';
 import { personExport } from './privacy.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
+import * as vnotes from './vnotes.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
 import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle } from './notify.js';
@@ -197,6 +198,9 @@ async function handleApi(request, env, ctx, url) {
     return json(await veh.importVehiclesCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/notes$/)) && m === 'GET') return json(await vnotes.listNotes(env, user, envName, mm[1], Object.fromEntries(url.searchParams)));
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/notes$/)) && m === 'POST') return json(await vnotes.addNote(env, user, envName, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/notes\/([\w-]+)\/archive$/)) && m === 'POST') return json(await vnotes.archiveNote(env, user, envName, mm[1], mm[2]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/timeline$/)) && m === 'GET') return json(await veh.vehicleTimeline(env, user, envName, mm[1], Object.fromEntries(url.searchParams)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/spec$/)) && m === 'POST') return json(await veh.setVehicleSpec(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/evaluation$/)) && m === 'POST') return json(await veh.setVehicleEvaluation(env, user, envName, mm[1], await readJson(request)));

@@ -36,6 +36,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     notifications: q('SELECT environment, kind, title, body, created_at, push_status, opened_at, acknowledged_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
     odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
     fines_as_driver: q('SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, status, driver_basis, driver_informed_at, driver_ack_at, created_at FROM fines WHERE driver_id=? ORDER BY offense_at', userId),
+    vehicle_notes_written: q(`SELECT n.environment, n.text, n.for_driver, n.created_at, n.archived_at, v.plate FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.created_by=? ORDER BY n.created_at`, userId),
     audit_as_actor: q('SELECT action, target, detail, created_at FROM audit_log WHERE actor_id=? ORDER BY created_at', userId),
     audit_about: q('SELECT actor_id, action, detail, created_at FROM audit_log WHERE target IN (?, ?) ORDER BY created_at', userId, did),
     driver_documents: q('SELECT * FROM driver_documents WHERE driver_id=? ORDER BY created_at', did),

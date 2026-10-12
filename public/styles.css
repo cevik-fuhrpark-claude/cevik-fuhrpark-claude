@@ -277,3 +277,4 @@ table.paper td:last-child { min-width: 30%; }
 .helpsec.flash { outline: 3px solid var(--signal); outline-offset: 2px; }
 
 @media print { table.printsm th, table.printsm td { font-size: 8.5pt; padding: 3px 4px; overflow-wrap: anywhere; } }
+.vnotes { margin: 0; padding-left: 18px; } .vnotes li { margin: 6px 0; } .vnotes-drv { margin-top: 8px; padding: 8px 10px; border-left: 4px solid var(--mid); background: var(--mid-bg); border-radius: 6px; } .vnotes-drv p { margin: 4px 0; }

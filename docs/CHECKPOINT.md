@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 162 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 163 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -421,6 +421,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: Fuhrparkagent berücksichtigt den Bestellvermerk: vollständig bestellte Fehlmenge → kein „unter Mindestbestand“; Liefertermin laut Lieferant überschritten → neuer Hinweis `STOCK_ORDER_OVERDUE` (ohne Liefertermin kein Befund, keine Annahme); teilweise bestellt → weiter `STOCK_BELOW_MIN` mit „noch zu bestellen“. Test, Zeitreise 8/8.
 - 12.10.2026: **Doppelte Meldungen** (Migration 0031 `cases.duplicate_of`): „Ablehnen“ mit Auswahl „Dublette von Vorgang“ (offene Vorgänge desselben Fahrzeugs; Server prüft gleiches Fahrzeug/gleiche Umgebung, keine Dublette einer Dublette), Grund ohne Eingabe „Dublette von <Nr.>“; Vorgang zeigt „Dublette von …“ (Fahrer ohne Link), Original „Gleiche Meldung auch als …“; Folgeaufträge und Dubletten in einer Abfrage (Vorgangsdetail bleibt ≤ 20). Hilfe Fuhrparkleitung DE/UK/EN, API-Doku. 162 Tests grün, Rauchtest 477 Ansichten, Playwright-Probe (Grund vorbelegt, Verweise beidseitig).
 - 12.10.2026: Vorgangsliste und -CSV zeigen „Dublette von <Nr.>“ (`duplicate_of_no`, CSV-Spalte am Ende). 162 Tests grün.
+- 12.10.2026: **Hinweise zum Fahrzeug** (Migration 0032 `vehicle_notes`, `src/vnotes.js`; Fahrzeugakte → „Hinweise zum Fahrzeug“): kurze angeheftete Notizen je Fahrzeug und Umgebung (3–500 Zeichen, max. 20 aktive), anlegen/archivieren durch Inhaber, Fuhrparkleitung, Werkstatt, Disposition; Lesezugriff liest; Archiv statt Löschen (mit Zeitpunkt/Person); mit Häkchen „für Fahrer sichtbar“ erscheinen sie ohne Verfasser auf „Mein Fahrzeug“ (auch offline aus dem Zwischenspeicher). Sicherung und Datenauskunft ergänzt, Protokoll `vehicle.note_add/_archive`. Hilfe Disposition/Mein Fahrzeug DE/UK/EN, API-Doku. 163 Tests grün (3× wiederholt; Sortierung mit rowid als Gleichstand-Regel), Rauchtest 477 Ansichten, Playwright Leitung → Fahrer.
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.
