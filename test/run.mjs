@@ -1377,6 +1377,14 @@ await test('Gespann: Sperre des gekoppelten Anhängers in Fahrzeugliste, „Mein
   eq((await users.fleet.get(`/api/vehicles/${V1}`)).data.coupled[0].locked, true, 'Fahrzeugakte: Anhänger gesperrt');
   eq((await users.prodFleet.get(`/api/vehicles/${V1}`)).data.coupled[0].locked, false, 'Fahrzeugakte Betrieb: Test-Sperre nicht sichtbar');
   eq(v1.availability, v1Before.availability, 'eigene Verfügbarkeit des Lkw unverändert');
+  const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
+  const vh = vcsv[0].replace(/^\ufeff/, '').split(';');
+  const ci = vh.indexOf('Gekoppeltes Fahrzeug'), zi = vh.indexOf('Zustand gekoppeltes Fahrzeug');
+  ok(ci > 0 && zi === ci + 1, 'CSV-Spalten Gespann');
+  const row = (plate) => vcsv.find((l) => l.split(';')[0] === plate)?.split(';');
+  eq(row(v1.plate)[ci], 'SZ-YC 5514'); eq(row(v1.plate)[zi], 'gesperrt', 'CSV: Lkw zeigt gesperrten Anhänger');
+  eq(row('SZ-YC 5514')[ci], v1.plate, 'CSV: Anhänger nennt Zugfahrzeug');
+  ok(vcsv.slice(1).filter((l) => l).every((l) => l.split(';').length === vh.length), 'CSV: gleiche Spaltenzahl je Zeile');
   eq((await users.driver.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1).coupled.availability, 'gesperrt', 'auch für Fahrer');
   const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
   eq(mv.coupled.id, T); eq(mv.coupled.plate, 'SZ-YC 5514'); eq(mv.coupled.locked, true, 'Mein Fahrzeug: Anhänger gesperrt');
