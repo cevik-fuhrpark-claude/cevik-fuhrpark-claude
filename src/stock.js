@@ -21,11 +21,11 @@ export async function onHand(env, itemId) {
 const r3 = (x) => Math.round(x * 1000) / 1000;
 export async function listStock(env, user, envName, query) {
   const site = siteScope(user, query.site);
-  // Verbrauch = Entnahmen der letzten 90 Tage (nur Information für den Bestellvorschlag)
+  // Verbrauch = Entnahmen der letzten 90 Tage ohne Umlagerungen (nur Information für den Bestellvorschlag)
   const since = new Date(Date.now() - 90 * 86400000).toISOString();
   const rows = (await env.DB.prepare(`SELECT i.*, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand,
-      COALESCE((SELECT -SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.created_at >= ?),0) AS used_90d,
-      (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme') AS last_out_at
+      COALESCE((SELECT -SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.transfer_id IS NULL AND m.created_at >= ?),0) AS used_90d,
+      (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.transfer_id IS NULL) AS last_out_at
     FROM stock_items i WHERE i.environment=? AND i.active=1 ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`)
     .bind(...(site ? [since, envName, site] : [since, envName])).all()).results;
   let list = rows.map(({ last_out_at, ...r }) => ({ ...r, on_hand: r3(r.on_hand), used_90d: r3(r.used_90d), below_min: r.min_qty !== null && r.on_hand < r.min_qty, last_out_date: last_out_at ? berlinDate(last_out_at) : null }));
@@ -118,6 +118,42 @@ export async function addMovement(env, user, envName, id, body) {
   return { ok: true, on_hand: await onHand(env, id) };
 }
 
+// Umlagerung in das Lager einer anderen Werkstatt: Entnahme hier, Zugang dort (gleiche transfer_id, in einer Transaktion).
+// Zielartikel: gleiche Teilenummer+Bezeichnung (auch deaktiviert → wieder aktiv), sonst eindeutige Teilenummer, sonst neu angelegt
+// (Bezeichnung/Teilenummer/Einheit/Preis übernommen, ohne Mindestbestand/Lagerort). Wert neutral: Preis des Quellartikels.
+export async function transfer(env, user, envName, id, body) {
+  const it = await loadItem(env, user, envName, id);
+  if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
+  const toSite = str(body.to_site, { required: true, max: 20, field: 'Ziellager' });
+  if (toSite === it.site) throw bad('validation', 'Ziellager ist das eigene Lager.');
+  if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.');
+  const qty = r3(num(body.qty, { min: 0, max: 1e6, field: 'Menge' }));
+  if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  const avail = await onHand(env, id);
+  if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}).`);
+  const note = str(body.note, { max: 300 });
+  const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=? AND (name=? OR (part_number IS NOT NULL AND part_number<>\'\' AND part_number=?))')
+    .bind(envName, toSite, it.name, it.part_number || '\u0000').all()).results;
+  let target = cands.find((c) => (c.part_number || '') === (it.part_number || '') && c.name === it.name) || null;
+  if (!target && it.part_number) { const pn = cands.filter((c) => c.active && c.part_number === it.part_number); if (pn.length === 1) target = pn[0]; }
+  const now = nowIso(); const tid = uuid(); const stmts = []; let created = false;
+  if (!target) {
+    target = { id: uuid(), site: toSite, unit: it.unit, unit_price_net: it.unit_price_net, active: 1 }; created = true;
+    stmts.push(env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?)`)
+      .bind(target.id, envName, toSite, it.part_number, it.name, it.unit, it.unit_price_net, user.id, now, now));
+  } else {
+    if (target.unit !== it.unit) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`);
+    if (!target.active || (target.unit_price_net === null && it.unit_price_net !== null)) stmts.push(env.DB.prepare('UPDATE stock_items SET active=1, unit_price_net=COALESCE(unit_price_net, ?), updated_at=? WHERE id=?').bind(it.unit_price_net, now, target.id));
+  }
+  const ins = `INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,transfer_id,transfer_site) VALUES (?,?,?,?,?,NULL,?,NULL,?,?,?,?,?,?)`;
+  const ref = 'UML-' + tid.slice(0, 8).toUpperCase();
+  stmts.push(env.DB.prepare(ins).bind(uuid(), envName, it.id, 'entnahme', -qty, it.unit_price_net, ref, `Umlagerung nach ${toSite}${note ? ' – ' + note : ''}`, user.id, now, tid, toSite));
+  stmts.push(env.DB.prepare(ins).bind(uuid(), envName, target.id, 'zugang', qty, it.unit_price_net, ref, `Umlagerung von ${it.site}${note ? ' – ' + note : ''}`, user.id, now, tid, it.site));
+  await env.DB.batch(stmts);
+  await audit(env, user.id, 'stock.transfer', null, { item: it.id, from: it.site, to: toSite, qty, target: target.id, created });
+  return { ok: true, transfer_id: tid, on_hand: r3(avail - qty), target_item_id: target.id, target_created: created };
+}
+
 // Für den Werkstattbefehl add_part: liefert Artikel + Statement für die Entnahme (in derselben Transaktion)
 export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, partId) {
   const it = await env.DB.prepare('SELECT * FROM stock_items WHERE id=? AND environment=? AND active=1').bind(itemId, envName).first();
@@ -195,23 +231,25 @@ export async function journal(env, user, envName, query = {}) {
   if (!isCalendarDate(from) || !isCalendarDate(to)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.');
   if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
   if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.');
-  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur'], 'Buchungsart') : null;
+  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur', 'umlagerung'], 'Buchungsart') : null;
   // UTC-Spanne mit einem Tag Rand, danach exakt nach Berliner Datum filtern
   const lo = new Date(Date.parse(from) - 86400000).toISOString();
   const hi = new Date(Date.parse(to) + 2 * 86400000).toISOString();
-  const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id,
+  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
+  const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id, m.transfer_id, m.transfer_site,
       i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate
     FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
-    WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${type ? 'AND m.type=?' : ''}
-    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(type ? [type] : []), JOURNAL_MAX + 400]).all()).results;
+    WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${typeSql}
+    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(type && type !== 'umlagerung' ? [type] : []), JOURNAL_MAX + 400]).all()).results;
   const r2 = (x) => Math.round(x * 100) / 100;
   let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
     .filter((r) => r.date >= from && r.date <= to);
   const truncated = list.length > JOURNAL_MAX;
   if (truncated) list = list.slice(0, JOURNAL_MAX);
   const sum = {};
-  for (const t of ['zugang', 'entnahme', 'korrektur']) sum[t] = { count: 0, value_net: 0, unvalued: 0 };
-  for (const r of list) { const x = sum[r.type]; x.count++; if (r.value_net === null) x.unvalued++; else x.value_net = r2(x.value_net + r.value_net); }
+  // Umlagerungen getrennt: Entnahme im Quell- und Zugang im Ziellager heben sich im Gesamtbestand auf
+  for (const t of ['zugang', 'entnahme', 'korrektur', 'umlagerung']) sum[t] = { count: 0, value_net: 0, unvalued: 0 };
+  for (const r of list) { const x = sum[r.transfer_id ? 'umlagerung' : r.type]; x.count++; if (r.value_net === null) x.unvalued++; else x.value_net = r2(x.value_net + r.value_net); }
   return { from, to, site, type, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
 }
 
@@ -221,7 +259,7 @@ export function journalCsv(rep, csvCell) {
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const r of rep.movements) {
-    lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), csvCell(r.part_number), csvCell(r.name), TYPE_DE[r.type], n(r.qty), csvCell(r.unit),
+    lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), csvCell(r.part_number), csvCell(r.name), r.transfer_id ? `Umlagerung ${r.qty < 0 ? 'nach' : 'von'} ${r.transfer_site}` : TYPE_DE[r.type], n(r.qty), csvCell(r.unit),
       n(r.unit_price_net), n(r.value_net), csvCell(r.case_no), csvCell(r.plate), csvCell(r.supplier), csvCell(r.document_ref), csvCell(r.note)].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';

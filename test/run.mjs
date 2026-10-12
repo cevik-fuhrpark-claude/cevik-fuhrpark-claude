@@ -1888,6 +1888,46 @@ await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit P
   for (const id of [a, b]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
 });
 
+await test('Lager-Umlagerung: Entnahme hier, Zugang im Ziellager (gleiche Kennung), kein Verbrauch, Zielartikel gefunden/angelegt, Rechte, Journal', async () => {
+  const src = (await users.ws.post('/api/stock', { name: 'Umlagerteil', part_number: 'UML-1', unit: 'Stk', min_qty: 1, unit_price_net: 10, initial_qty: 6 })).data.id;
+  eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'DORTMUND', qty: 1 })).status, 400, 'eigenes Lager');
+  eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'NIRGENDWO', qty: 1 })).status, 400, 'unbekannte Werkstatt');
+  eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'MUENCHEN', qty: 7 })).status, 400, 'mehr als Bestand');
+  eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'MUENCHEN', qty: 0 })).status, 400, 'Menge 0');
+  eq((await users.wsMuc.post(`/api/stock/${src}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 404, 'fremdes Lager nicht umlagerbar');
+  eq((await users.driver.post(`/api/stock/${src}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 403, 'Fahrer');
+  const t1 = await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'MUENCHEN', qty: 2, note: 'Eilbedarf' });
+  eq(t1.status, 201); eq(t1.data.on_hand, 4); eq(t1.data.target_created, true, 'Zielartikel angelegt');
+  const tgt = (await users.wsMuc.get(`/api/stock/${t1.data.target_item_id}`)).data;
+  eq(tgt.item.on_hand, 2); eq(tgt.item.site, 'MUENCHEN'); eq(tgt.item.part_number, 'UML-1'); eq(tgt.item.unit_price_net, 10); eq(tgt.item.min_qty, null, 'kein Mindestbestand erfunden');
+  ok(/Umlagerung von DORTMUND – Eilbedarf/.test(tgt.movements[0].note), 'Vermerk im Ziel');
+  const t2 = await users.fleet.post(`/api/stock/${src}/transfer`, { to_site: 'MUENCHEN', qty: 1 });
+  eq(t2.data.target_item_id, t1.data.target_item_id, 'zweite Umlagerung trifft denselben Zielartikel'); eq(t2.data.target_created, false);
+  // Rückweg von München nach Dortmund findet den Quellartikel
+  const back = await users.wsMuc.post(`/api/stock/${t1.data.target_item_id}/transfer`, { to_site: 'DORTMUND', qty: 1 });
+  eq(back.data.target_item_id, src, 'Rückweg auf Quellartikel');
+  const st = (await users.ws.get('/api/stock')).data.items.find((i) => i.id === src);
+  eq(st.on_hand, 4); eq(st.used_90d, 0, 'Umlagerung ist kein Verbrauch'); eq(st.last_out_date, null, 'Umlagerung ist keine Entnahme im Sinne von Verbrauch');
+  // Gesamtbestand unverändert (Dortmund 4 + München 2 = 6)
+  eq((await users.wsMuc.get(`/api/stock/${t1.data.target_item_id}`)).data.item.on_hand, 2);
+  // Einheit abweichend → abgewiesen statt falsch zu buchen
+  const kg = (await users.ws.post('/api/stock', { name: 'Fett', unit: 'kg', initial_qty: 5 })).data.id;
+  eq((await users.wsMuc.post('/api/stock', { name: 'Fett', unit: 'Dose' })).status, 201);
+  eq((await users.ws.post(`/api/stock/${kg}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 400, 'Einheit abweichend');
+  const today = (await users.ws.get('/api/stock/journal')).data.to;
+  const j = (await users.fleet.get(`/api/stock/journal?from=${today}&to=${today}`)).data;
+  const tm = j.movements.filter((m) => m.transfer_id);
+  eq(tm.length, 6, '3 Umlagerungen × 2 Buchungen'); eq(j.summary.umlagerung.count, 6);
+  eq(Math.round(tm.reduce((a, m) => a + m.value_net, 0) * 100) / 100, 0, 'Wert neutral');
+  eq((await users.fleet.get(`/api/stock/journal?from=${today}&to=${today}&type=umlagerung`)).data.movements.length, 6, 'Filter Umlagerung');
+  ok(!(await users.fleet.get(`/api/stock/journal?from=${today}&to=${today}&type=entnahme`)).data.movements.some((m) => m.transfer_id), 'Entnahme ohne Umlagerung');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/stock/journal?from=${today}&to=${today}&format=csv`)).data);
+  ok(csv.includes(';Umlagerung nach MUENCHEN;-2;') && csv.includes(';Umlagerung von DORTMUND;2;'), 'CSV-Buchungsart');
+  ok((await owner.get('/api/admin/audit?action=stock.transfer')).data.entries.length >= 3, 'protokolliert');
+  eq((await users.prodFleet.get('/api/stock')).data.items.filter((i) => i.name === 'Umlagerteil').length, 0, 'Betrieb unberührt');
+  for (const id of [src, kg, t1.data.target_item_id]) await (id === t1.data.target_item_id ? users.wsMuc : users.ws).patch(`/api/stock/${id}`, { active: false });
+});
+
 await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
