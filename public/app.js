@@ -1568,7 +1568,7 @@ async function viewFines() {
     <label>${esc(t('kind'))}</label><select name="kind">${S.meta.fine_kinds.map((k) => `<option value="${k}">${esc(t('fk_' + k))}</option>`).join('')}</select>
     <label>${esc(t('authority'))}</label><input name="authority" required><label>${esc(t('reference'))}</label><input name="reference">
     <label>${esc(t('offense'))}</label><select name="offense_type">${S.meta.fine_offenses.map((k) => `<option value="${k}">${esc(t('of_' + k))}</option>`).join('')}</select>
-    <label>${esc(t('offense_at'))}</label><input type="datetime-local" name="offense_at" required><label>${esc(t('offense_place'))}</label><input name="location">
+    <label>${esc(t('offense_at'))}</label><input type="datetime-local" name="offense_at" required aria-describedby="nf-tz"><p class="small muted" id="nf-tz" style="margin:2px 0 8px">${esc(t('offense_at_tz'))}</p><label>${esc(t('offense_place'))}</label><input name="location">
     <label>${esc(t('plate_letter'))}</label><input name="plate_in_letter" required placeholder="SZ-YC 5513"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal">
     <label>${esc(t('response_due'))}</label><input type="date" name="response_due"><label>${esc(t('note'))}</label><textarea name="note"></textarea>
     <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
