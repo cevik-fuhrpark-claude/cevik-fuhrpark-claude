@@ -105,7 +105,17 @@ function render(html, active) {
   const es = $('#envsel');
   if (es) es.onchange = () => { S.viewEnv = es.value; localStorage.setItem('cfp_env', es.value); route(); };
   stackTables(document.getElementById('app'));
+  markToggles(document.getElementById('app'));
   window.scrollTo(0, 0);
+}
+
+// Filterknöpfe (gelb = aktiv, „secondary“ = inaktiv): Zustand auch für Screenreader (aria-pressed), sofern nicht schon als Tab/Schalter ausgezeichnet
+const TOGGLE_ATTRS = ['av', 'clf', 'cf', 'qk', 'tt', 'tf', 'af', 'wl', 'dq', 'ud', 'mf'];
+function markToggles(root) {
+  for (const b of root.querySelectorAll(TOGGLE_ATTRS.map((a) => `button.btn[data-${a}]`).join(','))) {
+    if (b.hasAttribute('aria-pressed') || b.hasAttribute('aria-selected')) continue;
+    b.setAttribute('aria-pressed', String(!b.classList.contains('secondary')));
+  }
 }
 
 // Tabellen mit Klasse „stack“ werden auf dem Handy als Karten dargestellt: Spaltenüberschrift je Zelle als data-label
