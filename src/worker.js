@@ -300,16 +300,16 @@ async function handleApi(request, env, ctx, url) {
   // Datenauskunft je Person (Inhaber, Vorbereitung Art. 15 DSGVO)
   if ((mm = path.match(/^\/api\/admin\/users\/([\w-]+)\/data-export$/)) && m === 'GET') {
     const x = await personExport(env, user, { userId: mm[1] });
-    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_${x.user.username.replace(/[^\w.-]/g, '_')}_${x.meta.generated_at.slice(0, 10)}.json"` } });
+    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_${x.user.username.replace(/[^\w.-]/g, '_')}_${berlinDate(x.meta.generated_at)}.json"` } });
   }
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/data-export$/)) && m === 'GET') {
     const x = await personExport(env, user, { driverId: mm[1] });
-    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_fahrer_${x.meta.generated_at.slice(0, 10)}.json"` } });
+    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_fahrer_${berlinDate(x.meta.generated_at)}.json"` } });
   }
   // Datensicherung (Inhaber)
   if (path === '/api/admin/backup' && m === 'GET') {
     const b = await exportBackup(env, user);
-    return new Response(JSON.stringify(b), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-sicherung_${b.created_at.slice(0, 10)}.json"` } });
+    return new Response(JSON.stringify(b), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-sicherung_${berlinDate(b.created_at)}.json"` } });
   }
 
   // Kostenbericht je Fahrzeug/Monat

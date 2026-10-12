@@ -1,6 +1,6 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso } from './util.js';
+import { forbidden, nowIso, berlinDate } from './util.js';
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 
@@ -125,7 +125,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!v.build_year && v.kind === 'lkw') add('missing_build_year', v);
     if (v.kind === 'lkw') {
       const km = lastKm.get(v.id);
-      if (!km) add('no_km', v); else if (km < staleBefore) add('km_stale', v, km.slice(0, 10));
+      if (!km) add('no_km', v); else if (km < staleBefore) add('km_stale', v, berlinDate(km));
       if (v.trailer_plate) {
         const t = (byPlate.get(normPlate(v.trailer_plate)) || []).find((x) => x.kind === 'anhaenger');
         if (!t) add('trailer_unknown', v, v.trailer_plate);
@@ -147,7 +147,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!trucks.length) add('trailer_without_truck', v);
   }
   const vById = new Map(vs.map((v) => [v.id, v]));
-  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, `${k.odometer_km} km (${k.created_at.slice(0, 10)}) < ${k.prev_km} km`); }
+  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km`); }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
   const withVu = new Set(vu.results.map((r) => r.vehicle_id));
   for (const v of vs) if (v.kind === 'lkw' && !withVu.has(v.id)) add('vu_no_download', v);
@@ -155,11 +155,11 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const c of ctr.results) {
     const v = { id: c.vehicle_id, plate: c.plate };
     if (!c.active) add('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`);
-    else if (c.km_allowance && (!c.last_km_at || (c.start_date && c.last_km_at.slice(0, 10) < c.start_date))) add('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`);
+    else if (c.km_allowance && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) add('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`);
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
     if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) add('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`);
   }
-  for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.created_at.slice(0, 10)}` });
+  for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
   for (const d of defects.results) items.push({ check: 'inspection_defects_no_case', severity: CHECKS.inspection_defects_no_case, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]}` });
   for (const d of again.results) items.push({ check: 'reinspection_defects_again', severity: CHECKS.reinspection_defects_again, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id,

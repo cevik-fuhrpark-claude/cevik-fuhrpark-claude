@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 186 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 187 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -519,6 +519,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026 (Sitzung ab 22:16 UTC): **Direktsprung „Fällig – ohne Termin“**: Werkstatt-Startseite (unter „Prüftermine ≤ 14 Tage oder nach km fällig“, mit kurzem Hinweis) und „Heute zu tun“ → Prüftermine verlinken `#/plan?s=mdue`; der Werkstattplan springt zum Abschnitt und setzt den Fokus darauf (fehlt er, bleibt der Plan oben). Druckansicht des Werkstattplans mit „Fällig – ohne Termin“ geprüft: keine Formulare/Knöpfe im Druck. DE/UK/EN.
 - 12.10.2026: **Prüftermine: Reiter „Nach km fällig“** (erscheint nur mit Treffern): km-Regeln überschritten bzw. innerhalb der Vorwarnung, wenigste Rest-km zuerst, mit Erklärung. Playwright 390/820/1366 px.
 - 12.10.2026: **Zeitzone – Fehler behoben:** Die Tatzeit eines Bußgelds wurde mit der Zeitzone des Geräts umgerechnet und alle Zeitpunkte in der Gerätezeitzone angezeigt – auf einem Handy mit Kyjiwer Zeit stand dadurch 10:30 statt 08:30 wie im Schreiben (und die Fahrerermittlung zum Tatzeitpunkt konnte die falsche Stunde treffen). Jetzt: Server liest Zeitangaben ohne Zeitzone als Berliner Ortszeit (`berlinLocalToIso` in `src/util.js`, Zeitumstellung und ungültige Uhrzeiten getestet), die App zeigt Zeitpunkte und Tage aus Zeitstempeln immer in Berliner Zeit (wie Fristen und CSV). Test + Playwright mit Gerätezeitzone Kyjiw/New York/Berlin. 186 Tests, `pruefen.sh --schnell` grün (Rauchtest 495 Ansichten).
+- 12.10.2026: **Berliner Kalendertag statt UTC-Tag in Server-Texten**: Ablesungen/Meldungen kurz nach Mitternacht (Berlin) erschienen mit dem Vortag – km-Plausibilität („kleiner als … km vom …“), Datenqualität (veralteter km-Stand, abgewiesener Kontroll-km, Unfall ohne Versicherungsfall, Vertrag ohne km-Ablesung ab Beginn), Reifen-Befund des Agenten („gemessen …“), Fahrerkandidat Bußgeld („Zuordnung seit …“), Dateinamen Datenauskunft/Sicherung. Test (Ablesung 00:30 Berlin), Zeitreise 8 Zeitpunkte grün (187 Tests).
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

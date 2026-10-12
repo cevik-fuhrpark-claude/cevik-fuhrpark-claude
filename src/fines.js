@@ -62,7 +62,7 @@ export async function driverCandidates(env, envName, f) {
   const out = [];
   const assigned = (await env.DB.prepare(`SELECT d.user_id, u.display_name, d.valid_from, d.valid_to, d.evidence FROM driver_vehicles d JOIN users u ON u.id=d.user_id
     WHERE d.vehicle_id=? AND u.environment=? AND d.valid_from <= ? AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(f.vehicle_id, envName, f.offense_at, f.offense_at).all()).results;
-  for (const a of assigned) out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${a.valid_from.slice(0, 10)}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: a.valid_from.slice(0, 10), assign_evidence: a.evidence || null });
+  for (const a of assigned) out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDate(a.valid_from)}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null });
   const day = berlinDate(f.offense_at);
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at FROM inspections i JOIN users u ON u.id=i.performed_by
     WHERE i.vehicle_id=? AND i.environment=? AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ? AND ?`)

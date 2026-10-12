@@ -579,7 +579,7 @@ export async function addOdometer(env, user, vehicleId, body) {
     env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC LIMIT 1').bind(vehicleId, measuredAt).first(),
   ]);
   const problems = [];
-  const de = (iso) => iso.slice(0, 10).split('-').reverse().join('.');
+  const de = (iso) => berlinDate(iso).split('-').reverse().join('.'); // Berliner Tag (Ablesung kurz nach Mitternacht ≠ UTC-Vortag)
   if (prev && km < prev.km) problems.push(`kleiner als ${prev.km} km vom ${de(prev.measured_at)}`);
   if (next && km > next.km) problems.push(`größer als ${next.km} km vom ${de(next.measured_at)}`);
   if (problems.length && !note) {

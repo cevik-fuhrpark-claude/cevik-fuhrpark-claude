@@ -44,7 +44,7 @@ export function contractStatus(c, latest, today, warnDays) {
   }
   if (c.km_allowance) {
     if (c.start_km === null || c.start_km === undefined) km = { status: 'ohne_start', allowance: c.km_allowance };
-    else if (!latest || (c.start_date && latest.measured_at.slice(0, 10) < c.start_date) || latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
+    else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date) || latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
     else {
       const driven = latest.km - c.start_km;
       km = { status: driven > c.km_allowance ? 'ueber' : 'ok', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, driven, remaining: c.km_allowance - driven, forecast_driven: null };

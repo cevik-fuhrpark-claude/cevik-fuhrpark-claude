@@ -3137,6 +3137,17 @@ await test('Abfahrtskontrolle mit vielen Mängeln: Abfragezahl fest (vorher ≈ 
     eq(rj.status, 200, JSON.stringify(rj.data));
   }
 });
+await test('km-Plausibilität nennt den Berliner Ablesetag (Ablesung 00:30 Uhr Berlin ≠ UTC-Vortag)', async () => {
+  const vin = 'WDB96340310777701';
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-KM 1', site: 'Dortmund' })).status, 201);
+  // 01.07.2026 22:30 UTC = 02.07.2026 00:30 Berlin
+  env.DB.db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('tzkm-1', 'VIN:' + vin, 500000, '2026-07-01T22:30:00.000Z', 'manuell', null, '2026-07-01T22:30:00.000Z');
+  const r = await users.fleet.post(`/api/vehicles/VIN:${vin}/odometer`, { km: 400000, measured_on: '2026-07-05' });
+  eq(r.status, 409);
+  ok(JSON.stringify(r.data).includes('vom 02.07.2026'), 'Berliner Tag: ' + JSON.stringify(r.data).slice(0, 200));
+  await owner.post(`/api/vehicles/VIN:${vin}/active`, { active: false, reason: 'Testdaten Zeitzone' });
+});
+
 await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespeichert, km nicht in die Fahrzeugakte', async () => {
   const keys = (await users.driver.get('/api/meta')).data.checklist.map((i) => i.key);
   const items = keys.map((k) => ({ key: k, result: 'ok' }));
