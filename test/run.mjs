@@ -1062,6 +1062,35 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
 });
 
+await test('Prüftermine: Standortfilter (Fahrzeugstamm, Schreibweise egal) für Übersicht, CSV, Kalender und Integrations-API', async () => {
+  const all = (await users.fleet.get('/api/maintenance')).data;
+  eq(all.site, null);
+  const mv = all.rows[0]; ok(mv, 'Fahrzeug mit Prüfterminen');
+  const old = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(mv.vehicle_id).first()).site;
+  try {
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind('PT-Teststandort', mv.vehicle_id).run();
+    const base = (await users.fleet.get('/api/maintenance')).data;
+    ok(base.site_options.includes('PT-Teststandort') && base.site_options.length >= 2, 'Auswahl');
+    const one = (await users.fleet.get('/api/maintenance?site=pt-teststandort')).data;
+    eq(one.site, 'PT-Teststandort');
+    ok(one.rows.length > 0 && one.rows.every((r) => r.vehicle_id === mv.vehicle_id), 'nur Fahrzeuge des Standorts');
+    ok(one.gaps.every((g) => g.vehicle_id === mv.vehicle_id));
+    eq(one.totals.vehicles, 1, 'Fahrzeugzahl gefiltert');
+    let rows = 0; let veh = 0; let gaps = 0;
+    for (const st of base.site_options) { const x = (await users.fleet.get(`/api/maintenance?site=${encodeURIComponent(st)}`)).data; rows += x.rows.length; veh += x.totals.vehicles; gaps += x.gaps.length; }
+    eq(rows, base.rows.length, 'Summe Zeilen'); eq(veh, base.totals.vehicles, 'Summe Fahrzeuge'); eq(gaps, base.gaps.length, 'Summe Lücken');
+    ok((one.defects_without_case || []).every((d) => d.vehicle_id === mv.vehicle_id), 'Prüfmängel gefiltert');
+    const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/maintenance?site=PT-Teststandort&format=csv')).data).trim().split('\r\n').slice(1);
+    ok(csv.length > 0 && csv.every((l) => l.split(';')[1] === mv.vehicle_id), 'CSV nur Standort');
+    const ics = new TextDecoder().decode((await users.fleet.get('/api/maintenance?site=PT-Teststandort&format=ics')).data);
+    ok(ics.startsWith('BEGIN:VCALENDAR') && !base.rows.filter((r) => r.vehicle_id !== mv.vehicle_id && r.next_due_date).some((r) => ics.includes(r.plate)), 'Kalender ohne andere Fahrzeuge');
+    eq((await users.fleet.get('/api/maintenance?site=GIBTSNICHT')).data.rows.length, 0, 'unbekannter Standort leer');
+    const ig = await anon.req('GET', '/api/integration/v1/maintenance?site=PT-Teststandort', undefined, { authorization: 'Bearer integration-token-xyz' });
+    eq(ig.status, 200); eq(ig.data.rows.length, one.rows.length, 'Integration gleich');
+    ok(ig.data.defects_without_case.every((d) => d.vehicle_id === mv.vehicle_id) && ig.data.reinspection_pending.every((d) => d.vehicle_id === mv.vehicle_id), 'Integration: Listen gefiltert');
+  } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, mv.vehicle_id).run(); }
+});
+
 await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Überschneidungen einmal', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'KP-SP 1', vin: 'WDB96340310555501', site: 'Dortmund' })).status, 201);
   const VK = 'VIN:WDB96340310555501';

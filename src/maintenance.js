@@ -4,6 +4,7 @@ import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berl
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
+import { siteKey, siteLabels } from './reports.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
 const WRITE_ROLES = ['owner', 'fleet'];
@@ -176,16 +177,24 @@ export async function maintenanceEventLists(env, envName) {
   return out;
 }
 
-export async function maintenanceOverview(env, user, envName = null) {
+// opts.site: nur Fahrzeuge dieses Standorts laut Fahrzeugstamm (Schreibweise egal, 'ohne' = ohne Standort); site_options = Auswahl
+export async function maintenanceOverview(env, user, envName = null, opts = {}) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const cfg = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
   const warnDays = Number(cfg.get('maintenance_warn_days')) || 30;
   const warnKm = Number(cfg.get('maintenance_warn_km')) > 0 ? Number(cfg.get('maintenance_warn_km')) : null;
   const today = berlinDate();
   const latestKm = await latestKmByVehicle(env, { withBase: true });
-  const vehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1 AND eval_excluded=0').all()).results;
+  const allVehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1 AND eval_excluded=0').all()).results;
+  const sLabel = siteLabels(allVehicles);
+  const siteOptions = [...new Set(sLabel.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
+  const siteRaw = opts.site ? String(opts.site).slice(0, 60) : null;
+  const sKey = siteRaw ? siteKey(siteRaw === 'ohne' ? null : siteRaw) : null;
+  const siteSel = sKey ? (sLabel.get(sKey) || siteRaw) : null;
+  const vehicles = sKey ? allVehicles.filter((v) => siteKey(v.site) === sKey) : allVehicles;
+  const vIds = new Set(vehicles.map((v) => v.id));
   const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.last_done_date, m.next_due_date, m.planned_date, m.evidence, m.updated_at
-    FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results;
+    FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results.filter((r) => vIds.has(r.vehicle_id));
   const vmap = new Map(vehicles.map((v) => [v.id, v]));
   // HU/SP zentral nach StVZO Anlage VIII (inspection_rules.js)
   const huspIn = await loadHuSpInputs(env);
@@ -238,11 +247,12 @@ export async function maintenanceOverview(env, user, envName = null) {
   // Prüfmängel ohne Folgevorgang (nur App-Ansicht mit Umgebung; Lesezugriff ohne Nachweistext nicht nötig – gleiche Rechte wie die Übersicht)
   // + Pflichtprüfung ohne Prüfergebnis (gleiche Regel wie Datenqualität `inspection_no_result`) – für „Heute zu tun“ der Leitung; eine Abfrage
   const lists = envName ? await maintenanceEventLists(env, envName) : null;
+  if (lists && sKey) for (const k of Object.keys(lists)) if (Array.isArray(lists[k])) lists[k] = lists[k].filter((x) => vIds.has(x.vehicle_id));
   const defects = lists ? lists.defects_without_case : undefined;
   const reinspection = lists ? lists.reinspection_pending : undefined;
   const noResult = lists ? lists.result_missing : undefined;
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}),
+  return { today, site: siteSel, site_options: siteOptions, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}),
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 
