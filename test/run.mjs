@@ -1374,6 +1374,8 @@ await test('Gespann: Sperre des gekoppelten Anhängers in Fahrzeugliste, „Mein
   const list = (await users.fleet.get('/api/vehicles')).data.vehicles;
   const v1 = list.find((v) => v.id === V1);
   eq(v1.coupled.availability, 'gesperrt', 'Lkw zeigt gesperrten Anhänger');
+  eq((await users.fleet.get(`/api/vehicles/${V1}`)).data.coupled[0].locked, true, 'Fahrzeugakte: Anhänger gesperrt');
+  eq((await users.prodFleet.get(`/api/vehicles/${V1}`)).data.coupled[0].locked, false, 'Fahrzeugakte Betrieb: Test-Sperre nicht sichtbar');
   eq(v1.availability, v1Before.availability, 'eigene Verfügbarkeit des Lkw unverändert');
   eq((await users.driver.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1).coupled.availability, 'gesperrt', 'auch für Fahrer');
   const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
