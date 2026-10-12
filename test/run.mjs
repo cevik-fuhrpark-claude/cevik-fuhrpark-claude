@@ -901,6 +901,26 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
   const api = await anon.req('GET', `/api/integration/v1/costs?environment=test&from=2026-01&to=${COST_TO}`, undefined, H);
   eq(api.status, 200); eq(api.data.totals.actual_net, r.data.totals.actual_net);
 });
+await test('Kostenbericht: Summe je Standort = Summe der Zeilen (Standort laut Fahrzeugstamm, ohne = „ohne“)', async () => {
+  const r = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
+  ok(Array.isArray(r.sites) && r.sites.length > 0, 'sites vorhanden');
+  const exp = new Map();
+  for (const x of r.rows) { const k = x.site || 'ohne'; const e = exp.get(k) || { a: 0, e: 0, u: 0, h: 0, v: new Set() }; e.a += x.actual_net; e.e += x.estimate_net; e.u += x.unvalued_items; e.h += x.hours; e.v.add(x.vehicle_id); exp.set(k, e); }
+  eq(r.sites.length, exp.size, 'ein Eintrag je Standort');
+  const rr = (x) => Math.round(x * 100) / 100;
+  for (const s of r.sites) {
+    const e = exp.get(s.site); ok(e, `Standort ${s.site} aus den Zeilen`);
+    eq(s.actual_net, rr(e.a)); eq(s.estimate_net, rr(e.e)); eq(s.unvalued_items, e.u); eq(s.hours, rr(e.h)); eq(s.vehicles, e.v.size); eq(s.complete, e.u === 0);
+  }
+  eq(rr(r.sites.reduce((a, s) => a + s.actual_net, 0)), r.totals.actual_net, 'Summe Standorte = Gesamtsumme');
+  const iOhne = r.sites.findIndex((s) => s.site === 'ohne'); ok(iOhne === -1 || iOhne === r.sites.length - 1, '„ohne“ zuletzt');
+  // Fahrzeugfilter: nur der Standort dieses Fahrzeugs
+  const one = r.rows[0];
+  const f = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&vehicle_id=${encodeURIComponent(one.vehicle_id)}`)).data;
+  eq(f.sites.length, 1); eq(f.sites[0].site, one.site || 'ohne'); eq(f.sites[0].vehicles, 1);
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(['cs_title', 'cs_nosite', 'cs_vehicles', 'cs_rule'].every((k) => ['de', 'uk', 'en'].every((l) => STRINGS[l][k])), 'Texte DE/UK/EN');
+});
 
 await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den Vorgängen überein; Rechte', async () => {
   const ym = BERLIN_YM; // Monate nach Berliner Zeit (wie der Bericht)

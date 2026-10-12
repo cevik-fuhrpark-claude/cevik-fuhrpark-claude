@@ -130,6 +130,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] Arbeitszeit erfassen: Tätigkeitsvorschläge (häufigste Beschreibungen der eigenen Werkstatt, 12 Monate; `GET /api/work-suggestions`) als Auswahlliste – ohne neue Tabelle; ebenso Teilevorschläge (Bezeichnung → Teilenummer wird ergänzt, ohne Preise; `GET /api/part-suggestions`). 79 Tests grün.
 - [x] Fahrzeugliste als CSV (Stammdaten, Verfügbarkeit laut System, offene Vorgänge, letzter km-Stand, nächste Prüfung; nicht für Fahrer). API-Doku gegen Router abgeglichen. 82 Tests grün.
 - [x] Fuhrparkagent: Sammelblöcke 1000 statt 400 Befunde – erster Lauf bei 3000 Vorgängen 41 statt 47 Anweisungen (Grenze 50; durch neue Befundarten war der Abstand geschrumpft). Lasttest erneut ohne Auffälligkeit.
+- 12.10.2026 (Sitzung ab 03:16 UTC): **Kostenbericht: Summe je Standort** (`sites[]` in `GET /api/reports/costs` und `/v1/costs`, Standort laut Fahrzeugstamm, „ohne“ zuletzt; reine Summe der Zeilen, keine eigene Bewertung). Oberfläche zeigt den Abschnitt ab 2 Standorten (DE/UK/EN). Test: Summen je Standort = Zeilen, Gesamtsumme, Fahrzeugfilter. 141 Tests, `pruefen.sh --schnell` grün, 390/820/1366 px ohne waagrechtes Scrollen.
 
 ## Entscheidungen des Auftraggebers
 - 10.10.2026: Prüfintervalle bestätigt – HU 12, SP 6, Tachograph 24, UVV 12 Monate. Datei `seed/prueftermine_mit_intervall.csv` (29 Lkw-Einträge) an Auftraggeber zum Import übergeben.

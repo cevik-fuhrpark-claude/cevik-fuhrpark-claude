@@ -86,6 +86,16 @@ export async function costReport(env, user, envName, query = {}) {
   }).sort((a, b) => (a.plate || a.vehicle_id).localeCompare(b.plate || b.vehicle_id) || a.month.localeCompare(b.month));
   const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
     { actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0 });
+  // Summe je Fahrzeug-Standort (Stammdaten; ohne Standort = 'ohne') – nur Zusammenfassung der Zeilen, keine eigene Bewertung
+  const siteMap = new Map();
+  for (const r of out) {
+    const k = r.site || 'ohne';
+    const s = siteMap.get(k) || { site: k, actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0, vehicles: new Set() };
+    s.actual_net += r.actual_net; s.estimate_net += r.estimate_net; s.unvalued_items += r.unvalued_items; s.hours += r.hours; s.vehicles.add(r.vehicle_id);
+    siteMap.set(k, s);
+  }
+  const sites = [...siteMap.values()].map((s) => ({ site: s.site, actual_net: r2(s.actual_net), estimate_net: r2(s.estimate_net), unvalued_items: s.unvalued_items, hours: r2(s.hours), vehicles: s.vehicles.size, complete: s.unvalued_items === 0 }))
+    .sort((a, b) => (a.site === 'ohne') - (b.site === 'ohne') || b.actual_net - a.actual_net || a.site.localeCompare(b.site));
   // Kosten je Kilometer: gefahrene km im Zeitraum aus erster und letzter Ablesung (mind. 2 Ablesungen, kein Rückgang); sonst ohne Wert
   const kmRows = (await env.DB.prepare(`SELECT o.vehicle_id, COUNT(*) AS n,
       (SELECT o2.km FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id AND o2.measured_at >= ?1 AND o2.measured_at < ?2 ORDER BY o2.measured_at ASC LIMIT 1) AS km_first,
@@ -109,7 +119,7 @@ export async function costReport(env, user, envName, query = {}) {
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
 }
 
 // Monatsraten laut Vertrag je Fahrzeug im Zeitraum: je Kalendermonat, der ganz oder teilweise in der Laufzeit liegt
