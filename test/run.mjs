@@ -3274,7 +3274,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(links.length >= 8, 'Seitenhilfe-Links: ' + links.length);
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
-  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
+  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'costs', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].help_viewer_t && STRINGS[lang].help_viewer_s.split('|').length === 8, `help_viewer ${lang}`);
   ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>&q=<Suchbegriff>');
   {

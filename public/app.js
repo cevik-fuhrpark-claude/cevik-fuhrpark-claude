@@ -1411,7 +1411,7 @@ async function viewCosts() {
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, actual: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
   const vs = [...byV.entries()].sort((a, b) => b[1].actual - a[1].actual);
   const kmBy = new Map((rep.vehicles || []).map((v) => [v.vehicle_id, v]));
-  let html = `<h1>${esc(t('costs_report'))}</h1><form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+  let html = `<h1>${esc(t('costs_report'))}</h1>${helpLink('costs')}<form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn" id="csv">${esc(t('export_csv'))}</button></div></form>
     <section class="panel"><dl class="kv"><dt>${esc(t('cost_actual'))}</dt><dd><b>${eur(rep.totals.actual_net)}</b></dd><dt>${esc(t('cost_estimate'))}</dt><dd>${eur(rep.totals.estimate_net)}</dd>
@@ -2034,11 +2034,11 @@ const helpHash = (q) => '#/help' + (q ? '?q=' + encodeURIComponent(q) : '');
 // Hilfe-Abschnitte je Rolle (Reihenfolge = Anzeige)
 function helpSections(r) {
   // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
-  if (r === 'viewer') return ['viewer', 'kpi', 'push'];
+  if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'push'];
   const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
   if (r === 'dispatch') parts.unshift('dispo');
   if (r === 'driver') parts.unshift('myveh', 'myfines');
