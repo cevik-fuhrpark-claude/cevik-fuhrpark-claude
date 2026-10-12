@@ -578,7 +578,8 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
   const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']), kind: col(['fahrzeugart', 'art']), src: col(['quelle', 'nachweis']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
-  if (head.some((h) => h.startsWith('reifen') || h === 'art' || h.startsWith('letzte'))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');
+  // Reifen-/Prüftermin-Dateien abweisen; der eigene Fahrzeug-Export („Letzter km-Stand“, „Letzte Abfahrtskontrolle“) bleibt importierbar
+  if (head.some((h) => h.startsWith('reifen') || h === 'art' || /^(prüfart|pruefart|letzte prüf|letzte pruef|nächster termin|naechster termin)/.test(h))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');
   const result = { imported: 0, skipped: [], dry_run: dryRun, preview: [] };
   const rows = new Map();
   const cell = (cells, i) => (i >= 0 && cells[i] !== undefined && cells[i] !== '' ? cells[i] : null);

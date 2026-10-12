@@ -96,7 +96,8 @@ export function timingSafeEqual(a, b) {
 }
 
 export function normalizeVin(v) {
-  return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // „VIN:…“ = Fahrzeugschlüssel der App (z. B. Spalte „FIN-Schlüssel“ im Prüftermin-Export) – Präfix gehört nicht zur FIN
+  return String(v || '').replace(/^\s*VIN:/i, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
 export function isValidVin(v) {

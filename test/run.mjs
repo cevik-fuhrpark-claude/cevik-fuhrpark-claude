@@ -4802,6 +4802,53 @@ await test('Vorgangsdetail: Kosten aus geladenen Positionen = eigenständige Kos
   }
 });
 
+await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) lassen sich unverändert wieder importieren, Auslesungs-Übersicht wird klar abgewiesen', async () => {
+  const { normalizeVin } = await import('../src/util.js');
+  eq(normalizeVin('VIN:wdb9630051l917317'), 'WDB9630051L917317', 'Fahrzeugschlüssel der App → FIN');
+  eq(normalizeVin(' VIN: WDB9630051L917317'), 'WDB9630051L917317');
+  eq(normalizeVin('VINWDB9630051L9173'), 'VINWDB9630051L9173', 'ohne Doppelpunkt nichts abschneiden');
+  const text = (r) => new TextDecoder('utf-8').decode(r.data); // BOM wird beim Dekodieren entfernt (wie readCsvFile im Browser)
+  await env.DB.prepare("DELETE FROM rate_limits WHERE key LIKE 'import:%'").run(); // Importgrenze 20/h: Suite hat sie bereits genutzt
+  const dry = (path, body) => owner.req('POST', path + '?dry_run=1', body, { 'content-type': 'text/csv' });
+  // Fahrzeuge: Export enthält „Letzter km-Stand“/„Letzte Abfahrtskontrolle“ – vorher als Prüftermin-Datei abgewiesen
+  const vt = text(await owner.get('/api/vehicles?format=csv'));
+  const vr = await dry('/api/vehicles/import', vt);
+  eq(vr.status, 200, JSON.stringify(vr.data).slice(0, 200));
+  eq(vr.data.skipped.length, 0, 'keine übersprungenen Zeilen');
+  eq(vr.data.preview.length, vt.trim().split('\r\n').length - 1, 'jede Zeile erkannt');
+  ok(vr.data.preview.every((p) => p.action === 'unverändert'), 'nichts geändert: ' + JSON.stringify(vr.data.preview.filter((p) => p.action !== 'unverändert')).slice(0, 300));
+  // Prüftermin-/Reifendateien weiterhin abgewiesen
+  eq((await dry('/api/vehicles/import', 'Kennzeichen;FIN;Prüfart;Nächster Termin\nX;WDB9630051L917317;HU;2027-01-01')).data.error, 'wrong_file');
+  eq((await dry('/api/vehicles/import', 'Kennzeichen;FIN;Art;Letzte Prüfung\nX;WDB9630051L917317;HU;2026-01-01')).data.error, 'wrong_file');
+  // Prüftermine: „FIN-Schlüssel“ (VIN:…) wird erkannt, belegte Termine unverändert, Lückenzeilen ruhig übersprungen
+  const mt = text(await owner.get('/api/maintenance?format=csv'));
+  const mr = await dry('/api/maintenance/import', mt);
+  eq(mr.status, 200);
+  eq(mr.data.created, 0, 'nichts neu'); eq(mr.data.updated, 0, 'nichts geändert: ' + JSON.stringify(mr.data.rows.filter((r) => r.action !== 'unverändert' && r.status !== 'unverändert')).slice(0, 300));
+  ok(mr.data.unchanged > 0, 'belegte Termine erkannt');
+  ok(!mr.data.skipped.some((s) => /FIN ungültig/.test(s.reason)), 'FIN-Schlüssel gelesen');
+  const gapReason = 'Kein Termin eingetragen – Zeile bleibt unverändert';
+  const lines = mt.trim().split('\r\n');
+  const gaps = lines.filter((l) => l.includes(';kein Termin hinterlegt;'));
+  ok(gaps.length > 0, 'Testdaten mit Lücken');
+  eq(mr.data.skipped.filter((s) => s.reason === gapReason).length, gaps.length, 'jede Lückenzeile mit ruhigem Hinweis');
+  ok(mr.data.skipped.every((s) => s.reason === gapReason || /^Kein Datum/.test(s.reason)), 'sonst nur Zeilen ohne Datum (km-Fälligkeit/ungeklärt): ' + JSON.stringify(mr.data.skipped.filter((s) => s.reason !== gapReason)));
+  // Arbeitsweise „Lücken in Excel füllen“: Termin + Nachweis in eine Lückenzeile eintragen → genau ein neuer Termin
+  const c = gaps[0].split(';'); c[5] = '2027-03-31'; c[7] = ''; c[8] = 'Prüfbericht Testlauf';
+  const fr = await dry('/api/maintenance/import', [lines[0], c.join(';')].join('\r\n'));
+  eq(fr.status, 200); eq(fr.data.created, 1, JSON.stringify(fr.data).slice(0, 300)); eq(fr.data.skipped.length, 0);
+  // Verträge: unverändert „vorhanden“
+  const ct = text(await owner.get('/api/contracts?format=csv'));
+  const cr = await dry('/api/contracts/import', ct);
+  eq(cr.status, 200); eq(cr.data.counts.neu, 0); eq(cr.data.counts.uebersprungen, 0); eq(cr.data.counts.vorhanden, ct.trim().split('\r\n').length - 1);
+  // Auslesungen: die Fristen-Übersicht ist kein Beleg – eigener Fehlercode mit Übersetzung statt „Spalte Datum erforderlich“
+  const tr = await dry('/api/tacho/import', text(await owner.get('/api/tacho?format=csv')));
+  eq(tr.status, 400); eq(tr.data.error, 'wrong_file_tacho');
+  const { STRINGS, translateImportReason } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].err_wrong_file_tacho, `err_wrong_file_tacho (${l})`);
+  ok(translateImportReason('en', gapReason) === 'No date entered – row left unchanged', 'Hinweis übersetzt');
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

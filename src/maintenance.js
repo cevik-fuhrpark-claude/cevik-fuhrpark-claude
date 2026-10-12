@@ -312,6 +312,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     const kind = normalizeKind(get(cells, ci.kind));
     if (!kind) return skip(`Prüfart unbekannt: ${get(cells, ci.kind) || '–'}`);
     const evidence = get(cells, ci.evidence);
+    // Lückenzeile aus dem eigenen Export („kein Termin hinterlegt“), nicht ausgefüllt: ruhiger Hinweis statt „Nachweis fehlt“
+    if (!evidence && !get(cells, ci.due).trim() && !get(cells, ci.last).trim()) return skip('Kein Termin eingetragen – Zeile bleibt unverändert');
     if (!evidence) return skip('Nachweis/Quelle fehlt');
     if (evidence.length > 300) return skip('Nachweis zu lang (max. 300 Zeichen)');
     const due = parseDueDate(get(cells, ci.due));
