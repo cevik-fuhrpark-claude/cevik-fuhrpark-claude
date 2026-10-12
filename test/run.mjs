@@ -2337,6 +2337,20 @@ await test('Mängelstatistik der Kontrollen: Summen wie gespeichert, Filter, Rec
   for (const kind of ['abfahrt', 'nach_reparatur']) { const k = (await users.fleet.get('/api/reports/defects?kind=' + kind)).data; const y = await db(kind); eq(k.totals.checks, y.checks, kind); eq(k.totals.defect_items, y.defects, kind); }
   const p = (await users.prodFleet.get('/api/reports/defects')).data;
   ok(!p.vehicles.some((v) => v.vehicle_id === V1 && v.checks === r.vehicles.find((w) => w.vehicle_id === V1).checks) || p.totals.checks !== r.totals.checks, 'Betrieb getrennt von Test');
+  // Standortfilter: V1 vorübergehend an eigenem Standort → nur V1; Summe über Standorte = alle
+  const oldSite = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V1).first()).site;
+  try {
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind('Mängel-Teststandort', V1).run();
+    const all = (await users.fleet.get('/api/reports/defects')).data;
+    ok(all.site_options.includes('Mängel-Teststandort') && all.site === null);
+    const one = (await users.fleet.get('/api/reports/defects?site=' + encodeURIComponent('MÄNGEL-teststandort'))).data;
+    eq(one.site, 'Mängel-Teststandort'); ok(one.vehicles.length === 1 && one.vehicles[0].vehicle_id === V1, 'nur V1');
+    ok(one.items.every((i) => i.vehicles.every((v) => v.vehicle_id === V1)), 'Prüfpunkte nur V1');
+    let c = 0; let d = 0; let ag = 0;
+    for (const st of all.site_options) { const z = (await users.fleet.get('/api/reports/defects?site=' + encodeURIComponent(st))).data; c += z.totals.checks; d += z.totals.defect_items; ag += z.totals.again_after_repair; }
+    eq(c, all.totals.checks, 'Kontrollen'); eq(d, all.totals.defect_items, 'Mängel'); eq(ag, all.totals.again_after_repair, 'erneut nach Reparatur');
+    eq((await users.fleet.get('/api/reports/defects?site=GIBTSNICHT')).data.totals.checks, 0);
+  } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(oldSite, V1).run(); }
   await env.DB.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').bind(V1).run();
   try { ok(!(await users.fleet.get('/api/reports/defects')).data.vehicles.some((v) => v.vehicle_id === V1), 'ruhendes Fahrzeug ausgenommen'); }
   finally { await env.DB.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').bind(V1).run(); }

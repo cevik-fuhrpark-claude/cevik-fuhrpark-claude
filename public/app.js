@@ -2100,14 +2100,15 @@ function helpWire(parts, want) {
 // ---------- Mängelstatistik der Kontrollen ----------
 async function viewDefects() {
   const days = S.defDays || 90; const kind = S.defKind || '';
-  const r = await api('GET', `/api/reports/defects?days=${days}${kind ? '&kind=' + kind : ''}`);
+  const r = await api('GET', `/api/reports/defects?days=${days}${kind ? '&kind=' + kind : ''}${S.defSite ? '&site=' + encodeURIComponent(S.defSite) : ''}`);
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
   render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
-    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${days} ${esc(t('days'))}${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${days} ${esc(t('days'))}${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       <div><label for="dd">${esc(t('period'))}</label><select id="dd">${[30, 90, 180, 365].map((d) => `<option value="${d}"${d === days ? ' selected' : ''}>${d} ${esc(t('days'))}</option>`).join('')}</select></div>
       <div><label for="dk">${esc(t('check_kind'))}</label><select id="dk">${[['', t('all')], ['abfahrt', t('nav_check')], ['nach_reparatur', t('inspection')]].map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+      ${(r.site_options || []).length > 1 || r.site ? `<div>${siteSelect('dsite', '', r.site_options, r.site)}</div>` : ''}
       <button type="button" class="btn secondary" id="dprt">${esc(t('print'))}</button>
     </div>
     <div class="stats"><div><b>${r.totals.checks}</b>${esc(t('checks_done'))}</div><div><b>${r.totals.checks_with_defects}</b>${esc(t('checks_with_defects'))}</div><div><b style="${r.totals.defect_items ? 'color:var(--mid)' : ''}">${r.totals.defect_items}</b>${esc(t('defect_items'))}</div></div>
@@ -2120,6 +2121,7 @@ async function viewDefects() {
     <p class="small muted">${esc(t('defect_stats_rule'))}</p>`, 'more');
   $('#dd').onchange = () => { S.defDays = Number($('#dd').value); viewDefects(); };
   $('#dk').onchange = () => { S.defKind = $('#dk').value; viewDefects(); };
+  const dsel = $('#dsite'); if (dsel) dsel.onchange = () => { S.defSite = dsel.value; viewDefects(); };
   $('#dprt').onclick = () => window.print();
 }
 
