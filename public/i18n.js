@@ -539,3 +539,6 @@ Object.assign(STRINGS.en, { dq_site_spelling: 'Site spelled differently' });
 Object.assign(STRINGS.de, { def_csv_item: 'CSV je Prüfpunkt' });
 Object.assign(STRINGS.uk, { def_csv_item: 'CSV за пунктом перевірки' });
 Object.assign(STRINGS.en, { def_csv_item: 'CSV per check item' });
+Object.assign(STRINGS.de, { home_site: 'Mein Standard-Standort', home_site_hint: 'Voreinstellung für den Filter „Standort“ in Fahrzeugen, Vorgängen, Werkstattplan, Prüfterminen, Reifen, Bußgeldern, Mängelstatistik, Kosten und Kennzahlen. Nur Anzeige – Sie können jederzeit „Alle“ wählen.' });
+Object.assign(STRINGS.uk, { home_site: 'Моя локація за замовчуванням', home_site_hint: 'Попереднє значення фільтра «Локація» у транспорті, справах, плані майстерні, термінах перевірок, шинах, штрафах, статистиці дефектів, витратах і показниках. Лише відображення – будь-коли можна вибрати «Усі».' });
+Object.assign(STRINGS.en, { home_site: 'My default site', home_site_hint: 'Preset for the “Site” filter in vehicles, cases, workshop plan, inspection dates, tyres, fines, defect statistics, costs and KPIs. Display only – you can choose “All” at any time.' });

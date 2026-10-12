@@ -455,7 +455,7 @@ async function viewCases() {
   let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
   if (!['open', 'closed', 'all', 'repeat'].includes(f) || (f === 'repeat' && S.me.role === 'driver')) f = 'open';
   const q = S.caseQ || '';
-  const vq = () => (S.caseVsite && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(S.caseVsite) : '');
+  const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '');
   const res = await api('GET', `/api/cases?${caseFilterQ(f)}${q.length >= 2 ? '&q=' + encodeURIComponent(q) : ''}${vq()}`);
   const list = res.cases;
   const vsel = S.me.role !== 'driver' && ((res.site_options || []).length > 1 || res.site) ? `<div style="margin-bottom:12px">${siteSelect('cvsite', '', res.site_options, res.site, t('kpi_vsite'), t('filter_all'))}</div>` : '';
@@ -933,7 +933,7 @@ async function viewVehicles() {
   const vs = (await api('GET', '/api/vehicles' + (inact ? '?inactive=1' : ''))).vehicles;
   const f = S.vehKind || 'all';
   const av = S.vehAvail || 'all';
-  const site = S.vehSite || '';
+  const site = vsDef('vehSite') || '';
   // Schreibweisen desselben Standorts (Dortmund/DORTMUND) als ein Eintrag – wie Kostenbericht und Datenqualität; angezeigt die häufigste
   const sk = (x) => (x ? String(x).trim().toLocaleLowerCase('de') : '');
   const siteCnt = new Map(); for (const v of vs) if (sk(v.site)) { const m = siteCnt.get(sk(v.site)) || new Map(); const raw = String(v.site).trim(); m.set(raw, (m.get(raw) || 0) + 1); siteCnt.set(sk(v.site), m); }
@@ -1348,7 +1348,7 @@ async function viewStockItem(id) {
 
 
 async function viewFines() {
-  const fsite = S.me.role === 'driver' ? '' : (S.fineSite || '');
+  const fsite = S.me.role === 'driver' ? '' : (vsDef('fineSite') || '');
   const fq = fsite ? `site=${encodeURIComponent(fsite)}` : '';
   const fr = await api('GET', '/api/fines' + (fq ? '?' + fq : ''));
   const list = fr.fines;
@@ -1416,12 +1416,14 @@ async function viewFine(id) {
 }
 
 // Standortauswahl (Standort laut Fahrzeugstamm; Server liefert options in häufigster Schreibweise, 'ohne' = ohne Standort)
+// Filter „Fahrzeug-Standort“: in dieser Sitzung gewählter Wert (auch „Alle“ = ''), sonst der Standard-Standort aus „Mein Konto“
+function vsDef(k) { return S[k] !== undefined ? S[k] : (S.me && S.me.role !== 'driver' && S.me.home_site) || ''; }
 function siteSelect(id, name, options, cur, label = t('site'), allLabel = t('all')) {
   return `<label for="${id}">${esc(label)}</label><select id="${id}"${name ? ` name="${name}"` : ''}><option value="">${esc(allLabel)}</option>${[...new Set([...(options || []), ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('')}</select>`;
 }
 // ---------- Kosten je Fahrzeug/Monat ----------
 async function viewCosts() {
-  const to = S.costTo || bYm(); const from = S.costFrom || bYm(11); const site = S.costSite || '';
+  const to = S.costTo || bYm(); const from = S.costFrom || bYm(11); const site = vsDef('costSite') || '';
   const siteQ = site ? `&site=${encodeURIComponent(site)}` : '';
   let rep;
   try { rep = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}`); } catch (err) { render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
@@ -1686,7 +1688,7 @@ const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) +
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
 async function viewMaint() {
   let ov;
-  const msQ = S.maintSite ? '&site=' + encodeURIComponent(S.maintSite) : '';
+  const msQ = vsDef('maintSite') ? '&site=' + encodeURIComponent(vsDef('maintSite')) : '';
   try { ov = await api('GET', '/api/maintenance' + (msQ ? '?' + msQ.slice(1) : '')); } catch (err) { render(`<h1>${esc(t('inspections_due'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const f = S.maintFilter || 'due';
   // „fällig ohne Termin“: überfällig/bald fällig und kein geplanter Werkstatttermin ab heute – was noch eingeplant werden muss
@@ -1754,7 +1756,7 @@ const dur = (h) => (h === null || h === undefined ? '–' : h < 48 ? `${String(h
 async function viewKpi() {
   const to = S.kpiTo || bYm(); const from = S.kpiFrom || bYm(2);
   let r;
-  try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${S.kpiVsite ? '&vsite=' + encodeURIComponent(S.kpiVsite) : ''}`); } catch (err) { render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
+  try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${vsDef('kpiVsite') ? '&vsite=' + encodeURIComponent(vsDef('kpiVsite')) : ''}`); } catch (err) { render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const st = (x) => (x.n ? `${dur(x.median_h)} <span class="small muted">(P90 ${dur(x.p90_h)}, n=${x.n})</span>` : '–');
   let html = `<h1>${esc(t('kpi'))}</h1>${helpLink('kpi')}<form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
@@ -1866,7 +1868,7 @@ async function viewPlan() {
   const days = S.planDays || 14;
   const mgr = S.me.role !== 'workshop';
   const site = mgr ? (S.planSite || '') : '';
-  const vsite = S.planVsite || '';
+  const vsite = vsDef('planVsite') || '';
   const pq = `${site ? '&site=' + encodeURIComponent(site) : ''}${vsite ? '&vsite=' + encodeURIComponent(vsite) : ''}`;
   const r = await api('GET', `/api/workshop/plan?days=${days}${pq}`);
   const loc = S.lang === 'uk' ? 'uk-UA' : S.lang === 'en' ? 'en-GB' : 'de-DE';
@@ -2115,7 +2117,7 @@ function helpWire(parts, want) {
 // ---------- Mängelstatistik der Kontrollen ----------
 async function viewDefects() {
   const days = S.defDays || 90; const kind = S.defKind || '';
-  const r = await api('GET', `/api/reports/defects?days=${days}${kind ? '&kind=' + kind : ''}${S.defSite ? '&site=' + encodeURIComponent(S.defSite) : ''}`);
+  const r = await api('GET', `/api/reports/defects?days=${days}${kind ? '&kind=' + kind : ''}${vsDef('defSite') ? '&site=' + encodeURIComponent(vsDef('defSite')) : ''}`);
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
   render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
@@ -2148,7 +2150,7 @@ async function viewDefects() {
 
 // ---------- Reifen über die Flotte ----------
 async function viewFleetTires() {
-  const r = await api('GET', '/api/tires/fleet' + (S.tireSite ? '?site=' + encodeURIComponent(S.tireSite) : ''));
+  const r = await api('GET', '/api/tires/fleet' + (vsDef('tireSite') ? '?site=' + encodeURIComponent(vsDef('tireSite')) : ''));
   const f = S.tireFilter || 'attention';
   const sel = { attention: (x) => x.status === 'unter_minimum' || x.status === 'warnung', never: (x) => x.measured_positions === 0, stale: (x) => x.stale && x.measured_positions > 0, all: () => true }[f];
   const rows = r.rows.filter(sel);
@@ -2190,10 +2192,27 @@ function viewMore() {
     ${S.me.role === 'owner' ? `<a class="row" href="#/settings"><span>⚙</span><span class="title">${esc(t('settings'))}</span><span></span></a>` : ''}
   </div>
   <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
+  ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t('home_site_hint'))}</p></div>` : ''}
   <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
   <details id="sess"><summary>${esc(t('my_sessions'))}</summary><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div></details>
   <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
   bindLang(true);
+  const hs = $('#homesite');
+  if (hs) {
+    api('GET', '/api/sites').then((r) => {
+      const cur = S.me.home_site || '';
+      hs.innerHTML = `<option value="">${esc(t('filter_all'))}</option>` + [...new Set([...r.sites, ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('');
+    }).catch(() => {});
+    hs.onchange = async () => {
+      try {
+        await api('PATCH', '/api/me', { home_site: hs.value });
+        S.me.home_site = hs.value || null;
+        // neue Voreinstellung gilt sofort für alle Standortfilter dieser Sitzung
+        for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite']) delete S[k];
+        toast('✓');
+      } catch (err) { toast(err.message, true); }
+    };
+  }
   const sess = $('#sess');
   const loadSessions = async () => {
     const box = $('#sesslist'); if (!box) return;

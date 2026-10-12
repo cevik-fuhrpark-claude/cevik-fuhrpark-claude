@@ -1724,6 +1724,32 @@ await test('Vorgänge: Filter Fahrzeug-Standort (Schreibweise/Umlaute egal, Summ
   }
 });
 
+await test('Mein Standard-Standort: speichern/leeren, nur Anzeige (keine Rechte), Fahrer nicht; Standortauswahl /api/sites', async () => {
+  const sites = (await users.dispatch.get('/api/sites')).data.sites;
+  ok(sites.length >= 1 && sites.includes('Dortmund'), 'Auswahl aus dem Fahrzeugstamm: ' + sites.join(','));
+  eq((await users.driver.get('/api/sites')).status, 403, 'Fahrer: keine Standortauswahl');
+  eq((await users.dispatch.get('/api/me')).data.user.home_site, null, 'Standard: keiner');
+  eq((await users.dispatch.req('PATCH', '/api/me', { home_site: '  Dortmund ' })).status, 200);
+  eq((await users.dispatch.get('/api/me')).data.user.home_site, 'Dortmund', 'gespeichert (getrimmt)');
+  eq((await users.dispatch.req('PATCH', '/api/me', { language: 'uk' })).status, 200);
+  eq((await users.dispatch.get('/api/me')).data.user.home_site, 'Dortmund', 'Sprachwechsel lässt Standort unverändert');
+  const all = (await users.dispatch.get('/api/cases?limit=500')).data;
+  eq(all.site, null, 'keine serverseitige Einschränkung – nur Voreinstellung in der App');
+  eq((await users.dispatch.req('PATCH', '/api/me', { home_site: 'x'.repeat(61) })).status, 400, 'zu lang');
+  eq((await users.dispatch.req('PATCH', '/api/me', { home_site: '' })).status, 200);
+  eq((await users.dispatch.get('/api/me')).data.user.home_site, null, 'geleert');
+  eq((await users.dispatch.req('PATCH', '/api/me', { language: 'de' })).status, 200);
+  eq((await users.driver.req('PATCH', '/api/me', { home_site: 'Dortmund' })).status, 403, 'Fahrer');
+  // App: alle Standortfilter lesen die Voreinstellung über vsDef (keine direkte Verwendung mehr)
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite']) {
+    const direct = [...src.matchAll(new RegExp('S\\.' + k + '\\b(?! = )', 'g'))].length;
+    eq(direct, 0, k + ': nur über vsDef gelesen');
+    ok(src.includes(`vsDef('${k}')`), k + ' nutzt vsDef');
+  }
+});
+
 await test('Push-Einstellungen je Person: nicht dringende Arten stummschaltbar, dringende immer, In-App bleibt', async () => {
   const p0 = await users.driver.get('/api/me/notify-prefs');
   eq(p0.status, 200); ok(p0.data.kinds.includes('received') && !p0.data.kinds.includes('safety_lock'), 'Sicherheitsereignisse nicht stummschaltbar');

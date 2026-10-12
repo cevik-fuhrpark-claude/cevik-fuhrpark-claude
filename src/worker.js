@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly } from './util.js';
 import * as auth from './auth.js';
 import { personExport } from './privacy.js';
 import * as cases from './cases.js';
@@ -125,13 +125,25 @@ async function handleApi(request, env, ctx, url) {
 
   if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user) });
   if (path === '/api/me' && m === 'GET') {
-    const row = await env.DB.prepare('SELECT language FROM users WHERE id=?').bind(user.id).first();
-    return json({ user: { ...me, language: row.language }, active_environment: envName });
+    const row = await env.DB.prepare('SELECT language, home_site FROM users WHERE id=?').bind(user.id).first();
+    return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null }, active_environment: envName });
   }
   if (path === '/api/me' && m === 'PATCH') {
     const b = await readJson(request);
     if (b.language && ['de', 'uk', 'en'].includes(b.language)) await env.DB.prepare('UPDATE users SET language=?, updated_at=? WHERE id=?').bind(b.language, nowIso(), user.id).run();
+    // Standard-Standort (nur Anzeige-Voreinstellung der Filter, keine Berechtigung); Fahrer haben keine Standortfilter
+    if (b.home_site !== undefined) {
+      if (user.role === 'driver') throw forbidden();
+      const hs = b.home_site === null ? '' : String(b.home_site).trim();
+      if (hs.length > 60) throw bad('validation', 'Standort: höchstens 60 Zeichen.');
+      await env.DB.prepare('UPDATE users SET home_site=?, updated_at=? WHERE id=?').bind(hs || null, nowIso(), user.id).run();
+    }
     return json({ ok: true });
+  }
+  // Auswahl „Standort“ (Fahrzeugstamm, Schreibweisen zusammengefasst) – z. B. für den Standard-Standort in „Mein Konto“
+  if (path === '/api/sites' && m === 'GET') {
+    if (user.role === 'driver') throw forbidden();
+    return json({ sites: reports.siteSelection((await env.DB.prepare('SELECT site FROM vehicles').all()).results, null).options });
   }
   if (path === '/api/me/notify-prefs' && m === 'GET') {
     const row = await env.DB.prepare('SELECT push_muted FROM users WHERE id=?').bind(user.id).first();
