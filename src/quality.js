@@ -1,7 +1,7 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
 import { forbidden, nowIso } from './util.js';
-import { siteKey, siteLabels } from './reports.js';
+import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -171,7 +171,17 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}` });
   const rank = { fehler: 0, luecke: 1, hinweis: 2 };
   items.sort((a, b) => rank[a.severity] - rank[b.severity] || a.check.localeCompare(b.check) || String(a.plate || a.driver_name).localeCompare(String(b.plate || b.driver_name)));
+  // optional nur ein Standort laut Fahrzeugstamm: fahrzeugbezogene Befunde dieses Standorts; Personen-/Konto-/Einladungsbefunde
+  // haben keinen Standort und werden dann nur gezählt (other_hidden) – sichtbar mit „Alle“
+  const sel = siteSelection(vs, query.site);
+  let shown = items; let otherHidden = 0; let checked = vs.length;
+  if (sel.site) {
+    const siteOf = new Map((await env.DB.prepare('SELECT id, site FROM vehicles').all()).results.map((v) => [v.id, v.site]));
+    shown = items.filter((i) => i.vehicle_id && sel.match(siteOf.get(i.vehicle_id)));
+    otherHidden = items.filter((i) => !i.vehicle_id).length;
+    checked = vs.filter((v) => sel.match(v.site)).length;
+  }
   const counts = {};
-  for (const i of items) counts[i.check] = (counts[i.check] || 0) + 1;
-  return { generated_at: nowIso(), environment: envName, stale_days: staleDays, vehicles_checked: vs.length, counts, items };
+  for (const i of shown) counts[i.check] = (counts[i.check] || 0) + 1;
+  return { generated_at: nowIso(), environment: envName, stale_days: staleDays, vehicles_checked: checked, site: sel.site, site_options: sel.options, other_hidden: otherHidden, counts, items: shown };
 }

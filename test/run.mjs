@@ -1743,7 +1743,7 @@ await test('Mein Standard-Standort: speichern/leeren, nur Anzeige (keine Rechte)
   // App: alle Standortfilter lesen die Voreinstellung über vsDef (keine direkte Verwendung mehr)
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite']) {
+  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite']) {
     const direct = [...src.matchAll(new RegExp('S\\.' + k + '\\b(?! = )', 'g'))].length;
     eq(direct, 0, k + ': nur über vsDef gelesen');
     ok(src.includes(`vsDef('${k}')`), k + ' nutzt vsDef');
@@ -3552,6 +3552,30 @@ await test('Mängelstatistik als CSV (Browser): je Prüfpunkt und je Fahrzeug, B
   eq(lv.slice(1).reduce((s, l) => s + Number(l.split(';')[1]), 0), r.totals.checks, 'Summe Kontrollen = Bericht');
   const inj = defectVehiclesCsv({ vehicles: [{ plate: '=X()', checks: 1, checks_with_defects: 0, defect_items: 0, last_check_at: null }] }, tr, d);
   ok(inj.includes("'=X();1;0;0;\r\n"), 'Formelschutz, leeres Datum');
+});
+
+await test('Datenqualität: Filter Fahrzeug-Standort (nur fahrzeugbezogene Befunde, Personenbefunde gezählt), Integrations-API', async () => {
+  const all = (await users.fleet.get('/api/admin/data-quality')).data;
+  eq(all.site, null); eq(all.other_hidden, 0);
+  ok(all.site_options.length >= 1, 'Auswahl');
+  const veh = all.items.filter((i) => i.vehicle_id); const pers = all.items.filter((i) => !i.vehicle_id);
+  let sum = 0; let checked = 0;
+  for (const o of all.site_options) {
+    const r = (await users.fleet.get(`/api/admin/data-quality?site=${encodeURIComponent(o)}`)).data;
+    eq(r.site, o); ok(r.items.every((i) => i.vehicle_id), o + ': nur Fahrzeugbefunde');
+    eq(r.other_hidden, pers.length, o + ': Personenbefunde gezählt');
+    eq(Object.values(r.counts).reduce((a, b) => a + b, 0), r.items.length, o + ': Zähler passen');
+    sum += r.items.length; checked += r.vehicles_checked;
+  }
+  // Befunde zu inaktiven Fahrzeugen (z. B. Vertrag an stillgelegtem Fahrzeug) haben ggf. keinen auswählbaren Standort
+  const inactive = veh.filter((i) => i.check === 'contract_vehicle_inactive').length;
+  ok(sum <= veh.length && sum >= veh.length - inactive, `Summe über Standorte (${sum}) = Fahrzeugbefunde (${veh.length})`);
+  eq(checked, all.vehicles_checked, 'geprüfte Fahrzeuge verteilt');
+  const up = all.site_options.find((o) => o !== 'ohne');
+  if (up) eq((await users.fleet.get(`/api/admin/data-quality?site=${encodeURIComponent(up.toUpperCase())}`)).data.site, up, 'Schreibweise egal');
+  eq((await users.fleet.get('/api/admin/data-quality?site=Nirgendwo')).data.items.length, 0, 'unbekannt leer');
+  const i = await anon.req('GET', '/api/integration/v1/data-quality?environment=test&site=Nirgendwo', undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(i.status, 200); eq(i.data.items.length, 0, 'Integrations-API gefiltert');
 });
 
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {
