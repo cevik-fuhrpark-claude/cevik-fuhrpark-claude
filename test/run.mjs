@@ -926,6 +926,16 @@ await test('Kostenbericht: Summe je Standort = Summe der Zeilen (Standort laut F
   const { STRINGS } = await import('../public/i18n.js');
   ok(['cs_title', 'cs_nosite', 'cs_vehicles', 'cs_rule'].every((k) => ['de', 'uk', 'en'].every((l) => STRINGS[l][k])), 'Texte DE/UK/EN');
 });
+await test('Fahrzeugliste: Standortauswahl fasst Schreibweisen zusammen (Dortmund/DORTMUND) wie Kostenbericht/Datenqualität', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('async function viewVehicles('), app.indexOf('\n}\n', app.indexOf('async function viewVehicles(')));
+  ok(src.includes("(!site || sk(v.site) === sk(site))"), 'Filter ohne Groß-/Kleinschreibung');
+  ok(src.includes("toLocaleLowerCase('de')"), 'gleicher Schlüssel wie siteKey');
+  const { siteKey } = await import('../src/reports.js');
+  const sk = (x) => (x ? String(x).trim().toLocaleLowerCase('de') : '');
+  for (const x of ['Dortmund', 'DORTMUND', ' dortmund ', 'MÜNCHEN']) eq(sk(x), siteKey(x));
+});
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   const { siteKey } = await import('../src/reports.js');
