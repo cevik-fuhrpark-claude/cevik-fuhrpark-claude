@@ -2096,6 +2096,14 @@ await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis
   eq((await users.ws.get(`/api/vehicles/${V}`)).data.warranties, undefined, 'Werkstatt ohne (wie Kosten)');
 });
 
+await test('Positionen je Vorgang per Index (keine Volltabellen-Suche): Arbeitszeit, Teile, Fremdleistungen, Restarbeiten, Dateien', async () => {
+  for (const [t, sql] of [['work_entries', 'SELECT * FROM work_entries WHERE case_id=?'], ['parts', 'SELECT * FROM parts WHERE case_id=?'], ['external_costs', 'SELECT * FROM external_costs WHERE case_id=?'],
+    ['open_items', "SELECT COUNT(*) FROM open_items WHERE case_id=? AND status='offen'"], ['files', 'SELECT * FROM files WHERE case_id=?']]) {
+    const plan = env.DB.db.prepare('EXPLAIN QUERY PLAN ' + sql).all('x').map((r) => r.detail).join(' | ');
+    ok(/USING (COVERING )?INDEX/.test(plan) && !/^SCAN /.test(plan), `${t}: ${plan}`);
+  }
+});
+
 await test('Wiederherstellungs-Probe mit vollem Datenbestand: jede gesicherte Tabelle zeilen- und feldgleich (inkl. Hinweise „gültig bis“/Archiv, Dubletten, Lager-Umlagerung/Bestellvermerk)', async () => {
   const b = await owner.get('/api/admin/backup'); eq(b.status, 200);
   const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
