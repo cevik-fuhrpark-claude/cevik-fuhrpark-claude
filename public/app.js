@@ -67,8 +67,18 @@ function toast(msg, err = false) {
   el.className = 'toast' + (err ? ' err' : '');
   el.setAttribute('role', err ? 'alert' : 'status');
   el.textContent = msg;
+  // Fehler: nur einer gleichzeitig (keine übereinanderliegenden Meldungen), Anzeigedauer nach Textlänge (6–20 s, WCAG 2.2.1),
+  // pausiert solange Finger/Maus darauf liegt, Antippen schließt
+  if (err) document.querySelectorAll('.toast.err').forEach((x) => x.remove());
+  const ms = err ? Math.min(20000, Math.max(6000, 2500 + String(msg).length * 60)) : 3000;
+  let timer = setTimeout(() => el.remove(), ms);
+  if (err) {
+    el.title = t('tap_to_close');
+    el.addEventListener('click', () => el.remove());
+    el.addEventListener('pointerenter', () => clearTimeout(timer));
+    el.addEventListener('pointerleave', () => { clearTimeout(timer); timer = setTimeout(() => el.remove(), 4000); });
+  }
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), err ? 6000 : 3000);
 }
 
 // ---------- Rahmen ----------

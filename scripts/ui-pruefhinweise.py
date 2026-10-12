@@ -33,6 +33,13 @@ with sync_playwright() as p:
         # mehrdeutig bleibt erhalten
         q.fill('#ctf [name=monthly_rate_net]','2.000')
         check('2000' in q.eval_on_selector('#ctf [name=monthly_rate_net]','e=>e.validationMessage'),'„mehrdeutig“-Hinweis bleibt eigener Text')
+        # Fehlermeldungen: nur eine gleichzeitig, Antippen schließt
+        q.fill('#ctf [name=monthly_rate_net]',''); q.fill('#ctf [name=evidence]','Test')
+        q.fill('#ctf [name=start_date]','2026-05-01'); q.fill('#ctf [name=end_date]','2026-01-01')
+        q.click('#ctf button'); q.wait_for_selector('.toast.err'); q.click('#ctf button'); q.wait_for_timeout(400)
+        check(q.locator('.toast.err').count()==1,'nur eine Fehlermeldung gleichzeitig')
+        q.locator('.toast.err').click(); q.wait_for_timeout(100)
+        check(q.locator('.toast.err').count()==0,'Antippen schließt die Fehlermeldung')
         # Abfahrtskontrolle
         q.goto(B+'/#/check'); q.wait_for_selector('#f #v')
         q.select_option('#v','')
