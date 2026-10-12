@@ -2112,6 +2112,33 @@ await test('Positionen je Vorgang per Index (keine Volltabellen-Suche): Arbeitsz
   }
 });
 
+await test('Fuhrparkagent: Vorgang ohne Bewegung (CASE_STALE) nur mit Einstellung, Bezug letzte Änderung, nicht bei „wartet auf Teile“/unbewertet', async () => {
+  const V = (await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.active !== 0 && !v.eval_excluded).id;
+  const mk = async (d) => (await users.fleet.post('/api/cases', { vehicle_id: V, description: d, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (cid, action, note = null) => { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; return users.fleet.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload: {} }); };
+  const a = await mk('Stale-Test: Spiegel locker'); eq((await cmd(a, 'receive')).status, 200);
+  const b = await mk('Stale-Test: Reparatur hängt'); const w = await mk('Stale-Test: wartet auf Teile'); const u = await mk('Stale-Test: unbewertet');
+  const old = new Date(Date.now() - 10 * 86400000).toISOString();
+  env.DB.db.prepare(`UPDATE cases SET status='in_reparatur', fleet_received_at=?, workshop_ack_at=?, workshop_site='DORTMUND' WHERE id=?`).run(old, old, b);
+  env.DB.db.prepare(`UPDATE cases SET status='wartet_teile', fleet_received_at=?, workshop_ack_at=? WHERE id=?`).run(old, old, w);
+  env.DB.db.prepare(`UPDATE cases SET updated_at=? WHERE id IN (?,?,?,?)`).run(old, a, b, w, u);
+  const stale = async () => { eq((await users.fleet.post('/api/agent/run')).status, 200); return (await users.fleet.get('/api/master')).data.findings.filter((f) => f.finding_code === 'CASE_STALE'); };
+  eq((await stale()).length, 0, 'ohne Einstellung kein Befund');
+  eq((await owner.put('/api/settings', { case_stale_days: '7' })).status, 200);
+  eq((await owner.get('/api/settings')).data.values.case_stale_days, '7');
+  let f = await stale(); const ids = f.map((x) => x.case_id);
+  ok(ids.includes(a) && ids.includes(b), 'bewertet und in Reparatur seit 10 Tagen → Befund'); ok(!ids.includes(w) && !ids.includes(u), 'wartet auf Teile / unbewertet: eigene Befunde');
+  const fa = f.find((x) => x.case_id === a), fb = f.find((x) => x.case_id === b);
+  eq(fa.owner_role, 'fleet'); eq(fb.owner_role, 'workshop'); eq(fa.severity, 'hinweis');
+  ok(/letzte Änderung am \d{2}\.\d{2}\.\d{4} \(Nachfassen nach 7 Tagen eingestellt\)/.test(fb.message), fb.message);
+  eq((await cmd(a, 'comment', 'Werkstatt angefragt')).status, 200, 'Kommentar = Bewegung');
+  ok(!(await stale()).some((x) => x.case_id === a), 'nach Kommentar kein Befund mehr');
+  eq((await owner.put('/api/settings', { case_stale_days: '14' })).status, 200);
+  ok(!(await stale()).some((x) => x.case_id === b), '10 Tage < 14 → kein Befund');
+  eq((await owner.put('/api/settings', { case_stale_days: null })).status, 200);
+  for (const id of [a, b, w, u]) env.DB.db.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).run(id);
+});
+
 await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung, Bußgeld-Verlauf/-Dateien, Fahrer je Fahrzeug, Push-Geräte, letzter Agent-Lauf, Master-Eingang', async () => {
   for (const [t, sql, n] of [
     ['inspections', "SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1", 1],

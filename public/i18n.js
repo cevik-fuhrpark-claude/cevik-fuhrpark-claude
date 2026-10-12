@@ -569,3 +569,6 @@ Object.assign(STRINGS.en, { dispo_all_sites: 'show all sites', dispo_my_site: 's
 Object.assign(STRINGS.de, { dq_other_hidden: '{n} Befunde zu Personen, Konten oder Einladungen haben keinen Standort und sind ausgeblendet – mit „Alle“ sichtbar.' });
 Object.assign(STRINGS.uk, { dq_other_hidden: '{n} висновків щодо людей, облікових записів або запрошень не мають локації й приховані – видно з «Усі».' });
 Object.assign(STRINGS.en, { dq_other_hidden: '{n} findings about people, accounts or invitations have no site and are hidden – visible with “All”.' });
+Object.assign(STRINGS.de, { case_stale_setting: 'Vorgänge – nachfassen nach Tagen ohne Änderung (bewertet/übernommen/in Reparatur; leer = aus)' });
+Object.assign(STRINGS.uk, { case_stale_setting: 'Заявки – нагадати через днів без змін (оцінені/прийняті/в ремонті; порожньо = вимк.)' });
+Object.assign(STRINGS.en, { case_stale_setting: 'Cases – follow up after days without change (triaged/accepted/in repair; empty = off)' });
