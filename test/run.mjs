@@ -1974,6 +1974,9 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   const l = (await users.dispatch.get(base)).data; eq(l.notes.length, 2); eq(l.can_write, true); eq(l.notes[0].text, 'Ersatzschlüssel liegt im Büro Dortmund', 'neueste zuerst');
   eq((await viewer.get(base)).data.can_write, false);
   eq((await users.prodFleet.get(base)).data.notes.length, 0, 'Testhinweise nicht im Betrieb');
+  eq((await users.dispatch.get('/api/vehicles')).data.vehicles.find((v) => v.id === VID).notes_active, 2, 'Fahrzeugliste zählt aktive Hinweise');
+  eq((await users.prodFleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VID).notes_active, 0, 'Zähler je Umgebung');
+  ok(!('notes_active' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: kein Zähler');
   const me = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID);
   eq(me.notes.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'Fahrer sieht nur freigegebene, ohne Verfasser'); ok(!('created_by_name' in me.notes[0]));
   // Integrations-API /v1/availability: nur mit include=notes, nur für Fahrer freigegebene, ohne Verfasser, Umgebung getrennt
