@@ -32,7 +32,8 @@ export async function getSessionUser(env, request) {
   if (idle > Math.min(10 * 60 * 1000, idleMs ? idleMs / 3 : Infinity)) {
     await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(nowIso(), h).run();
   }
-  return publicUser(row, h);
+  // Für die App: gleiche Leerlauf-Grenze, damit sie geteilte Bildschirme selbst leert (ohne auf den nächsten Aufruf zu warten)
+  return { ...publicUser(row, h), idle_logout_min: idleMs ? idleMs / 60000 : null };
 }
 
 export function publicUser(row, sessionHash) {

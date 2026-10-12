@@ -1166,11 +1166,16 @@ await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von a
   const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
   const setSeen = (id, min) => env.DB.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').bind(ago(min), id).run();
   await setSeen(tab.id, 120);
-  eq((await tab.get('/api/me')).status, 200, 'Standard: keine Leerlauf-Abmeldung');
+  const r0 = await tab.get('/api/me');
+  eq(r0.status, 200, 'Standard: keine Leerlauf-Abmeldung');
+  eq(r0.data.user.idle_logout_min, null, 'App: keine Leerlauf-Grenze');
   eq((await owner.put('/api/settings', { idle_logout_workshop_min: 30 })).status, 200);
   try {
     await setSeen(tab.id, 20);
-    eq((await tab.get('/api/me')).status, 200, '20 Min. < 30 Min.');
+    const r1 = await tab.get('/api/me');
+    eq(r1.status, 200, '20 Min. < 30 Min.');
+    eq(r1.data.user.idle_logout_min, 30, 'App erhält dieselbe Grenze wie der Server');
+    eq((await users.fleet.get('/api/me')).data.user.idle_logout_min, null, 'andere Rollen: eigene Einstellung (leer)');
     const seen = (await env.DB.prepare('SELECT last_seen FROM sessions WHERE user_id=?').bind(tab.id).first()).last_seen;
     ok(Date.now() - Date.parse(seen) < 60000, 'Aktivität setzt Leerlauf zurück');
     await setSeen(tab.id, 31); await setSeen(users.fleet.id, 31);

@@ -9,6 +9,7 @@ const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase();
 // Sortierwahl je Gerät/Tab merken (nur erlaubte Werte, sonst Standard; Speicher kann fehlen oder werfen)
 const sortPref = (key, allowed, def, set) => { const k = 'cfp_sort_' + key; if (set !== undefined) { try { sessionStorage.setItem(k, set); } catch {} return set; } let v = ''; try { v = sessionStorage.getItem(k) || ''; } catch {} return allowed.includes(v) ? v : def; };
 const CASE_SORTS = ['priority', 'oldest', 'updated'], VEH_SORTS = ['plate', 'next_due', 'check_oldest', 'km_desc'];
+let lastActivity = Date.now(), lastApiAt = 0, idleBusy = false; // Leerlauf-Abmeldung (siehe noteActivity)
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -44,6 +45,7 @@ async function api(method, path, body, extra = {}) {
   let b = body;
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
   let res;
+  lastApiAt = Date.now();
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
@@ -165,7 +167,7 @@ async function route() {
   const pub = /^#\/(login|setup|invite\/)/.test(h);
   try {
     if (!S.me && !pub) {
-      try { const r = await api('GET', '/api/me'); S.me = r.user; S.lang = r.user.language || S.lang; S.offlineStart = false; }
+      try { const r = await api('GET', '/api/me'); S.me = r.user; lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false; }
       catch (err) {
         // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
         const cached = err.offline ? offlineSession() : null;
@@ -221,6 +223,27 @@ function resetUserState() {
 function clearOfflineData() {
   try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_')) localStorage.removeItem(k); } catch {}
 }
+// Leerlauf-Abmeldung auch in der App (Einstellung des Inhabers, Wert kommt vom Server mit /api/me): Der Server meldet erst beim
+// nächsten Aufruf ab – bis dahin stünde auf einem geteilten Tablet die Ansicht der vorherigen Person. Die App leert den Bildschirm
+// nach derselben Zeit ohne Bedienung selbst. Umgekehrt hält Bedienung ohne Serveraufruf (z. B. langes Tippen) die Anmeldung wach.
+const idleLimitMs = () => { const m = S.me ? Number(S.me.idle_logout_min) : 0; return m > 0 ? m * 60000 : 0; };
+function noteActivity() {
+  const ms = idleLimitMs(), now = Date.now();
+  if (ms && now - lastActivity > ms) { checkIdle(); return; } // abgelaufen: nicht mehr verlängern
+  lastActivity = now;
+  if (ms && !S.offlineStart && navigator.onLine !== false && now - lastApiAt > Math.min(10 * 60000, ms / 3)) api('GET', '/api/me').catch(() => {});
+}
+async function checkIdle() {
+  const ms = idleLimitMs();
+  if (!ms || idleBusy || Date.now() - lastActivity <= ms) return;
+  idleBusy = true;
+  try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout').catch(() => {}); } catch {}
+  clearOfflineData(); resetUserState(); idleBusy = false;
+  location.hash = '#/login'; toast(t('idle_signed_out'));
+}
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, noteActivity, { passive: true, capture: true }));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
+setInterval(checkIdle, 30000);
 window.addEventListener('online', () => { if (S.offlineStart) { S.offlineStart = false; S.me = null; route(); } });
 
 async function refreshUnread() {
