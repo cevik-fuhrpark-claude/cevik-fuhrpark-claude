@@ -71,6 +71,7 @@ function requireRole(user, roles) {
   if (!roles.includes(user.role)) throw forbidden();
 }
 
+const STATUS_DE_ICS = { gemeldet: 'gemeldet', werkstatt_freigegeben: 'an Werkstatt freigegeben', in_reparatur: 'in Reparatur', wartet_teile: 'wartet auf Teile', abschlusskontrolle: 'Abschlusskontrolle' };
 const SETTINGS_KEYS = [
   'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
@@ -416,6 +417,13 @@ async function handleApi(request, env, ctx, url) {
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') {
     const q = Object.fromEntries(url.searchParams);
+    // Wiedervorlagen als Kalender (.ics): nur Vorgangsnummer, Kennzeichen, Status – ohne Vermerk/Beschreibung/Namen (Kalender werden oft geteilt)
+    if (q.format === 'ics') {
+      if (['driver', 'workshop'].includes(user.role)) throw forbidden();
+      const rows = await cases.listCases(env, user, envName, { status: 'open', followup: '1', vsite: q.vsite, limit: 5000, __export: true });
+      const ev = rows.filter((c) => c.followup_on).map((c) => ({ uid: `case-followup-${c.id}`, date: c.followup_on, summary: `Wiedervorlage ${c.case_no} – ${c.plate}`, description: `Vorgang ${c.case_no} (${STATUS_DE_ICS[c.status] || c.status}) in der App öffnen` }));
+      return new Response(icsCalendar(`Fuhrpark Wiedervorlagen${envName === 'test' ? ' (Test)' : ''}`, ev.sort((x, y) => x.date.localeCompare(y.date))), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-wiedervorlagen_${envName}_${berlinDate()}.ics"` } });
+    }
     if (q.format === 'csv') {
       if (user.role === 'driver') throw forbidden();
       const rows = await cases.listCases(env, user, envName, { ...q, limit: 5000, __export: true });

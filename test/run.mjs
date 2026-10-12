@@ -2185,6 +2185,11 @@ await test('Wiedervorlage je Vorgang: nur Leitung setzt, Datum ab heute, Agent a
   eq((await users.ws.get('/api/cases?status=open&followup=1')).data.cases.length, 0, 'Werkstatt: leer');
   ok(!(await users.ws.get('/api/cases?status=open')).data.cases.some((x) => 'followup_on' in x), 'Werkstatt: kein Feld in der Liste');
   ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&status=open&followup=1')).data).includes(today.split('-').reverse().join('.') + ' – Werkstatt nach Termin fragen'), 'CSV-Spalte');
+  // Kalender: nur Nummer/Kennzeichen/Status, ohne Vermerk; Werkstatt/Fahrer 403
+  const ics = (await users.fleet.get('/api/cases?format=ics')).data; const icsT = typeof ics === 'string' ? ics : new TextDecoder().decode(ics);
+  ok(icsT.includes('BEGIN:VCALENDAR') && icsT.includes(`UID:case-followup-${cid}@`) && icsT.includes('DTSTART;VALUE=DATE:' + today.replace(/-/g, '')), 'ICS mit Termin');
+  ok(!icsT.includes('Werkstatt nach Termin fragen') && !icsT.includes('Tür klemmt'), 'ICS ohne Vermerk/Beschreibung');
+  eq((await users.ws.get('/api/cases?format=ics')).status, 403); eq((await users.driver.get('/api/cases?format=ics')).status, 403);
   // entfernen (leer) → kein Befund, Vermerk weg; Kommentar ändert die Wiedervorlage nicht
   eq((await cmd(users.fleet, 'set_followup', {})).status, 200);
   c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; eq(c.followup_on, null); eq(c.followup_note, null);

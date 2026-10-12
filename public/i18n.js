@@ -588,3 +588,6 @@ Object.assign(STRINGS.en, { act_set_followup: 'Follow-up', followup: 'Follow-up'
 STRINGS.de.help_fleet_s += '|Wiedervorlage: Im Vorgang „Wiedervorlage“ ein eigenes Datum (und optional einen Vermerk) setzen. Ab dem Tag steht der Vorgang unter „Heute zu tun → Wiedervorlage fällig“ und der Fuhrparkagent erinnert ruhig. Leer speichern entfernt sie. Werkstatt und Fahrer sehen sie nicht.';
 STRINGS.uk.help_fleet_s += '|Нагадування: у заявці «Нагадування» вкажіть власну дату (і за бажанням примітку). З цього дня заявка зʼявляється в «Сьогодні зробити → Нагадування на сьогодні», агент тихо нагадує. Збереження порожнім видаляє її. Майстерня й водії її не бачать.';
 STRINGS.en.help_fleet_s += '|Follow-up: in a case, “Follow-up” sets your own date (and optionally a note). From that day the case appears under “To do today → Follow-up due” and the fleet agent sends a quiet reminder. Saving it empty removes it. Workshop and drivers do not see it.';
+Object.assign(STRINGS.de, { followup_ics: 'Als Kalender (.ics)' });
+Object.assign(STRINGS.uk, { followup_ics: 'Як календар (.ics)' });
+Object.assign(STRINGS.en, { followup_ics: 'As calendar (.ics)' });
