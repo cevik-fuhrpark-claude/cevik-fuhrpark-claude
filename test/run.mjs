@@ -3500,6 +3500,20 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km'), 'CSV-Kopf: km-Spalten am Ende');
   ok(vcs.find((l) => l.startsWith('WP-LN 1;')).endsWith(';380000;Inspektion;-20000'), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
+  // „Mein Fahrzeug“: Wartung nach km nur überschritten bzw. innerhalb der Vorwarnung, wenigste Rest-km zuerst, ohne Nachweis
+  const asg2 = await users.fleet.post(`/api/vehicles/${VP}/drivers`, { user_id: users.driver.id, end_previous: false });
+  eq(asg2.status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'Hydraulik/Aufbau', due_km: 410000, evidence: 'Werkstattplan-Test bald' })).status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'Sonstiges', due_km: 450000, evidence: 'Werkstattplan-Test weit' })).status, 201);
+  mv = await myV();
+  eq(JSON.stringify(mv.km_due.map((r) => [r.kind, r.km_remaining, r.status])), JSON.stringify([['Inspektion', -20000, 'ueberfaellig'], ['Ölwechsel', -10000, 'ueberfaellig']]), 'ohne Vorwarnung nur überschritten');
+  ok(!JSON.stringify(mv.km_due).includes('Werkstattplan-Test'), 'kein Nachweistext');
+  eq((await owner.put('/api/settings', { maintenance_warn_km: 15000 })).status, 200);
+  mv = await myV();
+  eq(mv.km_due.map((r) => r.kind).join(','), 'Inspektion,Ölwechsel,Hydraulik/Aufbau', 'mit Vorwarnung: bald fällig dazu, weit entfernte nicht');
+  eq(mv.km_due[2].status, 'faellig');
+  await owner.put('/api/settings', { maintenance_warn_km: null });
+  eq((await users.fleet.req('DELETE', `/api/assignments/${asg2.data.id}`)).status, 200);
 });
 
 await test('Werkstattplan: Filter „Fahrzeug-Standort“ (Schreibweise egal, Summe über Standorte = alle, Terminvorschlag-Auslastung ungefiltert)', async () => {

@@ -366,19 +366,24 @@ export async function myVehicles(env, user, envName) {
     if (p && p.id !== v.id) coupledOf.set(v.id, p);
   }
   const ids = JSON.stringify([...new Set([...vs.map((v) => v.id), ...[...coupledOf.values()].map((p) => p.id)])]);
-  const [locks, mine, rules, kms, notes] = await Promise.all([
+  const [locks, mine, rules, kms, notes, warnKmRow] = await Promise.all([
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
     env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, parts_expected_date, reporter_id=? AS mine
       FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
-    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND (next_due_date IS NOT NULL OR planned_date IS NOT NULL) ORDER BY next_due_date IS NULL, next_due_date`).bind(ids).all(),
+    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date, due_km, interval_km, last_done_km FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?))
+      AND (next_due_date IS NOT NULL OR planned_date IS NOT NULL OR (kind NOT IN ('HU','SP') AND (due_km IS NOT NULL OR (interval_km > 0 AND last_done_km IS NOT NULL)))) ORDER BY next_due_date IS NULL, next_due_date`).bind(ids).all(),
     env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at FROM odometer_readings o WHERE o.vehicle_id IN (SELECT value FROM json_each(?1))
       AND o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id)`).bind(ids).all(),
     // Hinweise zum Fahrzeug, die ausdrücklich für Fahrer freigegeben sind (ohne Verfasser)
     env.DB.prepare(`SELECT vehicle_id, text, created_at, valid_until FROM vehicle_notes WHERE environment=? AND for_driver=1 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?) AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC, rowid DESC`).bind(envName, berlinDate(), ids).all(),
+    env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_km'`).first(),
   ]);
+  // Wartung nach km für den Fahrer: nur überschritten bzw. innerhalb der eingestellten Vorwarnung (ohne Schwelle nur überschritten),
+  // gerechnet ab dem letzten erfassten km-Stand – gleiche Regel wie die Prüftermin-Übersicht (kmDue); ohne km-Stand nichts
+  const warnKm = Number(warnKmRow && warnKmRow.value) > 0 ? Number(warnKmRow.value) : null;
   const lockMap = new Map(locks.results.map((r) => [r.vehicle_id, r]));
   const kmMap = new Map(kms.results.map((r) => [r.vehicle_id, r]));
   // geplante Termine (nur gespeicherte, ab heute nach Berliner Datum): Fahrer weiß, wann das Fahrzeug in die Werkstatt soll
@@ -398,6 +403,9 @@ export async function myVehicles(env, user, envName) {
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: kmMap.get(v.id) || null,
+      km_due: rules.results.filter((r) => r.vehicle_id === v.id && !['HU', 'SP'].includes(r.kind)).map((r) => ({ r, k: kmDue(r, kmMap.get(v.id), warnKm) }))
+        .filter((x) => x.k && ['ueberfaellig', 'faellig'].includes(x.k.km_status)).sort((a, b) => a.k.km_remaining - b.k.km_remaining).slice(0, 4)
+        .map(({ r, k }) => ({ kind: r.kind, next_due_km: k.next_due_km, km_remaining: k.km_remaining, status: k.km_status, planned_date: r.planned_date >= today ? r.planned_date : null })),
       notes: notes.results.filter((n) => n.vehicle_id === v.id).slice(0, 10).map(({ text, created_at }) => ({ text, created_at })),
       coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked }))(coupledOf.get(v.id)) : null,
     })),
