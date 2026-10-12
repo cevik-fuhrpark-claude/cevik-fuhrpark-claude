@@ -1132,8 +1132,18 @@ await test('CSV-Dateien aus Excel (Windows-1252) werden erkannt: Umlaute in Kopf
   eq((await owner.req('POST', '/api/maintenance/import?dry_run=1', broken, { 'content-type': 'text/csv' })).status, 400, 'falsch gelesene Datei: Spalte nicht gefunden');
   const r = await owner.req('POST', '/api/maintenance/import?dry_run=1', decodeCsvBytes(latin1), { 'content-type': 'text/csv' });
   eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.skipped[0].reason, 'Prüfart unbekannt: Ölxyz', 'Umlaut im Wert erhalten');
+  // Excel „Unicode-Text“: UTF-16 LE mit BOM, Tabulator als Trenner
+  const tab = text.replaceAll(';', '\t');
+  const t16 = new Uint8Array(2 + tab.length * 2); t16[0] = 0xFF; t16[1] = 0xFE; [...tab].forEach((c, i) => { t16[2 + i * 2] = c.charCodeAt(0); });
+  const rt = await owner.req('POST', '/api/maintenance/import?dry_run=1', decodeCsvBytes(t16), { 'content-type': 'text/csv' });
+  eq(rt.status, 200, JSON.stringify(rt.data)); eq(rt.data.skipped[0].reason, 'Prüfart unbekannt: Ölxyz', 'Tabulator-getrennt erkannt');
+  const { parseCsv } = await import('../src/util.js');
+  eq(JSON.stringify(parseCsv('a\tb\n1\t2,5')), '[["a","b"],["1","2,5"]]', 'Tabulator; Komma im Wert bleibt');
+  eq(JSON.stringify(parseCsv('a;b\n1\t2;3')), '[["a","b"],["1\\t2","3"]]', 'Semikolon hat Vorrang');
+  eq(JSON.stringify(parseCsv('a,b\n1,2')), '[["a","b"],["1","2"]]', 'Komma');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!/await (file|f)\.text\(\)/.test(app), 'kein CSV-Import liest mehr nur UTF-8');
+  eq((app.match(/accept="\.csv,\.txt,text\/csv,text\/plain"/g) || []).length, 5, 'Dateiauswahl nimmt auch .txt (Unicode-Text)');
   eq((app.match(/await readCsvFile\(/g) || []).length, 5, 'alle fünf CSV-Importe (Fahrzeugstamm, Reifen, Prüftermine, Verträge, Auslesungen)');
 });
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {

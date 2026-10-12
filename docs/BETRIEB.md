@@ -6,7 +6,7 @@
 3. „Mehr → Einstellungen → Fahrzeugstamm importieren“: `seed/fuhrpark_stammliste.csv` (38 Lkw aus der Fuhrpark-Stammliste), danach `seed/anhaenger_belegt.csv` (23 Anhänger mit FIN aus Prüfrechnungen).
 4. „Mehr → Prüftermine → Prüftermine importieren“: `seed/prueftermine_belegt.csv` – Vorschau prüfen, dann „Übernehmen“. Enthält nur belegte letzte Prüfungen; Fälligkeiten erscheinen erst mit Intervall oder Plakettenmonat.
 
-CSV-Dateien dürfen UTF-8 (mit oder ohne BOM) oder Windows-1252 sein – also direkt aus Excel „Speichern unter → CSV (Trennzeichen-getrennt)“; Semikolon oder Komma als Trenner. Die Vorschau nennt übersprungene Zeilen mit der Zeilennummer der Datei.
+CSV-Dateien dürfen UTF-8 (mit oder ohne BOM) oder Windows-1252 sein – also direkt aus Excel „Speichern unter → CSV (Trennzeichen-getrennt)“; Semikolon, Komma oder Tabulator als Trenner (auch Excel „Unicode-Text“ als .txt). Die Vorschau nennt übersprungene Zeilen mit der Zeilennummer der Datei.
 
 ## Benutzer
 - „Mehr → Benutzer → Benutzer anlegen“ erzeugt einen Einladungslink (7 Tage gültig). Die Person setzt ihr eigenes Passwort (mind. 10 Zeichen, Buchstaben und Ziffern; abgewiesen werden naheliegende Passwörter: eigener Name/Benutzername, Firmen-/App-Name, Allerweltswörter wie „Passwort“/„Sommer“, Tastaturfolgen, Wiederholungen – Prüfung lokal, ohne externe Dienste). Fehlanmeldungen: Sperre je Benutzer nach 8 Fehlversuchen (15 Min.) und zusätzlich je Netzadresse nach 60 Fehlversuchen in 15 Min. (gegen Durchprobieren vieler Namen; gilt dann für alle Anmeldungen von dieser Adresse – bei gemeinsamem Betriebshof-Internet 15 Min. warten). Die Adresse wird nur als gekürzter Hash gespeichert und nach 2 Tagen gelöscht; Protokolleintrag `login.ip_limited` ohne Adresse.

@@ -226,7 +226,8 @@ export async function rateLimit(env, action, userId) {
 export function parseCsv(text) {
   const src = String(text || '').replace(/^\uFEFF/, '');
   const firstLine = src.split(/\r?\n/, 1)[0] || '';
-  const sep = firstLine.includes(';') ? ';' : ',';
+  // Trenner aus der Kopfzeile: Semikolon (Excel DE), Tabulator (Excel „Unicode-Text“), sonst Komma
+  const sep = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
   const rows = []; let row = []; let cell = ''; let q = false; let lineNo = 1; let start = 1;
   const pushRow = () => { if (row.some((x) => x !== '')) { Object.defineProperty(row, 'line', { value: start, enumerable: false }); rows.push(row); } };
   for (let i = 0; i < src.length; i++) {
