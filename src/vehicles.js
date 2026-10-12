@@ -75,7 +75,9 @@ export function failedInspectionOf(v, events, cases, since) {
   return hits[0] ? { kind: hits[0].kind, done_date: hits[0].done_date, result: hits[0].result, event_id: hits[0].id } : null;
 }
 
-export async function vehicleDetail(env, user, envName, vehicleId) {
+// opts.timeline: nur die Teile laden, die die Zeitleiste braucht (gleiche Rechte, weniger D1-Abfragen)
+export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
+  const tl = !!opts.timeline;
   if (user.role === 'driver') throw forbidden('Fahrzeugakten sind für Fahrer nicht freigegeben.');
   const v = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
@@ -92,7 +94,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   for (const i of inspections) hideDriverName(user, i, 'performed_by_name', 'performed_by_role');
   if (lastCheck && !inspections.includes(lastCheck)) hideDriverName(user, lastCheck, 'performed_by_name', 'performed_by_role');
   // Wiederkehrende Mängel: gleicher Prüfpunkt mindestens 2× als Mangel in Kontrollen der letzten 90 Tage
-  const recurring = (await env.DB.prepare(`SELECT json_extract(j.value,'$.key') AS item, COUNT(*) AS n, MAX(i.created_at) AS last_at
+  const recurring = tl ? [] : (await env.DB.prepare(`SELECT json_extract(j.value,'$.key') AS item, COUNT(*) AS n, MAX(i.created_at) AS last_at
     FROM inspections i, json_each(i.items) j WHERE i.vehicle_id=? AND i.environment=? AND i.created_at >= ? AND json_extract(j.value,'$.result')='mangel'
     GROUP BY item HAVING COUNT(*) >= 2 ORDER BY n DESC, last_at DESC`).bind(vehicleId, envName, new Date(Date.now() - 90 * 86400000).toISOString()).all()).results;
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
@@ -105,7 +107,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
     : [];
   // Kopplung Lkw ↔ Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“ des Lkw)
   // locked: Sicherheitssperre eines offenen Vorgangs des gekoppelten Fahrzeugs in dieser Umgebung (nur Information)
-  const all = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.trailer_plate, EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.safety_lock=1
+  const all = tl ? [] : (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.trailer_plate, EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.safety_lock=1
     AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked FROM vehicles v WHERE v.active=1`).bind(envName).all()).results;
   const coupled = v.kind === 'anhaenger'
     ? all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw', locked: !!x.locked }))
@@ -115,11 +117,11 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
     : [];
   // Letzter Telematik-Stand (nur Inhaber, Fuhrparkleitung, Disposition – Positionsdaten sind über die Fahrerzuordnung personenbeziehbar)
-  const telematics = isManager(user) || user.role === 'dispatch'
+  const telematics = !tl && (isManager(user) || user.role === 'dispatch')
     ? (await env.DB.prepare('SELECT provider, match_basis, gps_time, received_at, lat, lon, km, speed, ignition FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
-  const husp = huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);
+  const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);
   const failedInspection = failedInspectionOf(v, maintenanceHistory, allCases, addMonths(berlinDate(), -12));
   // Pflichtprüfung in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`, ohne Zusatzabfrage
   const sinceNr = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
@@ -127,7 +129,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   const resultMissing = v.active && !v.eval_excluded ? maintenanceHistory.filter((e) => e.result === null && ['erfasst', 'erledigt'].includes(e.source) && REQUIRED_KINDS.includes(e.kind)
     && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
   // Fahrleistungs-Prognose für km-Fälligkeiten (nur Planungshilfe, gleiche Regel wie die Prüftermin-Übersicht) – Abfrage nur bei km-Regeln
-  if (odometer[0] && maintenance.some((m) => m.interval_km && m.last_done_km !== null)) {
+  if (!tl && odometer[0] && maintenance.some((m) => m.interval_km && m.last_done_km !== null)) {
     const b = await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first();
     const latest = { km: odometer[0].km, measured_at: odometer[0].measured_at, base_km: b ? b.km : null, base_at: b ? b.measured_at : null };
     const today = berlinDate();
@@ -135,11 +137,13 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
   }
   const out = { failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
+    if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
     // Versicherungsfälle des Fahrzeugs (Umgebung wie die Vorgänge): Anzahl, offen, Summe eingetragener Erstattungen – nicht mit den Kosten verrechnet
     out.claims_summary = await env.DB.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('gemeldet','in_pruefung') THEN 1 ELSE 0 END) AS open,
       SUM(reimbursed_net) AS reimbursed_net FROM insurance_claims WHERE vehicle_id=? AND environment=?`).bind(vehicleId, envName).first();
     out.claims_summary = { total: out.claims_summary.total, open: out.claims_summary.open || 0, reimbursed_net: out.claims_summary.reimbursed_net === null ? null : Math.round(out.claims_summary.reimbursed_net * 100) / 100 };
+    }
     // Verträge (Leasing/Miete/…): km-Auswertung mit dem letzten km-Stand der Akte
     out.contracts = await vehicleContracts(env, vehicleId, odometer[0] || null, sets, envName);
     if (v.kind !== 'anhaenger') {
@@ -155,7 +159,7 @@ export async function vehicleDetail(env, user, envName, vehicleId) {
 // Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
 export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
-  const d = await vehicleDetail(env, user, envName, vehicleId);
+  const d = await vehicleDetail(env, user, envName, vehicleId, { timeline: true });
   const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
   const limit = Math.min(Math.max(Number(query.limit) || 300, 1), 1000);
   const items = [];

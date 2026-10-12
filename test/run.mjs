@@ -3467,6 +3467,11 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   // Fuhrparkagent: Reserve für neue Prüfungen halten (Backlog 74; Ausgangslisten seit 12.10. in einer Abfrage)
   const agentMax = Math.max(...QSTAT.perRequest.slice(1).filter((w) => w.path === '/api/agent/run').map((w) => w.n));
   ok(agentMax <= 40, `Fuhrparkagent braucht ${agentMax} Abfragen (Ziel ≤ 40, Reserve für neue Prüfungen)`);
+  // Zeitleiste lädt nur die nötigen Teile der Akte (12.10.: vorher 28)
+  const per = (re) => QSTAT.perRequest.slice(1).filter((w) => re.test(w.path)).map((w) => w.n);
+  const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/VIN[^/]+$/));
+  console.log(`     Fahrzeugakte max. ${akteMax}, Zeitleiste max. ${tlMax} Abfragen`);
+  ok(tlMax < akteMax && tlMax <= 18, `Zeitleiste braucht ${tlMax} Abfragen`);
   // Cron am Ende der Suite (alle Testdaten vorhanden): Agent + Push-Wiederholung bzw. Bereinigung in einem Aufruf
   const cronN = [];
   for (const cron of ['*/15 * * * *', '7,37 * * * *']) {
