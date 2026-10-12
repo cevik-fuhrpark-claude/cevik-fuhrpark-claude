@@ -2696,6 +2696,8 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   eq((await rej(users.fleet, dup, { duplicate_of: dup })).status, 400, 'sich selbst');
   eq((await rej(users.fleet, dup, { duplicate_of: 'gibt-es-nicht' })).status, 400, 'unbekannt');
   eq((await users.prodFleet.post(`/api/cases/${dup}/commands`, { action: 'reject', command_id: rk(), expected_version: 1, payload: { duplicate_of: orig } })).status, 404, 'andere Umgebung');
+  const kpiAll = async () => (await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.by_priority;
+  const k0 = await kpiAll();
   const r = await rej(users.fleet, dup, { duplicate_of: orig });
   eq(r.status, 200); eq(r.data.status, 'abgelehnt');
   const d = (await users.fleet.get(`/api/cases/${dup}`)).data;
@@ -2708,6 +2710,18 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   eq(o.duplicates.map((x) => x.id).join(), [dup, dup2].join(), 'Original zeigt Dubletten'); eq(o.followups.length, 0, 'keine Folgeaufträge vermischt');
   eq(o.case.status, 'gemeldet', 'Original unverändert offen');
   eq((await rej(users.fleet, other, {})).status, 400, 'ohne Dublette weiter Grund nötig');
+  // Kennzahlen: Dubletten getrennt von echten Ablehnungen (Teilmenge von „abgelehnt“), auch je Dringlichkeit und in der CSV
+  eq((await rej(users.fleet, other, {}, 'Kein Schaden feststellbar')).status, 200, 'echte Ablehnung');
+  const k1 = await kpiAll();
+  const pick = (k, prio) => k.find((x) => x.priority === prio) || { rejected: 0, duplicates: 0 };
+  for (const prio of ['alle', 'mittel']) {
+    eq(pick(k1, prio).rejected - pick(k0, prio).rejected, 3, `${prio}: drei Ablehnungen`);
+    eq(pick(k1, prio).duplicates - pick(k0, prio).duplicates, 2, `${prio}: davon zwei Dubletten`);
+  }
+  ok(k1.every((x) => x.duplicates <= x.rejected), 'Dubletten ≤ abgelehnt');
+  const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&format=csv&part=priority`)).data).trim().split('\r\n');
+  ok(kcsv[0].endsWith(';davon Dubletten'), 'CSV-Spalte am Ende');
+  eq(Number(kcsv.find((l) => l.startsWith('alle;')).split(';').at(-1)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
   ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no)).length === 2, 'CSV-Spalte „Dublette von“');
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');

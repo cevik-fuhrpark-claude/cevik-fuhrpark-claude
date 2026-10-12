@@ -218,8 +218,8 @@ export function kpiReportCsv(rep, part = 'vehicles') {
   if (part === 'priority') {
     const st = (x) => [x.n, num(x.median_h), num(x.p90_h)];
     lines.push(['Dringlichkeit', 'Meldungen', 'Freigegeben', 'Abgelehnt', 'Offen', 'Erstbewertung Anzahl', 'Erstbewertung Median h', 'Erstbewertung P90 h',
-      'Werkstatt-Übernahme Anzahl', 'Werkstatt-Übernahme Median h', 'Werkstatt-Übernahme P90 h', 'Meldung bis Freigabe Anzahl', 'Meldung bis Freigabe Median h', 'Meldung bis Freigabe P90 h', 'Wartezeit Teile h'].join(';'));
-    for (const p of rep.by_priority) lines.push([p.priority, p.created, p.released, p.rejected, p.open, ...st(p.triage), ...st(p.workshop_ack), ...st(p.created_to_release), num(p.parts_wait_h)].join(';'));
+      'Werkstatt-Übernahme Anzahl', 'Werkstatt-Übernahme Median h', 'Werkstatt-Übernahme P90 h', 'Meldung bis Freigabe Anzahl', 'Meldung bis Freigabe Median h', 'Meldung bis Freigabe P90 h', 'Wartezeit Teile h', 'davon Dubletten'].join(';'));
+    for (const p of rep.by_priority) lines.push([p.priority, p.created, p.released, p.rejected, p.open, ...st(p.triage), ...st(p.workshop_ack), ...st(p.created_to_release), num(p.parts_wait_h), p.duplicates || 0].join(';'));
   } else {
     lines.push(['Kennzeichen', 'FIN-Schlüssel', 'Art', 'Standort', 'Vorgänge', 'Freigegeben', 'Werkstattzeit h', 'Wartezeit Teile h', 'Sperrzeit h'].join(';'));
     for (const v of rep.vehicles) lines.push([cell(v.plate), cell(v.vehicle_id), cell(v.kind), cell(v.site), v.cases, v.released, num(v.workshop_h), num(v.parts_wait_h), num(v.locked_h)].join(';'));
@@ -249,7 +249,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const vSel = siteSelection([...plates.values()].filter((v) => !v.eval_excluded), query.vsite);
   const vehicle_sites = vSel.options; const vehicle_site = vSel.site;
   const vOk = (vid) => vSel.match((plates.get(vid) || {}).site);
-  const allCases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
+  const allCases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.duplicate_of, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
     JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
     WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results
     .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to && vOk(c.vehicle_id); });
@@ -272,7 +272,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const addLock = (vid, a, b) => { if (b > a) { if (!locks.has(vid)) locks.set(vid, []); locks.get(vid).push([a, b]); } };
   // Kostenfreigaben: je Überschreitung (Ereignis „cost_limit_exceeded“) bis „Kosten freigeben“ – nur Anzahl und Dauer, keine Beträge
   const ca = { exceeded: 0, approved: 0, pending: 0, closed_without: 0, cases: 0, wait: [] };
-  const g = (k) => groups[k] || (groups[k] = { created: 0, released: 0, rejected: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
+  const g = (k) => groups[k] || (groups[k] = { created: 0, released: 0, rejected: 0, duplicates: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
   for (const c of cases) {
     const evs = evBy.get(c.id) || [];
     const t0 = Date.parse(c.created_at);
@@ -323,7 +323,7 @@ export async function kpiReport(env, user, envName, query = {}) {
     const workshop = approved && c.closed_at && c.status === 'fahrzeug_freigegeben' ? Date.parse(c.closed_at) - Date.parse(approved.created_at) : null;
     for (const k of [c.priority, 'alle']) {
       const x = g(k); x.created++;
-      if (c.status === 'fahrzeug_freigegeben') x.released++; else if (c.status === 'abgelehnt') x.rejected++; else x.open++;
+      if (c.status === 'fahrzeug_freigegeben') x.released++; else if (c.status === 'abgelehnt') { x.rejected++; if (c.duplicate_of) x.duplicates++; } else x.open++;
       if (c.fleet_received_at) x.triage.push((Date.parse(c.fleet_received_at) - t0) / H);
       if (approved && c.workshop_ack_at) x.ack.push((Date.parse(c.workshop_ack_at) - Date.parse(approved.created_at)) / H);
       if (c.status === 'fahrzeug_freigegeben' && c.closed_at) x.total.push((Date.parse(c.closed_at) - t0) / H);
@@ -345,7 +345,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
   const by_priority = order.filter((k) => groups[k]).map((k) => {
     const x = groups[k];
-    return { priority: k, created: x.created, released: x.released, rejected: x.rejected, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
+    return { priority: k, created: x.created, released: x.released, rejected: x.rejected, duplicates: x.duplicates, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
   });
   const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, site: plates.get(v.vehicle_id)?.site || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h) }))
     .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
@@ -371,7 +371,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const inspection_defects = { inspections: dd.inspections, without_order: dd.without_order, ordered: dd.ordered, released: dd.released, open: dd.open, reinspected: dd.reinspected, defects_again: dd.defects_again,
     to_release_days: { n: dd.days.length, median_d: r1(quantile(dd.days, 0.5)), p90_d: r1(quantile(dd.days, 0.9)) } };
   return { from, to, environment: envName, site, sites, vehicle_site, vehicle_sites, by_priority, vehicles, parts_eta, cost_approvals, inspection_defects,
-    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
+    definitions: { duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
 }
 
 // Werkstatt-Auslastung als CSV (Excel DE): eine Zeile je Standort und Kalenderwoche (älteste zuerst), offene Aufträge je Status
