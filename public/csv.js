@@ -23,3 +23,14 @@ export function defectVehiclesCsv(r, t, d) {
   return toCsv([t('vehicle'), t('checks_done'), t('checks_with_defects'), t('defect_items'), t('last_check_any')],
     r.vehicles.map((v) => [v.plate, v.checks, v.checks_with_defects, v.defect_items, v.last_check_at ? d(v.last_check_at) : '']));
 }
+// [CLAUDE] CSV-Datei lesen: UTF-8 (mit/ohne BOM) oder – wie Excel unter deutschem Windows „CSV (Trennzeichen-getrennt)“
+// speichert – Windows-1252. Ohne diese Erkennung wurden Umlaute in Kopfzeilen („Nächster Termin“, „Fällig am“) und Werten
+// zu „�“ und die Spalte nicht gefunden. UTF-16 nur mit BOM. Reine Funktion (Bytes → Text), auch in den Tests genutzt.
+export function decodeCsvBytes(input) {
+  const b = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(b.subarray(2));
+  if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(b.subarray(2));
+  const bom = b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF;
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bom ? b.subarray(3) : b); } catch { return new TextDecoder('windows-1252').decode(b); }
+}
+export async function readCsvFile(file) { return decodeCsvBytes(await file.arrayBuffer()); }

@@ -1,7 +1,7 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
 import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason } from './i18n.js';
 import { svg as qrSvg } from './qr.js';
-import { dataQualityCsv, defectItemsCsv, defectVehiclesCsv } from './csv.js';
+import { dataQualityCsv, defectItemsCsv, defectVehiclesCsv, readCsvFile } from './csv.js';
 import { helpMatches } from './help.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -1363,7 +1363,7 @@ async function viewContracts() {
   const inp = $('#ctimp');
   inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
-    const text = await file.text(); const src = $('#ctsrc').value.trim(); const q = src ? `&source=${encodeURIComponent(src)}` : '';
+    const text = await readCsvFile(file); const src = $('#ctsrc').value.trim(); const q = src ? `&source=${encodeURIComponent(src)}` : '';
     const show = (x, applied) => {
       const box = $('#ctimpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${x.counts.neu} · ${esc(t('ct_known'))}: ${x.counts.vorhanden} · ${esc(t('skipped'))}: ${x.counts.uebersprungen}</p>
@@ -1791,7 +1791,7 @@ async function viewTacho() {
   const inp = $('#timp');
   inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
-    const text = await file.text(); const q = $('#tsrc').value.trim() ? `&source=${encodeURIComponent($('#tsrc').value.trim())}` : '';
+    const text = await readCsvFile(file); const q = $('#tsrc').value.trim() ? `&source=${encodeURIComponent($('#tsrc').value.trim())}` : '';
     const show = (r, applied) => {
       const box = $('#timpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.counts.neu} · ${esc(t('tacho_known'))}: ${r.counts.vorhanden} · ${esc(t('skipped'))}: ${r.counts.uebersprungen}</p>
@@ -1950,7 +1950,7 @@ async function viewMaint() {
   const inp = $('#mimp');
   if (inp) inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
-    const text = await file.text();
+    const text = await readCsvFile(file);
     const show = (r, applied) => {
       const box = $('#mimpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_aktualisiert'))}: ${r.updated} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
@@ -2489,7 +2489,7 @@ async function viewSettings() {
   $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${bDate()}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
   $('#tcsv').onchange = async () => {
     const f = $('#tcsv').files[0]; if (!f) return;
-    const text = await f.text();
+    const text = await readCsvFile(f);
     try {
       const r = await api('POST', '/api/tires/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });
       $('#tcsvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${r.counts.neu} ${esc(t('imp_new'))} · ${r.counts.geaendert} ${esc(t('imp_changed'))} · ${r.counts.unveraendert} ${esc(t('imp_same'))} · ${r.kept_verified} ${esc(t('tires_kept_verified'))} · ${r.skipped_no_vehicle.length} ${esc(t('tires_no_vehicle'))}</p>${(r.skipped || []).length ? `<details open><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.slice(0, 300).map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : ''}<div class="actions"><button type="button" class="btn" id="tgo"${r.counts.neu + r.counts.geaendert ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
@@ -2499,7 +2499,7 @@ async function viewSettings() {
   $('#sf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k] === '' ? null : b[k].replace(',', '.'); b.test_master_readonly = $('#tmr').checked ? '1' : null; try { await api('PUT', '/api/settings', b); toast('✓'); } catch (err) { toast(err.message, true); } };
   $('#csv').onchange = async () => {
     const f = $('#csv').files[0]; if (!f) return;
-    const text = await f.text();
+    const text = await readCsvFile(f);
     const skipped = (r) => (r.skipped.length ? `<p class="small">${r.skipped.length} ${esc(t('skipped'))}: ${esc(r.skipped.map((x) => `${t('line')} ${x.line} ${x.plate || ''} (${reasonText(x.reason)})`).join(', '))}</p>` : '');
     const FL = { plate: t('plate_label'), site: t('site'), manufacturer: t('manufacturer'), model: t('model_label'), build_year: t('year'), trailer_plate: t('trailer'), master_status: t('status_label'), kind: t('vehicle_kind') };
     try {

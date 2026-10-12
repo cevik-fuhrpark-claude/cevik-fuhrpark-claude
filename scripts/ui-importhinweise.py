@@ -5,7 +5,8 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-MCSV=b'FIN;Art;N\xc3\xa4chster Termin;Nachweis\nVAK656EBDG1613170;\xc3\x96lxyz;2027-01-31;Beleg\n;HU;2027-01-31;Plakette\n'
+# Prüftermine als Windows-1252 (wie Excel unter deutschem Windows speichert), Verträge/Reifen als UTF-8
+MCSV='FIN;Art;Nächster Termin;Nachweis\nVAK656EBDG1613170;Ölxyz;2027-01-31;Beleg\n;HU;2027-01-31;Plakette\n'.encode('cp1252')
 TCSV=b'Quelle;Kennzeichen;FIN;Reifen Lenkachse\nListe;XX-NIE 7;WDB00000000000000;315/80 R22.5\n'
 CCSV=b'Kennzeichen;Vertragsart;Vertragspartner;Vertragsbeginn\nXX-NIE 9;Leasing;Muster GmbH;2026-01-01\nSZ-YC 5514;Zauber;Muster GmbH;2026-01-01\n'
 TEXP={'uk':'Рядок 2 · XX-NIE 7: VIN немає в реєстрі транспорту','en':'Line 2 · XX-NIE 7: VIN not in the vehicle master data','de':'Zeile 2 · XX-NIE 7: FIN nicht im Fahrzeugstamm'}

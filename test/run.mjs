@@ -1113,6 +1113,29 @@ await test('Import-Vorschauen: Zeilenhinweise (übersprungene Zeilen) auf Ukrain
   eq((app.match(/reasonText\([xy]\.reason\)/g) || []).length, 5, 'alle fünf Import-Vorschauen (inkl. Reifen) nutzen die Übersetzung');
   ok(!/esc\([xy]\.reason\)/.test(app), 'kein unübersetzter Grund mehr');
 });
+await test('CSV-Dateien aus Excel (Windows-1252) werden erkannt: Umlaute in Kopfzeile und Werten bleiben erhalten', async () => {
+  const fs = await import('node:fs');
+  const { decodeCsvBytes } = await import('../public/csv.js');
+  const text = 'FIN;Art;Nächster Termin;Nachweis\nWMA15SZZ2HM722774;Ölxyz;2027-01-31;Prüfbericht Süd\n';
+  const latin1 = Uint8Array.from([...text].map((c) => c.charCodeAt(0)));
+  ok(latin1.includes(0xE4) && latin1.length === text.length, 'Testdaten als Windows-1252 (ein Byte je Zeichen)');
+  eq(decodeCsvBytes(latin1), text, 'Windows-1252');
+  const utf8 = new TextEncoder().encode(text);
+  eq(decodeCsvBytes(utf8), text, 'UTF-8');
+  eq(decodeCsvBytes(Uint8Array.from([0xEF, 0xBB, 0xBF, ...utf8])), text, 'UTF-8 mit BOM (BOM entfernt)');
+  eq(decodeCsvBytes(utf8.buffer), text, 'ArrayBuffer');
+  const u16 = new Uint8Array(2 + text.length * 2); u16[0] = 0xFF; u16[1] = 0xFE; [...text].forEach((c, i) => { u16[2 + i * 2] = c.charCodeAt(0); });
+  eq(decodeCsvBytes(u16), text, 'UTF-16 LE mit BOM');
+  eq(decodeCsvBytes(new Uint8Array(0)), '', 'leer');
+  // Vorher: Windows-1252 als UTF-8 gelesen → „N�chster Termin“ → Spalte fehlt. Jetzt erkennt der Import die Spalte.
+  const broken = new TextDecoder('utf-8').decode(latin1);
+  eq((await owner.req('POST', '/api/maintenance/import?dry_run=1', broken, { 'content-type': 'text/csv' })).status, 400, 'falsch gelesene Datei: Spalte nicht gefunden');
+  const r = await owner.req('POST', '/api/maintenance/import?dry_run=1', decodeCsvBytes(latin1), { 'content-type': 'text/csv' });
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.skipped[0].reason, 'Prüfart unbekannt: Ölxyz', 'Umlaut im Wert erhalten');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/await (file|f)\.text\(\)/.test(app), 'kein CSV-Import liest mehr nur UTF-8');
+  eq((app.match(/await readCsvFile\(/g) || []).length, 5, 'alle fünf CSV-Importe (Fahrzeugstamm, Reifen, Prüftermine, Verträge, Auslesungen)');
+});
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   const { siteKey } = await import('../src/reports.js');
