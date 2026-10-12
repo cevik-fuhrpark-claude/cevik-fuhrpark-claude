@@ -1743,7 +1743,7 @@ await test('Mein Standard-Standort: speichern/leeren, nur Anzeige (keine Rechte)
   // App: alle Standortfilter lesen die Voreinstellung über vsDef (keine direkte Verwendung mehr)
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'ctSite', 'claimSite']) {
+  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'ctSite', 'claimSite', 'tachoSite']) {
     const direct = [...src.matchAll(new RegExp('S\\.' + k + '\\b(?! = )', 'g'))].length;
     eq(direct, 0, k + ': nur über vsDef gelesen');
     ok(src.includes(`vsDef('${k}')`), k + ' nutzt vsDef');
@@ -3615,6 +3615,26 @@ await test('Verträge und Versicherungsfälle: Filter Fahrzeug-Standort (Zähler
   const ccsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle&site=Nirgendwo')).data);
   eq(ccsv.trim().split('\r\n').length, 1, 'CSV nur Kopf');
   eq((await users.ws.get('/api/claims?site=x')).status, 403);
+});
+
+await test('Auslesungen (Tachograph): Filter Standort – Fahrer nach Fahrerakte, Fahrzeuge nach Fahrzeugstamm, Zähler und CSV', async () => {
+  const all = (await users.fleet.get('/api/tacho')).data;
+  eq(all.site, null); ok(all.site_options.length >= 1, 'Auswahl');
+  let dv = 0; let vv = 0; let wc = 0;
+  for (const o of all.site_options) {
+    const r = (await users.fleet.get(`/api/tacho?site=${encodeURIComponent(o)}`)).data;
+    eq(r.site, o);
+    const okSite = (x) => (o === 'ohne' ? !x.site : String(x.site).toLowerCase() === o.toLowerCase());
+    ok(r.drivers.every(okSite) && r.vehicles.every(okSite) && r.without_card.every(okSite), o + ': nur Standort');
+    eq(Object.values(r.totals.vehicles).reduce((a, b) => a + b, 0), r.vehicles.length, o + ': Zähler Fahrzeuge');
+    eq(Object.values(r.totals.drivers).reduce((a, b) => a + b, 0), r.drivers.length, o + ': Zähler Fahrer');
+    dv += r.drivers.length; vv += r.vehicles.length; wc += r.without_card.length;
+  }
+  eq(vv, all.vehicles.length, 'Summe Fahrzeuge'); eq(dv, all.drivers.length, 'Summe Fahrer'); eq(wc, all.without_card.length, 'Summe ohne Karte');
+  const csvAll = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tacho?format=csv')).data).trim().split('\r\n').length;
+  const csvNone = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tacho?format=csv&site=Nirgendwo')).data).trim().split('\r\n').length;
+  eq(csvAll, 1 + all.drivers.length + all.vehicles.length); eq(csvNone, 1, 'CSV gefiltert');
+  eq((await users.ws.get('/api/tacho?site=x')).status, 403);
 });
 
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {

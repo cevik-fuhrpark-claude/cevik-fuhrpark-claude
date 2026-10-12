@@ -357,9 +357,9 @@ async function handleApi(request, env, ctx, url) {
 
   // Auslese-Fristen Fahrerkarte / Massenspeicher (FPersV § 2 Abs. 5)
   if (path === '/api/tacho' && m === 'GET') {
-    const ov = await tacho.tachoOverview(env, user, envName);
+    const ov = await tacho.tachoOverview(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'reports.tacho.export', null, { environment: envName });
+      await auth.audit(env, user.id, 'reports.tacho.export', null, { environment: envName, site: ov.site });
       return new Response(tacho.tachoCsv(ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-auslesungen_${envName}_${ov.today}.csv"` } });
     }
     return json(ov);

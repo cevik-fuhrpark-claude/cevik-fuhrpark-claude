@@ -1572,7 +1572,8 @@ async function viewQrSheet(oneId) {
 // ---------- Auslese-Fristen Fahrerkarte / Massenspeicher ----------
 const TST = { ueberfaellig: 'kritisch', bald: 'mittel', keine: '', ok: 'ok' };
 async function viewTacho() {
-  const r = await api('GET', '/api/tacho');
+  const ts = vsDef('tachoSite') || ''; const tsq = ts ? 'site=' + encodeURIComponent(ts) : '';
+  const r = await api('GET', '/api/tacho' + (tsq ? '?' + tsq : ''));
   const tab = S.tachoTab || 'drivers'; const f = S.tachoFilter || 'attention';
   const list = r[tab];
   const sel = (x) => f === 'all' || (f === 'attention' ? ['ueberfaellig', 'bald'].includes(x.status) : x.status === f);
@@ -1582,6 +1583,7 @@ async function viewTacho() {
   render(`<h1>${esc(t('tacho'))}</h1><p class="small muted">${esc(t('tacho_rule'))}</p>
     <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${tab === 'drivers' ? '' : 'secondary'}" data-tt="drivers">${esc(t('tacho_cards'))} (${r.drivers.length})</button><button type="button" class="btn ${tab === 'vehicles' ? '' : 'secondary'}" data-tt="vehicles">${esc(t('tacho_vus'))} (${r.vehicles.length})</button></div>
     <div class="actions" style="flex-wrap:wrap;margin-top:0">${filters.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
+    ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('tsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div></div>` : ''}
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'ueberfaellig' ? 'p-kritisch' : x.status === 'bald' ? 'p-mittel' : ''}" href="${tab === 'drivers' ? '#/drivers/' + esc(x.id) : '#/vehicles/' + encodeURIComponent(x.id)}">${tab === 'drivers' ? '<span>🪪</span>' : plate(x.plate)}<span class="title">${tab === 'drivers' ? esc(x.display_name) : x.due ? `${esc(t('tacho_due'))} ${fmtD(x.due)}` : '–'}</span><span class="chip ${TST[x.status]}">${esc(t('tst_' + x.status))}</span><span class="sub">${[tab === 'drivers' && x.due && `${esc(t('tacho_due'))} ${fmtD(x.due)}`, `${esc(t('tacho_last'))}: ${x.last ? fmtD(x.last) : '–'}`, x.site && esc(x.site), tab === 'drivers' && x.personnel_no && esc(x.personnel_no)].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>
     ${tab === 'drivers' && r.without_card.length ? `<p class="small muted">${esc(t('tacho_without_card'))}: ${r.without_card.map((d) => esc(d.display_name)).join(', ')}</p>` : ''}
     ${list.length ? `<details class="panel"><summary>${esc(t('tacho_record'))}</summary><form id="tnf"><label>${esc(tab === 'drivers' ? t('role_driver') : t('vehicle'))}</label><select name="target" required>${opts}</select>
@@ -1592,7 +1594,8 @@ async function viewTacho() {
       <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" placeholder="${esc(t('tacho_ev_ph'))}"><input type="file" id="timp" accept=".csv,text/csv" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
   $$('[data-tt]').forEach((b) => (b.onclick = () => { S.tachoTab = b.dataset.tt; viewTacho(); }));
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tachoFilter = b.dataset.tf; viewTacho(); }));
-  $('#tcsv').onclick = async () => { try { download(await api('GET', '/api/tacho?format=csv'), `fuhrpark-auslesungen_${r.today}.csv`); } catch (err) { toast(err.message, true); } };
+  const tse = $('#tsite'); if (tse) tse.onchange = () => { S.tachoSite = tse.value; viewTacho(); };
+  $('#tcsv').onclick = async () => { try { download(await api('GET', '/api/tacho?format=csv' + (tsq ? '&' + tsq : '')), `fuhrpark-auslesungen_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const inp = $('#timp');
   inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;

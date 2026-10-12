@@ -6,6 +6,7 @@
 // daher „spätestens fällig“ = letzte erfasste Auslesung + 28 bzw. + 90 Tage. Ohne erfasste Auslesung wird KEINE Frist
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate } from './util.js';
+import { siteSelection } from './reports.js';
 import { audit } from './auth.js';
 
 export const TACHO_RULE = { card_days: 28, vu_days: 90, source: 'FPersV § 2 Abs. 5' };
@@ -45,7 +46,7 @@ export async function tachoRows(env, envName, warn, today = berlinDate()) {
     FROM vehicles v WHERE v.active=1 AND v.eval_excluded=0 AND v.kind<>'anhaenger' ORDER BY v.plate`).bind(envName).all()).results;
   const drivers = drv.filter((d) => d.has_card || d.last).map((d) => ({ id: d.id, display_name: d.display_name, personnel_no: d.personnel_no, site: d.site,
     card_valid_until: d.card_valid_until, has_card: !!d.has_card, ...tachoStatus(d.last, TACHO_RULE.card_days, today, warn) }));
-  const without_card = drv.filter((d) => !d.has_card && !d.last).map((d) => ({ id: d.id, display_name: d.display_name }));
+  const without_card = drv.filter((d) => !d.has_card && !d.last).map((d) => ({ id: d.id, display_name: d.display_name, site: d.site }));
   const vehicles = veh.map((v) => ({ id: v.id, plate: v.plate, site: v.site, ...tachoStatus(v.last, TACHO_RULE.vu_days, today, warn) }));
   return { drivers, vehicles, without_card };
 }
@@ -53,10 +54,14 @@ export async function tachoRows(env, envName, warn, today = berlinDate()) {
 const RANK = { ueberfaellig: 0, bald: 1, keine: 2, ok: 3 };
 const byUrgency = (a, b) => RANK[a.status] - RANK[b.status] || (a.due || '9').localeCompare(b.due || '9');
 
-export async function tachoOverview(env, user, envName) {
+export async function tachoOverview(env, user, envName, query = {}) {
   if (!isMgr(user)) throw forbidden();
   const warn = await warnDays(env); const today = berlinDate();
   const r = await tachoRows(env, envName, warn, today);
+  // Filter „Standort“: Fahrer nach Standort der Fahrerakte, Fahrzeuge nach Fahrzeugstamm (Schreibweisen zusammengefasst)
+  const sel = siteSelection([...r.drivers, ...r.without_card, ...r.vehicles].map((x) => ({ site: x.site })), query.site);
+  if (sel.site) for (const k of ['drivers', 'without_card', 'vehicles']) r[k] = r[k].filter((x) => sel.match(x.site));
+  r.site = sel.site; r.site_options = sel.options;
   r.drivers.sort(byUrgency); r.vehicles.sort(byUrgency);
   const count = (list) => ({ ueberfaellig: list.filter((x) => x.status === 'ueberfaellig').length, bald: list.filter((x) => x.status === 'bald').length,
     keine: list.filter((x) => x.status === 'keine').length, ok: list.filter((x) => x.status === 'ok').length });

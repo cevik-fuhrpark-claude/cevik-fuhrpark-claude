@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 154 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 155 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -406,6 +406,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: **Verträge und Versicherungsfälle: Filter „Fahrzeug-Standort“** (`GET /api/contracts?site=`, `GET /api/claims?site=`; Antwort `site`, `site_options[]`): Liste, Zähler, Ratensumme, CSV und Vertragskalender (.ics, Kalendername mit Standort) gefiltert; Auswahl erscheint ab zwei Standorten, Voreinstellung über „Mein Standard-Standort“ (`vsDef('ctSite'|'claimSite')`), Dateinamen mit Standort (`fnPart`), Export-Protokoll mit Standort. Test (Summe über Standorte = alle, Umlaut-Schreibweise, CSV/ICS, Rechte). Playwright 390/820/1366 px ohne waagrechtes Scrollen; UI-Rauchtest 468 Ansichten ohne Auffälligkeit. 154 Tests grün.
 - 12.10.2026: **Abfragebudget Werkstattauftrag aus Prüftermin/Prüfung**: Prüftermin bzw. Prüfung, offener Auftrag und Werkstatt in einer Abfrage (Fehlerreihenfolge unverändert) → 25 bzw. 28 Abfragen (vorher 27/30); Test-Grenzen auf 26/28 gesenkt.
 
+- 12.10.2026: **Auslesungen Fahrtenschreiber: Filter „Standort“** (`GET /api/tacho?site=`, auch CSV): Fahrer nach Standort der Fahrerakte, Lkw nach Fahrzeugstamm, „ohne Fahrerkarte“ ebenfalls; Zähler nach Filter, Voreinstellung „Mein Standard-Standort“ (`tachoSite`). Test (Summen über Standorte, CSV, Rechte). 390/820/1366 px geprüft. 155 Tests grün.
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.
