@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 172 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 173 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -449,6 +449,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: Wiedervorlagen als Kalender (`GET /api/cases?format=ics`, Knopf „Als Kalender (.ics)“ im Reiter Wiedervorlage) – nur Vorgangsnummer, Kennzeichen, Status; Vermerk und Beschreibung bleiben in der App (Kalender werden oft geteilt). Test. README-Testzahl aktualisiert.
 - 12.10.2026: **Vorgangsliste zeigt Begrenzung an** (vorher fehlten ab 200 Treffern ältere Vorgänge ohne Hinweis, z. B. „Abgeschlossen“/„Alle“ nach einigen Monaten): Server liest eine Zeile mehr und meldet `truncated`/`limit`; Oberfläche: Hinweis „nur die ersten 200 … Suche, Filter oder CSV nutzen“ und „Bis 500 anzeigen“ (auch bei der Suche). DE/UK/EN, API-Doku. Test, Playwright 390/820/1366 px mit 205 Vorgängen. 171 Tests grün.
 - 12.10.2026: **Integrations-API `/v1/cases` blättert lückenlos** (vorher: bei > 1000 Treffern mit gleichem `updated_at`, z. B. Sammeländerung, gingen beim Weiterblättern mit `since` Vorgänge verloren): Sortierung `updated_at, id`, additiv `has_more`, `next {since, after_id}`, optional `limit`; ohne `after_id` unverändert. **Migration 0038** Index `cases(environment, updated_at, id)` (Abfrageplan im Test). UI-Rauchtest um „Ohne Bewegung“/„Wiedervorlage“ erweitert. 172 Tests grün.
+- 12.10.2026: **Bußgeldliste: Begrenzung korrigiert** – bisher wurden bei > 500 Schreiben die nach Frist ersten 500 gezeigt (die neuesten wären weggefallen); jetzt die 500 jüngsten, Anzeige weiter nach Frist, Hinweis „Es werden die 500 jüngsten Schreiben angezeigt“ (`truncated`). DE/UK/EN. Test mit 501 Schreiben. 173 Tests grün.
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.

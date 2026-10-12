@@ -2221,6 +2221,20 @@ await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem upda
   const st = env.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?'); for (const r of saved) st.run(r.updated_at, r.id);
 });
 
+await test('Bußgeldliste: bei mehr als 500 Schreiben die jüngsten 500 (vorher nach Frist begrenzt), Hinweis truncated, Reihenfolge nach Frist', async () => {
+  const before = (await users.fleet.get('/api/fines')).data; eq(before.truncated, false);
+  const ins = env.DB.db.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,offense_type,offense_at,plate_in_letter,status,created_by,created_at,response_due,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const ids = [];
+  for (let i = 0; i < 501; i++) { const id = 'lim-' + i; ids.push(id); ins.run(id, 'TLIM-' + i, 'test', 'verwarnung', 'Probe-Behörde', 'parken', '2020-01-01T10:00:00.000Z', 'XX-LIM ' + i, 'eingegangen', users.fleet.id, new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString(), i === 0 ? '2020-02-01' : null, new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString()); }
+  const r = (await users.fleet.get('/api/fines')).data;
+  eq(r.truncated, true, 'Hinweis'); eq(r.fines.length, 500);
+  ok(r.fines.some((f) => f.fine_no === 'TLIM-500'), 'jüngstes Schreiben enthalten');
+  ok(!r.fines.some((f) => f.fine_no === 'TLIM-0'), 'ältestes fällt weg (obwohl mit Frist)');
+  const withDue = r.fines.filter((f) => f.response_due); ok(withDue.length >= 1 && r.fines.indexOf(withDue[0]) === 0, 'mit Frist zuerst');
+  env.DB.db.prepare(`DELETE FROM fines WHERE id LIKE 'lim-%'`).run();
+  eq((await users.fleet.get('/api/fines')).data.truncated, false);
+});
+
 await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung, Bußgeld-Verlauf/-Dateien, Fahrer je Fahrzeug, Push-Geräte, letzter Agent-Lauf, Master-Eingang', async () => {
   for (const [t, sql, n] of [
     ['inspections', "SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1", 1],

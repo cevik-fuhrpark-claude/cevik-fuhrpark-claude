@@ -594,3 +594,6 @@ Object.assign(STRINGS.en, { followup_ics: 'As calendar (.ics)' });
 Object.assign(STRINGS.de, { list_truncated: 'Es werden nur die ersten {n} Vorgänge angezeigt – Suche, Filter oder CSV-Export nutzen.', cases_upto500: 'Bis 500 anzeigen' });
 Object.assign(STRINGS.uk, { list_truncated: 'Показано лише перші {n} заявок – скористайтеся пошуком, фільтром або експортом CSV.', cases_upto500: 'Показати до 500' });
 Object.assign(STRINGS.en, { list_truncated: 'Only the first {n} cases are shown – use search, filters or CSV export.', cases_upto500: 'Show up to 500' });
+Object.assign(STRINGS.de, { fines_truncated: 'Es werden die 500 jüngsten Schreiben angezeigt.' });
+Object.assign(STRINGS.uk, { fines_truncated: 'Показано 500 найновіших листів.' });
+Object.assign(STRINGS.en, { fines_truncated: 'Showing the 500 most recent letters.' });

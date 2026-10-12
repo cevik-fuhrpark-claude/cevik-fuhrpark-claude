@@ -407,7 +407,7 @@ async function handleApi(request, env, ctx, url) {
       await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site });
       return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}.csv"` } });
     }
-    return json({ fines: list, site: sel.site, site_options: sel.site_options });
+    return json({ fines: list, site: sel.site, site_options: sel.site_options, truncated: !!sel.truncated });
   }
   if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));
