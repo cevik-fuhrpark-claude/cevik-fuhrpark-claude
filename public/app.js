@@ -355,17 +355,25 @@ async function viewHome() {
     else {
       if (isMgr()) html += await fleetTodo();
       if (S.me.role === 'dispatch') {
-        const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance').catch(() => null),
+        // Standard-Standort aus „Mein Konto“: Tafel nur für diesen Standort – sichtbar vermerkt und jederzeit auf „alle“ umschaltbar
+        const hs = S.me.home_site && !S.dispoAll ? S.me.home_site : '';
+        const hq = hs ? encodeURIComponent(hs) : '';
+        if (S.me.home_site) html += `<p class="small muted noprint" id="dsitebar">${esc(t('kpi_vsite'))}: <b>${esc(hs ? (hs === 'ohne' ? t('cs_nosite') : hs) : t('filter_all'))}</b> · <a href="#/" id="dsitetoggle">${esc(hs ? t('dispo_all_sites') : t('dispo_my_site'))}</a></p>`;
+        const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
           cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
         html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));
         html += helpLink('dispo');
       }
-      if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned();
-      html += `<h2>${esc(t('open'))}</h2>${caseList(cases)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
+      if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
+      // Disposition mit Standard-Standort: offene Vorgänge ebenfalls nur dieses Standorts (gleiche Regel wie Server: getrimmt, ohne Groß-/Kleinschreibung)
+      const dk = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : 'ohne');
+      const shown = S.me.role === 'dispatch' && S.me.home_site && !S.dispoAll && cases ? cases.filter((c) => dk(c.vehicle_site) === dk(S.me.home_site === 'ohne' ? null : S.me.home_site)) : cases;
+      html += `<h2>${esc(t('open'))}</h2>${caseList(shown)}<p><a href="#/cases">${esc(t('all'))}</a></p>`;
       if (S.me.role === 'viewer') html += helpLink('viewer');
     }
   }
   render(html, 'home');
+  const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
 }
 
 // Disposition: nicht einplanbare Fahrzeuge (gesperrt / in Werkstatt / wartet auf Teile) mit Status und „seit“ – nur gespeicherte Angaben
@@ -393,8 +401,8 @@ function dispoSub(i) {
 }
 
 // Disposition: geplante Werkstatt- und Prüftermine der nächsten 7 Tage (aus dem Werkstattplan, nur gespeicherte Termine)
-async function dispoPlanned() {
-  const r = await api('GET', '/api/workshop/plan?days=7').catch(() => null);
+async function dispoPlanned(vsite = '') {
+  const r = await api('GET', '/api/workshop/plan?days=7' + (vsite ? '&vsite=' + encodeURIComponent(vsite) : '')).catch(() => null);
   if (!r || !r.days.length) return '';
   const rows = r.days.flatMap((d) => d.items.map((i) => `<a class="row ${i.type === 'case' ? 'p-' + esc(i.priority) : ''}" href="${i.type === 'case' ? '#/cases/' + esc(i.id) : '#/vehicles/' + encodeURIComponent(i.vehicle_id)}">${plate(i.plate, { locked: !!i.safety_lock })}<span class="title" style="white-space:normal">${i.type === 'case' ? esc(t('planned_ws_short')) + ' · ' + esc(t('st_' + i.status)) : esc(t('planned_inspection')) + ': ' + esc(mk(i.kind))}</span><span class="chip${d.date === r.today ? ' ok' : ''}">${d.date === r.today ? esc(t('today')) : fmtD(d.date)}</span>${dispoSub(i)}</a>`));
   return `<h2>${esc(t('dispo_planned'))}</h2><p class="small muted">${esc(t('dispo_planned_hint'))}</p><div class="list">${rows.join('')}</div><p><a href="#/plan">${esc(t('wplan'))}</a></p>`;
