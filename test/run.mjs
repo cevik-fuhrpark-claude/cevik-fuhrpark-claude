@@ -1054,7 +1054,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   const vt = dec(v); ok(vt.startsWith('\ufeffKennzeichen;FIN-Schlüssel;Art;Standort;'), 'BOM + Kopfzeile');
   const vl = vt.trim().split('\r\n');
   eq(vl.length, r.vehicles.length + 1, 'alle Fahrzeuge (nicht nur 20)');
-  ok(vl.slice(1).every((l) => l.split(';').length === 9), 'gleiche Spaltenzahl');
+  ok(vl.slice(1).every((l) => l.split(';').length === 10), 'gleiche Spaltenzahl');
   ok(r.vehicles.every((x) => 'site' in x), 'Standort je Fahrzeug in der JSON-Antwort');
   const p = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`);
   const pl = dec(p).trim().split('\r\n');
@@ -1073,7 +1073,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok((await owner.get('/api/admin/audit?action=reports.kpi.export')).data.entries.length >= 3, 'protokolliert');
   const { kpiReportCsv } = await import('../src/reports.js');
   const inj = kpiReportCsv({ vehicles: [{ plate: '=X()', vehicle_id: 'VIN:X', kind: 'lkw', site: 'A;B', cases: 2, released: 1, workshop_h: 1.5, parts_wait_h: 0, locked_h: null }] });
-  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
+  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
 });
 
 await test('Standortauswahl (siteSelection): Schreibweisen zusammengefasst, „ohne“ zuletzt, Auswahl ohne Groß-/Kleinschreibung', async () => {
@@ -2728,6 +2728,7 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
     eq(pick(k1, prio).duplicates - pick(k0, prio).duplicates, 2, `${prio}: davon zwei Dubletten`);
   }
   ok(k1.every((x) => x.duplicates <= x.rejected), 'Dubletten ≤ abgelehnt');
+  eq((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.vehicles.find((v) => v.plate === 'DU-PL 1').duplicates, 2, 'je Fahrzeug: zwei Dubletten');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&format=csv&part=priority`)).data).trim().split('\r\n');
   ok(kcsv[0].endsWith(';davon Dubletten'), 'CSV-Spalte am Ende');
   eq(Number(kcsv.find((l) => l.startsWith('alle;')).split(';').at(-1)), pick(k1, 'alle').duplicates, 'CSV = JSON');
