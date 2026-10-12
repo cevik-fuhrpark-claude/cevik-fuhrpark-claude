@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate, berlinDateTime, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -170,6 +170,50 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   await audit(env, user.id, 'stock.inventory', null, { site, counted: seen.size, differences: diffs.length });
   result.booked = diffs.length;
   return result;
+}
+
+// Lagerjournal: alle Buchungen (Zugang/Entnahme/Korrektur) eines Zeitraums nach Berliner Datum – z. B. für die Monatsabgrenzung.
+// Wert = Menge × Preis der Buchung (bei Entnahme der zum Zeitpunkt hinterlegte Artikelpreis); ohne Preis bleibt der Wert leer (nie 0 €).
+// Bewusst ohne Namen der buchenden Person (keine Auswertung je Mitarbeiter); Werkstattrolle nur eigenes Lager.
+export const JOURNAL_MAX = 5000;
+export async function journal(env, user, envName, query = {}) {
+  const site = siteScope(user, query.site ? String(query.site).slice(0, 20) : null);
+  const today = berlinDate();
+  const from = query.from ? String(query.from) : today.slice(0, 8) + '01';
+  const to = query.to ? String(query.to) : today;
+  if (!isCalendarDate(from) || !isCalendarDate(to)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.');
+  if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.');
+  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur'], 'Buchungsart') : null;
+  // UTC-Spanne mit einem Tag Rand, danach exakt nach Berliner Datum filtern
+  const lo = new Date(Date.parse(from) - 86400000).toISOString();
+  const hi = new Date(Date.parse(to) + 2 * 86400000).toISOString();
+  const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id,
+      i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate
+    FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
+    WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${type ? 'AND m.type=?' : ''}
+    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(type ? [type] : []), JOURNAL_MAX + 400]).all()).results;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
+    .filter((r) => r.date >= from && r.date <= to);
+  const truncated = list.length > JOURNAL_MAX;
+  if (truncated) list = list.slice(0, JOURNAL_MAX);
+  const sum = {};
+  for (const t of ['zugang', 'entnahme', 'korrektur']) sum[t] = { count: 0, value_net: 0, unvalued: 0 };
+  for (const r of list) { const x = sum[r.type]; x.count++; if (r.value_net === null) x.unvalued++; else x.value_net = r2(x.value_net + r.value_net); }
+  return { from, to, site, type, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
+}
+
+const TYPE_DE = { zugang: 'Zugang', entnahme: 'Entnahme', korrektur: 'Korrektur' };
+export function journalCsv(rep, csvCell) {
+  const head = ['Datum', 'Uhrzeit', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Buchungsart', 'Menge', 'Einheit', 'Preis netto', 'Wert netto', 'Vorgang', 'Kennzeichen', 'Lieferant', 'Beleg', 'Bemerkung'];
+  const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const lines = [head.join(';')];
+  for (const r of rep.movements) {
+    lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), csvCell(r.part_number), csvCell(r.name), TYPE_DE[r.type], n(r.qty), csvCell(r.unit),
+      n(r.unit_price_net), n(r.value_net), csvCell(r.case_no), csvCell(r.plate), csvCell(r.supplier), csvCell(r.document_ref), csvCell(r.note)].join(';'));
+  }
+  return '﻿' + lines.join('\r\n') + '\r\n';
 }
 
 export async function stockFindings(env, environment) {

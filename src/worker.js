@@ -331,6 +331,14 @@ async function handleApi(request, env, ctx, url) {
     if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
     return json({ items });
   }
+  if (path === '/api/stock/journal' && m === 'GET') {
+    const rep = await stock.journal(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'stock.journal.export', null, { from: rep.from, to: rep.to, site: rep.site, type: rep.type, rows: rep.movements.length, environment: envName });
+      return new Response(stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lagerjournal_${envName}_${rep.from}_${rep.to}${rep.site ? '_' + rep.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    }
+    return json(rep);
+  }
   if (path === '/api/stock/inventory' && m === 'POST') return json(await stock.inventory(env, user, envName, await readJson(request, 512 * 1024), { dryRun: url.searchParams.get('dry_run') === '1' }));
   if (path === '/api/stock' && m === 'POST') return json(await stock.createItem(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));

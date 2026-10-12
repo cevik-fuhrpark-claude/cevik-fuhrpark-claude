@@ -810,8 +810,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     throw e;
   }
-  const updated = await env.DB.prepare('SELECT * FROM cases WHERE id=?').bind(c.id).first();
-  if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c });
+  // Kennzeichen gleich mitladen: spart der Benachrichtigung eine eigene Abfrage
+  const updated = await env.DB.prepare('SELECT c.*, v.plate AS v_plate FROM cases c LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?').bind(c.id).first();
+  const vPlate = updated.v_plate; delete updated.v_plate;
+  if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate } });
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
   return { ok: true, version: newVersion, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}) };
 }

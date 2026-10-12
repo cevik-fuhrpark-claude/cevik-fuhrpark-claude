@@ -1828,6 +1828,49 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 7 }, { item_id: it.id, counted: 7 }] })).status, 400, 'doppelt');
 });
 
+await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit Preis, Summen, nur eigenes Lager, CSV ohne Personen', async () => {
+  const def = await users.ws.get('/api/stock/journal');
+  eq(def.status, 200); const today = def.data.to; eq(def.data.from, today.slice(0, 8) + '01', 'Standard: laufender Monat');
+  const from = new Date(Date.parse(today) - 300 * 86400000).toISOString().slice(0, 10);
+  const j = (await users.ws.get(`/api/stock/journal?from=${from}&to=${today}`)).data;
+  ok(j.movements.length >= 5, `Buchungen vorhanden (${j.movements.length})`);
+  ok(j.movements.every((m) => m.site === 'DORTMUND'), 'nur eigenes Lager');
+  ok(j.movements.every((m, i, a) => !i || a[i - 1].created_at <= m.created_at), 'zeitlich aufsteigend');
+  // Abgleich mit den Artikelbewegungen: gleiche Anzahl je Artikel
+  const items = (await users.ws.get('/api/stock')).data.items;
+  for (const it of items) eq(j.movements.filter((m) => m.item_id === it.id).length, (await users.ws.get(`/api/stock/${it.id}`)).data.movements.length, `Anzahl ${it.name}`);
+  // Wert: Menge × Preis; ohne Preis null (nie 0)
+  for (const m of j.movements) { if (m.unit_price_net === null) eq(m.value_net, null, 'ohne Preis unbewertet'); else eq(m.value_net, Math.round(m.qty * m.unit_price_net * 100) / 100, 'Wert'); }
+  ok(j.movements.some((m) => m.unit_price_net === null), 'Beispiel ohne Preis enthalten');
+  const withCase = j.movements.find((m) => m.case_no); ok(withCase && withCase.type === 'entnahme' && withCase.plate, 'Entnahme aus Vorgang mit Vorgangsnummer und Kennzeichen');
+  for (const t of ['zugang', 'entnahme', 'korrektur']) {
+    const xs = j.movements.filter((m) => m.type === t);
+    eq(j.summary[t].count, xs.length, `Anzahl ${t}`); eq(j.summary[t].unvalued, xs.filter((m) => m.value_net === null).length, `unbewertet ${t}`);
+    eq(j.summary[t].value_net, Math.round(xs.reduce((a, m) => a + (m.value_net || 0), 0) * 100) / 100, `Summe ${t}`);
+  }
+  ok(!JSON.stringify(j).includes('user_id') && !JSON.stringify(j).includes('display_name'), 'keine Personen');
+  const only = (await users.ws.get(`/api/stock/journal?from=${from}&to=${today}&type=entnahme`)).data;
+  eq(only.movements.length, j.summary.entnahme.count, 'Filter Buchungsart');
+  eq((await users.ws.get(`/api/stock/journal?from=${from}&to=${today}&type=diebstahl`)).status, 400, 'unbekannte Art');
+  eq((await users.ws.get('/api/stock/journal?from=2026-02-30&to=2026-03-01')).status, 400, 'kein Kalenderdatum');
+  eq((await users.ws.get(`/api/stock/journal?from=${today}&to=${from}`)).status, 400, 'von nach bis');
+  eq((await users.ws.get('/api/stock/journal?from=2024-01-01&to=2025-06-01')).status, 400, 'höchstens ein Jahr');
+  eq((await users.ws.get(`/api/stock/journal?from=${from}&to=${from}`)).data.movements.length, 0, 'Tag ohne Buchungen');
+  eq((await users.wsMuc.get('/api/stock/journal?site=DORTMUND')).status, 403, 'fremdes Lager');
+  ok((await users.wsMuc.get(`/api/stock/journal?from=${from}&to=${today}`)).data.movements.every((m) => m.site !== 'DORTMUND'), 'Werkstatt München ohne Dortmunder Buchungen');
+  eq((await users.driver.get('/api/stock/journal')).status, 403, 'Fahrer');
+  eq((await users.fleet.get(`/api/stock/journal?from=${from}&to=${today}&site=DORTMUND`)).data.movements.length, j.movements.length, 'Fuhrparkleitung mit Lagerfilter');
+  eq((await users.prodFleet.get(`/api/stock/journal?from=${from}&to=${today}`)).data.movements.length, 0, 'Testbuchungen nicht im Betrieb');
+  const csv = await users.ws.get(`/api/stock/journal?from=${from}&to=${today}&format=csv`);
+  eq(csv.status, 200); ok(/lagerjournal_test_/.test(csv.headers.get('content-disposition')), 'Dateiname');
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  const lines = txt.replace(/\r\n$/, '').split('\r\n');
+  ok(lines[0].startsWith('﻿Datum;Uhrzeit;Lager'), 'Kopfzeile mit BOM'); eq(lines.length - 1, j.movements.length, 'Zeilen = Buchungen');
+  const wsName = (await users.ws.get('/api/me')).data.user?.display_name || (await users.ws.get('/api/me')).data.display_name; ok(wsName && !txt.includes(wsName), `kein Name der buchenden Person (${wsName})`);
+  ok(txt.includes(';Entnahme;') && txt.includes(withCase.case_no), 'Buchungsart deutsch, Vorgang');
+  ok((await owner.get('/api/admin/audit?action=stock.journal')).data.entries.some((e) => e.action === 'stock.journal.export'), 'Export im Protokoll');
+});
+
 await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten löschen keine Stammdaten, Anführungszeichen', async () => {
   const H = { 'content-type': 'text/csv' };
   eq((await owner.post('/api/vehicles', { plate: 'IM-P 1', vin: 'WDB96340310888001', site: 'Dortmund', manufacturer: 'Mercedes-Benz', model: 'Actros 1845' })).status, 201);
@@ -3151,7 +3194,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
   { const ce = d.events.find((e) => e.action === 'create'); const pl = typeof ce.payload === 'string' ? JSON.parse(ce.payload) : ce.payload;
     eq(pl.origin, 'wartung', 'Anlage-Ereignis nennt Herkunft Wartung (Verknüpfung im selben Batch)'); }
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 26), 'Auftrag aus Prüftermin ≤ 26 Abfragen');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 25), 'Auftrag aus Prüftermin ≤ 25 Abfragen');
   { // Anfragedaten können Herkunft/Verknüpfung nicht setzen
     const fake = await users.fleet.post('/api/cases', { vehicle_id: rule.data.vehicle_id || V1, description: 'Test Herkunft fremd gesetzt', origin: 'wartung', maintenance_rule_id: rule.data.id, request_key: rk() });
     eq(fake.status, 201); const fc = (await users.fleet.get(`/api/cases/${fake.data.id}`)).data;
@@ -3238,7 +3281,7 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.priority, 'kritisch'); eq(o.data.driveability, 'nicht_fahrbereit');
   const c = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
   eq(c.case.origin, 'wartung'); eq(c.case.maintenance_event_id, evBad.id, 'Verknüpfung gespeichert');
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 28), 'Auftrag aus Prüfung ≤ 28 Abfragen');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 27), 'Auftrag aus Prüfung ≤ 27 Abfragen');
   console.log('     Auftrag aus Prüftermin/Prüfung max. ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').map((w) => w.n)) + ' / ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').map((w) => w.n)) + ' Abfragen');
   ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
   eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
