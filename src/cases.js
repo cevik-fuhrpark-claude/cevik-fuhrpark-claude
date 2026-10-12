@@ -204,7 +204,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
     if (user.role === 'workshop') others = others.filter((o) => o.workshop_site === user.workshop_site && o.status !== 'gemeldet');
     const soon = berlinDate(new Date(Date.now() + 30 * 86400000).toISOString());
     const due = (await env.DB.prepare(`SELECT kind, next_due_date FROM maintenance_rules WHERE vehicle_id=? AND next_due_date IS NOT NULL AND next_due_date <= ? ORDER BY next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results;
-    const km = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(c.vehicle_id).first();
+    // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
+    const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
+        (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until)) FROM
+          (SELECT text, for_driver, created_at, valid_until FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes
+      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate()).first();
+    const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
+    const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver })) : [];
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)
     let prevSame = [];
     if (c.check_item) {
@@ -213,7 +219,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
         .bind(c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString()).all()).results;
       if (user.role === 'workshop') prevSame = prevSame.filter((o) => o.workshop_site === user.workshop_site);
     }
-    detail.vehicle_info = { other_open_cases: others.slice(0, 5), other_open_total: others.length, inspections_due: due, last_km: km || null, previous_same_item: prevSame };
+    detail.vehicle_info = { other_open_cases: others.slice(0, 5), other_open_total: others.length, inspections_due: due, last_km: km || null, previous_same_item: prevSame, notes: vnotes };
   }
   if (user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch') {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;

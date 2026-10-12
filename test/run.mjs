@@ -1988,6 +1988,12 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   const vn = avn.find((v) => v.id === VID).notes;
   eq(vn.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'nur für Fahrer freigegebene'); eq(Object.keys(vn[0]).sort().join(), 'created_at,text,valid_until', 'ohne Verfasser');
   eq((await anon.req('GET', '/api/integration/v1/availability?environment=production&include=notes', undefined, IH)).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'Betrieb sieht Testhinweise nicht');
+  // Vorgangsdetail: aktive Hinweise in der Fahrzeug-Kurzinfo (ohne Verfasser), nicht für Fahrer
+  const nc = (await users.fleet.post('/api/cases', { vehicle_id: VID, description: 'Hinweis-Test im Vorgang', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cvi = (await users.dispatch.get(`/api/cases/${nc}`)).data.vehicle_info;
+  eq(cvi.notes.map((n) => n.text).join('|'), 'Ersatzschlüssel liegt im Büro Dortmund|Ladeetage oben hakt – bekannt, Termin folgt', 'beide aktiven, neueste zuerst');
+  ok(cvi.notes.every((n) => !('created_by' in n) && !('created_by_name' in n)), 'ohne Verfasser'); eq(cvi.notes[1].for_driver, true);
+  ok(!('vehicle_info' in (await users.driver.get(`/api/cases/${nc}`)).data), 'Fahrer: keine Kurzinfo');
   eq((await users.driver.post(`${base}/${a.data.id}/archive`)).status, 403);
   eq((await users.prodFleet.post(`${base}/${a.data.id}/archive`)).status, 404, 'andere Umgebung');
   eq((await users.ws.post(`${base}/${a.data.id}/archive`)).status, 200);
