@@ -185,7 +185,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
   const rows = []; const skipped = []; const seen = new Set();
   table.slice(1).forEach((cells, idx) => {
-    const line = idx + 2;
+    const line = cells.line || idx + 2;
     if (cells.every((c) => !String(c || '').trim())) return;
     const skip = (reason) => skipped.push({ line, reason });
     const kind = kindOf(get(cells, ci.kind));

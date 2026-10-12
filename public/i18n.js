@@ -780,3 +780,54 @@ Object.assign(STRINGS.en, { v_required: 'Please fill in this field.', v_choose: 
 Object.assign(STRINGS.de, { tap_to_close: 'Antippen zum Schließen' });
 Object.assign(STRINGS.uk, { tap_to_close: 'Торкніться, щоб закрити' });
 Object.assign(STRINGS.en, { tap_to_close: 'Tap to close' });
+// [CLAUDE] Zeilenhinweise der Import-Vorschauen (Fahrzeugstamm, Prüftermine, Verträge, Auslesungen) in der App-Sprache.
+// Der Server liefert deutsche Gründe je Zeile; Werte aus der Datei (Kennzeichen, Datum, Art) bleiben wörtlich stehen.
+// Unbekannte Gründe: über translateValidation (Feldfehler aus readBody/vehicleRow), sonst der deutsche Server-Text.
+const IMPORT_FIXED = [
+  ['FIN ungültig/fehlt', 'VIN недійсний/відсутній', 'VIN invalid/missing'],
+  ['FIN ungültig', 'VIN недійсний', 'VIN invalid'],
+  ['FIN nicht im Fahrzeugstamm', 'VIN немає в реєстрі транспорту', 'VIN not in the vehicle master data'],
+  ['Kennzeichen nicht im Fahrzeugstamm', 'Номерного знака немає в реєстрі транспорту', 'Licence plate not in the vehicle master data'],
+  ['Kennzeichen mehrdeutig – FIN angeben', 'Номерний знак неоднозначний – вкажіть VIN', 'Licence plate ambiguous – please give the VIN'],
+  ['Nachweis/Quelle fehlt', 'Відсутній підтверджувальний документ/джерело', 'Evidence/source missing'],
+  ['Nachweis zu lang (max. 300 Zeichen)', 'Підтвердження занадто довге (макс. 300 символів)', 'Evidence too long (max. 300 characters)'],
+  ['Letzte Prüfung bitte taggenau (JJJJ-MM-TT oder TT.MM.JJJJ)', 'Останню перевірку вкажіть з точністю до дня (РРРР-ММ-ДД або ДД.ММ.РРРР)', 'Please give the last inspection to the day (YYYY-MM-DD or DD.MM.YYYY)'],
+  ['Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben', 'Немає дати: вкажіть «Nächster Termin» або «Letzte Prüfung»', 'No date: enter “Nächster Termin” or “Letzte Prüfung”'],
+  ['Letzte Prüfung liegt nach dem nächsten Termin', 'Остання перевірка пізніше наступного терміну', 'The last inspection is after the next due date'],
+  ['doppelt in der Datei', 'двічі у файлі', 'duplicate in the file'],
+  ['Datum liegt in der Zukunft', 'Дата в майбутньому', 'The date is in the future'],
+];
+const IMPORT_TPL = [
+  // [Muster, uk, en] – $1/$2 = wörtliche Werte aus der Datei
+  [/^Prüfart unbekannt: (.{0,200})$/, 'Невідомий вид перевірки: $1', 'Unknown inspection type: $1'],
+  [/^Intervall ungültig: (.{0,200})$/, 'Недійсний інтервал: $1', 'Invalid interval: $1'],
+  [/^Doppelt in der Datei \(Zeile (\d{1,6}) ist gleich oder neuer\)$/, 'Двічі у файлі (рядок $1 такий самий або новіший)', 'Duplicate in the file (line $1 is the same or newer)'],
+  [/^Ersetzt durch Zeile (\d{1,6}) \(neuerer Beleg\)$/, 'Замінено рядком $1 (новіший документ)', 'Replaced by line $1 (newer evidence)'],
+  [/^Vorhandener Termin (\d{4}-\d{2}-\d{2}) ist neuer – nicht überschrieben$/, 'Наявний термін $1 новіший – не перезаписано', 'Existing due date $1 is newer – not overwritten'],
+  [/^Vorhandene letzte Prüfung (\d{4}-\d{2}-\d{2}) ist neuer – nicht überschrieben$/, 'Наявна остання перевірка $1 новіша – не перезаписано', 'Existing last inspection $1 is newer – not overwritten'],
+  [/^Datum nicht erkannt: (.{0,200}) \(JJJJ-MM-TT, TT\.MM\.JJJJ oder MM\/JJJJ\)$/, 'Дату не розпізнано: $1 (РРРР-ММ-ДД, ДД.ММ.РРРР або ММ/РРРР)', 'Date not recognised: $1 (YYYY-MM-DD, DD.MM.YYYY or MM/YYYY)'],
+  [/^Datum nicht erkannt: (.{0,200})$/, 'Дату не розпізнано: $1', 'Date not recognised: $1'],
+  [/^Datum ungültig: (.{0,200})$/, 'Недійсна дата: $1', 'Invalid date: $1'],
+  [/^Monat ungültig: (.{0,200})$/, 'Недійсний місяць: $1', 'Invalid month: $1'],
+  [/^Zahl nicht erkannt: (.{0,200})$/, 'Число не розпізнано: $1', 'Number not recognised: $1'],
+  [/^Kennzeichen nicht eindeutig: (.{0,200})$/, 'Номерний знак неоднозначний: $1', 'Licence plate not unique: $1'],
+  [/^Fahrzeug nicht gefunden: (.{0,200})$/, 'Транспорт не знайдено: $1', 'Vehicle not found: $1'],
+  [/^Vertragsart unbekannt: (.{0,200})$/, 'Невідомий вид договору: $1', 'Unknown contract type: $1'],
+  [/^Art unbekannt: (.{0,200})$/, 'Невідомий вид: $1', 'Unknown type: $1'],
+  [/^Fahrer nicht eindeutig: (.{0,200})$/, 'Водій неоднозначний: $1', 'Driver not unique: $1'],
+  [/^Fahrer nicht gefunden: (.{0,200})$/, 'Водія не знайдено: $1', 'Driver not found: $1'],
+  [/^Anhänger ohne Fahrtenschreiber: (.{0,200})$/, 'Причіп без тахографа: $1', 'Trailer without tachograph: $1'],
+];
+export const IMPORT_REASONS_FIXED = IMPORT_FIXED.map(([de]) => de);
+export const IMPORT_REASONS_TPL = IMPORT_TPL.map(([re]) => re);
+export function translateImportReason(lang, reason) {
+  if (typeof reason !== 'string' || lang === 'de' || !VALIDATION_TEXTS[lang]) return reason;
+  const k = lang === 'uk' ? 1 : 2;
+  const fixed = IMPORT_FIXED.find((x) => x[0] === reason);
+  if (fixed) return fixed[k];
+  for (const row of IMPORT_TPL) {
+    const m = reason.match(row[0]);
+    if (m) return row[k].replace(/\$(\d)/g, (_, i) => m[Number(i)] ?? '');
+  }
+  return translateValidation(lang, reason) || reason;
+}

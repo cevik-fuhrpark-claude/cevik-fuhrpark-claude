@@ -100,15 +100,22 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
   const idx = (n) => head.findIndex((h) => h.startsWith(n));
   const ci = { src: idx('quelle'), fin: idx('fin'), lenk: idx('reifen lenk'), lift: idx('reifen lift'), antr: idx('reifen antrieb'), anh: idx('reifen anh') };
   if (ci.fin < 0) throw bad('validation', 'Spalte FIN fehlt.');
-  const res = { imported: 0, skipped_no_vehicle: [], kept_verified: 0, dry_run: dryRun };
+  const ciPlate = idx('kennzeichen');
+  // skipped: Zeilennummer, Kennzeichen/FIN und Grund (wie die anderen Import-Vorschauen); skipped_no_vehicle bleibt für bestehende Aufrufer
+  const res = { imported: 0, skipped_no_vehicle: [], skipped: [], kept_verified: 0, dry_run: dryRun };
   // Abfragebudget: Fahrzeuge und geprüfte Werte vorab laden, Schreibvorgang als Sammelanweisung
   const byVin = new Map((await env.DB.prepare('SELECT id, vin FROM vehicles').all()).results.map((v) => [v.vin, v.id]));
   const verified = new Set((await env.DB.prepare('SELECT vehicle_id, axle FROM tire_specs WHERE verified=1').all()).results.map((r) => `${r.vehicle_id}|${r.axle}`));
   const rows = new Map();
   for (const c of lines) {
+    if (c.every((x) => !String(x || '').trim())) continue; // Leerzeile (z. B. am Dateiende)
     const vin = normalizeVin(c[ci.fin]);
     const vid = byVin.get(vin);
-    if (!vid) { res.skipped_no_vehicle.push(vin || '(leer)'); continue; }
+    if (!vid) {
+      res.skipped_no_vehicle.push(vin || '(leer)');
+      res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: vin ? 'FIN nicht im Fahrzeugstamm' : 'FIN ungültig/fehlt' });
+      continue;
+    }
     for (const [axle, k] of [['lenkachse', 'lenk'], ['liftachse', 'lift'], ['antriebsachse', 'antr'], ['anhaenger', 'anh']]) {
       const size = ci[k] >= 0 ? c[ci[k]] : '';
       if (!size || !/\d/.test(size)) continue;

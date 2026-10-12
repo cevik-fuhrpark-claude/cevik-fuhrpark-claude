@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
-import { STRINGS, CHECK_LABELS, translateValidation } from './i18n.js';
+import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason } from './i18n.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, defectItemsCsv, defectVehiclesCsv } from './csv.js';
 import { helpMatches } from './help.js';
@@ -62,6 +62,8 @@ async function api(method, path, body, extra = {}) {
   return data;
 }
 
+// [CLAUDE] Zeilenhinweise der Import-Vorschauen in der App-Sprache (Server liefert Deutsch)
+const reasonText = (r) => translateImportReason(S.lang, r);
 function toast(msg, err = false) {
   const el = document.createElement('div');
   el.className = 'toast' + (err ? ' err' : '');
@@ -1366,7 +1368,7 @@ async function viewContracts() {
       const box = $('#ctimpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${x.counts.neu} · ${esc(t('ct_known'))}: ${x.counts.vorhanden} · ${esc(t('skipped'))}: ${x.counts.uebersprungen}</p>
         ${x.rows.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('line'))}</th><th>${esc(t('vehicle'))}</th><th>${esc(t('ct_kind'))}</th><th>${esc(t('ct_partner'))}</th><th>${esc(t('ct_end'))}</th><th></th></tr></thead><tbody>${x.rows.map((r) => `<tr><td>${r.line}</td><td style="white-space:nowrap">${esc(r.plate)}</td><td>${esc(t('ck_' + r.kind))}</td><td>${esc(r.partner)}${r.contract_no ? ' · ' + esc(r.contract_no) : ''}</td><td>${fmtD(r.end_date)}</td><td><span class="chip ${r.status === 'neu' ? 'ok' : ''}">${esc(r.status === 'neu' ? t('ia_neu') : t('ct_known'))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
-        ${x.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${x.skipped.length})</summary><ul class="small">${x.skipped.map((y) => `<li>${esc(t('line'))} ${y.line}: ${esc(y.reason)}</li>`).join('')}</ul></details>` : ''}
+        ${x.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${x.skipped.length})</summary><ul class="small">${x.skipped.map((y) => `<li>${esc(t('line'))} ${y.line}: ${esc(reasonText(y.reason))}</li>`).join('')}</ul></details>` : ''}
         ${!applied && x.counts.neu ? `<div class="actions"><button type="button" class="btn" id="ctapply">${esc(t('apply_import'))}</button></div>` : ''}`;
       stackTables(box);
       const ap = $('#ctapply');
@@ -1794,7 +1796,7 @@ async function viewTacho() {
       const box = $('#timpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.counts.neu} · ${esc(t('tacho_known'))}: ${r.counts.vorhanden} · ${esc(t('skipped'))}: ${r.counts.uebersprungen}</p>
         ${r.rows.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('line'))}</th><th>${esc(t('kind'))}</th><th>${esc(t('tacho_target'))}</th><th>${esc(t('tacho_date'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td>${x.line}</td><td>${esc(t(x.kind === 'fahrerkarte' ? 'dk2_fahrerkarte' : 'tacho_vu'))}</td><td style="white-space:nowrap">${esc(x.label)}</td><td>${fmtD(x.downloaded_on)}</td><td><span class="chip ${x.status === 'neu' ? 'ok' : ''}">${esc(x.status === 'neu' ? t('ia_neu') : t('tacho_known'))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
-        ${r.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.map((x) => `<li>${esc(t('line'))} ${x.line}: ${esc(x.reason)}</li>`).join('')}</ul></details>` : ''}
+        ${r.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.map((x) => `<li>${esc(t('line'))} ${x.line}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : ''}
         ${!applied && r.counts.neu ? `<div class="actions"><button type="button" class="btn" id="tapply">${esc(t('apply_import'))}</button></div>` : ''}`;
       stackTables(box);
       const ap = $('#tapply');
@@ -1953,7 +1955,7 @@ async function viewMaint() {
       const box = $('#mimpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_aktualisiert'))}: ${r.updated} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
         ${r.rows.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('line'))}</th><th></th><th>${esc(t('kind'))}</th><th>${esc(t('next_due'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td>${x.line}</td><td style="white-space:nowrap">${esc(x.plate)}</td><td>${esc(mk(x.kind))}</td><td>${fmtD(x.next_due_date)}${x.previous_due_date && x.previous_due_date !== x.next_due_date ? ` <span class="small muted">(${fmtD(x.previous_due_date)})</span>` : ''}</td><td><span class="chip ${x.action === 'neu' ? 'ok' : x.action === 'aktualisiert' ? 'mittel' : ''}">${esc(t('ia_' + x.action))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
-        ${r.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(x.reason)}</li>`).join('')}</ul></details>` : ''}
+        ${r.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : ''}
         ${!applied && (r.created || r.updated) ? `<div class="actions"><button type="button" class="btn" id="mapply">${esc(t('apply_import'))}</button></div>` : ''}`;
       const ap = $('#mapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
@@ -2490,7 +2492,7 @@ async function viewSettings() {
     const text = await f.text();
     try {
       const r = await api('POST', '/api/tires/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });
-      $('#tcsvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${r.counts.neu} ${esc(t('imp_new'))} · ${r.counts.geaendert} ${esc(t('imp_changed'))} · ${r.counts.unveraendert} ${esc(t('imp_same'))} · ${r.kept_verified} ${esc(t('tires_kept_verified'))} · ${r.skipped_no_vehicle.length} ${esc(t('tires_no_vehicle'))}</p><div class="actions"><button type="button" class="btn" id="tgo"${r.counts.neu + r.counts.geaendert ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
+      $('#tcsvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${r.counts.neu} ${esc(t('imp_new'))} · ${r.counts.geaendert} ${esc(t('imp_changed'))} · ${r.counts.unveraendert} ${esc(t('imp_same'))} · ${r.kept_verified} ${esc(t('tires_kept_verified'))} · ${r.skipped_no_vehicle.length} ${esc(t('tires_no_vehicle'))}</p>${(r.skipped || []).length ? `<details open><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.slice(0, 300).map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : ''}<div class="actions"><button type="button" class="btn" id="tgo"${r.counts.neu + r.counts.geaendert ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
       $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${g.imported}</p>`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
@@ -2498,7 +2500,7 @@ async function viewSettings() {
   $('#csv').onchange = async () => {
     const f = $('#csv').files[0]; if (!f) return;
     const text = await f.text();
-    const skipped = (r) => (r.skipped.length ? `<p class="small">${r.skipped.length} ${esc(t('skipped'))}: ${esc(r.skipped.map((x) => `${t('line')} ${x.line} ${x.plate || ''} (${x.reason})`).join(', '))}</p>` : '');
+    const skipped = (r) => (r.skipped.length ? `<p class="small">${r.skipped.length} ${esc(t('skipped'))}: ${esc(r.skipped.map((x) => `${t('line')} ${x.line} ${x.plate || ''} (${reasonText(x.reason)})`).join(', '))}</p>` : '');
     const FL = { plate: t('plate_label'), site: t('site'), manufacturer: t('manufacturer'), model: t('model_label'), build_year: t('year'), trailer_plate: t('trailer'), master_status: t('status_label'), kind: t('vehicle_kind') };
     try {
       const r = await api('POST', '/api/vehicles/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });

@@ -221,26 +221,29 @@ export async function rateLimit(env, action, userId) {
 }
 
 // CSV mit Anführungszeichen (RFC 4180, Trennzeichen ; oder ,)
+// Jede Zeile trägt die physische Zeilennummer der Datei als nicht aufzählbare Eigenschaft `line` (Kopfzeile = 1) –
+// Leerzeilen und Zeilenumbrüche in Anführungszeichen verschieben so die Zeilenangaben der Import-Vorschauen nicht.
 export function parseCsv(text) {
-  const src = String(text || '').replace(/^﻿/, '');
+  const src = String(text || '').replace(/^\uFEFF/, '');
   const firstLine = src.split(/\r?\n/, 1)[0] || '';
   const sep = firstLine.includes(';') ? ';' : ',';
-  const rows = []; let row = []; let cell = ''; let q = false;
+  const rows = []; let row = []; let cell = ''; let q = false; let lineNo = 1; let start = 1;
+  const pushRow = () => { if (row.some((x) => x !== '')) { Object.defineProperty(row, 'line', { value: start, enumerable: false }); rows.push(row); } };
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     if (q) {
-      if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c;
+      if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else { cell += c; if (c === '\n') lineNo++; }
     } else if (c === '"' && cell === '') q = true;
     else if (c === sep) { row.push(cell.trim()); cell = ''; }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++;
       row.push(cell.trim()); cell = '';
-      if (row.some((x) => x !== '')) rows.push(row);
-      row = [];
+      pushRow();
+      row = []; lineNo++; start = lineNo;
     } else cell += c;
   }
   row.push(cell.trim());
-  if (row.some((x) => x !== '')) rows.push(row);
+  pushRow();
   return rows;
 }
 

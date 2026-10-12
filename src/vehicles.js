@@ -583,7 +583,7 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   const rows = new Map();
   const cell = (cells, i) => (i >= 0 && cells[i] !== undefined && cells[i] !== '' ? cells[i] : null);
   table.slice(1).forEach((cells, idx) => {
-    const line = idx + 2;
+    const line = cells.line || idx + 2;
     const vin = normalizeVin(cells[ci.vin]);
     if (!isValidVin(vin)) { result.skipped.push({ line, plate: cells[ci.plate], reason: 'FIN ungültig/fehlt' }); return; }
     try {

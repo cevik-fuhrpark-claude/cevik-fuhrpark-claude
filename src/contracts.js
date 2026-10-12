@@ -294,7 +294,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
   const rows = []; const skipped = []; const seen = new Set();
   table.slice(1).forEach((cells, idx) => {
-    const line = idx + 2;
+    const line = cells.line || idx + 2;
     const skip = (reason) => skipped.push({ line, reason });
     const vin = normVin(get(cells, ci.vin));
     const v = vin ? byVin.get(vin) : get(cells, ci.plate) ? byPlate.get(normPlate(get(cells, ci.plate))) : undefined;

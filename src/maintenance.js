@@ -293,7 +293,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   const planned = new Map(); // je Fahrzeug+Art gilt der späteste belegte Termin der Datei
   const get = (cells, i) => (i >= 0 ? cells[i] || '' : '');
   table.slice(1).forEach((cells, idx) => {
-    const line = idx + 2;
+    const line = cells.line || idx + 2;
     const plateRaw = get(cells, ci.plate);
     const skip = (reason) => result.skipped.push({ line, plate: plateRaw || get(cells, ci.vin), reason });
     let v = null; let matchedBy = null;

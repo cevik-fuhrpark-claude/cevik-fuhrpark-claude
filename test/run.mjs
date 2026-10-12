@@ -1069,6 +1069,50 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/code === 'validation' && translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung');
 });
+await test('Import-Vorschauen: Zeilenhinweise (übersprungene Zeilen) auf Ukrainisch/Englisch, Werte aus der Datei bleiben wörtlich', async () => {
+  const fs = await import('node:fs');
+  const { translateImportReason: tr, IMPORT_REASONS_FIXED } = await import('../public/i18n.js');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  // Wächter: jeder feste Grund und jede Vorlage im Server ist übersetzt (neue Gründe fallen sofort auf)
+  const lits = [...src.matchAll(/(?:skip|skipRow)\('([^']+)'\)|reason: '([^']+)'/g)].map((m) => m[1] || m[2]);
+  ok(lits.length >= 10, 'feste Gründe gefunden');
+  for (const l of new Set(lits)) { ok(IMPORT_REASONS_FIXED.includes(l), `Grund ohne Übersetzung: ${l}`); ok(tr('uk', l) !== l && tr('en', l) !== l, l); }
+  const tpls = [...src.matchAll(/(?:skip|skipRow)\((`[^`]+`)\)|reason: (`[^`]+`)|error: (`[^`]+`)/g)].map((m) => m[1] || m[2] || m[3]);
+  ok(tpls.length >= 20, 'Vorlagen gefunden');
+  const sample = (code) => code.slice(1, -1).replace(/(Zeile |Termin |Prüfung )?\$\{[^}]+\}/g, (_, pre) => (pre === 'Zeile ' ? 'Zeile 7' : pre ? `${pre}2026-01-31` : 'AB 12$&'));
+  for (const code of new Set(tpls)) {
+    const de = sample(code);
+    for (const l of ['uk', 'en']) { const out = tr(l, de); ok(out !== de, `Vorlage ohne Übersetzung (${l}): ${code}`); ok(!/\$\d/.test(out), `Platzhalter ersetzt: ${out}`); }
+  }
+  eq(tr('uk', 'Fahrzeug nicht gefunden: SZ-AB 12'), 'Транспорт не знайдено: SZ-AB 12');
+  eq(tr('en', 'Ersetzt durch Zeile 14 (neuerer Beleg)'), 'Replaced by line 14 (newer evidence)');
+  eq(tr('en', 'Vorhandener Termin 2027-03-31 ist neuer – nicht überschrieben'), 'Existing due date 2027-03-31 is newer – not overwritten');
+  eq(tr('uk', 'Prüfart unbekannt: $& $1'), 'Невідомий вид перевірки: $& $1', 'Dateiwerte wörtlich (keine Ersetzungsmuster)');
+  eq(tr('de', 'FIN ungültig'), 'FIN ungültig', 'Deutsch unverändert');
+  eq(tr('uk', 'Ganz neuer Grund'), 'Ganz neuer Grund', 'Unbekannt: Server-Text');
+  eq(tr('xx', 'FIN ungültig'), 'FIN ungültig'); eq(tr('uk', undefined), undefined);
+  eq(tr('en', 'Vertragsende muss nach dem Vertragsbeginn liegen.'), 'The contract end must be after the contract start.', 'Feldfehler aus readBody über translateValidation');
+  // Echte Vorschau: Prüftermin-Import mit unbekanntem Kennzeichen und unbekannter Prüfart liefert übersetzbare Gründe
+  const csv = 'FIN;Art;Nächster Termin;Nachweis\nWMA15SZZ2HM722774;Ölwechselxyz;2027-01-31;Beleg\nWMA15SZZ2HM722774;HU;31.02.2027;Plakette\n;HU;2027-01-31;Plakette\n';
+  const r = await owner.req('POST', '/api/maintenance/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(r.status, 200, JSON.stringify(r.data).slice(0, 200));
+  eq(r.data.skipped.length, 3, JSON.stringify(r.data.skipped));
+  for (const x of r.data.skipped) { ok(tr('uk', x.reason) !== x.reason && tr('en', x.reason) !== x.reason, x.reason); }
+  // Zeilennummern = Zeilen der Datei (Leerzeilen, Umbrüche in Anführungszeichen, CRLF, BOM)
+  const { parseCsv } = await import('../src/util.js');
+  const pc = parseCsv('﻿a;b\n\n1;"x\ny"\n2;3\r\n\r\n4;5\n;\n');
+  eq(JSON.stringify(pc.map((x) => x.line)), '[1,3,5,7]'); eq(JSON.stringify(pc[1]), JSON.stringify(['1', 'x\ny']), 'Zeilennummer nicht aufzählbar (Vergleiche unverändert)');
+  const r2 = await owner.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Art;Nächster Termin;Nachweis\n\nWMA15SZZ2HM722774;Ölxyz;2027-01-31;Beleg\n', { 'content-type': 'text/csv' });
+  eq(r2.data.skipped[0].line, 3, 'Leerzeile verschiebt die Zeilenangabe nicht');
+  const r3 = await owner.req('POST', '/api/tires/import?dry_run=1', 'Quelle;Kennzeichen;FIN;Reifen Lenkachse\nListe;XX-NIE 1;WDB00000000000000;315/80 R22.5\n\nListe;XX-NIE 2;;315/80 R22.5\n', { 'content-type': 'text/csv' });
+  eq(r3.status, 200);
+  eq(JSON.stringify(r3.data.skipped), JSON.stringify([{ line: 2, plate: 'XX-NIE 1', reason: 'FIN nicht im Fahrzeugstamm' }, { line: 4, plate: 'XX-NIE 2', reason: 'FIN ungültig/fehlt' }]), 'Reifen-Import: übersprungene Zeilen mit Zeile/Kennzeichen/Grund');
+  eq(r3.data.skipped_no_vehicle.length, 2, 'bisheriges Feld bleibt');
+  eq(tr('uk', r3.data.skipped[1].reason), 'VIN недійсний/відсутній');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/reasonText\([xy]\.reason\)/g) || []).length, 5, 'alle fünf Import-Vorschauen (inkl. Reifen) nutzen die Übersetzung');
+  ok(!/esc\([xy]\.reason\)/.test(app), 'kein unübersetzter Grund mehr');
+});
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   const { siteKey } = await import('../src/reports.js');
@@ -2880,7 +2924,7 @@ await test('Auslesungen-Sammelimport (CSV): Vorschau, nur eindeutige Treffer, An
   ok(/Fahrer nicht gefunden: P-999/.test(reasons) && /Anhänger/.test(reasons) && /Zukunft/.test(reasons) && /doppelt/.test(reasons) && /Art unbekannt/.test(reasons), reasons);
   const before = (await users.fleet.get('/api/tacho')).data;
   const run = await users.fleet.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' });
-  eq(run.data.counts.neu, 3);
+  eq(run.status, 200, JSON.stringify(run.data)); eq(run.data.counts.neu, 3);
   const after = (await users.fleet.get('/api/tacho')).data;
   eq(after.vehicles.find((v) => v.id === V2).last, ago(10), 'Massenspeicher übernommen');
   ok(after.drivers.find((d) => d.display_name === 'Fahrer ohne Konto').last === ago(4), 'Name eindeutig (Groß/Klein egal)');
@@ -2888,7 +2932,7 @@ await test('Auslesungen-Sammelimport (CSV): Vorschau, nur eindeutige Treffer, An
   const again = await users.fleet.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' });
   eq(again.data.counts.neu, 0); eq(again.data.counts.vorhanden, 3, 'idempotent');
   const q = await users.fleet.req('POST', `/api/tacho/import?source=${encodeURIComponent('Export Auslesesoftware')}`, `Art;Kennzeichen;Datum\nM;SZ-KC 5515;${ago(20)}`, { 'content-type': 'text/csv' });
-  eq(q.data.counts.neu, 1, 'Kennzeichen + Quelle für alle Zeilen');
+  eq(q.status, 200, JSON.stringify(q.data)); eq(q.data.counts.neu, 1, 'Kennzeichen + Quelle für alle Zeilen');
   eq((await users.fleet.get(`/api/tacho/downloads?vehicle_id=${encodeURIComponent(V2)}`)).data.downloads.find((x) => x.downloaded_on === ago(20)).evidence, 'Export Auslesesoftware');
 });
 
