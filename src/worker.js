@@ -340,14 +340,17 @@ async function handleApi(request, env, ctx, url) {
   // Fahrerakte
   if (path === '/api/drivers' && m === 'GET') {
     const q = Object.fromEntries(url.searchParams);
-    const list = await drivers.listDrivers(env, user, envName, q);
+    let list = await drivers.listDrivers(env, user, envName, q);
+    // Filter „Standort“ (Standort der Fahrerakte, Schreibweisen zusammengefasst) – nur Leitung; Fahrer sehen ohnehin nur die eigene Akte
+    const dsel = ['owner', 'fleet'].includes(user.role) ? reports.siteSelection(list, q.site) : null;
+    if (dsel && dsel.site) list = list.filter((d) => dsel.match(d.site));
     if (q.format === 'csv') {
       if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
       const tr = await tacho.tachoRows(env, envName, await tacho.warnDays(env));
-      await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName });
+      await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null });
       return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}.csv"` } });
     }
-    return json({ drivers: list });
+    return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options } : {}) });
   }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') return json(await drivers.driverDetail(env, user, envName, mm[1]));

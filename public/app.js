@@ -1476,7 +1476,9 @@ async function viewCosts() {
 // ---------- Fahrerakte (personenbezogen: nur Inhaber/Fuhrparkleitung, Fahrer nur eigene Akte) ----------
 const DST = { ok: 'ok', hinweis: 'mittel', kritisch: 'kritisch', laeuft_ab: 'mittel', abgelaufen: 'kritisch', faellig: 'kritisch', bald: 'mittel', fehlt: 'mittel', mangel: 'kritisch' };
 async function viewDrivers() {
-  const list = (await api('GET', '/api/drivers' + (S.drvInactive ? '?inactive=1' : ''))).drivers;
+  const dsite = isMgr() ? vsDef('drvSite') || '' : '';
+  const dq = [S.drvInactive ? 'inactive=1' : '', dsite ? 'site=' + encodeURIComponent(dsite) : ''].filter(Boolean).join('&');
+  const dr = await api('GET', '/api/drivers' + (dq ? '?' + dq : '')); const list = dr.drivers;
   if (!isMgr()) { if (list.length) { location.hash = '#/drivers/' + list[0].id; return; } render(`<h1>${esc(t('my_driver_file'))}</h1><p class="muted">${esc(t('no_driver_file'))}</p>`, 'more'); return; }
   let users = [];
   try { users = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active); } catch {}
@@ -1486,10 +1488,12 @@ async function viewDrivers() {
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
     <div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="dcsv">${esc(t('driver_csv'))}</button></div>
     <p><label style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label></p>
+    ${(dr.site_options || []).length > 1 || dr.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('dsite', '', dr.site_options, dr.site, t('site'), t('filter_all'))}</div></div>` : ''}
     <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${esc(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${[...crit.map((i) => `${t('dk2_' + i.kind)}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || `<p class="muted">–</p>`}</div>`;
   render(html, 'more');
   const ia = $('#dinact'); if (ia) ia.onchange = () => { S.drvInactive = ia.checked; viewDrivers(); };
-  $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv'), `fuhrpark-fahrer-fristen_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
+  const dse = $('#dsite'); if (dse) dse.onchange = () => { S.drvSite = dse.value; viewDrivers(); };
+  $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv' + (dsite ? '&site=' + encodeURIComponent(dsite) : '')), `fuhrpark-fahrer-fristen_${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', '/api/drivers', b); location.hash = '#/drivers/' + r.id; } catch (err) { toast(err.message, true); } };
 }
 async function viewDriver(id) {

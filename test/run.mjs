@@ -1743,7 +1743,7 @@ await test('Mein Standard-Standort: speichern/leeren, nur Anzeige (keine Rechte)
   // App: alle Standortfilter lesen die Voreinstellung über vsDef (keine direkte Verwendung mehr)
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'ctSite', 'claimSite', 'tachoSite']) {
+  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'ctSite', 'claimSite', 'tachoSite', 'drvSite']) {
     const direct = [...src.matchAll(new RegExp('S\\.' + k + '\\b(?! = )', 'g'))].length;
     eq(direct, 0, k + ': nur über vsDef gelesen');
     ok(src.includes(`vsDef('${k}')`), k + ' nutzt vsDef');
@@ -3635,6 +3635,22 @@ await test('Auslesungen (Tachograph): Filter Standort – Fahrer nach Fahrerakte
   const csvNone = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tacho?format=csv&site=Nirgendwo')).data).trim().split('\r\n').length;
   eq(csvAll, 1 + all.drivers.length + all.vehicles.length); eq(csvNone, 1, 'CSV gefiltert');
   eq((await users.ws.get('/api/tacho?site=x')).status, 403);
+});
+
+await test('Fahrerakte: Filter Standort (Liste, CSV), nur Leitung; Fahrer sieht weiter nur die eigene Akte', async () => {
+  for (const [n, site] of [['Standort Fahrer A', 'Bremen'], ['Standort Fahrer B', 'BREMEN'], ['Standort Fahrer C', 'Kiel']]) eq((await users.fleet.post('/api/drivers', { display_name: n, site })).status, 201);
+  const all = (await users.fleet.get('/api/drivers')).data;
+  eq(all.site, null); ok(all.site_options.includes('Kiel'), 'Auswahl');
+  ok(all.site_options.filter((o) => o.toLowerCase() === 'bremen').length === 1, 'Schreibweisen zusammengefasst');
+  let sum = 0;
+  for (const o of all.site_options) { const r = (await users.fleet.get(`/api/drivers?site=${encodeURIComponent(o)}`)).data; eq(r.site, o); sum += r.drivers.length; }
+  eq(sum, all.drivers.length, 'Summe über Standorte');
+  const br = (await users.fleet.get('/api/drivers?site=bremen')).data;
+  eq(br.drivers.filter((d) => d.display_name.startsWith('Standort Fahrer')).length, 2, 'Bremen/BREMEN');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/drivers?format=csv&site=Kiel')).data);
+  ok(csv.includes('Standort Fahrer C') && !csv.includes('Standort Fahrer A'), 'CSV gefiltert');
+  const dv = (await users.driver.get('/api/drivers?site=Kiel')).data;
+  ok(dv.site === undefined && dv.site_options === undefined, 'Fahrer: keine Standortauswahl');
 });
 
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {
