@@ -904,12 +904,14 @@ await test('Kosten je Fahrzeug/Monat stimmen mit der Vorgangsbewertung überein;
 await test('Kostenbericht: Summe je Standort = Summe der Zeilen (Standort laut Fahrzeugstamm, ohne = „ohne“)', async () => {
   const r = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   ok(Array.isArray(r.sites) && r.sites.length > 0, 'sites vorhanden');
+  const { siteKey, siteLabels } = await import('../src/reports.js');
+  const K = (x) => (x === 'ohne' ? 'ohne' : siteKey(x));
   const exp = new Map();
-  for (const x of r.rows) { const k = x.site || 'ohne'; const e = exp.get(k) || { a: 0, e: 0, u: 0, h: 0, v: new Set() }; e.a += x.actual_net; e.e += x.estimate_net; e.u += x.unvalued_items; e.h += x.hours; e.v.add(x.vehicle_id); exp.set(k, e); }
+  for (const x of r.rows) { const k = siteKey(x.site); const e = exp.get(k) || { a: 0, e: 0, u: 0, h: 0, v: new Set() }; e.a += x.actual_net; e.e += x.estimate_net; e.u += x.unvalued_items; e.h += x.hours; e.v.add(x.vehicle_id); exp.set(k, e); }
   eq(r.sites.length, exp.size, 'ein Eintrag je Standort');
   const rr = (x) => Math.round(x * 100) / 100;
   for (const s of r.sites) {
-    const e = exp.get(s.site); ok(e, `Standort ${s.site} aus den Zeilen`);
+    const e = exp.get(K(s.site)); ok(e, `Standort ${s.site} aus den Zeilen`);
     eq(s.actual_net, rr(e.a)); eq(s.estimate_net, rr(e.e)); eq(s.unvalued_items, e.u); eq(s.hours, rr(e.h)); eq(s.vehicles, e.v.size); eq(s.complete, e.u === 0);
   }
   eq(rr(r.sites.reduce((a, s) => a + s.actual_net, 0)), r.totals.actual_net, 'Summe Standorte = Gesamtsumme');
@@ -917,9 +919,52 @@ await test('Kostenbericht: Summe je Standort = Summe der Zeilen (Standort laut F
   // Fahrzeugfilter: nur der Standort dieses Fahrzeugs
   const one = r.rows[0];
   const f = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&vehicle_id=${encodeURIComponent(one.vehicle_id)}`)).data;
-  eq(f.sites.length, 1); eq(f.sites[0].site, one.site || 'ohne'); eq(f.sites[0].vehicles, 1);
+  eq(f.sites.length, 1); eq(K(f.sites[0].site), siteKey(one.site)); eq(f.sites[0].vehicles, 1);
+  // Schreibweisen: Dortmund/DORTMUND/„ dortmund “ = ein Standort, Anzeige der häufigsten Schreibweise; leer = ohne
+  const L = siteLabels([{ site: 'Dortmund' }, { site: 'DORTMUND' }, { site: ' Dortmund ' }, { site: null }, { site: '  ' }, { site: 'München' }]);
+  eq(L.get('dortmund'), 'Dortmund'); eq(L.get('ohne'), 'ohne'); eq(L.get('münchen'), 'München'); eq(L.size, 3);
   const { STRINGS } = await import('../public/i18n.js');
   ok(['cs_title', 'cs_nosite', 'cs_vehicles', 'cs_rule'].every((k) => ['de', 'uk', 'en'].every((l) => STRINGS[l][k])), 'Texte DE/UK/EN');
+});
+await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
+  const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
+  const { siteKey } = await import('../src/reports.js');
+  const K = (x) => (x === 'ohne' ? 'ohne' : siteKey(x));
+  ok(Array.isArray(all.site_options) && all.site_options.length >= 1, 'site_options');
+  eq(all.site, null);
+  for (const s of all.sites) ok(all.site_options.includes(s.site), `Option ${s.site}`);
+  for (const s of all.sites) {
+    const f = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&site=${encodeURIComponent(s.site)}`)).data;
+    eq(f.site, s.site);
+    ok(f.rows.every((x) => siteKey(x.site) === K(s.site)), 'nur Zeilen des Standorts');
+    eq(f.totals.actual_net, s.actual_net, `Summe ${s.site}`); eq(f.totals.unvalued_items, s.unvalued_items);
+    eq(f.rows.length, all.rows.filter((x) => siteKey(x.site) === K(s.site)).length);
+    ok(f.vehicles.every((v) => siteKey(v.site) === K(s.site)), 'km/Fahrzeuge nur des Standorts');
+    if (f.contract_costs) ok(f.contract_costs.vehicles.every((v) => siteKey(v.site) === K(s.site)), 'Vertragsraten nur des Standorts');
+    eq(JSON.stringify(f.site_options), JSON.stringify(all.site_options), 'Auswahlliste bleibt vollständig');
+  }
+  const none = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&site=${encodeURIComponent('Gibt-es-nicht')}`)).data;
+  eq(none.rows.length, 0); eq(none.totals.actual_net, 0); eq(none.vehicles.length, 0);
+  const s0 = all.sites[0];
+  const csv = await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&site=${encodeURIComponent(s0.site)}&format=csv`);
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  eq(text.trim().split('\r\n').length, all.rows.filter((x) => siteKey(x.site) === K(s0.site)).length + 1, 'CSV nur Standort');
+  if (s0.site !== 'ohne') eq((await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&site=${encodeURIComponent(s0.site.toUpperCase())}`)).data.totals.actual_net, s0.actual_net, 'Filter unabhängig von Groß-/Kleinschreibung');
+  console.log(`     Standorte im Testbestand: ${all.sites.map((x) => x.site).join(', ')}`);
+  // zweiter Standort: ein Fahrzeug mit Kosten vorübergehend nach „MÜNCHEN“ (Schreibweise abweichend), danach zurück
+  const mv = all.rows.find((x) => x.actual_net > 0) || all.rows[0];
+  const old = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(mv.vehicle_id).first()).site;
+  await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind('MÜNCHEN', mv.vehicle_id).run();
+  try {
+    const two = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
+    ok(two.sites.length >= 2 && two.site_options.includes('MÜNCHEN'), 'zwei Standorte');
+    eq(Math.round(two.sites.reduce((a, x) => a + x.actual_net, 0) * 100) / 100, two.totals.actual_net, 'Summe der Standorte = Gesamt');
+    const mu = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&site=m%C3%BCnchen`)).data;
+    ok(mu.rows.length > 0 && mu.rows.every((x) => x.vehicle_id === mv.vehicle_id), 'nur das verschobene Fahrzeug');
+    eq(mu.totals.actual_net, two.sites.find((x) => x.site === 'MÜNCHEN').actual_net);
+    const rest = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}&site=${encodeURIComponent(s0.site)}`)).data;
+    ok(rest.rows.every((x) => x.vehicle_id !== mv.vehicle_id), 'anderer Standort ohne das Fahrzeug');
+  } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, mv.vehicle_id).run(); }
 });
 
 await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den Vorgängen überein; Rechte', async () => {

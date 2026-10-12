@@ -282,7 +282,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/reports/costs' && m === 'GET') {
     const rep = await reports.costReport(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'reports.costs.export', null, { from: rep.from, to: rep.to, environment: envName });
+      await auth.audit(env, user.id, 'reports.costs.export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site });
       return new Response(reports.costReportCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten_${envName}_${rep.from}_${rep.to}.csv"` } });
     }
     return json(rep);

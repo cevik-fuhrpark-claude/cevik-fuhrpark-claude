@@ -7,6 +7,15 @@ const READ_ROLES = ['owner', 'fleet', 'viewer'];
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const r2 = (x) => Math.round(x * 100) / 100;
 
+// Standort-Schlüssel: ohne Leerzeichen am Rand, Groß-/Kleinschreibung egal; leer = 'ohne'
+export const siteKey = (s) => (s && String(s).trim() ? String(s).trim().toLocaleLowerCase('de') : 'ohne');
+// je Schlüssel die häufigste Schreibweise (bei Gleichstand alphabetisch zuerst)
+export function siteLabels(vehicles) {
+  const cnt = new Map();
+  for (const v of vehicles) { const k = siteKey(v.site); const raw = k === 'ohne' ? 'ohne' : String(v.site).trim(); const m = cnt.get(k) || new Map(); m.set(raw, (m.get(raw) || 0) + 1); cnt.set(k, m); }
+  return new Map([...cnt].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'))[0][0]]));
+}
+
 function monthRange(q) {
   const now = berlinDate().slice(0, 7);
   const to = q.to || now;
@@ -70,9 +79,15 @@ export async function costReport(env, user, envName, query = {}) {
     else if (e.valuation === 'estimate') r.external_estimate_net += e.amount_net;
     else r.external_actual_net += e.amount_net;
   }
-  const plates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
+  const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
+  // Standortfilter (Standort laut Fahrzeugstamm, 'ohne' = ohne Standort): wirkt auf Zeilen, km, Vertragsraten und Erstattungen
+  // Schreibweisen desselben Standorts (Dortmund/DORTMUND) zählen zusammen; angezeigt wird die häufigste Schreibweise
+  const label = siteLabels([...allPlates.values()].filter((v) => !v.eval_excluded));
+  const siteOptions = [...new Set(label.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
+  const siteFilter = query.site ? String(query.site).slice(0, 60) : null;
+  const plates = siteFilter ? new Map([...allPlates].filter(([, v]) => siteKey(v.site) === siteKey(siteFilter === 'ohne' ? null : siteFilter))) : allPlates;
   // ruhende Fahrzeuge (Inhaberentscheidung) zählen in keiner Auswertung
-  for (const [k, r] of rows) if ((plates.get(r.vehicle_id) || {}).eval_excluded) rows.delete(k);
+  for (const [k, r] of rows) if ((plates.get(r.vehicle_id) || {}).eval_excluded || (siteFilter && !plates.has(r.vehicle_id))) rows.delete(k);
   const out = [...rows.values()].map((r) => {
     const v = plates.get(r.vehicle_id) || {};
     const actual = r.work_net + r.parts_actual_net + r.external_actual_net;
@@ -89,8 +104,8 @@ export async function costReport(env, user, envName, query = {}) {
   // Summe je Fahrzeug-Standort (Stammdaten; ohne Standort = 'ohne') – nur Zusammenfassung der Zeilen, keine eigene Bewertung
   const siteMap = new Map();
   for (const r of out) {
-    const k = r.site || 'ohne';
-    const s = siteMap.get(k) || { site: k, actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0, vehicles: new Set() };
+    const k = siteKey(r.site);
+    const s = siteMap.get(k) || { site: label.get(k) || r.site || 'ohne', actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0, vehicles: new Set() };
     s.actual_net += r.actual_net; s.estimate_net += r.estimate_net; s.unvalued_items += r.unvalued_items; s.hours += r.hours; s.vehicles.add(r.vehicle_id);
     siteMap.set(k, s);
   }
@@ -119,7 +134,7 @@ export async function costReport(env, user, envName, query = {}) {
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  return { from, to, environment: envName, site: siteFilter, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
 }
 
 // Monatsraten laut Vertrag je Fahrzeug im Zeitraum: je Kalendermonat, der ganz oder teilweise in der Laufzeit liegt
