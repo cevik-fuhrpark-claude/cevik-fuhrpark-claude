@@ -1030,6 +1030,38 @@ await test('Kennzahlen: Filter nach Fahrzeug-Standort (Fahrzeugstamm, Schreibwei
   } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, mv.vehicle_id).run(); }
 });
 
+await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlichkeit, Filter, Rechte, Protokoll, Formelschutz', async () => {
+  const ym = BERLIN_YM;
+  const r = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`)).data;
+  const dec = (x) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(x.data);
+  const v = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv`);
+  eq(v.status, 200); ok((v.headers.get('content-type') || '').startsWith('text/csv'));
+  ok((v.headers.get('content-disposition') || '').includes('fuhrpark-kennzahlen-fahrzeuge_'), 'Dateiname');
+  const vt = dec(v); ok(vt.startsWith('\ufeffKennzeichen;FIN-Schlüssel;Art;Standort;'), 'BOM + Kopfzeile');
+  const vl = vt.trim().split('\r\n');
+  eq(vl.length, r.vehicles.length + 1, 'alle Fahrzeuge (nicht nur 20)');
+  ok(vl.slice(1).every((l) => l.split(';').length === 9), 'gleiche Spaltenzahl');
+  ok(r.vehicles.every((x) => 'site' in x), 'Standort je Fahrzeug in der JSON-Antwort');
+  const p = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`);
+  const pl = dec(p).trim().split('\r\n');
+  ok(pl[0].startsWith('Dringlichkeit;Meldungen;'), 'Kopfzeile Dringlichkeit'); // trim() entfernt das BOM
+  eq(pl.length, r.by_priority.length + 1);
+  const alle = pl.find((l) => l.startsWith('alle;')).split(';');
+  const a = r.by_priority.find((x) => x.priority === 'alle');
+  eq(Number(alle[1]), a.created, 'Meldungen wie JSON'); eq(Number(alle[5]), a.triage.n, 'Anzahl Erstbewertung');
+  // Filter wirkt auch auf CSV
+  const ws = r.sites[0];
+  const f = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&site=${ws}`)).data;
+  eq(dec(await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&site=${ws}&format=csv`)).trim().split('\r\n').length, f.vehicles.length + 1, 'Werkstattfilter');
+  eq((await users.driver.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv`)).status, 403);
+  const viewer = await invite(owner, { username: 'test.lesen.kpicsv', display_name: 'Test Lesezugriff KPI', role: 'viewer', environment: 'test' });
+  eq((await viewer.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv`)).status, 200, 'Lesezugriff darf exportieren (wie Kostenbericht)');
+  ok((await owner.get('/api/admin/audit?action=reports.kpi.export')).data.entries.length >= 3, 'protokolliert');
+  const { kpiReportCsv } = await import('../src/reports.js');
+  const inj = kpiReportCsv({ vehicles: [{ plate: '=X()', vehicle_id: 'VIN:X', kind: 'lkw', site: 'A;B', cases: 2, released: 1, workshop_h: 1.5, parts_wait_h: 0, locked_h: null }] });
+  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
+});
+
 await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Überschneidungen einmal', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'KP-SP 1', vin: 'WDB96340310555501', site: 'Dortmund' })).status, 201);
   const VK = 'VIN:WDB96340310555501';
