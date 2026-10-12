@@ -2278,6 +2278,13 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
   ok(app.includes("t('audit_csv_truncated')") && app.includes('/api/admin/audit?format=csv'), 'Oberfläche');
 });
 
+await test('Systemzustand /api/health ohne Anmeldung mit Schema-Nummer (Deployment-Prüfung)', async () => {
+  const r = await anon.get('/api/health'); eq(r.status, 200); eq(r.data.ok, true);
+  const files = (await import('node:fs')).readdirSync(new URL('../migrations/', import.meta.url)).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+  eq(r.data.schema, files[files.length - 1].slice(0, 4), 'letzte Migration');
+  eq(Object.keys(r.data).sort().join(','), 'ok,schema,time', 'nichts weiter');
+});
+
 await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem updated_at (after_id, has_more, next), ohne Parameter wie bisher', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   const get = async (q) => (await anon.req('GET', '/api/integration/v1/cases?environment=test' + q, undefined, H)).data;

@@ -98,7 +98,8 @@ async function handleApi(request, env, ctx, url) {
   const m = request.method;
   checkCsrf(request);
 
-  if (path === '/api/health') return json({ ok: true, time: nowIso() });
+  // schema = Nummer der letzten angewandten Migration (ensureSchema lief vorher) – zum Prüfen eines Deployments ohne Anmeldung
+  if (path === '/api/health') return json({ ok: true, time: nowIso(), schema: MIGRATIONS[MIGRATIONS.length - 1].id.slice(0, 4) });
 
   // ---- Integration (Unternehmensbetriebssystem, n8n) per Bearer-Token ----
   if (path.startsWith('/api/integration/')) return integrationRouter(request, env, ctx, url);

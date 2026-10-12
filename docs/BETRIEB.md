@@ -116,6 +116,11 @@ Fahrer meldet → Fuhrparkleitung gibt Reparatur frei → Werkstatt übernimmt, 
 den Aufkleber-Link. Prüft nach jedem Schritt den Status über die API und meldet JavaScript-Fehler. Anlass: Fehler „preId is not defined“
 (10.10.2026) – die Kontrolle nach Reparatur war in der Oberfläche nicht abschließbar, obwohl alle API-Tests grün waren.
 
+## Deployment prüfen
+Nach einem Push auf `main` baut Cloudflare automatisch. Kontrolle ohne Anmeldung: `https://cevik-fuhrpark-claude.y-cevik.workers.dev/api/health`
+liefert `{"ok":true,"time":…,"schema":"00NN"}` – `schema` muss der höchsten Nummer im Ordner `migrations/` entsprechen
+(die Migrationen laufen beim ersten Aufruf automatisch). Die App-Version steht in `/version.json` und unter Hilfe.
+
 ## Sicherheitsheader
 Die Oberfläche (HTML/JS/CSS) liefert Cloudflare direkt aus den statischen Dateien aus – **ohne** den Worker. Deshalb stehen
 Content-Security-Policy, X-Frame-Options, HSTS usw. in `public/_headers` (Cloudflare wendet die Datei automatisch an; sie selbst ist

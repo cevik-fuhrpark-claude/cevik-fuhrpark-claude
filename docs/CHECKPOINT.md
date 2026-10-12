@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 176 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 177 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -461,6 +461,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: **Bußgelder-CSV und Fristenkalender nicht mehr still auf 500 begrenzt** (nutzten die Liste): jetzt die 5000 jüngsten, darüber Header `x-cfp-truncated` und Hinweis; gemeinsame App-Funktion `downloadChecked()` für begrenzte Exporte (Text `export_truncated` DE/UK/EN). Test mit > 500 und 5001 Schreiben. 176 Tests grün.
 - 12.10.2026: Protokoll: Bereichsauswahl als Auswahlliste „Bereich“ statt 8 Knöpfen und um Lager, Verträge, Versicherungsfälle, Fahrer, Auslesungen, Datenauskunft, Protokoll-Export ergänzt (gilt auch für den CSV-Export). 390/820/1366 px geprüft.
 - 12.10.2026: **Fahrzeugliste sortierbar** (nicht für Fahrer, nur Anzeige): Kennzeichen, nächste Prüfung zuerst, Abfahrtskontrolle am längsten her (nie kontrolliert zuerst), km-Stand höchster zuerst; fehlende Werte zuletzt, sonst nach Kennzeichen. DE/UK/EN. Playwright 390/820/1366 px (Reihenfolge geprüft, kein waagrechtes Scrollen).
+- 12.10.2026: `GET /api/health` meldet zusätzlich `schema` (Nummer der letzten Migration, z. B. `0039`) – so lässt sich nach einem Deployment ohne Anmeldung prüfen, ob die neuen Migrationen live sind (Backlog 40). Test gegen den Ordner `migrations/`. 177 Tests grün.
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.
@@ -488,4 +489,4 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 73. Mängelstatistik/Kennzahlen: nach dem nächsten Live-Zugriff Laufzeit in D1 messen (lokal 200–300 ms bei 15 000 Kontrollen, überwiegend Datenbank).
 74. Abfragebudget Zeitleiste: 12.10. auf 16 gesenkt (erledigt). Agent-Abfragebudget: **12.10. auf 38/50 gesenkt** (sieben Ausgangslisten in einer Abfrage, `agentBasics`); Test erzwingt ≤ 40. Vor neuen Agent-Prüfungen weiter mit `scripts/agentprofil.mjs` messen.
 76. Wiedervorlage in der Integrations-API (`followup_on` in `/v1/cases`, nie der Vermerk) – nur wenn das Unternehmensbetriebssystem sie braucht (Datensparsamkeit).
-40. Nach dem Deployment prüfen (braucht Browser/Live-Zugriff): Datensicherung herunterladen und mit `scripts/sicherung-probe.mjs` prüfen (Sammelabfragen seit 10.10. 23 Uhr UTC); kommen die Sicherheitsheader aus `public/_headers` an (Antwort-Header von `/`), zeigt Hilfe die App-Version, läuft Migration 0019. Diese Sitzung konnte die Live-Adresse nicht abrufen.
+40. Nach dem Deployment prüfen (braucht Browser/Live-Zugriff): Datensicherung herunterladen und mit `scripts/sicherung-probe.mjs` prüfen (Sammelabfragen seit 10.10. 23 Uhr UTC); kommen die Sicherheitsheader aus `public/_headers` an (Antwort-Header von `/`), zeigt Hilfe die App-Version, meldet `GET /api/health` die neueste Migration (`schema`). Diese Sitzung konnte die Live-Adresse nicht abrufen.
