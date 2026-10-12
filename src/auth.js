@@ -382,10 +382,22 @@ export async function listAudit(env, user, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
   const limit = Math.min(Math.max(Number(query.limit) || 200, 1), 1000);
   const prefix = query.action ? String(query.action).slice(0, 40) : null;
-  const before = query.before && /^\d{4}-\d{2}-\d{2}T/.test(query.before) ? query.before : '9999';
+  let before = query.before && /^\d{4}-\d{2}-\d{2}T/.test(query.before) ? query.before : '9999';
+  // „bis Datum“ (Berliner Kalendertag einschließlich) – nur wenn kein späterer Blätter-Zeitpunkt gesetzt ist
+  if (query.until !== undefined && query.until !== '') {
+    if (!isCalendarDate(query.until)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+    const end = berlinDayStartIso(new Date(Date.parse(query.until + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10));
+    if (end < before) before = end;
+  }
+  // Suche in Kennung (target), Details und handelnder Person (Name/Benutzername), z. B. Kennzeichen, FIN; Platzhalter wirkungslos
+  const qs = String(query.q || '').trim().slice(0, 60);
+  const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
+  const where = ['a.created_at < ?']; const args = [before];
+  if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
+  if (qs.length >= 2) { where.push("(a.target LIKE ?1x ESCAPE '\\' OR a.detail LIKE ?1x ESCAPE '\\' OR u.username LIKE ?1x ESCAPE '\\' OR u.display_name LIKE ?1x ESCAPE '\\')".replaceAll('?1x', '?')); args.push(...Array(4).fill('%' + esc(qs) + '%')); }
   const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE a.created_at < ? ${prefix ? "AND a.action LIKE ? ESCAPE '\\'" : ''} ORDER BY a.created_at DESC LIMIT ?`)
-    .bind(...(prefix ? [before, prefix.replace(/[%_\\]/g, (c) => '\\' + c) + '%', limit] : [before, limit])).all()).results;
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
+    .bind(...args, limit).all()).results;
   return rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
 }
 
@@ -402,13 +414,18 @@ export async function auditCsv(env, user, query, csvCell) {
   if ((Date.parse(next) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Höchstens ein Jahr je Export.');
   const lo = berlinDayStartIso(from); const hi = berlinDayStartIso(next);
   const prefix = query.action ? String(query.action).slice(0, 40) : null;
+  const qs = String(query.q || '').trim().slice(0, 60);
+  const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
+  const where = ['a.created_at >= ?', 'a.created_at < ?']; const args = [lo, hi];
+  if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
+  if (qs.length >= 2) { where.push("(a.target LIKE ?1x ESCAPE '\\' OR a.detail LIKE ?1x ESCAPE '\\' OR u.username LIKE ?1x ESCAPE '\\' OR u.display_name LIKE ?1x ESCAPE '\\')".replaceAll('?1x', '?')); args.push(...Array(4).fill('%' + esc(qs) + '%')); }
   const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE a.created_at >= ? AND a.created_at < ? ${prefix ? "AND a.action LIKE ? ESCAPE '\\'" : ''}
-    ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...[lo, hi, ...(prefix ? [prefix.replace(/[%_\\]/g, (c) => '\\' + c) + '%'] : []), AUDIT_CSV_MAX + 1]).all()).results;
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')}
+    ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...args, AUDIT_CSV_MAX + 1).all()).results;
   const truncated = rows.length > AUDIT_CSV_MAX; if (truncated) rows.length = AUDIT_CSV_MAX;
   const lines = [['Zeitpunkt', 'Aktion', 'Person', 'Benutzername', 'Betrifft (Kennung)', 'Details'].join(';')];
   for (const r of rows) lines.push([berlinDateTime(r.created_at), csvCell(r.action), csvCell(r.actor_name || (r.actor_username ? '' : 'System')), csvCell(r.actor_username), csvCell(r.target), csvCell(r.detail)].join(';'));
-  return { csv: '\uFEFF' + lines.join('\r\n') + '\r\n', rows: rows.length, truncated, from, to, prefix };
+  return { csv: '\uFEFF' + lines.join('\r\n') + '\r\n', rows: rows.length, truncated, from, to, prefix, q: qs.length >= 2 };
 }
 
 // Kurzlebige Tabellen aufräumen (Cron): abgelaufene Sitzungen, alte Zählerfenster, alte Fehlversuche ohne aktive Sperre

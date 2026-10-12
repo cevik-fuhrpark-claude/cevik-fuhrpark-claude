@@ -621,3 +621,6 @@ Object.assign(STRINGS.en, { sort_by: 'Sort', vsort_plate: 'Plate', vsort_next_du
 Object.assign(STRINGS.de, { csort_priority: 'Dringlichkeit', csort_oldest: 'älteste zuerst', csort_updated: 'zuletzt geändert' });
 Object.assign(STRINGS.uk, { csort_priority: 'терміновість', csort_oldest: 'найстаріші спочатку', csort_updated: 'нещодавно змінені' });
 Object.assign(STRINGS.en, { csort_priority: 'urgency', csort_oldest: 'oldest first', csort_updated: 'recently changed' });
+Object.assign(STRINGS.de, { audit_search: 'Suche (Person, Kennzeichen, Kennung, Details)', audit_search_ph: 'z. B. SZ-YC 5539 oder FIN', audit_until: 'bis Datum' });
+Object.assign(STRINGS.uk, { audit_search: 'Пошук (особа, номер, ідентифікатор, деталі)', audit_search_ph: 'напр. SZ-YC 5539 або VIN', audit_until: 'до дати' });
+Object.assign(STRINGS.en, { audit_search: 'Search (person, plate, ID, details)', audit_search_ph: 'e.g. SZ-YC 5539 or VIN', audit_until: 'up to date' });

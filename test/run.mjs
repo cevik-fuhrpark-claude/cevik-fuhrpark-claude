@@ -2269,7 +2269,16 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
     eq((await owner.get('/api/admin/audit?format=csv&from=2019-01-01&to=2020-03-01')).status, 400, 'höchstens ein Jahr');
     eq((await owner.get('/api/admin/audit?format=csv&from=01.03.2020')).status, 400);
     eq((await users.fleet.get('/api/admin/audit?format=csv')).status, 403, 'nur Inhaber');
+    // Ansicht: Suche in Kennung/Details und „bis Datum“ (Berliner Tag einschließlich)
+    let v = (await owner.get('/api/admin/audit?q=x%3By&limit=1000')).data.entries; ok(v.some((e) => e.id === 'aucsv-1') && !v.some((e) => e.id === 'aucsv-3'), 'Suche in Details');
+    v = (await owner.get('/api/admin/audit?q=HYPERLINK')).data.entries; eq(v.map((e) => e.id).join(), 'aucsv-3', 'Suche in Kennung');
+    eq((await owner.get('/api/admin/audit?q=%25')).status, 200);
+    v = (await owner.get('/api/admin/audit?q=' + encodeURIComponent(db.prepare('SELECT username FROM users WHERE id=?').get(users.fleet.id).username) + '&until=2020-03-02&limit=1000')).data.entries.filter((e) => e.id.startsWith('aucsv-')); eq(v.map((e) => e.id).sort().join(), 'aucsv-1,aucsv-3', 'Suche nach Person');
+    v = (await owner.get('/api/admin/audit?until=2020-03-01&limit=1000')).data.entries.filter((e) => e.id.startsWith('aucsv-')); eq(v.map((e) => e.id).join(), 'aucsv-1', 'bis 01.03. (Berlin) – 23:30 UTC ist schon der 02.03.');
+    v = (await owner.get('/api/admin/audit?until=2020-03-02&limit=1000')).data.entries.filter((e) => e.id.startsWith('aucsv-')); eq(v.length, 3);
+    eq((await owner.get('/api/admin/audit?until=02.03.2020')).status, 400);
     const last = db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get(); ok(last && JSON.parse(last.detail).rows === 2 && JSON.parse(last.detail).action === 'probe.', 'Export protokolliert');
+    r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02&q=HYPERLINK'); eq(dec(r).trim().split('\r\n').length, 2, 'CSV mit Suche');
     eq((await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02')).headers.get('x-cfp-truncated'), null);
     db.exec('BEGIN'); for (let i = 0; i < 20000; i++) ins.run('aucsv-m' + i, null, 'probe.menge', null, null, '2020-03-02T10:00:00.000Z'); db.exec('COMMIT');
     r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02'); eq(r.headers.get('x-cfp-truncated'), '20000'); eq(dec(r).trim().split('\r\n').length, 20001);
