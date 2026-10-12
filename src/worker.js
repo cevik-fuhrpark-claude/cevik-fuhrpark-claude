@@ -293,7 +293,14 @@ async function handleApi(request, env, ctx, url) {
     if (url.searchParams.get('format') === 'ics') return new Response(reports.workshopPlanIcs(plan, envName), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstattplan_${envName}_${berlinDate()}.ics"` } });
     return json(plan);
   }
-  if (path === '/api/reports/workshop-load' && m === 'GET') return json(await reports.workshopLoad(env, user, envName, Object.fromEntries(url.searchParams)));
+  if (path === '/api/reports/workshop-load' && m === 'GET') {
+    const rep = await reports.workshopLoad(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'reports.workshop_load.export', null, { weeks: rep.weeks.length, environment: envName });
+      return new Response(reports.workshopLoadCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstatt-auslastung_${envName}_${rep.from}_${rep.weeks.length}kw.csv"` } });
+    }
+    return json(rep);
+  }
   if (path === '/api/reports/defects' && m === 'GET') return json(await reports.defectReport(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/reports/kpi' && m === 'GET') {
     const rep = await reports.kpiReport(env, user, envName, Object.fromEntries(url.searchParams));

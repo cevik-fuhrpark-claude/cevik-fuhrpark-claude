@@ -1600,6 +1600,21 @@ await test('Werkstatt-Auslastung je Standort/Kalenderwoche ohne Personenbezug; W
   const ws = await users.ws.get('/api/reports/workshop-load');
   eq(ws.status, 200); ok(ws.data.sites.every((x) => x.site === 'DORTMUND'), 'nur eigener Standort');
   eq((await users.driver.get('/api/reports/workshop-load')).status, 403);
+  // CSV: eine Zeile je Standort × Woche, Stundensumme gleich, offene Aufträge nur in der jüngsten Woche, Werkstatt nur eigener Standort
+  const csv = await users.fleet.get('/api/reports/workshop-load?weeks=4&format=csv');
+  eq(csv.status, 200); ok((csv.headers.get('content-type') || '').startsWith('text/csv'));
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
+  ok(text.startsWith('\ufeffStandort;Werkstatt-Code;Kalenderwoche;Stunden;'), 'BOM + Kopfzeile');
+  const lines = text.trim().split('\r\n').slice(1).map((l) => l.split(';'));
+  eq(lines.length, r.data.sites.length * 4, 'Standort × Woche');
+  ok(Math.abs(lines.reduce((a, l) => a + Number(l[3].replace(',', '.')), 0) - sumHours) < 0.01, 'Stundensumme im CSV');
+  const lastW = r.data.weeks[3];
+  ok(lines.every((l) => (l[2] === lastW) === (l[6] !== '')), 'offene Aufträge nur in der jüngsten Woche');
+  for (const s of r.data.sites) eq(Number(lines.find((l) => l[1] === s.site && l[2] === lastW)[7]), s.open.in_reparatur || 0, 'offen in Reparatur');
+  const wcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/reports/workshop-load?format=csv')).data).trim().split('\r\n').slice(1);
+  ok(wcsv.length > 0 && wcsv.every((l) => l.split(';')[1] === 'DORTMUND'), 'Werkstatt-CSV nur eigener Standort');
+  eq((await users.driver.get('/api/reports/workshop-load?format=csv')).status, 403);
+  ok((await owner.get('/api/admin/audit?action=reports.workshop_load.export')).data.entries.length >= 2, 'protokolliert');
 });
 
 await test('Vorgangsliste als CSV: gleiche Filter/Rechte wie die Liste, Excel-tauglich, Formelschutz, protokolliert', async () => {

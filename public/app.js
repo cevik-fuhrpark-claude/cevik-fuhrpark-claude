@@ -1915,12 +1915,13 @@ async function viewWsLoad() {
   const r = await api('GET', `/api/reports/workshop-load?weeks=${weeks}`);
   const n = (x) => String(x).replace('.', ',');
   render(`<h1>${esc(t('ws_load'))}</h1><p class="small muted">${esc(t('ws_load_hint'))}</p>
-    <div class="actions" style="flex-wrap:wrap">${[4, 8, 13, 26].map((w) => `<button type="button" class="btn ${w === weeks ? '' : 'secondary'}" data-wl="${w}">${w} ${esc(t('weeks'))}</button>`).join('')}</div>
+    <div class="actions" style="flex-wrap:wrap">${[4, 8, 13, 26].map((w) => `<button type="button" class="btn ${w === weeks ? '' : 'secondary'}" data-wl="${w}">${w} ${esc(t('weeks'))}</button>`).join('')}<button type="button" class="btn secondary" id="wlcsv">${esc(t('export_csv'))}</button></div>
     ${r.sites.map((s) => { const max = Math.max(1, ...s.weeks.map((w) => w.hours)); return `<section class="panel"><h2 style="margin-top:0">${esc(s.name === 'ohne' ? t('no_workshop') : s.name)}</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${r.open_statuses.map((st) => `<span class="chip ${s.open[st] ? 'mittel' : ''}">${esc(t('st_' + st))}: ${s.open[st] || 0}</span>`).join('')}</div>
       <div class="scroll"><table style="font-size:.85rem"><thead><tr><th>${esc(t('week'))}</th><th>${esc(t('hours'))}</th><th>${esc(t('ws_acknowledged'))}</th><th>${esc(t('ws_released'))}</th></tr></thead><tbody>
       ${s.weeks.slice().reverse().map((w) => `<tr><td style="white-space:nowrap" title="${esc(w.week)}">${esc(t('cw'))} ${esc(w.week.slice(6))}</td><td><div style="display:flex;align-items:center;gap:6px"><span aria-hidden="true" style="display:inline-block;height:10px;width:${Math.round((w.hours / max) * 40)}px;background:var(--steel);border-radius:2px"></span>${n(w.hours)}</div></td><td>${w.acknowledged}</td><td>${w.released}</td></tr>`).join('')}</tbody></table></div></section>`; }).join('') || '<p class="muted">–</p>'}`, 'more');
   $$('[data-wl]').forEach((b) => (b.onclick = () => { S.wlWeeks = Number(b.dataset.wl); viewWsLoad(); }));
+  $('#wlcsv').onclick = async () => { try { download(await api('GET', `/api/reports/workshop-load?weeks=${weeks}&format=csv`), `werkstatt-auslastung_${r.from}_${weeks}kw.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // ---------- Telematik-Prüffälle und Zuordnungen ----------

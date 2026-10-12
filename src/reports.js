@@ -367,6 +367,20 @@ export async function kpiReport(env, user, envName, query = {}) {
     definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
 }
 
+// Werkstatt-Auslastung als CSV (Excel DE): eine Zeile je Standort und Kalenderwoche (älteste zuerst), offene Aufträge je Status
+// als aktueller Stand nur in der jüngsten Woche (sonst leer – es gibt keinen gespeicherten Wochenstand). Keine Personen.
+const OPEN_DE = { werkstatt_freigegeben: 'Offen: zur Übernahme', in_reparatur: 'Offen: in Reparatur', wartet_teile: 'Offen: wartet auf Teile', abschlusskontrolle: 'Offen: Abschlusskontrolle' };
+export function workshopLoadCsv(rep) {
+  const num = (x) => String(x).replace('.', ',');
+  const cell = (x) => { let v = x === null || x === undefined ? '' : String(x); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  const last = rep.weeks[rep.weeks.length - 1];
+  const lines = [['Standort', 'Werkstatt-Code', 'Kalenderwoche', 'Stunden', 'Übernommen', 'Freigegeben', ...rep.open_statuses.map((st) => OPEN_DE[st] || st)].join(';')];
+  for (const s of rep.sites) for (const w of s.weeks) {
+    lines.push([cell(s.site === 'ohne' ? 'ohne Werkstatt' : s.name), cell(s.site), w.week, num(w.hours), w.acknowledged, w.released, ...rep.open_statuses.map((st) => (w.week === last ? s.open[st] || 0 : ''))].join(';'));
+  }
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
+
 // ---- Werkstatt-Auslastung je Standort und Kalenderwoche (ohne Auswertung je Person) ----
 // Stunden = Summe erfasster Arbeitszeit der Aufträge des Standorts (Arbeitstag), übernommen = workshop_ack_at, freigegeben = closed_at.
 export function isoWeek(dateStr) {
