@@ -22,7 +22,7 @@ Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Te
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Sicherung |
 
 ```bash
-npm test                                            # 137 Abnahmetests (Node ≥ 22)
+npm test                                            # 139 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

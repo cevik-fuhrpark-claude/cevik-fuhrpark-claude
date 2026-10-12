@@ -381,8 +381,9 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   const note = str(body.note, { max: 1000 });
   const description = `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
-  const created = await createCase(env, ctx, user, envName, { vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey });
-  await env.DB.prepare(`UPDATE cases SET maintenance_rule_id=?, origin='wartung' WHERE id=?`).bind(rule.id, created.id).run();
+  // Verknüpfung mit dem Prüftermin im selben atomaren Batch wie die Meldung (vorher eigenes UPDATE danach)
+  const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
+    { origin: 'wartung', maintenance_rule_id: rule.id, site_checked: true });
   const planned = rule.planned_date && rule.planned_date >= berlinDate() ? rule.planned_date : null;
   const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'mo-' + requestKey, expected_version: 1,
     note: `Auftrag aus Prüftermin ${rule.kind}${note ? ': ' + note : ''}`, payload: { workshop_site: site, ...(planned ? { planned_date: planned } : {}) } });
@@ -413,8 +414,8 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   const date = ev.done_date.split('-').reverse().join('.');
   const description = `Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ${ev.evidence})${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
-  const created = await createCase(env, ctx, user, envName, { vehicle_id: ev.vehicle_id, description, priority, driveability, workshop_site: site, request_key: requestKey });
-  await env.DB.prepare(`UPDATE cases SET maintenance_event_id=?, origin='wartung' WHERE id=?`).bind(ev.id, created.id).run();
+  const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: ev.vehicle_id, description, priority, driveability, workshop_site: site, request_key: requestKey }],
+    { origin: 'wartung', maintenance_event_id: ev.id, site_checked: true });
   const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'md-' + requestKey, expected_version: 1,
     note: `Mängelbeseitigung aus ${ev.kind} vom ${date}${note ? ': ' + note : ''}`, payload: { workshop_site: site, priority } });
   return { id: created.id, case_no: created.case_no, status: r.status, priority, driveability };
@@ -427,7 +428,8 @@ export async function createCase(env, ctx, user, envName, body) {
 // Mehrere Meldungen in einem Aufruf anlegen (z. B. Folgeaufträge einer Kontrolle mit mehreren Mängeln).
 // Abfragebudget: feste Zahl an Anweisungen unabhängig von der Anzahl – vorher ≈ 14 je Meldung, d. h. eine
 // Abfahrtskontrolle mit 3 Mängeln überschritt bereits die Cloudflare-Grenze von 50 Abfragen je Aufruf.
-export async function createCases(env, ctx, user, envName, bodies) {
+// internal: nur für serverseitige Aufrufer (Aufträge aus Prüftermin/Prüfung) – nie aus Anfragedaten befüllen
+export async function createCases(env, ctx, user, envName, bodies, internal = {}) {
   if (!['owner', 'fleet', 'workshop', 'dispatch', 'driver'].includes(user.role)) throw forbidden();
   if (!bodies.length) return [];
   const specs = [];
@@ -445,12 +447,13 @@ export async function createCases(env, ctx, user, envName, bodies) {
     const checkItem = origin === 'kontrolle' && body.check_item ? str(body.check_item, { max: 60 }) : null;
     specs.push({ vehicleId, description, reportedPriority, driveability, suggested, requestKey, location, origin, parentId, checkItem,
       reporterNote: str(body.reporter_name_note, { max: 120 }) });
+    if (internal.origin) specs.at(-1).origin = internal.origin;
   }
   const J = (a) => JSON.stringify([...new Set(a)]);
   const vehicles = new Map((await env.DB.prepare('SELECT * FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).all()).results.map((v) => [v.id, v]));
   if (specs.some((x) => !vehicles.has(x.vehicleId))) throw bad('validation', 'Fahrzeug unbekannt.');
   const sites = specs.map((x) => x.suggested).filter(Boolean);
-  if (sites.length) {
+  if (sites.length && !internal.site_checked) {
     const ok = new Set((await env.DB.prepare('SELECT code FROM workshops WHERE active=1 AND code IN (SELECT value FROM json_each(?))').bind(J(sites)).all()).results.map((r) => r.code));
     if (sites.some((x) => !ok.has(x))) throw bad('validation', 'Unbekannte Werkstatt.');
   }
@@ -489,7 +492,8 @@ export async function createCases(env, ctx, user, envName, bodies) {
     const lockReason = safetyLock ? (x.driveability === 'nicht_fahrbereit' ? `${by}: nicht fahrbereit (ungeprüft)` : `${by}: sicherheitskritisch (ungeprüft)`) : null;
     rows.push({ id, case_no: caseNo, vehicle_id: x.vehicleId, reporter_name_note: x.reporterNote, description: x.description, location_note: x.location,
       priority: x.reportedPriority, driveability: x.driveability, safety_lock: safetyLock, lock_reason: lockReason, site: x.suggested, origin: x.origin,
-      parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash });
+      parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash,
+      maintenance_rule_id: internal.maintenance_rule_id || null, maintenance_event_id: internal.maintenance_event_id || null });
     events.push({ id: uuid(), case_id: id, payload: JSON.stringify({ priority: x.reportedPriority, driveability: x.driveability, safety_lock: !!safetyLock, origin: x.origin, parent_case_id: x.parentId }) });
     results[i] = { id, case_no: caseNo, duplicate: false, safety_lock: !!safetyLock };
   });
@@ -497,9 +501,9 @@ export async function createCases(env, ctx, user, envName, bodies) {
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
-        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,version,created_at,updated_at)
+        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,version,created_at,updated_at)
         SELECT ${v('id')}, ${v('case_no')}, ?1, ${v('vehicle_id')}, ?2, ${v('reporter_name_note')}, ${v('description')}, ${v('location_note')}, ${v('priority')}, ${v('priority')},
-          ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, 1, ?3, ?3
+          ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, ${v('maintenance_rule_id')}, ${v('maintenance_event_id')}, 1, ?3, ?3
         FROM json_each(?4)`).bind(envName, user.id, now, JSON.stringify(rows)),
       env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         SELECT ${v('id')}, ${v('case_id')}, ?1, ?2, ?3, 'create', NULL, 'gemeldet', NULL, 1, NULL, ${v('payload')}, ?4 FROM json_each(?5)`)

@@ -2798,6 +2798,14 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   eq(o.status, 201); eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.planned_date, day(3), 'geplanter Prüftermin als Werkstatttermin');
   let d = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
   eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
+  { const ce = d.events.find((e) => e.action === 'create'); const pl = typeof ce.payload === 'string' ? JSON.parse(ce.payload) : ce.payload;
+    eq(pl.origin, 'wartung', 'Anlage-Ereignis nennt Herkunft Wartung (Verknüpfung im selben Batch)'); }
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 28), 'Auftrag aus Prüftermin ≤ 28 Abfragen');
+  { // Anfragedaten können Herkunft/Verknüpfung nicht setzen
+    const fake = await users.fleet.post('/api/cases', { vehicle_id: rule.data.vehicle_id || V1, description: 'Test Herkunft fremd gesetzt', origin: 'wartung', maintenance_rule_id: rule.data.id, request_key: rk() });
+    eq(fake.status, 201); const fc = (await users.fleet.get(`/api/cases/${fake.data.id}`)).data;
+    eq(fc.case.origin, 'meldung'); eq(fc.case.maintenance_rule_id ?? null, null, 'keine Verknüpfung aus Anfragedaten');
+    eq((await users.fleet.post(`/api/cases/${fake.data.id}/commands`, { action: 'reject', command_id: rk(), expected_version: fc.case.version, note: 'Testdaten' })).status, 200); }
   ok(d.case.description.includes('Bremsen') && d.case.description.includes('Bremsprüfstand'), 'Beschreibung');
   eq(d.maintenance_rule.kind, 'Bremsen'); eq(d.maintenance_rule.done_since_order, false);
   ok((await users.ws.get('/api/notifications')).data.notifications.some((n) => n.case_id === o.data.id && n.kind === 'approved'), 'Werkstatt informiert');
@@ -2878,7 +2886,8 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   eq(o.status, 201);
   eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.priority, 'kritisch'); eq(o.data.driveability, 'nicht_fahrbereit');
   const c = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
-  eq(c.case.origin, 'wartung');
+  eq(c.case.origin, 'wartung'); eq(c.case.maintenance_event_id, evBad.id, 'Verknüpfung gespeichert');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 30), 'Auftrag aus Prüfung ≤ 30 Abfragen');
   ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
   eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
   eq(c.case.safety_lock, 1, 'verkehrsunsicher → gesperrt'); eq(c.case.safety_lock_reason, 'Meldung Fuhrparkleitung: nicht fahrbereit (ungeprüft)', 'Sperrgrund nennt die Rolle');
@@ -3462,6 +3471,7 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
   console.log('     größte Aufrufe: ' + worst.map((w) => `${w.method} ${w.path} = ${w.n}`).join(' · '));
+  if (process.env.CFP_PATH) { const w = QSTAT.perRequest.filter((x) => x.path === process.env.CFP_PATH).sort((a, b) => b.n - a.n)[0]; if (w && w.sql) console.log(w.sql.map((q, i) => `       ${i + 1}. ${q.slice(0, 160)}`).join('\n')); }
   if (worst[0].sql) console.log(worst[0].sql.map((q, i) => `       ${i + 1}. ${q}`).join('\n')); // CFP_QTRACE=1 npm test
   ok(worst[0].n <= 50, `${worst[0].method} ${worst[0].path} braucht ${worst[0].n} Abfragen`);
   // Fuhrparkagent: Reserve für neue Prüfungen halten (Backlog 74; Ausgangslisten seit 12.10. in einer Abfrage)
@@ -3469,7 +3479,8 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   ok(agentMax <= 40, `Fuhrparkagent braucht ${agentMax} Abfragen (Ziel ≤ 40, Reserve für neue Prüfungen)`);
   // Zeitleiste lädt nur die nötigen Teile der Akte (12.10.: vorher 28)
   const per = (re) => QSTAT.perRequest.slice(1).filter((w) => re.test(w.path)).map((w) => w.n);
-  const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/VIN[^/]+$/));
+  const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/(:vin|VIN[^/]+)$/));
+  if (process.env.CFP_TOP) { const m = new Map(); for (const w of QSTAT.perRequest.slice(1)) { const k = w.method + " " + w.path; m.set(k, Math.max(m.get(k) || 0, w.n)); } console.log([...m].sort((a, b) => b[1] - a[1]).slice(0, 15).map((x) => x.join(" = ")).join("\n")); }
   console.log(`     Fahrzeugakte max. ${akteMax}, Zeitleiste max. ${tlMax} Abfragen`);
   ok(tlMax < akteMax && tlMax <= 18, `Zeitleiste braucht ${tlMax} Abfragen`);
   // Cron am Ende der Suite (alle Testdaten vorhanden): Agent + Push-Wiederholung bzw. Bereinigung in einem Aufruf
