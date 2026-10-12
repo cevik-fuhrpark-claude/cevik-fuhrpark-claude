@@ -34,6 +34,16 @@ export async function listStock(env, user, envName, query) {
       const shortfall = r3(r.min_qty - r.on_hand);
       return { ...r, shortfall, shortfall_value_net: r.unit_price_net === null ? null : Math.round(shortfall * r.unit_price_net * 100) / 100 };
     });
+    // Zum Bestellen: letzter Lieferant (jüngster Zugang mit Lieferant) und letzter Zugang – nur aus gebuchten Zugängen, eine Abfrage
+    if (list.length) {
+      const last = new Map((await env.DB.prepare(`SELECT i.value AS id,
+          (SELECT m.supplier FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang' AND m.supplier IS NOT NULL AND m.supplier<>'' ORDER BY m.created_at DESC LIMIT 1) AS last_supplier,
+          (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang') AS last_receipt_at
+        FROM json_each(?) i`).bind(JSON.stringify(list.map((r) => r.id))).all()).results.map((x) => [x.id, x]));
+      list = list.map((r) => ({ ...r, last_supplier: last.get(r.id)?.last_supplier || null, last_receipt_date: last.get(r.id)?.last_receipt_at ? berlinDate(last.get(r.id).last_receipt_at) : null }));
+      // je Lager nach Lieferant gruppiert (ohne Lieferant zuletzt), dann Bezeichnung
+      list.sort((a, b) => a.site.localeCompare(b.site) || (a.last_supplier === null) - (b.last_supplier === null) || String(a.last_supplier || '').localeCompare(String(b.last_supplier || ''), 'de') || a.name.localeCompare(b.name, 'de'));
+    }
   }
   return list;
 }
@@ -132,11 +142,11 @@ export function stockCsv(items, csvCell) {
 
 // Bestellvorschlag als CSV: Fehlmenge bis Mindestbestand, Verbrauch 90 Tage, Wert nur mit hinterlegtem Preis (nie 0 €)
 export function reorderCsv(items, csvCell) {
-  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto'];
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto', 'Letzter Lieferant', 'Letzter Zugang'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), n(i.shortfall), n(i.used_90d),
-    n(i.unit_price_net), n(i.shortfall_value_net)].join(';'));
+    n(i.unit_price_net), n(i.shortfall_value_net), csvCell(i.last_supplier), i.last_receipt_date || ''].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

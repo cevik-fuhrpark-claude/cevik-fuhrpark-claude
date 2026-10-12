@@ -274,3 +274,5 @@ table.paper td:last-child { min-width: 30%; }
 .helpsec li.hit { background: var(--mid-bg); border-radius: 4px; box-shadow: -6px 0 0 var(--mid-bg); }
 .helpsec { scroll-margin-top: 72px; }
 .helpsec.flash { outline: 3px solid var(--signal); outline-offset: 2px; }
+
+@media print { table.printsm th, table.printsm td { font-size: 8.5pt; padding: 3px 4px; overflow-wrap: anywhere; } }

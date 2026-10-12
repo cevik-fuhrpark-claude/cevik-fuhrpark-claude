@@ -795,7 +795,9 @@ await test('Bestellvorschlag: nur Artikel unter Mindestbestand, Fehlmenge, Verbr
   const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
   ok(txt.startsWith('\ufeffLager;Artikelnummer;Bezeichnung;Einheit;Lagerort;Bestand;Mindestbestand;Fehlmenge bis Mindestbestand'), 'CSV-Kopf');
   ok(txt.includes(';1;2;1;2;84,5;84,5'), 'CSV-Zeile mit Komma-Dezimalen');
-  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;\r\n/.test(txt), 'ohne Preis: Wert leer');
+  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;;;\d{4}-\d\d-\d\d\r\n/.test(txt), 'ohne Preis: Wert leer, ohne Lieferant leer, letzter Zugang = Anfangsbestand');
+  ok(txt.split('\r\n')[0].endsWith(';Letzter Lieferant;Letzter Zugang'), 'CSV-Kopf mit Lieferant');
+  eq(r2.find((i) => i.id === np.data.id).last_supplier, null, 'kein Lieferant erfunden');
   // Testartikel wieder entfernen (deaktivieren), damit spätere Zählungen unverändert bleiben
   for (const id of [np.data.id, nm.data.id]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
 });
@@ -1869,6 +1871,17 @@ await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit P
   const wsName = (await users.ws.get('/api/me')).data.user?.display_name || (await users.ws.get('/api/me')).data.display_name; ok(wsName && !txt.includes(wsName), `kein Name der buchenden Person (${wsName})`);
   ok(txt.includes(';Entnahme;') && txt.includes(withCase.case_no), 'Buchungsart deutsch, Vorgang');
   ok((await owner.get('/api/admin/audit?action=stock.journal')).data.entries.some((e) => e.action === 'stock.journal.export'), 'Export im Protokoll');
+  // Bestellvorschlag: letzter Lieferant aus dem jüngsten Zugang mit Lieferant, sortiert nach Lieferant (ohne zuletzt)
+  const a = (await users.ws.post('/api/stock', { name: 'Zz Lieferantentest A', min_qty: 10, initial_qty: 1 })).data.id;
+  const b = (await users.ws.post('/api/stock', { name: 'Aa Lieferantentest B', min_qty: 10, initial_qty: 1 })).data.id;
+  await users.ws.post(`/api/stock/${a}/movements`, { type: 'zugang', qty: 1, supplier: 'Alt GmbH' });
+  await users.ws.post(`/api/stock/${a}/movements`, { type: 'zugang', qty: 1, supplier: 'Neu GmbH' });
+  await users.ws.post(`/api/stock/${a}/movements`, { type: 'zugang', qty: 1 });
+  const ro = (await users.ws.get('/api/stock?reorder=1')).data.items;
+  const ra = ro.find((i) => i.id === a); const rb = ro.find((i) => i.id === b);
+  eq(ra.last_supplier, 'Neu GmbH', 'jüngster Zugang mit Lieferant'); eq(ra.last_receipt_date, today, 'letzter Zugang (auch ohne Lieferant)'); eq(rb.last_supplier, null);
+  ok(ro.indexOf(ra) < ro.indexOf(rb), 'mit Lieferant vor ohne Lieferant');
+  for (const id of [a, b]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
 });
 
 await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten löschen keine Stammdaten, Anführungszeichen', async () => {
