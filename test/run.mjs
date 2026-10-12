@@ -1008,6 +1008,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`${field}: darf nicht in der Zukunft liegen.`', 'Ausgestellt am: darf nicht in der Zukunft liegen.', 'Видано: не може бути в майбутньому.', 'Issued on: must not be in the future.'],
     ['`${field}: ganze Zahl.`', 'km-Kontingent: ganze Zahl.', 'Ліміт пробігу: ціле число.', 'Mileage allowance: whole number.'],
     ['`Maximal ${MAX_IMPORT} Zeilen je Import.`', 'Maximal 2000 Zeilen je Import.', 'Не більше 2000 рядків за один імпорт.', 'At most 2000 rows per import.'],
+    ['`Maximal ${MAX_ROWS} Zeilen je Import.`', 'Maximal 500 Zeilen je Import.', 'Не більше 500 рядків за один імпорт.', 'At most 500 rows per import.'],
     ['`Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`', 'Höchstens 20 aktive Hinweise je Fahrzeug – bitte erledigte archivieren.', 'Не більше 20 активних приміток на транспорт – заархівуйте виконані.', 'At most 20 active notes per vehicle – please archive completed ones.'],
     ['`Fahrzeugart unbekannt: ${raw} (Lkw oder Anhänger)`', 'Fahrzeugart unbekannt: Bus (Lkw oder Anhänger)', 'Невідомий тип транспорту: Bus (Lkw або Anhänger)', 'Unknown vehicle type: Bus (Lkw or Anhänger)'],
     ['`Artikel doppelt gezählt: ${it.name}`', 'Artikel doppelt gezählt: Öl $& 5W30', 'Позицію підраховано двічі: Öl $& 5W30', 'Item counted twice: Öl $& 5W30'],
@@ -1017,6 +1018,13 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   ];
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
   eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
+  // Neue Server-Texte fallen auf: jeder feste validation-Text ist übersetzt oder bewusst technisch (Integration/API)
+  const TECH = new Set(['request_key doppelt.', 'provider muss webfleet oder yellowfox sein.', 'items[] erforderlich.', 'driver_id oder vehicle_id angeben.', 'Ungültiger Push-Endpunkt.', 'Max. 500 Einträge je Aufruf.']);
+  const lits = [...src.matchAll(/bad\('validation', '([^']+)'\)/g)].map((m) => m[1]);
+  ok(lits.length >= 100, 'Server-Texte gefunden');
+  for (const l of new Set(lits)) ok(TECH.has(l) || (tv('uk', l) && tv('en', l)), `validation-Text ohne Übersetzung (in V_MORE ergänzen oder TECH): ${l}`);
+  const tpls = new Set([...src.matchAll(/bad\('validation', (`[^`]+`)\)/g)].map((m) => m[1]));
+  for (const t of tpls) ok(tpl.some(([code]) => code === t) || /^`\$\{field\} (ist erforderlich|ist zu lang)|^`\$\{field\}: (ungültiger Wert|„|ungültige Zahl)/.test(t), `validation-Vorlage ohne Übersetzung/Test: ${t}`);
   // Nutzerseitige Fehlercodes haben eine Übersetzung (technische wie invalid_json/invalid_token bewusst nicht)
   const { STRINGS: STR } = await import('../public/i18n.js');
   for (const code of ['username_taken', 'setup_done', 'invalid_setup_code', 'wrong_file', 'invalid_session']) {
