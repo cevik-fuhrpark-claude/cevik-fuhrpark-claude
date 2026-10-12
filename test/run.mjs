@@ -1000,6 +1000,36 @@ await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den
   eq((await users.fleet.get('/api/reports/kpi?from=2026-13')).status, 400);
 });
 
+await test('Kennzahlen: Filter nach Fahrzeug-Standort (Fahrzeugstamm, Schreibweise egal), Summe der Standorte = alle', async () => {
+  const ym = BERLIN_YM;
+  const base = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`)).data;
+  const allN = (x) => (x.by_priority.find((p) => p.priority === 'alle') || { created: 0 }).created;
+  const mv = base.vehicles[0]; ok(mv, 'Fahrzeug mit Vorgängen');
+  const old = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(mv.vehicle_id).first()).site;
+  try {
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind('KPI-Teststandort', mv.vehicle_id).run();
+    const r = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}`)).data;
+    ok(r.vehicle_sites.includes('KPI-Teststandort') && r.vehicle_sites.length >= 2, 'Standorte laut Fahrzeugstamm zur Auswahl');
+    eq(r.vehicle_site, null);
+    const one = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&vsite=kpi-teststandort`)).data;
+    eq(one.vehicle_site, 'KPI-Teststandort', 'Schreibweise zusammengefasst, Anzeige laut Stamm');
+    eq(allN(one), mv.cases, 'nur Vorgänge des Fahrzeugs am Standort');
+    ok(one.vehicles.every((v) => v.vehicle_id === mv.vehicle_id), 'je Fahrzeug nur dieser Standort');
+    let sum = 0; let insp = 0;
+    for (const vs of r.vehicle_sites) { const x = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&vsite=${encodeURIComponent(vs)}`)).data; sum += allN(x); insp += x.inspection_defects.inspections; }
+    eq(sum, allN(r), 'Fahrzeug-Standorte ergeben zusammen alle Meldungen');
+    eq(insp, r.inspection_defects.inspections, 'Prüfungen ebenfalls nach Fahrzeug-Standort aufgeteilt');
+    eq(allN((await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&vsite=GIBTSNICHT`)).data), 0, 'unbekannter Standort leer');
+    // kombinierbar mit Werkstattfilter
+    const ws = r.sites[0];
+    const both = (await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&site=${ws}&vsite=KPI-Teststandort`)).data;
+    ok(allN(both) <= allN(one), 'Werkstatt- und Fahrzeugfilter zusammen');
+    // Integrations-API reicht den Parameter durch
+    const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${ym}&to=${ym}&vsite=KPI-Teststandort&environment=${one.environment}`, undefined, { authorization: 'Bearer integration-token-xyz' });
+    eq(ig.status, 200); eq(allN(ig.data), mv.cases, 'Integration gleich');
+  } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, mv.vehicle_id).run(); }
+});
+
 await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Überschneidungen einmal', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'KP-SP 1', vin: 'WDB96340310555501', site: 'Dortmund' })).status, 201);
   const VK = 'VIN:WDB96340310555501';

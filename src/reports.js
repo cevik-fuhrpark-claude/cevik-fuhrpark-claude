@@ -212,10 +212,18 @@ export async function kpiReport(env, user, envName, query = {}) {
   const { from, to } = monthRange(query);
   const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
+  // Fahrzeugstamm einmal laden (Kennzeichen, Art, Standort laut Stamm) – auch für den Fahrzeug-Standortfilter
+  const plates = new Map((await env.DB.prepare('SELECT id, plate, kind, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
+  const vLabel = siteLabels([...plates.values()].filter((v) => !v.eval_excluded));
+  const vehicle_sites = [...new Set(vLabel.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
+  const vsiteRaw = query.vsite ? String(query.vsite).slice(0, 60) : null;
+  const vKey = vsiteRaw ? siteKey(vsiteRaw === 'ohne' ? null : vsiteRaw) : null;
+  const vehicle_site = vKey ? (vLabel.get(vKey) || vsiteRaw) : null;
+  const vOk = (vid) => !vKey || siteKey((plates.get(vid) || {}).site) === vKey;
   const allCases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
     JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
     WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results
-    .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to; });
+    .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to && vOk(c.vehicle_id); });
   // optional je Werkstatt-Standort (Werkstatt des Vorgangs; „ohne“ = noch keiner Werkstatt zugeordnet) – Standorte des Zeitraums zur Auswahl
   const sites = [...new Set(allCases.map((c) => c.workshop_site || 'ohne'))].sort();
   const site = query.site ? String(query.site).slice(0, 20) : null;
@@ -305,7 +313,6 @@ export async function kpiReport(env, user, envName, query = {}) {
     sum += b - a;
     byVehicle.get(vid).locked_h = sum / H;
   }
-  const plates = new Map((await env.DB.prepare('SELECT id, plate, kind FROM vehicles').all()).results.map((v) => [v.id, v]));
   const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
   const by_priority = order.filter((k) => groups[k]).map((k) => {
     const x = groups[k];
@@ -322,9 +329,9 @@ export async function kpiReport(env, user, envName, query = {}) {
   const DEF = `('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')`;
   const cSub = (col) => `(SELECT c.${col} FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?1 AND c.status<>'abgelehnt' ORDER BY c.created_at DESC LIMIT 1)`;
   const nSub = (col) => `(SELECT x.${col} FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)) ORDER BY x.done_date, x.created_at LIMIT 1)`;
-  const dRows = (await env.DB.prepare(`SELECT e.done_date, ${cSub('status')} AS c_status, ${cSub('closed_at')} AS c_closed, ${cSub('workshop_site')} AS c_site, ${nSub('done_date')} AS n_date, ${nSub('result')} AS n_result
+  const dRows = (await env.DB.prepare(`SELECT e.vehicle_id, e.done_date, ${cSub('status')} AS c_status, ${cSub('closed_at')} AS c_closed, ${cSub('workshop_site')} AS c_site, ${nSub('done_date')} AS n_date, ${nSub('result')} AS n_result
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id AND v.eval_excluded=0 WHERE e.result IN ${DEF} AND e.done_date >= ?2 AND e.done_date <= ?3`)
-    .bind(envName, `${from}-01`, `${to}-31`).all()).results.filter((r) => !site || (r.c_status && (r.c_site || 'ohne') === site));
+    .bind(envName, `${from}-01`, `${to}-31`).all()).results.filter((r) => vOk(r.vehicle_id) && (!site || (r.c_status && (r.c_site || 'ohne') === site)));
   const dd = { inspections: dRows.length, without_order: site ? null : dRows.filter((r) => !r.c_status).length, ordered: dRows.filter((r) => r.c_status).length,
     released: 0, open: 0, reinspected: 0, defects_again: 0, days: [] };
   for (const r of dRows) {
@@ -334,8 +341,8 @@ export async function kpiReport(env, user, envName, query = {}) {
   }
   const inspection_defects = { inspections: dd.inspections, without_order: dd.without_order, ordered: dd.ordered, released: dd.released, open: dd.open, reinspected: dd.reinspected, defects_again: dd.defects_again,
     to_release_days: { n: dd.days.length, median_d: r1(quantile(dd.days, 0.5)), p90_d: r1(quantile(dd.days, 0.9)) } };
-  return { from, to, environment: envName, site, sites, by_priority, vehicles, parts_eta, cost_approvals, inspection_defects,
-    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort' } };
+  return { from, to, environment: envName, site, sites, vehicle_site, vehicle_sites, by_priority, vehicles, parts_eta, cost_approvals, inspection_defects,
+    definitions: { triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
 }
 
 // ---- Werkstatt-Auslastung je Standort und Kalenderwoche (ohne Auswertung je Person) ----
