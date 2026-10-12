@@ -277,12 +277,14 @@ export function computeCosts(rate, work, parts, ext) {
   };
 }
 
+// Eine Abfrage statt vier (Stundensatz + Stunden + Teile + Fremdleistungen); Ergebnis wie computeCosts über die Einzelabfragen
 export async function caseCosts(env, caseId) {
-  const rate = await hourlyRate(env);
-  const work = (await env.DB.prepare('SELECT hours FROM work_entries WHERE case_id=?').bind(caseId).all()).results;
-  const parts = (await env.DB.prepare('SELECT quantity, unit_price_net, valuation FROM parts WHERE case_id=?').bind(caseId).all()).results;
-  const ext = (await env.DB.prepare('SELECT amount_net, valuation, covers_work_and_parts FROM external_costs WHERE case_id=?').bind(caseId).all()).results;
-  return computeCosts(rate, work, parts, ext);
+  const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
+    (SELECT json_group_array(json_object('hours', hours)) FROM work_entries WHERE case_id=?1) AS w,
+    (SELECT json_group_array(json_object('quantity', quantity, 'unit_price_net', unit_price_net, 'valuation', valuation)) FROM parts WHERE case_id=?1) AS p,
+    (SELECT json_group_array(json_object('amount_net', amount_net, 'valuation', valuation, 'covers_work_and_parts', covers_work_and_parts)) FROM external_costs WHERE case_id=?1) AS e`).bind(caseId).first();
+  const rate = r.rate === null || r.rate === '' ? null : Number(r.rate);
+  return computeCosts(rate, JSON.parse(r.w || '[]'), JSON.parse(r.p || '[]'), JSON.parse(r.e || '[]'));
 }
 
 // Summe über alle Vorgänge eines Fahrzeugs mit 4 Abfragen (statt 4 je Vorgang)

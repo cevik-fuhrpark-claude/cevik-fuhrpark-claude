@@ -3474,6 +3474,16 @@ await test('Vorgangsdetail: Kosten aus geladenen Positionen = eigenständige Kos
   const ids = (await env.DB.prepare(`SELECT id FROM cases WHERE environment='test' AND id IN (SELECT case_id FROM work_entries UNION SELECT case_id FROM parts UNION SELECT case_id FROM external_costs)`).all()).results.map((r) => r.id);
   ok(ids.length >= 3, `Vorgänge mit Kostenpositionen: ${ids.length}`);
   for (const id of ids) eq(JSON.stringify((await users.fleet.get(`/api/cases/${id}`)).data.costs), JSON.stringify(await caseCosts(env, id)), `Kosten ${id}`);
+  // Referenz: Einzelabfragen wie vor dem 12.10. (eine Sammelabfrage in caseCosts)
+  const { computeCosts } = await import('../src/cases.js');
+  const rr = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
+  const rate = rr && rr.value !== '' ? Number(rr.value) : null;
+  for (const id of ids) {
+    const q = async (sql) => (await env.DB.prepare(sql).bind(id).all()).results;
+    const ref = computeCosts(rate, await q('SELECT hours FROM work_entries WHERE case_id=?'), await q('SELECT quantity, unit_price_net, valuation FROM parts WHERE case_id=?'),
+      await q('SELECT amount_net, valuation, covers_work_and_parts FROM external_costs WHERE case_id=?'));
+    eq(JSON.stringify(await caseCosts(env, id)), JSON.stringify(ref), `Sammelabfrage = Einzelabfragen ${id}`);
+  }
 });
 
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
