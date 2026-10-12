@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -103,12 +103,12 @@ export async function listCases(env, user, envName, query, meta = null) {
     args.push(new Date(Date.now() - d * 86400000).toISOString());
   }
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
-  // noch lief (Meldetag = UTC-Datum – höchstens einen Tag großzügiger als die Berliner Angabe im Vorgang); Werkstatt nur eigener Standort
+  // noch lief (Meldetag = Berliner Kalendertag wie im Vorgang angezeigt); Werkstatt nur eigener Standort
   if (query.warranty && user.role !== 'driver') {
     const own = user.role === 'workshop' ? ' AND x.workshop_site = ?' : '';
     where.push(`EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
-      AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))
-        OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))))`);
+      AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})
+        OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})))`);
     if (own) args.push(user.workshop_site);
   }
   // Filter „Wiedervorlage“ (nur Inhaber/Fuhrparkleitung/Lesende): offene Vorgänge mit Wiedervorlage, fällige zuerst (Sortierung in der Oberfläche)

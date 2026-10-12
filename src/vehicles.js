@@ -650,7 +650,7 @@ export async function aiAnalysis(env, user, envName, vehicleId) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   if (!env.AI) return { available: false, message: 'KI-Analyse ist in dieser Umgebung nicht aktiviert.' };
   const d = await vehicleDetail(env, user, envName, vehicleId);
-  const history = d.cases.slice(0, 30).map((c) => `${c.created_at.slice(0, 10)} [${c.priority}/${c.status}] ${c.description.slice(0, 300)}`).join('\n');
+  const history = d.cases.slice(0, 30).map((c) => `${berlinDate(c.created_at)} [${c.priority}/${c.status}] ${c.description.slice(0, 300)}`).join('\n');
   if (!history) return { available: true, suggestion: null, message: 'Keine Vorgänge zu diesem Fahrzeug.' };
   const prompt = `Du unterstützt eine Lkw-Werkstatt (Autotransporter). Analysiere die Schadenshistorie des Fahrzeugs ${d.vehicle.plate} (${d.vehicle.manufacturer || 'Hersteller unbekannt'}, Baujahr ${d.vehicle.build_year || 'unbekannt'}).
 Nenne: 1) wiederkehrende Muster, 2) mögliche gemeinsame Ursachen, 3) konkrete Prüfempfehlungen für die nächste Inspektion.

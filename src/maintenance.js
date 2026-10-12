@@ -73,13 +73,15 @@ export async function latestKmByVehicle(env, { withBase = false } = {}) {
 // km gestiegen; letzte Ablesung höchstens 90 Tage alt (sonst veraltet). Ergebnis: Ø km/Tag und voraussichtliches Datum.
 export const KM_RATE_WINDOW_DAYS = 90;
 export const KM_RATE_MIN_SPAN_DAYS = 14;
-const dayOf = (x) => Date.parse(String(x).slice(0, 10) + 'T00:00:00Z');
+// Kalendertag: reines Datum bleibt, Zeitstempel → Berliner Tag (Ablesung um 00:30 Uhr zählt zum selben Tag wie in der Akte)
+const calDay = (x) => (String(x).length > 10 ? berlinDate(x) : String(x).slice(0, 10));
+const dayOf = (x) => Date.parse(calDay(x) + 'T00:00:00Z');
 export function kmRate(latest, base, today) {
   if (!latest || !base || base.km === null || base.km === undefined || !base.measured_at) return null;
   const span = Math.round((dayOf(latest.measured_at) - dayOf(base.measured_at)) / 86400000);
   if (!(span >= KM_RATE_MIN_SPAN_DAYS) || !(latest.km > base.km)) return null;
   if (today && Math.round((dayOf(today) - dayOf(latest.measured_at)) / 86400000) > KM_RATE_WINDOW_DAYS) return null;
-  return { km_per_day: (latest.km - base.km) / span, from: String(base.measured_at).slice(0, 10), to: String(latest.measured_at).slice(0, 10), days: span };
+  return { km_per_day: (latest.km - base.km) / span, from: calDay(base.measured_at), to: calDay(latest.measured_at), days: span };
 }
 export function kmForecastDate(remaining, rate, latestAt) {
   if (!rate || !(remaining > 0)) return null;

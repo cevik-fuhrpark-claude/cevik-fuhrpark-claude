@@ -1,6 +1,6 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso, berlinDate } from './util.js';
+import { forbidden, nowIso, berlinDate, berlinDaySql } from './util.js';
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 
@@ -102,7 +102,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       JOIN maintenance_events n ON n.id = (SELECT x.id FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)) ORDER BY x.done_date, x.created_at LIMIT 1)
       JOIN vehicles v ON v.id=e.vehicle_id
-      WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND substr(c.closed_at,1,10) <= n.done_date
+      WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND ${berlinDaySql('c.closed_at')} <= n.done_date
       AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       GROUP BY n.id ORDER BY n.done_date DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
     noResultQuery(env).all(),

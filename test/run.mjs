@@ -2325,6 +2325,30 @@ await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis
   ok(Array.isArray(aw.notes), 'kombiniert: notes'); eq(aw.warranties.map((w) => w.item).join(), 'Bosch-Dienst,Lichtmaschine', 'API: laufende, nach Datum');
   eq(Object.keys(aw.warranties[0]).sort().join(), 'case_no,item,item_kind,warranty_until', 'nur Bezeichnung/Art/Datum/Vorgang');
   eq((await av('environment=production&include=warranties')).find((v) => v.id === V).warranties.length, 0, 'API: Umgebung getrennt');
+  // Meldetag = Berliner Kalendertag – Liste (SQL) und Vorgangsdetail (JS) entscheiden gleich, auch um 00:30 Uhr Berliner Zeit
+  const { berlinDayStartIso } = await import('../src/util.js');
+  const D = day(-5);
+  env.DB.db.prepare('UPDATE parts SET warranty_until=? WHERE case_id=? AND warranty_until IS NOT NULL').run(D, c1);
+  env.DB.db.prepare('UPDATE external_costs SET warranty_until=? WHERE case_id=?').run(D, c1);
+  env.DB.db.prepare('UPDATE cases SET created_at=? WHERE id=?').run(new Date(Date.now() - 30 * 86400000).toISOString(), c1);
+  const at0030 = (dstr) => new Date(Date.parse(berlinDayStartIso(dstr)) + 30 * 60000).toISOString();
+  env.DB.db.prepare('UPDATE cases SET created_at=? WHERE id=?').run(at0030(day(-4)), c2); // UTC-Tag = D, Berliner Tag = D+1
+  eq((await users.fleet.get(`/api/cases/${c2}`)).data.vehicle_info.warranties.length, 0, 'Detail: am Berliner Meldetag abgelaufen');
+  ok(!(await wl(users.fleet)).includes(c2), 'Liste: 00:30 Uhr Berlin am Folgetag – nicht mehr gelistet (früher UTC-Tag)');
+  env.DB.db.prepare('UPDATE cases SET created_at=? WHERE id=?').run(at0030(D), c2); // Berliner Tag = D (letzter Gültigkeitstag)
+  ok((await users.fleet.get(`/api/cases/${c2}`)).data.vehicle_info.warranties.length > 0, 'Detail: am letzten Tag noch gültig');
+  ok((await wl(users.fleet)).includes(c2), 'Liste: am letzten Gültigkeitstag gelistet');
+});
+
+await test('Berliner Kalendertag in SQL (berlinDaySql) stimmt mit berlinDate überein – Zeitumstellung, Jahreswechsel, Mitternacht', async () => {
+  const { berlinDaySql, berlinDate } = await import('../src/util.js');
+  const st = env.DB.db.prepare(`SELECT ${berlinDaySql('?1')} AS d`);
+  const probes = ['2026-03-29T00:59:59.000Z', '2026-03-29T01:00:00.000Z', '2026-10-25T00:59:59.000Z', '2026-10-25T01:00:00.000Z',
+    '2026-10-12T21:59:59.000Z', '2026-10-12T22:00:00.000Z', '2026-12-31T22:59:59.000Z', '2026-12-31T23:00:00.000Z', '2027-03-28T01:30:00.000Z', '2028-02-29T23:30:00.000Z'];
+  for (let ms = Date.UTC(2026, 0, 1); ms < Date.UTC(2029, 0, 1); ms += 3 * 3600000 + 17 * 60000) probes.push(new Date(ms).toISOString());
+  let bad = 0; for (const iso of probes) if (st.get(iso).d !== berlinDate(iso)) bad++;
+  eq(bad, 0, `${probes.length} Zeitpunkte`);
+  eq(st.get('2026-10-12T22:30:00.000Z').d, '2026-10-13', 'Sommerzeit: 00:30 Berlin'); eq(st.get('2026-12-31T23:30:00.000Z').d, '2027-01-01', 'Winterzeit: Jahreswechsel');
 });
 
 await test('Positionen je Vorgang per Index (keine Volltabellen-Suche): Arbeitszeit, Teile, Fremdleistungen, Restarbeiten, Dateien', async () => {

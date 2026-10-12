@@ -197,6 +197,13 @@ function berlinOffsetMs(ms) {
   }
   return off;
 }
+// Berliner Kalendertag eines gespeicherten UTC-Zeitstempels direkt in SQL (SQLite/D1 kennt keine Zeitzonen):
+// Sommerzeit (+2 h) vom letzten Sonntag im März 01:00 UTC bis zum letzten Sonntag im Oktober 01:00 UTC, sonst +1 h (EU-Regel).
+// datetime() vereinheitlicht „2026-10-12T22:30:00.000Z“ zu „2026-10-12 22:30:00“, damit der Textvergleich stimmt.
+export function berlinDaySql(col) {
+  const t = `datetime(${col})`; const y = `substr(${t},1,4)`;
+  return `date(${t}, CASE WHEN ${t} >= datetime(${y}||'-03-25','weekday 0','+1 hour') AND ${t} < datetime(${y}||'-10-25','weekday 0','+1 hour') THEN '+2 hours' ELSE '+1 hour' END)`;
+}
 // Beginn eines Berliner Kalendertags als UTC-Zeitpunkt (ISO); Zeitumstellung liegt nie um Mitternacht (01:00/02:00 UTC)
 export function berlinDayStartIso(dateStr) {
   const ms = Date.parse(dateStr + 'T00:00:00Z');
