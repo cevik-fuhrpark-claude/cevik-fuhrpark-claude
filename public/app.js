@@ -1483,8 +1483,8 @@ async function viewFines() {
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn secondary" id="fcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="fics">${esc(t('export_ics'))}</button>${mgr ? `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv"> ${esc(t('with_driver_names'))}</label>` : ''}</div>`;
   render(html, 'more');
   const day = bDate();
-  const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { download(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}`), `fuhrpark-bussgelder_${day}.csv`); } catch (err) { toast(err.message, true); } };
-  const fi = $('#fics'); if (fi) fi.onclick = async () => { try { download(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${day}.ics`); } catch (err) { toast(err.message, true); } };
+  const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { downloadChecked(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}`), `fuhrpark-bussgelder_${day}.csv`); } catch (err) { toast(err.message, true); } };
+  const fi = $('#fics'); if (fi) fi.onclick = async () => { try { downloadChecked(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${day}.ics`); } catch (err) { toast(err.message, true); } };
   const fs = $('#fsite'); if (fs) fs.onchange = () => { S.fineSite = fs.value; viewFines(); };
   const nf = $('#nf');
   if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.replace(',', '.'); b.offense_at = new Date(b.offense_at).toISOString(); try { const r = await api('POST', '/api/fines', b); if (!r.vehicle_matched) toast(t('vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
@@ -1808,6 +1808,8 @@ async function viewMaster() {
 // Druck/PDF: Prüfhistorie der Fahrzeugakte („Bisherige Durchführungen“) immer mitdrucken, danach wieder zuklappen
 window.addEventListener('beforeprint', () => { const mh = document.querySelector('#mhist'); if (mh && !mh.open) { mh.open = true; mh.dataset.printOpened = '1'; } });
 window.addEventListener('afterprint', () => { const mh = document.querySelector('#mhist'); if (mh && mh.dataset.printOpened) { mh.open = false; delete mh.dataset.printOpened; } });
+// Download mit Hinweis, wenn der Server die Datei begrenzt hat (Header x-cfp-truncated)
+function downloadChecked(blob, name) { download(blob, name); if (blob.cfpTruncated) toast(t('export_truncated').replace('{n}', blob.cfpTruncated), true); }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 // Gespeicherter Standard-Nachweis der Fahrerzuordnung (Server, deutsch) in der App-Sprache anzeigen; eigene Nachweise bleiben wörtlich
 const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_default') : e || '');

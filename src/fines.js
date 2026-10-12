@@ -28,15 +28,16 @@ export async function listFines(env, user, envName, query) {
 
 // Liste mit Standortfilter (Fahrzeug-Standort laut Fahrzeugstamm, Schreibweise egal; Schreiben ohne erkanntes Fahrzeug = „ohne“).
 // Auswahl aus den Fahrzeugen der Schreiben (wie Mängelstatistik); Fahrer: keine Standortauswahl.
-export async function listFinesSel(env, user, envName, query = {}) {
+// max: Liste 500, CSV/Kalender bis 5000 (die jüngsten; truncated = es gibt ältere)
+export async function listFinesSel(env, user, envName, query = {}, max = 500) {
   let rows; let sel = null; let truncated = false;
   if (isMgr(user) || user.role === 'viewer') {
     const open = query.status === 'open';
     rows = (await env.DB.prepare(`SELECT f.*, v.plate, v.site AS vehicle_site, u.display_name AS driver_name FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id LEFT JOIN users u ON u.id=f.driver_id
       WHERE f.environment=? ${open ? "AND f.status NOT IN ('bezahlt','eingestellt','erledigt')" : ''}
-      ORDER BY f.created_at DESC, f.rowid DESC LIMIT 501`).bind(envName).all()).results;
+      ORDER BY f.created_at DESC, f.rowid DESC LIMIT ?`).bind(envName, max + 1).all()).results;
     // die 500 jüngsten Schreiben (vorher: nach Frist aufsteigend begrenzt – dann wären bei > 500 die neuesten weggefallen), Anzeige-Reihenfolge wie bisher
-    if (rows.length > 500) { rows.length = 500; truncated = true; }
+    if (rows.length > max) { rows.length = max; truncated = true; }
     rows.sort((x, y) => (x.response_due === null) - (y.response_due === null) || (x.response_due || '').localeCompare(y.response_due || '') || (y.created_at || '').localeCompare(x.created_at || ''));
     sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
     if (sel.site) rows = rows.filter((r) => sel.match(r.vehicle_site));

@@ -2302,6 +2302,16 @@ await test('Bußgeldliste: bei mehr als 500 Schreiben die jüngsten 500 (vorher 
   ok(r.fines.some((f) => f.fine_no === 'TLIM-500'), 'jüngstes Schreiben enthalten');
   ok(!r.fines.some((f) => f.fine_no === 'TLIM-0'), 'ältestes fällt weg (obwohl mit Frist)');
   const withDue = r.fines.filter((f) => f.response_due); ok(withDue.length >= 1 && r.fines.indexOf(withDue[0]) === 0, 'mit Frist zuerst');
+  // CSV/Kalender: bis 5000 (vorher still auf die Liste mit 500 begrenzt)
+  const csvLines = async () => { const c = await users.fleet.get('/api/fines?format=csv'); return [new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data).trim().split('\r\n').length - 1, c.headers.get('x-cfp-truncated')]; };
+  const total = env.DB.db.prepare(`SELECT COUNT(*) AS n FROM fines WHERE environment='test'`).get().n;
+  let [n, h] = await csvLines(); eq(n, total, 'CSV enthält alle (mehr als 500)'); eq(h, null);
+  ok((await users.fleet.get('/api/fines?format=ics')).data.length > 0);
+  try {
+    env.DB.db.exec('BEGIN'); for (let i = 501; i < 5001 - total + 501; i++) ins.run('lim-' + i, 'TLIM-' + i, 'test', 'verwarnung', 'Probe-Behörde', 'parken', '2020-01-01T10:00:00.000Z', 'XX-LIM ' + i, 'eingegangen', users.fleet.id, new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString(), null, new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString()); env.DB.db.exec('COMMIT');
+    [n, h] = await csvLines(); eq(n, 5000, 'höchstens 5000'); eq(h, '5000', 'Header bei Begrenzung');
+    eq((await users.fleet.get('/api/fines?format=ics')).headers.get('x-cfp-truncated'), '5000', 'auch Kalender');
+  } finally { if (env.DB.db.isTransaction) env.DB.db.exec('ROLLBACK'); }
   env.DB.db.prepare(`DELETE FROM fines WHERE id LIKE 'lim-%'`).run();
   eq((await users.fleet.get('/api/fines')).data.truncated, false);
 });

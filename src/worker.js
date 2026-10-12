@@ -26,6 +26,8 @@ import * as claims from './claims.js';
 
 // Höchstzahl Zeilen der Vorgangs-CSV (bei Erreichen: Header x-cfp-truncated)
 const CASES_CSV_MAX = 5000;
+// Bußgelder: CSV/Fristenkalender aus den jüngsten 5000 Schreiben (Liste: 500)
+const FINES_EXPORT_MAX = 5000;
 
 // Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
 const usageEnv = new WeakMap();
@@ -404,18 +406,20 @@ async function handleApi(request, env, ctx, url) {
   // Bußgelder & Zeugenfragebögen
   if (path === '/api/fines' && m === 'GET') {
     const q = Object.fromEntries(url.searchParams);
-    const sel = await fines.listFinesSel(env, user, envName, q); const list = sel.rows;
-    if (q.format === 'csv' || q.format === 'ics') {
+    const exp = q.format === 'csv' || q.format === 'ics';
+    const sel = await fines.listFinesSel(env, user, envName, q, exp ? FINES_EXPORT_MAX : 500); const list = sel.rows;
+    if (exp) {
+      const trunc = sel.truncated ? { 'x-cfp-truncated': String(FINES_EXPORT_MAX) } : {};
       if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
       const day = berlinDate();
       if (q.format === 'ics') {
         const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
         const warn = w && Number(w.value) > 0 ? Number(w.value) : null;
-        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"` } });
+        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"`, ...trunc } });
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
-      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site });
-      return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}.csv"` } });
+      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site, ...(sel.truncated ? { truncated: true } : {}) });
+      return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}.csv"`, ...trunc } });
     }
     return json({ fines: list, site: sel.site, site_options: sel.site_options, truncated: !!sel.truncated });
   }
