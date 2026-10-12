@@ -973,6 +973,25 @@ await test('Abmelden/Sitzungsende verwirft Ansichtszustand der vorherigen Person
   eq(f('vehicles', ['plate', 'km_desc'], 'plate'), 'km_desc');
   f('cases', ['priority', 'oldest'], 'priority', 'oldest'); eq(mem.get('cfp_sort_cases'), 'oldest');
 });
+await test('Browser-Prüfhinweise in der App-Sprache: Pflicht/Auswahl/Länge/Bereich, eigene Meldungen bleiben, Aufheben im ganzen Formular', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const a = app.indexOf('function nativeValidityText'); const b = app.indexOf('\ndocument.addEventListener(\'invalid\'', a);
+  ok(a > 0 && b > a, 'Funktion vorhanden');
+  const fn = new Function('t', 'fmtD', app.slice(a, b) + '\nreturn nativeValidityText;')((k) => STRINGS.uk[k], (d) => d.split('-').reverse().join('.'));
+  const V = (o) => ({ valid: false, customError: false, ...o });
+  eq(fn({ validity: V({ valueMissing: true }), type: 'text', tagName: 'INPUT' }), 'Заповніть це поле.');
+  eq(fn({ validity: V({ valueMissing: true }), type: 'select-one', tagName: 'SELECT' }), 'Виберіть варіант.');
+  eq(fn({ validity: V({ tooShort: true }), minLength: 3, value: 'ab', type: 'text' }), 'Введіть щонайменше 3 символів (зараз 2).');
+  eq(fn({ validity: V({ rangeOverflow: true }), type: 'date', max: '2026-10-12' }), 'Дата не може бути пізніше 12.10.2026.');
+  eq(fn({ validity: V({ rangeUnderflow: true }), type: 'number', min: '0' }), 'Значення має бути не менше 0.');
+  eq(fn({ validity: V({ customError: true, valueMissing: true }), type: 'text' }), '', 'eigene Meldung (z. B. mehrdeutig) bleibt');
+  eq(fn({ validity: { valid: true }, type: 'text' }), '');
+  ok(/document\.addEventListener\('invalid', [\s\S]{0,300}\}, true\);/.test(app), 'invalid in der Erfassungsphase (Ereignis steigt nicht auf)');
+  ok(/document\.addEventListener\('input', clearNativeValidity, true\)/.test(app) && /document\.addEventListener\('change', clearNativeValidity, true\)/.test(app), 'Aufheben vor den Feldprüfungen');
+  ok(app.indexOf("addEventListener('input', clearNativeValidity, true)") < app.indexOf("el.inputMode === 'decimal') el.setCustomValidity"), 'Reihenfolge');
+});
 await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen passen zu src/util.js, feste Texte existieren', async () => {
   const fs = await import('node:fs');
   const { translateValidation: tv } = await import('../public/i18n.js');

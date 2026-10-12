@@ -2521,6 +2521,37 @@ async function checkVersion() {
   document.body.appendChild(el);
 }
 checkVersion();
+// Browser-Prüfhinweise (Pflichtfeld, Mindestlänge, Format, Bereich) in der App-Sprache statt in der Gerätesprache.
+// Eigene Meldungen (setCustomValidity, z. B. „mehrdeutig“) bleiben unangetastet; nach der nächsten Eingabe wird neu geprüft.
+function nativeValidityText(el) {
+  const v = el.validity; if (!v || v.valid || v.customError) return '';
+  const isDate = el.type === 'date' || el.type === 'month';
+  const lim = (x) => (isDate && /^\d{4}-\d{2}-\d{2}$/.test(x) ? fmtD(x) : x);
+  if (v.valueMissing) return t(el.type === 'checkbox' ? 'v_check' : el.type === 'file' ? 'v_file' : el.type === 'radio' || el.tagName === 'SELECT' ? 'v_choose' : 'v_required');
+  if (v.tooShort) return t('v_too_short').replace('{n}', el.minLength).replace('{c}', el.value.length);
+  if (v.tooLong) return t('v_too_long').replace('{n}', el.maxLength);
+  if (v.badInput) return t('v_bad');
+  if (v.typeMismatch) return t(el.type === 'email' ? 'v_type_email' : 'v_type');
+  if (v.patternMismatch) return t('v_pattern');
+  if (v.rangeUnderflow) return t(isDate ? 'v_min_date' : 'v_min').replace('{n}', () => lim(el.min));
+  if (v.rangeOverflow) return t(isDate ? 'v_max_date' : 'v_max').replace('{n}', () => lim(el.max));
+  if (v.stepMismatch) return t('v_step').replace('{n}', () => el.step);
+  return '';
+}
+document.addEventListener('invalid', (e) => {
+  const el = e.target; if (!el || typeof el.setCustomValidity !== 'function') return;
+  const msg = nativeValidityText(el); if (!msg) return;
+  el.setCustomValidity(msg); el.dataset.cfpNv = '1';
+}, true);
+// Jede Eingabe im selben Formular hebt alle so gesetzten Hinweise auf (Radiogruppen, per Skript ausgeblendete Pflichtfelder) – beim nächsten Absenden prüft der Browser neu
+const clearNativeValidity = (e) => {
+  const el = e.target; if (!el || !el.dataset) return;
+  const scope = el.form || (el.closest && el.closest('form'));
+  for (const x of scope ? scope.querySelectorAll('[data-cfp-nv]') : el.dataset.cfpNv ? [el] : []) { delete x.dataset.cfpNv; x.setCustomValidity(''); }
+};
+// Erfassungsphase: läuft vor den Feld-Prüfungen unten (sonst würde z. B. „mehrdeutig“ wieder gelöscht)
+document.addEventListener('input', clearNativeValidity, true);
+document.addEventListener('change', clearNativeValidity, true);
 // Zahlenfelder (Preise, Mengen, Stunden): „2.000“ ist mehrdeutig (2 oder 2000?) – der Server weist es ab; hier schon am Feld in der App-Sprache melden
 const AMBIG_NUM = /^-?[1-9]\d{0,2}(\.\d{3})+$/;
 document.addEventListener('input', (e) => { const el = e.target; if (el instanceof HTMLInputElement && el.inputMode === 'decimal') el.setCustomValidity(AMBIG_NUM.test(el.value.trim()) ? t('num_ambiguous') : ''); });

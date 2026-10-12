@@ -13,6 +13,7 @@ run_smoke() {
   tail -1 /tmp/cfp-rauch.log
 }
 step "UI-Leerlauf (geteiltes Tablet)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-leerlauf.py > /tmp/cfp-leerlauf.log 2>&1 || { tail -20 /tmp/cfp-leerlauf.log; fail "Leerlauftest"; }; tail -1 /tmp/cfp-leerlauf.log
+step "UI-Prüfhinweise in der App-Sprache"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-pruefhinweise.py > /tmp/cfp-hinweise.log 2>&1 || { tail -20 /tmp/cfp-hinweise.log; fail "Prüfhinweise"; }; tail -1 /tmp/cfp-hinweise.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
