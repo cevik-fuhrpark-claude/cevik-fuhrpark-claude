@@ -950,6 +950,29 @@ await test('Fahrzeugliste: Standortauswahl fasst Schreibweisen zusammen (Dortmun
   const sk = (x) => (x ? String(x).trim().toLocaleLowerCase('de') : '');
   for (const x of ['Dortmund', 'DORTMUND', ' dortmund ', 'MÜNCHEN']) eq(sk(x), siteKey(x));
 });
+await test('Abmelden/Sitzungsende verwirft Ansichtszustand der vorherigen Person (geteilte Tablets); Sortierwahl nur erlaubte Werte', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const KEEP_STATE'), b = app.indexOf('\n}\n', app.indexOf('function resetUserState(')) + 3;
+  ok(a > 0 && b > a, 'resetUserState vorhanden');
+  const store = new Map([['cfp_cf', 'all'], ['cfp_sort_cases', 'oldest'], ['cfp_sj_from', '2026-01-01'], ['cfp_after_login', '#/cases/X'], ['fremd', '1']]);
+  const ss = { removeItem: (k) => store.delete(k) }; for (const k of store.keys()) ss[k] = 1; // Object.keys(sessionStorage) liefert die Schlüssel
+  const S = { me: { id: 'u1' }, meta: { workshops: [] }, lang: 'uk', appVersion: 'v1', caseQ: 'Geheim', lastSearch: 'Name', vehSort: 'km_desc', auditRows: [1], viewEnv: 'test', unread: 3 };
+  new Function('S', 'sessionStorage', app.slice(a, b) + '\nresetUserState();')(S, ss);
+  eq(Object.keys(S).sort().join(','), 'appVersion,lang,me,meta,unread,viewEnv');
+  eq(S.me, null); eq(S.viewEnv, null); eq(S.unread, 0); eq(S.lang, 'uk');
+  eq([...store.keys()].sort().join(','), 'cfp_after_login,fremd');
+  const lo = app.slice(app.indexOf("$('#lo').onclick"), app.indexOf('\n', app.indexOf("$('#lo').onclick")));
+  ok(lo.includes('resetUserState()'), 'Abmelden setzt zurück');
+  ok(/res\.status === 401[^\n]*resetUserState\(\)/.test(app), '401 (z. B. Leerlauf-Abmeldung) setzt zurück');
+  // Sortierwahl: unbekannte/gefährliche Werte → Standard
+  const sp = app.slice(app.indexOf('const sortPref'), app.indexOf('\n', app.indexOf('const sortPref')));
+  const mem = new Map([['cfp_sort_cases', '__proto__'], ['cfp_sort_vehicles', 'km_desc']]);
+  const fake = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+  const f = new Function('sessionStorage', sp + '\nreturn sortPref;')(fake);
+  eq(f('cases', ['priority', 'oldest'], 'priority'), 'priority');
+  eq(f('vehicles', ['plate', 'km_desc'], 'plate'), 'km_desc');
+  f('cases', ['priority', 'oldest'], 'priority', 'oldest'); eq(mem.get('cfp_sort_cases'), 'oldest');
+});
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   const { siteKey } = await import('../src/reports.js');

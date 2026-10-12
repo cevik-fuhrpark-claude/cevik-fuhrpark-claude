@@ -46,7 +46,7 @@ async function api(method, path, body, extra = {}) {
   let res;
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { S.me = null; try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   // Exporte mit Zeilengrenze melden die Begrenzung per Header (z. B. Vorgangs-CSV)
@@ -209,6 +209,15 @@ function saveOfflineSession() {
   } catch {}
 }
 function offlineSession() { try { const x = JSON.parse(localStorage.getItem(OFFLINE_KEY) || 'null'); return x && x.me && x.meta ? x : null; } catch { return null; } }
+// Ansichtszustand der vorherigen Person verwerfen (geteilte Werkstatt-Tablets): Suchtexte, Filter, Sortierung, Zwischenspeicher.
+// Bleibt: Sprache, App-Version, Stammdaten-Meta (wird bei der nächsten Anmeldung ohnehin neu geladen; laufende Ansichten
+// lesen sie evtl. noch nach einem 401) und das Sprungziel nach der Anmeldung.
+const KEEP_STATE = ['lang', 'appVersion', 'meta'];
+function resetUserState() {
+  for (const k of Object.keys(S)) if (!KEEP_STATE.includes(k)) delete S[k];
+  S.me = null; S.viewEnv = null; S.unread = 0;
+  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}
+}
 function clearOfflineData() {
   try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_')) localStorage.removeItem(k); } catch {}
 }
@@ -2384,7 +2393,7 @@ function viewMore() {
     const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); loadSessions(); } catch (err) { toast(err.message, true); } };
   };
   sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
-  $('#lo').onclick = async () => { await api('POST', '/api/logout'); clearOfflineData(); S.me = null; location.hash = '#/login'; };
+  $('#lo').onclick = async () => { await api('POST', '/api/logout'); clearOfflineData(); resetUserState(); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
 }
 
