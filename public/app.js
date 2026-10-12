@@ -8,7 +8,7 @@ import { helpMatches } from './help.js';
 const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase(); return l.startsWith('uk') ? 'uk' : l.startsWith('en') ? 'en' : 'de'; };
 // Sortierwahl je Gerät/Tab merken (nur erlaubte Werte, sonst Standard; Speicher kann fehlen oder werfen)
 const sortPref = (key, allowed, def, set) => { const k = 'cfp_sort_' + key; if (set !== undefined) { try { sessionStorage.setItem(k, set); } catch {} return set; } let v = ''; try { v = sessionStorage.getItem(k) || ''; } catch {} return allowed.includes(v) ? v : def; };
-const CASE_SORTS = ['priority', 'oldest', 'updated'], VEH_SORTS = ['plate', 'next_due', 'check_oldest', 'km_desc'];
+const CASE_SORTS = ['priority', 'oldest', 'updated'], VEH_SORTS = ['plate', 'next_due', 'km_due', 'check_oldest', 'km_desc'];
 let lastActivity = Date.now(), lastApiAt = 0, idleBusy = false; // Leerlauf-Abmeldung (siehe noteActivity)
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1055,7 +1055,9 @@ async function viewVehicles() {
   const cmpStr = (a, b) => (a === b ? 0 : !a ? 1 : !b ? -1 : a < b ? -1 : 1);
   const SORTS = { plate: (a, b) => String(a.plate).localeCompare(String(b.plate), 'de'), next_due: (a, b) => cmpStr(a.next_due, b.next_due),
     check_oldest: (a, b) => (a.last_check_at || '') < (b.last_check_at || '') ? -1 : (a.last_check_at || '') > (b.last_check_at || '') ? 1 : 0,
-    km_desc: (a, b) => (b.last_km ?? -1) - (a.last_km ?? -1) };
+    km_desc: (a, b) => (b.last_km ?? -1) - (a.last_km ?? -1),
+    // wenigste Rest-km zuerst (überschritten = negativ); ohne km-Fälligkeit oder ohne km-Stand ans Ende
+    km_due: (a, b) => (a.km_remaining ?? Infinity) - (b.km_remaining ?? Infinity) || 0 };
   if (S.me.role !== 'driver' && SORTS[so]) shown.sort((a, b) => SORTS[so](a, b) || String(a.plate).localeCompare(String(b.plate), 'de'));
   const nT = vs.filter((v) => v.kind === 'anhaenger').length;
   const AV = ['gesperrt', 'werkstatt', 'meldung_offen', 'einsatzbereit_lt_system'];
