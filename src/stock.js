@@ -291,6 +291,15 @@ export function journalCsv(rep, csvCell) {
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 
+// Befunde für den Fuhrparkagenten: unter Mindestbestand – außer die Fehlmenge ist vollständig bestellt (Bestellvermerk);
+// dann nur ein Hinweis, wenn der Liefertermin laut Lieferant überschritten ist (ohne Liefertermin keine Annahme, kein Befund).
 export async function stockFindings(env, environment) {
-  return (await listStock(env, { role: 'owner' }, environment, {})).filter((i) => i.below_min);
+  const today = berlinDate();
+  const out = [];
+  for (const i of (await listStock(env, { role: 'owner' }, environment, {})).filter((x) => x.below_min)) {
+    const open = r3(Math.max(0, i.min_qty - i.on_hand - (i.ordered_on ? i.ordered_qty || 0 : 0)));
+    if (!i.ordered_on || open > 0) out.push({ ...i, code: 'STOCK_BELOW_MIN', open });
+    else if (i.ordered_eta && i.ordered_eta < today) out.push({ ...i, code: 'STOCK_ORDER_OVERDUE', open });
+  }
+  return out;
 }

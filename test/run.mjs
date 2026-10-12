@@ -1941,6 +1941,15 @@ await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, end
   eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 5, note: 'Tel. Händler' })).status, 200);
   r = await ro(); eq(r.ordered_qty, 5); eq(r.ordered_on, today); eq(r.open_after_order, 3, 'Fehlmenge minus bestellt'); eq(r.ordered_eta, null, 'kein Liefertermin erfunden');
   eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200); eq((await ro()).open_after_order, 0, 'nie negativ');
+  // Fuhrparkagent: vollständig bestellt → kein „unter Mindestbestand“; Liefertermin überschritten → eigener Hinweis
+  const mine = async () => { await users.fleet.post('/api/agent/run'); return (await users.fleet.get('/api/master')).data.findings.filter((f) => String(f.message).includes('Bestellvermerk-Teil')).map((f) => f.finding_code); };
+  eq((await mine()).join(), '', 'vollständig bestellt, ohne Liefertermin: kein Befund');
+  const dd = (n) => new Date(Date.parse(today) + n * 86400000).toISOString().slice(0, 10);
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20, ordered_on: dd(-10), eta: dd(-1) })).status, 200);
+  eq((await mine()).join(), 'STOCK_ORDER_OVERDUE', 'Liefertermin überschritten');
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 2, ordered_on: dd(-10), eta: dd(-1) })).status, 200);
+  eq((await mine()).join(), 'STOCK_BELOW_MIN', 'teilweise bestellt: weiter unter Mindestbestand');
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?reorder=1&format=csv')).data);
   ok(csv.split('\r\n')[0].endsWith(';Bestellt Menge;Bestellt am;Liefertermin laut Lieferant;Noch zu bestellen'), 'CSV-Kopf');
   ok(csv.includes(`Bestellvermerk-Teil;Stk;;2;10;8;0;5;40;;${today};20;${today};;0`), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Bestellvermerk')));

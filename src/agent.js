@@ -286,8 +286,15 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Ersatzteile unter Mindestbestand
     for (const it of await stockFindings(env, environment)) {
+      const ord = it.ordered_on ? ` Bestellt ${it.ordered_qty} ${it.unit} am ${it.ordered_on}${it.ordered_eta ? ', Liefertermin laut Lieferant ' + it.ordered_eta : ''}.` : '';
+      if (it.code === 'STOCK_ORDER_OVERDUE') {
+        add({ code: 'STOCK_ORDER_OVERDUE', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
+          message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Liefertermin überschritten.${ord} Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.`,
+          next_action: 'Beim Lieferanten nachfragen; bei Eingang Zugang buchen (beendet den Vermerk).' });
+        continue;
+      }
       add({ code: 'STOCK_BELOW_MIN', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
-        message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.`,
+        message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.${ord}${ord ? ` Noch zu bestellen: ${it.open} ${it.unit}.` : ''}`,
         next_action: 'Nachbestellung prüfen (Bestellung nur nach Freigabe).' });
     }
 
