@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 175 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 176 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -457,6 +457,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: Startseite ohne Standort-/Nachfass-Abfragen (`__counts`, 7 → 5 Abfragen); **interne Schalter `__export`/`__counts` werden nicht mehr aus der Adresse übernommen** (vorher lieferte `GET /api/cases?__export=1&limit=5000` bis 5000 Zeilen als JSON statt höchstens 500 – keine Rechteausweitung, aber Abfrage-/Lesebudget). Test mit Gegenprobe. 175 Tests grün.
 - 12.10.2026: Hilfe Fuhrparkleitung „Große Listen“ (DE/UK/EN): Liste 200/500, CSV 5000, Hinweis und Eingrenzen. `pruefen.sh --schnell` grün (175 Tests, Ablauftest, Rauchtest 495 Ansichten ohne Auffälligkeit).
 - 12.10.2026: **Migration 0039** Index `fines(environment, created_at)` (Backlog 77, vorsorglich): Bußgeldliste liest die 500 jüngsten ohne Sortierung aller Schreiben der Umgebung; Abfrageplan-Test (kein TEMP B-TREE). 175 Tests grün.
+- 12.10.2026: **Protokoll als CSV** (Mehr → Protokoll → „Protokoll als CSV exportieren“, nur Inhaber; `GET /api/admin/audit?format=csv&from=&to=&action=`): Zeitraum nach Berliner Kalendertagen (max. ein Jahr), gewählter Bereich, älteste zuerst, max. 20 000 Zeilen mit Hinweis/Header, Formelschutz, Export wird selbst protokolliert (`admin.audit_export`) – z. B. für Revision/Datenschutz-Nachweise. Filterknöpfe mit `aria-pressed`. DE/UK/EN, API-Doku. Test (Tagesgrenze 23:30 UTC, Bereich, Rechte, 20 001 Einträge), Playwright 390/820/1366 px mit Download. 176 Tests grün.
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.

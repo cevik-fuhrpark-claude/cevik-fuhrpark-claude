@@ -281,7 +281,14 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/telematics/mappings' && m === 'DELETE') return json(await telem.removeMapping(env, user, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/data-quality' && m === 'GET') return json(await dataQuality(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/usage' && m === 'GET') return json(await usageReport(env, user, envName, Object.fromEntries(url.searchParams)));
-  if (path === '/api/admin/audit' && m === 'GET') return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });
+  if (path === '/api/admin/audit' && m === 'GET') {
+    if (url.searchParams.get('format') === 'csv') {
+      const r = await auth.auditCsv(env, user, Object.fromEntries(url.searchParams), maint.csvCell);
+      await auth.audit(env, user.id, 'admin.audit_export', null, { from: r.from, to: r.to, action: r.prefix, rows: r.rows, ...(r.truncated ? { truncated: true } : {}) });
+      return new Response(r.csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-protokoll_${r.from}_${r.to}.csv"`, ...(r.truncated ? { 'x-cfp-truncated': String(auth.AUDIT_CSV_MAX) } : {}) } });
+    }
+    return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });
+  }
 
   // Datenauskunft je Person (Inhaber, Vorbereitung Art. 15 DSGVO)
   if ((mm = path.match(/^\/api\/admin\/users\/([\w-]+)\/data-export$/)) && m === 'GET') {

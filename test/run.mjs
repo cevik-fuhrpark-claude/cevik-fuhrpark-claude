@@ -2250,6 +2250,34 @@ await test('Durchgeführte Prüfungen: Begrenzung 5000 korrekt erkannt (genau 50
   ok(app.includes("t('mh_truncated')") && app.includes('h.truncated ?'), 'Oberfläche zeigt Hinweis');
 });
 
+await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, älteste zuerst, Formelschutz, Grenze mit x-cfp-truncated, Export protokolliert', async () => {
+  const db = env.DB.db;
+  const ins = db.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)');
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  try {
+    ins.run('aucsv-1', users.fleet.id, 'probe.eins', 'V1', JSON.stringify({ a: 1, b: 'x;y' }), '2020-03-01T22:59:00.000Z'); // Berlin 01.03. 23:59
+    ins.run('aucsv-2', null, 'probe.zwei', null, null, '2020-03-01T23:30:00.000Z'); // Berlin 02.03. 00:30
+    ins.run('aucsv-3', users.fleet.id, 'anderes.x', '=HYPERLINK(1)', null, '2020-03-01T23:40:00.000Z');
+    let r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-01'); eq(r.status, 200);
+    let lines = dec(r).trim().split('\r\n'); ok(dec(r).startsWith('\uFEFF'), 'BOM'); eq(lines[0], 'Zeitpunkt;Aktion;Person;Benutzername;Betrifft (Kennung);Details'); eq(lines.length, 2, 'nur 01.03. (Berlin)');
+    ok(lines[1].startsWith('01.03.2020 23:59;probe.eins;') && lines[1].includes('"{""a"":1,""b"":""x;y""}"'), 'Zeile mit Details: ' + lines[1]);
+    r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02'); lines = dec(r).trim().split('\r\n'); eq(lines.length, 4);
+    ok(lines[2].startsWith('02.03.2020 00:30;probe.zwei;System;'), 'ohne Person = System, älteste zuerst');
+    ok(lines[3].includes(";'=HYPERLINK(1);"), 'Formelschutz');
+    r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02&action=probe.'); eq(dec(r).trim().split('\r\n').length, 3, 'Bereich');
+    eq((await owner.get('/api/admin/audit?format=csv&from=2020-03-02&to=2020-03-01')).status, 400);
+    eq((await owner.get('/api/admin/audit?format=csv&from=2019-01-01&to=2020-03-01')).status, 400, 'höchstens ein Jahr');
+    eq((await owner.get('/api/admin/audit?format=csv&from=01.03.2020')).status, 400);
+    eq((await users.fleet.get('/api/admin/audit?format=csv')).status, 403, 'nur Inhaber');
+    const last = db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get(); ok(last && JSON.parse(last.detail).rows === 2 && JSON.parse(last.detail).action === 'probe.', 'Export protokolliert');
+    eq((await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02')).headers.get('x-cfp-truncated'), null);
+    db.exec('BEGIN'); for (let i = 0; i < 20000; i++) ins.run('aucsv-m' + i, null, 'probe.menge', null, null, '2020-03-02T10:00:00.000Z'); db.exec('COMMIT');
+    r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02'); eq(r.headers.get('x-cfp-truncated'), '20000'); eq(dec(r).trim().split('\r\n').length, 20001);
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare("DELETE FROM audit_log WHERE id LIKE 'aucsv-%'").run(); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('audit_csv_truncated')") && app.includes('/api/admin/audit?format=csv'), 'Oberfläche');
+});
+
 await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem updated_at (after_id, has_more, next), ohne Parameter wie bisher', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   const get = async (q) => (await anon.req('GET', '/api/integration/v1/cases?environment=test' + q, undefined, H)).data;

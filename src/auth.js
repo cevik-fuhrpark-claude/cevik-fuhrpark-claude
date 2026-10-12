@@ -1,7 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, HttpError, str, oneOf,
+  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDate, isCalendarDate,
 } from './util.js';
 
 export const ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
@@ -387,6 +387,28 @@ export async function listAudit(env, user, query = {}) {
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE a.created_at < ? ${prefix ? "AND a.action LIKE ? ESCAPE '\\'" : ''} ORDER BY a.created_at DESC LIMIT ?`)
     .bind(...(prefix ? [before, prefix.replace(/[%_\\]/g, (c) => '\\' + c) + '%', limit] : [before, limit])).all()).results;
   return rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
+}
+
+// Protokoll als CSV (nur Inhaber): Zeitraum nach Berliner Kalendertagen (max. 366 Tage), optional Bereich (Präfix wie in der Ansicht),
+// älteste zuerst, höchstens AUDIT_CSV_MAX Zeilen (eine mehr gelesen → truncated). Details unverändert als Text (enthalten keine Geheimnisse).
+export const AUDIT_CSV_MAX = 20000;
+export async function auditCsv(env, user, query, csvCell) {
+  if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
+  const today = berlinDate();
+  const from = query.from || today.slice(0, 8) + '01'; const to = query.to || today;
+  if (!isCalendarDate(from) || !isCalendarDate(to)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
+  const next = new Date(Date.parse(to + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  if ((Date.parse(next) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Höchstens ein Jahr je Export.');
+  const lo = berlinDayStartIso(from); const hi = berlinDayStartIso(next);
+  const prefix = query.action ? String(query.action).slice(0, 40) : null;
+  const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE a.created_at >= ? AND a.created_at < ? ${prefix ? "AND a.action LIKE ? ESCAPE '\\'" : ''}
+    ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...[lo, hi, ...(prefix ? [prefix.replace(/[%_\\]/g, (c) => '\\' + c) + '%'] : []), AUDIT_CSV_MAX + 1]).all()).results;
+  const truncated = rows.length > AUDIT_CSV_MAX; if (truncated) rows.length = AUDIT_CSV_MAX;
+  const lines = [['Zeitpunkt', 'Aktion', 'Person', 'Benutzername', 'Betrifft (Kennung)', 'Details'].join(';')];
+  for (const r of rows) lines.push([berlinDateTime(r.created_at), csvCell(r.action), csvCell(r.actor_name || (r.actor_username ? '' : 'System')), csvCell(r.actor_username), csvCell(r.target), csvCell(r.detail)].join(';'));
+  return { csv: '\uFEFF' + lines.join('\r\n') + '\r\n', rows: rows.length, truncated, from, to, prefix };
 }
 
 // Kurzlebige Tabellen aufräumen (Cron): abgelaufene Sitzungen, alte Zählerfenster, alte Fehlversuche ohne aktive Sperre
