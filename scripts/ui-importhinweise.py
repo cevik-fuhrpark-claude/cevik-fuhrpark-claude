@@ -12,6 +12,7 @@ CCSV=b'Kennzeichen;Vertragsart;Vertragspartner;Vertragsbeginn\nXX-NIE 9;Leasing;
 # Fristen-Übersicht der App (Export „Auslesungen“) versehentlich im Auslese-Import → klare Meldung in der App-Sprache
 ACSV='\ufeffArt;Fahrer/Kennzeichen;Personalnummer;Standort;Letzte Auslesung;Spätestens fällig;Tage;Status\r\nMassenspeicher;SZ-YC 5514;;Dortmund;;;;keine Auslesung erfasst\r\n'.encode('utf-8')
 AEXP={'de':'Fristen-Übersicht dieser App','uk':'огляд строків із цього застосунку','en':"this app's deadline overview"}
+GAP={'de':'Lückenzeilen ohne Eintrag','uk':'Рядки-пропуски без даних','en':'Gap rows without entry'}
 TEXP={'uk':'Рядок 2 · XX-NIE 7: VIN немає в реєстрі транспорту','en':'Line 2 · XX-NIE 7: VIN not in the vehicle master data','de':'Zeile 2 · XX-NIE 7: FIN nicht im Fahrzeugstamm'}
 EXP={'uk':(['Невідомий вид перевірки: Ölxyz','Номерного знака немає в реєстрі транспорту'],['Транспорт не знайдено: XX-NIE 9','Невідомий вид договору: Zauber']),
      'en':(['Unknown inspection type: Ölxyz','Licence plate not in the vehicle master data'],['Vehicle not found: XX-NIE 9','Unknown contract type: Zauber']),
@@ -43,6 +44,13 @@ with sync_playwright() as p:
         txt=q.inner_text('#mimpr')
         for e in EXP[lang][0]: check(e in txt,'Prüftermine: '+e)
         if SHOTS: q.locator('#mimpr').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/maint_{lang}_{w}.png')
+        # Rundreise: eigener Prüftermin-Export wieder hochgeladen → Lückenzeilen getrennt und zugeklappt, keine „FIN ungültig“
+        exp=q.evaluate("async()=>{const r=await fetch('/api/maintenance?format=csv');return Array.from(new Uint8Array(await r.arrayBuffer()))}")
+        q.set_input_files('#mimp',{'name':'export.csv','mimeType':'text/csv','buffer':bytes(exp)}); q.wait_for_function("()=>document.querySelector('#mimpr').innerText.includes('"+GAP[lang]+"')")
+        gd=q.evaluate("(t)=>{const d=[...document.querySelectorAll('#mimpr details')].find((x)=>x.querySelector('summary').innerText.startsWith(t));return d?{open:d.open,n:d.querySelectorAll('li').length}:null}",GAP[lang])
+        check(gd is not None and not gd['open'] and gd['n']>0,'Prüftermin-Export: Lückenzeilen zugeklappt '+str(gd))
+        check('FIN' not in q.inner_text('#mimpr') and 'VIN' not in q.inner_text('#mimpr'),'Prüftermin-Export: FIN-Schlüssel erkannt')
+        if SHOTS: q.locator('#mimpr').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/maintexp_{lang}_{w}.png')
         q.goto(B+'/#/contracts'); q.wait_for_selector('#ctimp',state='attached')
         q.evaluate("()=>{const d=document.querySelector('#ctimp').closest('details'); if(d) d.open=true}")
         q.fill('#ctsrc','Leasingliste Test')

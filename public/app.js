@@ -1948,6 +1948,9 @@ async function viewMaint() {
   }
   $('#mcsv').onclick = async () => { try { download(await api('GET', '/api/maintenance?format=csv' + msQ), `fuhrpark-prueftermine_${ov.today}.csv`); } catch (err) { toast(err.message, true); } };
   const inp = $('#mimp');
+  // Lückenzeilen aus dem eigenen Export (nicht ausgefüllt) getrennt und zugeklappt – sonst verdecken sie die echten Hinweise
+  const GAP_ROW = 'Kein Termin eingetragen – Zeile bleibt unverändert';
+  const skipList = (list, title, open) => (list.length ? `<details ${open ? 'open' : ''}><summary>${esc(title)} (${list.length})</summary><ul class="small">${list.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : '');
   if (inp) inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
     const text = await readCsvFile(file);
@@ -1955,7 +1958,7 @@ async function viewMaint() {
       const box = $('#mimpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_aktualisiert'))}: ${r.updated} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
         ${r.rows.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('line'))}</th><th></th><th>${esc(t('kind'))}</th><th>${esc(t('next_due'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td>${x.line}</td><td style="white-space:nowrap">${esc(x.plate)}</td><td>${esc(mk(x.kind))}</td><td>${fmtD(x.next_due_date)}${x.previous_due_date && x.previous_due_date !== x.next_due_date ? ` <span class="small muted">(${fmtD(x.previous_due_date)})</span>` : ''}</td><td><span class="chip ${x.action === 'neu' ? 'ok' : x.action === 'aktualisiert' ? 'mittel' : ''}">${esc(t('ia_' + x.action))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
-        ${r.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : ''}
+        ${skipList(r.skipped.filter((x) => x.reason !== GAP_ROW), t('skipped'), !applied)}${skipList(r.skipped.filter((x) => x.reason === GAP_ROW), t('imp_gap_rows'), false)}
         ${!applied && (r.created || r.updated) ? `<div class="actions"><button type="button" class="btn" id="mapply">${esc(t('apply_import'))}</button></div>` : ''}`;
       const ap = $('#mapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
