@@ -795,8 +795,8 @@ await test('Bestellvorschlag: nur Artikel unter Mindestbestand, Fehlmenge, Verbr
   const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
   ok(txt.startsWith('\ufeffLager;Artikelnummer;Bezeichnung;Einheit;Lagerort;Bestand;Mindestbestand;Fehlmenge bis Mindestbestand'), 'CSV-Kopf');
   ok(txt.includes(';1;2;1;2;84,5;84,5'), 'CSV-Zeile mit Komma-Dezimalen');
-  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;;;\d{4}-\d\d-\d\d\r\n/.test(txt), 'ohne Preis: Wert leer, ohne Lieferant leer, letzter Zugang = Anfangsbestand');
-  ok(txt.split('\r\n')[0].endsWith(';Letzter Lieferant;Letzter Zugang'), 'CSV-Kopf mit Lieferant');
+  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;;;\d{4}-\d\d-\d\d;;;;4\r\n/.test(txt), 'ohne Preis: Wert leer, ohne Lieferant leer, letzter Zugang = Anfangsbestand');
+  ok(txt.split('\r\n')[0].includes(';Letzter Lieferant;Letzter Zugang;'), 'CSV-Kopf mit Lieferant');
   eq(r2.find((i) => i.id === np.data.id).last_supplier, null, 'kein Lieferant erfunden');
   // Testartikel wieder entfernen (deaktivieren), damit spätere Zählungen unverändert bleiben
   for (const id of [np.data.id, nm.data.id]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
@@ -1926,6 +1926,30 @@ await test('Lager-Umlagerung: Entnahme hier, Zugang im Ziellager (gleiche Kennun
   ok((await owner.get('/api/admin/audit?action=stock.transfer')).data.entries.length >= 3, 'protokolliert');
   eq((await users.prodFleet.get('/api/stock')).data.items.filter((i) => i.name === 'Umlagerteil').length, 0, 'Betrieb unberührt');
   for (const id of [src, kg, t1.data.target_item_id]) await (id === t1.data.target_item_id ? users.wsMuc : users.ws).patch(`/api/stock/${id}`, { active: false });
+});
+
+await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, endet mit Zugang, Datumsprüfung, Rechte', async () => {
+  const id = (await users.ws.post('/api/stock', { name: 'Bestellvermerk-Teil', min_qty: 10, initial_qty: 2, unit_price_net: 5 })).data.id;
+  const today = (await users.ws.get('/api/stock/journal')).data.to;
+  const ro = async () => (await users.ws.get('/api/stock?reorder=1')).data.items.find((i) => i.id === id);
+  let r = await ro(); eq(r.shortfall, 8); eq(r.open_after_order, 8); eq(r.ordered_on, null);
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 0 })).status, 400, 'Menge 0');
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 5, ordered_on: '2099-01-01' })).status, 400, 'Bestelldatum Zukunft');
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 5, ordered_on: today, eta: '2020-01-01' })).status, 400, 'Liefertermin vor Bestellung');
+  eq((await users.wsMuc.put(`/api/stock/${id}/order`, { qty: 5 })).status, 404, 'fremdes Lager');
+  eq((await users.driver.put(`/api/stock/${id}/order`, { qty: 5 })).status, 403, 'Fahrer');
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 5, note: 'Tel. Händler' })).status, 200);
+  r = await ro(); eq(r.ordered_qty, 5); eq(r.ordered_on, today); eq(r.open_after_order, 3, 'Fehlmenge minus bestellt'); eq(r.ordered_eta, null, 'kein Liefertermin erfunden');
+  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200); eq((await ro()).open_after_order, 0, 'nie negativ');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?reorder=1&format=csv')).data);
+  ok(csv.split('\r\n')[0].endsWith(';Bestellt Menge;Bestellt am;Liefertermin laut Lieferant;Noch zu bestellen'), 'CSV-Kopf');
+  ok(csv.includes(`Bestellvermerk-Teil;Stk;;2;10;8;0;5;40;;${today};20;${today};;0`), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Bestellvermerk')));
+  eq((await users.ws.req('DELETE', `/api/stock/${id}/order`)).status, 200); eq((await ro()).ordered_on, null, 'manuell aufgehoben');
+  await users.ws.put(`/api/stock/${id}/order`, { qty: 8 });
+  await users.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 3, supplier: 'Teilehandel' });
+  r = await ro(); eq(r.ordered_on, null, 'Zugang beendet den Vermerk'); eq(r.shortfall, 5);
+  ok((await owner.get('/api/admin/audit?action=stock.order')).data.entries.length >= 3, 'protokolliert');
+  await users.ws.patch(`/api/stock/${id}`, { active: false });
 });
 
 await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {

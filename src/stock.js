@@ -33,7 +33,9 @@ export async function listStock(env, user, envName, query) {
   if (query.reorder === '1') {
     list = list.filter((r) => r.below_min).map((r) => {
       const shortfall = r3(r.min_qty - r.on_hand);
-      return { ...r, shortfall, shortfall_value_net: r.unit_price_net === null ? null : Math.round(shortfall * r.unit_price_net * 100) / 100 };
+      // nach Bestellvermerk noch offen (Fehlmenge minus bestellte Menge, nie negativ) – Hinweis gegen Doppelbestellung
+      const open_after_order = r.ordered_on ? r3(Math.max(0, shortfall - (r.ordered_qty || 0))) : shortfall;
+      return { ...r, shortfall, open_after_order, shortfall_value_net: r.unit_price_net === null ? null : Math.round(shortfall * r.unit_price_net * 100) / 100 };
     });
     // Zum Bestellen: letzter Lieferant (jüngster Zugang mit Lieferant) und letzter Zugang – nur aus gebuchten Zugängen, eine Abfrage
     if (list.length) {
@@ -114,8 +116,32 @@ export async function addMovement(env, user, envName, id, body) {
     VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120 }), str(body.document_ref, { max: 200 }),
     str(body.note, { max: 500 }), user.id, nowIso())];
   if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
+  // Lieferung eingegangen: Bestellvermerk endet (Teillieferung → neu vermerken, falls noch offen)
+  if (type === 'zugang' && it.ordered_on) stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id));
   await env.DB.batch(stmts);
   return { ok: true, on_hand: await onHand(env, id) };
+}
+
+// Bestellvermerk setzen/aufheben (nur Vermerk, es wird nichts bestellt oder versendet)
+export async function setOrder(env, user, envName, id, body) {
+  const it = await loadItem(env, user, envName, id);
+  if (body === null) {
+    await env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id).run();
+    await audit(env, user.id, 'stock.order_clear', null, { item: id });
+    return { ok: true };
+  }
+  if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
+  const qty = r3(num(body.qty, { min: 0, max: 1e6, field: 'Menge' }));
+  if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  const today = berlinDate();
+  const on = body.ordered_on ? String(body.ordered_on) : today;
+  if (!isCalendarDate(on) || on > today) throw bad('validation', 'Bestelldatum: gültiges Datum, nicht in der Zukunft.');
+  const eta = body.eta ? String(body.eta) : null;
+  if (eta && (!isCalendarDate(eta) || eta < on)) throw bad('validation', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.');
+  await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=?')
+    .bind(qty, on, eta, str(body.note, { max: 200 }), user.id, nowIso(), id).run();
+  await audit(env, user.id, 'stock.order_mark', null, { item: id, qty, eta });
+  return { ok: true };
 }
 
 // Umlagerung in das Lager einer anderen Werkstatt: Entnahme hier, Zugang dort (gleiche transfer_id, in einer Transaktion).
@@ -179,11 +205,11 @@ export function stockCsv(items, csvCell) {
 
 // Bestellvorschlag als CSV: Fehlmenge bis Mindestbestand, Verbrauch 90 Tage, Wert nur mit hinterlegtem Preis (nie 0 €)
 export function reorderCsv(items, csvCell) {
-  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto', 'Letzter Lieferant', 'Letzter Zugang'];
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto', 'Letzter Lieferant', 'Letzter Zugang', 'Bestellt Menge', 'Bestellt am', 'Liefertermin laut Lieferant', 'Noch zu bestellen'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), n(i.shortfall), n(i.used_90d),
-    n(i.unit_price_net), n(i.shortfall_value_net), csvCell(i.last_supplier), i.last_receipt_date || ''].join(';'));
+    n(i.unit_price_net), n(i.shortfall_value_net), csvCell(i.last_supplier), i.last_receipt_date || '', n(i.ordered_qty), i.ordered_on || '', i.ordered_eta || '', n(i.open_after_order)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

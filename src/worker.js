@@ -343,6 +343,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/stock' && m === 'POST') return json(await stock.createItem(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'PATCH') return json(await stock.updateItem(env, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/order$/)) && (m === 'PUT' || m === 'DELETE')) return json(await stock.setOrder(env, user, envName, mm[1], m === 'DELETE' ? null : await readJson(request)));
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/transfer$/)) && m === 'POST') return json(await stock.transfer(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)\/movements$/)) && m === 'POST') return json(await stock.addMovement(env, user, envName, mm[1], await readJson(request)), 201);
 
