@@ -14,8 +14,8 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
     'owner': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
-    'workshop': ['', 'search', 'plan', 'cases', 'cases?f=repeat', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'wsload', 'help'],
+    'fleet': ['', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
+    'workshop': ['', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check', 'help?q=foto'],
     'dispatch': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
     # Lesezugriff (z. B. Büro/Steuerberatung): nur lesen, keine Meldungen/Kontrollen

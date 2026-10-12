@@ -83,6 +83,15 @@ export async function listCases(env, user, envName, query, meta = null) {
     where.push(`EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding' AND e.created_at > ?)`);
     args.push(new Date(Date.now() - d * 86400000).toISOString());
   }
+  // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
+  // noch lief (Meldetag = UTC-Datum – höchstens einen Tag großzügiger als die Berliner Angabe im Vorgang); Werkstatt nur eigener Standort
+  if (query.warranty && user.role !== 'driver') {
+    const own = user.role === 'workshop' ? ' AND x.workshop_site = ?' : '';
+    where.push(`EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
+      AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))
+        OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))))`);
+    if (own) args.push(user.workshop_site);
+  }
   // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
   const q = String(query.q || '').trim().slice(0, 60);
   if (q.length >= 2) {

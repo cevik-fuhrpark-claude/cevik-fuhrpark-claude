@@ -2076,10 +2076,17 @@ await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis
   eq(d.vehicle_info.warranties.find((w) => w.item === 'Lichtmaschine').supplier, 'Teilehandel Nord');
   eq((await users.fleet.get(`/api/cases/${await mk(W, 'Anderes Fahrzeug')}`)).data.vehicle_info.warranties.length, 0, 'anderes Fahrzeug');
   eq((await users.dispatch.get(`/api/cases/${c2}`)).data.vehicle_info.warranties.length, 2, 'Disposition sieht den Hinweis');
+  // Vorgangsliste: Filter „Gewährleistung prüfen“ (offene Vorgänge mit laufender Gewährleistung aus früheren Vorgängen)
+  const wl = async (u) => (await u.get('/api/cases?status=open&warranty=1&limit=500')).data.cases.map((x) => x.id);
+  let ids = await wl(users.fleet); ok(ids.includes(c2) && !ids.includes(c1), 'neue Meldung gelistet, Ursprung nicht');
+  ok((await wl(users.dispatch)).includes(c2), 'Disposition');
+  const csvW = new TextDecoder().decode((await users.fleet.get('/api/cases?format=csv&status=open&warranty=1')).data); ok(csvW.includes('Batterieleuchte') && !csvW.includes('Lichtmaschine lädt nicht'), 'CSV gefiltert');
+  ok((await users.driver.get('/api/cases?status=open&warranty=1')).status === 200, 'Fahrer: Parameter wirkungslos');
   eq((await users.driver.get(`/api/cases/${c2}`)).status === 200 ? (await users.driver.get(`/api/cases/${c2}`)).data.vehicle_info : undefined, undefined, 'Fahrer ohne Kurzinfo');
   // Meldung vor dem Vorgang mit Gewährleistung: kein Hinweis (nur frühere Vorgänge)
   await env.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(new Date(Date.now() - 86400000 * 400).toISOString(), c2).run();
   eq((await users.fleet.get(`/api/cases/${c2}`)).data.vehicle_info.warranties.length, 0, 'nur Vorgänge vor der Meldung');
+  ids = await wl(users.fleet); ok(!ids.includes(c2), 'Liste: Meldung vor dem Gewährleistungsvorgang nicht gelistet');
   // Umgebung getrennt: Betriebs-Vorgang desselben Fahrzeugs sieht Test-Gewährleistung nicht
   const pc = await owner.post('/api/cases', { vehicle_id: V, description: 'Betrieb: Lichtmaschine?', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() });
   if (pc.status === 201) eq((await owner.get(`/api/cases/${pc.data.id}`)).data.vehicle_info.warranties.length, 0, 'Umgebung getrennt');

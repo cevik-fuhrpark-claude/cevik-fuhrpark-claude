@@ -462,12 +462,12 @@ function caseList(list, empty) {
 }
 
 // Filter der Vorgangsliste: offen/abgeschlossen/alle bzw. „Mangel erneut festgestellt“ (offen, letzte 3 Tage)
-const caseFilterQ = (f) => (f === 'repeat' ? 'status=open&repeat_days=3' : `status=${f === 'all' ? '' : f}`);
+const caseFilterQ = (f) => (f === 'repeat' ? 'status=open&repeat_days=3' : f === 'warranty' ? 'status=open&warranty=1' : `status=${f === 'all' ? '' : f}`);
 async function viewCases() {
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf) try { sessionStorage.setItem('cfp_cf', hf); } catch {}
   let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
-  if (!['open', 'closed', 'all', 'repeat'].includes(f) || (f === 'repeat' && S.me.role === 'driver')) f = 'open';
+  if (!['open', 'closed', 'all', 'repeat', 'warranty'].includes(f) || (['repeat', 'warranty'].includes(f) && S.me.role === 'driver')) f = 'open';
   const q = S.caseQ || '';
   const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '');
   const res = await api('GET', `/api/cases?${caseFilterQ(f)}${q.length >= 2 ? '&q=' + encodeURIComponent(q) : ''}${vq()}`);
@@ -475,7 +475,7 @@ async function viewCases() {
   const vsel = S.me.role !== 'driver' && ((res.site_options || []).length > 1 || res.site) ? `<div style="margin-bottom:12px">${siteSelect('cvsite', '', res.site_options, res.site, t('kpi_vsite'), t('filter_all'))}</div>` : '';
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}
-    <div class="seg-tabs">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat'])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k === 'repeat' ? 'filter_repeat' : k))}</a>`).join('')}</div>
+    <div class="seg-tabs">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty'])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k === 'repeat' ? 'filter_repeat' : k === 'warranty' ? 'filter_warranty' : k))}</a>`).join('')}</div>
     <div id="cl">${caseList(list)}</div>
     ${S.me.role !== 'driver' ? `<div class="actions"><button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button></div>` : ''}`, 'cases');
   const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { download(await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}`), `fuhrpark-vorgaenge_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
