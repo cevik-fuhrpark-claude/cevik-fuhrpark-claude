@@ -894,7 +894,7 @@ function actionForm(action, c, cmd, preset = {}, d = null) {
 function checklistHtml() {
   return S.meta.checklist.map((i) => `<div class="checkitem" data-key="${esc(i.key)}"><span id="cl_${esc(i.key)}">${esc(checkLabel(i.key))}</span>
     <span class="seg" role="radiogroup" aria-labelledby="cl_${esc(i.key)}"><label><input type="radio" name="${esc(i.key)}" value="ok" required>${esc(t('ok'))}</label><label class="bad"><input type="radio" name="${esc(i.key)}" value="mangel">${esc(t('defect'))}</label><label><input type="radio" name="${esc(i.key)}" value="na">${esc(t('na'))}</label></span>
-    <div class="detail" hidden><input name="${esc(i.key)}__note" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label></div></div>`).join('');
+    <div class="detail" hidden><input name="${esc(i.key)}__note" minlength="3" maxlength="1000" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label></div></div>`).join('');
 }
 const kmWarn = (r) => (r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', r.km_rejected.km).replace('{prev}', r.km_rejected.previous_km) : r.km_test_only ? ' · ' + t('km_test_only') : '');
 function bindChecklist(form) {
@@ -905,6 +905,15 @@ function bindChecklist(form) {
   let shown = false;
   form.addEventListener('invalid', (e) => {
     const row = e.target.closest('.checkitem');
+    // Mangelbeschreibung (Pflicht, ≥ 3 Zeichen wie der Server) und km-Stand ebenfalls in der App-Sprache statt Browser-/Server-Text
+    if ((row && e.target.name && e.target.name.endsWith('__note')) || e.target.id === 'km') {
+      e.preventDefault();
+      if (shown) return;
+      shown = true; setTimeout(() => (shown = false), 0);
+      e.target.scrollIntoView({ block: 'center' }); e.target.focus({ preventScroll: true });
+      toast(t(e.target.id === 'km' ? 'km_invalid' : 'defect_note_missing'), true);
+      return;
+    }
     if (!row || e.target.type !== 'radio') return;
     e.preventDefault();
     row.classList.add('missing');
@@ -923,7 +932,7 @@ function collectChecklist(form) {
 async function viewInspection(caseId) {
   const d = await api('GET', '/api/cases/' + caseId);
   render(`<p><a href="#/cases/${esc(caseId)}">‹ ${esc(t('back'))}</a></p><h1>${esc(t('inspection'))}</h1><p>${plate(d.vehicle.plate)} ${esc(d.case.case_no)}</p>
-    <form id="f">${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" name="km" inputmode="numeric"><label for="n">${esc(t('note'))}</label><textarea id="n" name="n"></textarea>
+    <form id="f">${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" name="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12"><label for="n">${esc(t('note'))}</label><textarea id="n" name="n"></textarea>
     <div class="actions"><button class="btn block">${esc(t('submit_inspection'))}</button></div></form>`, 'cases');
   const form = $('#f'); bindChecklist(form);
   const key = uid();
@@ -939,7 +948,7 @@ async function viewInspection(caseId) {
 async function viewDepartureCheck(preId) {
   const vs = await vehiclesCached();
   render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select><div id="known"></div>
-    ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric">
+    ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p>`, 'check');
   const form = $('#f'); bindChecklist(form);
