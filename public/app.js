@@ -48,7 +48,7 @@ async function api(method, path, body, extra = {}) {
   lastApiAt = Date.now();
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; throw new Error('Bitte anmelden.'); }
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   // Exporte mit Zeilengrenze melden die Begrenzung per Header (z. B. Vorgangs-CSV)
