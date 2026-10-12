@@ -1,7 +1,7 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
 import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad } from './util.js';
 import { masterPanel } from './agent.js';
-import { costReport, kpiReport } from './reports.js';
+import { costReport, kpiReport, siteSelection } from './reports.js';
 import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
 import { dataQuality, CHECKS } from './quality.js';
@@ -32,7 +32,8 @@ export async function integrationRouter(request, env, ctx, url) {
   if (p === '/v1/vehicles' && m === 'GET') {
     const rows = (await env.DB.prepare(`SELECT v.id, v.vin, v.plate, v.kind, v.site, v.manufacturer, v.model, v.build_year, v.trailer_plate, v.trailer_vin, v.master_status, v.updated_at
       FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).all()).results;
-    return json({ schema_version: '1.0', vehicles: rows });
+    const sel = siteSelection(rows, url.searchParams.get('site'));
+    return json({ schema_version: '1.0', ...(sel.site ? { site: sel.site } : {}), vehicles: sel.site ? rows.filter((v) => sel.match(v.site)) : rows });
   }
   if (p === '/v1/cases' && m === 'GET') {
     const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
@@ -44,8 +45,11 @@ export async function integrationRouter(request, env, ctx, url) {
   }
   // Verfügbarkeit für Tourenplanung: gesperrt / Werkstatt / Meldung offen / laut System einsatzbereit (keine Freigabe-Aussage)
   if (p === '/v1/availability' && m === 'GET') {
-    const list = await listVehicles(env, { role: 'owner' }, envParam(url));
-    return json({ schema_version: '1.0', environment: envParam(url), generated_at: nowIso(),
+    // optional ?site= (Standort laut Fahrzeugstamm, Schreibweise egal, 'ohne' = ohne Standort) – z. B. Disposition Bayern
+    let list = await listVehicles(env, { role: 'owner' }, envParam(url));
+    const sel = siteSelection(list, url.searchParams.get('site'));
+    if (sel.site) list = list.filter((v) => sel.match(v.site));
+    return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
       vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }

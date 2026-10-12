@@ -3653,6 +3653,21 @@ await test('Fahrerakte: Filter Standort (Liste, CSV), nur Leitung; Fahrer sieht 
   ok(dv.site === undefined && dv.site_options === undefined, 'Fahrer: keine Standortauswahl');
 });
 
+await test('Integrations-API: /v1/vehicles und /v1/availability mit optionalem Standortfilter (additiv)', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const all = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H)).data;
+  ok(all.site === undefined, 'ohne Filter unverändert');
+  const sh = (await anon.req('GET', '/api/integration/v1/availability?environment=test&site=s%C3%BCdhafen', undefined, H)).data;
+  eq(sh.site, 'SÜDHAFEN'); eq(sh.vehicles.map((v) => v.plate).join(','), 'SF-XY 71', 'nur Standort');
+  const vs = (await anon.req('GET', '/api/integration/v1/vehicles?site=S%C3%9CDHAFEN', undefined, H)).data;
+  eq(vs.vehicles.length, 1); eq(vs.site, 'SÜDHAFEN');
+  const allV = (await anon.req('GET', '/api/integration/v1/vehicles', undefined, H)).data.vehicles.length;
+  const sites = [...new Set((await anon.req('GET', '/api/integration/v1/vehicles', undefined, H)).data.vehicles.map((v) => (v.site || '').toLowerCase()))];
+  let sum = 0; for (const x of sites) sum += (await anon.req('GET', '/api/integration/v1/vehicles?site=' + encodeURIComponent(x || 'ohne'), undefined, H)).data.vehicles.length;
+  eq(sum, allV, 'Summe über Standorte');
+  eq((await anon.req('GET', '/api/integration/v1/availability?site=Nirgendwo', undefined, H)).data.vehicles.length, 0);
+});
+
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {
   const VD = 'VIN:WDB96340310888883';
   eq((await owner.post('/api/vehicles', { plate: 'KD-XY 83', vin: 'WDB96340310888883', site: 'Dortmund' })).status, 201);
