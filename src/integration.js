@@ -50,16 +50,28 @@ export async function integrationRouter(request, env, ctx, url) {
     const sel = siteSelection(list, url.searchParams.get('site'));
     if (sel.site) list = list.filter((v) => sel.match(v.site));
     // optional ?include=notes: aktive, für Fahrer freigegebene Hinweise zum Fahrzeug (nur Text + Zeitpunkt, ohne Verfasser – Datensparsamkeit)
+    const inc = new Set(String(url.searchParams.get('include') || '').split(',').map((x) => x.trim()).filter(Boolean));
     let notesBy = null;
-    if (url.searchParams.get('include') === 'notes') {
+    if (inc.has('notes')) {
       notesBy = new Map();
       const nr = (await env.DB.prepare('SELECT vehicle_id, text, created_at, valid_until FROM vehicle_notes WHERE environment=? AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?) AND for_driver=1 ORDER BY created_at DESC, rowid DESC')
         .bind(envParam(url), berlinDate()).all()).results;
       for (const n of nr) { if (!notesBy.has(n.vehicle_id)) notesBy.set(n.vehicle_id, []); notesBy.get(n.vehicle_id).push({ text: n.text, created_at: n.created_at, valid_until: n.valid_until }); }
     }
+    // optional ?include=warranties: heute laufende Gewährleistungen (Teile/Fremdleistungen laut Rechnung) – nur Bezeichnung, Art, Datum, Vorgangsnummer;
+    // keine Preise, keine Personen. Mehrere Angaben kommagetrennt: include=notes,warranties
+    let warrBy = null;
+    if (inc.has('warranties')) {
+      warrBy = new Map();
+      const wr = (await env.DB.prepare(`SELECT c.vehicle_id, c.case_no, g.item, g.item_kind, g.warranty_until FROM cases c JOIN
+        (SELECT case_id, name AS item, 'part' AS item_kind, warranty_until, created_at FROM parts WHERE warranty_until >= ?2
+         UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?2) g ON g.case_id=c.id
+        WHERE c.environment=?1 ORDER BY g.warranty_until, g.created_at`).bind(envParam(url), berlinDate()).all()).results;
+      for (const w of wr) { if (!warrBy.has(w.vehicle_id)) warrBy.set(w.vehicle_id, []); warrBy.get(w.vehicle_id).push({ item: w.item, item_kind: w.item_kind, warranty_until: w.warranty_until, case_no: w.case_no }); }
+    }
     return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
-      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
+      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }
   if (p === '/v1/findings' && m === 'GET') {
     const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;

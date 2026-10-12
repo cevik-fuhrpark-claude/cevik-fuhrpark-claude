@@ -2094,6 +2094,14 @@ await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis
   const ak = (await users.fleet.get(`/api/vehicles/${V}`)).data;
   eq(ak.warranties.map((w) => w.item).join(), 'Bosch-Dienst,Lichtmaschine', 'Akte: laufende, nach Datum'); eq(ak.costs.warranties, undefined);
   eq((await users.ws.get(`/api/vehicles/${V}`)).data.warranties, undefined, 'Werkstatt ohne (wie Kosten)');
+  // Integrations-API: nur mit include=warranties (auch kombiniert), ohne Preise/Personen, Umgebung getrennt
+  const IH = { authorization: 'Bearer integration-token-xyz' };
+  const av = async (q) => (await anon.req('GET', '/api/integration/v1/availability?' + q, undefined, IH)).data.vehicles;
+  ok(!('warranties' in (await av('environment=test'))[0]), 'ohne include unverändert');
+  const aw = (await av('environment=test&include=notes,warranties')).find((v) => v.id === V);
+  ok(Array.isArray(aw.notes), 'kombiniert: notes'); eq(aw.warranties.map((w) => w.item).join(), 'Bosch-Dienst,Lichtmaschine', 'API: laufende, nach Datum');
+  eq(Object.keys(aw.warranties[0]).sort().join(), 'case_no,item,item_kind,warranty_until', 'nur Bezeichnung/Art/Datum/Vorgang');
+  eq((await av('environment=production&include=warranties')).find((v) => v.id === V).warranties.length, 0, 'API: Umgebung getrennt');
 });
 
 await test('Positionen je Vorgang per Index (keine Volltabellen-Suche): Arbeitszeit, Teile, Fremdleistungen, Restarbeiten, Dateien', async () => {
