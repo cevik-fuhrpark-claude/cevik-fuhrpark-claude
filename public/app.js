@@ -1954,7 +1954,9 @@ async function viewTimeline(id, fArg) {
       case 'tacho': return ['', esc(t('tl_tacho')), `${esc(x.evidence || '')}${x.by ? ' · ' + esc(x.by) : ''}`];
       case 'contract': return ['', `${esc(t('ck_' + x.contract_kind))}: ${esc(t(x.contract_event === 'end' ? 'tl_contract_end' : 'tl_contract_start'))}`, `${esc(x.partner)}${x.evidence ? ' · ' + esc(x.evidence) : ''}`];
       case 'claim': return ['', `${esc(t('claim_title'))}: ${esc(t(x.claim_event === 'reimbursed' ? 'tl_claim_reimbursed' : 'tl_claim_reported'))}${x.claim_event === 'reimbursed' && x.reimbursed_net !== null ? ' · ' + eur(x.reimbursed_net) : ''}`, `${esc(x.insurer)}${x.claim_no ? ' · ' + esc(t('claim_no')) + ' ' + esc(x.claim_no) : ''}${x.claim_event === 'reported' ? ' · ' + esc(t('cls_' + x.status)) : ''}${caseLink(x)}`];
-      case 'note': return ['', `${esc(t('vnotes'))}: ${x.note_event === 'archive' ? `<s>${esc(x.text)}</s>` : esc(x.text)}`, x.note_event === 'archive' ? esc(t('vnote_archived')) : x.for_driver ? esc(t('vnote_driver_chip')) : ''];
+      case 'note': { const gone = x.note_event === 'archive' || x.note_event === 'expire';
+        const meta = x.note_event === 'archive' ? [t('vnote_archived')] : x.note_event === 'expire' ? [t('vnote_expired').replace('{d}', fmtD(x.valid_until))] : [x.for_driver ? t('vnote_driver_chip') : '', x.valid_until ? t('vnote_until').replace('{d}', fmtD(x.valid_until)) : ''];
+        return ['', `${esc(t('vnotes'))}: ${gone ? `<s>${esc(x.text)}</s>` : esc(x.text)}`, esc(meta.filter(Boolean).join(' · '))]; }
       case 'fine': return ['', `${esc(t('fk_' + x.fine_kind))}: <a href="#/fines/${esc(x.fine_id)}">${esc(x.fine_no)}</a>`, esc(t('fs_' + x.status))];
       default: return ['', esc(x.type), ''];
     }

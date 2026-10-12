@@ -2030,8 +2030,21 @@ await test('Hinweise zum Fahrzeug: „gültig bis“ (optional) – danach nicht
   ok(!avn.some((n) => n.text === 'Gilt nur bis heute'), 'API ohne abgelaufene');
   const ar = (await users.fleet.get(base + '?archived=1')).data.notes.find((n) => n.id === a.data.id);
   ok(ar && ar.expired === true && !ar.archived_at, 'im Archiv als abgelaufen');
+  // Zeitleiste: „gültig bis“ am Anlage-Eintrag, Ablauf als eigenes Ereignis am Ablaufdatum
+  const tlOf = async (id) => (await users.fleet.get(`/api/vehicles/${VID}/timeline?types=note`)).data.items.filter((x) => x.text === id);
+  let ta = await tlOf('Gilt nur bis heute');
+  eq(ta.find((x) => x.note_event === 'add').valid_until, day(-1), 'Anlage mit gültig bis');
+  const ex = ta.filter((x) => x.note_event === 'expire'); eq(ex.length, 1, 'Ablauf-Ereignis'); eq(ex[0].at, day(-1), 'am Ablaufdatum');
+  ok(!ta.some((x) => x.note_event === 'archive'), 'nicht archiviert');
+  let tb = await tlOf('Gilt bis nächste Woche');
+  ok(!tb.some((x) => x.note_event === 'expire'), 'noch gültig: kein Ablauf'); eq(tb.find((x) => x.note_event === 'add').valid_until, day(7));
   eq((await users.fleet.post(`${base}/${a.data.id}/archive`)).status, 200, 'abgelaufenen Hinweis trotzdem archivierbar');
   eq((await users.fleet.post(`${base}/${b.data.id}/archive`)).status, 200);
+  ta = await tlOf('Gilt nur bis heute'); eq(ta.map((x) => x.note_event).sort().join(), 'add,archive,expire', 'nach Ablauf archiviert: beides');
+  tb = await tlOf('Gilt bis nächste Woche'); eq(tb.map((x) => x.note_event).sort().join(), 'add,archive', 'vor Ablauf archiviert: kein Ablauf-Ereignis');
+  await env.DB.prepare('UPDATE vehicle_notes SET valid_until=? WHERE id=?').bind(day(-30), b.data.id).run();
+  await env.DB.prepare('UPDATE vehicle_notes SET archived_at=? WHERE id=?').bind(day(-40) + 'T08:00:00.000Z', b.data.id).run();
+  tb = await tlOf('Gilt bis nächste Woche'); eq(tb.map((x) => x.note_event).sort().join(), 'add,archive', 'archiviert vor dem Ablaufdatum: kein Ablauf');
 });
 
 await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {

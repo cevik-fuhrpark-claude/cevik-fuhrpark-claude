@@ -180,8 +180,15 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: t.case_id });
     // Hinweise zum Fahrzeug: angelegt und archiviert (nur wenn der Bereich gewünscht ist – spart sonst die Abfrage)
     if (!want.size || want.has('note')) {
-      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at FROM vehicle_notes WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 200`).bind(vehicleId, envName).all()).results;
-      for (const n of notes) { add('note', n.created_at, { note_event: 'add', text: n.text, for_driver: !!n.for_driver }); add('note', n.archived_at, { note_event: 'archive', text: n.text }); }
+      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at, valid_until FROM vehicle_notes WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 200`).bind(vehicleId, envName).all()).results;
+      const today = berlinDate();
+      for (const n of notes) {
+        add('note', n.created_at, { note_event: 'add', text: n.text, for_driver: !!n.for_driver, valid_until: n.valid_until || null });
+        // Abgelaufen („gültig bis“ überschritten), sofern nicht schon vorher archiviert – Datum laut Eintrag, nichts geschätzt
+        const expired = n.valid_until && n.valid_until < today && !(n.archived_at && n.archived_at.slice(0, 10) <= n.valid_until);
+        if (expired) add('note', n.valid_until, { note_event: 'expire', text: n.text, valid_until: n.valid_until });
+        if (!expired || n.archived_at) add('note', n.archived_at, { note_event: 'archive', text: n.text });
+      }
     }
   }
   if (isManager(user)) {
