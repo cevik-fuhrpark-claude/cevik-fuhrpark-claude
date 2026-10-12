@@ -514,6 +514,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: Hilfe „Werkstatt“ (DE/UK/EN) erklärt „Fällig – ohne Termin“ im Werkstattplan (km-Kennzeichnung, Auftrag legt die Fuhrparkleitung an).
 - 12.10.2026: Werkstattplan „Fällig – ohne Termin“: **Werkstattauftrag direkt anlegen** (nur Inhaber/Fuhrparkleitung, nicht HU/SP; gleiche Funktion wie in der Fahrzeugakte, `POST /api/maintenance/:id/order`); der Plan aktualisiert sich, der Auftrag steht danach unter „Ohne Termin“. Im Browser geprüft (390/820/1366 px).
 - 12.10.2026: Integrations-API `/v1/availability` additiv mit `next_due_km`, `next_due_km_kind`, `km_remaining` (gleiche Regel wie Fahrzeugliste; bestehende Felder unverändert). Test.
+- 12.10.2026: Fahrzeugliste: Filter **„Prüfung/Wartung überfällig“** (frühester Termin vor heute oder km überschritten; erscheint nur mit Treffern), überschrittene „Nächste Fälligkeit“ rot markiert. DE/UK/EN, im Browser geprüft.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
