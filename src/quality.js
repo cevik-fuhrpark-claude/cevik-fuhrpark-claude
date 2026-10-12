@@ -26,6 +26,8 @@ export const CHECKS = {
   reinspection_defects_again: 'luecke',
   // in der App erfasste Pflichtprüfung (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – Ergebnis in der Fahrzeugakte nachtragen
   inspection_no_result: 'hinweis',
+  // Wartungsregel mit Intervall km, aber ohne km-Stand der letzten Durchführung und ohne belegte km-Fälligkeit – km-Fälligkeit nicht berechenbar
+  km_rule_no_base: 'luecke',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -61,7 +63,8 @@ export async function dataQuality(env, user, envName, query = {}) {
   const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
-    env.DB.prepare('SELECT DISTINCT vehicle_id, kind FROM maintenance_rules WHERE next_due_date IS NOT NULL').all(),
+    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL
+      OR (interval_km IS NOT NULL AND last_done_km IS NULL AND due_km IS NULL AND kind NOT IN ('HU','SP'))`).all(),
     env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, u.display_name, u.active FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles v ON v.id=d.vehicle_id
       WHERE u.environment=? AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(envName, nowIso()).all(),
     env.DB.prepare(`SELECT u.id, u.display_name, u.role, MAX(i.expires_at) AS expires_at FROM users u JOIN invites i ON i.user_id=u.id
@@ -112,7 +115,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const [, list] of byPlate) if (list.length > 1) for (const v of list) add('duplicate_plate', v, list.filter((x) => x !== v).map((x) => x.id).join(', '));
   for (const [v, other, pos] of similarVins(vins.results)) add('vin_similar', v, `${other.plate} · ${other.vin} · #${pos}`);
   const lastKm = new Map(kms.results.map((r) => [r.vehicle_id, r.last]));
-  const hasRule = new Set(rules.results.map((r) => `${r.vehicle_id}|${r.kind}`));
+  const hasRule = new Set(rules.results.filter((r) => r.next_due_date).map((r) => `${r.vehicle_id}|${r.kind}`));
   const pulledBy = new Map();
   const siteLabel = siteLabels(vs);
   for (const v of vs) {
@@ -136,6 +139,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     const missing = required.filter((k) => !hasRule.has(`${v.id}|${k}`));
     if (missing.length) add('missing_inspection', v, missing.join(', '));
   }
+  const vAct = new Map(vs.map((v) => [v.id, v]));
+  for (const r of rules.results) if (r.interval_km && r.last_done_km === null && r.due_km === null && !['HU', 'SP'].includes(r.kind) && vAct.has(r.vehicle_id)) add('km_rule_no_base', vAct.get(r.vehicle_id), `${r.kind} · ${r.interval_km} km`);
   for (const v of vs.filter((x) => x.kind === 'anhaenger')) {
     const trucks = pulledBy.get(v.id) || [];
     if (trucks.length > 1) add('trailer_multi', v, trucks.join(', '));

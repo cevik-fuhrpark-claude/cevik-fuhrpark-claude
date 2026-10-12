@@ -4915,6 +4915,10 @@ await test('Prüftermin-Import nach km: „Fällig bei km“ laut Beleg, „km b
   let oe = await row('Ölwechsel'); eq(oe.due_km, 215000); eq(oe.next_due_km, 215000, 'Beleg vor km + Intervall (219000)'); eq(oe.status, 'ok');
   eq((await users.fleet.post(`/api/maintenance/${oel}/complete`, { done_date: day(0), evidence: 'Ölwechsel Test 2', done_km: 189000 })).status, 200);
   oe = await row('Ölwechsel'); eq(oe.due_km, null); eq(oe.next_due_km, 219000, 'ohne Beleg: km + Intervall');
+  // Datenqualität: Intervall km ohne Ausgangswert → Lücke; mit km-Stand/Beleg nicht
+  eq((await users.fleet.post(`${vp}/maintenance`, { kind: 'Hydraulik/Aufbau', interval_km: 50000, evidence: 'Herstellervorgabe Test' })).status, 201);
+  const dqi = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'km_rule_no_base' && i.vehicle_id === V);
+  eq(dqi.length, 1, JSON.stringify(dqi)); eq(dqi[0].detail, 'Hydraulik/Aufbau · 50000 km'); eq(dqi[0].severity, 'luecke');
   // Export enthält die km-Spalten (Rundreise)
   const csv = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
   const line = csv.split('\r\n').find((l) => l.startsWith('KM-IMP 1;') && l.includes(';Ölwechsel;')).split(';');
