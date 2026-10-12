@@ -3500,6 +3500,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km'), 'CSV-Kopf: km-Spalten am Ende');
   ok(vcs.find((l) => l.startsWith('WP-LN 1;')).endsWith(';380000;Inspektion;-20000'), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
+  const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
+  eq(JSON.stringify([av.next_due_km, av.next_due_km_kind, av.km_remaining]), JSON.stringify([380000, 'Inspektion', -20000]), 'Integrations-API: km-Fälligkeit');
   // „Mein Fahrzeug“: Wartung nach km nur überschritten bzw. innerhalb der Vorwarnung, wenigste Rest-km zuerst, ohne Nachweis
   const asg2 = await users.fleet.post(`/api/vehicles/${VP}/drivers`, { user_id: users.driver.id, end_previous: false });
   eq(asg2.status, 201);
