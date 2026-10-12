@@ -34,8 +34,8 @@ export async function listVehicles(env, user, envName, query = {}) {
           AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
         AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status<>'abgelehnt' AND c.created_at >= e.done_date)
         ORDER BY e.result='verkehrsunsicher' DESC, e.done_date DESC LIMIT 1) AS failed_insp,
-      (SELECT COUNT(*) FROM vehicle_notes n WHERE n.vehicle_id=v.id AND n.environment=? AND n.archived_at IS NULL) AS notes_active
-    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, active).all()).results;
+      (SELECT COUNT(*) FROM vehicle_notes n WHERE n.vehicle_id=v.id AND n.environment=? AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?)) AS notes_active
+    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, active).all()).results;
   // letzte Abfahrtskontrolle je Fahrzeug – nur Information (ohne Einsatzplan keine Pflichtbewertung)
   for (const v of rows) { const [at, result] = v.last_check ? v.last_check.split('|') : [null, null]; v.last_check_at = at; v.last_check_result = result; delete v.last_check;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
@@ -361,7 +361,7 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at FROM odometer_readings o WHERE o.vehicle_id IN (SELECT value FROM json_each(?1))
       AND o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id)`).bind(ids).all(),
     // Hinweise zum Fahrzeug, die ausdrücklich für Fahrer freigegeben sind (ohne Verfasser)
-    env.DB.prepare(`SELECT vehicle_id, text, created_at FROM vehicle_notes WHERE environment=? AND for_driver=1 AND archived_at IS NULL AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC, rowid DESC`).bind(envName, ids).all(),
+    env.DB.prepare(`SELECT vehicle_id, text, created_at, valid_until FROM vehicle_notes WHERE environment=? AND for_driver=1 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?) AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC, rowid DESC`).bind(envName, berlinDate(), ids).all(),
   ]);
   const lockMap = new Map(locks.results.map((r) => [r.vehicle_id, r]));
   const kmMap = new Map(kms.results.map((r) => [r.vehicle_id, r]));

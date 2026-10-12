@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate } from './util.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
 import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
@@ -53,9 +53,9 @@ export async function integrationRouter(request, env, ctx, url) {
     let notesBy = null;
     if (url.searchParams.get('include') === 'notes') {
       notesBy = new Map();
-      const nr = (await env.DB.prepare('SELECT vehicle_id, text, created_at FROM vehicle_notes WHERE environment=? AND archived_at IS NULL AND for_driver=1 ORDER BY created_at DESC, rowid DESC')
-        .bind(envParam(url)).all()).results;
-      for (const n of nr) { if (!notesBy.has(n.vehicle_id)) notesBy.set(n.vehicle_id, []); notesBy.get(n.vehicle_id).push({ text: n.text, created_at: n.created_at }); }
+      const nr = (await env.DB.prepare('SELECT vehicle_id, text, created_at, valid_until FROM vehicle_notes WHERE environment=? AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?) AND for_driver=1 ORDER BY created_at DESC, rowid DESC')
+        .bind(envParam(url), berlinDate()).all()).results;
+      for (const n of nr) { if (!notesBy.has(n.vehicle_id)) notesBy.set(n.vehicle_id, []); notesBy.get(n.vehicle_id).push({ text: n.text, created_at: n.created_at, valid_until: n.valid_until }); }
     }
     return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',

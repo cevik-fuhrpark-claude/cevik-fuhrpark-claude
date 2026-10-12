@@ -1986,7 +1986,7 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   const avn = (await anon.req('GET', '/api/integration/v1/availability?environment=test&include=notes', undefined, IH)).data.vehicles;
   ok(avn.every((v) => Array.isArray(v.notes)), 'notes[] je Fahrzeug');
   const vn = avn.find((v) => v.id === VID).notes;
-  eq(vn.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'nur für Fahrer freigegebene'); eq(Object.keys(vn[0]).sort().join(), 'created_at,text', 'ohne Verfasser');
+  eq(vn.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'nur für Fahrer freigegebene'); eq(Object.keys(vn[0]).sort().join(), 'created_at,text,valid_until', 'ohne Verfasser');
   eq((await anon.req('GET', '/api/integration/v1/availability?environment=production&include=notes', undefined, IH)).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'Betrieb sieht Testhinweise nicht');
   eq((await users.driver.post(`${base}/${a.data.id}/archive`)).status, 403);
   eq((await users.prodFleet.post(`${base}/${a.data.id}/archive`)).status, 404, 'andere Umgebung');
@@ -2002,6 +2002,30 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   eq(tl.filter((x) => x.note_event === 'add').length, 2); eq(tl.filter((x) => x.note_event === 'archive').length, 1, 'Zeitleiste: angelegt und archiviert');
   eq((await users.driver.get(`/api/vehicles/${VID}/timeline`)).status === 200 ? (await users.driver.get(`/api/vehicles/${VID}/timeline`)).data.items.filter((x) => x.type === 'note').length : 0, 0, 'Fahrer: keine Hinweise in der Zeitleiste');
   await users.ws.post(`${base}/${b.data.id}/archive`);
+});
+
+await test('Hinweise zum Fahrzeug: „gültig bis“ (optional) – danach nicht mehr aktiv (Akte, Liste, Mein Fahrzeug, API), im Archiv als abgelaufen', async () => {
+  const VID = (await users.driver.get('/api/me/vehicles')).data.vehicles[0].id; const base = `/api/vehicles/${VID}/notes`;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await users.fleet.post(base, { text: 'Datum ungültig', valid_until: '2026-02-30' })).status, 400, 'kein Kalenderdatum');
+  eq((await users.fleet.post(base, { text: 'Datum vorbei', valid_until: day(-1) })).status, 400, 'nicht in der Vergangenheit');
+  const a = await users.fleet.post(base, { text: 'Gilt nur bis heute', valid_until: BERLIN_TODAY, for_driver: true }); eq(a.status, 201, 'heute erlaubt');
+  const b = await users.fleet.post(base, { text: 'Gilt bis nächste Woche', valid_until: day(7) }); eq(b.status, 201);
+  const act = (await users.fleet.get(base)).data.notes; eq(act.length, 2, 'beide aktiv'); eq(act.find((n) => n.id === b.data.id).valid_until, day(7));
+  ok(act.every((n) => n.expired === false));
+  const drv = () => users.driver.get('/api/me/vehicles');
+  ok((await drv()).data.vehicles.find((v) => v.id === VID).notes.some((n) => n.text === 'Gilt nur bis heute'), 'Fahrer sieht ihn heute');
+  // abgelaufen (Datum in der Datenbank auf gestern setzen – wie nach Mitternacht)
+  await env.DB.prepare('UPDATE vehicle_notes SET valid_until=? WHERE id=?').bind(day(-1), a.data.id).run();
+  eq((await users.fleet.get(base)).data.notes.map((n) => n.id).join(), b.data.id, 'abgelaufen nicht mehr aktiv');
+  eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VID).notes_active, 1, 'Fahrzeugliste zählt nur aktive');
+  ok(!(await drv()).data.vehicles.find((v) => v.id === VID).notes.some((n) => n.text === 'Gilt nur bis heute'), 'Fahrer sieht ihn nicht mehr');
+  const avn = (await anon.req('GET', '/api/integration/v1/availability?environment=test&include=notes', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VID).notes;
+  ok(!avn.some((n) => n.text === 'Gilt nur bis heute'), 'API ohne abgelaufene');
+  const ar = (await users.fleet.get(base + '?archived=1')).data.notes.find((n) => n.id === a.data.id);
+  ok(ar && ar.expired === true && !ar.archived_at, 'im Archiv als abgelaufen');
+  eq((await users.fleet.post(`${base}/${a.data.id}/archive`)).status, 200, 'abgelaufenen Hinweis trotzdem archivierbar');
+  eq((await users.fleet.post(`${base}/${b.data.id}/archive`)).status, 200);
 });
 
 await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {
