@@ -196,6 +196,11 @@ function berlinOffsetMs(ms) {
   }
   return off;
 }
+// Beginn eines Berliner Kalendertags als UTC-Zeitpunkt (ISO); Zeitumstellung liegt nie um Mitternacht (01:00/02:00 UTC)
+export function berlinDayStartIso(dateStr) {
+  const ms = Date.parse(dateStr + 'T00:00:00Z');
+  return new Date(ms - berlinOffsetMs(ms - 7200000)).toISOString();
+}
 const p2 = (n) => (n < 10 ? '0' + n : String(n));
 export function berlinDateTime(iso) {
   const ms = Date.parse(iso);

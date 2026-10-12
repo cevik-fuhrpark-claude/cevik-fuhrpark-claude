@@ -10,6 +10,7 @@ import { tachoFindings } from './tacho.js';
 import { documentFindings } from './vehicles.js';
 import { contractFindings } from './contracts.js';
 import { claimFindings } from './claims.js';
+import { staleBefore } from './cases.js';
 import { latestKmByVehicle, kmDue, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
@@ -99,13 +100,13 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // (jede Aktion inkl. Kommentar setzt updated_at); der Text nennt das Datum statt einer laufenden Tageszahl. „Wartet auf Teile“ und
     // „Abschlusskontrolle“ haben eigene Befunde, unbewertete Meldungen/nicht übernommene Aufträge ebenfalls.
     const staleDays = Number(settings.get('case_stale_days'));
-    const staleLimit = staleDays > 0 ? new Date(Date.parse(berlinDate() + 'T00:00:00Z') - staleDays * 86400000).toISOString().slice(0, 10) : null;
+    const staleLimit = staleBefore(staleDays);
     const STALE_DE = { gemeldet: 'bewertet, nicht weitergeleitet', werkstatt_freigegeben: 'von der Werkstatt übernommen, Reparatur nicht begonnen', in_reparatur: 'in Reparatur' };
     for (const c of open) {
       const label = `${c.case_no} (${c.plate})`;
       if (staleLimit && STALE_DE[c.status] && (c.status !== 'gemeldet' || c.fleet_received_at) && (c.status !== 'werkstatt_freigegeben' || c.workshop_ack_at)) {
         const last = berlinDate(c.updated_at);
-        if (last <= staleLimit) {
+        if (c.updated_at < staleLimit) {
           add({ code: 'CASE_STALE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: c.status === 'gemeldet' ? 'fleet' : 'workshop',
             message: `${label}: ${STALE_DE[c.status]} – letzte Änderung am ${last.split('-').reverse().join('.')} (Nachfassen nach ${staleDays} Tagen eingestellt).`,
             next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });

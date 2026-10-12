@@ -147,3 +147,5 @@ gleiche Termine bleiben unverändert (Import ist wiederholbar). `?dry_run=1` lie
 
 ## Reifen – Flotte (App)
 `GET /api/tires/fleet?stale_days=90[&site=<Standort>|ohne]` – Inhaber, Fuhrparkleitung, Werkstatt, Lesezugriff. Optional nur ein Standort laut Fahrzeugstamm (Schreibweise egal; Antwort `site`, `site_options[]`). Je aktivem Fahrzeug `status` (unter_minimum/warnung/ok/unbekannt), `min_tread_mm`, `measured_positions`, `below_min`, `below_warn`, `oldest_measure_at`, `stale`; Summen in `totals`.
+
+**Vorgänge ohne Bewegung:** `GET /api/cases?status=open&stale=1` (auch `format=csv`; nicht für Fahrer) liefert bewertete (nicht weitergeleitete), von der Werkstatt übernommene und in Reparatur befindliche Vorgänge, deren letzte Änderung vor dem Berliner Kalendertag „heute − N + 1“ liegt (N = Einstellung `case_stale_days`; gleiche Regel wie Agent-Befund `CASE_STALE`). Ohne Einstellung leere Liste. Jede Antwort von `GET /api/cases` enthält für Nicht-Fahrer `stale_days` (Zahl oder `null`).

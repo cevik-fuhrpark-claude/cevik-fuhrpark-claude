@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -49,6 +49,16 @@ export function caseAccess(user, c) {
   }
 }
 
+// Vorgang ohne Bewegung (Einstellung `case_stale_days`, leer = aus): bewertet/übernommen/in Reparatur und letzte Änderung vor dem
+// Berliner Tag „heute − N“ + 1 – gleiche Regel für Fuhrparkagent (CASE_STALE) und Vorgangsfilter „Ohne Bewegung“
+export const STALE_SQL = `(c.status='in_reparatur' OR (c.status='gemeldet' AND c.fleet_received_at IS NOT NULL) OR (c.status='werkstatt_freigegeben' AND c.workshop_ack_at IS NOT NULL))`;
+export function staleBefore(days) {
+  const n = Number(days);
+  if (!(n > 0)) return null;
+  const limit = new Date(Date.parse(berlinDate() + 'T00:00:00Z') - (n - 1) * 86400000).toISOString().slice(0, 10);
+  return berlinDayStartIso(limit);
+}
+
 // meta (optional): erhält site/site_options für den Filter „Fahrzeug-Standort“ (vsite) – nicht für Fahrer
 export async function listCases(env, user, envName, query, meta = null) {
   const where = ['c.environment = ?'];
@@ -91,6 +101,15 @@ export async function listCases(env, user, envName, query, meta = null) {
       AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))
         OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))))`);
     if (own) args.push(user.workshop_site);
+  }
+  // Filter „Ohne Bewegung“ (nur wenn eingestellt; sonst leere Liste statt einer erfundenen Frist)
+  if (meta || query.stale) {
+    const days = user.role === 'driver' ? null : Number((await env.DB.prepare(`SELECT value FROM settings WHERE key='case_stale_days'`).first())?.value) || null;
+    if (meta && user.role !== 'driver') meta.stale_days = days;
+    if (query.stale && user.role !== 'driver') {
+      const before = staleBefore(days);
+      if (!before) where.push('0'); else { where.push(STALE_SQL, 'c.updated_at < ?'); args.push(before); }
+    }
   }
   // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
   const q = String(query.q || '').trim().slice(0, 60);

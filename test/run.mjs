@@ -2131,11 +2131,31 @@ await test('Fuhrparkagent: Vorgang ohne Bewegung (CASE_STALE) nur mit Einstellun
   const fa = f.find((x) => x.case_id === a), fb = f.find((x) => x.case_id === b);
   eq(fa.owner_role, 'fleet'); eq(fb.owner_role, 'workshop'); eq(fa.severity, 'hinweis');
   ok(/letzte Änderung am \d{2}\.\d{2}\.\d{4} \(Nachfassen nach 7 Tagen eingestellt\)/.test(fb.message), fb.message);
+  // Vorgangsliste „Ohne Bewegung“: gleiche Regel wie der Agent, Einstellung in der Antwort, Werkstatt nur eigene, Fahrer ohne
+  let lr = (await users.fleet.get('/api/cases?status=open&stale=1')).data; eq(lr.stale_days, 7);
+  eq(lr.cases.map((c) => c.id).filter((id) => [a, b, w, u].includes(id)).sort().join(), [a, b].sort().join(), 'Liste = Agent-Befunde');
+  eq((await users.fleet.get('/api/cases?status=open')).data.stale_days, 7, 'auch ohne Filter (für den Reiter)');
+  const wsl = (await users.ws.get('/api/cases?status=open&stale=1')).data.cases.map((c) => c.id);
+  ok(wsl.includes(b) && !wsl.includes(a), 'Werkstatt: eigener Auftrag ja, fremde Meldung nein');
+  ok(!('stale_days' in (await users.driver.get('/api/cases')).data), 'Fahrer: kein Feld');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&status=open&stale=1')).data).includes('Stale-Test: Reparatur hängt'), 'CSV mit Filter');
+  // Grenze: genau N Tage (Berliner Kalendertag) → Befund; N−1 Tage → nicht
+  const { berlinDayStartIso } = await import('../src/util.js');
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  const dayOf = (k) => new Date(Date.parse(today + 'T00:00:00Z') - k * 86400000).toISOString().slice(0, 10);
+  env.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(new Date(Date.parse(berlinDayStartIso(dayOf(6))) + 86400000 - 1000).toISOString(), b);
+  ok(!(await stale()).some((x) => x.case_id === b), '6 Tage (Ende des Tages) → kein Befund');
+  ok(!(await users.fleet.get('/api/cases?status=open&stale=1')).data.cases.some((c) => c.id === b), 'Liste ebenso');
+  env.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(new Date(Date.parse(berlinDayStartIso(dayOf(6))) - 1000).toISOString(), b);
+  ok((await stale()).some((x) => x.case_id === b), '7 Tage (letzte Sekunde) → Befund');
+  ok((await users.fleet.get('/api/cases?status=open&stale=1')).data.cases.some((c) => c.id === b), 'Liste ebenso');
+  env.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(old, b);
   eq((await cmd(a, 'comment', 'Werkstatt angefragt')).status, 200, 'Kommentar = Bewegung');
   ok(!(await stale()).some((x) => x.case_id === a), 'nach Kommentar kein Befund mehr');
   eq((await owner.put('/api/settings', { case_stale_days: '14' })).status, 200);
   ok(!(await stale()).some((x) => x.case_id === b), '10 Tage < 14 → kein Befund');
   eq((await owner.put('/api/settings', { case_stale_days: null })).status, 200);
+  lr = (await users.fleet.get('/api/cases?status=open&stale=1')).data; eq(lr.stale_days, null); eq(lr.cases.length, 0, 'ohne Einstellung leere Liste');
   for (const id of [a, b, w, u]) env.DB.db.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).run(id);
 });
 
