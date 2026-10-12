@@ -227,15 +227,29 @@ function clearOfflineData() {
 // nächsten Aufruf ab – bis dahin stünde auf einem geteilten Tablet die Ansicht der vorherigen Person. Die App leert den Bildschirm
 // nach derselben Zeit ohne Bedienung selbst. Umgekehrt hält Bedienung ohne Serveraufruf (z. B. langes Tippen) die Anmeldung wach.
 const idleLimitMs = () => { const m = S.me ? Number(S.me.idle_logout_min) : 0; return m > 0 ? m * 60000 : 0; };
-function noteActivity() {
+function noteActivity(ev) {
   const ms = idleLimitMs(), now = Date.now();
   if (ms && now - lastActivity > ms) { checkIdle(); return; } // abgelaufen: nicht mehr verlängern
-  lastActivity = now;
+  lastActivity = now; if (ms && !(ev && ev.target && ev.target.closest && ev.target.closest('#idlebar'))) idleWarn(null); // Leiste selbst: Knopf soll klickbar bleiben
   if (ms && !S.offlineStart && navigator.onLine !== false && now - lastApiAt > Math.min(10 * 60000, ms / 3)) api('GET', '/api/me').catch(() => {});
+}
+// Vorwarnung 60 s vor der Abmeldung mit „Angemeldet bleiben“ (WCAG 2.2.1: Zeitbegrenzung ankündigen und verlängern lassen)
+function idleWarn(left) {
+  let bar = document.getElementById('idlebar');
+  if (left === null) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'idlebar'; bar.className = 'update-bar'; bar.setAttribute('role', 'alert');
+    bar.innerHTML = `<span></span><button type="button" class="btn">${esc(t('idle_stay'))}</button>`;
+    bar.querySelector('button').onclick = () => { lastActivity = Date.now(); idleWarn(null); noteActivity(); };
+    document.body.appendChild(bar);
+  }
+  bar.querySelector('span').textContent = t('idle_warn').replace('{s}', Math.max(1, Math.ceil(left / 1000)));
 }
 async function checkIdle() {
   const ms = idleLimitMs();
-  if (!ms || idleBusy || Date.now() - lastActivity <= ms) return;
+  const left = ms ? ms - (Date.now() - lastActivity) : Infinity;
+  idleWarn(left > 0 && left <= 60000 && !idleBusy ? left : null);
+  if (!ms || idleBusy || left > 0) return;
   idleBusy = true;
   try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout').catch(() => {}); } catch {}
   clearOfflineData(); resetUserState(); idleBusy = false;
@@ -243,7 +257,7 @@ async function checkIdle() {
 }
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, noteActivity, { passive: true, capture: true }));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
-setInterval(checkIdle, 30000);
+setInterval(checkIdle, 5000); // nur Zeitvergleich, ohne Serveraufruf
 window.addEventListener('online', () => { if (S.offlineStart) { S.offlineStart = false; S.me = null; route(); } });
 
 async function refreshUnread() {
