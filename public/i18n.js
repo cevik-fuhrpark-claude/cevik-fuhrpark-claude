@@ -600,3 +600,6 @@ Object.assign(STRINGS.en, { fines_truncated: 'Showing the 500 most recent letter
 Object.assign(STRINGS.de, { csv_truncated: 'Die CSV-Datei enthält nur die ersten {n} Vorgänge – bitte mit Filter, Fahrzeug-Standort oder Suche eingrenzen und getrennt exportieren.' });
 Object.assign(STRINGS.uk, { csv_truncated: 'Файл CSV містить лише перші {n} заявок – звузьте вибірку фільтром, місцезнаходженням транспорту або пошуком і експортуйте окремо.' });
 Object.assign(STRINGS.en, { csv_truncated: 'The CSV file contains only the first {n} cases – narrow it down with filters, vehicle site or search and export separately.' });
+Object.assign(STRINGS.de, { mh_truncated: 'Es werden nur die jüngsten {n} Durchführungen berücksichtigt – bitte Zeitraum oder Prüfart eingrenzen.' });
+Object.assign(STRINGS.uk, { mh_truncated: 'Враховано лише останні {n} проведених перевірок – звузьте період або вид перевірки.' });
+Object.assign(STRINGS.en, { mh_truncated: 'Only the latest {n} completed inspections are included – please narrow the period or inspection type.' });

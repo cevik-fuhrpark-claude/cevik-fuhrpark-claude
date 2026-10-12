@@ -2228,6 +2228,25 @@ await test('Vorgangs-CSV: Begrenzung auf 5000 Zeilen wird per Header x-cfp-trunc
   ok(app.includes("res.headers.get('x-cfp-truncated')") && app.includes("t('csv_truncated')"), 'Oberfläche zeigt Hinweis');
 });
 
+await test('Durchgeführte Prüfungen: Begrenzung 5000 korrekt erkannt (genau 5000 = nicht begrenzt), CSV mit x-cfp-truncated, Hinweis in der App', async () => {
+  const db = env.DB.db; const rule = db.prepare('SELECT id, vehicle_id FROM maintenance_rules LIMIT 1').get(); ok(rule, 'Regel vorhanden');
+  const ins = db.prepare(`INSERT INTO maintenance_events(id, rule_id, vehicle_id, kind, done_date, evidence, source, created_at) VALUES (?,?,?,?,?,?,?,?)`);
+  const day = (i) => new Date(Date.UTC(1980, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+  const add = (a, b) => { db.exec('BEGIN'); for (let i = a; i < b; i++) ins.run('mhlim-' + i, rule.id, rule.vehicle_id, 'Probe-Grenze', day(i), 'Probe', 'erfasst', '2020-01-01T00:00:00.000Z'); db.exec('COMMIT'); };
+  const q = '/api/maintenance/history?from=1980-01-01&to=2000-12-31&kind=Probe-Grenze';
+  try {
+    add(0, 5000);
+    let h = (await users.fleet.get(q)).data; eq(h.rows.length, 5000); eq(h.truncated, false, 'genau 5000: nicht begrenzt (vorher fälschlich begrenzt)'); eq(h.max, 5000);
+    eq((await users.fleet.get(q + '&format=csv')).headers.get('x-cfp-truncated'), null);
+    add(5000, 5001);
+    h = (await users.fleet.get(q)).data; eq(h.rows.length, 5000); eq(h.truncated, true); eq(h.rows[0].done_date, day(5000), 'jüngste zuerst');
+    const c = await users.fleet.get(q + '&format=csv'); eq(c.headers.get('x-cfp-truncated'), '5000');
+    eq(new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data).trim().split('\r\n').length, 5001, 'Kopf + 5000 Zeilen');
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM maintenance_events WHERE id LIKE 'mhlim-%'`).run(); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('mh_truncated')") && app.includes('h.truncated ?'), 'Oberfläche zeigt Hinweis');
+});
+
 await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem updated_at (after_id, has_more, next), ohne Parameter wie bisher', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   const get = async (q) => (await anon.req('GET', '/api/integration/v1/cases?environment=test' + q, undefined, H)).data;

@@ -403,6 +403,7 @@ const NEXT_EVENT_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT e2.${col} 
       AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)) ORDER BY e2.done_date, e2.created_at LIMIT 1) END`;
 const DEFECT_CASE_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT c.${col} FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?1 AND c.status<>'abgelehnt' ORDER BY c.created_at DESC LIMIT 1) END`;
 
+export const HISTORY_MAX = 5000;
 export async function maintenanceHistory(env, user, query = {}, envName = 'production') {
   if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
   const today = berlinDate();
@@ -416,11 +417,13 @@ export async function maintenanceHistory(env, user, query = {}, envName = 'produ
       CASE WHEN e.result IS NULL AND NOT EXISTS (SELECT 1 FROM maintenance_events e3 WHERE e3.vehicle_id=e.vehicle_id AND e3.kind=e.kind AND e3.id<>e.id
         AND (e3.done_date > e.done_date OR (e3.done_date = e.done_date AND e3.created_at > e.created_at))) THEN 1 ELSE 0 END AS result_addable
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN users u ON u.id=e.recorded_by
-    WHERE e.done_date >= ?2 AND e.done_date <= ?3 ${kind ? 'AND e.kind = ?4' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5000`)
+    WHERE e.done_date >= ?2 AND e.done_date <= ?3 ${kind ? 'AND e.kind = ?4' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5001`)
     .bind(...(kind ? [envName, from, to, kind] : [envName, from, to])).all()).results;
+  // eine Zeile mehr gelesen: genau 5000 Treffer gelten nicht als begrenzt
+  const truncated = rows.length > HISTORY_MAX; if (truncated) rows.length = HISTORY_MAX;
   const by_kind = {};
   for (const r of rows) by_kind[r.kind] = (by_kind[r.kind] || 0) + 1;
-  return { from, to, kind, rows, by_kind, truncated: rows.length === 5000 };
+  return { from, to, kind, rows, by_kind, truncated, max: HISTORY_MAX };
 }
 export function maintenanceHistoryCsv(h) {
   const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Fahrzeugart', 'Standort', 'Prüfart', 'Durchgeführt am', 'km bei Durchführung', 'Ergebnis', 'Nachweis', 'Herkunft', 'Erfasst von', 'Erfasst am', 'Mängelauftrag', 'Status Mängelauftrag', 'Nachprüfung am', 'Ergebnis Nachprüfung'].join(';')];
