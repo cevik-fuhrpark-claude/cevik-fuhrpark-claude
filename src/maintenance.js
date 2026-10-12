@@ -255,7 +255,8 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
 
 export const csvCell = (x) => {
   let s = x === null || x === undefined ? '' : String(x);
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  // Formelschutz (CSV-Injection); reine Zahlen (auch negativ, Dezimalkomma) bleiben Zahlen – z. B. Saldo „-150,5“ statt Text „'-150,5“
+  if (/^[=+\-@\t\r]/.test(s) && !/^-\d+(?:[.,]\d+)?$/.test(s)) s = "'" + s;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };

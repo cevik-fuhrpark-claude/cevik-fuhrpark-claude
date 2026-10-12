@@ -2,7 +2,7 @@
 export function csvCell(v) {
   if (v === null || v === undefined) return '';
   let s = String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // Formelschutz (CSV-Injection)
+  if (/^[=+\-@\t\r]/.test(s) && !/^-\d+(?:[.,]\d+)?$/.test(s)) s = "'" + s; // Formelschutz (CSV-Injection); negative Zahlen bleiben Zahlen
   return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 export function toCsv(header, rows) {

@@ -3733,6 +3733,11 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   eq((await users.fleet.get('/api/claims?filter=reguliert')).data.counts.reguliert >= 1, true);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
   ok(csv.startsWith('﻿Kennzeichen;Vorgang;Versicherer;') && csv.includes(';Muster-Versicherung AG;S-2026-77;') && csv.includes(';500;2000;') && csv.includes(';2500;500;'), 'CSV');
+  // Erstattung über den Kosten → negativer Saldo bleibt in Excel eine Zahl (kein Formelschutz-Apostroph)
+  eq((await users.fleet.put(P, { status: 'reguliert', reimbursed_net: '3000', reimbursed_on: day(0), evidence: 'Abrechnung vom ' + day(0) })).status, 200);
+  const csvNeg = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
+  ok(csvNeg.includes(';2500;-500;') && !csvNeg.includes("'-500"), 'negativer Saldo als Zahl');
+  eq((await users.fleet.put(P, { status: 'reguliert', reimbursed_net: '2000', reimbursed_on: day(0), evidence: 'Abrechnung vom ' + day(0) })).status, 200);
   const au = (await owner.get('/api/admin/audit?action=claim')).data.entries;
   ok(au.some((e) => e.action === 'claim.create') && au.some((e) => e.action === 'claim.update') && au.some((e) => e.action === 'claim.export'), 'Protokoll');
   // Zeitleiste der Fahrzeugakte: Meldung und Erstattung (nur Leitung, nur eigene Umgebung)
@@ -4369,7 +4374,12 @@ await test('Datenqualität als CSV (Browser): Formelschutz, BOM, alle Prüfungen
     eq(missing.join(','), '', lang + ': fehlende Beschriftungen');
   }
   eq(csvCell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"', 'Formelschutz + Maskierung');
-  eq(csvCell('-5'), "'-5"); eq(csvCell('a;b'), '"a;b"'); eq(csvCell(null), '');
+  // reine (negative) Zahlen bleiben Zahlen (Saldo, Tage überfällig); alles mit Rechenzeichen/Text dahinter bleibt geschützt
+  eq(csvCell('-5'), '-5'); eq(csvCell('-150,5'), '-150,5'); eq(csvCell(-3), '-3'); eq(csvCell('a;b'), '"a;b"'); eq(csvCell(null), '');
+  for (const evil of ['-2+3+cmd|\' /C calc\'!A0', '-1e5', '-5 ', '- 5', '-SUMME(A1)', '-', '+5', '@5']) ok(csvCell(evil).replace(/^"/, '').startsWith("'"), 'geschützt: ' + evil);
+  const { csvCell: srvCell } = await import('../src/maintenance.js');
+  for (const x of ['-5', '-150,5', '-0.25']) eq(srvCell(x), x, 'Server: Zahl ' + x);
+  for (const evil of ['-2+3+cmd|\' /C calc\'!A0', '-1e5', '=1', '+5', '@x', '-A1']) ok(srvCell(evil).replace(/^"/, '').startsWith("'"), 'Server geschützt: ' + evil);
   const items = (await users.fleet.get('/api/admin/data-quality')).data.items;
   ok(items.length > 0, 'Befunde vorhanden');
   const tr = (k) => STRINGS.de[k] || k;
