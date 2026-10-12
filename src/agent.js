@@ -35,6 +35,23 @@ const CHUNK = 1000; // JSON-Parameter je Anweisung ≈ 0,5 MB (D1: max. 2 MB je 
 // Befunde, die als ruhige Erinnerung (nicht dringend) an Fuhrparkleitung/Inhaber gehen, sobald sie neu auftreten
 const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab', DRIVER_DOC_EXPIRED: 'Fahrernachweis abgelaufen', DRIVER_DOC_EXPIRES_SOON: 'Fahrernachweis läuft ab', LICENSE_CHECK_DUE: 'Führerscheinkontrolle fällig', LICENSE_CHECK_FAILED: 'Führerscheinkontrolle mit Mangel', TACHO_CARD_OVERDUE: 'Fahrerkarte nicht ausgelesen', TACHO_CARD_DUE: 'Fahrerkarte bald auslesen', TACHO_VU_OVERDUE: 'Massenspeicher nicht ausgelesen', TACHO_VU_DUE: 'Massenspeicher bald auslesen', CONTRACT_ENDED: 'Vertrag abgelaufen', CONTRACT_ENDS_SOON: 'Vertrag endet bald', CONTRACT_NOTICE_DUE: 'Kündigungsfrist Vertrag', CONTRACT_KM_OVER: 'km-Kontingent überschritten', CONTRACT_KM_FORECAST: 'km-Kontingent (Prognose)', CLAIM_OPEN_LONG: 'Versicherungsfall nachfassen', CASE_STALE: 'Vorgang ohne Bewegung', CASE_FOLLOWUP_DUE: 'Wiedervorlage', INSPECTION_DEFECTS_NO_CASE: 'Prüfmangel ohne Auftrag', REINSPECTION_PENDING: 'Nachprüfung eintragen' };
 const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
+// Push-Texte des Agenten in der Sprache der Person (Fuhrparkleitung/Inhaber arbeiten nicht immer auf Deutsch); Befundcodes bleiben sprachneutral
+const REMINDER_LABEL_I18N = {
+  uk: { MAINTENANCE_OVERDUE: 'Техогляд прострочено', MAINTENANCE_DUE: 'Техогляд незабаром', INSPECTION_UNCLEAR: 'Строк огляду не з’ясовано', FINE_OVERDUE: 'Строк органу влади минув', FINE_DUE_SOON: 'Строк органу влади спливає', DOCUMENT_EXPIRED: 'Документ прострочено', DOCUMENT_EXPIRES_SOON: 'Документ спливає', DRIVER_DOC_EXPIRED: 'Документ водія прострочено', DRIVER_DOC_EXPIRES_SOON: 'Документ водія спливає', LICENSE_CHECK_DUE: 'Потрібна перевірка посвідчення', LICENSE_CHECK_FAILED: 'Перевірка посвідчення з дефектом', TACHO_CARD_OVERDUE: 'Картку водія не зчитано', TACHO_CARD_DUE: 'Незабаром зчитати картку водія', TACHO_VU_OVERDUE: 'Пам’ять тахографа не зчитано', TACHO_VU_DUE: 'Незабаром зчитати пам’ять тахографа', CONTRACT_ENDED: 'Договір закінчився', CONTRACT_ENDS_SOON: 'Договір незабаром закінчується', CONTRACT_NOTICE_DUE: 'Строк розірвання договору', CONTRACT_KM_OVER: 'Ліміт пробігу перевищено', CONTRACT_KM_FORECAST: 'Ліміт пробігу (прогноз)', CLAIM_OPEN_LONG: 'Страховий випадок: нагадати', CASE_STALE: 'Заявка без руху', CASE_FOLLOWUP_DUE: 'Нагадування', INSPECTION_DEFECTS_NO_CASE: 'Дефект огляду без замовлення', REINSPECTION_PENDING: 'Внести повторний огляд' },
+  en: { MAINTENANCE_OVERDUE: 'Inspection overdue', MAINTENANCE_DUE: 'Inspection due soon', INSPECTION_UNCLEAR: 'Inspection deadline unclear', FINE_OVERDUE: 'Authority deadline passed', FINE_DUE_SOON: 'Authority deadline expiring', DOCUMENT_EXPIRED: 'Document expired', DOCUMENT_EXPIRES_SOON: 'Document expiring', DRIVER_DOC_EXPIRED: 'Driver document expired', DRIVER_DOC_EXPIRES_SOON: 'Driver document expiring', LICENSE_CHECK_DUE: 'Licence check due', LICENSE_CHECK_FAILED: 'Licence check with defect', TACHO_CARD_OVERDUE: 'Driver card not downloaded', TACHO_CARD_DUE: 'Driver card download due soon', TACHO_VU_OVERDUE: 'Vehicle unit not downloaded', TACHO_VU_DUE: 'Vehicle unit download due soon', CONTRACT_ENDED: 'Contract expired', CONTRACT_ENDS_SOON: 'Contract ending soon', CONTRACT_NOTICE_DUE: 'Contract notice deadline', CONTRACT_KM_OVER: 'Mileage allowance exceeded', CONTRACT_KM_FORECAST: 'Mileage allowance (forecast)', CLAIM_OPEN_LONG: 'Follow up insurance claim', CASE_STALE: 'Case without progress', CASE_FOLLOWUP_DUE: 'Follow-up', INSPECTION_DEFECTS_NO_CASE: 'Inspection defect without order', REINSPECTION_PENDING: 'Record re-inspection' },
+};
+export const AGENT_PUSH_T = {
+  de: { agent: 'Fuhrparkagent: Handlungsbedarf', critical_n: '{n} neue kritische Befunde', reminder: 'Fuhrparkagent: neue Termine/Fristen' },
+  uk: { agent: 'Агент автопарку: потрібні дії', critical_n: 'Нових критичних знахідок: {n}', reminder: 'Агент автопарку: нові терміни/строки' },
+  en: { agent: 'Fleet agent: action required', critical_n: '{n} new critical findings', reminder: 'Fleet agent: new dates/deadlines' },
+};
+export const reminderLabel = (code, lang) => (REMINDER_LABEL_I18N[lang] && REMINDER_LABEL_I18N[lang][code]) || REMINDER_LABEL[code];
+// Sammel-Erinnerung je Sprache: „2× Prüftermin bald fällig, 1× …“ (Reihenfolge wie die Befunde, ohne Kennzeichen/Details)
+export function reminderBody(codes, lang, environment) {
+  const counts = new Map();
+  for (const c of codes) counts.set(reminderLabel(c, lang), (counts.get(reminderLabel(c, lang)) || 0) + 1);
+  return [...counts].map(([k, n]) => `${n}× ${k}`).join(', ') + (environment === 'test' ? ' · TEST' : '');
+}
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -48,7 +65,7 @@ const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'next_action
 // als JSON-Arrays in einer Abfrage – gleiche Bedingungen wie zuvor die sieben Einzelabfragen.
 const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('key', key, 'value', value)) FROM settings) AS settings,
-  (SELECT json_group_array(json_object('id', id, 'role', role, 'workshop_site', workshop_site)) FROM users
+  (SELECT json_group_array(json_object('id', id, 'role', role, 'workshop_site', workshop_site, 'language', language)) FROM users
      WHERE environment=?1 AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL) AS users,
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
      WHERE c.environment=?1 AND c.status='in_reparatur' AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id)) AS safety_open,
@@ -407,22 +424,22 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Kritische neue Befunde zusätzlich an Fuhrparkleitung/Owner pushen
     let ids = null;
     const recipients = async () => ids || (ids = fleetUsers.map((r) => r.id)); // Empfänger wurden zu Beginn des Laufs geladen
+    const langOf = new Map(fleetUsers.map((u) => [u.id, u.language]));
     if (newCritical.length) {
       await recipients();
       // Abfragebudget: ab 2 neuen kritischen Befunden eine Sammelmeldung statt Einzel-Pushs (je Push ≈ 4 Abfragen; Agent liegt bei ≈ 44 von 50)
       if (newCritical.length > 1) {
-        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${newCritical.length} neue kritische Befunde${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${runId}`, caseId: null, urgent: true });
+        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: AGENT_PUSH_T.de.agent, body: '', eventKey: `agent:${runId}`, caseId: null, localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: AGENT_PUSH_T[l].critical_n.replace('{n}', newCritical.length) + (environment === 'test' ? ' · TEST' : '') }), langOf, urgent: true });
       } else for (const { eventId, f } of newCritical) {
-        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: 'Fuhrparkagent: Handlungsbedarf', body: `${f.code}${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
+        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent }), langOf, title: AGENT_PUSH_T.de.agent, body: `${f.code}${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
       }
     }
 
     // Neue Termine/Fristen (Prüftermine, Behördenfristen): eine ruhige Sammel-Erinnerung je Lauf, ohne Details im Push-Text
     if (newReminders.length) {
-      const counts = {};
-      for (const f of newReminders) counts[REMINDER_LABEL[f.code]] = (counts[REMINDER_LABEL[f.code]] || 0) + 1;
-      const body = Object.entries(counts).map(([k, n]) => `${n}× ${k}`).join(', ') + (environment === 'test' ? ' · TEST' : '');
-      await notifyUsers(env, ctx, environment, await recipients(), { kind: 'agent_reminder', title: 'Fuhrparkagent: neue Termine/Fristen', body, eventKey: `agent-reminder:${runId}`, caseId: null, urgent: false });
+      const codes = newReminders.map((f) => f.code);
+      await notifyUsers(env, ctx, environment, await recipients(), { kind: 'agent_reminder', title: AGENT_PUSH_T.de.reminder, body: reminderBody(codes, 'de', environment), langOf,
+        localize: (l) => ({ title: AGENT_PUSH_T[l].reminder, body: reminderBody(codes, l, environment) }), eventKey: `agent-reminder:${runId}`, caseId: null, urgent: false });
     }
 
     // Nach dem Sammel-Upsert sind genau die in diesem Lauf gefundenen Befunde offen, alle anderen erledigt – keine Zählabfrage nötig

@@ -419,10 +419,20 @@ await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () =>
   // HU vor 12 Monaten im laufenden Berliner Monat → fällig zum Monatsende (bald fällig, unabhängig vom Testdatum)
   const r = await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: HU_LAST, interval_months: 12, evidence: 'Prüfbericht TÜV (Test)' });
   eq(r.status, 201); eq(r.data.next_due_date, HU_DUE, 'HU: 12 Kalendermonate, Fristende Monatsende');
+  eq((await users.fleet.patch('/api/me', { language: 'uk' })).status, 200, 'Fuhrparkleitung arbeitet auf Ukrainisch');
   await users.fleet.post('/api/agent/run');
+  eq((await users.fleet.patch('/api/me', { language: 'de' })).status, 200);
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_DUE'), 'HU-Fälligkeit erkannt');
+  const remUk = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
+  eq(remUk.length, 1); eq(remUk[0].title, 'Агент автопарку: нові терміни/строки', 'Sammel-Erinnerung in der Sprache der Person');
+  ok(/1× Техогляд незабаром/.test(remUk[0].body) && !/Prüftermin/.test(remUk[0].body), remUk[0].body);
+  const { reminderBody, AGENT_PUSH_T } = await import('../src/agent.js');
+  eq(reminderBody(['MAINTENANCE_DUE', 'FINE_OVERDUE', 'MAINTENANCE_DUE'], 'en', 'test'), '2× Inspection due soon, 1× Authority deadline passed · TEST');
+  eq(reminderBody(['MAINTENANCE_DUE'], 'xx', 'production'), '1× Prüftermin bald fällig', 'unbekannte Sprache → Deutsch');
+  const { STRINGS: _S } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(AGENT_PUSH_T[l].agent && AGENT_PUSH_T[l].reminder && AGENT_PUSH_T[l].critical_n.includes('{n}'), l);
   const rem = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
-  eq(rem.length, 1, 'eine Sammel-Erinnerung'); ok(/1× Prüftermin bald fällig/.test(rem[0].body) && !rem[0].urgent && !/SZ-/.test(rem[0].body), 'ruhig, ohne Details');
+  eq(rem.length, 1, 'eine Sammel-Erinnerung'); ok(/1× Техогляд незабаром/.test(rem[0].body) && !rem[0].urgent && !/SZ-/.test(rem[0].body), 'ruhig, ohne Details');
   await users.fleet.post('/api/agent/run');
   eq((await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder').length, 1, 'keine Wiederholung bei gleichem Befund');
   ok(!(await users.ws.get('/api/notifications')).data.notifications.some((n) => n.kind === 'agent_reminder'), 'Werkstatt nicht');

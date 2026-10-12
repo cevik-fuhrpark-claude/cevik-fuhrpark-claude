@@ -173,10 +173,16 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
   return created.length;
 }
 
-export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false }) {
+// localize(lang) → { title?, body? } je Sprache der Person (langOf: Map Benutzer-ID → Sprache); ohne Angabe gilt title/body für alle
+export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null }) {
   const now = nowIso();
-  const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now }));
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title, body, urgent, case_id: caseId, kind }));
+  const text = (uid) => {
+    if (!localize) return { title, body };
+    const l = langOf && ['de', 'uk', 'en'].includes(langOf.get(uid)) ? langOf.get(uid) : 'de';
+    const x = localize(l) || {}; return { title: x.title ?? title, body: x.body ?? body };
+  };
+  const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
