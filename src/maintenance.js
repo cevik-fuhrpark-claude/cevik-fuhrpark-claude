@@ -4,7 +4,7 @@ import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berl
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
-import { siteKey, siteLabels } from './reports.js';
+import { siteSelection } from './reports.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
 const WRITE_ROLES = ['owner', 'fleet'];
@@ -186,12 +186,9 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   const today = berlinDate();
   const latestKm = await latestKmByVehicle(env, { withBase: true });
   const allVehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1 AND eval_excluded=0').all()).results;
-  const sLabel = siteLabels(allVehicles);
-  const siteOptions = [...new Set(sLabel.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
-  const siteRaw = opts.site ? String(opts.site).slice(0, 60) : null;
-  const sKey = siteRaw ? siteKey(siteRaw === 'ohne' ? null : siteRaw) : null;
-  const siteSel = sKey ? (sLabel.get(sKey) || siteRaw) : null;
-  const vehicles = sKey ? allVehicles.filter((v) => siteKey(v.site) === sKey) : allVehicles;
+  const sel = siteSelection(allVehicles, opts.site);
+  const siteOptions = sel.options; const siteSel = sel.site; const sKey = sel.site !== null;
+  const vehicles = sKey ? allVehicles.filter((v) => sel.match(v.site)) : allVehicles;
   const vIds = new Set(vehicles.map((v) => v.id));
   const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.last_done_date, m.next_due_date, m.planned_date, m.evidence, m.updated_at
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results.filter((r) => vIds.has(r.vehicle_id));

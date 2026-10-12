@@ -16,6 +16,16 @@ export function siteLabels(vehicles) {
   return new Map([...cnt].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'))[0][0]]));
 }
 
+// Standortauswahl für Berichte: options = Auswahl (häufigste Schreibweise, „ohne“ zuletzt), site = gewählter Standort in Anzeige-Schreibweise
+// (unbekannt → wie übergeben), match(site) = gehört ein Stammdaten-Standort zur Auswahl (ohne Auswahl immer true)
+export function siteSelection(vehicles, raw) {
+  const label = siteLabels(vehicles);
+  const options = [...new Set(label.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
+  const r = raw ? String(raw).slice(0, 60) : null;
+  const key = r ? siteKey(r === 'ohne' ? null : r) : null;
+  return { options, label, site: key ? (label.get(key) || r) : null, match: (s) => !key || siteKey(s) === key };
+}
+
 function monthRange(q) {
   const now = berlinDate().slice(0, 7);
   const to = q.to || now;
@@ -82,10 +92,10 @@ export async function costReport(env, user, envName, query = {}) {
   const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
   // Standortfilter (Standort laut Fahrzeugstamm, 'ohne' = ohne Standort): wirkt auf Zeilen, km, Vertragsraten und Erstattungen
   // Schreibweisen desselben Standorts (Dortmund/DORTMUND) zählen zusammen; angezeigt wird die häufigste Schreibweise
-  const label = siteLabels([...allPlates.values()].filter((v) => !v.eval_excluded));
-  const siteOptions = [...new Set(label.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
+  const sel = siteSelection([...allPlates.values()].filter((v) => !v.eval_excluded), query.site);
+  const label = sel.label; const siteOptions = sel.options;
   const siteFilter = query.site ? String(query.site).slice(0, 60) : null;
-  const plates = siteFilter ? new Map([...allPlates].filter(([, v]) => siteKey(v.site) === siteKey(siteFilter === 'ohne' ? null : siteFilter))) : allPlates;
+  const plates = siteFilter ? new Map([...allPlates].filter(([, v]) => sel.match(v.site))) : allPlates;
   // ruhende Fahrzeuge (Inhaberentscheidung) zählen in keiner Auswertung
   for (const [k, r] of rows) if ((plates.get(r.vehicle_id) || {}).eval_excluded || (siteFilter && !plates.has(r.vehicle_id))) rows.delete(k);
   const out = [...rows.values()].map((r) => {
@@ -236,12 +246,9 @@ export async function kpiReport(env, user, envName, query = {}) {
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
   // Fahrzeugstamm einmal laden (Kennzeichen, Art, Standort laut Stamm) – auch für den Fahrzeug-Standortfilter
   const plates = new Map((await env.DB.prepare('SELECT id, plate, kind, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
-  const vLabel = siteLabels([...plates.values()].filter((v) => !v.eval_excluded));
-  const vehicle_sites = [...new Set(vLabel.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
-  const vsiteRaw = query.vsite ? String(query.vsite).slice(0, 60) : null;
-  const vKey = vsiteRaw ? siteKey(vsiteRaw === 'ohne' ? null : vsiteRaw) : null;
-  const vehicle_site = vKey ? (vLabel.get(vKey) || vsiteRaw) : null;
-  const vOk = (vid) => !vKey || siteKey((plates.get(vid) || {}).site) === vKey;
+  const vSel = siteSelection([...plates.values()].filter((v) => !v.eval_excluded), query.vsite);
+  const vehicle_sites = vSel.options; const vehicle_site = vSel.site;
+  const vOk = (vid) => vSel.match((plates.get(vid) || {}).site);
   const allCases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
     JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
     WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results

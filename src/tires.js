@@ -1,7 +1,7 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName } from './util.js';
 import { audit } from './auth.js';
-import { siteKey, siteLabels } from './reports.js';
+import { siteSelection } from './reports.js';
 
 export const AXLES = ['lenkachse', 'liftachse', 'antriebsachse', 'anhaenger'];
 export const POSITIONS = ['VA-L', 'VA-R', 'LA-L', 'LA-R', 'HA-L-aussen', 'HA-L-innen', 'HA-R-innen', 'HA-R-aussen',
@@ -161,11 +161,8 @@ export async function fleetTires(env, user, envName, query = {}) {
   const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
   const allVehicles = (await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE active=1 AND eval_excluded=0 ORDER BY plate').all()).results;
   // optional nur ein Standort laut Fahrzeugstamm (Schreibweise egal, 'ohne' = ohne Standort)
-  const sLabel = siteLabels(allVehicles);
-  const siteOptions = [...new Set(sLabel.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
-  const siteRaw = query.site ? String(query.site).slice(0, 60) : null;
-  const sKey = siteRaw ? siteKey(siteRaw === 'ohne' ? null : siteRaw) : null;
-  const vehicles = sKey ? allVehicles.filter((v) => siteKey(v.site) === sKey) : allVehicles;
+  const sel = siteSelection(allVehicles, query.site);
+  const vehicles = sel.site !== null ? allVehicles.filter((v) => sel.match(v.site)) : allVehicles;
   // je Fahrzeug+Position letzte Profilmessung (Wechsel ohne Messung setzt den Messwert zurück)
   const ev = (await env.DB.prepare(`SELECT vehicle_id, position, event_type, tread_mm, created_at FROM tire_events WHERE environment=? ORDER BY created_at DESC`).bind(envName).all()).results;
   const latest = new Map();
@@ -191,6 +188,6 @@ export async function fleetTires(env, user, envName, query = {}) {
     return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
-  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, stale_days: staleDays, site: sKey ? (sLabel.get(sKey) || siteRaw) : null, site_options: siteOptions, rows,
+  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, stale_days: staleDays, site: sel.site, site_options: sel.options, rows,
     totals: { vehicles: rows.length, below_min: count((r) => r.status === 'unter_minimum'), warn: count((r) => r.status === 'warnung'), never_measured: count((r) => r.measured_positions === 0), stale: count((r) => r.stale && r.measured_positions > 0) } };
 }
