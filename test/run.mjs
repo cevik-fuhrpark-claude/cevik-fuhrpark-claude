@@ -973,6 +973,33 @@ await test('Abmelden/Sitzungsende verwirft Ansichtszustand der vorherigen Person
   eq(f('vehicles', ['plate', 'km_desc'], 'plate'), 'km_desc');
   f('cases', ['priority', 'oldest'], 'priority', 'oldest'); eq(mem.get('cfp_sort_cases'), 'oldest');
 });
+await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen passen zu src/util.js, feste Texte existieren', async () => {
+  const fs = await import('node:fs');
+  const { translateValidation: tv } = await import('../public/i18n.js');
+  const { str, num, oneOf } = await import('../src/util.js');
+  const msg = (fn) => { try { fn(); } catch (e) { return e.message; } return null; };
+  const cases = [
+    [msg(() => num('abc', { field: 'Stunden' })), 'Години: недійсне число.', 'Hours: invalid number.'],
+    [msg(() => num('1.234', { field: 'Menge' })), null, null],
+    [msg(() => str('', { required: true, field: 'Fahrzeug' })), 'Транспорт: обов’язкове поле.', 'Vehicle is required.'],
+    [msg(() => str('x'.repeat(30), { max: 20, field: 'Bemerkung' })), 'Примітка: занадто довго (макс. 20 символів).', 'Note is too long (max. 20 characters).'],
+    [msg(() => oneOf('zzz', ['ok', 'mangel'], 'Prüfergebnis')), 'Результат перевірки: недійсне значення.', 'Check result: invalid value.'],
+    [msg(() => num('5', { min: 10, field: 'Sonderfeld' })), 'Sonderfeld: недійсне число.', 'Sonderfeld: invalid number.'],
+  ];
+  for (const [m, uk, en] of cases) {
+    ok(m, 'Server liefert einen Text');
+    if (uk === null) { ok(/mehrdeutig/.test(m), m); ok(tv('uk', m).includes('«1.234»'), 'mehrdeutig übersetzt'); continue; }
+    eq(tv('uk', m), uk, m); eq(tv('en', m), en, m);
+  }
+  eq(tv('de', 'Stunden: ungültige Zahl.'), null, 'Deutsch: Server-Text');
+  eq(tv('uk', 'Ganz anderer Text.'), null); eq(tv('uk', 'constructor'), null); eq(tv('uk', undefined), null);
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  for (const fixed of ['Jeder Mangel braucht eine kurze Beschreibung.', 'Fehlerbeschreibung ist zu kurz.', 'Fahrzeug unbekannt.']) {
+    ok(src.includes(`'${fixed}'`), `Servertext noch vorhanden: ${fixed}`); ok(tv('uk', fixed) && tv('en', fixed), `übersetzt: ${fixed}`);
+  }
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/code === 'validation' && translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung');
+});
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
   const { siteKey } = await import('../src/reports.js');

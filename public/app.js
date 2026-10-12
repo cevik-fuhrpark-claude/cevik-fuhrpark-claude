@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
-import { STRINGS, CHECK_LABELS } from './i18n.js';
+import { STRINGS, CHECK_LABELS, translateValidation } from './i18n.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, defectItemsCsv, defectVehiclesCsv } from './csv.js';
 import { helpMatches } from './help.js';
@@ -56,7 +56,7 @@ async function api(method, path, body, extra = {}) {
   if (!res.ok) {
     // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch); unbekannte Codes: Server-Text
     const code = data && data.error;
-    const tr = code && S.lang !== 'de' && STRINGS[S.lang] && STRINGS[S.lang]['err_' + code];
+    const tr = code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || (code === 'validation' && translateValidation(S.lang, data.message)));
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; throw e;
   }
   return data;

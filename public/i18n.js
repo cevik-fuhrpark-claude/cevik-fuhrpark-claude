@@ -631,3 +631,28 @@ Object.assign(STRINGS.en, { err_safety_items_open: 'There are open safety-releva
 Object.assign(STRINGS.de, { defect_note_missing: 'Bitte den Mangel kurz beschreiben (mindestens 3 Zeichen).', km_invalid: 'Kilometerstand bitte nur als ganze Zahl eingeben (z. B. 120500).' });
 Object.assign(STRINGS.uk, { defect_note_missing: 'Коротко опишіть дефект (щонайменше 3 символи).', km_invalid: 'Вкажіть пробіг лише цілим числом (наприклад, 120500).' });
 Object.assign(STRINGS.en, { defect_note_missing: 'Please describe the defect briefly (at least 3 characters).', km_invalid: 'Please enter the odometer as a whole number (e.g. 120500).' });
+
+// [CLAUDE] Allgemeine Eingabefehler des Servers (Code „validation“, deutscher Text aus festen Vorlagen in src/util.js) in die App-Sprache.
+// Feldnamen nur für häufige Felder übersetzt, sonst bleibt der deutsche Feldname stehen. Unbekannte Texte: null (App zeigt den Server-Text).
+const FIELD_NAMES = {
+  uk: { Stunden: 'Години', Menge: 'Кількість', Preis: 'Ціна', Betrag: 'Сума', Kilometerstand: 'Пробіг', km: 'Пробіг', Bemerkung: 'Примітка', Grund: 'Причина', Fahrzeug: 'Транспорт', Bezeichnung: 'Назва', Name: 'Ім’я', Benutzername: 'Ім’я користувача', Kennzeichen: 'Номерний знак', Restarbeit: 'Залишкова робота', Tätigkeit: 'Робота', Teil: 'Деталь', Mindestbestand: 'Мінімальний запас', Profiltiefe: 'Глибина протектора', Werkstatt: 'Майстерня', Fahrer: 'Водій', Prüfergebnis: 'Результат перевірки', Beschreibung: 'Опис' },
+  en: { Stunden: 'Hours', Menge: 'Quantity', Preis: 'Price', Betrag: 'Amount', Kilometerstand: 'Odometer', km: 'Odometer', Bemerkung: 'Note', Grund: 'Reason', Fahrzeug: 'Vehicle', Bezeichnung: 'Description', Name: 'Name', Benutzername: 'Username', Kennzeichen: 'Licence plate', Restarbeit: 'Remaining task', Tätigkeit: 'Activity', Teil: 'Part', Mindestbestand: 'Minimum stock', Profiltiefe: 'Tread depth', Werkstatt: 'Workshop', Fahrer: 'Driver', Prüfergebnis: 'Check result', Beschreibung: 'Description' },
+};
+const VALIDATION_TEXTS = {
+  uk: { required: '{f}: обов’язкове поле.', too_long: '{f}: занадто довго (макс. {n} символів).', value: '{f}: недійсне значення.', number: '{f}: недійсне число.', ambiguous: '{f}: «{v}» неоднозначно – вводьте без крапки-розділювача тисяч (напр. 2000) або з комою для дробової частини (напр. 2,5).',
+    'Jeder Mangel braucht eine kurze Beschreibung.': 'Кожен дефект потребує короткого опису.', 'Fehlerbeschreibung ist zu kurz.': 'Опис несправності занадто короткий.', 'Fahrzeug unbekannt.': 'Транспорт невідомий.' },
+  en: { required: '{f} is required.', too_long: '{f} is too long (max. {n} characters).', value: '{f}: invalid value.', number: '{f}: invalid number.', ambiguous: '{f}: “{v}” is ambiguous – please enter without thousands separator (e.g. 2000) or with a comma for decimals (e.g. 2,5).',
+    'Jeder Mangel braucht eine kurze Beschreibung.': 'Every defect needs a short description.', 'Fehlerbeschreibung ist zu kurz.': 'Fault description is too short.', 'Fahrzeug unbekannt.': 'Unknown vehicle.' },
+};
+export function translateValidation(lang, msg) {
+  const T = VALIDATION_TEXTS[lang]; if (!T || typeof msg !== 'string') return null;
+  if (Object.hasOwn(T, msg) && msg.endsWith('.') && msg.includes(' ')) return T[msg];
+  const f = (x) => (FIELD_NAMES[lang] && Object.hasOwn(FIELD_NAMES[lang], x) ? FIELD_NAMES[lang][x] : x);
+  let m;
+  if ((m = msg.match(/^(.{1,60}) ist erforderlich\.$/))) return T.required.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^(.{1,60}) ist zu lang \(max\. (\d+) Zeichen\)\.$/))) return T.too_long.replace('{f}', f(m[1])).replace('{n}', m[2]);
+  if ((m = msg.match(/^(.{1,60}): ungültiger Wert\.$/))) return T.value.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^(.{1,60}): ungültige Zahl\.$/))) return T.number.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist mehrdeutig/))) return T.ambiguous.replace('{f}', f(m[1])).replace('{v}', m[2]);
+  return null;
+}
