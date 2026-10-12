@@ -3490,6 +3490,16 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   pl = (await users.ws.get('/api/workshop/plan')).data;
   ok(!pl.maintenance_due.some((i) => i.id === kmr), 'mit offenem Werkstattauftrag nicht doppelt');
   ok(pl.unplanned.some((i) => i.maintenance_rule_id === kmr), 'Auftrag steht unter „Ohne Termin“');
+  // Fahrzeugliste/CSV: nächste km-Fälligkeit (kleinste, belegter Wert vor Intervall), Rest-km aus letztem km-Stand
+  let vk = await vrow(users.fleet);
+  eq(vk.next_due_km, 390000, 'Liste: km-Fälligkeit'); eq(vk.next_due_km_kind, 'Ölwechsel'); eq(vk.km_remaining, -10000, 'Liste: überschritten');
+  eq((await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'Inspektion', due_km: '380.000', evidence: 'Werkstattplan-Test Beleg' })).status, 201);
+  vk = await vrow(users.fleet);
+  eq(vk.next_due_km, 380000, 'belegte km-Fälligkeit, kleinste zuerst'); eq(vk.next_due_km_kind, 'Inspektion'); eq(vk.km_remaining, -20000);
+  const vcs = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
+  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km'), 'CSV-Kopf: km-Spalten am Ende');
+  ok(vcs.find((l) => l.startsWith('WP-LN 1;')).endsWith(';380000;Inspektion;-20000'), 'CSV-Zeile: km-Fälligkeit');
+  ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
 });
 
 await test('Werkstattplan: Filter „Fahrzeug-Standort“ (Schreibweise egal, Summe über Standorte = alle, Terminvorschlag-Auslastung ungefiltert)', async () => {
