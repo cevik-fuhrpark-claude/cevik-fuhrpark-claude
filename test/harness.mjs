@@ -3,10 +3,27 @@ import { DatabaseSync } from 'node:sqlite';
 
 // Zähler ausgeführter SQL-Anweisungen (für Abfragebudget je Aufruf im Lasttest)
 export const QSTAT = { n: 0, written: 0, perRequest: [], trace: process.env.CFP_QTRACE ? [] : null };
+// CFP_QPLAN=1: Abfrageplan jeder neuen SQL-Anweisung prüfen und Volltabellen-Suchen am Ende ausgeben (Index-Suche)
+export const QPLAN = process.env.CFP_QPLAN ? new Map() : null;
+function planCheck(db, sql) {
+  if (!QPLAN || QPLAN.has(sql) || !/^\s*(SELECT|WITH|UPDATE|DELETE)/i.test(sql)) return;
+  let scans = [];
+  try {
+    const n = (sql.match(/\?/g) || []).length;
+    scans = db.prepare('EXPLAIN QUERY PLAN ' + sql).all(...Array(n).fill(null)).map((r) => r.detail).filter((d) => /^SCAN [a-z_]+(?: AS \w+)?$/i.test(d));
+  } catch { /* z. B. benannte Parameter */ }
+  QPLAN.set(sql, scans);
+}
+if (QPLAN) process.on('exit', () => {
+  const by = {};
+  for (const [sql, sc] of QPLAN) for (const d of sc) (by[d.split(' ')[1]] ||= []).push(sql.replace(/\s+/g, ' ').slice(0, 160));
+  console.log('\n[QPLAN] Volltabellen-Suchen je Tabelle:');
+  for (const [t, l] of Object.entries(by).sort((a, b) => b[1].length - a[1].length)) { console.log(`  ${t}: ${l.length}`); for (const q of l.slice(0, 6)) console.log('     ' + q); }
+});
 class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
   bind(...args) { return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a))); }
-  _prep() { QSTAT.n++; if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
+  _prep() { QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
   async first(col) {
     const r = this._prep().get(...this.args);
     if (!r) return null;

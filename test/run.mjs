@@ -2104,6 +2104,20 @@ await test('Positionen je Vorgang per Index (keine Volltabellen-Suche): Arbeitsz
   }
 });
 
+await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung, Bußgeld-Verlauf/-Dateien, Fahrer je Fahrzeug, Push-Geräte, letzter Agent-Lauf, Master-Eingang', async () => {
+  for (const [t, sql, n] of [
+    ['inspections', "SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1", 1],
+    ['notifications/retry', "SELECT id FROM notifications WHERE acknowledged_at IS NULL AND created_at > ? AND ((push_status='failed' AND push_attempts < 3) OR (push_status='pending' AND created_at < ?)) ORDER BY urgent DESC, created_at LIMIT 20", 2],
+    ['notifications/case', "SELECT user_id FROM notifications WHERE case_id=? AND kind='comment'", 1],
+    ['fine_events', 'SELECT * FROM fine_events WHERE fine_id=? ORDER BY created_at', 1], ['files/fine', 'SELECT id FROM files WHERE fine_id=?', 1],
+    ['driver_vehicles', 'SELECT user_id FROM driver_vehicles WHERE vehicle_id=?', 1], ['push_subscriptions', 'SELECT id FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL', 1],
+    ['agent_runs/env', 'SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1', 1], ['agent_runs', 'SELECT environment, error FROM agent_runs ORDER BY started_at DESC LIMIT 2', 0],
+    ['master_inbox', 'UPDATE master_inbox SET processed_at=? WHERE environment=? AND processed_at IS NULL', 2]]) {
+    const plan = env.DB.db.prepare('EXPLAIN QUERY PLAN ' + sql).all(...Array(n).fill('x')).map((r) => r.detail).join(' | ');
+    ok(/USING (COVERING )?INDEX/.test(plan) && !/^SCAN [a-z_]+$/m.test(plan.split(' | ').join('\n')), `${t}: ${plan}`);
+  }
+});
+
 await test('Wiederherstellungs-Probe mit vollem Datenbestand: jede gesicherte Tabelle zeilen- und feldgleich (inkl. Hinweise „gültig bis“/Archiv, Dubletten, Lager-Umlagerung/Bestellvermerk)', async () => {
   const b = await owner.get('/api/admin/backup'); eq(b.status, 200);
   const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
