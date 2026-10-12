@@ -3469,6 +3469,13 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
   console.log(`     ${compared} Vergleiche, ${withDrivers} Vorgänge mit zugeordneten Fahrern`);
 });
 
+await test('Vorgangsdetail: Kosten aus geladenen Positionen = eigenständige Kostenberechnung (alle Testvorgänge)', async () => {
+  const { caseCosts } = await import('../src/cases.js');
+  const ids = (await env.DB.prepare(`SELECT id FROM cases WHERE environment='test' AND id IN (SELECT case_id FROM work_entries UNION SELECT case_id FROM parts UNION SELECT case_id FROM external_costs)`).all()).results.map((r) => r.id);
+  ok(ids.length >= 3, `Vorgänge mit Kostenpositionen: ${ids.length}`);
+  for (const id of ids) eq(JSON.stringify((await users.fleet.get(`/api/cases/${id}`)).data.costs), JSON.stringify(await caseCosts(env, id)), `Kosten ${id}`);
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
@@ -3479,8 +3486,12 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   // Fuhrparkagent: Reserve für neue Prüfungen halten (Backlog 74; Ausgangslisten seit 12.10. in einer Abfrage)
   const agentMax = Math.max(...QSTAT.perRequest.slice(1).filter((w) => w.path === '/api/agent/run').map((w) => w.n));
   ok(agentMax <= 40, `Fuhrparkagent braucht ${agentMax} Abfragen (Ziel ≤ 40, Reserve für neue Prüfungen)`);
-  // Zeitleiste lädt nur die nötigen Teile der Akte (12.10.: vorher 28)
   const per = (re) => QSTAT.perRequest.slice(1).filter((w) => re.test(w.path)).map((w) => w.n);
+  // Vorgangsdetail: Kosten aus bereits geladenen Positionen (12.10.: 24 → 20)
+  const caseMax = Math.max(...per(/^\/api\/cases\/:id$/));
+  console.log(`     Vorgangsdetail max. ${caseMax} Abfragen`);
+  ok(caseMax <= 20, `Vorgangsdetail braucht ${caseMax} Abfragen`);
+  // Zeitleiste lädt nur die nötigen Teile der Akte (12.10.: vorher 28)
   const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/(:vin|VIN[^/]+)$/));
   if (process.env.CFP_TOP) { const m = new Map(); for (const w of QSTAT.perRequest.slice(1)) { const k = w.method + " " + w.path; m.set(k, Math.max(m.get(k) || 0, w.n)); } console.log([...m].sort((a, b) => b[1] - a[1]).slice(0, 15).map((x) => x.join(" = ")).join("\n")); }
   console.log(`     Fahrzeugakte max. ${akteMax}, Zeitleiste max. ${tlMax} Abfragen`);

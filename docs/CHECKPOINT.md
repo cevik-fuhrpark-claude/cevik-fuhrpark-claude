@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 139 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 140 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -375,6 +375,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: Aufträge aus Prüftermin/Prüfung legen Meldung **und** Verknüpfung (`origin='wartung'`, `maintenance_rule_id`/`maintenance_event_id`) im selben atomaren Batch an (vorher eigenes UPDATE danach – bei Abbruch dazwischen wäre ein unverknüpfter Auftrag möglich gewesen; Doppelauftrag-Sperre griff dann nicht). Anlage-Ereignis nennt jetzt Herkunft „wartung“. Werkstattprüfung nicht doppelt. 32 → 30 bzw. 29 → 27 Abfragen. Test: Herkunft/Verknüpfung über `POST /api/cases` nicht setzbar.
 - 12.10.2026: Fahrzeugliste: Filter **„Gespann gesperrt“** (Lkw/Anhänger selbst nicht gesperrt, gekoppeltes Fahrzeug gesperrt; Knopf nur bei Treffern), DE/UK/EN, Hilfe Disposition ergänzt. Screenshots 390/820/1366 px + UK/EN, kein waagrechtes Scrollen; `pruefen.sh --schnell` grün.
 - 12.10.2026: Barrierefreiheit: Filterknöpfe (Fahrzeuge, Verträge, Versicherungsfälle, QR, Auslesungen, Reifen, Prüftermine, Protokoll, Auslastung, Datenqualität, Nutzung) melden den aktiven Filter per `aria-pressed` (zentral in `render()` → `markToggles`; Tabs mit `aria-selected` unverändert).
+- 12.10.2026: Vorgangsdetail `GET /api/cases/:id` berechnet Kosten aus den bereits geladenen Stunden/Teilen/Fremdleistungen, Stundensatz und Freigabegrenze in einer Abfrage – **24 → 20 Abfragen**. Neuer Test vergleicht für alle Testvorgänge mit Kostenpositionen das Ergebnis mit `caseCosts` (140 Tests).
 - **Sitzungsende 12.10.2026 ca. 02:05 UTC** (Sitzung ab 00:16 UTC): Agent-Abfragebudget 44 → 38 (Test ≤ 40), Empfängerermittlung in einer Abfrage (Vergleichstest), Cron-Budget mit vollem Datenbestand geprüft, **Gespann-Zustand** (Liste, Akte, Mein Fahrzeug, Melde-/Kontrollformular, Scanseite, Disposition, `/v1/availability`), Datenqualität „Gespann an verschiedenen Standorten“, Warnkästen gestylt (Fehler). Vollprüfung grün. Keine neuen Antworten des Auftraggebers (Postfach geprüft). **Nächster Schritt:** Antworten auf offene Fragen prüfen; sonst eigene Verbesserungen – Vorschlag: Fahrzeugliste-CSV um Spalte „Gekoppeltes Fahrzeug: Zustand“, danach weitere Abfragebudget-Reserve bei `GET /api/vehicles/:id/timeline` (28).
 
 ## Offene Fragen an den Auftraggeber

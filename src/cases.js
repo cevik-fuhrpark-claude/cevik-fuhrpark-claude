@@ -200,8 +200,12 @@ export async function getCaseDetail(env, user, envName, caseId) {
   }
   if (canSeeCosts(user)) {
     detail.external_costs = (await env.DB.prepare('SELECT * FROM external_costs WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
-    detail.costs = await caseCosts(env, c.id);
-    const lim = await costLimit(env);
+    // Kosten aus den bereits geladenen Positionen; Stundensatz und Freigabegrenze in einer Abfrage (vorher 5 Zusatzabfragen)
+    const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','repair_cost_limit_net')`).all()).results.map((r) => [r.key, r.value]));
+    const rate = sets.has('workshop_hourly_rate_net') && sets.get('workshop_hourly_rate_net') !== '' ? Number(sets.get('workshop_hourly_rate_net')) : null;
+    detail.costs = detail.work && detail.parts ? computeCosts(rate, detail.work, detail.parts, detail.external_costs) : await caseCosts(env, c.id);
+    const limRaw = sets.has('repair_cost_limit_net') && sets.get('repair_cost_limit_net') !== '' ? Number(sets.get('repair_cost_limit_net')) : null;
+    const lim = Number.isFinite(limRaw) && limRaw > 0 ? limRaw : null;
     if (lim !== null || c.cost_approved_net !== null || c.cost_over_limit_at) detail.cost_limit = { limit_net: lim, approved_net: c.cost_approved_net ?? null, over_since: c.cost_over_limit_at || null };
   }
   return detail;
