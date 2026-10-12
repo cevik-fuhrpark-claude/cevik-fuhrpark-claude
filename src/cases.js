@@ -102,6 +102,9 @@ export async function listCases(env, user, envName, query, meta = null) {
         OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= substr(c.created_at,1,10))))`);
     if (own) args.push(user.workshop_site);
   }
+  // Filter „Wiedervorlage“ (nur Inhaber/Fuhrparkleitung/Lesende): offene Vorgänge mit Wiedervorlage, fällige zuerst (Sortierung in der Oberfläche)
+  if (query.followup && !['driver', 'workshop'].includes(user.role)) where.push('c.followup_on IS NOT NULL');
+  else if (query.followup) where.push('0');
   // Filter „Ohne Bewegung“ (nur wenn eingestellt; sonst leere Liste statt einer erfundenen Frist)
   if (meta || query.stale) {
     const days = user.role === 'driver' ? null : Number((await env.DB.prepare(`SELECT value FROM settings WHERE key='case_stale_days'`).first())?.value) || null;
@@ -162,14 +165,14 @@ const ORIGIN_DE = { meldung: 'Meldung', kontrolle: 'Abfahrtskontrolle', wartung:
 const CLAIM_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 'reguliert', abgelehnt: 'abgelehnt', zurueckgezogen: 'zurückgezogen' };
 export function casesCsv(rows, csvCell, fmt, claims = null) {
   const head = ['Vorgang', 'Kennzeichen', 'Standort', 'Priorität', 'Status', 'Sicherheitssperre', 'Fahrbereit laut Meldung', 'Werkstatt', 'Beschreibung', 'Gemeldet am', 'Gemeldet von',
-    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von'];
+    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage'];
   const lines = [head.join(';')];
   for (const c of rows) {
     const k = claims && claims.get(c.id);
     lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       csvCell(c.reported_driveability), csvCell(c.workshop_site), csvCell(c.description), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
-      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), csvCell(k ? k.claim_no : ''), c.cost_over_limit_at ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no)].join(';'));
+      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), csvCell(k ? k.claim_no : ''), c.cost_over_limit_at ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : ''].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -181,6 +184,7 @@ function shapeCase(c, user) {
   if (!canSeeCosts(user)) delete out.cost_approved_net;
   if (user.role === 'driver') delete out.cost_over_limit_at;
   if (user.role === 'viewer') delete out.reporter_name_note; // freier Namensvermerk – Datensparsamkeit Lesezugriff
+  if (user.role === 'driver' || user.role === 'workshop') { delete out.followup_on; delete out.followup_note; } // Wiedervorlage = Arbeitsmittel der Leitung
   if (user.role === 'driver') {
     // Fahrer sehen ihren Status, aber keine internen Zuständigkeiten
     delete out.fleet_received_by;
@@ -195,7 +199,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const reporter = await env.DB.prepare('SELECT display_name, role FROM users WHERE id=?').bind(c.reporter_id).first();
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
-    .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }));
+    .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
+    .filter((e) => e.action !== 'set_followup' || !['driver', 'workshop'].includes(user.role)); // Wiedervorlage nur für Leitung/Lesende
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at, uploaded_by FROM files WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
   const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, u.role AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
     .map((o) => hideDriverName(user, o, 'created_by_name', 'created_by_role'));
@@ -394,6 +399,16 @@ export function planDate(v) {
   return d;
 }
 
+// Wiedervorlage: Kalenderdatum ab heute (Berlin), höchstens 1 Jahr voraus
+export function followupDate(v) {
+  const d = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Wiedervorlage im Format JJJJ-MM-TT.');
+  const today = berlinDate();
+  if (d < today) throw bad('followup_past', 'Wiedervorlage liegt in der Vergangenheit.');
+  if (d > new Date(Date.parse(today) + 366 * 86400000).toISOString().slice(0, 10)) throw bad('validation', 'Wiedervorlage liegt mehr als ein Jahr in der Zukunft.');
+  return d;
+}
+
 // Liefertermin Teile: gültiges Datum, nicht in der Vergangenheit (Berliner Kalender), höchstens 1 Jahr voraus
 export function partsDate(v) {
   const d = String(v);
@@ -416,7 +431,7 @@ export function allowedActions(user, c, access) {
   if (mgr) {
     a.push('set_safety_lock');
     if (c.safety_lock) a.push('lift_safety_lock');
-    if (OPEN_STATUSES.includes(c.status)) a.push('change_priority');
+    if (OPEN_STATUSES.includes(c.status)) a.push('change_priority', 'set_followup');
   }
   switch (c.status) {
     case 'gemeldet':
@@ -693,6 +708,14 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const d = p.planned_date ? planDate(p.planned_date) : null;
       if (d === (c.planned_date || null)) throw bad('validation', 'Termin ist unverändert.');
       set.planned_date = d; payload = { from: c.planned_date || null, to: d };
+      break;
+    }
+    case 'set_followup': {
+      // Wiedervorlage setzen/ändern/entfernen (leer) – ohne Statuswechsel, ohne Push; nur Inhaber/Fuhrparkleitung, nur offene Vorgänge
+      const d = p.followup_on ? followupDate(p.followup_on) : null;
+      const fnote = d ? (note || null) : null;
+      if (d === (c.followup_on || null) && fnote === (c.followup_note || null)) throw bad('validation', 'Wiedervorlage ist unverändert.');
+      set.followup_on = d; set.followup_note = fnote ? fnote.slice(0, 300) : null; payload = { from: c.followup_on || null, to: d };
       break;
     }
     case 'reassign_workshop': {

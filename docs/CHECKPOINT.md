@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 169 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 170 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -58,7 +58,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - [x] 30/30 Tests grün, UI per Headless-Browser geprüft
 - [x] Cloudflare D1/KV angelegt, GitHub verbunden, erster Build gestartet
 - [x] Erster Deploy verifiziert (https://cevik-fuhrpark-claude.y-cevik.workers.dev), D1-Migration live, Secret `SETUP_CODE` gesetzt
-- [ ] Inhaber-Konto durch Auftraggeber anlegen (Ersteinrichtung), dann Fahrzeugstamm (38 LKW) importieren
+- [x] Inhaber-Konto durch Auftraggeber anlegen (Ersteinrichtung), dann Fahrzeugstamm (38 LKW) importieren (10.10.2026)
 - [ ] Testkonten Fahrer/Fuhrparkleitung/Werkstatt anlegen; Einladungslinks an Auftraggeber
 
 ## Erledigt seit Erststand
@@ -445,6 +445,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: **Integrations-API `/v1/availability?include=warranties`** (additiv, Opt-in, kombinierbar `include=notes,warranties`): je Fahrzeug heute laufende Gewährleistungen (Bezeichnung, Teil/Fremdleistung, Datum, Vorgangsnummer) – Datensparsamkeit geprüft: keine Preise, keine Lieferanten-Rechnungsnummern, keine Personen. Eine zusätzliche Abfrage nur bei Opt-in. Test, API-Doku. 168 Tests grün.
 - 12.10.2026: **Fuhrparkagent: Vorgang ohne Bewegung** (`CASE_STALE`, Hinweis, in der ruhigen Sammel-Erinnerung): bewertete, aber nicht weitergeleitete (→ Fuhrparkleitung), übernommene bzw. in Reparatur befindliche Vorgänge (→ Werkstatt) ohne jede Änderung (auch kein Kommentar) seit N Tagen. **Nur mit Einstellung** „Vorgänge – nachfassen nach Tagen ohne Änderung“ (`case_stale_days`, leer = aus, die App setzt keine Frist). Text nennt das Datum der letzten Änderung (kein tägliches Neuschreiben). „Wartet auf Teile“, Abschlusskontrolle, unbewertete und nicht übernommene Vorgänge haben eigene Befunde. Keine zusätzliche Agent-Abfrage. DE/UK/EN, API-/Betriebsdoku. Test, Playwright 390/820/1366 px. 169 Tests grün.
 - 12.10.2026: **Vorgänge → „Ohne Bewegung“** (Reiter erscheint nur mit Einstellung `case_stale_days`; `GET /api/cases?stale=1`, auch CSV; Werkstatt nur eigene, nicht für Fahrer): gleiche Regel wie `CASE_STALE`, gemeinsam in `src/cases.js` (`STALE_SQL`, `staleBefore`, Berliner Kalendertag über neues `berlinDayStartIso`). Ohne Einstellung leere Liste mit Hinweis statt Frist. Hilfe Fuhrparkleitung/Werkstatt DE/UK/EN, API-Doku. Test inkl. Tagesgrenze (6 Tage → nein, 7 Tage → ja), Playwright 390/820/1366 px. 169 Tests grün.
+- 12.10.2026: **Wiedervorlage je Vorgang** (Migration 0037 `cases.followup_on/followup_note`, Befehl `set_followup`): Inhaber/Fuhrparkleitung setzen ein eigenes Erinnerungsdatum (ab heute, ≤ 1 Jahr) mit optionalem Vermerk; leer = entfernen. Ab dem Tag: „Heute zu tun → Wiedervorlage fällig“, Agent-Befund `CASE_FOLLOWUP_DUE` (ruhige Sammel-Erinnerung), Chip in der Liste/im Vorgang, Reiter „Wiedervorlage“ (nach Datum), CSV-Spalte. Für Werkstatt und Fahrer unsichtbar (Feld und Verlaufseintrag). Keine zusätzliche Agent-Abfrage. DE/UK/EN inkl. Hilfe, API-Doku. 170 Tests grün, Playwright 390/820/1366 px (Formular → Detail → Liste → Startseite).
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).
 - **Google-Docs-Connector** im Chat einschalten, damit Claude den MASTER-CHECKPOINT (Drive-Doc 130lB6Loc…) direkt fortschreiben kann; bis dahin eigene Sicherung als separates Google-Doc „[CLAUDE] Fuhrpark – MASTER-CHECKPOINT“.

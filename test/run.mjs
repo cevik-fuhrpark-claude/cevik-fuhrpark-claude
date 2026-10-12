@@ -2159,6 +2159,40 @@ await test('Fuhrparkagent: Vorgang ohne Bewegung (CASE_STALE) nur mit Einstellun
   for (const id of [a, b, w, u]) env.DB.db.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).run(id);
 });
 
+await test('Wiedervorlage je Vorgang: nur Leitung setzt, Datum ab heute, Agent ab dem Tag, Liste/CSV, für Werkstatt und Fahrer unsichtbar', async () => {
+  const V = (await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.active !== 0 && !v.eval_excluded).id;
+  const cid = (await users.driver.post('/api/cases', { vehicle_id: (await users.driver.get('/api/me/vehicles')).data.vehicles[0]?.id || V, description: 'Wiedervorlage-Test: Tür klemmt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (u, action, payload = {}, note = null) => { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  const dayOf = (k) => new Date(Date.parse(today + 'T00:00:00Z') + k * 86400000).toISOString().slice(0, 10);
+  ok((await users.fleet.get(`/api/cases/${cid}`)).data.allowed_actions.includes('set_followup'), 'Leitung darf');
+  eq((await cmd(users.fleet, 'set_followup', { followup_on: dayOf(-1) })).status, 400, 'nicht in der Vergangenheit');
+  eq((await cmd(users.fleet, 'set_followup', { followup_on: dayOf(400) })).status, 400, 'max. 1 Jahr');
+  eq((await cmd(users.fleet, 'set_followup', { followup_on: '2026-02-30' })).status, 400, 'kein Kalenderdatum');
+  eq((await cmd(users.dispatch, 'set_followup', { followup_on: dayOf(2) })).status, 403, 'Disposition nicht');
+  eq((await cmd(users.fleet, 'set_followup', { followup_on: dayOf(2) }, 'Werkstatt nach Termin fragen')).status, 200);
+  let c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; eq(c.followup_on, dayOf(2)); eq(c.followup_note, 'Werkstatt nach Termin fragen');
+  eq((await cmd(users.fleet, 'set_followup', { followup_on: dayOf(2) }, 'Werkstatt nach Termin fragen')).status, 400, 'unverändert');
+  const fu = async () => { eq((await users.fleet.post('/api/agent/run')).status, 200); return (await users.fleet.get('/api/master')).data.findings.filter((f) => f.finding_code === 'CASE_FOLLOWUP_DUE' && f.case_id === cid); };
+  eq((await fu()).length, 0, 'vor dem Tag kein Befund');
+  env.DB.db.prepare('UPDATE cases SET followup_on=? WHERE id=?').run(today, cid);
+  const f = await fu(); eq(f.length, 1, 'ab dem Tag Befund'); eq(f[0].owner_role, 'fleet');
+  ok(f[0].message.includes(today.split('-').reverse().join('.')) && f[0].message.includes('Werkstatt nach Termin fragen'), f[0].message);
+  // Sichtbarkeit: Werkstatt/Fahrer weder Feld noch Ereignis; Disposition liest
+  const dd = (await users.driver.get(`/api/cases/${cid}`)).data; ok(!('followup_on' in dd.case) && !dd.events.some((e) => e.action === 'set_followup'), 'Fahrer sieht nichts');
+  eq((await users.dispatch.get(`/api/cases/${cid}`)).data.case.followup_on, today, 'Disposition liest');
+  ok((await users.dispatch.get('/api/cases?status=open&followup=1')).data.cases.some((x) => x.id === cid), 'Liste Wiedervorlage');
+  eq((await users.ws.get('/api/cases?status=open&followup=1')).data.cases.length, 0, 'Werkstatt: leer');
+  ok(!(await users.ws.get('/api/cases?status=open')).data.cases.some((x) => 'followup_on' in x), 'Werkstatt: kein Feld in der Liste');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&status=open&followup=1')).data).includes(today.split('-').reverse().join('.') + ' – Werkstatt nach Termin fragen'), 'CSV-Spalte');
+  // entfernen (leer) → kein Befund, Vermerk weg; Kommentar ändert die Wiedervorlage nicht
+  eq((await cmd(users.fleet, 'set_followup', {})).status, 200);
+  c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; eq(c.followup_on, null); eq(c.followup_note, null);
+  eq((await fu()).length, 0, 'entfernt → kein Befund');
+  eq((await users.fleet.get(`/api/cases/${cid}`)).data.events.filter((e) => e.action === 'set_followup').length, 2, 'Verlauf für Leitung');
+  const cx = (await users.fleet.get(`/api/cases/${cid}`)).data.case; await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: cx.version, note: 'Testdaten' });
+});
+
 await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung, Bußgeld-Verlauf/-Dateien, Fahrer je Fahrzeug, Push-Geräte, letzter Agent-Lauf, Master-Eingang', async () => {
   for (const [t, sql, n] of [
     ['inspections', "SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1", 1],
@@ -2933,7 +2967,7 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   ok(kcsv[0].endsWith(';davon Dubletten'), 'CSV-Spalte am Ende');
   eq(Number(kcsv.find((l) => l.startsWith('alle;')).split(';').at(-1)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
-  ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no)).length === 2, 'CSV-Spalte „Dublette von“');
+  ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';')).length === 2, 'CSV-Spalte „Dublette von“');
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
   // Folgeauftrag und Dublette im selben Vorgang werden getrennt (eine Abfrage)
   ok(QSTAT.perRequest.filter((w) => w.method === 'GET' && w.path === '/api/cases/:id').every((w) => w.n <= 21), 'Vorgangsdetail ≤ 21 Abfragen');
@@ -2958,7 +2992,7 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   p = (await users.fleet.get('/api/workshop/plan')).data;
   ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
   const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Werkstattplan-Test')).data);
-  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
+  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung;;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
@@ -3326,10 +3360,10 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
   // Vorgänge-CSV: Versicherungsfall-Spalten nur für die Leitung
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=VT-IC')).data);
-  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
+  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von;Wiedervorlage') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
   const vcsvV = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/cases?format=csv&q=VT-IC')).data);
   ok(!vcsvV.includes('Versicherer'), 'Disposition ohne Versicherungsspalten');
-  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft;Dublette von'), 'Disposition ohne Kostenspalte, mit Herkunft');
+  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft;Dublette von;Wiedervorlage'), 'Disposition ohne Kostenspalte, mit Herkunft');
   // Fahrzeugakte: Zusammenfassung Versicherungsfälle (nur Leitung)
   const akte = (await users.fleet.get(`/api/vehicles/${V}`)).data;
   eq(akte.claims_summary.total, 1); eq(akte.claims_summary.open, 0); eq(akte.claims_summary.reimbursed_net, 2000);
@@ -3544,7 +3578,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
-  ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung;'), 'CSV: Kostenfreigabe ausstehend');
+  ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung;;'), 'CSV: Kostenfreigabe ausstehend');
   eq((await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.cases.find((c) => c.id === id).cost_approval_pending, 1, 'Integrations-API: Kostenfreigabe offen');
   // Fuhrparkagent: offene Kostenfreigabe als Befund (ohne Beträge), verschwindet nach Freigabe
   eq((await users.fleet.post('/api/agent/run')).status, 200);
