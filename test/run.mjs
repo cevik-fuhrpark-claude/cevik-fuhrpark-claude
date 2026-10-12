@@ -999,6 +999,24 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   for (const fixed of VALIDATION_FIXED) {
     ok(src.includes(`'${fixed}'`), `Servertext noch vorhanden: ${fixed}`); ok(tv('uk', fixed) && tv('en', fixed), `übersetzt: ${fixed}`);
   }
+  ok(VALIDATION_FIXED.length >= 100, 'Backlog 83: auch Inhaber/Fuhrparkleitung (Verträge, Bußgelder, Importe)');
+  // Vorlagen mit Platzhaltern: Server-Quelltext muss sie noch enthalten (Drift), Übersetzung samt Feldname
+  const tpl = [
+    ['`${field}: gültiges Datum im Format JJJJ-MM-TT.`', 'Vertragsende: gültiges Datum im Format JJJJ-MM-TT.', 'Кінець договору: вкажіть дійсну дату у форматі РРРР-ММ-ДД.', 'Contract end: valid date in format YYYY-MM-DD.'],
+    ['`${field}: Datum im Format JJJJ-MM-TT.`', 'Kontrolldatum: Datum im Format JJJJ-MM-TT.', 'Дата перевірки: вкажіть дійсну дату у форматі РРРР-ММ-ДД.', 'Check date: valid date in format YYYY-MM-DD.'],
+    ['`${field}: Datum außerhalb des zulässigen Bereichs.`', 'Erstattet am: Datum außerhalb des zulässigen Bereichs.', 'Відшкодовано: дата поза допустимим діапазоном.', 'Reimbursed on: date outside the permitted range.'],
+    ['`${field}: darf nicht in der Zukunft liegen.`', 'Ausgestellt am: darf nicht in der Zukunft liegen.', 'Видано: не може бути в майбутньому.', 'Issued on: must not be in the future.'],
+    ['`${field}: ganze Zahl.`', 'km-Kontingent: ganze Zahl.', 'Ліміт пробігу: ціле число.', 'Mileage allowance: whole number.'],
+    ['`Maximal ${MAX_IMPORT} Zeilen je Import.`', 'Maximal 2000 Zeilen je Import.', 'Не більше 2000 рядків за один імпорт.', 'At most 2000 rows per import.'],
+    ['`Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`', 'Höchstens 20 aktive Hinweise je Fahrzeug – bitte erledigte archivieren.', 'Не більше 20 активних приміток на транспорт – заархівуйте виконані.', 'At most 20 active notes per vehicle – please archive completed ones.'],
+    ['`Fahrzeugart unbekannt: ${raw} (Lkw oder Anhänger)`', 'Fahrzeugart unbekannt: Bus (Lkw oder Anhänger)', 'Невідомий тип транспорту: Bus (Lkw або Anhänger)', 'Unknown vehicle type: Bus (Lkw or Anhänger)'],
+    ['`Artikel doppelt gezählt: ${it.name}`', 'Artikel doppelt gezählt: Öl $& 5W30', 'Позицію підраховано двічі: Öl $& 5W30', 'Item counted twice: Öl $& 5W30'],
+    ['`Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`', 'Einheit im Ziellager abweichend (l statt Stk) – bitte dort prüfen.', 'Одиниця на цільовому складі інша (l замість Stk) – перевірте там.', 'Different unit in the target store (l instead of Stk) – please check there.'],
+    ['`Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`', 'Vorgang V-2026-0007 ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.', 'Заявка V-2026-0007 сама є дублікатом – виберіть початкову заявку.', 'Case V-2026-0007 is itself a duplicate – please choose the original case.'],
+    ['`Unbekannter Prüfpunkt ${it.key}.`', 'Unbekannter Prüfpunkt xyz.', 'Невідомий пункт перевірки xyz.', 'Unknown check item xyz.'],
+  ];
+  for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
+  eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/code === 'validation' && translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung');
 });

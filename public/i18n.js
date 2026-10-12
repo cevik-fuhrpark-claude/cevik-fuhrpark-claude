@@ -647,6 +647,104 @@ const VALIDATION_TEXTS = {
     'Jeder Mangel braucht eine kurze Beschreibung.': 'Every defect needs a short description.', 'Fehlerbeschreibung ist zu kurz.': 'Fault description is too short.', 'Fahrzeug unbekannt.': 'Unknown vehicle.',
     'Datum ungültig.': 'Invalid date.', 'Liefertermin ist unverändert.': 'Delivery date is unchanged.', 'Termin ist unverändert.': 'Appointment is unchanged.', 'Restarbeit nicht gefunden oder bereits erledigt.': 'Remaining task not found or already done.', 'Artikel ist deaktiviert.': 'Item is deactivated.', 'Korrektur braucht einen Grund.': 'A correction needs a reason.', 'Korrektur ungleich 0 angeben.': 'Enter a correction other than 0.', 'Lagerartikel nicht gefunden.': 'Stock item not found.', 'Lagerartikel gehört nicht zur zuständigen Werkstatt.': 'Stock item does not belong to the responsible workshop.', 'Artikel gehört nicht zu diesem Lager.': 'Item does not belong to this store.', 'Menge muss größer 0 sein.': 'Quantity must be greater than 0.', 'Ziellager ist das eigene Lager.': 'Target store is your own store.', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.': 'Delivery date: valid date, not before the order date.', 'Bestelldatum: gültiges Datum, nicht in der Zukunft.': 'Order date: valid date, not in the future.', 'Fahrzeug ist bereits gesperrt.': 'Vehicle is already locked.' },
 };
+// [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
+// CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
+const V_MORE = [
+  ['Unbekannte Werkstatt.', 'Невідома майстерня.', 'Unknown workshop.'],
+  ['Datum im Format JJJJ-MM-TT.', 'Дата у форматі РРРР-ММ-ДД.', 'Date in format YYYY-MM-DD.'],
+  ['CSV leer.', 'Файл CSV порожній.', 'The CSV file is empty.'],
+  ['„Von“ liegt nach „bis“.', '«З» пізніше, ніж «по».', '“From” is after “to”.'],
+  ['„Von“ liegt nach „Bis“.', '«З» пізніше, ніж «По».', '“From” is after “To”.'],
+  ['Frist im Format JJJJ-MM-TT.', 'Строк у форматі РРРР-ММ-ДД.', 'Deadline in format YYYY-MM-DD.'],
+  ['Fahrzeug ist außer Betrieb.', 'Транспорт виведено з експлуатації.', 'The vehicle is out of service.'],
+  ['„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).', '«Дійсний до» – недійсна дата (РРРР-ММ-ДД).', '“Valid until” is not a valid date (YYYY-MM-DD).'],
+  ['„Gültig bis“ darf nicht in der Vergangenheit liegen.', '«Дійсний до» не може бути в минулому.', '“Valid until” must not be in the past.'],
+  ['Zeitraum: „von“ liegt nach „bis“.', 'Період: «з» пізніше, ніж «по».', 'Period: “from” is after “to”.'],
+  ['Zeitraum: Datum im Format JJJJ-MM-TT angeben.', 'Період: вкажіть дату у форматі РРРР-ММ-ДД.', 'Period: enter dates in format YYYY-MM-DD.'],
+  ['Zeitraum im Format JJJJ-MM angeben.', 'Вкажіть період у форматі РРРР-ММ.', 'Enter the period in format YYYY-MM.'],
+  ['Zeitraum höchstens ein Jahr.', 'Період – не більше одного року.', 'The period may be at most one year.'],
+  ['Wiedervorlage liegt mehr als ein Jahr in der Zukunft.', 'Дата нагадування більш ніж через рік.', 'The follow-up date is more than one year ahead.'],
+  ['Wiedervorlage ist unverändert.', 'Нагадування не змінилося.', 'The follow-up is unchanged.'],
+  ['Wiedervorlage im Format JJJJ-MM-TT.', 'Дата нагадування у форматі РРРР-ММ-ДД.', 'Follow-up date in format YYYY-MM-DD.'],
+  ['Werkstatt/Lager ist erforderlich.', 'Потрібно вказати майстерню/склад.', 'Workshop/store is required.'],
+  ['Werkstatt ist für Rolle Werkstatt erforderlich.', 'Для ролі «Майстерня» потрібно вказати майстерню.', 'A workshop is required for the workshop role.'],
+  ['Vorgang passt nicht zu diesem Fahrzeug.', 'Заявка не відповідає цьому транспорту.', 'The case does not match this vehicle.'],
+  ['Vertragsende muss nach dem Vertragsbeginn liegen.', 'Кінець договору має бути після його початку.', 'The contract end must be after the contract start.'],
+  ['Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.', 'Документ договору: виберіть документ з архіву документів цього транспорту.', 'Contract document: please choose a document from this vehicle’s documents.'],
+  ['Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.', 'Договір страхування: виберіть договір страхування цього транспорту.', 'Insurance contract: please choose an insurance contract of this vehicle.'],
+  ['Versicherer angeben (oder Versicherungsvertrag wählen).', 'Вкажіть страховика (або виберіть договір страхування).', 'Enter the insurer (or choose an insurance contract).'],
+  ['Ursprünglicher Vorgang nicht gefunden.', 'Початкову заявку не знайдено.', 'Original case not found.'],
+  ['Ungültiger Benutzername.', 'Недійсне ім’я користувача.', 'Invalid username.'],
+  ['Termin liegt außerhalb des zulässigen Zeitraums.', 'Термін поза допустимим періодом.', 'The date is outside the permitted period.'],
+  ['Termin im Format JJJJ-MM-TT.', 'Термін у форматі РРРР-ММ-ДД.', 'Date in format YYYY-MM-DD.'],
+  ['Tatzeit ungültig.', 'Недійсний час порушення.', 'Invalid time of the offence.'],
+  ['Standort: höchstens 60 Zeichen.', 'Локація: не більше 60 символів.', 'Site: at most 60 characters.'],
+  ['Spalten Kennzeichen und FIN erforderlich.', 'Потрібні стовпці «Kennzeichen» і «FIN».', 'Columns “Kennzeichen” and “FIN” are required.'],
+  ['Spalten Art und Nachweis erforderlich.', 'Потрібні стовпці «Art» і «Nachweis».', 'Columns “Art” and “Nachweis” are required.'],
+  ['Spalte „Vertragspartner“ erforderlich.', 'Потрібен стовпець «Vertragspartner».', 'Column “Vertragspartner” is required.'],
+  ['Spalte „Vertragsart“ erforderlich.', 'Потрібен стовпець «Vertragsart».', 'Column “Vertragsart” is required.'],
+  ['Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.', 'Потрібен стовпець «Nächster Termin» або «Letzte Prüfung».', 'Column “Nächster Termin” or “Letzte Prüfung” is required.'],
+  ['Spalte „Nachweis“/„Datei“ oder Angabe „Quelle“ für alle Zeilen erforderlich.', 'Потрібен стовпець «Nachweis»/«Datei» або «Quelle» для всіх рядків.', 'Column “Nachweis”/“Datei” or a “Quelle” for all rows is required.'],
+  ['Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.', 'Потрібен стовпець «Nachweis» або «Quelle» для всіх рядків.', 'Column “Nachweis” or a “Quelle” for all rows is required.'],
+  ['Spalte „Kennzeichen“ oder „FIN“ erforderlich.', 'Потрібен стовпець «Kennzeichen» або «FIN».', 'Column “Kennzeichen” or “FIN” is required.'],
+  ['Spalte „Datum“ erforderlich.', 'Потрібен стовпець «Datum».', 'Column “Datum” is required.'],
+  ['Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.', 'Потрібен стовпець «Art» (Fahrerkarte/Massenspeicher).', 'Column “Art” (Fahrerkarte/Massenspeicher) is required.'],
+  ['Spalte Personalnummer/Fahrer oder Kennzeichen/FIN erforderlich.', 'Потрібен стовпець «Personalnummer»/«Fahrer» або «Kennzeichen»/«FIN».', 'Column “Personalnummer”/“Fahrer” or “Kennzeichen”/“FIN” is required.'],
+  ['Spalte Kennzeichen oder FIN erforderlich.', 'Потрібен стовпець «Kennzeichen» або «FIN».', 'Column “Kennzeichen” or “FIN” is required.'],
+  ['Spalte FIN fehlt.', 'Відсутній стовпець «FIN».', 'Column “FIN” is missing.'],
+  ['Priorität ist unverändert.', 'Пріоритет не змінився.', 'The priority is unchanged.'],
+  ['Messung braucht Profiltiefe oder Luftdruck.', 'Для вимірювання потрібна глибина протектора або тиск.', 'A measurement needs tread depth or tyre pressure.'],
+  ['Maximal 5000 Fahrzeuge je Import.', 'Не більше 5000 транспортних засобів за один імпорт.', 'At most 5000 vehicles per import.'],
+  ['Maximal 36 Monate je Abfrage.', 'Не більше 36 місяців за один запит.', 'At most 36 months per query.'],
+  ['Maximal 2000 Artikel je Inventur.', 'Не більше 2000 позицій за одну інвентаризацію.', 'At most 2000 items per stocktake.'],
+  ['Liefertermin liegt mehr als ein Jahr in der Zukunft.', 'Дата постачання більш ніж через рік.', 'The delivery date is more than one year ahead.'],
+  ['Liefertermin im Format JJJJ-MM-TT.', 'Дата постачання у форматі РРРР-ММ-ДД.', 'Delivery date in format YYYY-MM-DD.'],
+  ['Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Останнє проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The last completion is in the future – enter planned dates via “Plan workshop date”.'],
+  ['Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Дата проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The completion date is in the future – enter planned dates via “Plan workshop date”.'],
+  ['Lager (Werkstatt) angeben.', 'Вкажіть склад (майстерню).', 'Specify the store (workshop).'],
+  ['Kündigungsfrist nur zusammen mit einem Vertragsende (laut Vertrag).', 'Строк розірвання – лише разом із кінцем договору (згідно з договором).', 'Notice period only together with a contract end (as per contract).'],
+  ['Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.', 'Вкажіть пробіг на момент проведення – ця перевірка має інтервал у кілометрах.', 'Enter the odometer at completion – this inspection has a kilometre interval.'],
+  ['Keine Zählmengen übermittelt.', 'Підраховані кількості не передано.', 'No counted quantities submitted.'],
+  ['Keine Kostenfreigabe ausstehend.', 'Немає витрат, що очікують погодження.', 'No cost approval pending.'],
+  ['Höchstens ein Jahr je Export.', 'Не більше одного року за один експорт.', 'At most one year per export.'],
+  ['Hinweis ist zu kurz.', 'Примітка занадто коротка.', 'The note is too short.'],
+  ['Gültig bis liegt vor dem Ausstellungsdatum.', '«Дійсний до» раніше дати видачі.', '“Valid until” is before the issue date.'],
+  ['Gültig bis laut Dokument angeben.', 'Вкажіть «Дійсний до» згідно з документом.', 'Enter “valid until” as stated in the document.'],
+  ['Gültig bis im Format JJJJ-MM-TT.', '«Дійсний до» у форматі РРРР-ММ-ДД.', '“Valid until” in format YYYY-MM-DD.'],
+  ['Gewährleistung bis: höchstens 10 Jahre voraus.', 'Гарантія до: не більше ніж на 10 років уперед.', 'Warranty until: at most 10 years ahead.'],
+  ['Gewährleistung bis: bitte gültiges Datum (JJJJ-MM-TT) angeben.', 'Гарантія до: вкажіть дійсну дату (РРРР-ММ-ДД).', 'Warranty until: please enter a valid date (YYYY-MM-DD).'],
+  ['Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.', 'Вагова категорія не відповідає вказаній повній масі.', 'The weight class does not match the stated gross weight.'],
+  ['Für ein km-Kontingent bitte den km-Stand bei Übernahme laut Übergabeprotokoll angeben.', 'Для ліміту пробігу вкажіть пробіг при отриманні згідно з актом передачі.', 'For a mileage allowance please enter the odometer at handover as per the handover report.'],
+  ['Fahrer nicht gefunden.', 'Водія не знайдено.', 'Driver not found.'],
+  ['Fahrer nicht gefunden (gleiche Umgebung erforderlich).', 'Водія не знайдено (потрібне те саме середовище).', 'Driver not found (same environment required).'],
+  ['FIN muss 17 Zeichen haben (ohne I, O, Q).', 'VIN має містити 17 символів (без I, O, Q).', 'The VIN must have 17 characters (without I, O, Q).'],
+  ['Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.', 'Перша реєстрація у форматі РРРР-ММ-ДД, не в майбутньому.', 'First registration in format YYYY-MM-DD, not in the future.'],
+  ['Erstattung: Betrag und Datum nur zusammen laut Abrechnung des Versicherers angeben.', 'Відшкодування: суму й дату вказуйте лише разом згідно з розрахунком страховика.', 'Reimbursement: enter amount and date only together, as per the insurer’s statement.'],
+  ['Erstattet am liegt vor dem Meldedatum.', 'Дата відшкодування раніше дати повідомлення.', 'The reimbursement date is before the report date.'],
+  ['Eigene Rolle/Aktivierung kann nicht selbst geändert werden.', 'Власну роль/активацію не можна змінити самостійно.', 'You cannot change your own role/activation.'],
+  ['Eigene Anmeldungen bitte unter „Mein Konto“ beenden.', 'Власні входи завершуйте в розділі «Мій акаунт».', 'End your own sign-ins under “My account”.'],
+  ['Dublette nur zu einem Vorgang desselben Fahrzeugs.', 'Дублікат можливий лише до заявки того самого транспорту.', 'A duplicate can only refer to a case of the same vehicle.'],
+  ['Dieser Status entsteht über die Fahrerermittlung.', 'Цей статус встановлюється через визначення водія.', 'This status results from identifying the driver.'],
+  ['Die Prüfung hat kein Ergebnis mit erheblichen/gefährlichen Mängeln.', 'Перевірка не має результату зі значними/небезпечними дефектами.', 'The inspection has no result with major/dangerous defects.'],
+  ['Datei: bitte eine Datei dieses Vorgangs wählen.', 'Файл: виберіть файл цієї заявки.', 'File: please choose a file of this case.'],
+  ['DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).', 'DOT: останні 4 цифри = тиждень і рік (напр. 2324).', 'DOT: last 4 digits = week and year (e.g. 2324).'],
+  ['Benutzername: 3–64 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.', 'Ім’я користувача: 3–64 символи, лише a–z, 0–9, крапка, дефіс, підкреслення.', 'Username: 3–64 characters, only a–z, 0–9, dot, hyphen, underscore.'],
+  ['Beim Reifenwechsel ist die Reifengröße Pflicht.', 'При заміні шини розмір шини обов’язковий.', 'The tyre size is mandatory for a tyre change.'],
+  ['Bei „abgelehnt“/„zurückgezogen“ keine Erstattung eintragen.', 'При «відхилено»/«відкликано» не вносьте відшкодування.', 'Do not enter a reimbursement for “rejected”/“withdrawn”.'],
+  ['Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.', 'При дефектах або ненаданому посвідченні водія додайте примітку.', 'Please add a note for defects or a licence not presented.'],
+  ['Beendet am liegt vor dem Vertragsbeginn.', 'Дата завершення раніше початку договору.', '“Ended on” is before the contract start.'],
+  ['Auslesedatum im Format JJJJ-MM-TT.', 'Дата зчитування у форматі РРРР-ММ-ДД.', 'Download date in format YYYY-MM-DD.'],
+  ['Auslesedatum darf nicht in der Zukunft liegen.', 'Дата зчитування не може бути в майбутньому.', 'The download date must not be in the future.'],
+  ['App-Konto nicht gefunden (Rolle Fahrer, gleiche Umgebung).', 'Обліковий запис не знайдено (роль «Водій», те саме середовище).', 'App account not found (role driver, same environment).'],
+  ['Anhänger haben keinen Fahrtenschreiber.', 'Причепи не мають тахографа.', 'Trailers have no tachograph.'],
+  ['Ablesedatum ungültig (JJJJ-MM-TT).', 'Недійсна дата зчитування пробігу (РРРР-ММ-ДД).', 'Invalid reading date (YYYY-MM-DD).'],
+  ['Ablesedatum darf nicht in der Zukunft liegen.', 'Дата зчитування пробігу не може бути в майбутньому.', 'The reading date must not be in the future.'],
+];
+for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
+Object.assign(VALIDATION_TEXTS.uk, { date_fmt: '{f}: вкажіть дійсну дату у форматі РРРР-ММ-ДД.', date_range: '{f}: дата поза допустимим діапазоном.', not_future: '{f}: не може бути в майбутньому.', integer: '{f}: ціле число.', max_rows: 'Не більше {n} рядків за один імпорт.', notes_max: 'Не більше {n} активних приміток на транспорт – заархівуйте виконані.', kind_unknown: 'Невідомий тип транспорту: {v} (Lkw або Anhänger)', counted_twice: 'Позицію підраховано двічі: {v}', unit_differs: 'Одиниця на цільовому складі інша ({a} замість {b}) – перевірте там.', dup_of_dup: 'Заявка {v} сама є дублікатом – виберіть початкову заявку.', unknown_item: 'Невідомий пункт перевірки {v}.' });
+Object.assign(VALIDATION_TEXTS.en, { date_fmt: '{f}: valid date in format YYYY-MM-DD.', date_range: '{f}: date outside the permitted range.', not_future: '{f}: must not be in the future.', integer: '{f}: whole number.', max_rows: 'At most {n} rows per import.', notes_max: 'At most {n} active notes per vehicle – please archive completed ones.', kind_unknown: 'Unknown vehicle type: {v} (Lkw or Anhänger)', counted_twice: 'Item counted twice: {v}', unit_differs: 'Different unit in the target store ({a} instead of {b}) – please check there.', dup_of_dup: 'Case {v} is itself a duplicate – please choose the original case.', unknown_item: 'Unknown check item {v}.' });
+Object.assign(FIELD_NAMES.uk, { Kontrolldatum: 'Дата перевірки', 'Gültig bis': 'Дійсний до', 'Beendet am': 'Завершено', 'Ausgestellt am': 'Видано', Vertragsende: 'Кінець договору', Vertragsbeginn: 'Початок договору', 'Erstattet am': 'Відшкодовано', 'Gemeldet am': 'Повідомлено', Vertragspartner: 'Контрагент', Vertragsnummer: 'Номер договору', Monatsrate: 'Щомісячний платіж', Versicherer: 'Страховик', Schadennummer: 'Номер страхового випадку', Selbstbeteiligung: 'Франшиза', Behörde: 'Орган влади', Tatzeit: 'Час порушення', Lieferant: 'Постачальник', Anfangsbestand: 'Початковий запас', Nachweis: 'Підтвердження', Quelle: 'Джерело', Reifengröße: 'Розмір шини', Luftdruck: 'Тиск у шинах', Hinweis: 'Примітка', Datum: 'Дата', Status: 'Статус', Priorität: 'Пріоритет', Art: 'Вид', Vertragsart: 'Вид договору', 'km-Kontingent': 'Ліміт пробігу', 'km bei Übernahme': 'Пробіг при отриманні', 'Kündigungsfrist (Monate)': 'Строк розірвання (місяці)', 'Intervall Monate': 'Інтервал (місяці)', 'Intervall km': 'Інтервал (км)', Erstattung: 'Відшкодування', Baujahr: 'Рік випуску', Auslesedatum: 'Дата зчитування' });
+Object.assign(FIELD_NAMES.en, { Kontrolldatum: 'Check date', 'Gültig bis': 'Valid until', 'Beendet am': 'Ended on', 'Ausgestellt am': 'Issued on', Vertragsende: 'Contract end', Vertragsbeginn: 'Contract start', 'Erstattet am': 'Reimbursed on', 'Gemeldet am': 'Reported on', Vertragspartner: 'Contract partner', Vertragsnummer: 'Contract number', Monatsrate: 'Monthly rate', Versicherer: 'Insurer', Schadennummer: 'Claim number', Selbstbeteiligung: 'Deductible', Behörde: 'Authority', Tatzeit: 'Time of offence', Lieferant: 'Supplier', Anfangsbestand: 'Opening stock', Nachweis: 'Evidence', Quelle: 'Source', Reifengröße: 'Tyre size', Luftdruck: 'Tyre pressure', Hinweis: 'Note', Datum: 'Date', Status: 'Status', Priorität: 'Priority', Art: 'Type', Vertragsart: 'Contract type', 'km-Kontingent': 'Mileage allowance', 'km bei Übernahme': 'Odometer at handover', 'Kündigungsfrist (Monate)': 'Notice period (months)', 'Intervall Monate': 'Interval (months)', 'Intervall km': 'Interval (km)', Erstattung: 'Reimbursement', Baujahr: 'Year of manufacture', Auslesedatum: 'Download date' });
 export const VALIDATION_FIXED = Object.keys(VALIDATION_TEXTS.uk).filter((k) => k.endsWith('.') && k.includes(' ') || /^[A-ZÄÖÜ]/.test(k));
 export function translateValidation(lang, msg) {
   const T = VALIDATION_TEXTS[lang]; if (!T || typeof msg !== 'string') return null;
@@ -657,6 +755,17 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(.{1,60}) ist zu lang \(max\. (\d+) Zeichen\)\.$/))) return T.too_long.replace('{f}', f(m[1])).replace('{n}', m[2]);
   if ((m = msg.match(/^(.{1,60}): ungültiger Wert\.$/))) return T.value.replace('{f}', f(m[1]));
   if ((m = msg.match(/^(.{1,60}): ungültige Zahl\.$/))) return T.number.replace('{f}', f(m[1]));
-  if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist mehrdeutig/))) return T.ambiguous.replace('{f}', f(m[1])).replace('{v}', m[2]);
+  if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist mehrdeutig/))) return T.ambiguous.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
+  if ((m = msg.match(/^(.{1,60}): (?:gültiges )?Datum im Format JJJJ-MM-TT\.$/))) return T.date_fmt.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^(.{1,60}): Datum außerhalb des zulässigen Bereichs\.$/))) return T.date_range.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^(.{1,60}): darf nicht in der Zukunft liegen\.$/))) return T.not_future.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^(.{1,60}): ganze Zahl\.$/))) return T.integer.replace('{f}', f(m[1]));
+  if ((m = msg.match(/^Maximal (\d{1,6}) Zeilen je Import\.$/))) return T.max_rows.replace('{n}', m[1]);
+  if ((m = msg.match(/^Höchstens (\d{1,4}) aktive Hinweise je Fahrzeug – bitte erledigte archivieren\.$/))) return T.notes_max.replace('{n}', m[1]);
+  if ((m = msg.match(/^Fahrzeugart unbekannt: (.{0,60}) \(Lkw oder Anhänger\)$/))) return T.kind_unknown.replace('{v}', () => m[1]);
+  if ((m = msg.match(/^Artikel doppelt gezählt: (.{1,200})$/))) return T.counted_twice.replace('{v}', () => m[1]);
+  if ((m = msg.match(/^Einheit im Ziellager abweichend \((.{0,40}) statt (.{0,40})\) – bitte dort prüfen\.$/))) return T.unit_differs.replace('{a}', () => m[1]).replace('{b}', () => m[2]);
+  if ((m = msg.match(/^Vorgang (\S{1,40}) ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen\.$/))) return T.dup_of_dup.replace('{v}', () => m[1]);
+  if ((m = msg.match(/^Unbekannter Prüfpunkt (.{1,60})\.$/))) return T.unknown_item.replace('{v}', () => m[1]);
   return null;
 }
