@@ -24,10 +24,11 @@ export async function listStock(env, user, envName, query) {
   // Verbrauch = Entnahmen der letzten 90 Tage (nur Information für den Bestellvorschlag)
   const since = new Date(Date.now() - 90 * 86400000).toISOString();
   const rows = (await env.DB.prepare(`SELECT i.*, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand,
-      COALESCE((SELECT -SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.created_at >= ?),0) AS used_90d
+      COALESCE((SELECT -SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.created_at >= ?),0) AS used_90d,
+      (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme') AS last_out_at
     FROM stock_items i WHERE i.environment=? AND i.active=1 ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`)
     .bind(...(site ? [since, envName, site] : [since, envName])).all()).results;
-  let list = rows.map((r) => ({ ...r, on_hand: r3(r.on_hand), used_90d: r3(r.used_90d), below_min: r.min_qty !== null && r.on_hand < r.min_qty }));
+  let list = rows.map(({ last_out_at, ...r }) => ({ ...r, on_hand: r3(r.on_hand), used_90d: r3(r.used_90d), below_min: r.min_qty !== null && r.on_hand < r.min_qty, last_out_date: last_out_at ? berlinDate(last_out_at) : null }));
   // Bestellvorschlag: nur Artikel unter Mindestbestand; Fehlmenge bis Mindestbestand – es wird nichts bestellt
   if (query.reorder === '1') {
     list = list.filter((r) => r.below_min).map((r) => {
@@ -132,11 +133,11 @@ export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, 
 
 // Bestandsliste als CSV (Excel): Bestand und Bestandswert nur, wenn ein Preis hinterlegt ist (sonst leer, nie 0 €)
 export function stockCsv(items, csvCell) {
-  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Unter Mindestbestand', 'Preis netto', 'Bestandswert netto'];
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Unter Mindestbestand', 'Preis netto', 'Bestandswert netto', 'Letzte Entnahme'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
-    n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100)].join(';'));
+    n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100), i.last_out_date || ''].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

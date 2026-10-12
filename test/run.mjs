@@ -1871,6 +1871,10 @@ await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit P
   const wsName = (await users.ws.get('/api/me')).data.user?.display_name || (await users.ws.get('/api/me')).data.display_name; ok(wsName && !txt.includes(wsName), `kein Name der buchenden Person (${wsName})`);
   ok(txt.includes(';Entnahme;') && txt.includes(withCase.case_no), 'Buchungsart deutsch, Vorgang');
   ok((await owner.get('/api/admin/audit?action=stock.journal')).data.entries.some((e) => e.action === 'stock.journal.export'), 'Export im Protokoll');
+  // letzte Entnahme je Artikel (für „ohne Entnahme seit …“): aus dem Journal nachgerechnet
+  for (const it of items) { const outs = j.movements.filter((m) => m.item_id === it.id && m.type === 'entnahme'); eq(it.last_out_date, outs.length ? outs.at(-1).date : null, `letzte Entnahme ${it.name}`); }
+  ok(items.some((i) => i.last_out_date) && items.some((i) => !i.last_out_date), 'Beispiele mit und ohne Entnahme');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?format=csv')).data).split('\r\n')[0].endsWith(';Letzte Entnahme'), 'Bestandsliste-CSV mit letzter Entnahme');
   // Bestellvorschlag: letzter Lieferant aus dem jüngsten Zugang mit Lieferant, sortiert nach Lieferant (ohne zuletzt)
   const a = (await users.ws.post('/api/stock', { name: 'Zz Lieferantentest A', min_qty: 10, initial_qty: 1 })).data.id;
   const b = (await users.ws.post('/api/stock', { name: 'Aa Lieferantentest B', min_qty: 10, initial_qty: 1 })).data.id;
@@ -1882,6 +1886,14 @@ await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit P
   eq(ra.last_supplier, 'Neu GmbH', 'jüngster Zugang mit Lieferant'); eq(ra.last_receipt_date, today, 'letzter Zugang (auch ohne Lieferant)'); eq(rb.last_supplier, null);
   ok(ro.indexOf(ra) < ro.indexOf(rb), 'mit Lieferant vor ohne Lieferant');
   for (const id of [a, b]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
+});
+
+await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/.test(css), 'globale Regel [hidden] { display: none !important }');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("$('#sf').onchange = applyStock") && app.includes("stock_idle"), 'Lagerfilter vorhanden');
 });
 
 await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten löschen keine Stammdaten, Anführungszeichen', async () => {

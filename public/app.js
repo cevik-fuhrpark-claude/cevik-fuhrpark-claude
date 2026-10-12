@@ -1309,9 +1309,23 @@ async function viewStock() {
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
       <div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
       <div class="actions"><button type="button" class="btn secondary" id="invchk">${esc(t('inventory_check'))}</button><button type="button" class="btn" id="invbook" disabled>${esc(t('inventory_book'))}</button></div><div id="invres"></div></details>` : ''}
-    <input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:12px">
-    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc((i.name + ' ' + (i.part_number || '')).toLowerCase())}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + i.min_qty + ')', i.unit_price_net !== null && eur(i.unit_price_net)].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
-  $('#q').oninput = () => { const q = $('#q').value.toLowerCase(); $$('#sl a').forEach((a) => (a.hidden = q && !a.dataset.s.includes(q))); };
+    <input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
+    <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option></select>
+    <p class="small muted" id="sfsum" hidden></p>
+    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc((i.name + ' ' + (i.part_number || '')).toLowerCase())}" data-id="${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + i.min_qty + ')', i.unit_price_net !== null && eur(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
+  // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) – nur Anzeige
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const applyStock = () => {
+    const q = $('#q').value.toLowerCase(); const f = $('#sf').value;
+    const cut = f && f !== 'min' ? bDate(-Number(f)) : null;
+    const hit = (i) => (!f || (f === 'min' ? i.below_min : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
+    const shown = [];
+    $$('#sl a').forEach((a) => { const i = byId.get(a.dataset.id); a.hidden = !!((q && !a.dataset.s.includes(q)) || !hit(i)); if (!a.hidden) shown.push(i); });
+    const sum = $('#sfsum'); sum.hidden = !cut;
+    if (cut) { const priced = shown.filter((i) => i.unit_price_net !== null); const v = Math.round(priced.reduce((a, i) => a + i.on_hand * i.unit_price_net, 0) * 100) / 100;
+      sum.textContent = t('stock_idle_sum').replace('{n}', shown.length).replace('{v}', eur(v)) + (priced.length < shown.length ? ` (${shown.length - priced.length} ${t('unvalued_short')})` : ''); }
+  };
+  $('#q').oninput = applyStock; $('#sf').onchange = applyStock;
   $('#scsv').onclick = async () => { try { download(await api('GET', '/api/stock?format=csv'), `fuhrpark-lager_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
   if ($('#inv')) {
     const invSite = () => ($('#invsite') ? $('#invsite').value : sites[0] && sites[0].code);

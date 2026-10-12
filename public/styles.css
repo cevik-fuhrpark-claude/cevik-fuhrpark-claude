@@ -1,4 +1,5 @@
 /* [CLAUDE] Cevik Fuhrpark – Werkstatt-Oberfläche: große Ziele für Handschuhe, Kennzeichen als Leitelement */
+[hidden] { display: none !important; }
 :root {
   --paper: #eef1ef;
   --surface: #ffffff;
