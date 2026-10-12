@@ -846,3 +846,9 @@ Object.assign(STRINGS.en, { due_km_doc: 'Due at km (as documented, optional)', w
 Object.assign(STRINGS.de, { dq_km_rule_no_base: 'Wartung nach km ohne Ausgangs-km' });
 Object.assign(STRINGS.uk, { dq_km_rule_no_base: 'Обслуговування за км без вихідного пробігу' });
 Object.assign(STRINGS.en, { dq_km_rule_no_base: 'Mileage service without base km' });
+Object.assign(STRINGS.de, { ws_mdue_link_hint: 'Ohne kommenden Termin und ohne offenen Auftrag – dort gesammelt.' });
+Object.assign(STRINGS.uk, { ws_mdue_link_hint: 'Без запланованої дати та без відкритого замовлення – зібрано там.' });
+Object.assign(STRINGS.en, { ws_mdue_link_hint: 'Without an upcoming date or open job – collected there.' });
+Object.assign(STRINGS.de, { km_due_tab: 'Nach km fällig', km_due_tab_hint: 'Wartung nach Kilometern: überschritten oder innerhalb der eingestellten Vorwarnung, gerechnet ab dem letzten erfassten km-Stand. Wenigste Rest-km zuerst.' });
+Object.assign(STRINGS.uk, { km_due_tab: 'Строк за пробігом', km_due_tab_hint: 'Обслуговування за кілометрами: перевищено або в межах налаштованого попередження, від останнього зафіксованого пробігу. Спочатку найменший залишок км.' });
+Object.assign(STRINGS.en, { km_due_tab: 'Due by mileage', km_due_tab_hint: 'Maintenance by kilometres: exceeded or within the configured advance warning, counted from the last recorded odometer reading. Fewest remaining km first.' });

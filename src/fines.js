@@ -1,5 +1,5 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -102,8 +102,10 @@ export async function createFine(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
   const kind = oneOf(body.kind, FINE_KINDS, 'Art');
   const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß');
-  const offenseAt = str(body.offense_at, { required: true, max: 30, field: 'Tatzeit' });
-  if (Number.isNaN(Date.parse(offenseAt))) throw bad('validation', 'Tatzeit ungültig.');
+  // Tatzeit wie im Schreiben (Berliner Ortszeit, ohne Zeitzone) → UTC; Angaben mit Zeitzone werden nur vereinheitlicht
+  const offenseRaw = berlinLocalToIso(str(body.offense_at, { required: true, max: 30, field: 'Tatzeit' }));
+  if (!offenseRaw || Number.isNaN(Date.parse(offenseRaw))) throw bad('validation', 'Tatzeit ungültig.');
+  const offenseAt = new Date(offenseRaw).toISOString();
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10 });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');

@@ -2654,6 +2654,25 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   eq(icsEscape('a;b,c\\d\nx'), 'a\\;b\\,c\\\\d\\nx');
 });
 
+await test('Bußgelder: Tatzeit ohne Zeitzone = Berliner Ortszeit wie im Schreiben (unabhängig vom Gerät), ungültige Uhrzeit abgewiesen', async () => {
+  const { berlinLocalToIso } = await import('../src/util.js');
+  eq(berlinLocalToIso('2026-07-01T08:30'), '2026-07-01T06:30:00.000Z', 'Sommerzeit');
+  eq(berlinLocalToIso('2026-12-01T08:30'), '2026-12-01T07:30:00.000Z', 'Winterzeit');
+  eq(berlinLocalToIso('2026-03-29T03:30'), '2026-03-29T01:30:00.000Z', 'nach Umstellung März');
+  eq(berlinLocalToIso('2026-10-25T01:59'), '2026-10-24T23:59:00.000Z', 'vor Umstellung Oktober');
+  eq(berlinLocalToIso('2026-07-01T08:30:00Z'), '2026-07-01T08:30:00Z', 'mit Zeitzone unverändert');
+  eq(berlinLocalToIso('2026-02-30T08:00'), null); eq(berlinLocalToIso('2026-07-01T24:00'), null);
+  const base = { kind: 'verwarnung', authority: 'Ordnungsamt Zeitzone', offense_type: 'parken', plate_in_letter: 'XX-TZ 1', response_due: '2099-05-01' };
+  const r = await users.fleet.post('/api/fines', { ...base, reference: 'AZ-TZ-1', offense_at: '2026-07-01T08:30' });
+  eq(r.status, 201);
+  const f = (await users.fleet.get('/api/fines')).data.fines.find((x) => x.reference === 'AZ-TZ-1');
+  eq(f.offense_at, '2026-07-01T06:30:00.000Z', 'gespeichert als UTC');
+  const r2 = await users.fleet.post('/api/fines', { ...base, reference: 'AZ-TZ-2', offense_at: '2026-07-01T08:30:00+02:00' });
+  eq(r2.status, 201);
+  eq((await users.fleet.get('/api/fines')).data.fines.find((x) => x.reference === 'AZ-TZ-2').offense_at, '2026-07-01T06:30:00.000Z', 'Zeitzone vereinheitlicht');
+  for (const bad of ['2026-02-30T08:00', '2026-07-01T25:00', 'gestern']) eq((await users.fleet.post('/api/fines', { ...base, reference: 'AZ-TZ-X', offense_at: bad })).status, 400, bad);
+});
+
 await test('Bußgelder: Filter Fahrzeug-Standort (Schreibweise egal, ohne Fahrzeug = „ohne“, Summe = alle), CSV und Kalender gefiltert', async () => {
   const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
   eq((await users.fleet.post('/api/fines', { kind: 'verwarnung', authority: 'Ordnungsamt Standorttest', reference: 'AZ-SITE-UNBEKANNT', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'XX-ZZ 9999', response_due: '2099-04-01' })).status, 201);

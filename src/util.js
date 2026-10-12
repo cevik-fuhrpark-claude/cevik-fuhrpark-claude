@@ -202,6 +202,21 @@ export function berlinDayStartIso(dateStr) {
   const ms = Date.parse(dateStr + 'T00:00:00Z');
   return new Date(ms - berlinOffsetMs(ms - 7200000)).toISOString();
 }
+// Wanduhrzeit in Berlin ohne Zeitzone („2026-07-01T08:30“, z. B. Tatzeit aus einem Behördenschreiben) → UTC-ISO.
+// Unabhängig von der Zeitzone des Geräts bzw. des Servers. Angaben mit Zeitzone (Z, +02:00) bleiben unverändert;
+// ungültiges Kalenderdatum/Uhrzeit (30.02., 24:00) → null. Zeitumstellung: Uhrzeit in der übersprungenen Stunde (02:30 im März)
+// wird wie 03:30 Sommerzeit gelesen, die doppelte Stunde im Oktober als Winterzeit (zweites Auftreten).
+const NAIVE_LOCAL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+export function berlinLocalToIso(v) {
+  const s = String(v ?? '').trim();
+  const m = NAIVE_LOCAL.exec(s);
+  if (!m) return s;
+  const [y, mo, d, h, mi, se] = m.slice(1).map((x) => Number(x || 0));
+  const ms = Date.UTC(y, mo - 1, d, h, mi, se);
+  const c = new Date(ms);
+  if (c.getUTCFullYear() !== y || c.getUTCMonth() !== mo - 1 || c.getUTCDate() !== d || h > 23 || mi > 59 || se > 59) return null;
+  return new Date(ms - berlinOffsetMs(ms - berlinOffsetMs(ms))).toISOString();
+}
 const p2 = (n) => (n < 10 ? '0' + n : String(n));
 export function berlinDateTime(iso) {
   const ms = Date.parse(iso);
