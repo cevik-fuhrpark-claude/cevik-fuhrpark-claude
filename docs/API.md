@@ -113,7 +113,7 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 | `change_priority` | fleet/owner | offen | `payload.priority`, Begründung |
 | `set_safety_lock` / `lift_safety_lock` | fleet/owner | jeder offene | Grund; Aufheben + `confirm`, keine offenen sicherheitsrel. Restarbeiten |
 | `approve_repair` | fleet/owner | gemeldet → werkstatt_freigegeben | `workshop_site`, Umfang |
-| `reject` | fleet/owner | gemeldet → abgelehnt | Grund; nicht bei aktiver Sperre |
+| `reject` | fleet/owner | gemeldet → abgelehnt | Grund; nicht bei aktiver Sperre; optional `payload.duplicate_of` = Vorgang desselben Fahrzeugs (keine Dublette einer Dublette) → `cases.duplicate_of`, Grund ohne Eingabe „Dublette von <Nr.>“; Vorgangsdetail liefert `duplicate_of` bzw. `duplicates[]` |
 | `acknowledge` | Werkstatt (Standort) | werkstatt_freigegeben (Übernahme) | – |
 | `start_repair` | Werkstatt | werkstatt_freigegeben → in_reparatur | – |
 | `wait_parts` / `resume_repair` | Werkstatt | in_reparatur ↔ wartet_teile | Teile-Vermerk; optional `payload.parts_expected_date` (Liefertermin laut Lieferant, ab heute, ≤ 1 Jahr); `resume_repair` leert ihn |

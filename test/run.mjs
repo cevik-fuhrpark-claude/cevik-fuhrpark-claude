@@ -2653,6 +2653,35 @@ await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/AP
   eq(miss.join(', '), '', 'undokumentierte Pfade');
 });
 
+await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs schließen (Grund vorbelegt, Verweise in beiden Vorgängen, Prüfungen)', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'DU-PL 1', vin: 'WDB96340310555701', site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'DU-PL 2', vin: 'WDB96340310555702', site: 'Dortmund' })).status, 201);
+  const mk = async (vin, d) => (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: d, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const orig = await mk('WDB96340310555701', 'Spiegel links gebrochen');
+  const dup = await mk('WDB96340310555701', 'Außenspiegel links kaputt');
+  const dup2 = await mk('WDB96340310555701', 'Spiegel links (dritte Meldung)');
+  const other = await mk('WDB96340310555702', 'Spiegel am anderen Lkw');
+  const rej = async (u, id, payload, note = null) => { const c = (await u.get(`/api/cases/${id}`)).data.case; return u.post(`/api/cases/${id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await rej(users.fleet, dup, { duplicate_of: other })).status, 400, 'anderes Fahrzeug');
+  eq((await rej(users.fleet, dup, { duplicate_of: dup })).status, 400, 'sich selbst');
+  eq((await rej(users.fleet, dup, { duplicate_of: 'gibt-es-nicht' })).status, 400, 'unbekannt');
+  eq((await users.prodFleet.post(`/api/cases/${dup}/commands`, { action: 'reject', command_id: rk(), expected_version: 1, payload: { duplicate_of: orig } })).status, 404, 'andere Umgebung');
+  const r = await rej(users.fleet, dup, { duplicate_of: orig });
+  eq(r.status, 200); eq(r.data.status, 'abgelehnt');
+  const d = (await users.fleet.get(`/api/cases/${dup}`)).data;
+  eq(d.case.duplicate_of, orig); eq(d.duplicate_of.case_no.length > 0, true);
+  const ev = d.events.at(-1); eq(ev.action, 'reject'); eq(ev.note, `Dublette von ${d.duplicate_of.case_no}`, 'Grund vorbelegt'); eq(ev.payload.duplicate_of, orig);
+  eq((await rej(users.fleet, dup2, { duplicate_of: dup })).status, 400, 'Dublette einer Dublette');
+  eq((await rej(users.fleet, dup2, { duplicate_of: orig }, 'Gleicher Schaden, Fotos im Original')).status, 200, 'eigener Grund bleibt');
+  eq((await users.fleet.get(`/api/cases/${dup2}`)).data.events.at(-1).note, 'Gleicher Schaden, Fotos im Original');
+  const o = (await users.fleet.get(`/api/cases/${orig}`)).data;
+  eq(o.duplicates.map((x) => x.id).join(), [dup, dup2].join(), 'Original zeigt Dubletten'); eq(o.followups.length, 0, 'keine Folgeaufträge vermischt');
+  eq(o.case.status, 'gemeldet', 'Original unverändert offen');
+  eq((await rej(users.fleet, other, {})).status, 400, 'ohne Dublette weiter Grund nötig');
+  // Folgeauftrag und Dublette im selben Vorgang werden getrennt (eine Abfrage)
+  ok(QSTAT.perRequest.filter((w) => w.method === 'GET' && w.path === '/api/cases/:id').every((w) => w.n <= 21), 'Vorgangsdetail ≤ 21 Abfragen');
+});
+
 await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Termin setzen/verschieben nur gültig; Werkstatt nur eigener Standort', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'WP-LN 1', vin: 'WDB96340310555504', site: 'Dortmund' })).status, 201);
   const VP = 'VIN:WDB96340310555504';

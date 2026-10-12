@@ -172,7 +172,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
     .map((o) => hideDriverName(user, o, 'created_by_name', 'created_by_role'));
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
     .map((i) => hideDriverName(user, { ...i, items: JSON.parse(i.items) }, 'performed_by_name', 'performed_by_role'));
-  const followups = (await env.DB.prepare('SELECT id, case_no, status, priority, description FROM cases WHERE parent_case_id=?').bind(c.id).all()).results;
+  // Folgeaufträge und als Dublette geschlossene Meldungen zu diesem Vorgang in einer Abfrage
+  const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, description, created_at, parent_case_id FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results;
+  const followups = linked.filter((x) => x.parent_case_id === c.id).map(({ created_at, parent_case_id, ...x }) => x);
+  const duplicates = linked.filter((x) => x.parent_case_id !== c.id).map((x) => ({ id: x.id, case_no: x.case_no, created_at: x.created_at }));
+  const duplicateOf = c.duplicate_of ? await env.DB.prepare('SELECT id, case_no, status FROM cases WHERE id=?').bind(c.duplicate_of).first() : null;
   const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=?').bind(c.parent_case_id).first() : null;
   // Prüfung des Mängelauftrags + jüngste spätere Durchführung derselben Prüfart am Fahrzeug (= eingetragene Nachprüfung)
   const mevent = c.maintenance_event_id ? await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result,
@@ -185,7 +189,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
-    files, open_items: openItems, inspections, followups, parent, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
+    files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
     allowed_actions: allowedActions(user, c, access),
   };
@@ -556,7 +560,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const action = str(body.action, { required: true, max: 40, field: 'Aktion' });
   const commandId = str(body.command_id, { required: true, max: 64, field: 'command_id' });
   const expectedVersion = num(body.expected_version, { min: 1, field: 'Version' });
-  const note = str(body.note, { max: 4000 });
+  let note = str(body.note, { max: 4000 });
   const p = body.payload || {};
 
   const { c, access } = await loadCase(env, user, envName, caseId);
@@ -645,6 +649,15 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'reject':
+      // optional als Dublette eines anderen Vorgangs desselben Fahrzeugs (gleiche Umgebung); Grund wird dann vorbelegt
+      if (p.duplicate_of) {
+        const o = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of FROM cases WHERE id=? AND environment=?').bind(String(p.duplicate_of).slice(0, 40), envName).first();
+        if (!o || o.id === c.id) throw bad('validation', 'Ursprünglicher Vorgang nicht gefunden.');
+        if (o.vehicle_id !== c.vehicle_id) throw bad('validation', 'Dublette nur zu einem Vorgang desselben Fahrzeugs.');
+        if (o.duplicate_of) throw bad('validation', `Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`);
+        set.duplicate_of = o.id; payload.duplicate_of = o.id; payload.duplicate_of_no = o.case_no;
+        if (!note || note.length < 3) note = `Dublette von ${o.case_no}`;
+      }
       requireNote('Bitte Ablehnungsgrund angeben.');
       if (c.safety_lock) throw bad('safety_lock_active', 'Vorgang mit aktiver Sicherheitssperre kann nicht abgelehnt werden. Zuerst Sperre fachlich aufheben.');
       if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
