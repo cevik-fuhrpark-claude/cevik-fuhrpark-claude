@@ -3466,6 +3466,30 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   ok(mcal.includes(`UID:${rule.data.id}-plan@`) && mcal.includes('SUMMARY:Werkstatttermin UVV – WP-LN 1'), 'Prüftermin-Kalender enthält geplanten Werkstatttermin');
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(-2) })).status, 200);
   ok(!new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics')).data).includes(`UID:${rule.data.id}-plan@`), 'vergangener Plan-Termin nicht im Kalender');
+  // „Fällig – ohne Termin“: nur nach km überschrittene Regel erscheint (ohne Datum), mit km-Angaben; Plan-Termin bzw. offener Auftrag nimmt sie heraus
+  eq((await users.fleet.post(`/api/vehicles/${VP}/odometer`, { km: 400000 })).status, 201);
+  const kmr = (await users.fleet.post(`/api/vehicles/${VP}/maintenance`, { kind: 'Ölwechsel', interval_km: 50000, last_done_km: 340000, evidence: 'Werkstattplan-Test km' })).data.id;
+  pl = (await users.ws.get('/api/workshop/plan')).data;
+  let md = pl.maintenance_due.find((i) => i.id === kmr);
+  ok(md, 'km-Regel ohne Datum in „Fällig – ohne Termin“');
+  eq(md.status, 'ueberfaellig'); eq(md.by_km, true); eq(md.next_due_km, 390000); eq(md.km_remaining, -10000); eq(md.next_due_date, null);
+  ok(!pl.maintenance_due.some((i) => i.id === rule.data.id), 'nicht fällige UVV (Termin verstrichen) nicht in der Liste');
+  ok(!pl.maintenance_due.some((i) => i.status === 'ok'), 'nur überschritten/bald fällig');
+  ok(!JSON.stringify(pl.maintenance_due).includes('Werkstattplan-Test'), 'kein Nachweistext im Plan');
+  eq((await users.dispatch.get('/api/workshop/plan')).data.maintenance_due.some((i) => i.id === kmr), true, 'Disposition sieht die Liste');
+  eq((await users.fleet.get('/api/workshop/plan?vsite=Nirgendwo')).data.maintenance_due.length, 0, 'Fahrzeug-Standortfilter wirkt');
+  eq((await users.fleet.post(`/api/maintenance/${kmr}/plan`, { planned_date: day(3) })).status, 200);
+  pl = (await users.ws.get('/api/workshop/plan')).data;
+  ok(!pl.maintenance_due.some((i) => i.id === kmr), 'mit kommendem Termin nicht mehr ohne Termin');
+  const pi = pl.days.find((d) => d.date === day(3)).items.find((i) => i.type === 'maintenance' && i.id === kmr);
+  eq(pi.next_due_km, 390000, 'geplanter Termin zeigt km-Fälligkeit'); eq(pi.km_remaining, -10000);
+  eq((await users.fleet.post(`/api/maintenance/${kmr}/plan`, { planned_date: day(-1) })).status, 200);
+  md = (await users.ws.get('/api/workshop/plan')).data.maintenance_due.find((i) => i.id === kmr);
+  eq(md.past_planned_date, day(-1), 'verstrichener Termin: wieder in der Liste mit Hinweis');
+  eq((await users.fleet.post(`/api/maintenance/${kmr}/order`, { workshop_site: 'DORTMUND', note: 'Ölwechsel', request_key: rk() })).status, 201);
+  pl = (await users.ws.get('/api/workshop/plan')).data;
+  ok(!pl.maintenance_due.some((i) => i.id === kmr), 'mit offenem Werkstattauftrag nicht doppelt');
+  ok(pl.unplanned.some((i) => i.maintenance_rule_id === kmr), 'Auftrag steht unter „Ohne Termin“');
 });
 
 await test('Werkstattplan: Filter „Fahrzeug-Standort“ (Schreibweise egal, Summe über Standorte = alle, Terminvorschlag-Auslastung ungefiltert)', async () => {

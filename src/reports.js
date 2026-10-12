@@ -2,6 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { bad, forbidden, berlinDate, icsCalendar } from './util.js';
+import { maintenanceOverview } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -527,7 +528,23 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const others = (i, own) => [...(vDates.get(i.vehicle_id) || [])].filter((d) => d !== own).sort();
   for (const [d, items] of byDay) for (const i of items) i.other_dates = others(i, d);
   for (const i of [...overdue, ...unplanned]) i.other_dates = others(i, null);
-  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned };
+  // Fällige Prüfungen/Wartung ohne Termin (nach Datum ODER nach km überschritten/bald fällig – gleiche Status wie die Prüftermin-Übersicht,
+  // km-Vorwarnung nur mit eingestellter Schwelle). Ohne kommenden Plan-Termin und ohne offenen Werkstattauftrag (der steht oben als Auftrag).
+  // Nur Anzeige: die App plant nichts selbst. Geplante Prüftermine im Zeitraum erhalten die km-Fälligkeit zur Anzeige.
+  const ov = await maintenanceOverview(env, null, envName, { site: query.vsite });
+  const ovById = new Map(ov.rows.map((r) => [r.id, r]));
+  for (const [, items] of byDay) for (const i of items) if (i.type === 'maintenance') {
+    const o = ovById.get(i.id);
+    if (o) Object.assign(i, { status: o.status, next_due_km: o.next_due_km ?? null, km_remaining: o.km_remaining ?? null, km_status: o.km_status ?? null });
+  }
+  const DUE = ['ueberfaellig', 'faellig'];
+  const maintenance_due = ov.rows.filter((r) => DUE.includes(r.status) && !(r.planned_date && r.planned_date >= today) && !r.open_order)
+    .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: r.status,
+      next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null,
+      by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null }))
+    .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
+  for (const i of maintenance_due) i.other_dates = others(i, null);
+  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned, maintenance_due, warn_km: ov.warn_km };
 }
 
 // Kalenderdatei des Werkstattplans: nur Vorgangsnummer, Kennzeichen, Status/Prüfart – keine Beschreibung, keine Namen
