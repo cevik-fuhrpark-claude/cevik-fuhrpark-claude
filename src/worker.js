@@ -545,10 +545,12 @@ async function handleApi(request, env, ctx, url) {
 }
 
 async function dashboard(env, user, envName) {
-  const open = await cases.listCases(env, user, envName, { status: 'open', limit: 200 });
+  // Zähler aus höchstens 500 offenen Vorgängen (kritische zuerst); darüber Kennzeichnung statt stiller Kappung (vorher 200 ohne Hinweis)
+  const om = {}; const open = await cases.listCases(env, user, envName, { status: 'open', limit: 500 }, om);
   const out = {
     environment: envName,
     open_cases: open.length,
+    open_cases_truncated: !!om.truncated,
     critical: open.filter((c) => c.priority === 'kritisch').length,
     locked: open.filter((c) => c.safety_lock).length,
     by_status: open.reduce((a, c) => ((a[c.status] = (a[c.status] || 0) + 1), a), {}),

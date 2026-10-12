@@ -2215,15 +2215,17 @@ await test('Vorgangs-CSV: Begrenzung auf 5000 Zeilen wird per Header x-cfp-trunc
   const db = env.DB.db; const src = db.prepare(`SELECT * FROM cases WHERE environment='test' LIMIT 1`).get(); ok(src, 'Vorlage');
   const cols = Object.keys(src);
   const ins = db.prepare(`INSERT INTO cases(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
-  const add = (from, to) => { db.exec('BEGIN'); for (let i = from; i < to; i++) ins.run(...cols.map((k) => (k === 'id' ? 'csvlim-' + i : k === 'case_no' ? 'CSVLIM-' + i : k === 'request_key' ? 'csvlim-' + i : k === 'duplicate_of' ? null : src[k]))); db.exec('COMMIT'); };
+  const add = (from, to) => { db.exec('BEGIN'); for (let i = from; i < to; i++) ins.run(...cols.map((k) => (k === 'id' ? 'csvlim-' + i : k === 'case_no' ? 'CSVLIM-' + i : k === 'request_key' ? 'csvlim-' + i : k === 'duplicate_of' ? null : k === 'status' ? 'gemeldet' : k === 'closed_at' ? null : src[k]))); db.exec('COMMIT'); };
   try {
   add(0, 5000 - have);
   r = await csvGet(''); eq(lines(r), 5000); eq(r.headers.get('x-cfp-truncated'), null, 'genau 5000: nicht begrenzt');
   add(5000 - have, 5001 - have);
   r = await csvGet(''); eq(r.status, 200); eq(lines(r), 5000, 'höchstens 5000 Zeilen'); eq(r.headers.get('x-cfp-truncated'), '5000', 'Header');
+  const dash = (await users.fleet.get('/api/dashboard')).data; eq(dash.open_cases, 500, 'Startseite zählt bis 500'); eq(dash.open_cases_truncated, true, 'und kennzeichnet mehr');
   const au = db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY rowid DESC LIMIT 1`).get(); ok(au && JSON.parse(au.detail).truncated === true, 'Protokoll vermerkt Begrenzung');
   } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM cases WHERE id LIKE 'csvlim-%'`).run(); }
   eq((await csvGet('')).headers.get('x-cfp-truncated'), null, 'nach dem Aufräumen wieder ohne');
+  eq((await users.fleet.get('/api/dashboard')).data.open_cases_truncated, false);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("res.headers.get('x-cfp-truncated')") && app.includes("t('csv_truncated')"), 'Oberfläche zeigt Hinweis');
 });

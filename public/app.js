@@ -348,7 +348,7 @@ async function viewHome() {
         <div class="fleetbar" role="img" aria-label="${esc(t('fleet_state'))}">${seg.map(([, n, c]) => `<span style="width:${(n / tot) * 100}%;background:${c}"></span>`).join('')}</div>
         <div class="legend">${seg.map(([k, n, c]) => `<span><i style="background:${c}"></i>${esc(t('av_' + k))}: <b>${n}</b></span>`).join('')}</div></section>`;
     }
-    html += `<div class="stats"><div><b>${d.open_cases}</b>${esc(t('open'))}</div><div><b style="color:var(--stop)">${d.critical}</b>${esc(t('prio_kritisch'))}</div><div><b>${d.locked}</b>${esc(t('locked'))}</div>
+    html += `<div class="stats"><div><b>${d.open_cases}${d.open_cases_truncated ? '+' : ''}</b>${esc(t('open'))}</div><div><b style="color:var(--stop)">${d.critical}</b>${esc(t('prio_kritisch'))}</div><div><b>${d.locked}</b>${esc(t('locked'))}</div>
       ${S.me.role === 'workshop' ? `<div><b>${d.inbox}</b>${esc(t('act_acknowledge'))}</div><div><b>${d.in_progress}</b>${esc(t('st_in_reparatur'))}</div>` : ''}</div>`;
     if (d.findings && d.findings.length) {
       const n = d.findings.filter((f) => ['kritisch', 'handeln'].includes(f.severity)).reduce((s, f) => s + f.n, 0);

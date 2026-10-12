@@ -61,6 +61,7 @@ console.log(`${N_CASES} Vorgänge in ${((performance.now() - t0) / 1000).toFixed
 for (let k = 0; k < 20; k++) {
   await timed('Werkstattplan 30 Tage', () => owner.get('/api/workshop/plan?days=30'));
   await timed('Vorgangsliste', () => owner.get('/api/cases'));
+  await timed('Startseite (Zähler, 500 offene)', () => owner.get('/api/dashboard'));
   await timed('Vorgangsdetail', () => owner.get(`/api/cases/${ids[(k * 97) % ids.length]}`));
   await timed('Fahrzeugliste', () => owner.get('/api/vehicles'));
   await timed('Fahrzeugdetail', () => owner.get(`/api/vehicles/${vehicles[k % vehicles.length].id}`));
