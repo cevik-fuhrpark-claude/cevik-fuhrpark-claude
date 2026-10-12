@@ -1985,6 +1985,9 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, fÃ
   eq((await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'archiviert â†’ beim Fahrer weg');
   eq((await users.fleet.post('/api/vehicles/VIN:UNBEKANNT123/notes', { text: 'gibt es nicht' })).status, 404);
   ok((await owner.get('/api/admin/audit?action=vehicle.note')).data.entries.length >= 3, 'protokolliert');
+  const tl = (await users.fleet.get(`/api/vehicles/${VID}/timeline?types=note`)).data.items;
+  eq(tl.filter((x) => x.note_event === 'add').length, 2); eq(tl.filter((x) => x.note_event === 'archive').length, 1, 'Zeitleiste: angelegt und archiviert');
+  eq((await users.driver.get(`/api/vehicles/${VID}/timeline`)).status === 200 ? (await users.driver.get(`/api/vehicles/${VID}/timeline`)).data.items.filter((x) => x.type === 'note').length : 0, 0, 'Fahrer: keine Hinweise in der Zeitleiste');
   await users.ws.post(`${base}/${b.data.id}/archive`);
 });
 

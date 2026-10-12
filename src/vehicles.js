@@ -157,7 +157,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
 }
 
 // Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
-export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim'];
+export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim', 'note'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
   const d = await vehicleDetail(env, user, envName, vehicleId, { timeline: true });
   const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
@@ -177,6 +177,11 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     const tires = (await env.DB.prepare(`SELECT created_at, position, event_type, tread_mm, odometer_km, case_id FROM tire_events WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 300`)
       .bind(vehicleId, envName).all()).results;
     for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: t.case_id });
+    // Hinweise zum Fahrzeug: angelegt und archiviert (nur wenn der Bereich gewünscht ist – spart sonst die Abfrage)
+    if (!want.size || want.has('note')) {
+      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at FROM vehicle_notes WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 200`).bind(vehicleId, envName).all()).results;
+      for (const n of notes) { add('note', n.created_at, { note_event: 'add', text: n.text, for_driver: !!n.for_driver }); add('note', n.archived_at, { note_event: 'archive', text: n.text }); }
+    }
   }
   if (isManager(user)) {
     const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT 200`)
