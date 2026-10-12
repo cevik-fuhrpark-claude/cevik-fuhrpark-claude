@@ -724,6 +724,18 @@ await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitun
   eq(r2.measured_positions, 0); eq(r2.status, 'unbekannt'); ok(ft.data.totals.never_measured >= 1);
   eq((await users.driver.get('/api/tires/fleet')).status, 403);
   eq((await users.prodFleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1).measured_positions, 0, 'Umgebungen getrennt');
+  // Standortfilter laut Fahrzeugstamm (Schreibweise egal); Summe über Standorte = alle
+  const old = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V1).first()).site;
+  try {
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind('Reifen-Teststandort', V1).run();
+    const all = (await users.fleet.get('/api/tires/fleet')).data;
+    ok(all.site_options.includes('Reifen-Teststandort') && all.site === null, 'Auswahl');
+    const one = (await users.fleet.get('/api/tires/fleet?site=REIFEN-TESTSTANDORT')).data;
+    eq(one.site, 'Reifen-Teststandort'); eq(one.rows.length, 1); eq(one.rows[0].vehicle_id, V1); eq(one.totals.below_min, 1);
+    let n = 0; for (const st of all.site_options) n += (await users.fleet.get(`/api/tires/fleet?site=${encodeURIComponent(st)}`)).data.rows.length;
+    eq(n, all.rows.length, 'Summe über Standorte');
+    eq((await users.fleet.get('/api/tires/fleet?site=GIBTSNICHT')).data.rows.length, 0);
+  } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, V1).run(); }
 });
 await test('Reifenwechsel nur mit Größe; danach ist der alte Messwert nicht mehr maßgeblich', async () => {
   eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L' })).status, 400);
