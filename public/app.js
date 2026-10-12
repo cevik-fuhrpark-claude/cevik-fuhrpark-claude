@@ -539,7 +539,7 @@ async function viewNew(preId) {
   // Bekannte Mängel des gewählten (eigenen) Fahrzeugs anzeigen, damit nichts doppelt gemeldet wird
   if (S.me.role === 'driver' && mine.length) {
     let known = null;
-    const showKnown = () => { const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const v = known && sel && known.find((x) => x.id === sel.value); box.innerHTML = v ? knownDefects(v.known_defects) : ''; };
+    const showKnown = () => { const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const v = known && sel && known.find((x) => x.id === sel.value); box.innerHTML = v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : ''; };
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => {});
     $$('input[name=veh]').forEach((r) => r.addEventListener('change', showKnown));
   }
@@ -848,7 +848,7 @@ async function viewDepartureCheck(preId) {
   if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
   if (S.me.role === 'driver') {
     let known = null;
-    const showKnown = () => { const box = $('#known'); if (!box) return; const v = known && known.find((x) => x.id === $('#v').value); box.innerHTML = v ? knownDefects(v.known_defects) : ''; };
+    const showKnown = () => { const box = $('#known'); if (!box) return; const v = known && known.find((x) => x.id === $('#v').value); box.innerHTML = v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : ''; };
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => {});
     $('#v').addEventListener('change', showKnown);
   }
@@ -945,6 +945,8 @@ function coupledLockedChip(c) {
   if (!c || !c.locked) return '';
   return `<span class="chip kritisch">${esc(coupledLockedText(c))}</span>`;
 }
+// Melde-/Kontrollformular: gesperrter Anhänger bzw. gesperrtes Zugfahrzeug des gewählten eigenen Fahrzeugs
+const coupledAlert = (c) => (c && c.locked ? `<div class="alert" role="alert" style="margin-bottom:8px">${esc(coupledLockedText(c))}</div>` : '');
 function coupledChip(c) {
   if (!c || !['gesperrt', 'werkstatt'].includes(c.availability)) return '';
   return `<span class="chip ${c.availability === 'gesperrt' ? 'kritisch' : 'mittel'}">${esc(t(c.kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(c.plate)}: ${esc(t('av_' + c.availability))}</span> `;

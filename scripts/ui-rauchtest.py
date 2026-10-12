@@ -187,6 +187,12 @@ with sync_playwright() as p:
                 problems.append('Fahrer-Startseite: gesperrter Anhänger nicht angezeigt')
         except Exception as e:
             problems.append(f'Fahrer-Startseite: Gespann-Sperre fehlt ({e.__class__.__name__})')
+        for r in (f'check/{vid}', f'new/{vid}'):
+            pg.goto(f'{B}/#/{r}')
+            try:
+                pg.wait_for_selector('#known .alert', timeout=8000)
+            except Exception as e:
+                problems.append(f'{r}: Hinweis gesperrter Anhänger fehlt ({e.__class__.__name__})')
         ROUTES['fleet'] += ['vehicles']
     # Eine Meldung, damit Listen nicht leer sind
     cs = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegel locker', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-1'}])
