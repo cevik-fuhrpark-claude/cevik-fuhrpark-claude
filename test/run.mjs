@@ -1017,6 +1017,12 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   ];
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
   eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
+  // Nutzerseitige Fehlercodes haben eine Übersetzung (technische wie invalid_json/invalid_token bewusst nicht)
+  const { STRINGS: STR } = await import('../public/i18n.js');
+  for (const code of ['username_taken', 'setup_done', 'invalid_setup_code', 'wrong_file', 'invalid_session']) {
+    ok(new RegExp(`'${code}'`).test(src), `Code im Server: ${code}`);
+    for (const l of ['de', 'uk', 'en']) ok(STR[l]['err_' + code], `err_${code} (${l})`);
+  }
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/code === 'validation' && translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung');
 });

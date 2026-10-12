@@ -769,3 +769,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^Unbekannter Prüfpunkt (.{1,60})\.$/))) return T.unknown_item.replace('{v}', () => m[1]);
   return null;
 }
+// [CLAUDE] Weitere Fehlercodes in der App-Sprache (Benutzerverwaltung, Ersteinrichtung, falscher Import)
+Object.assign(STRINGS.de, { err_username_taken: 'Benutzername ist bereits vergeben.', err_setup_done: 'Einrichtung bereits abgeschlossen.', err_invalid_setup_code: 'Einrichtungscode falsch.', err_wrong_file: 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.', err_invalid_session: 'Ungültige Anmeldung.' });
+Object.assign(STRINGS.uk, { err_username_taken: 'Це ім’я користувача вже зайняте.', err_setup_done: 'Налаштування вже завершено.', err_invalid_setup_code: 'Неправильний код налаштування.', err_wrong_file: 'Це не файл реєстру транспорту (розпізнано стовпці шин або техоглядів). Завантажте його у відповідне поле імпорту.', err_invalid_session: 'Недійсний вхід.' });
+Object.assign(STRINGS.en, { err_username_taken: 'This username is already taken.', err_setup_done: 'Setup has already been completed.', err_invalid_setup_code: 'Wrong setup code.', err_wrong_file: 'This is not a vehicle master file (tyre or inspection columns detected). Please upload it in the matching import field.', err_invalid_session: 'Invalid sign-in.' });
