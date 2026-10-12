@@ -1977,6 +1977,7 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   eq((await users.dispatch.get('/api/vehicles')).data.vehicles.find((v) => v.id === VID).notes_active, 2, 'Fahrzeugliste zählt aktive Hinweise');
   eq((await users.prodFleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VID).notes_active, 0, 'Zähler je Umgebung');
   ok(!('notes_active' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: kein Zähler');
+  { const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("av === 'with_notes' ? v.notes_active > 0"), 'Filter „Mit Hinweisen“ in der Fahrzeugliste'); }
   const me = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID);
   eq(me.notes.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'Fahrer sieht nur freigegebene, ohne Verfasser'); ok(!('created_by_name' in me.notes[0]));
   // Integrations-API /v1/availability: nur mit include=notes, nur für Fahrer freigegebene, ohne Verfasser, Umgebung getrennt
