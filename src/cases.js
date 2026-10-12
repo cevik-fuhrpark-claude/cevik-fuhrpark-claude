@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -207,10 +207,18 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
         (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until)) FROM
-          (SELECT text, for_driver, created_at, valid_until FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes
-      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate()).first();
+          (SELECT text, for_driver, created_at, valid_until FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes,
+        (SELECT json_group_array(json_object('case_id', w.case_id, 'case_no', w.case_no, 'status', w.status, 'workshop_site', w.workshop_site, 'item', w.item, 'item_kind', w.item_kind, 'supplier', w.supplier, 'warranty_until', w.warranty_until)) FROM
+          (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at FROM cases x JOIN
+            (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
+             UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
+           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 ORDER BY g.warranty_until, g.created_at LIMIT 20) w) AS warranties
+      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
     const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver })) : [];
+    // Laufende Gewährleistung aus früheren Vorgängen dieses Fahrzeugs (am Meldedatum noch gültig) – Hinweis: Rückgriff beim Lieferanten prüfen
+    let warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : [];
+    if (user.role === 'workshop') warranties = warranties.filter((w) => w.workshop_site === user.workshop_site);
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)
     let prevSame = [];
     if (c.check_item) {
@@ -219,7 +227,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
         .bind(c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString()).all()).results;
       if (user.role === 'workshop') prevSame = prevSame.filter((o) => o.workshop_site === user.workshop_site);
     }
-    detail.vehicle_info = { other_open_cases: others.slice(0, 5), other_open_total: others.length, inspections_due: due, last_km: km || null, previous_same_item: prevSame, notes: vnotes };
+    detail.vehicle_info = { other_open_cases: others.slice(0, 5), other_open_total: others.length, inspections_due: due, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties };
   }
   if (user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch') {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;
@@ -246,6 +254,14 @@ export async function costLimit(env) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 const COST_ACTIONS = ['record_work', 'add_part', 'add_external_cost'];
+// „Gewährleistung bis“ (optional, nur laut Rechnung/Lieferant): Kalenderdatum, höchstens 10 Jahre voraus – keine Vorgabe der App
+export function warrantyDate(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const d = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !isCalendarDate(d)) throw bad('validation', 'Gewährleistung bis: bitte gültiges Datum (JJJJ-MM-TT) angeben.');
+  if (d > addMonths(berlinDate(), 120)) throw bad('validation', 'Gewährleistung bis: höchstens 10 Jahre voraus.');
+  return d;
+}
 // Nach einer Kostenbuchung: übersteigen die bewerteten Kosten (Ist + Schätzung; unbewertete Positionen zählen nicht) die Grenze bzw.
 // den zuletzt freigegebenen Betrag, wird der Auftrag einmalig markiert, im Verlauf vermerkt und die Fuhrparkleitung informiert.
 // Kein Statuswechsel, keine Sperre – die Werkstatt sieht „Kostenfreigabe ausstehend“ (ohne Beträge).
@@ -727,11 +743,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const rawPrice = p.unit_price_net === undefined || p.unit_price_net === '' || p.unit_price_net === null ? (stockItem ? stockItem.unit_price_net : null) : p.unit_price_net;
       const price = num(rawPrice, { min: 0, max: 1000000, field: 'Preis', nullable: true });
       const valuation = price === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
-      extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
+      const warranty = warrantyDate(p.warranty_until);
+      extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
         stockItem ? stockItem.unit : (str(p.unit, { max: 20 }) || 'Stk'), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { max: 120 }),
-        str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now));
-      payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null };
+        str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now, warranty));
+      payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null, ...(warranty ? { warranty_until: warranty } : {}) };
       break;
     }
     case 'add_open_item': {
@@ -757,9 +774,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
-      extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, p.covers_work_and_parts ? 1 : 0, note, now));
-      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation };
+      const warranty = warrantyDate(p.warranty_until);
+      extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, p.covers_work_and_parts ? 1 : 0, note, now, warranty));
+      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}) };
       break;
     }
     case 'approve_costs': {

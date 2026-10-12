@@ -2047,6 +2047,44 @@ await test('Hinweise zum Fahrzeug: „gültig bis“ (optional) – danach nicht
   tb = await tlOf('Gilt bis nächste Woche'); eq(tb.map((x) => x.note_event).sort().join(), 'add,archive', 'archiviert vor dem Ablaufdatum: kein Ablauf');
 });
 
+await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis bei neuer Meldung am selben Fahrzeug (am Meldedatum gültig), Rechte', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'VT-GW 1', vin: 'WDB96340310555641', site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'VT-GW 2', vin: 'WDB96340310555642', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555641', W = 'VIN:WDB96340310555642';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const mk = async (vid, text) => (await users.fleet.post('/api/cases', { vehicle_id: vid, description: text, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmdOn = (cid) => async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  const c1 = await mk(V, 'Lichtmaschine lädt nicht'); const cmd = cmdOn(c1);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Prüfen')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Lichtmaschine', quantity: 1, warranty_until: '2026-02-30' })).status, 400, 'kein Kalenderdatum');
+  eq((await cmd(users.ws, 'add_part', { name: 'Lichtmaschine', quantity: 1, warranty_until: day(365 * 11) })).status, 400, 'höchstens 10 Jahre');
+  const ap = await cmd(users.ws, 'add_part', { name: 'Lichtmaschine', quantity: 1, supplier: 'Teilehandel Nord', warranty_until: day(730) });
+  eq(ap.status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Keilriemen', quantity: 1 })).status, 200, 'ohne Datum wie bisher');
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Elektrik Müller', amount_net: 120, warranty_until: day(-1) })).status, 200, 'abgelaufene Angabe zulässig (laut Rechnung)');
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Bosch-Dienst', amount_net: 80, warranty_until: day(365) })).status, 200);
+  let d = (await users.fleet.get(`/api/cases/${c1}`)).data;
+  eq(d.parts.find((x) => x.name === 'Lichtmaschine').warranty_until, day(730)); eq(d.parts.find((x) => x.name === 'Keilriemen').warranty_until, null);
+  eq(d.external_costs.find((x) => x.supplier === 'Bosch-Dienst').warranty_until, day(365));
+  eq(d.vehicle_info.warranties.length, 0, 'eigener Vorgang zählt nicht');
+  // neue Meldung am selben Fahrzeug: laufende Gewährleistungen (abgelaufene nicht), anderes Fahrzeug: keine
+  const c2 = await mk(V, 'Batterieleuchte leuchtet wieder');
+  d = (await users.fleet.get(`/api/cases/${c2}`)).data;
+  eq(d.vehicle_info.warranties.map((w) => `${w.case_no}|${w.item}|${w.item_kind}|${w.warranty_until}`).join(';'),
+    [`${(await users.fleet.get(`/api/cases/${c1}`)).data.case.case_no}|Bosch-Dienst|external|${day(365)}`, `${(await users.fleet.get(`/api/cases/${c1}`)).data.case.case_no}|Lichtmaschine|part|${day(730)}`].join(';'), 'nach Datum sortiert, ohne abgelaufene');
+  eq(d.vehicle_info.warranties.find((w) => w.item === 'Lichtmaschine').supplier, 'Teilehandel Nord');
+  eq((await users.fleet.get(`/api/cases/${await mk(W, 'Anderes Fahrzeug')}`)).data.vehicle_info.warranties.length, 0, 'anderes Fahrzeug');
+  eq((await users.dispatch.get(`/api/cases/${c2}`)).data.vehicle_info.warranties.length, 2, 'Disposition sieht den Hinweis');
+  eq((await users.driver.get(`/api/cases/${c2}`)).status === 200 ? (await users.driver.get(`/api/cases/${c2}`)).data.vehicle_info : undefined, undefined, 'Fahrer ohne Kurzinfo');
+  // Meldung vor dem Vorgang mit Gewährleistung: kein Hinweis (nur frühere Vorgänge)
+  await env.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(new Date(Date.now() - 86400000 * 400).toISOString(), c2).run();
+  eq((await users.fleet.get(`/api/cases/${c2}`)).data.vehicle_info.warranties.length, 0, 'nur Vorgänge vor der Meldung');
+  // Umgebung getrennt: Betriebs-Vorgang desselben Fahrzeugs sieht Test-Gewährleistung nicht
+  const pc = await owner.post('/api/cases', { vehicle_id: V, description: 'Betrieb: Lichtmaschine?', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() });
+  if (pc.status === 201) eq((await owner.get(`/api/cases/${pc.data.id}`)).data.vehicle_info.warranties.length, 0, 'Umgebung getrennt');
+});
+
 await test('Wiederherstellungs-Probe mit vollem Datenbestand: jede gesicherte Tabelle zeilen- und feldgleich (inkl. Hinweise „gültig bis“/Archiv, Dubletten, Lager-Umlagerung/Bestellvermerk)', async () => {
   const b = await owner.get('/api/admin/backup'); eq(b.status, 200);
   const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
