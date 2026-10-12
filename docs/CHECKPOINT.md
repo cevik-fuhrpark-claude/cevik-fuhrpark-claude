@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 146 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 147 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -392,6 +392,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026: **Werkstatt-Auslastung als CSV** (`GET /api/reports/workshop-load?weeks=&format=csv`, Knopf „CSV-Export“): je Standort × Kalenderwoche Stunden, übernommen, freigegeben; offene Aufträge je Status nur in der jüngsten Woche (aktueller Stand – es gibt keinen gespeicherten Wochenstand); Werkstattrolle nur eigener Standort, keine Personen, Protokoll `reports.workshop_load.export`. Test (Zeilenzahl, Stundensumme, Rechte), Download per Playwright, 390/820/1366 px ohne waagrechtes Scrollen.
 - 12.10.2026: **Prüftermine: Standortfilter** (`GET /api/maintenance?site=`, auch CSV/Kalender und `/v1/maintenance?site=`; Antwort `site`, `site_options[]`): Standort laut Fahrzeugstamm, Schreibweise egal; wirkt auf Zeilen, Lückenliste, Zähler und Prüfmängel-Listen. Auswahl „Standort“ auf der Seite Prüftermine ab 2 Standorten, Druckvermerk nennt den Standort; Startseiten (ohne Filter) unverändert. Hilfe DE/UK/EN, API-Doku. Test: Summe über Standorte = alle (Zeilen, Fahrzeuge, Lücken), CSV/Kalender/Integration gefiltert. 146 Tests, `pruefen.sh --schnell` grün, 390/820/1366 px geprüft.
 - 12.10.2026: **Reifen – Flotte: Standortfilter** (`GET /api/tires/fleet?site=`, Antwort `site`, `site_options[]`; Auswahl ab 2 Standorten, gleiche Standort-Logik wie Kostenbericht/Prüftermine). Test im Reifen-Flottentest (Schreibweise egal, Summe über Standorte = alle, unbekannt leer), Hilfe DE/UK/EN, API-Doku, 390 px geprüft.
+- 12.10.2026: Standortauswahl vereinheitlicht: Server `siteSelection(vehicles, raw)` in `src/reports.js` (Kostenbericht, Kennzahlen, Prüftermine, Reifen – Flotte), App `siteSelect()` (gleiche Auswahlliste überall). Eigener Test für Schreibweisen/„ohne“/unbekannt. 147 Tests, `pruefen.sh --schnell` grün.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

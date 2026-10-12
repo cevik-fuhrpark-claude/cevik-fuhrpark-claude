@@ -1074,6 +1074,19 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
 });
 
+await test('Standortauswahl (siteSelection): Schreibweisen zusammengefasst, „ohne“ zuletzt, Auswahl ohne Groß-/Kleinschreibung', async () => {
+  const { siteSelection } = await import('../src/reports.js');
+  const vs = [{ site: 'Dortmund' }, { site: 'DORTMUND' }, { site: ' Dortmund ' }, { site: null }, { site: '' }, { site: 'Hamburg' }];
+  const a = siteSelection(vs, null);
+  eq(JSON.stringify(a.options), JSON.stringify(['Dortmund', 'Hamburg', 'ohne'])); eq(a.site, null); ok(a.match('irgendwas') && a.match(null), 'ohne Auswahl alles');
+  const b = siteSelection(vs, 'dortMUND');
+  eq(b.site, 'Dortmund', 'Anzeige in häufigster Schreibweise'); ok(b.match('DORTMUND') && b.match(' dortmund') && !b.match('Hamburg') && !b.match(null));
+  const c = siteSelection(vs, 'ohne');
+  eq(c.site, 'ohne'); ok(c.match(null) && c.match('  ') && !c.match('Dortmund'), '„ohne“ = leerer Standort');
+  const d = siteSelection(vs, 'Berlin');
+  eq(d.site, 'Berlin', 'unbekannt wie übergeben'); ok(!vs.some((v) => d.match(v.site)), 'unbekannt trifft nichts');
+});
+
 await test('Prüftermine: Standortfilter (Fahrzeugstamm, Schreibweise egal) für Übersicht, CSV, Kalender und Integrations-API', async () => {
   const all = (await users.fleet.get('/api/maintenance')).data;
   eq(all.site, null);
