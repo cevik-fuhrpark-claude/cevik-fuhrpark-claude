@@ -858,3 +858,6 @@ Object.assign(STRINGS.en, { offense_at_tz: 'German local time as in the letter.'
 Object.assign(STRINGS.de, { print_filter: 'Auswahl' });
 Object.assign(STRINGS.uk, { print_filter: 'Вибірка' });
 Object.assign(STRINGS.en, { print_filter: 'Selection' });
+Object.assign(STRINGS.de, { print_search: 'Suche', print_count: 'Anzahl: {n}' });
+Object.assign(STRINGS.uk, { print_search: 'Пошук', print_count: 'Кількість: {n}' });
+Object.assign(STRINGS.en, { print_search: 'Search', print_count: 'Count: {n}' });
