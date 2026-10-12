@@ -2047,6 +2047,33 @@ await test('Hinweise zum Fahrzeug: „gültig bis“ (optional) – danach nicht
   tb = await tlOf('Gilt bis nächste Woche'); eq(tb.map((x) => x.note_event).sort().join(), 'add,archive', 'archiviert vor dem Ablaufdatum: kein Ablauf');
 });
 
+await test('Wiederherstellungs-Probe mit vollem Datenbestand: jede gesicherte Tabelle zeilen- und feldgleich (inkl. Hinweise „gültig bis“/Archiv, Dubletten, Lager-Umlagerung/Bestellvermerk)', async () => {
+  const b = await owner.get('/api/admin/backup'); eq(b.status, 200);
+  const j = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
+  const notes = j.data.vehicle_notes || [];
+  ok(notes.some((n) => n.valid_until) && notes.some((n) => n.archived_at), 'Sicherung enthält Hinweise mit gültig bis und archivierte');
+  const { restoreInto } = await import('../scripts/sicherung-probe.mjs');
+  const { ensureSchema } = await import('../src/worker.js');
+  const fresh = makeEnv(); await ensureSchema(fresh);
+  const rr = restoreInto(fresh.DB.db, j);
+  eq(rr.tables.filter((x) => !x.ok).map((x) => `${x.table} ${x.restored}/${x.expected}`).join(', '), '', 'alle Tabellen vollständig'); eq(rr.foreign_key_errors, 0);
+  const norm = (rows) => rows.map((r) => JSON.stringify(Object.keys(r).sort().map((k) => [k, r[k]]))).sort();
+  const diff = [];
+  for (const [table, rows] of Object.entries(j.data)) {
+    if (table === '_migrations') continue;
+    // Spalten der Datenbank (abgeleitete Felder der Sicherung wie users.has_password zählen nicht)
+    const cols = (await fresh.DB.prepare(`SELECT name FROM pragma_table_info(?)`).bind(table).all()).results.map((c) => c.name).filter((c) => !/^password_/.test(c));
+    const back = (await fresh.DB.prepare(`SELECT * FROM ${table}`).all()).results.map((r) => Object.fromEntries(cols.map((k) => [k, r[k] ?? null])));
+    const exp = rows.map((r) => Object.fromEntries(cols.map((k) => [k, r[k] ?? null])));
+    const live = (await env.DB.prepare(`SELECT * FROM ${table}`).all()).results.map((r) => Object.fromEntries(cols.map((k) => [k, r[k] ?? null])));
+    // settings: ohne Schlüssel gesichert; audit_log: der Export protokolliert sich selbst nach der Momentaufnahme
+    if (!['settings', 'audit_log'].includes(table) && JSON.stringify(norm(live)) !== JSON.stringify(norm(exp))) diff.push(table + ' (Sicherung ≠ Datenbank)');
+    if (JSON.stringify(norm(back)) !== JSON.stringify(norm(exp))) { diff.push(table); if (process.env.DBG) { const a = norm(back), e = norm(exp); console.log(a.filter((x) => !e.includes(x)).slice(0, 2), e.filter((x) => !a.includes(x)).slice(0, 2)); } }
+  }
+  eq(diff.join(', '), '', 'Inhalte nach Wiederherstellung identisch');
+  ok(Object.keys(j.data).length >= 20, 'viele Tabellen geprüft');
+});
+
 await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:grid/flex aus (Such-/Lagerfilter)', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');

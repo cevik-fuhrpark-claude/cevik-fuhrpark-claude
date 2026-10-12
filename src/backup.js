@@ -61,8 +61,9 @@ export async function exportBackup(env, user) {
     }
   }
   for (const t of TABLES) counts[t] = data[t].length;
-  data.users = (await env.DB.prepare(`SELECT id, username, display_name, role, environment, workshop_site, employee_number, language, active, created_by, created_at, updated_at,
-    CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_password FROM users`).all()).results;
+  // Benutzer: alle Spalten laut Schema außer Passwort-Hash/-Salz (neue Spalten wie push_muted, home_site kommen automatisch mit)
+  const userCols = TABLE_COLUMNS.users.filter((c) => !/^password_/.test(c));
+  data.users = (await env.DB.prepare(`SELECT ${userCols.join(', ')}, CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_password FROM users`).all()).results;
   counts.users = data.users.length;
   data.settings = (await env.DB.prepare(`SELECT key, value, updated_at FROM settings WHERE key NOT LIKE '%private%' AND key NOT LIKE '%secret%' AND key NOT LIKE '%token%'`).all()).results;
   counts.settings = data.settings.length;
