@@ -4,6 +4,7 @@
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { csvCell } from './maintenance.js';
+import { siteSelection } from './reports.js';
 
 export const CLAIM_STATUS = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 export const OPEN_STATUS = ['gemeldet', 'in_pruefung'];
@@ -103,7 +104,7 @@ export async function claimOverview(env, user, envName, query = {}) {
   const rate = rv !== undefined && rv !== null && rv !== '' && Number.isFinite(Number(rv)) ? Number(rv) : null;
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
-  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate,
+  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate, v.site AS vehicle_site,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS not_actual,
@@ -113,7 +114,9 @@ export async function claimOverview(env, user, envName, query = {}) {
     FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE ic.environment=? ORDER BY ic.reported_on DESC`).bind(envName).all()).results;
   const today = berlinDate();
   const r2 = (x) => Math.round(x * 100) / 100;
-  let list = rows.map((r) => {
+  // Filter „Fahrzeug-Standort“ vor den Zählern (Standort laut Fahrzeugstamm)
+  const sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
+  let list = rows.filter((r) => !sel.site || sel.match(r.vehicle_site)).map((r) => {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
     const workNet = r.covered ? 0 : rate === null ? (r.hours ? null : 0) : r.hours * rate;
     const complete = workNet !== null && (r.covered ? true : r.not_actual === 0);
@@ -126,7 +129,7 @@ export async function claimOverview(env, user, envName, query = {}) {
   for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; }
   if (filter === 'offen') list = list.filter((c) => c.open); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
   const reimb = list.filter((c) => c.reimbursed_net !== null);
-  return { today, filter, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: reimb.length ? r2(reimb.reduce((s, c) => s + c.reimbursed_net, 0)) : null };
+  return { today, filter, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: reimb.length ? r2(reimb.reduce((s, c) => s + c.reimbursed_net, 0)) : null };
 }
 
 export function claimsCsv(ov) {

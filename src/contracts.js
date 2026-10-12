@@ -5,6 +5,7 @@
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell } from './maintenance.js';
+import { siteSelection } from './reports.js';
 
 export const CONTRACT_KINDS = ['leasing', 'miete', 'finanzierung', 'versicherung', 'wartung', 'sonstiges'];
 export const KIND_DE = { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' };
@@ -157,13 +158,15 @@ export async function contractOverview(env, user, query = {}) {
   const filter = ['aktiv', 'aktion', 'beendet', 'alle'].includes(query.filter) ? query.filter : 'aktiv';
   const kind = CONTRACT_KINDS.includes(query.kind) ? query.kind : null;
   const [rows, settingsRows, latestKm] = await Promise.all([
-    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id ORDER BY v.plate, c.kind`).all(),
+    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.site AS vehicle_site FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id ORDER BY v.plate, c.kind`).all(),
     env.DB.prepare(`SELECT key, value FROM settings WHERE key='contract_warn_days'`).all(),
     latestKmByVehicle(env),
   ]);
   const settings = new Map(settingsRows.results.map((r) => [r.key, r.value]));
   const today = berlinDate(); const w = warnDaysOf(settings);
-  let list = rows.results.map((c) => ({ ...c, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
+  // Filter „Fahrzeug-Standort“ (Standort laut Fahrzeugstamm, Schreibweisen zusammengefasst) – vor den Zählern, damit diese zum Standort passen
+  const sel = siteSelection(rows.results.map((r) => ({ site: r.vehicle_site })), query.site);
+  let list = rows.results.filter((c) => !sel.site || sel.match(c.vehicle_site)).map((c) => ({ ...c, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
   for (const c of list) { if (c.ended_on) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
   if (kind) list = list.filter((c) => c.kind === kind);
@@ -174,7 +177,7 @@ export async function contractOverview(env, user, query = {}) {
   // Summe der Monatsraten nur über aktive Verträge mit hinterlegter Rate (fehlende Rate = unbewertet, nie 0 €)
   const active = list.filter((c) => !c.ended_on);
   const rated = active.filter((c) => c.monthly_rate_net !== null);
-  return { today, warn_days: w, filter, kind, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
+  return { today, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
 }
 
 const ST_DE = { handeln: 'handeln', hinweis: 'Hinweis', ok: 'in Ordnung', beendet: 'beendet' };
@@ -203,7 +206,7 @@ export function contractsIcs(ov) {
     if (c.end_date && c.end_date >= ov.today) ev.push({ uid: `contract-${c.id}-end`, date: c.end_date, summary: `Vertragsende: ${label}`,
       description: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären; danach Vertrag in der Fahrzeugakte beenden.', alarmDays: ov.warn_days });
   }
-  return icsCalendar('Fuhrpark Verträge', ev.sort((a, b) => a.date.localeCompare(b.date)));
+  return icsCalendar(`Fuhrpark Verträge${ov.site ? ' – ' + (ov.site === 'ohne' ? 'ohne Standort' : ov.site) : ''}`, ev.sort((a, b) => a.date.localeCompare(b.date)));
 }
 
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag

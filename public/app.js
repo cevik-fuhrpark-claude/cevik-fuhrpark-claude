@@ -740,16 +740,19 @@ function claimSection(cl, contracts, files = []) {
 }
 async function viewClaims() {
   const f = S.clFilter || 'offen';
-  const r = await api('GET', `/api/claims?filter=${f}`);
+  const cs = vsDef('claimSite') || ''; const csq = cs ? '&site=' + encodeURIComponent(cs) : '';
+  const r = await api('GET', `/api/claims?filter=${f}${csq}`);
   const tabs = ['offen', 'alle', 'reguliert', 'abgelehnt'];
   let html = `<h1>${esc(t('claims'))}</h1>${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(x === 'offen' ? t('claim_f_open') : x === 'alle' ? t('filter_all') : t('cls_' + x))} (${r.counts[x] || 0})</button>`).join('')}</div>
+    ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     ${r.reimbursed_sum_net !== null ? `<section class="panel"><dl class="kv"><dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd></dl></section>` : ''}
     <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(t('claim_days_open').replace('{n}', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button></div>`;
   render(html, 'more');
   $$('[data-clf]').forEach((b) => (b.onclick = () => { S.clFilter = b.dataset.clf; viewClaims(); }));
-  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}`), `fuhrpark-versicherungsfaelle_${r.today}.csv`); } catch (err) { toast(err.message, true); } };
+  const cls = $('#clsite'); if (cls) cls.onchange = () => { S.claimSite = cls.value; viewClaims(); };
+  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}`), `fuhrpark-versicherungsfaelle_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 const wsName = (code) => (S.meta.workshops.find((w) => w.code === code) || {}).name || code || '–';
@@ -1218,11 +1221,13 @@ function bindCtSection(id, reload) {
 }
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
-  const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}`);
+  const cts = vsDef('ctSite') || ''; const sq = cts ? '&site=' + encodeURIComponent(cts) : '';
+  const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}${sq}`);
   render(`<h1>${esc(t('ct_title'))}</h1>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
-    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
     <div class="actions noprint" style="margin-top:0"><select id="ctk" aria-label="${esc(t('ct_kind'))}" style="max-width:260px"><option value="">${esc(t('ct_all_kinds'))}</option>${CT_KINDS.map((x) => `<option value="${x}"${k === x ? ' selected' : ''}>${esc(t('ck_' + x))}</option>`).join('')}</select></div>
+    ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('ctsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     ${f !== 'beendet' ? `<p>${esc(t('ct_rate_sum'))}: <b>${eur(r.monthly_rate_sum_net)}</b>${r.unrated ? ` <span class="small muted">· ${r.unrated} ${esc(t('ct_unrated'))}</span>` : ''}</p>` : ''}
     <div class="list">${r.contracts.length ? r.contracts.map((c) => `<a class="row ${c.status.overall === 'handeln' ? 'p-kritisch' : c.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}<span class="title">${esc(t('ck_' + c.kind))} · ${esc(c.partner)}</span>${ctChip(c.status)}<span class="sub" style="white-space:normal">${ctLines(c).slice(0, -1).join(' · ').replace(/<br>/g, ' · ')}${c.file_id ? ` · 📎 ${esc(t('ct_doc_linked'))}` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="ctcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="ctics" title="${esc(t('ct_ics_hint'))}">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="ctprt">${esc(t('print'))}</button></div>
@@ -1230,6 +1235,7 @@ async function viewContracts() {
       <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,text/csv" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };
+  const ctsEl = $('#ctsite'); if (ctsEl) ctsEl.onchange = () => { S.ctSite = ctsEl.value; viewContracts(); };
   $('#ctprt').onclick = () => window.print();
   const inp = $('#ctimp');
   inp.onchange = async () => {
@@ -1247,8 +1253,8 @@ async function viewContracts() {
     };
     try { show(await api('POST', '/api/contracts/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
-  $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}`), `fuhrpark-vertraege_${r.today}.ics`); } catch (err) { toast(err.message, true); } };
-  $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}`), `fuhrpark-vertraege_${r.today}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.ics`); } catch (err) { toast(err.message, true); } };
+  $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 async function renderTires(id, el) {
@@ -1425,6 +1431,8 @@ async function viewFine(id) {
 
 // Standortauswahl (Standort laut Fahrzeugstamm; Server liefert options in häufigster Schreibweise, 'ohne' = ohne Standort)
 // Filter „Fahrzeug-Standort“: in dieser Sitzung gewählter Wert (auch „Alle“ = ''), sonst der Standard-Standort aus „Mein Konto“
+// Standort als Teil eines Dateinamens (Umlaute bleiben, sonst Bindestrich)
+function fnPart(x) { return String(x).replace(/[^\wÄÖÜäöüß-]+/g, '-'); }
 function vsDef(k) { return S[k] !== undefined ? S[k] : (S.me && S.me.role !== 'driver' && S.me.home_site) || ''; }
 function siteSelect(id, name, options, cur, label = t('site'), allLabel = t('all')) {
   return `<label for="${id}">${esc(label)}</label><select id="${id}"${name ? ` name="${name}"` : ''}><option value="">${esc(allLabel)}</option>${[...new Set([...(options || []), ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('')}</select>`;
@@ -2152,7 +2160,7 @@ async function viewDefects() {
   const dsel = $('#dsite'); if (dsel) dsel.onchange = () => { S.defSite = dsel.value; viewDefects(); };
   $('#dprt').onclick = () => window.print();
   // CSV im Browser (Beschriftungen in der App-Sprache), Dateiname mit Zeitraum, Kontrollart und Standort
-  const dn = (part) => `fuhrpark-maengel-${part}_${r.environment}_${days}t${kind ? '_' + kind : ''}${r.site ? '_' + r.site.replace(/[^\wÄÖÜäöüß-]+/g, '-') : ''}_${bDate()}.csv`;
+  const dn = (part) => `fuhrpark-maengel-${part}_${r.environment}_${days}t${kind ? '_' + kind : ''}${r.site ? '_' + fnPart(r.site) : ''}_${bDate()}.csv`;
   const dd = (iso) => fmtD(iso);
   const ci = $('#dcsvi'); if (ci) ci.onclick = () => download(new Blob([defectItemsCsv(r, t, checkLabel, dd)], { type: 'text/csv;charset=utf-8' }), dn('pruefpunkte'));
   const cv = $('#dcsvv'); if (cv) cv.onclick = () => download(new Blob([defectVehiclesCsv(r, t, dd)], { type: 'text/csv;charset=utf-8' }), dn('fahrzeuge'));

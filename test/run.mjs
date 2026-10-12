@@ -1743,7 +1743,7 @@ await test('Mein Standard-Standort: speichern/leeren, nur Anzeige (keine Rechte)
   // App: alle Standortfilter lesen die Voreinstellung über vsDef (keine direkte Verwendung mehr)
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite']) {
+  for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'ctSite', 'claimSite']) {
     const direct = [...src.matchAll(new RegExp('S\\.' + k + '\\b(?! = )', 'g'))].length;
     eq(direct, 0, k + ': nur über vsDef gelesen');
     ok(src.includes(`vsDef('${k}')`), k + ' nutzt vsDef');
@@ -3151,7 +3151,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
   { const ce = d.events.find((e) => e.action === 'create'); const pl = typeof ce.payload === 'string' ? JSON.parse(ce.payload) : ce.payload;
     eq(pl.origin, 'wartung', 'Anlage-Ereignis nennt Herkunft Wartung (Verknüpfung im selben Batch)'); }
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 28), 'Auftrag aus Prüftermin ≤ 28 Abfragen');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 26), 'Auftrag aus Prüftermin ≤ 26 Abfragen');
   { // Anfragedaten können Herkunft/Verknüpfung nicht setzen
     const fake = await users.fleet.post('/api/cases', { vehicle_id: rule.data.vehicle_id || V1, description: 'Test Herkunft fremd gesetzt', origin: 'wartung', maintenance_rule_id: rule.data.id, request_key: rk() });
     eq(fake.status, 201); const fc = (await users.fleet.get(`/api/cases/${fake.data.id}`)).data;
@@ -3238,7 +3238,8 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.priority, 'kritisch'); eq(o.data.driveability, 'nicht_fahrbereit');
   const c = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
   eq(c.case.origin, 'wartung'); eq(c.case.maintenance_event_id, evBad.id, 'Verknüpfung gespeichert');
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 30), 'Auftrag aus Prüfung ≤ 30 Abfragen');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 28), 'Auftrag aus Prüfung ≤ 28 Abfragen');
+  console.log('     Auftrag aus Prüftermin/Prüfung max. ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').map((w) => w.n)) + ' / ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').map((w) => w.n)) + ' Abfragen');
   ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
   eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
   eq(c.case.safety_lock, 1, 'verkehrsunsicher → gesperrt'); eq(c.case.safety_lock_reason, 'Meldung Fuhrparkleitung: nicht fahrbereit (ungeprüft)', 'Sperrgrund nennt die Rolle');
@@ -3576,6 +3577,44 @@ await test('Datenqualität: Filter Fahrzeug-Standort (nur fahrzeugbezogene Befun
   eq((await users.fleet.get('/api/admin/data-quality?site=Nirgendwo')).data.items.length, 0, 'unbekannt leer');
   const i = await anon.req('GET', '/api/integration/v1/data-quality?environment=test&site=Nirgendwo', undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(i.status, 200); eq(i.data.items.length, 0, 'Integrations-API gefiltert');
+});
+
+await test('Verträge und Versicherungsfälle: Filter Fahrzeug-Standort (Zähler, CSV, Kalender, Schreibweise, Rechte)', async () => {
+  // eigener Vertrag an einem Fahrzeug mit Standort in abweichender Schreibweise
+  const VS = 'VIN:WDB96340310777771';
+  eq((await owner.post('/api/vehicles', { plate: 'SF-XY 71', vin: 'WDB96340310777771', site: 'SÜDHAFEN' })).status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VS}/contracts`, { kind: 'miete', partner: 'Standort-Test', start_date: '2026-01-01', end_date: '2030-01-31', evidence: 'ST-1' })).status, 201);
+  const all = (await users.fleet.get('/api/contracts?filter=alle')).data;
+  eq(all.site, null); ok(all.site_options.includes('SÜDHAFEN'), 'Standort in Auswahl');
+  let sum = 0;
+  for (const o of all.site_options) {
+    const r = (await users.fleet.get(`/api/contracts?filter=alle&site=${encodeURIComponent(o)}`)).data;
+    eq(r.site, o); eq(r.counts.alle, r.contracts.length, o + ': Zähler = Liste');
+    ok(r.contracts.every((c) => (o === 'ohne' ? !c.vehicle_site : String(c.vehicle_site).toLowerCase() === o.toLowerCase())), o + ': nur Fahrzeuge des Standorts');
+    sum += r.contracts.length;
+  }
+  eq(sum, all.contracts.length, 'Summe über Standorte = alle Verträge');
+  const sh = (await users.fleet.get('/api/contracts?filter=alle&site=s%C3%BCdhafen')).data;
+  eq(sh.site, 'SÜDHAFEN', 'Schreibweise egal (Umlaut)'); eq(sh.contracts.length, 1);
+  eq((await users.fleet.get('/api/contracts?site=Nirgendwo')).data.contracts.length, 0, 'unbekannt leer');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/contracts?format=csv&filter=alle&site=S%C3%BCdhafen')).data);
+  eq(csv.trim().split('\r\n').length, 2, 'CSV: Kopf + 1 Zeile'); ok(csv.includes('SF-XY 71'));
+  const ics = new TextDecoder().decode((await users.fleet.get('/api/contracts?format=ics&site=S%C3%BCdhafen')).data);
+  ok(ics.includes('Fuhrpark Verträge – SÜDHAFEN'), 'Kalendername mit Standort'); ok(!ics.includes('KD-XY'), 'nur Standort');
+  eq((await users.ws.get('/api/contracts?site=S%C3%BCdhafen')).status, 403, 'Werkstatt weiterhin nicht');
+  // Versicherungsfälle (Umgebung Test)
+  const ca = (await users.fleet.get('/api/claims?filter=alle')).data;
+  eq(ca.site, null); ok(Array.isArray(ca.site_options));
+  let csum = 0;
+  for (const o of ca.site_options) {
+    const r = (await users.fleet.get(`/api/claims?filter=alle&site=${encodeURIComponent(o)}`)).data;
+    eq(r.site, o); eq(r.counts.alle, r.claims.length, o + ': Zähler = Liste'); csum += r.claims.length;
+  }
+  eq(csum, ca.claims.length, 'Summe über Standorte = alle Fälle');
+  eq((await users.fleet.get('/api/claims?filter=alle&site=Nirgendwo')).data.claims.length, 0);
+  const ccsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle&site=Nirgendwo')).data);
+  eq(ccsv.trim().split('\r\n').length, 1, 'CSV nur Kopf');
+  eq((await users.ws.get('/api/claims?site=x')).status, 403);
 });
 
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {

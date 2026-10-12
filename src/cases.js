@@ -388,16 +388,21 @@ export function allowedActions(user, c, access) {
 // und gibt sie direkt an die gewählte Werkstatt frei (normaler Befehl approve_repair, inkl. Hinweis an die Werkstatt). Geplanter Prüftermin
 // (ab heute) wird als Werkstatttermin übernommen. Je Regel und Umgebung höchstens ein offener Auftrag. Erledigt wird die Prüfung weiterhin
 // in der Fahrzeugakte mit Nachweis – der Auftrag ersetzt keinen Prüfnachweis.
+// Werkstatt-Code für die Sammelabfrage (Prüfung auf Pflicht/Länge erfolgt danach wie bisher mit str())
+const wsParam = (body) => String(body.workshop_site ?? '').trim().slice(0, 20);
 export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body = {}) {
   if (!isManager(user)) throw forbidden();
-  const rule = await env.DB.prepare(`SELECT m.id, m.kind, m.vehicle_id, m.planned_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?`).bind(ruleId).first();
+  // Prüftermin, offener Auftrag und Werkstatt in einer Abfrage (Abfragebudget je Aufruf); Prüfreihenfolge der Fehler unverändert
+  const rule = await env.DB.prepare(`SELECT m.id, m.kind, m.vehicle_id, m.planned_date, v.active, v.plate,
+      (SELECT json_object('id', c.id, 'case_no', c.case_no) FROM cases c WHERE c.maintenance_rule_id=m.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
+      (SELECT code FROM workshops WHERE code=?3 AND active=1) AS ws_code
+    FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?1`).bind(ruleId, envName, wsParam(body)).first();
   if (!rule) throw notFound('Prüftermin nicht gefunden.');
   if (!rule.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
-  const open = await env.DB.prepare(`SELECT id, case_no FROM cases WHERE maintenance_rule_id=? AND environment=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1`).bind(rule.id, envName).first();
+  const open = rule.open_case ? JSON.parse(rule.open_case) : null;
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
-  const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
-  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
   const note = str(body.note, { max: 1000 });
   const description = `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
@@ -420,15 +425,17 @@ const ROLE_DE = { owner: 'Inhaber', fleet: 'Fuhrparkleitung', workshop: 'Werksta
 const DEFECT_RES = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
 export async function orderFromInspectionDefect(env, ctx, user, envName, eventId, body = {}) {
   if (!isManager(user)) throw forbidden();
-  const ev = await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result, e.evidence, e.vehicle_id, v.active, v.plate FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id WHERE e.id=?`).bind(eventId).first();
+  const ev = await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result, e.evidence, e.vehicle_id, v.active, v.plate,
+      (SELECT json_object('id', c.id, 'case_no', c.case_no) FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
+      (SELECT code FROM workshops WHERE code=?3 AND active=1) AS ws_code
+    FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id WHERE e.id=?1`).bind(eventId, envName, wsParam(body)).first();
   if (!ev) throw notFound('Prüfung nicht gefunden.');
   if (!DEFECT_RES[ev.result]) throw bad('validation', 'Die Prüfung hat kein Ergebnis mit erheblichen/gefährlichen Mängeln.');
   if (!ev.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
-  const open = await env.DB.prepare(`SELECT id, case_no FROM cases WHERE maintenance_event_id=? AND environment=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1`).bind(ev.id, envName).first();
+  const open = ev.open_case ? JSON.parse(ev.open_case) : null;
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
-  const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
-  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (!ev.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || (ev.result === 'erhebliche_maengel' ? 'mittel' : 'kritisch'), PRIORITIES, 'Priorität');
   const driveability = oneOf(body.driveability || (ev.result === 'verkehrsunsicher' ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
   const note = str(body.note, { max: 1000 });

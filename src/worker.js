@@ -209,7 +209,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/contracts' && m === 'GET') {
     const ov = await contracts.contractOverview(env, user, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter });
+      await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter, site: ov.site });
       return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.csv"` } });
     }
     if (url.searchParams.get('format') === 'ics') return new Response(contracts.contractsIcs(ov), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.ics"` } });
@@ -423,7 +423,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/claims' && m === 'GET') {
     const ov = await claims.claimOverview(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter });
+      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter, site: ov.site });
       return new Response(claims.claimsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${ov.today}.csv"` } });
     }
     return json(ov);
