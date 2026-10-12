@@ -840,6 +840,6 @@ export function translateImportReason(lang, reason) {
   return translateValidation(lang, reason) || reason;
 }
 // [CLAUDE] Belegte km-Fälligkeit (Migration 0040)
-Object.assign(STRINGS.de, { due_km_doc: 'Fällig bei km (laut Beleg, optional)' });
-Object.assign(STRINGS.uk, { due_km_doc: 'Строк за пробігом, км (згідно з документом, необов’язково)' });
-Object.assign(STRINGS.en, { due_km_doc: 'Due at km (as documented, optional)' });
+Object.assign(STRINGS.de, { due_km_doc: 'Fällig bei km (laut Beleg, optional)', ws_due_km_suffix: 'oder nach km fällig' });
+Object.assign(STRINGS.uk, { due_km_doc: 'Строк за пробігом, км (згідно з документом, необов’язково)', ws_due_km_suffix: 'або строк за пробігом' });
+Object.assign(STRINGS.en, { due_km_doc: 'Due at km (as documented, optional)', ws_due_km_suffix: 'or due by mileage' });
