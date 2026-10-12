@@ -612,3 +612,6 @@ Object.assign(STRINGS.en, { audit_csv: 'Export log as CSV', audit_csv_hint: 'Per
 Object.assign(STRINGS.de, { export_truncated: 'Die Datei enthält nur die jüngsten {n} Einträge – bitte mit Filter oder Standort eingrenzen.' });
 Object.assign(STRINGS.uk, { export_truncated: 'Файл містить лише останні {n} записів – звузьте вибірку фільтром або локацією.' });
 Object.assign(STRINGS.en, { export_truncated: 'The file contains only the latest {n} entries – please narrow it down with filters or site.' });
+Object.assign(STRINGS.de, { audit_area: 'Bereich' });
+Object.assign(STRINGS.uk, { audit_area: 'Розділ' });
+Object.assign(STRINGS.en, { audit_area: 'Area' });
