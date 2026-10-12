@@ -435,8 +435,8 @@ async function handleApi(request, env, ctx, url) {
         : null;
       return new Response(cases.casesCsv(rows, maint.csvCell, fmt, claimMap), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"` } });
     }
-    const meta = {}; const list = await cases.listCases(env, user, envName, q, user.role === 'driver' ? null : meta);
-    return json({ cases: list, site: meta.site ?? null, site_options: meta.site_options || [], ...(user.role === 'driver' ? {} : { stale_days: meta.stale_days ?? null }) });
+    const meta = {}; const list = await cases.listCases(env, user, envName, q, meta);
+    return json({ cases: list, site: meta.site ?? null, site_options: meta.site_options || [], ...(user.role === 'driver' ? {} : { stale_days: meta.stale_days ?? null }), truncated: !!meta.truncated, limit: Math.min(Number(q.limit) || 200, 500) });
   }
   if (path === '/api/work-suggestions' && m === 'GET') return json(await cases.workSuggestions(env, user, envName));
   if (path === '/api/part-suggestions' && m === 'GET') return json(await cases.partSuggestions(env, user, envName));

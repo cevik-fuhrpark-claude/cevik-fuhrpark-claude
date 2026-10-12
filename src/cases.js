@@ -134,7 +134,9 @@ export async function listCases(env, user, envName, query, meta = null) {
     WHERE ${where.join(' AND ')}
     ORDER BY CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END,
       CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, c.updated_at DESC
-    LIMIT ?`).bind(...args, limit).all()).results;
+    LIMIT ?`).bind(...args, limit + 1).all()).results;
+  // eine Zeile mehr gelesen: zeigt an, dass die Liste begrenzt ist (Oberfläche: „weitere laden“ bzw. Suche/CSV)
+  if (rows.length > limit) { rows.length = limit; if (meta) meta.truncated = true; }
   return rows.map((r) => ({ ...hideDriverName(user, shapeCase(r, user), 'reporter_name', 'reporter_role'), access: caseAccess(user, r) }));
 }
 

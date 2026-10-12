@@ -2198,6 +2198,15 @@ await test('Wiedervorlage je Vorgang: nur Leitung setzt, Datum ab heute, Agent a
   const cx = (await users.fleet.get(`/api/cases/${cid}`)).data.case; await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: cx.version, note: 'Testdaten' });
 });
 
+await test('Vorgangsliste: Begrenzung wird angezeigt (truncated), limit bis 500', async () => {
+  const all = (await users.fleet.get('/api/cases?status=&limit=500')).data; ok(all.cases.length >= 3, 'genug Vorgänge');
+  const n = all.cases.length;
+  let r = (await users.fleet.get(`/api/cases?status=&limit=${n - 1}`)).data; eq(r.cases.length, n - 1); eq(r.truncated, true, 'begrenzt'); eq(r.limit, n - 1);
+  r = (await users.fleet.get(`/api/cases?status=&limit=${n}`)).data; eq(r.cases.length, n); eq(r.truncated, false, 'genau passend: nicht begrenzt');
+  eq((await users.fleet.get('/api/cases?status=&limit=9999')).data.limit, 500, 'höchstens 500');
+  eq(typeof (await users.driver.get('/api/cases')).data.truncated, 'boolean', 'auch für Fahrer');
+});
+
 await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung, Bußgeld-Verlauf/-Dateien, Fahrer je Fahrzeug, Push-Geräte, letzter Agent-Lauf, Master-Eingang', async () => {
   for (const [t, sql, n] of [
     ['inspections', "SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1", 1],
