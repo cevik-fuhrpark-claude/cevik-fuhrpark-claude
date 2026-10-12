@@ -12,6 +12,7 @@ run_smoke() {
   env "$@" python3 scripts/ui-rauchtest.py > /tmp/cfp-rauch.log 2>&1 || { tail -30 /tmp/cfp-rauch.log; fail "Rauchtest $*"; }
   tail -1 /tmp/cfp-rauch.log
 }
+step "UI-Leerlauf (geteiltes Tablet)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-leerlauf.py > /tmp/cfp-leerlauf.log 2>&1 || { tail -20 /tmp/cfp-leerlauf.log; fail "Leerlauftest"; }; tail -1 /tmp/cfp-leerlauf.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark

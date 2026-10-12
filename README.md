@@ -23,7 +23,7 @@ Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Te
 
 ```bash
 npm test                                            # 179 Abnahmetests (Node ≥ 22)
-sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
+sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
 Deployment: Push auf `main` → Cloudflare Workers Builds (`node scripts/build-schema.mjs`, `npx wrangler deploy`).

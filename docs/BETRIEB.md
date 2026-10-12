@@ -109,6 +109,12 @@ Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (267 Ansichten, inkl. 
 fehlende Überschriften, waagrechtes Scrollen sowie (Handybreite) Felder ohne Beschriftung, Bilder ohne Alternativtext und Schaltflächen/Links ohne Text. Braucht Python-Playwright, nur lokale synthetische Daten. Stand 10.10.2026: 0 Auffälligkeiten.
 Mit `CFP_LANG=uk` bzw. `CFP_LANG=en` laufen alle Konten in dieser Sprache; zusätzlich werden sichtbare deutsche Texte (Umlaute) gemeldet.
 
+## UI-Test geteiltes Tablet (Leerlauf-Abmeldung)
+`sh scripts/restart-dev.sh && python3 scripts/ui-leerlauf.py` – mit simulierter Uhr in 390/820/1366 px: Bedienung hält die Sitzung wach,
+Vorwarnleiste 60 s vor Ablauf mit „Angemeldet bleiben“, ohne Bedienung Anmeldeseite und beendete Server-Sitzung; nach Abmelden sieht die
+nächste Person im selben Tab keine Suche/Sortierung der vorherigen. Teil von `scripts/pruefen.sh`. Zweiter lokaler Server neben einer laufenden
+Gesamtprüfung: `PORT=8788 node --experimental-sqlite scripts/dev-server.mjs` und `CFP_URL=http://localhost:8788`.
+
 ## UI-Ablauftest (Kernprozess per Klick)
 `sh scripts/restart-dev.sh && python3 scripts/ui-ablauf.py [Screenshot-Ordner]` – spielt den Kernprozess in Handybreite über die Oberfläche durch:
 Fahrer meldet → Fuhrparkleitung gibt Reparatur frei → Werkstatt übernimmt, repariert, erfasst Zeit → Kontrolle nach Reparatur im Formular
