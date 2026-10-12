@@ -2639,6 +2639,13 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   const csv = await users.fleet.get('/api/fines?format=csv');
   eq(csv.status, 200); const t = dec(csv);
   ok(t.startsWith('\ufeffVorgang;Art;Behörde') && !t.includes(';Fahrer') && t.includes('35,5'), 'ohne Fahrer, Komma-Betrag');
+  // Tatzeit wie im Schreiben (Berliner Ortszeit), nicht als UTC-Zeitstempel
+  const fz = (await users.fleet.get('/api/fines')).data.fines.find((f) => f.reference === 'AZ-ICS-1');
+  const { berlinDateTime } = await import('../src/util.js');
+  const { maintenanceHistoryCsv } = await import('../src/maintenance.js');
+  ok(maintenanceHistoryCsv({ rows: [{ plate: 'X', vehicle_id: 'VIN:X', kind: 'HU', done_date: '2026-10-12', created_at: '2026-10-12T22:30:00.000Z' }] }).includes(';2026-10-13;'), 'Prüfhistorie: „Erfasst am“ als Berliner Tag');
+  ok(t.includes(';' + berlinDateTime(fz.offense_at) + ';') && !t.includes(fz.offense_at), 'Tatzeit Berlin: ' + berlinDateTime(fz.offense_at));
+  eq(berlinDateTime('2026-07-01T06:30:00.000Z'), '01.07.2026 08:30', 'Sommerzeit'); eq(berlinDateTime('2026-12-01T06:30:00.000Z'), '01.12.2026 07:30', 'Winterzeit');
   ok(dec(await users.fleet.get('/api/fines?format=csv&with_driver=1')).split('\r\n')[0].endsWith(';Fahrer'), 'mit Fahrer auf Wunsch');
   eq((await users.driver.get('/api/fines?format=csv')).status, 403);
   const ics = dec(await users.fleet.get('/api/fines?format=ics'));
