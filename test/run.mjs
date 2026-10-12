@@ -2207,6 +2207,20 @@ await test('Vorgangsliste: Begrenzung wird angezeigt (truncated), limit bis 500'
   eq(typeof (await users.driver.get('/api/cases')).data.truncated, 'boolean', 'auch für Fahrer');
 });
 
+await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem updated_at (after_id, has_more, next), ohne Parameter wie bisher', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const get = async (q) => (await anon.req('GET', '/api/integration/v1/cases?environment=test' + q, undefined, H)).data;
+  const all = await get(''); eq(all.has_more, false); const n = all.cases.length; ok(n >= 5, 'genug Testvorgänge');
+  const saved = env.DB.db.prepare(`SELECT id, updated_at FROM cases WHERE environment='test'`).all();
+  const T = '2020-01-01T00:00:00.000Z';
+  env.DB.db.prepare(`UPDATE cases SET updated_at=? WHERE environment='test'`).run(T); // Sammeländerung: alle gleich
+  const seen = []; let q = '&since=2019-12-31T00:00:00.000Z&limit=2'; let pages = 0;
+  for (;;) { const r = await get(q); seen.push(...r.cases.map((c) => c.id)); pages++; if (!r.has_more) break; q = `&since=${encodeURIComponent(r.next.since)}&after_id=${encodeURIComponent(r.next.after_id)}&limit=2`; if (pages > n) break; }
+  eq(seen.length, n, 'alle Vorgänge genau einmal'); eq(new Set(seen).size, n); eq(pages, Math.ceil(n / 2));
+  eq((await get(`&since=${T}`)).cases.length, 0, 'ohne after_id: strikt nach since (wie bisher)');
+  const st = env.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?'); for (const r of saved) st.run(r.updated_at, r.id);
+});
+
 await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung, Bußgeld-Verlauf/-Dateien, Fahrer je Fahrzeug, Push-Geräte, letzter Agent-Lauf, Master-Eingang', async () => {
   for (const [t, sql, n] of [
     ['inspections', "SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1", 1],
@@ -2215,7 +2229,8 @@ await test('Weitere Index-Pfade (0036): Kontrollen je Vorgang, Push-Wiederholung
     ['fine_events', 'SELECT * FROM fine_events WHERE fine_id=? ORDER BY created_at', 1], ['files/fine', 'SELECT id FROM files WHERE fine_id=?', 1],
     ['driver_vehicles', 'SELECT user_id FROM driver_vehicles WHERE vehicle_id=?', 1], ['push_subscriptions', 'SELECT id FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL', 1],
     ['agent_runs/env', 'SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1', 1], ['agent_runs', 'SELECT environment, error FROM agent_runs ORDER BY started_at DESC LIMIT 2', 0],
-    ['master_inbox', 'UPDATE master_inbox SET processed_at=? WHERE environment=? AND processed_at IS NULL', 2]]) {
+    ['master_inbox', 'UPDATE master_inbox SET processed_at=? WHERE environment=? AND processed_at IS NULL', 2],
+    ['cases/updated (0038)', 'SELECT c.id FROM cases c WHERE c.environment=?1 AND (c.updated_at > ?2 OR (?3 IS NOT NULL AND c.updated_at = ?2 AND c.id > ?3)) ORDER BY c.updated_at, c.id LIMIT ?4', 4]]) {
     const plan = env.DB.db.prepare('EXPLAIN QUERY PLAN ' + sql).all(...Array(n).fill('x')).map((r) => r.detail).join(' | ');
     ok(/USING (COVERING )?INDEX/.test(plan) && !/^SCAN [a-z_]+$/m.test(plan.split(' | ').join('\n')), `${t}: ${plan}`);
   }
