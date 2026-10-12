@@ -2387,8 +2387,11 @@ async function viewFleetTires() {
   render(`<h1>${esc(t('fleet_tires'))}</h1>${helpLink('tires')}<p class="small muted">${esc(t('tires_rule').replace('{min}', String(r.legal_min_tread_mm).replace('.', ',')).replace('{warn}', r.warn_tread_mm === null ? '–' : String(r.warn_tread_mm).replace('.', ',')))}</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="panel">${siteSelect('tsite', '', r.site_options, r.site)}</div>` : ''}
     <div class="actions" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
+    <div class="actions"><button type="button" class="btn secondary" id="trcsv">${esc(t('export_csv'))}</button></div>
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(String(x.min_tread_mm).replace('.', ',')) + ' mm'}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span><span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${x.measured_positions} ${esc(t('positions'))}`, x.below_min && `${x.below_min}× < ${String(r.legal_min_tread_mm).replace('.', ',')} mm`, x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
+  // CSV: alle Fahrzeuge (gewählter Standort) mit Status und Reifengrößen je Achse – unabhängig vom Filterknopf
+  $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-reifen_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const ts = $('#tsite'); if (ts) ts.onchange = () => { S.tireSite = ts.value; viewFleetTires(); };
 }
 

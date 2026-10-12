@@ -734,6 +734,23 @@ await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitun
   eq(r2.measured_positions, 0); eq(r2.status, 'unbekannt'); ok(ft.data.totals.never_measured >= 1);
   eq((await users.driver.get('/api/tires/fleet')).status, 403);
   eq((await users.prodFleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1).measured_positions, 0, 'Umgebungen getrennt');
+  // CSV (Reifendienst): alle Fahrzeuge unabhängig vom Filter, Dezimalkomma, Größen je Achse mit Prüfstatus
+  const cr = await users.fleet.get('/api/tires/fleet?format=csv');
+  eq(cr.status, 200); ok(/fuhrpark-reifen_test_\d{4}-\d{2}-\d{2}\.csv/.test(cr.headers.get('content-disposition')), 'Dateiname mit Umgebung');
+  const ctx = new TextDecoder('utf-8', { ignoreBOM: true }).decode(cr.data);
+  ok(ctx.startsWith('\ufeffKennzeichen;Fahrzeugart;Standort;Status;Kleinste Profiltiefe (mm)'), 'Kopf + BOM');
+  const cl = ctx.trim().split('\r\n');
+  eq(cl.length - 1, ft.data.rows.length, 'eine Zeile je Fahrzeug');
+  const hd = cl[0].split(';'); const v1 = cl.find((l) => l.startsWith(r1.plate + ';')).split(';');
+  eq(v1[hd.indexOf('Status')], 'unter gesetzlichem Minimum'); eq(v1[hd.indexOf('Kleinste Profiltiefe (mm)')], '1,2'); eq(v1[hd.indexOf('Unter 1,6 mm')], '1');
+  eq(v1[hd.indexOf('Größe Lenkachse')], '315/70 R22.5', 'geprüfte Größe');
+  const specs1 = (await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.specs;
+  eq(v1[hd.indexOf('Größen geprüft')], specs1.every((x) => x.verified) ? 'ja' : 'teilweise', 'Prüfstatus der Größen');
+  const v2 = cl.find((l) => l.startsWith(r2.plate + ';')).split(';');
+  eq(v2[hd.indexOf('Status')], 'kein Messwert'); eq(v2[hd.indexOf('Kleinste Profiltiefe (mm)')], ''); eq(v2[hd.indexOf('Alter (Tage)')], '');
+  eq((await users.driver.get('/api/tires/fleet?format=csv')).status, 403);
+  // Auswertung ist kein Quellimport: der Reifengrößen-Import nimmt die Datei nicht an (keine FIN-Spalte)
+  eq((await owner.req('POST', '/api/tires/import?dry_run=1', ctx, { 'content-type': 'text/csv' })).status, 400, 'nicht versehentlich importierbar');
   // Standortfilter laut Fahrzeugstamm (Schreibweise egal); Summe über Standorte = alle
   const old = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V1).first()).site;
   try {

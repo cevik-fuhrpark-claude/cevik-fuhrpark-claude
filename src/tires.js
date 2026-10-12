@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName, berlinDate } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -198,3 +198,28 @@ export async function fleetTires(env, user, envName, query = {}) {
   return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, stale_days: staleDays, site: sel.site, site_options: sel.options, rows,
     totals: { vehicles: rows.length, below_min: count((r) => r.status === 'unter_minimum'), warn: count((r) => r.status === 'warnung'), never_measured: count((r) => r.measured_positions === 0), stale: count((r) => r.stale && r.measured_positions > 0) } };
 }
+
+// Reifen-Übersicht als CSV (Excel DE): je Fahrzeug Status aus gemessenen Werten und hinterlegte Reifengrößen je Achse
+// (z. B. für den Reifendienst). Größen „ungeprüft“ = Quellwert, nicht am Fahrzeug bestätigt. Spalten „Größe …“ statt „Reifen …“:
+// die Datei ist eine Auswertung und soll nicht versehentlich den Reifengrößen-Import (Quelldatei) überschreiben.
+const TS_DE = { unter_minimum: 'unter gesetzlichem Minimum', warnung: 'unter Warnschwelle', ok: 'in Ordnung', unbekannt: 'kein Messwert' };
+export async function fleetTiresCsv(env, ov, csvCell) {
+  const specs = (await env.DB.prepare('SELECT vehicle_id, axle, size, verified FROM tire_specs WHERE vehicle_id IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(ov.rows.map((r) => r.vehicle_id))).all()).results;
+  const byV = new Map();
+  for (const s of specs) { if (!byV.has(s.vehicle_id)) byV.set(s.vehicle_id, {}); byV.get(s.vehicle_id)[s.axle] = s; }
+  const mm = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const head = ['Kennzeichen', 'Fahrzeugart', 'Standort', 'Status', 'Kleinste Profiltiefe (mm)', 'Gemessene Positionen', `Unter ${mm(ov.legal_min_tread_mm)} mm`, 'Unter Warnschwelle',
+    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} Tage`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft'];
+  const lines = [head.join(';')];
+  for (const r of ov.rows) {
+    const sp = byV.get(r.vehicle_id) || {};
+    const list = Object.values(sp);
+    const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
+    lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
+      r.oldest_measure_at ? berlinDate(r.oldest_measure_at) : '', r.oldest_age_days ?? '', r.measured_positions ? (r.stale ? 'ja' : 'nein') : '',
+      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked].join(';'));
+  }
+  return '﻿' + lines.join('\r\n') + '\r\n';
+}
+const AXLE_DE = { lenkachse: 'Lenkachse', liftachse: 'Liftachse', antriebsachse: 'Antriebsachse', anhaenger: 'Anhänger' };

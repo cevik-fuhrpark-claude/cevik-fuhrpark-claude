@@ -271,7 +271,11 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires$/)) && m === 'GET') return json(await tires.tireOverview(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/events$/)) && m === 'POST') return json(await tires.addTireEvent(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
-  if (path === '/api/tires/fleet' && m === 'GET') return json(await tires.fleetTires(env, user, envName, Object.fromEntries(url.searchParams)));
+  if (path === '/api/tires/fleet' && m === 'GET') {
+    const ov = await tires.fleetTires(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') return new Response(await tires.fleetTiresCsv(env, ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-reifen_${envName}_${berlinDate()}${ov.site ? '_' + ov.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    return json(ov);
+  }
   if (path === '/api/tires/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
