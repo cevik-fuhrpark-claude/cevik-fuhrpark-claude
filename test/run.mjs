@@ -994,7 +994,9 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   eq(tv('de', 'Stunden: ungültige Zahl.'), null, 'Deutsch: Server-Text');
   eq(tv('uk', 'Ganz anderer Text.'), null); eq(tv('uk', 'constructor'), null); eq(tv('uk', undefined), null);
   const src = fs.readdirSync(new URL('../src/', import.meta.url)).map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
-  for (const fixed of ['Jeder Mangel braucht eine kurze Beschreibung.', 'Fehlerbeschreibung ist zu kurz.', 'Fahrzeug unbekannt.']) {
+  const { VALIDATION_FIXED } = await import('../public/i18n.js');
+  ok(VALIDATION_FIXED.length >= 18, 'feste Texte');
+  for (const fixed of VALIDATION_FIXED) {
     ok(src.includes(`'${fixed}'`), `Servertext noch vorhanden: ${fixed}`); ok(tv('uk', fixed) && tv('en', fixed), `übersetzt: ${fixed}`);
   }
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
