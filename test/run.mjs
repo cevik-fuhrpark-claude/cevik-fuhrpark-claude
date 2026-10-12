@@ -843,8 +843,12 @@ await test('Fahrerermittlung: Kandidat aus Fahrzeugzuordnung, Bestätigung nur m
   eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung', evidence: 'Fahrzeugzuordnung + Tourenplan KW 41' } })).status, 200);
   eq((await users.driver.get(`/api/fines/${FINE}`)).status, 404, 'Noch nicht informiert');
   eq((await users.driver.get('/api/fines')).data.fines.length, 0);
+  eq((await users.driver.patch('/api/me', { language: 'uk' })).status, 200, 'Fahrer arbeitet auf Ukrainisch');
   eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'inform_driver' })).status, 200);
+  eq((await users.driver.patch('/api/me', { language: 'de' })).status, 200);
   const n = await users.driver.get('/api/notifications');
+  { const raw = await env.DB.prepare("SELECT title FROM notifications WHERE user_id=? AND kind='fine'").bind(users.driver.id).first(); eq(raw.title, 'Новий лист від органу влади', 'Push-Titel in der Sprache des Fahrers'); }
+  ok(n.data.notifications.some((x) => x.kind === 'fine' && x.title === 'Neues Schreiben einer Behörde'), 'Hinweisliste zeigt den Titel in der aktuellen Sprache');
   ok(n.data.notifications.some((x) => x.kind === 'fine' && !x.body.includes('Dortmund')), 'Push ohne Details');
   const dv = await users.driver.get(`/api/fines/${FINE}`);
   eq(dv.status, 200); ok(!('driver_evidence' in dv.data.fine), 'Fahrer sieht keine internen Nachweise');
@@ -4167,10 +4171,14 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   const old = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-60), evidence: 'GM 1', result: 'verkehrsunsicher' });
   eq(old.status, 200); eq(old.data.notified, 0, 'alter Bericht: kein Alarm');
   eq((await notes(users.dispatch)).length, 0);
+  eq((await users.dispatch.patch('/api/me', { language: 'en' })).status, 200);
   const cur = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'GM 2', result: 'verkehrsunsicher' });
+  eq((await users.dispatch.patch('/api/me', { language: 'de' })).status, 200);
+  { const raw = await env.DB.prepare("SELECT title, body FROM notifications WHERE user_id=? AND kind='inspection_defect' AND body LIKE '%GM-XY 82%'").bind(users.dispatch.id).first();
+    ok(raw && raw.title === 'Inspection with dangerous defects' && /unroadworthy – do not schedule/.test(raw.body), 'Dispo auf Englisch: ' + JSON.stringify(raw)); }
   eq(cur.status, 200); ok(cur.data.notified >= 1, 'Alarm versendet');
   const nd = await notes(users.dispatch);
-  ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('verkehrsunsicher') && nd[0].body.includes('nicht einplanen'), 'Dispo dringend informiert: ' + JSON.stringify(nd[0] || null));
+  ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('unroadworthy') && nd[0].title === 'Prüfung mit gefährlichen Mängeln', 'Dispo dringend informiert: ' + JSON.stringify(nd[0] || null));
   eq((await notes(users.fleet)).length, 0, 'Erfassende Person nicht');
   eq((await notes(users.driver)).length, 0, 'Fahrer nicht');
   eq((await notes(users.ws)).length, 0, 'Werkstatt nicht');

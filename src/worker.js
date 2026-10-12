@@ -7,7 +7,7 @@ import * as veh from './vehicles.js';
 import * as vnotes from './vnotes.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle } from './notify.js';
+import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle, nt } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -515,7 +515,7 @@ async function handleApi(request, env, ctx, url) {
     return json({ devices: (await env.DB.prepare('SELECT id, device_label, created_at, last_success_at FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL').bind(user.id).all()).results });
   }
   if (path === '/api/push/test' && m === 'POST') {
-    const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: 'Testbenachrichtigung', body: 'Push funktioniert auf diesem Gerät.', eventKey: `test:${user.id}:${Date.now()}` });
+    const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}` });
     const row = await env.DB.prepare('SELECT push_status, push_last_error FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
     return json({ created: n, push_status: row?.push_status, error: row?.push_last_error });
   }

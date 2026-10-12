@@ -6,7 +6,7 @@ import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRA
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
 import { sha256Hex, berlinDateTime, hideDriverName } from './util.js';
 import { vehicleContracts } from './contracts.js';
-import { notifyUsers } from './notify.js';
+import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, KM_RATE_WINDOW_DAYS } from './maintenance.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -473,11 +473,12 @@ async function notifyInspectionDefect(env, ctx, envName, user, { vehicleId, kind
   const v = await env.DB.prepare(`SELECT v.plate, (SELECT COUNT(*) FROM maintenance_events e WHERE e.vehicle_id=v.id AND e.kind=? AND e.done_date > ?) AS newer
     FROM vehicles v WHERE v.id=?`).bind(kind, date, vehicleId).first();
   if (!v || v.newer) return 0;
-  const ids = (await env.DB.prepare(`SELECT id FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN ('owner','fleet','dispatch') AND id<>?`)
-    .bind(envName, user.id).all()).results.map((x) => x.id);
-  if (!ids.length) return 0;
-  return notifyUsers(env, ctx, envName, ids, { kind: 'inspection_defect', title: 'Prüfung mit gefährlichen Mängeln', urgent: true,
-    body: `${v.plate} · ${kind} ${date}: ${URGENT_RESULTS[result]}${result === 'verkehrsunsicher' ? ' – nicht einplanen' : ''}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `inspdef:${key}:${date}:${result}` });
+  const us = (await env.DB.prepare(`SELECT id, language FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN ('owner','fleet','dispatch') AND id<>?`)
+    .bind(envName, user.id).all()).results;
+  if (!us.length) return 0;
+  const text = (l) => ({ title: nt(l, 'inspection_defect'), body: `${v.plate} · ${kind} ${date}: ${nt(l, 'res_' + result)}${result === 'verkehrsunsicher' ? ' – ' + nt(l, 'do_not_plan') : ''}${envName === 'test' ? ' · TEST' : ''}` });
+  return notifyUsers(env, ctx, envName, us.map((x) => x.id), { kind: 'inspection_defect', ...text('de'), urgent: true, localize: text, langOf: new Map(us.map((x) => [x.id, x.language])),
+    eventKey: `inspdef:${key}:${date}:${result}` });
 }
 
 export const INSPECTION_RESULTS = ['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];

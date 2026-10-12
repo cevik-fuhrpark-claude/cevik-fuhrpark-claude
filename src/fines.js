@@ -1,6 +1,6 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, isCalendarDate } from './util.js';
-import { notifyUsers } from './notify.js';
+import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
 export const FINE_KINDS = ['anhoerung', 'zeugenfragebogen', 'bussgeldbescheid', 'verwarnung', 'maut', 'sonstiges'];
@@ -191,7 +191,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   ]);
   if (action === 'inform_driver') {
     // Sperrbildschirm: nur Vorgangsnummer; Details erst nach Anmeldung
-    await notifyUsers(env, ctx, envName, [f.driver_id], { kind: 'fine', title: 'Neues Schreiben einer Behörde', body: `${f.fine_no}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `fine:${id}:inform:${f.version}`, urgent: false });
+    // Fahrer arbeiten oft auf Ukrainisch/Englisch: Titel in ihrer Sprache
+    const du = await env.DB.prepare('SELECT language FROM users WHERE id=?').bind(f.driver_id).first();
+    await notifyUsers(env, ctx, envName, [f.driver_id], { kind: 'fine', title: nt(du && du.language, 'fine'), body: `${f.fine_no}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `fine:${id}:inform:${f.version}`, urgent: false });
   }
   return { ok: true, version: f.version + 1 };
 }
