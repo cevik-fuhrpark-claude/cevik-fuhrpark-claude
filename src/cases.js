@@ -4,6 +4,7 @@ import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
+import { siteSelection } from './reports.js';
 
 export const PRIORITIES = ['niedrig', 'mittel', 'kritisch'];
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
@@ -48,9 +49,24 @@ export function caseAccess(user, c) {
   }
 }
 
-export async function listCases(env, user, envName, query) {
+// meta (optional): erhält site/site_options für den Filter „Fahrzeug-Standort“ (vsite) – nicht für Fahrer
+export async function listCases(env, user, envName, query, meta = null) {
   const where = ['c.environment = ?'];
   const args = [envName];
+  // Fahrzeug-Standort laut Fahrzeugstamm (Schreibweise egal): passende Schreibweisen in JS bestimmen (Umlaute, wie Berichte),
+  // dann exakt per IN filtern – so greift das LIMIT erst nach dem Filter
+  if (user.role !== 'driver' && (meta || query.vsite)) {
+    const vs = (await env.DB.prepare('SELECT site FROM vehicles').all()).results;
+    const sel = siteSelection(vs, query.vsite);
+    if (meta) { meta.site = sel.site; meta.site_options = sel.options; }
+    if (sel.site) {
+      if (sel.site === 'ohne') where.push(`(v.site IS NULL OR trim(v.site) = '')`);
+      else {
+        const raws = [...new Set(vs.map((v) => v.site).filter((x) => x && sel.match(x)))];
+        if (raws.length) { where.push(`v.site IN (${raws.map(() => '?').join(',')})`); args.push(...raws); } else where.push('0');
+      }
+    }
+  }
   if (user.role === 'driver') { where.push('c.reporter_id = ?'); args.push(user.id); }
   if (user.role === 'workshop') {
     where.push(`((c.workshop_site = ? AND c.status NOT IN ('gemeldet','abgelehnt')) OR (c.status='gemeldet' AND (c.suggested_workshop_site = ? OR c.workshop_site = ?)) OR c.reporter_id = ?)`);

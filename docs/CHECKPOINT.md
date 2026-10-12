@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 150 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 151 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -398,6 +398,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 12.10.2026 (Sitzung ab 06:15 UTC): **Werkstattplan: Filter „Fahrzeug-Standort“** (`GET /api/workshop/plan?vsite=`, auch Kalender; Antwort `vehicle_site`, `vehicle_sites[]`; wirkt auf Aufträge und Prüftermine, auch für die Werkstattrolle, kombinierbar mit dem Werkstattfilter). Neu `case_load` (geplante Aufträge je Tag/Werkstatt aus allen Fahrzeugen): der Terminvorschlag zählt auch bei Fahrzeugfilter alle Aufträge der Werkstatt. Test: Summe über Standorte = alle, Schreibweise egal, unbekannt leer, Auslastung unabhängig vom Filter. Hilfe DE/UK/EN, API-Doku.
 - 12.10.2026: **Bußgelder: Filter „Fahrzeug-Standort“** (`GET /api/fines?site=` für Liste, CSV, Kalender; Antwort `site`, `site_options[]`, je Schreiben `vehicle_site`; Schreiben ohne erkanntes Fahrzeug unter „ohne Standort“; Fahrer ohne Auswahl; Lesezugriff weiterhin ohne Fahrerdaten). Test: Summe = alle, kombinierbar mit `status=open`, CSV/Kalender gefiltert. Hilfe DE/UK/EN, API-Doku.
 - 12.10.2026: **Mängelstatistik als CSV** (Knöpfe „CSV je Prüfpunkt“ / „CSV je Fahrzeug“, im Browser erzeugt wie Datenqualität: Prüfpunkt-Bezeichnungen in der App-Sprache, BOM/Semikolon/Formelschutz; Dateiname mit Zeitraum, Kontrollart, Standort; je Fahrzeug alle kontrollierten Fahrzeuge). Test: Zeilen und Summen = Bericht, Beschriftungen DE/UK/EN. Download per Playwright geprüft. 150 Tests, `pruefen.sh --schnell` grün, 390/820/1366 px ohne waagrechtes Scrollen.
+- 12.10.2026: **Vorgänge: Filter „Fahrzeug-Standort“** (`GET /api/cases?vsite=`, Liste und CSV; Antwort `site`, `site_options[]`, nicht für Fahrer): passende Schreibweisen werden in JS bestimmt (Umlaute wie „MÜNCHEN/München“ – SQLite-`lower()` kann das nicht) und per `IN` vor dem LIMIT gefiltert; eine zusätzliche Abfrage nur bei Bedarf. Auswahl in „Vorgänge“ unter der Suche, kombinierbar mit Suche/Status/CSV. Test: Summe = alle, Umlaute, vor LIMIT, Werkstatt in eigener Sicht, Fahrer wirkungslos. Hilfe Fuhrparkleitung DE/UK/EN, API-Doku. 151 Tests grün, 390/820/1366 px geprüft.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

@@ -1690,6 +1690,40 @@ await test('Vorgangsliste als CSV: gleiche Filter/Rechte wie die Liste, Excel-ta
   ok((await owner.get('/api/admin/audit?action=reports.cases')).data.entries.length >= 1, 'protokolliert');
 });
 
+await test('Vorgänge: Filter Fahrzeug-Standort (Schreibweise/Umlaute egal, Summe = alle, vor dem LIMIT), CSV gefiltert, Fahrer ohne Auswahl', async () => {
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  const old = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V1).first()).site;
+  const other = await env.DB.prepare('SELECT id, site FROM vehicles WHERE id<>? AND id NOT IN (SELECT vehicle_id FROM cases) LIMIT 1').bind(V1).first();
+  try {
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(' MÜNCHEN ', V1).run();
+    await env.DB.prepare(`UPDATE vehicles SET site='München' WHERE id=?`).bind(other.id).run();
+    const all = (await users.fleet.get('/api/cases?limit=500')).data;
+    eq(all.site, null);
+    ok(all.site_options.includes('München'), 'Auswahl mit häufigster Schreibweise: ' + all.site_options.join(','));
+    const m = (await users.fleet.get('/api/cases?limit=500&vsite=münchen')).data;
+    eq(m.site, 'München');
+    const v1n = all.cases.filter((c) => c.vehicle_id === V1).length; ok(v1n > 0, 'V1 hat Vorgänge');
+    eq(m.cases.length, v1n, 'Umlaut-Schreibweise egal (JS statt SQLite-lower)'); ok(m.cases.every((c) => c.vehicle_id === V1));
+    const ids = (l) => l.map((c) => c.id).sort();
+    const union = [];
+    for (const o of all.site_options) union.push(...(await users.fleet.get(`/api/cases?limit=500&vsite=${encodeURIComponent(o)}`)).data.cases.map((c) => c.id));
+    eq(JSON.stringify(union.sort()), JSON.stringify(ids(all.cases)), 'Summe über alle Fahrzeug-Standorte = alle');
+    eq((await users.fleet.get('/api/cases?vsite=Nirgendwo')).data.cases.length, 0, 'unbekannter Standort leer');
+    eq((await users.fleet.get('/api/cases?vsite=M%C3%BCnchen&limit=1')).data.cases[0].vehicle_id, V1, 'Filter vor LIMIT');
+    const mo = (await users.fleet.get('/api/cases?vsite=M%C3%BCnchen&status=open&limit=500')).data.cases;
+    ok(mo.every((c) => c.vehicle_id === V1 && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)), 'kombinierbar mit Status');
+    const csv = dec(await users.fleet.get('/api/cases?format=csv&vsite=M%C3%BCnchen'));
+    eq(csv.trim().split('\r\n').length - 1, v1n, 'CSV gefiltert');
+    const ws = (await users.ws.get('/api/cases?limit=500&vsite=M%C3%BCnchen')).data.cases;
+    ok(ws.every((c) => c.vehicle_id === V1), 'Werkstatt: Filter innerhalb der eigenen Sicht');
+    const dr = (await users.driver.get('/api/cases?vsite=Nirgendwo')).data;
+    ok(dr.cases.length > 0 && dr.site === null && dr.site_options.length === 0, 'Fahrer: Filter wirkungslos, keine Auswahl');
+  } finally {
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, V1).run();
+    await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(other.site, other.id).run();
+  }
+});
+
 await test('Push-Einstellungen je Person: nicht dringende Arten stummschaltbar, dringende immer, In-App bleibt', async () => {
   const p0 = await users.driver.get('/api/me/notify-prefs');
   eq(p0.status, 200); ok(p0.data.kinds.includes('received') && !p0.data.kinds.includes('safety_lock'), 'Sicherheitsereignisse nicht stummschaltbar');
