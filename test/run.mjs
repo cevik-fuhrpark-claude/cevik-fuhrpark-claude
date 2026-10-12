@@ -3418,6 +3418,16 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   // Fuhrparkagent: Reserve für neue Prüfungen halten (Backlog 74; Ausgangslisten seit 12.10. in einer Abfrage)
   const agentMax = Math.max(...QSTAT.perRequest.slice(1).filter((w) => w.path === '/api/agent/run').map((w) => w.n));
   ok(agentMax <= 40, `Fuhrparkagent braucht ${agentMax} Abfragen (Ziel ≤ 40, Reserve für neue Prüfungen)`);
+  // Cron am Ende der Suite (alle Testdaten vorhanden): Agent + Push-Wiederholung bzw. Bereinigung in einem Aufruf
+  const cronN = [];
+  for (const cron of ['*/15 * * * *', '7,37 * * * *']) {
+    const p = []; const q0 = QSTAT.n;
+    await worker.scheduled({ cron }, env, { waitUntil: (x) => p.push(x) });
+    await Promise.all(p);
+    cronN.push(QSTAT.n - q0);
+    ok(QSTAT.n - q0 <= 50, `Cron ${cron}: ${QSTAT.n - q0} Abfragen > 50`);
+  }
+  console.log(`     Cron mit vollem Datenbestand: Betrieb ${cronN[0]}, Test ${cronN[1]} Abfragen`);
 });
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
