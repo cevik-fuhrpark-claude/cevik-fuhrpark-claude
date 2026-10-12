@@ -9,6 +9,8 @@ export const CHECKS = {
   duplicate_plate: 'fehler', vin_similar: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
   missing_site: 'luecke', no_km: 'luecke', km_stale: 'hinweis', missing_inspection: 'luecke',
   km_inspection_rejected: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
+  // fest gekoppeltes Gespann (Stammliste), aber Lkw und Anhänger mit unterschiedlichem Standort – Stammdaten prüfen
+  coupled_site_mismatch: 'hinweis',
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
   // Fahrzeugverträge
@@ -119,7 +121,10 @@ export async function dataQuality(env, user, envName, query = {}) {
       if (v.trailer_plate) {
         const t = (byPlate.get(normPlate(v.trailer_plate)) || []).find((x) => x.kind === 'anhaenger');
         if (!t) add('trailer_unknown', v, v.trailer_plate);
-        else pulledBy.set(t.id, [...(pulledBy.get(t.id) || []), v.plate]);
+        else {
+          pulledBy.set(t.id, [...(pulledBy.get(t.id) || []), v.plate]);
+          if (v.site && t.site && v.site.trim().toLowerCase() !== t.site.trim().toLowerCase()) add('coupled_site_mismatch', v, `${v.site} · ${t.plate}: ${t.site}`);
+        }
       }
     }
     const required = v.kind === 'anhaenger' ? REQUIRED_KINDS_TRAILER : REQUIRED_KINDS;

@@ -1397,6 +1397,11 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   // Lkw mit Anhängerkennzeichen, das es nicht gibt; zweites Fahrzeug mit gleichem Kennzeichen (anders geschrieben)
   eq((await owner.post('/api/vehicles', { plate: 'DQ-XY 1', vin: 'WDB96340310999001', trailer_plate: 'DQ-AH 404' })).status, 201);
   eq((await owner.post('/api/vehicles', { plate: 'DQ XY1', vin: 'WDB96340310999002', site: 'Dortmund' })).status, 201);
+  // fest gekoppeltes Gespann mit unterschiedlichem bzw. gleichem Standort
+  for (const [plate, vin, site, extra] of [['DQ-GS 1', 'WDB96340310999003', 'Dortmund', { trailer_plate: 'DQ-GA 1' }], ['DQ-GA 1', 'WDB96340310999004', 'Hamm', { kind: 'anhaenger' }],
+    ['DQ-GS 2', 'WDB96340310999005', 'Dortmund', { trailer_plate: 'DQ-GA 2' }], ['DQ-GA 2', 'WDB96340310999006', 'dortmund ', { kind: 'anhaenger' }]]) {
+    eq((await owner.post('/api/vehicles', { plate, vin, site, ...extra })).status, 201);
+  }
   // Prüfung mit erheblichen Mängeln ohne Vorgang danach → Hinweis; nach einer Meldung zum Fahrzeug nicht mehr
   const dqDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 3 * 86400000));
   const dqRule = await users.fleet.post('/api/vehicles/VIN:WDB96340310999002/maintenance', { kind: 'UVV', last_done_date: '2025-01-10', interval_months: 12, evidence: 'DQ-Test' });
@@ -1407,6 +1412,9 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   const has = (check, vin) => r.data.items.some((i) => i.check === check && (!vin || i.vehicle_id === 'VIN:' + vin));
   ok(has('duplicate_plate', 'WDB96340310999001') && has('duplicate_plate', 'WDB96340310999002'), 'gleiches Kennzeichen');
   ok(has('trailer_unknown', 'WDB96340310999001'), 'unbekannter Anhänger');
+  const gs = r.data.items.filter((i) => i.check === 'coupled_site_mismatch');
+  ok(gs.some((i) => i.vehicle_id === 'VIN:WDB96340310999003' && i.detail === 'Dortmund · DQ-GA 1: Hamm' && i.severity === 'hinweis'), 'Gespann an verschiedenen Standorten');
+  ok(!gs.some((i) => i.vehicle_id === 'VIN:WDB96340310999005'), 'gleicher Standort (Groß-/Kleinschreibung egal): kein Hinweis');
   ok(has('missing_site', 'WDB96340310999001') && !has('missing_site', 'WDB96340310999002'), 'fehlender Standort');
   ok(has('no_km', 'WDB96340310999001'), 'kein km-Stand');
   ok(r.data.items.find((i) => i.check === 'inspection_defects_no_case' && i.vehicle_id === 'VIN:WDB96340310999002')?.detail.includes('erhebliche Mängel'), 'Mängel ohne Vorgang');

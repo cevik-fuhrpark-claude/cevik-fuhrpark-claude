@@ -324,6 +324,7 @@ with sync_playwright() as p:
             r = pg.evaluate(JS, ['PATCH', '/api/me', {'language': LANG}])
             if r['s'] != 200:
                 sys.exit(f'Sprache {LANG}: {r}')
+            pg.reload()  # Sprache gilt nach dem Neuladen (Seiten wurden für die Vorbereitung ggf. schon geladen)
     for role, pg in pages.items():
         errors = []
         pg.on('pageerror', lambda e, errors=errors: errors.append(str(e)))
