@@ -4896,6 +4896,10 @@ await test('Prüftermin-Import nach km: „Fällig bei km“ laut Beleg, „km b
   // überfällig nach km → Gesamtstatus
   eq((await users.fleet.post(`${vp}/odometer`, { km: 189000, measured_on: day(0) })).status, 201);
   eq((await row('Ölwechsel')).status, 'ueberfaellig');
+  // Agent: km-Befund auch für belegte Fälligkeit
+  const k = (await env.DB.prepare(`SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind='Ölwechsel'`).bind(V).first()).id;
+  await owner.post('/api/agent/run', {});
+  ok(await env.DB.prepare(`SELECT 1 FROM agent_findings WHERE subject_key=? AND finding_code='MAINTENANCE_OVERDUE'`).bind(`${k}|km`).first(), 'Agent-Befund km überfällig');
   // Formular: belegte km-Fälligkeit; HU/SP abgewiesen; Erledigen setzt den Beleg zurück
   eq((await users.fleet.post(`${vp}/maintenance`, { kind: 'HU', due_km: 250000, evidence: 'Test' })).status, 400);
   eq((await users.fleet.post(`${vp}/maintenance`, { kind: 'Bremsen', due_km: 150000, last_done_km: 160000, evidence: 'Test' })).status, 400);
@@ -4904,14 +4908,17 @@ await test('Prüftermin-Import nach km: „Fällig bei km“ laut Beleg, „km b
   eq((await row('Bremsen')).next_due_km, 200000);
   eq((await users.fleet.post(`/api/maintenance/${b.data.id}/complete`, { done_date: day(0), evidence: 'Bremsen erneuert Test', done_km: 189000 })).status, 200);
   const br = await row('Bremsen'); eq(br.due_km, null); eq(br.next_due_km, null, 'ohne Intervall nach Erledigung keine km-Fälligkeit');
-  // Agent: km-Befund auch für belegte Fälligkeit
-  const k = (await env.DB.prepare(`SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind='Ölwechsel'`).bind(V).first()).id;
-  await owner.post('/api/agent/run', {});
-  ok(await env.DB.prepare(`SELECT 1 FROM agent_findings WHERE subject_key=? AND finding_code='MAINTENANCE_OVERDUE'`).bind(`${k}|km`).first(), 'Agent-Befund km überfällig');
+  // Erledigen mit neuer km-Fälligkeit laut Beleg (Serviceanzeige); unplausibel/HU abgewiesen
+  const oel = (await row('Ölwechsel')).id;
+  eq((await users.fleet.post(`/api/maintenance/${oel}/complete`, { done_date: day(0), evidence: 'Ölwechsel Test', done_km: 189000, next_due_km: 180000 })).status, 400);
+  eq((await users.fleet.post(`/api/maintenance/${oel}/complete`, { done_date: day(0), evidence: 'Ölwechsel Test', done_km: 189000, next_due_km: '215.000' })).status, 200);
+  let oe = await row('Ölwechsel'); eq(oe.due_km, 215000); eq(oe.next_due_km, 215000, 'Beleg vor km + Intervall (219000)'); eq(oe.status, 'ok');
+  eq((await users.fleet.post(`/api/maintenance/${oel}/complete`, { done_date: day(0), evidence: 'Ölwechsel Test 2', done_km: 189000 })).status, 200);
+  oe = await row('Ölwechsel'); eq(oe.due_km, null); eq(oe.next_due_km, 219000, 'ohne Beleg: km + Intervall');
   // Export enthält die km-Spalten (Rundreise)
   const csv = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
   const line = csv.split('\r\n').find((l) => l.startsWith('KM-IMP 1;') && l.includes(';Ölwechsel;')).split(';');
-  eq(line[10], '188000'); eq(line[14], '158000'); eq(line[15], '30000');
+  eq(line[10], '219000'); eq(line[14], '189000'); eq(line[15], '30000');
 });
 
 await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) lassen sich unverändert wieder importieren, Auslesungs-Übersicht wird klar abgewiesen', async () => {

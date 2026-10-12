@@ -515,11 +515,16 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10 });
+  // neue km-Fälligkeit laut Beleg (z. B. Serviceanzeige nach dem Ölwechsel); ohne Angabe gilt „km + Intervall km“
+  let docKm = body.next_due_km ? Math.round(num(body.next_due_km, { min: 1, max: 5000000, field: 'km', grouped: true })) : null;
+  if (husp && docKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
+  if (docKm !== null && km !== null && docKm <= km) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
+  if (docKm !== null && km !== null && r.interval_km && docKm === km + r.interval_km) docKm = null;
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
   const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
   await env.DB.batch([
-    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=NULL, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
-      .bind(date, km, next, evidence, nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
+    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
+      .bind(date, km, docKm, next, evidence, nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
     ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=?').bind(result, ruleId, date)] : []),
   ]);
