@@ -49,9 +49,15 @@ export async function listVehicles(env, user, envName, query = {}) {
     truck_id: pulledBy.get(v.id)?.id || null, truck_plate: pulledBy.get(v.id)?.plate || null,
     availability: v.locked ? 'gesperrt' : v.in_workshop ? 'werkstatt' : v.open_cases ? 'meldung_offen' : 'einsatzbereit_lt_system',
   }));
+  // Gespann (Kopplung laut Stammliste ist fest): Zustand des gekoppelten Fahrzeugs je Zeile – nur Information, ändert availability nicht
+  const byId = new Map(list.map((v) => [v.id, v]));
+  for (const v of list) {
+    const p = byId.get(v.trailer_id || v.truck_id);
+    v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability } : null;
+  }
   if (user.role === 'driver') {
     const assigned = (await env.DB.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)`).bind(user.id, nowIso()).all()).results.map((r) => r.vehicle_id);
-    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability }));
+    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability, coupled: v.coupled }));
     list.sort((a, b) => (b.assigned - a.assigned) || a.plate.localeCompare(b.plate));
   }
   return list;
@@ -320,7 +326,16 @@ export async function myVehicles(env, user, envName) {
   const vs = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.site, v.manufacturer, v.model, v.trailer_plate, d.valid_from FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id
     WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND v.active=1 ORDER BY d.valid_from DESC`).bind(user.id, now).all()).results;
   if (!vs.length) return { vehicles: [] };
-  const ids = JSON.stringify(vs.map((v) => v.id));
+  // Gespann: gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (fest gekoppelt) – deren Sperre betrifft die Fahrt ebenfalls
+  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>''))`).all()).results;
+  const coupledOf = new Map();
+  for (const v of vs) {
+    const p = v.kind === 'anhaenger'
+      ? pool.find((x) => x.kind === 'lkw' && normPlate(x.trailer_plate) === normPlate(v.plate))
+      : v.trailer_plate ? pool.find((x) => x.kind === 'anhaenger' && normPlate(x.plate) === normPlate(v.trailer_plate)) : null;
+    if (p && p.id !== v.id) coupledOf.set(v.id, p);
+  }
+  const ids = JSON.stringify([...new Set([...vs.map((v) => v.id), ...[...coupledOf.values()].map((p) => p.id)])]);
   const [locks, mine, rules, kms] = await Promise.all([
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
@@ -351,6 +366,7 @@ export async function myVehicles(env, user, envName) {
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: kmMap.get(v.id) || null,
+      coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked }))(coupledOf.get(v.id)) : null,
     })),
   };
 }

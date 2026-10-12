@@ -172,6 +172,22 @@ with sync_playwright() as p:
     for r in ('owner', 'fleet'):
         ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho', 'vehicles/qr', f'vehicles/qr/{vid}']
     ROUTES['driver'] += ['drivers', f'new/{vid}', f'v/{vid}', f'check/{vid}']
+    # Gespann: Anhänger RT-AB 102 fest an RT-AB 101 gekoppelt und gesperrt – Fahrer-Startseite, Fahrzeugliste und Scan-Seite zeigen den Zustand
+    tvin = 'WDB96340310123457'
+    api('POST', '/api/vehicles', {'plate': 'RT-AB 102', 'vin': tvin, 'site': 'Dortmund', 'kind': 'anhaenger'})
+    api('POST', '/api/vehicles', {'plate': 'RT-AB 101', 'vin': vin, 'site': 'Dortmund', 'trailer_plate': 'RT-AB 102'})
+    tc = pages['fleet'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': 'VIN:' + tvin, 'description': 'Rauchtest: Anhänger Bremsleitung undicht', 'priority': 'kritisch', 'driveability': 'nicht_fahrbereit', 'request_key': 'rt-gespann'}])
+    if tc['s'] != 201:
+        problems.append(f'Vorbereitung Gespann-Sperre: {tc}')
+    else:
+        pg = pages['driver']; pg.goto(f'{B}/#/'); pg.reload()
+        try:
+            pg.wait_for_selector('section.panel.alert .chip.kritisch', timeout=8000)
+            if 'RT-AB 102' not in pg.inner_text('main'):
+                problems.append('Fahrer-Startseite: gesperrter Anhänger nicht angezeigt')
+        except Exception as e:
+            problems.append(f'Fahrer-Startseite: Gespann-Sperre fehlt ({e.__class__.__name__})')
+        ROUTES['fleet'] += ['vehicles']
     # Eine Meldung, damit Listen nicht leer sind
     cs = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegel locker', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-1'}])
     cid = (cs.get('d') or {}).get('case', {}).get('id') or (cs.get('d') or {}).get('id')

@@ -1360,6 +1360,37 @@ await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte
   // Ausgangszustand für spätere Tests wiederherstellen
   eq((await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id })).status, 201);
 });
+await test('Gespann: Sperre des gekoppelten Anhängers in Fahrzeugliste, „Mein Fahrzeug“ und /v1/availability (nur Information)', async () => {
+  const T = 'VIN:VAK656EBDG1613170'; // Anhänger SZ-YC 5514, laut Stammliste an SZ-YC 5513 (V1) gekoppelt
+  const before = (await users.fleet.get('/api/vehicles')).data.vehicles;
+  const v1Before = before.find((v) => v.id === V1);
+  eq(v1Before.coupled.id, T, 'Lkw kennt Anhänger'); eq(v1Before.coupled.kind, 'anhaenger');
+  eq(before.find((v) => v.id === T).coupled.id, V1, 'Anhänger kennt Zugmaschine');
+  ok(before.filter((v) => !v.trailer_id && !v.truck_id).every((v) => v.coupled === null), 'ohne Kopplung: null');
+  const c = await users.fleet.post('/api/cases', { vehicle_id: T, description: 'Bremsleitung Anhänger undicht (Test Gespann)', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() });
+  eq(c.status, 201);
+  const cs = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case;
+  if (!cs.safety_lock) eq((await users.fleet.post(`/api/cases/${cs.id}/commands`, { action: 'safety_lock', command_id: rk(), expected_version: cs.version, reason: 'Bremse' })).status, 200);
+  const list = (await users.fleet.get('/api/vehicles')).data.vehicles;
+  const v1 = list.find((v) => v.id === V1);
+  eq(v1.coupled.availability, 'gesperrt', 'Lkw zeigt gesperrten Anhänger');
+  eq(v1.availability, v1Before.availability, 'eigene Verfügbarkeit des Lkw unverändert');
+  eq((await users.driver.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1).coupled.availability, 'gesperrt', 'auch für Fahrer');
+  const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
+  eq(mv.coupled.id, T); eq(mv.coupled.plate, 'SZ-YC 5514'); eq(mv.coupled.locked, true, 'Mein Fahrzeug: Anhänger gesperrt');
+  eq(mv.locked, v1Before.availability === 'gesperrt', 'Sperre des Lkw selbst unverändert (eigene Vorgänge)');
+  ok(!mv.known_defects.some((k) => k.case_no === c.data.case_no), 'Anhänger-Mängel nicht als Mängel des Lkw');
+  const av = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(av.status, 200);
+  eq(av.data.vehicles.find((v) => v.id === V1).coupled.availability, 'gesperrt', 'Integrations-API');
+  eq((await anon.req('GET', '/api/integration/v1/availability?environment=production', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === V1).coupled.availability === 'gesperrt', false, 'Betrieb sieht Test-Sperre nicht');
+  // Ausgangszustand: Sperre fachlich aufheben, Meldung ablehnen
+  let cur = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cur.id}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: cur.version, note: 'Testdaten', payload: { confirm: true } })).status, 200);
+  cur = (await users.fleet.get(`/api/cases/${c.data.id}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cur.id}/commands`, { action: 'reject', command_id: rk(), expected_version: cur.version, note: 'Testdaten' })).status, 200);
+  eq((await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1).coupled.locked, false, 'nach Ablehnung nicht mehr gesperrt');
+});
 
 await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhaber/Fuhrparkleitung, ändert nichts', async () => {
   eq((await users.ws.get('/api/admin/data-quality')).status, 403);
