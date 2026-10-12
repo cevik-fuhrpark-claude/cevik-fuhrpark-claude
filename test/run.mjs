@@ -613,6 +613,11 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
   eq((await tel('2026-10-08T06:00:00Z', 400)).data.odometer_written, 0, 'am Folgetag nicht kleiner als der Vortag');
   eq((await tel('2026-10-08T07:00:00Z', 500100)).data.odometer_written, 1, 'Folgetag mit größerem Wert');
   eq((await owner.get('/api/vehicles/VIN:WDB96340310777777')).data.odometer.filter((o) => o.source === 'telematik:webfleet' && o.measured_at < '2026-10-09').length, 2, 'zwei Tage → zwei Zeilen');
+  // Tagesgrenze nach Berliner Zeit: 09.10. 22:30 UTC = 10.10. 00:30 Berlin → derselbe Tag wie 10.10. 08:00 UTC (eine Zeile, jüngster Wert)
+  eq((await tel('2026-10-09T22:30:00Z', 500200)).data.odometer_written, 1);
+  eq((await tel('2026-10-10T08:00:00', 500300)).data.odometer_written, 1, 'ohne Zeitzone = UTC, gleicher Berliner Tag ersetzt');
+  const b10 = (await owner.get('/api/vehicles/VIN:WDB96340310777777')).data.odometer.filter((o) => o.source === 'telematik:webfleet' && o.measured_at > '2026-10-09T12');
+  eq(b10.length, 1, 'ein Tageswert für den Berliner 10.10.'); eq(b10[0].km, 500300); eq(b10[0].measured_at, '2026-10-10T08:00:00.000Z');
   // GPS-Zeit in der Zukunft (Uhrfehler am Gerät) wird verworfen
   const fut = await tel(new Date(Date.now() + 3600000).toISOString(), 500200);
   eq(fut.data.rejected, 1, 'Zukunftszeit verworfen'); eq(fut.data.odometer_written, 0);

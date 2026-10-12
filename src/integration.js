@@ -142,7 +142,9 @@ export async function integrationRouter(request, env, ctx, url) {
       let vehicleId = null; let basis = null;
       if (mapOf.has(ext)) { vehicleId = mapOf.get(ext); basis = 'confirmed_mapping'; }
       else if (vin && vinOf.has(vin)) { vehicleId = vinOf.get(vin); basis = 'vin'; }
-      const gps = it.gps_time && !Number.isNaN(Date.parse(it.gps_time)) ? new Date(it.gps_time).toISOString() : null;
+      // GPS-Zeit ohne Zeitzone wird ausdrücklich als UTC gelesen (vorher abhängig von der Laufzeitumgebung) – Quellen senden mit „Z“/Versatz
+      const gt = typeof it.gps_time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(it.gps_time) ? it.gps_time + 'Z' : it.gps_time;
+      const gps = gt && !Number.isNaN(Date.parse(gt)) ? new Date(gt).toISOString() : null;
       const lat = Number.isFinite(Number(it.lat)) && Math.abs(Number(it.lat)) <= 90 ? Number(it.lat) : null;
       const lon = Number.isFinite(Number(it.lon)) && Math.abs(Number(it.lon)) <= 180 ? Number(it.lon) : null;
       const validPos = lat !== null && lon !== null && !(lat === 0 && lon === 0);
@@ -162,7 +164,8 @@ export async function integrationRouter(request, env, ctx, url) {
         speed: Number.isFinite(Number(it.speed)) ? Number(it.speed) : null, ign: it.ignition === undefined || it.ignition === null ? null : (it.ignition ? 1 : 0) });
       if (km !== null && gps) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
-        const day = gps.slice(0, 10); const key = `${vehicleId}|${day}`; const cur = odo.get(key);
+        // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)
+        const day = berlinDate(gps); const key = `${vehicleId}|${day}`; const cur = odo.get(key);
         if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps });
       }
       res.matched++;
