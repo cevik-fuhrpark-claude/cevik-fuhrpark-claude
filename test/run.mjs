@@ -1493,6 +1493,9 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
   ok(gs.some((i) => i.vehicle_id === 'VIN:WDB96340310999003' && i.detail === 'Dortmund · DQ-GA 1: Hamm' && i.severity === 'hinweis'), 'Gespann an verschiedenen Standorten');
   ok(!gs.some((i) => i.vehicle_id === 'VIN:WDB96340310999005'), 'gleicher Standort (Groß-/Kleinschreibung egal): kein Hinweis');
   ok(has('missing_site', 'WDB96340310999001') && !has('missing_site', 'WDB96340310999002'), 'fehlender Standort');
+  const sp = r.data.items.filter((i) => i.check === 'site_spelling');
+  ok(sp.some((i) => i.vehicle_id === 'VIN:WDB96340310999006' && i.detail === 'dortmund → Dortmund' && i.severity === 'hinweis'), 'abweichende Schreibweise des Standorts');
+  ok(!sp.some((i) => i.vehicle_id === 'VIN:WDB96340310999005' || i.vehicle_id === 'VIN:WDB96340310999004'), 'häufigste Schreibweise bzw. anderer Standort: kein Hinweis');
   ok(has('no_km', 'WDB96340310999001'), 'kein km-Stand');
   ok(r.data.items.find((i) => i.check === 'inspection_defects_no_case' && i.vehicle_id === 'VIN:WDB96340310999002')?.detail.includes('erhebliche Mängel'), 'Mängel ohne Vorgang');
   const dqc = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310999002', description: 'UVV-Mängel beseitigen (DQ-Test)', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() }); eq(dqc.status, 201);

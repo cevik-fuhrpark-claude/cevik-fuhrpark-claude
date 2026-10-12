@@ -1,6 +1,7 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
 import { forbidden, nowIso } from './util.js';
+import { siteKey, siteLabels } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -11,6 +12,8 @@ export const CHECKS = {
   km_inspection_rejected: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
   // fest gekoppeltes Gespann (Stammliste), aber Lkw und Anhänger mit unterschiedlichem Standort – Stammdaten prüfen
   coupled_site_mismatch: 'hinweis',
+  // gleicher Standort in abweichender Schreibweise (Dortmund/DORTMUND) – Auswertungen fassen sie zusammen, Stammdaten vereinheitlichen
+  site_spelling: 'hinweis',
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
   // Fahrzeugverträge
@@ -111,8 +114,10 @@ export async function dataQuality(env, user, envName, query = {}) {
   const lastKm = new Map(kms.results.map((r) => [r.vehicle_id, r.last]));
   const hasRule = new Set(rules.results.map((r) => `${r.vehicle_id}|${r.kind}`));
   const pulledBy = new Map();
+  const siteLabel = siteLabels(vs);
   for (const v of vs) {
     if (!v.site) add('missing_site', v);
+    else if (String(v.site).trim() !== siteLabel.get(siteKey(v.site))) add('site_spelling', v, `${String(v.site).trim()} → ${siteLabel.get(siteKey(v.site))}`);
     if (!v.manufacturer) add('missing_manufacturer', v);
     if (!v.build_year && v.kind === 'lkw') add('missing_build_year', v);
     if (v.kind === 'lkw') {
