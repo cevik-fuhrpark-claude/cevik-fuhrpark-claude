@@ -1801,6 +1801,34 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   eq(icsEscape('a;b,c\\d\nx'), 'a\\;b\\,c\\\\d\\nx');
 });
 
+await test('Bußgelder: Filter Fahrzeug-Standort (Schreibweise egal, ohne Fahrzeug = „ohne“, Summe = alle), CSV und Kalender gefiltert', async () => {
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  eq((await users.fleet.post('/api/fines', { kind: 'verwarnung', authority: 'Ordnungsamt Standorttest', reference: 'AZ-SITE-UNBEKANNT', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'XX-ZZ 9999', response_due: '2099-04-01' })).status, 201);
+  const all = (await users.fleet.get('/api/fines')).data;
+  eq(all.site, null);
+  ok(all.site_options.includes('ohne'), '„ohne“ für Schreiben ohne erkanntes Fahrzeug');
+  const known = all.fines.find((f) => f.reference === 'AZ-ICS-1'); ok(known && known.vehicle_site, 'Schreiben mit Fahrzeug-Standort');
+  const ids = (l) => l.map((f) => f.id).sort();
+  const union = [];
+  for (const o of all.site_options) union.push(...(await users.fleet.get(`/api/fines?site=${encodeURIComponent(o)}`)).data.fines.map((f) => f.id));
+  eq(JSON.stringify(union.sort()), JSON.stringify(ids(all.fines)), 'Summe über alle Standorte = alle Schreiben');
+  const k = (await users.fleet.get(`/api/fines?site=${encodeURIComponent(known.vehicle_site.toUpperCase())}`)).data;
+  ok(k.fines.some((f) => f.id === known.id) && !k.fines.some((f) => f.reference === 'AZ-SITE-UNBEKANNT'), 'Schreibweise egal, nur dieser Standort');
+  ok((await users.fleet.get('/api/fines?site=ohne')).data.fines.some((f) => f.reference === 'AZ-SITE-UNBEKANNT'), 'ohne Fahrzeug unter „ohne“');
+  eq((await users.fleet.get('/api/fines?site=Nirgendwo')).data.fines.length, 0, 'unbekannter Standort leer');
+  const open = (await users.fleet.get('/api/fines?status=open&site=ohne')).data.fines;
+  ok(open.length >= 1 && open.every((f) => !f.vehicle_site), 'kombinierbar mit „offen“');
+  const csv = dec(await users.fleet.get('/api/fines?format=csv&site=ohne'));
+  ok(csv.includes('AZ-SITE-UNBEKANNT') && !csv.includes('AZ-ICS-1'), 'CSV gefiltert');
+  const ics = dec(await users.fleet.get(`/api/fines?format=ics&site=${encodeURIComponent(known.vehicle_site)}`));
+  ok(ics.includes('20990315') && !ics.includes('20990401') && ics.includes('Behördenfristen – '), 'Kalender gefiltert und benannt');
+  const viewer = await invite(owner, { username: 'test.lesen.finesite', display_name: 'Test Lesezugriff Standort', role: 'viewer', environment: 'test' });
+  const vw = (await viewer.get('/api/fines?site=ohne')).data;
+  ok(vw.fines.length >= 1 && vw.fines.every((f) => !('driver_id' in f)), 'Lesezugriff: Filter, weiterhin ohne Fahrer');
+  const dr = (await users.driver.get('/api/fines?site=ohne')).data;
+  eq(JSON.stringify(dr.site_options), '[]', 'Fahrer: keine Standortauswahl'); eq(dr.site, null);
+});
+
 await test('Kommentar gezielt benachrichtigen (nur Werkstatt / nur Meldende), Standard alle Beteiligten', async () => {
   const c = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Kommentartest Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk(), workshop_site: 'DORTMUND' });
   await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'receive', command_id: rk(), expected_version: 1 });
@@ -2527,6 +2555,44 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   ok(mcal.includes(`UID:${rule.data.id}-plan@`) && mcal.includes('SUMMARY:Werkstatttermin UVV – WP-LN 1'), 'Prüftermin-Kalender enthält geplanten Werkstatttermin');
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(-2) })).status, 200);
   ok(!new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics')).data).includes(`UID:${rule.data.id}-plan@`), 'vergangener Plan-Termin nicht im Kalender');
+});
+
+await test('Werkstattplan: Filter „Fahrzeug-Standort“ (Schreibweise egal, Summe über Standorte = alle, Terminvorschlag-Auslastung ungefiltert)', async () => {
+  const VP = 'VIN:WDB96340310555504';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const rule = (await users.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === VP && r.kind === 'UVV');
+  eq((await users.fleet.post(`/api/maintenance/${rule.id}/plan`, { planned_date: day(5) })).status, 200);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: VP, description: 'Standortfilter Werkstattplan', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  let c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: c.version, note: 'Spiegel links', payload: { workshop_site: 'DORTMUND' } })).status, 200);
+  c = (await users.ws.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'acknowledge', command_id: rk(), expected_version: c.version, payload: {} })).status, 200);
+  c = (await users.ws.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: c.version, payload: { planned_date: day(3) } })).status, 200);
+  const ids = (p) => [...p.overdue, ...p.unplanned, ...p.days.flatMap((d) => d.items)].map((i) => `${i.type}:${i.id}`).sort();
+  const all = (await users.fleet.get('/api/workshop/plan?days=14')).data;
+  eq(all.vehicle_site, null);
+  ok(all.vehicle_sites.includes('Dortmund'), 'Auswahl enthält Standort des Fahrzeugs');
+  ok(all.days.find((d) => d.date === day(3)).items.some((i) => i.id === cid) && all.days.find((d) => d.date === day(5)).items.some((i) => i.type === 'maintenance' && i.vehicle_id === VP));
+  const dm = (await users.fleet.get('/api/workshop/plan?days=14&vsite=dORTmund')).data;
+  eq(dm.vehicle_site, 'Dortmund', 'Schreibweise egal');
+  ok(dm.days.find((d) => d.date === day(3))?.items.some((i) => i.id === cid) && dm.days.find((d) => d.date === day(5))?.items.some((i) => i.type === 'maintenance' && i.vehicle_id === VP), 'Auftrag und Prüftermin im Filter');
+  ok([...dm.overdue, ...dm.unplanned, ...dm.days.flatMap((d) => d.items)].every((i) => (i.vehicle_site || '').trim().toLowerCase() === 'dortmund'), 'nur Fahrzeuge des Standorts');
+  const union = [];
+  for (const o of all.vehicle_sites) union.push(...ids((await users.fleet.get(`/api/workshop/plan?days=14&vsite=${encodeURIComponent(o)}`)).data));
+  eq(JSON.stringify(union.sort()), JSON.stringify(ids(all)), 'Summe über alle Fahrzeug-Standorte = alle Einträge');
+  const unk = (await users.fleet.get('/api/workshop/plan?days=14&vsite=Nirgendwo')).data;
+  eq(ids(unk).length, 0, 'unbekannter Standort: leer');
+  eq(JSON.stringify(unk.case_load), JSON.stringify(all.case_load), 'Auslastung für Terminvorschlag unabhängig vom Fahrzeugfilter');
+  ok(all.case_load[day(3)].DORTMUND >= 1, 'Auslastung je Tag und Werkstatt');
+  const ws = (await users.ws.get('/api/workshop/plan?vsite=Nirgendwo')).data;
+  eq(ws.site, 'DORTMUND'); eq(ids(ws).length, 0, 'Werkstatt kann ebenfalls nach Fahrzeug-Standort filtern');
+  const ics = new TextDecoder().decode((await users.fleet.get('/api/workshop/plan?days=14&vsite=dortmund&format=ics')).data);
+  ok(ics.includes('Fahrzeuge Dortmund') && ics.includes('WP-LN 1'), 'Kalender gefiltert und benannt');
+  ok(!new TextDecoder().decode((await users.fleet.get('/api/workshop/plan?days=14&vsite=Nirgendwo&format=ics')).data).includes('WP-LN 1'), 'Kalender: unbekannter Standort leer');
+  c = (await users.ws.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: c.version, payload: { planned_date: '' } })).status, 200);
+  eq((await users.fleet.post(`/api/maintenance/${rule.id}/plan`, { planned_date: day(-2) })).status, 200);
 });
 
 await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent mit Prognose, Agent-Befunde, Rechte, Beenden, CSV', async () => {
@@ -3402,6 +3468,30 @@ await test('Datenqualität als CSV (Browser): Formelschutz, BOM, alle Prüfungen
   ok(csv.startsWith('\ufeffSchweregrad;Prüfung;Fahrzeug / Person;Detail\r\n'), 'Kopfzeile/BOM');
   eq(csv.trim().split('\r\n').length, items.length + 1, 'eine Zeile je Befund');
   ok(!/;dq_/.test(csv), 'keine unübersetzten Schlüssel');
+});
+
+await test('Mängelstatistik als CSV (Browser): je Prüfpunkt und je Fahrzeug, Beschriftungen DE/UK/EN, Zeilen = Bericht', async () => {
+  const { defectItemsCsv, defectVehiclesCsv } = await import('../public/csv.js');
+  const { STRINGS, CHECK_LABELS } = await import('../public/i18n.js');
+  const { CHECKLIST } = await import('../src/cases.js');
+  for (const lang of ['de', 'uk', 'en']) {
+    const miss = ['check_item', 'defect_items', 'again_after_repair', 'nav_vehicles', 'last_used', 'vehicle', 'checks_done', 'checks_with_defects', 'last_check_any', 'def_csv_item', 'kpi_csv_veh'].filter((k) => !STRINGS[lang][k]);
+    eq(miss.join(','), '', lang + ': fehlende Beschriftungen');
+    eq(CHECKLIST.filter((c) => !CHECK_LABELS[lang][c.key]).map((c) => c.key).join(','), '', lang + ': Prüfpunkt-Bezeichnungen');
+  }
+  const r = (await users.fleet.get('/api/reports/defects?days=365')).data;
+  ok(r.totals.checks > 0 && r.items.length > 0, 'Kontrollen mit Mängeln vorhanden');
+  const tr = (k) => STRINGS.de[k] || k; const lab = (k) => CHECK_LABELS.de[k] || k; const d = (iso) => iso.slice(0, 10);
+  const ci = defectItemsCsv(r, tr, lab, d); const li = ci.trim().split('\r\n');
+  ok(ci.startsWith('\ufeffPrüfpunkt;'), 'BOM + Kopfzeile: ' + li[0]);
+  eq(li.length, r.items.length + 1, 'eine Zeile je Prüfpunkt');
+  eq(li.slice(1).reduce((s, l) => s + Number(l.split(';')[1]), 0), r.totals.defect_items, 'Summe Mängel = Bericht');
+  ok(!li.slice(1).some((l) => CHECKLIST.some((c) => l.startsWith(c.key + ';'))), 'Bezeichnungen statt Schlüssel');
+  const cv = defectVehiclesCsv(r, tr, d); const lv = cv.trim().split('\r\n');
+  eq(lv.length, r.vehicles.length + 1, 'alle kontrollierten Fahrzeuge (auch ohne Mangel)');
+  eq(lv.slice(1).reduce((s, l) => s + Number(l.split(';')[1]), 0), r.totals.checks, 'Summe Kontrollen = Bericht');
+  const inj = defectVehiclesCsv({ vehicles: [{ plate: '=X()', checks: 1, checks_with_defects: 0, defect_items: 0, last_check_at: null }] }, tr, d);
+  ok(inj.includes("'=X();1;0;0;\r\n"), 'Formelschutz, leeres Datum');
 });
 
 await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in Verträgen, km-Ständen, Nachweisliste', async () => {

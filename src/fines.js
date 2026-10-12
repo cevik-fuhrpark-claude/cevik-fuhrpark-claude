@@ -1,6 +1,7 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, isCalendarDate } from './util.js';
 import { notifyUsers } from './notify.js';
+import { siteSelection } from './reports.js';
 
 export const FINE_KINDS = ['anhoerung', 'zeugenfragebogen', 'bussgeldbescheid', 'verwarnung', 'maut', 'sonstiges'];
 export const OFFENSES = ['geschwindigkeit', 'abstand', 'parken', 'rotlicht', 'lenk_ruhezeit', 'ladung', 'maut', 'handy', 'sonstiges'];
@@ -22,17 +23,25 @@ function shape(f, user) {
 }
 
 export async function listFines(env, user, envName, query) {
-  let rows;
+  return (await listFinesSel(env, user, envName, query)).rows;
+}
+
+// Liste mit Standortfilter (Fahrzeug-Standort laut Fahrzeugstamm, Schreibweise egal; Schreiben ohne erkanntes Fahrzeug = „ohne“).
+// Auswahl aus den Fahrzeugen der Schreiben (wie Mängelstatistik); Fahrer: keine Standortauswahl.
+export async function listFinesSel(env, user, envName, query = {}) {
+  let rows; let sel = null;
   if (isMgr(user) || user.role === 'viewer') {
     const open = query.status === 'open';
-    rows = (await env.DB.prepare(`SELECT f.*, v.plate, u.display_name AS driver_name FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id LEFT JOIN users u ON u.id=f.driver_id
+    rows = (await env.DB.prepare(`SELECT f.*, v.plate, v.site AS vehicle_site, u.display_name AS driver_name FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id LEFT JOIN users u ON u.id=f.driver_id
       WHERE f.environment=? ${open ? "AND f.status NOT IN ('bezahlt','eingestellt','erledigt')" : ''}
       ORDER BY CASE WHEN f.response_due IS NULL THEN 1 ELSE 0 END, f.response_due, f.created_at DESC LIMIT 500`).bind(envName).all()).results;
+    sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
+    if (sel.site) rows = rows.filter((r) => sel.match(r.vehicle_site));
   } else if (user.role === 'driver') {
     rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id
       WHERE f.environment=? AND f.driver_id=? AND f.driver_informed_at IS NOT NULL ORDER BY f.offense_at DESC`).bind(envName, user.id).all()).results;
   } else throw forbidden();
-  return rows.map((r) => shape(r, user));
+  return { rows: rows.map((r) => shape(r, user)), site: sel ? sel.site : null, site_options: sel ? sel.options : [] };
 }
 
 async function loadFine(env, user, envName, id) {
@@ -221,9 +230,9 @@ export function finesCsv(rows, csvCell, withDriver) {
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 // Fristenkalender: nur Antwortfristen laut Schreiben offener Vorgänge, ohne Fahrernamen (Kalender werden oft geteilt)
-export function finesIcs(rows, warnDays, icsCalendar) {
+export function finesIcs(rows, warnDays, icsCalendar, site = null) {
   const open = rows.filter((f) => f.response_due && !['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status));
-  return icsCalendar('Fuhrpark Behördenfristen', open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due, summary: `Frist ${KIND_DE[f.kind] || f.kind} – ${f.plate || f.plate_in_letter} (${f.fine_no})`,
+  return icsCalendar(`Fuhrpark Behördenfristen${site ? ' – ' + (site === 'ohne' ? 'ohne Standort' : site) : ''}`, open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due, summary: `Frist ${KIND_DE[f.kind] || f.kind} – ${f.plate || f.plate_in_letter} (${f.fine_no})`,
     description: `${f.authority}${f.reference ? ' · Az. ' + f.reference : ''} · Frist laut Schreiben`, alarmDays: warnDays })));
 }
 

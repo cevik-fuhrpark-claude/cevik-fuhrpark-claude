@@ -364,20 +364,20 @@ async function handleApi(request, env, ctx, url) {
   // Bußgelder & Zeugenfragebögen
   if (path === '/api/fines' && m === 'GET') {
     const q = Object.fromEntries(url.searchParams);
-    const list = await fines.listFines(env, user, envName, q);
+    const sel = await fines.listFinesSel(env, user, envName, q); const list = sel.rows;
     if (q.format === 'csv' || q.format === 'ics') {
       if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
       const day = berlinDate();
       if (q.format === 'ics') {
         const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
         const warn = w && Number(w.value) > 0 ? Number(w.value) : null;
-        return new Response(fines.finesIcs(list, warn, icsCalendar), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"` } });
+        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"` } });
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
-      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName });
+      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site });
       return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}.csv"` } });
     }
-    return json({ fines: list });
+    return json({ fines: list, site: sel.site, site_options: sel.site_options });
   }
   if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));

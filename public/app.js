@@ -1,7 +1,7 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
 import { STRINGS, CHECK_LABELS } from './i18n.js';
 import { svg as qrSvg } from './qr.js';
-import { dataQualityCsv } from './csv.js';
+import { dataQualityCsv, defectItemsCsv, defectVehiclesCsv } from './csv.js';
 import { helpMatches } from './help.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -1344,10 +1344,14 @@ async function viewStockItem(id) {
 
 
 async function viewFines() {
-  const list = (await api('GET', '/api/fines')).fines;
+  const fsite = S.me.role === 'driver' ? '' : (S.fineSite || '');
+  const fq = fsite ? `site=${encodeURIComponent(fsite)}` : '';
+  const fr = await api('GET', '/api/fines' + (fq ? '?' + fq : ''));
+  const list = fr.fines;
   const mgr = isMgr();
   const today = bDate();
   let html = `<h1>${esc(mgr ? t('fines') : t('my_fines'))}</h1>${helpLink(mgr ? 'fines' : 'myfines')}`;
+  const fsiteSel = (fr.site_options || []).length > 1 || fr.site ? `<div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div>${siteSelect('fsite', '', fr.site_options, fr.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : '';
   if (mgr) html += `<details class="panel"><summary>${esc(t('new_fine'))}</summary><form id="nf">
     <label>${esc(t('kind'))}</label><select name="kind">${S.meta.fine_kinds.map((k) => `<option value="${k}">${esc(t('fk_' + k))}</option>`).join('')}</select>
     <label>${esc(t('authority'))}</label><input name="authority" required><label>${esc(t('reference'))}</label><input name="reference">
@@ -1356,12 +1360,14 @@ async function viewFines() {
     <label>${esc(t('plate_letter'))}</label><input name="plate_in_letter" required placeholder="SZ-YC 5513"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal">
     <label>${esc(t('response_due'))}</label><input type="date" name="response_due"><label>${esc(t('note'))}</label><textarea name="note"></textarea>
     <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
+  html += fsiteSel;
   html += `<div class="list">${list.map((f) => { const over = f.response_due && f.response_due < today && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status); return `<a class="row ${over ? 'p-kritisch' : ''}" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="chip ${over ? 'kritisch' : ['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status) ? 'ok' : ''}">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)} · ${fmtDT(f.offense_at)}${f.authority ? ' · ' + esc(f.authority) : ''}${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + fmtD(f.response_due) : ''}${f.driver_name ? ' · ' + esc(f.driver_name) : ''}</span></a>`; }).join('') || `<p class="muted">–</p>`}</div>`;
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn secondary" id="fcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="fics">${esc(t('export_ics'))}</button>${mgr ? `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv"> ${esc(t('with_driver_names'))}</label>` : ''}</div>`;
   render(html, 'more');
   const day = bDate();
-  const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { download(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}`), `fuhrpark-bussgelder_${day}.csv`); } catch (err) { toast(err.message, true); } };
-  const fi = $('#fics'); if (fi) fi.onclick = async () => { try { download(await api('GET', '/api/fines?format=ics'), `fuhrpark-behoerdenfristen_${day}.ics`); } catch (err) { toast(err.message, true); } };
+  const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { download(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}`), `fuhrpark-bussgelder_${day}.csv`); } catch (err) { toast(err.message, true); } };
+  const fi = $('#fics'); if (fi) fi.onclick = async () => { try { download(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${day}.ics`); } catch (err) { toast(err.message, true); } };
+  const fs = $('#fsite'); if (fs) fs.onchange = () => { S.fineSite = fs.value; viewFines(); };
   const nf = $('#nf');
   if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.replace(',', '.'); b.offense_at = new Date(b.offense_at).toISOString(); try { const r = await api('POST', '/api/fines', b); if (!r.vehicle_matched) toast(t('vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
 }
@@ -1856,7 +1862,9 @@ async function viewPlan() {
   const days = S.planDays || 14;
   const mgr = S.me.role !== 'workshop';
   const site = mgr ? (S.planSite || '') : '';
-  const r = await api('GET', `/api/workshop/plan?days=${days}${site ? '&site=' + encodeURIComponent(site) : ''}`);
+  const vsite = S.planVsite || '';
+  const pq = `${site ? '&site=' + encodeURIComponent(site) : ''}${vsite ? '&vsite=' + encodeURIComponent(vsite) : ''}`;
+  const r = await api('GET', `/api/workshop/plan?days=${days}${pq}`);
   const loc = S.lang === 'uk' ? 'uk-UA' : S.lang === 'en' ? 'en-GB' : 'de-DE';
   const wd = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString(loc, { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
   // weiterer geplanter Tag desselben Fahrzeugs → Hinweis zum Zusammenlegen (nur Anzeige)
@@ -1866,9 +1874,10 @@ async function viewPlan() {
     ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${esc(i.description)}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(mgr && !site && esc(wsName(i.workshop_site)), partsEta(i, '', true), i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, other(i))}</a>`
     : `<a class="row" href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(mk(i.kind))}</span><span class="chip">${i.next_due_date ? esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span>${subs(i.order && `🔧 ${esc(t('mo_open'))} ${esc(i.order.case_no)}`, other(i))}</a>`;
   let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>
-    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${r.vehicle_site ? esc(t('kpi_vsite')) + ': ' + esc(r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
+      ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('pvsite', '', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
       <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${n} ${esc(t('days'))}</option>`).join('')}</select></div>
       <button type="button" class="btn secondary" id="plprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
   // Termin direkt im Plan setzen (Backlog 60): nur für Aufträge, die der Vorgangsbefehl set_planned_date zulässt.
@@ -1891,7 +1900,8 @@ async function viewPlan() {
     const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay())
       && d.items.some((x) => x.vehicle_id === i.vehicle_id && x.id !== i.id && (x.type === 'maintenance' || x.workshop_site === i.workshop_site)))[0];
     if (same) return same.date;
-    const load = new Map(r.days.map((d) => [d.date, d.items.filter((x) => x.type === 'case' && x.workshop_site === i.workshop_site).length]));
+    // Auslastung vom Server (alle Aufträge der Werkstatt, auch bei Fahrzeug-Standortfilter); ältere Antwort: aus den angezeigten Tagen
+    const load = r.case_load ? new Map(Object.entries(r.case_load).map(([d, m]) => [d, m[i.workshop_site] || 0])) : new Map(r.days.map((d) => [d.date, d.items.filter((x) => x.type === 'case' && x.workshop_site === i.workshop_site).length]));
     let best = null;
     for (let n = 1; n <= days + 7 + (minD ? Math.max(0, Math.round((Date.parse(minD) - Date.parse(r.today)) / 86400000)) : 0); n++) {
       const d = new Date(Date.parse(r.today + 'T00:00:00Z') + n * 86400000);
@@ -1912,9 +1922,10 @@ async function viewPlan() {
     catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };
+  const pvs = $('#pvsite'); if (pvs) pvs.onchange = () => { S.planVsite = pvs.value; viewPlan(); };
   $('#pdays').onchange = () => { S.planDays = Number($('#pdays').value); viewPlan(); };
   $('#plprt').onclick = () => window.print();
-  $('#pics').onclick = async () => { try { download(await api('GET', `/api/workshop/plan?days=${days}&format=ics${site ? '&site=' + encodeURIComponent(site) : ''}`), `werkstattplan_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
+  $('#pics').onclick = async () => { try { download(await api('GET', `/api/workshop/plan?days=${days}&format=ics${pq}`), `werkstattplan_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
 }
 
 async function viewWsLoad() {
@@ -2110,6 +2121,7 @@ async function viewDefects() {
       <div><label for="dk">${esc(t('check_kind'))}</label><select id="dk">${[['', t('all')], ['abfahrt', t('nav_check')], ['nach_reparatur', t('inspection')]].map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       ${(r.site_options || []).length > 1 || r.site ? `<div>${siteSelect('dsite', '', r.site_options, r.site)}</div>` : ''}
       <button type="button" class="btn secondary" id="dprt">${esc(t('print'))}</button>
+      ${r.totals.checks ? `<button type="button" class="btn secondary" id="dcsvi">${esc(t('def_csv_item'))}</button><button type="button" class="btn secondary" id="dcsvv">${esc(t('kpi_csv_veh'))}</button>` : ''}
     </div>
     <div class="stats"><div><b>${r.totals.checks}</b>${esc(t('checks_done'))}</div><div><b>${r.totals.checks_with_defects}</b>${esc(t('checks_with_defects'))}</div><div><b style="${r.totals.defect_items ? 'color:var(--mid)' : ''}">${r.totals.defect_items}</b>${esc(t('defect_items'))}</div></div>
     <h2>${esc(t('defects_by_item'))}</h2>
@@ -2123,6 +2135,11 @@ async function viewDefects() {
   $('#dk').onchange = () => { S.defKind = $('#dk').value; viewDefects(); };
   const dsel = $('#dsite'); if (dsel) dsel.onchange = () => { S.defSite = dsel.value; viewDefects(); };
   $('#dprt').onclick = () => window.print();
+  // CSV im Browser (Beschriftungen in der App-Sprache), Dateiname mit Zeitraum, Kontrollart und Standort
+  const dn = (part) => `fuhrpark-maengel-${part}_${r.environment}_${days}t${kind ? '_' + kind : ''}${r.site ? '_' + r.site.replace(/[^\wÄÖÜäöüß-]+/g, '-') : ''}_${bDate()}.csv`;
+  const dd = (iso) => fmtD(iso);
+  const ci = $('#dcsvi'); if (ci) ci.onclick = () => download(new Blob([defectItemsCsv(r, t, checkLabel, dd)], { type: 'text/csv;charset=utf-8' }), dn('pruefpunkte'));
+  const cv = $('#dcsvv'); if (cv) cv.onclick = () => download(new Blob([defectVehiclesCsv(r, t, dd)], { type: 'text/csv;charset=utf-8' }), dn('fahrzeuge'));
 }
 
 // ---------- Reifen über die Flotte ----------

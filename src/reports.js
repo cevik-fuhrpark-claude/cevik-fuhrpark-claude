@@ -490,13 +490,20 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const site = user.role === 'workshop' ? user.workshop_site : (query.site ? String(query.site).slice(0, 20) : null);
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
-  const [cs, mt] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,80) AS description, c.maintenance_rule_id
+  const [cs, mt, vs] = await Promise.all([
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,80) AS description, c.maintenance_rule_id
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
-    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.kind AS vehicle_kind, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),
+    env.DB.prepare(`SELECT site FROM vehicles WHERE active=1 AND eval_excluded=0`).all(),
   ]);
+  // Fahrzeug-Standort (laut Fahrzeugstamm, Schreibweise egal) – unabhängig vom Werkstatt-Standort; wirkt auf Aufträge und Prüftermine
+  // Auslastung je Tag und Werkstatt aus ALLEN Aufträgen (vor dem Fahrzeug-Standortfilter) – Grundlage für den Terminvorschlag
+  const case_load = {};
+  for (const c of cs.results) if (c.planned_date && c.planned_date >= today && c.planned_date <= to) { const d = (case_load[c.planned_date] ||= {}); d[c.workshop_site] = (d[c.workshop_site] || 0) + 1; }
+  const vSel = siteSelection(vs.results, query.vsite);
+  if (vSel.site) { cs.results = cs.results.filter((c) => vSel.match(c.vehicle_site)); mt.results = mt.results.filter((m) => vSel.match(m.vehicle_site)); }
   const byDay = new Map();
   const put = (d, item) => { if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(item); };
   const overdue = []; const unplanned = [];
@@ -520,7 +527,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const others = (i, own) => [...(vDates.get(i.vehicle_id) || [])].filter((d) => d !== own).sort();
   for (const [d, items] of byDay) for (const i of items) i.other_dates = others(i, d);
   for (const i of [...overdue, ...unplanned]) i.other_dates = others(i, null);
-  return { today, from: today, to, site, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned };
+  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned };
 }
 
 // Kalenderdatei des Werkstattplans: nur Vorgangsnummer, Kennzeichen, Status/Prüfart – keine Beschreibung, keine Namen
@@ -532,6 +539,6 @@ export function workshopPlanIcs(plan, envName) {
       ? { uid: `plan-case-${i.id}-${d.date}`, date: d.date, summary: `Werkstatt: ${i.case_no} – ${i.plate}${envName === 'test' ? ' (TEST)' : ''}`, description: `Status: ${i.status}${i.safety_lock ? ' · gesperrt' : ''}` }
       : { uid: `plan-maint-${i.id}-${d.date}`, date: d.date, summary: `Prüfung ${i.kind} – ${i.plate}`, description: i.next_due_date ? `fällig bis ${i.next_due_date}` : '' });
   }
-  return icsCalendar(`Werkstattplan${plan.site ? ' ' + plan.site : ''}`, ev);
+  return icsCalendar(`Werkstattplan${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – Fahrzeuge ' + plan.vehicle_site : ''}`, ev);
 }
 
