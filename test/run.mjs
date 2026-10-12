@@ -1377,6 +1377,7 @@ await test('Gespann: Sperre des gekoppelten Anhängers in Fahrzeugliste, „Mein
   eq((await users.fleet.get(`/api/vehicles/${V1}`)).data.coupled[0].locked, true, 'Fahrzeugakte: Anhänger gesperrt');
   eq((await users.prodFleet.get(`/api/vehicles/${V1}`)).data.coupled[0].locked, false, 'Fahrzeugakte Betrieb: Test-Sperre nicht sichtbar');
   eq(v1.availability, v1Before.availability, 'eigene Verfügbarkeit des Lkw unverändert');
+  ok(/coupled_locked/.test((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Fahrzeugliste: Filter „Gespann gesperrt“');
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
   const vh = vcsv[0].replace(/^\ufeff/, '').split(';');
   const ci = vh.indexOf('Gekoppeltes Fahrzeug'), zi = vh.indexOf('Zustand gekoppeltes Fahrzeug');
