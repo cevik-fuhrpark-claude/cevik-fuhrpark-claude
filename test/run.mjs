@@ -2678,6 +2678,9 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   eq(o.duplicates.map((x) => x.id).join(), [dup, dup2].join(), 'Original zeigt Dubletten'); eq(o.followups.length, 0, 'keine Folgeaufträge vermischt');
   eq(o.case.status, 'gemeldet', 'Original unverändert offen');
   eq((await rej(users.fleet, other, {})).status, 400, 'ohne Dublette weiter Grund nötig');
+  const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
+  ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no)).length === 2, 'CSV-Spalte „Dublette von“');
+  eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
   // Folgeauftrag und Dublette im selben Vorgang werden getrennt (eine Abfrage)
   ok(QSTAT.perRequest.filter((w) => w.method === 'GET' && w.path === '/api/cases/:id').every((w) => w.n <= 21), 'Vorgangsdetail ≤ 21 Abfragen');
 });
@@ -2701,7 +2704,7 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   p = (await users.fleet.get('/api/workshop/plan')).data;
   ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
   const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Werkstattplan-Test')).data);
-  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
+  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
@@ -3069,10 +3072,10 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
   // Vorgänge-CSV: Versicherungsfall-Spalten nur für die Leitung
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=VT-IC')).data);
-  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
+  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
   const vcsvV = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/cases?format=csv&q=VT-IC')).data);
   ok(!vcsvV.includes('Versicherer'), 'Disposition ohne Versicherungsspalten');
-  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft'), 'Disposition ohne Kostenspalte, mit Herkunft');
+  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft;Dublette von'), 'Disposition ohne Kostenspalte, mit Herkunft');
   // Fahrzeugakte: Zusammenfassung Versicherungsfälle (nur Leitung)
   const akte = (await users.fleet.get(`/api/vehicles/${V}`)).data;
   eq(akte.claims_summary.total, 1); eq(akte.claims_summary.open, 0); eq(akte.claims_summary.reimbursed_net, 2000);
@@ -3287,7 +3290,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
-  ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung'), 'CSV: Kostenfreigabe ausstehend');
+  ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung;'), 'CSV: Kostenfreigabe ausstehend');
   eq((await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.cases.find((c) => c.id === id).cost_approval_pending, 1, 'Integrations-API: Kostenfreigabe offen');
   // Fuhrparkagent: offene Kostenfreigabe als Befund (ohne Beträge), verschwindet nach Freigabe
   eq((await users.fleet.post('/api/agent/run')).status, 200);
