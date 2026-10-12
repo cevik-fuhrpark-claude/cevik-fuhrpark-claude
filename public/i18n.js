@@ -597,3 +597,6 @@ Object.assign(STRINGS.en, { list_truncated: 'Only the first {n} cases are shown 
 Object.assign(STRINGS.de, { fines_truncated: 'Es werden die 500 jüngsten Schreiben angezeigt.' });
 Object.assign(STRINGS.uk, { fines_truncated: 'Показано 500 найновіших листів.' });
 Object.assign(STRINGS.en, { fines_truncated: 'Showing the 500 most recent letters.' });
+Object.assign(STRINGS.de, { csv_truncated: 'Die CSV-Datei enthält nur die ersten {n} Vorgänge – bitte mit Filter, Fahrzeug-Standort oder Suche eingrenzen und getrennt exportieren.' });
+Object.assign(STRINGS.uk, { csv_truncated: 'Файл CSV містить лише перші {n} заявок – звузьте вибірку фільтром, місцезнаходженням транспорту або пошуком і експортуйте окремо.' });
+Object.assign(STRINGS.en, { csv_truncated: 'The CSV file contains only the first {n} cases – narrow it down with filters, vehicle site or search and export separately.' });

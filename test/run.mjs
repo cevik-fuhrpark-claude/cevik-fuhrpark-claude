@@ -942,7 +942,7 @@ await test('Kostenbericht: Summe je Standort = Summe der Zeilen (Standort laut F
 });
 await test('Fahrzeugliste: Standortauswahl fasst Schreibweisen zusammen (Dortmund/DORTMUND) wie Kostenbericht/Datenqualität', async () => {
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const src = app.slice(app.indexOf('async function viewVehicles('), app.indexOf('\n}\n', app.indexOf('async function viewVehicles(')));
   ok(src.includes("(!site || sk(v.site) === sk(site))"), 'Filter ohne Groß-/Kleinschreibung');
   ok(src.includes("toLocaleLowerCase('de')"), 'gleicher Schlüssel wie siteKey');
@@ -1228,7 +1228,7 @@ await test('Oberflächen-Skripte sind syntaktisch gültig (ein Tippfehler, z. B.
 });
 await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in DE/UK/EN vorhanden', async () => {
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   ok(!/\son[a-z]+=["']/i.test(app) && !/\son[a-z]+=["']/i.test(html), 'Inline-Handler verstoßen gegen die CSP (script-src self)');
   ok(!/<script>(?!\s*<\/script>)/.test(html), 'kein Inline-Skript');
@@ -2207,6 +2207,27 @@ await test('Vorgangsliste: Begrenzung wird angezeigt (truncated), limit bis 500'
   eq(typeof (await users.driver.get('/api/cases')).data.truncated, 'boolean', 'auch für Fahrer');
 });
 
+await test('Vorgangs-CSV: Begrenzung auf 5000 Zeilen wird per Header x-cfp-truncated gemeldet (Backlog 75), sonst kein Header', async () => {
+  const csvGet = (q) => users.fleet.get('/api/cases?format=csv&status=' + q);
+  let r = await csvGet(''); eq(r.status, 200); eq(r.headers.get('x-cfp-truncated'), null, 'unter der Grenze: kein Header');
+  const lines = (res) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(res.data).trim().split('\r\n').length - 1;
+  const have = lines(r);
+  const db = env.DB.db; const src = db.prepare(`SELECT * FROM cases WHERE environment='test' LIMIT 1`).get(); ok(src, 'Vorlage');
+  const cols = Object.keys(src);
+  const ins = db.prepare(`INSERT INTO cases(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+  const add = (from, to) => { db.exec('BEGIN'); for (let i = from; i < to; i++) ins.run(...cols.map((k) => (k === 'id' ? 'csvlim-' + i : k === 'case_no' ? 'CSVLIM-' + i : k === 'request_key' ? 'csvlim-' + i : k === 'duplicate_of' ? null : src[k]))); db.exec('COMMIT'); };
+  try {
+  add(0, 5000 - have);
+  r = await csvGet(''); eq(lines(r), 5000); eq(r.headers.get('x-cfp-truncated'), null, 'genau 5000: nicht begrenzt');
+  add(5000 - have, 5001 - have);
+  r = await csvGet(''); eq(r.status, 200); eq(lines(r), 5000, 'höchstens 5000 Zeilen'); eq(r.headers.get('x-cfp-truncated'), '5000', 'Header');
+  const au = db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY rowid DESC LIMIT 1`).get(); ok(au && JSON.parse(au.detail).truncated === true, 'Protokoll vermerkt Begrenzung');
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM cases WHERE id LIKE 'csvlim-%'`).run(); }
+  eq((await csvGet('')).headers.get('x-cfp-truncated'), null, 'nach dem Aufräumen wieder ohne');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("res.headers.get('x-cfp-truncated')") && app.includes("t('csv_truncated')"), 'Oberfläche zeigt Hinweis');
+});
+
 await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem updated_at (after_id, has_more, next), ohne Parameter wie bisher', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   const get = async (q) => (await anon.req('GET', '/api/integration/v1/cases?environment=test' + q, undefined, H)).data;
@@ -2281,7 +2302,7 @@ await test('Oberfläche: Attribut hidden blendet auch Listenzeilen mit display:g
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   ok(/\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/.test(css), 'globale Regel [hidden] { display: none !important }');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("$('#sf').onchange = applyStock") && app.includes("stock_idle"), 'Lagerfilter vorhanden');
 });
 
@@ -4214,7 +4235,7 @@ await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste 
   eq((await agentRM()).length, 0, 'Agent-Befund nach Nachtragen erledigt');
   eq(JSON.stringify(await histAdd()), JSON.stringify([[day(-1), 0], [day(-200), 0]]), 'Nachweisliste nach Nachtragen ohne Direktsprung');
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/'todo_result_missing', ov && ov\.result_missing/.test(app) && app.includes('#/quality?f=inspection_no_result'), '„Heute zu tun“: Gruppe mit Link auf Datenqualität-Filter');
   ok(/ae\.matches\('input, select, textarea[^']*'\)/.test(app), 'Seitenwechsel: Fokus auf Überschrift überschreibt nicht das Ergebnisfeld beim Direktsprung ?ev=');
   ok(/\[\/\^#\\\/quality\(\?:\\\?f=\(\\w\+\)\)\?\$\/, viewQuality\]/.test(app), 'Route #/quality?f=<Prüfung>');
@@ -4224,7 +4245,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   const { helpMatches, helpNorm } = await import('../public/help.js');
   const { STRINGS } = await import('../public/i18n.js');
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   eq(helpNorm('  Straße  PRÜFUNG '), 'strasse prufung'); eq(helpNorm('Pruefung'), 'prufung');
   const secs = [{ name: 'a', title: 'Prüftermine', steps: ['HU alle 12 Monate', 'SP nach der HU', 'Nachweis hochladen'] }, { name: 'b', title: 'Lager', steps: ['Mindestbestand pflegen', 'Bestellvorschlag'] }];
   eq(helpMatches(secs, '   '), null, 'leere Suche = alles zeigen');
@@ -4325,7 +4346,7 @@ await test('Sammelabfrage Prüfungs-Listen (Agent, Übersicht) liefert dasselbe 
 await test('Hinweise: Filter alle/ungelesen/dringend mit Anzahlen (nur Anzeige), Texte DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const { STRINGS } = await import('../public/i18n.js');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/const NF = (\{[^\n]*\});/);
   ok(m, 'Filterdefinition');
   const NF = new Function('return ' + m[1])();
@@ -4380,7 +4401,7 @@ await test('Lesezugriff: Fahrernamen in Vorgängen, Fahrzeugakte, Zeitleiste und
 });
 await test('Hilfe: Suchbegriff wird beim Tippen in die Adresse übernommen (replaceState, kein Verlaufseintrag)', async () => {
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/const helpHash = (\(q\) => [^\n]*);/);
   ok(m, 'helpHash vorhanden');
   const helpHash = new Function('return ' + m[1])();
@@ -4389,7 +4410,7 @@ await test('Hilfe: Suchbegriff wird beim Tippen in die Adresse übernommen (repl
 });
 await test('Zeitleiste: Filter steht in der Adresse (?f=), unbekannte/für die Rolle verborgene Bereiche → „Alle“', async () => {
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const start = app.indexOf('const routes = [');
   const routes = new Function(app.slice(start, app.indexOf('\n];', start) + 3).replace(/,\s*(view\w+)\]/g, ", '$1']") + '; return routes;')();
   const hit = (h) => { for (const [re, fn] of routes) { const m = h.match(re); if (m) return JSON.stringify([fn, ...m.slice(1).map((x) => x ?? '-')]); } return null; };
@@ -4408,7 +4429,7 @@ await test('Zeitleiste: Filter steht in der Adresse (?f=), unbekannte/für die R
 });
 await test('Prüf-/Wartungsarten werden in der App-Sprache angezeigt (gespeichert bleibt der deutsche Name)', async () => {
   const { readFileSync } = await import('node:fs');
-  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const { MAINT_KINDS } = await import('../src/vehicles.js');
   const { STRINGS } = await import('../public/i18n.js');
   const m = app.match(/const MK_KEYS = (\{[^\n]*\});/);

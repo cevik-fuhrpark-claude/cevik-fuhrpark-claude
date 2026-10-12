@@ -24,6 +24,9 @@ import * as telem from './telematics.js';
 import * as contracts from './contracts.js';
 import * as claims from './claims.js';
 
+// Höchstzahl Zeilen der Vorgangs-CSV (bei Erreichen: Header x-cfp-truncated)
+const CASES_CSV_MAX = 5000;
+
 // Angemeldete API-Aufrufe für die Nutzungsstatistik (nur Umgebung, keine Person)
 const usageEnv = new WeakMap();
 const usageAction = new WeakMap(); // Befehlsname bei …/commands (z. B. receive, add_part) – keine Inhalte
@@ -426,14 +429,16 @@ async function handleApi(request, env, ctx, url) {
     }
     if (q.format === 'csv') {
       if (user.role === 'driver') throw forbidden();
-      const rows = await cases.listCases(env, user, envName, { ...q, limit: 5000, __export: true });
-      await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, vsite: q.vsite || null, rows: rows.length, environment: envName });
+      const cmeta = {};
+      const rows = await cases.listCases(env, user, envName, { ...q, limit: CASES_CSV_MAX, __export: true }, cmeta);
+      await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, vsite: q.vsite || null, rows: rows.length, ...(cmeta.truncated ? { truncated: true } : {}), environment: envName });
       const fmt = (iso) => (iso ? berlinDateTime(iso) : '');
       // Versicherungsfall-Spalten nur für Inhaber/Fuhrparkleitung (eine Abfrage)
       const claimMap = ['owner', 'fleet'].includes(user.role)
         ? new Map((await env.DB.prepare('SELECT case_id, status, insurer, claim_no FROM insurance_claims WHERE environment=?').bind(envName).all()).results.map((r) => [r.case_id, r]))
         : null;
-      return new Response(cases.casesCsv(rows, maint.csvCell, fmt, claimMap), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"` } });
+      // Begrenzung sichtbar machen (wie die Vorgangsliste): Antwort-Header, die Oberfläche zeigt einen Hinweis
+      return new Response(cases.casesCsv(rows, maint.csvCell, fmt, claimMap), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"`, ...(cmeta.truncated ? { 'x-cfp-truncated': String(CASES_CSV_MAX) } : {}) } });
     }
     const meta = {}; const list = await cases.listCases(env, user, envName, q, meta);
     return json({ cases: list, site: meta.site ?? null, site_options: meta.site_options || [], ...(user.role === 'driver' ? {} : { stale_days: meta.stale_days ?? null }), truncated: !!meta.truncated, limit: Math.min(Number(q.limit) || 200, 500) });
