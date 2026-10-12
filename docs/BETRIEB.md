@@ -27,6 +27,8 @@
 ## Fristen und Kosten
 - Reaktionsfristen (Erstbewertung, Werkstatt-Übernahme) je Priorität unter „Einstellungen“. Leer = keine Frist (der Agent meldet dann „Frist nicht konfiguriert“).
 - Interner Werkstatt-Stundensatz: ohne Wert bleiben Arbeitsstunden „unbewertet“.
+- Wiedervorlage: Inhaber/Fuhrparkleitung setzen im Vorgang ein eigenes Datum (optional mit Vermerk); ab dem Tag „Heute zu tun → Wiedervorlage fällig“ und ruhige Agent-Erinnerung. Werkstatt und Fahrer sehen sie nicht. Kalender-Download im Reiter „Wiedervorlage“ (ohne Vermerk).
+- „Ohne Bewegung“: nur mit Einstellung „Vorgänge – nachfassen nach Tagen ohne Änderung“ (leer = aus).
 
 ## HU/SP-Fristen (StVZO § 29, Anlage VIII)
 Berechnung zentral im Server (`src/inspection_rules.js`), nie im Browser:
