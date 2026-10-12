@@ -4887,6 +4887,9 @@ await test('Prüftermin-Import nach km: „Fällig bei km“ laut Beleg, „km b
   eq((await imp(`${H}\nKM-IMP 1;Ölwechsel;;157000;;Rechnung alt`, true)).data.skipped[0].reason, 'Vorhandener km-Stand der letzten Prüfung 158000 ist höher – nicht überschrieben');
   // Beleg = letzte + Intervall → kein eigener Beleg gespeichert (Export-Rundreise bleibt unverändert)
   eq((await imp(`${H}\nKM-IMP 1;Ölwechsel;188000;158000;30000;Werkstattrechnung Test`, true)).data.unchanged, 1);
+  // Kopfzeile ohne Umlaute (so steht sie in der ukrainischen/englischen Hilfe)
+  const nu = await imp(`Kennzeichen;Art;Faellig bei km;km bei letzter Pruefung;Intervall km;Nachweis\nKM-IMP 1;Ölwechsel;188000;158000;30000;Werkstattrechnung Test`, true);
+  eq(nu.data.unchanged, 1, JSON.stringify(nu.data).slice(0, 300));
   // Datum + km in einer Zeile
   const both = await imp(`Kennzeichen;Art;Letzte Prüfung;Intervall (Monate);km bei letzter Prüfung;Intervall km;Nachweis\nKM-IMP 1;Inspektion;${day(10)};12;151000;60000;Wartungsheft Test`);
   eq(both.data.created, 1);
