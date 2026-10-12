@@ -363,6 +363,10 @@ async function viewHome() {
         const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
           cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
         html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));
+        // Fahrzeuge mit aktiven Hinweisen (z. B. „Ladebordwand nur manuell“) – Link auf die gefilterte Fahrzeugliste; Standortregel wie oben
+        const nk = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : 'ohne');
+        const wn = dvs.filter((v) => v.notes_active > 0 && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))).length;
+        if (wn) html += `<p class="noprint"><a href="#/vehicles" id="dnotes">${esc(t('vnotes_with_veh'))} (${wn})</a></p>`;
         html += helpLink('dispo');
       }
       if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
@@ -375,6 +379,7 @@ async function viewHome() {
   }
   render(html, 'home');
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
+  const dnl = $('#dnotes'); if (dnl) dnl.onclick = () => { S.vehAvail = 'with_notes'; };
 }
 
 // Disposition: nicht einplanbare Fahrzeuge (gesperrt / in Werkstatt / wartet auf Teile) mit Status und „seit“ – nur gespeicherte Angaben
