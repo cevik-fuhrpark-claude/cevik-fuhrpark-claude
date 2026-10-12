@@ -61,14 +61,16 @@ export function staleBefore(days) {
 
 // meta (optional): erhält site/site_options für den Filter „Fahrzeug-Standort“ (vsite) – nicht für Fahrer
 export async function listCases(env, user, envName, query, meta = null) {
+  // query.__counts: nur Begrenzung melden (meta.truncated), ohne Standort-/Nachfass-Angaben (spart zwei Abfragen, z. B. Startseite)
+  const fullMeta = meta && !query.__counts;
   const where = ['c.environment = ?'];
   const args = [envName];
   // Fahrzeug-Standort laut Fahrzeugstamm (Schreibweise egal): passende Schreibweisen in JS bestimmen (Umlaute, wie Berichte),
   // dann exakt per IN filtern – so greift das LIMIT erst nach dem Filter
-  if (user.role !== 'driver' && (meta || query.vsite)) {
+  if (user.role !== 'driver' && (fullMeta || query.vsite)) {
     const vs = (await env.DB.prepare('SELECT site FROM vehicles').all()).results;
     const sel = siteSelection(vs, query.vsite);
-    if (meta) { meta.site = sel.site; meta.site_options = sel.options; }
+    if (fullMeta) { meta.site = sel.site; meta.site_options = sel.options; }
     if (sel.site) {
       if (sel.site === 'ohne') where.push(`(v.site IS NULL OR trim(v.site) = '')`);
       else {
@@ -106,9 +108,9 @@ export async function listCases(env, user, envName, query, meta = null) {
   if (query.followup && !['driver', 'workshop'].includes(user.role)) where.push('c.followup_on IS NOT NULL');
   else if (query.followup) where.push('0');
   // Filter „Ohne Bewegung“ (nur wenn eingestellt; sonst leere Liste statt einer erfundenen Frist)
-  if (meta || query.stale) {
+  if (fullMeta || query.stale) {
     const days = user.role === 'driver' ? null : Number((await env.DB.prepare(`SELECT value FROM settings WHERE key='case_stale_days'`).first())?.value) || null;
-    if (meta && user.role !== 'driver') meta.stale_days = days;
+    if (fullMeta && user.role !== 'driver') meta.stale_days = days;
     if (query.stale && user.role !== 'driver') {
       const before = staleBefore(days);
       if (!before) where.push('0'); else { where.push(STALE_SQL, 'c.updated_at < ?'); args.push(before); }

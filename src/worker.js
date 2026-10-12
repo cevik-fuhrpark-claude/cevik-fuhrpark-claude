@@ -419,7 +419,8 @@ async function handleApi(request, env, ctx, url) {
 
   // Vorgänge
   if (path === '/api/cases' && m === 'GET') {
-    const q = Object.fromEntries(url.searchParams);
+    // interne Schalter (__export, __counts) nie aus der Adresse übernehmen
+    const q = Object.fromEntries([...url.searchParams].filter(([k]) => !k.startsWith('__')));
     // Wiedervorlagen als Kalender (.ics): nur Vorgangsnummer, Kennzeichen, Status – ohne Vermerk/Beschreibung/Namen (Kalender werden oft geteilt)
     if (q.format === 'ics') {
       if (['driver', 'workshop'].includes(user.role)) throw forbidden();
@@ -546,7 +547,7 @@ async function handleApi(request, env, ctx, url) {
 
 async function dashboard(env, user, envName) {
   // Zähler aus höchstens 500 offenen Vorgängen (kritische zuerst); darüber Kennzeichnung statt stiller Kappung (vorher 200 ohne Hinweis)
-  const om = {}; const open = await cases.listCases(env, user, envName, { status: 'open', limit: 500 }, om);
+  const om = {}; const open = await cases.listCases(env, user, envName, { status: 'open', limit: 500, __counts: true }, om);
   const out = {
     environment: envName,
     open_cases: open.length,

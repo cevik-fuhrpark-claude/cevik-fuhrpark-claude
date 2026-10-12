@@ -2222,6 +2222,7 @@ await test('Vorgangs-CSV: Begrenzung auf 5000 Zeilen wird per Header x-cfp-trunc
   add(5000 - have, 5001 - have);
   r = await csvGet(''); eq(r.status, 200); eq(lines(r), 5000, 'höchstens 5000 Zeilen'); eq(r.headers.get('x-cfp-truncated'), '5000', 'Header');
   const dash = (await users.fleet.get('/api/dashboard')).data; eq(dash.open_cases, 500, 'Startseite zählt bis 500'); eq(dash.open_cases_truncated, true, 'und kennzeichnet mehr');
+  eq((await users.fleet.get('/api/cases?status=&__export=1&limit=5000')).data.cases.length, 500, 'interner Schalter __export nicht über die Adresse');
   const au = db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY rowid DESC LIMIT 1`).get(); ok(au && JSON.parse(au.detail).truncated === true, 'Protokoll vermerkt Begrenzung');
   } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM cases WHERE id LIKE 'csvlim-%'`).run(); }
   eq((await csvGet('')).headers.get('x-cfp-truncated'), null, 'nach dem Aufräumen wieder ohne');
