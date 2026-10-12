@@ -473,7 +473,8 @@ async function viewCases() {
   if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup'].includes(f) || (['repeat', 'warranty', 'stale'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
   const q = S.caseQ || '';
   const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '');
-  const lq = () => (S.caseLimit ? '&limit=' + S.caseLimit : '');
+  const lq = () => (S.caseLimit ? '&limit=' + S.caseLimit : '') + sq();
+  const sq = () => (S.caseSort && S.caseSort !== 'priority' && f !== 'followup' ? '&sort=' + S.caseSort : '');
   // Liste ist begrenzt (Server: 200, „weitere laden“ bis 500) – sonst fehlten ältere Vorgänge ohne Hinweis
   const trunc = (r) => (r.truncated ? `<p class="small muted">${esc(t('list_truncated').replace('{n}', r.limit))}${r.limit < 500 ? ` <button type="button" class="btn secondary" id="cmore">${esc(t('cases_upto500'))}</button>` : ''}</p>` : '');
   const bindMore = () => { const b = $('#cmore'); if (b) b.onclick = () => { S.caseLimit = 500; viewCases(); }; };
@@ -483,12 +484,14 @@ async function viewCases() {
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}
     <div class="seg-tabs">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup'])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}">${esc(t(k === 'repeat' ? 'filter_repeat' : k === 'warranty' ? 'filter_warranty' : k === 'stale' ? 'filter_stale' : k === 'followup' ? 'filter_followup' : k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', res.stale_days) : t('filter_stale_off'))}</p>` : ''}
+    ${f !== 'followup' ? `<select id="csort" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${['priority', 'oldest', 'updated'].map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
     <div id="cl">${caseList(list)}${trunc(res)}</div>
     ${S.me.role !== 'driver' ? `<div class="actions"><button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}</div>` : ''}`, 'cases');
   const ci = $('#cics'); if (ci) ci.onclick = async () => { try { download(await api('GET', `/api/cases?format=ics${vq()}`), `fuhrpark-wiedervorlagen_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
-  const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { const blob = await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}`); download(blob, `fuhrpark-vorgaenge_${bDate()}.csv`); if (blob.cfpTruncated) toast(t('csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
+  const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { const blob = await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${sq()}`); download(blob, `fuhrpark-vorgaenge_${bDate()}.csv`); if (blob.cfpTruncated) toast(t('csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); S.caseLimit = null; viewCases(); }));
   const cvs = $('#cvsite'); if (cvs) cvs.onchange = () => { S.caseVsite = cvs.value; S.caseLimit = null; viewCases(); };
+  const cso = $('#csort'); if (cso) cso.onchange = () => { S.caseSort = cso.value; viewCases(); };
   bindMore();
   let timer = null;
   const cq = $('#cq');

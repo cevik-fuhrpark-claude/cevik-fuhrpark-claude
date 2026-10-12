@@ -59,6 +59,13 @@ export function staleBefore(days) {
   return berlinDayStartIso(limit);
 }
 
+// Sortierung der Liste (vor dem LIMIT, damit z. B. „älteste zuerst“ auch bei vielen Vorgängen stimmt); Standard: Dringlichkeit
+const CASE_SORTS = {
+  priority: `CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END,
+      CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, c.updated_at DESC`,
+  oldest: 'c.created_at ASC, c.id',
+  updated: 'c.updated_at DESC, c.id',
+};
 // meta (optional): erhält site/site_options für den Filter „Fahrzeug-Standort“ (vsite) – nicht für Fahrer
 export async function listCases(env, user, envName, query, meta = null) {
   // query.__counts: nur Begrenzung melden (meta.truncated), ohne Standort-/Nachfass-Angaben (spart zwei Abfragen, z. B. Startseite)
@@ -134,8 +141,7 @@ export async function listCases(env, user, envName, query, meta = null) {
       (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
-    ORDER BY CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END,
-      CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, c.updated_at DESC
+    ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : CASE_SORTS.priority}
     LIMIT ?`).bind(...args, limit + 1).all()).results;
   // eine Zeile mehr gelesen: zeigt an, dass die Liste begrenzt ist (Oberfläche: „weitere laden“ bzw. Suche/CSV)
   if (rows.length > limit) { rows.length = limit; if (meta) meta.truncated = true; }

@@ -2278,6 +2278,18 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
   ok(app.includes("t('audit_csv_truncated')") && app.includes('/api/admin/audit?format=csv'), 'Oberfläche');
 });
 
+await test('Vorgangsliste: Sortierung älteste zuerst / zuletzt geändert vor dem LIMIT, unbekannt = Dringlichkeit', async () => {
+  const all = (await users.fleet.get('/api/cases?status=&limit=500')).data.cases; ok(all.length >= 3);
+  const byCreated = all.map((c) => c.created_at).sort();
+  const o = (await users.fleet.get('/api/cases?status=&limit=2&sort=oldest')).data;
+  eq(o.cases.map((c) => c.created_at).join(), byCreated.slice(0, 2).join(), 'älteste zuerst über alle, nicht nur geladene'); eq(o.truncated, true);
+  const u = (await users.fleet.get('/api/cases?status=&sort=updated&limit=500')).data.cases.map((c) => c.updated_at);
+  eq(u.join(), u.slice().sort().reverse().join(), 'zuletzt geändert zuerst');
+  for (const bad of ['constructor', '__proto__', 'x;DROP', 'toString']) eq((await users.fleet.get('/api/cases?status=&sort=' + encodeURIComponent(bad))).status, 200, 'unbekannt: ' + bad);
+  eq((await users.fleet.get('/api/cases?status=&sort=constructor&limit=500')).data.cases.map((c) => c.id).join(), all.map((c) => c.id).join(), 'unbekannt = Standard');
+  const c = await users.fleet.get('/api/cases?format=csv&status=&sort=oldest'); eq(c.status, 200);
+});
+
 await test('Systemzustand /api/health ohne Anmeldung mit Schema-Nummer (Deployment-Prüfung)', async () => {
   const r = await anon.get('/api/health'); eq(r.status, 200); eq(r.data.ok, true);
   const files = (await import('node:fs')).readdirSync(new URL('../migrations/', import.meta.url)).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

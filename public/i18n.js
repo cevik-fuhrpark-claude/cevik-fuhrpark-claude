@@ -618,3 +618,6 @@ Object.assign(STRINGS.en, { audit_area: 'Area' });
 Object.assign(STRINGS.de, { sort_by: 'Sortieren', vsort_plate: 'Kennzeichen', vsort_next_due: 'nächste Prüfung zuerst', vsort_check_oldest: 'Abfahrtskontrolle am längsten her', vsort_km_desc: 'km-Stand (höchster zuerst)' });
 Object.assign(STRINGS.uk, { sort_by: 'Сортувати', vsort_plate: 'Номер', vsort_next_due: 'найближчий техогляд спочатку', vsort_check_oldest: 'найдавніша перевірка перед виїздом', vsort_km_desc: 'пробіг (найбільший спочатку)' });
 Object.assign(STRINGS.en, { sort_by: 'Sort', vsort_plate: 'Plate', vsort_next_due: 'next inspection first', vsort_check_oldest: 'departure check longest ago', vsort_km_desc: 'mileage (highest first)' });
+Object.assign(STRINGS.de, { csort_priority: 'Dringlichkeit', csort_oldest: 'älteste zuerst', csort_updated: 'zuletzt geändert' });
+Object.assign(STRINGS.uk, { csort_priority: 'терміновість', csort_oldest: 'найстаріші спочатку', csort_updated: 'нещодавно змінені' });
+Object.assign(STRINGS.en, { csort_priority: 'urgency', csort_oldest: 'oldest first', csort_updated: 'recently changed' });
