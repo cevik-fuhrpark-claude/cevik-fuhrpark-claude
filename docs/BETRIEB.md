@@ -87,7 +87,7 @@ Ergänzt 11.10.2026, 11:40 UTC: 60 Werkstattaufträge aus Prüfterminen mit Kost
 Ergänzt 11.10.2026, 15:45 UTC: 1200 Durchführungen mit Ergebnis (400 mit erheblichen/gefährlichen Mängeln, 200 mit Mängelauftrag, davon 67 freigegeben): Nachweisliste 12 Monate ≈ 19 ms / 3 Abfragen, als CSV ≈ 16 ms / 4, Prüftermine inkl. Prüfmängel/Nachprüfungen ≈ 10 ms / 12, Kennzahlen inkl. Mängelbeseitigung ≈ 54 ms / 6, Integrations-API `/v1/kpi` ≈ 54 ms / 4, `/v1/maintenance/history` ≈ 19 ms / 1, `/v1/maintenance` ≈ 7 ms / 9, Datenqualität ≈ 18 ms / 17, Fuhrparkagent ≈ 190 ms / 39.
 
 Cloudflare begrenzt die Anzahl der Datenbankabfragen je Aufruf. Deshalb arbeiten Agent, Importe, Push-Zustellung und Fahrzeugakte
-mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 33 statt
+mit Sammelabfragen; die Anzahl der Abfragen hängt nicht mehr von der Zahl der Vorgänge oder Fahrzeuge ab (Agent: höchstens ≈ 38 – eigener Test ≤ 40 – statt
 zuvor ≈ 9000 bei 3000 offenen Vorgängen). Ein Test prüft bei jedem Lauf, dass jeder API-Aufruf ≤ 50 Abfragen braucht.
 Betrieb und Testumgebung laufen in getrennten Cron-Aufrufen (`*/15` bzw. `7,37`).
 Push-Zustellung schreibt Ergebnisse mit höchstens 3 Anweisungen je Zustellung – unabhängig von Empfänger- und Gerätezahl

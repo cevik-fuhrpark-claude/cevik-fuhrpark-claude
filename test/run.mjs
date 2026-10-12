@@ -3379,6 +3379,9 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   console.log('     größte Aufrufe: ' + worst.map((w) => `${w.method} ${w.path} = ${w.n}`).join(' · '));
   if (worst[0].sql) console.log(worst[0].sql.map((q, i) => `       ${i + 1}. ${q}`).join('\n')); // CFP_QTRACE=1 npm test
   ok(worst[0].n <= 50, `${worst[0].method} ${worst[0].path} braucht ${worst[0].n} Abfragen`);
+  // Fuhrparkagent: Reserve für neue Prüfungen halten (Backlog 74; Ausgangslisten seit 12.10. in einer Abfrage)
+  const agentMax = Math.max(...QSTAT.perRequest.slice(1).filter((w) => w.path === '/api/agent/run').map((w) => w.n));
+  ok(agentMax <= 40, `Fuhrparkagent braucht ${agentMax} Abfragen (Ziel ≤ 40, Reserve für neue Prüfungen)`);
 });
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);

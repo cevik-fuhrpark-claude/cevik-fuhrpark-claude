@@ -43,17 +43,44 @@ const since = (iso) => `seit ${berlinDateTime(iso)}`;
 // Felder, deren Änderung einen Befund „geändert“ macht (sonst kein Schreibzugriff)
 const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'next_action', 'owner_role', 'requires_decision', 'fingerprint'];
 
+// Ausgangslisten des Agenten (Einstellungen, Empfänger, Sperren, Restarbeiten, nicht zugestellte Push, ruhende Fahrzeuge)
+// als JSON-Arrays in einer Abfrage – gleiche Bedingungen wie zuvor die sieben Einzelabfragen.
+const BASICS_SQL = `SELECT
+  (SELECT json_group_array(json_object('key', key, 'value', value)) FROM settings) AS settings,
+  (SELECT json_group_array(json_object('id', id, 'role', role, 'workshop_site', workshop_site)) FROM users
+     WHERE environment=?1 AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL) AS users,
+  (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
+     WHERE c.environment=?1 AND c.status='in_reparatur' AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id)) AS safety_open,
+  (SELECT json_group_array(json_object('id', c.id, 'case_no', c.case_no, 'vehicle_id', c.vehicle_id, 'plate', v.plate, 'safety_lock_reason', c.safety_lock_reason))
+     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=?1 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
+  (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
+     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN open_items o ON o.case_id=c.id AND o.status='offen'
+     WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
+  (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(*) AS n FROM notifications n
+     WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
+     AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 GROUP BY n.case_id)) AS undelivered,
+  (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded`;
+
+export async function agentBasics(env, environment) {
+  const row = await env.DB.prepare(BASICS_SQL).bind(environment, new Date(Date.now() - 48 * 3600000).toISOString()).first();
+  const out = {};
+  for (const k of ['settings', 'users', 'safety_open', 'locked', 'released_open', 'undelivered', 'excluded']) out[k] = JSON.parse(row?.[k] || '[]');
+  return out;
+}
+
 export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
   const runId = uuid();
   const started = nowIso();
   await env.DB.prepare('INSERT INTO agent_runs(id,environment,trigger,started_at) VALUES (?,?,?,?)').bind(runId, environment, trigger, started).run();
   try {
-    const settings = new Map((await env.DB.prepare('SELECT key, value FROM settings').all()).results.map((r) => [r.key, r.value]));
+    // Kleine Ausgangslisten in EINER D1-Abfrage (Abfragebudget je Aufruf, siehe Backlog 74)
+    const base = await agentBasics(env, environment);
+    const settings = new Map(base.settings.map((r) => [r.key, r.value]));
     const findings = [];
     const add = (f) => findings.push({ requires_decision: 0, case_id: null, vehicle_id: null, ...f });
 
     // Leitung (Empfänger) und Werkstattstandorte mit Zugang in einer Abfrage
-    const activeUsers = (await env.DB.prepare(`SELECT id, role, workshop_site FROM users WHERE environment=? AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL`).bind(environment).all()).results;
+    const activeUsers = base.users;
     const fleetUsers = activeUsers.filter((u) => u.role !== 'workshop');
     if (fleetUsers.length === 0) {
       add({ code: 'NO_FLEET_RECIPIENT', subject: 'system', severity: 'kritisch', owner_role: 'owner', requires_decision: 1,
@@ -66,8 +93,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     const sitesWithUsers = new Set(activeUsers.filter((u) => u.role === 'workshop').map((r) => r.workshop_site));
 
-    const safetyOpen = new Map((await env.DB.prepare(`SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
-      WHERE c.environment=? AND c.status='in_reparatur' AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id`).bind(environment).all()).results.map((r) => [r.case_id, r.n]));
+    const safetyOpen = new Map(base.safety_open.map((r) => [r.case_id, r.n]));
 
     for (const c of open) {
       const label = `${c.case_no} (${c.plate})`;
@@ -126,24 +152,21 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Gesperrte Fahrzeuge (für Dispo sichtbar)
-    const locked = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.safety_lock_reason FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
-      WHERE c.environment=? AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).all()).results;
+    const locked = base.locked;
     for (const l of locked) {
       add({ code: 'VEHICLE_LOCKED', subject: l.vehicle_id, case_id: l.id, vehicle_id: l.vehicle_id, severity: 'info', owner_role: 'dispatch',
         message: `${l.plate}: gesperrt (${l.safety_lock_reason || 'Sicherheitsprüfung'}) – nicht disponieren.`, next_action: 'Bis zur technischen Freigabe nicht einplanen.' });
     }
 
     // Freigegeben, aber Restarbeiten offen
-    const relOpen = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
-      JOIN open_items o ON o.case_id=c.id AND o.status='offen' WHERE c.environment=? AND c.status='fahrzeug_freigegeben' GROUP BY c.id`).bind(environment).all()).results;
+    const relOpen = base.released_open;
     for (const r of relOpen) {
       add({ code: 'RELEASED_WITH_OPEN_ITEMS', subject: r.id, case_id: r.id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         message: `${r.case_no} (${r.plate}): freigegeben mit ${r.n} offener nicht sicherheitsrelevanter Restarbeit(en).`, next_action: 'Werkstatttermin für Restarbeiten planen.' });
     }
 
     // Dringende Benachrichtigungen ohne Push-Zustellung
-    const undelivered = (await env.DB.prepare(`SELECT n.case_id, COUNT(*) AS n FROM notifications n WHERE n.environment=? AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
-      AND n.push_status IN ('failed','no_subscription') AND n.created_at > ? GROUP BY n.case_id`).bind(environment, new Date(Date.now() - 48 * 3600000).toISOString()).all()).results;
+    const undelivered = base.undelivered;
     for (const u of undelivered) {
       add({ code: 'URGENT_NOT_DELIVERED', subject: u.case_id || 'system', case_id: u.case_id, severity: 'handeln', owner_role: 'fleet',
         message: `Dringende Benachrichtigung an ${u.n} Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler).`,
@@ -278,7 +301,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Ruhende Fahrzeuge (Inhaberentscheidung): keine fahrzeugbezogenen Bewertungsbefunde; vorgangsbezogene Sicherheitsbefunde bleiben
-    const excludedVeh = new Set((await env.DB.prepare('SELECT id FROM vehicles WHERE eval_excluded=1').all()).results.map((r) => r.id));
+    const excludedVeh = new Set(base.excluded);
     if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && !findings[i].case_id && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
 
     // ---- Befunde persistieren (Sammel-Upsert), Erledigtes schließen, Übergaben an Master ----
