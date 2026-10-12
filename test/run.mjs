@@ -2083,6 +2083,10 @@ await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis
   // Umgebung getrennt: Betriebs-Vorgang desselben Fahrzeugs sieht Test-Gewährleistung nicht
   const pc = await owner.post('/api/cases', { vehicle_id: V, description: 'Betrieb: Lichtmaschine?', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() });
   if (pc.status === 201) eq((await owner.get(`/api/cases/${pc.data.id}`)).data.vehicle_info.warranties.length, 0, 'Umgebung getrennt');
+  // Fahrzeugakte (Leitung): heute laufende Gewährleistungen, nicht Werkstatt/Disposition, Kostensumme unverändert
+  const ak = (await users.fleet.get(`/api/vehicles/${V}`)).data;
+  eq(ak.warranties.map((w) => w.item).join(), 'Bosch-Dienst,Lichtmaschine', 'Akte: laufende, nach Datum'); eq(ak.costs.warranties, undefined);
+  eq((await users.ws.get(`/api/vehicles/${V}`)).data.warranties, undefined, 'Werkstatt ohne (wie Kosten)');
 });
 
 await test('Wiederherstellungs-Probe mit vollem Datenbestand: jede gesicherte Tabelle zeilen- und feldgleich (inkl. Hinweise „gültig bis“/Archiv, Dubletten, Lager-Umlagerung/Bestellvermerk)', async () => {

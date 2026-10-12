@@ -332,8 +332,12 @@ export async function vehicleCosts(env, envName, vehicleId) {
   const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
     (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours)) FROM work_entries x ${J}) AS w,
     (SELECT json_group_array(json_object('case_id', x.case_id, 'quantity', x.quantity, 'unit_price_net', x.unit_price_net, 'valuation', x.valuation)) FROM parts x ${J}) AS p,
-    (SELECT json_group_array(json_object('case_id', x.case_id, 'amount_net', x.amount_net, 'valuation', x.valuation, 'covers_work_and_parts', x.covers_work_and_parts)) FROM external_costs x ${J}) AS e`)
-    .bind(envName, vehicleId).first();
+    (SELECT json_group_array(json_object('case_id', x.case_id, 'amount_net', x.amount_net, 'valuation', x.valuation, 'covers_work_and_parts', x.covers_work_and_parts)) FROM external_costs x ${J}) AS e,
+    (SELECT json_group_array(json_object('case_id', g.case_id, 'case_no', g.case_no, 'item', g.item, 'item_kind', g.item_kind, 'supplier', g.supplier, 'warranty_until', g.warranty_until)) FROM
+      (SELECT x.case_id, c.case_no, x.name AS item, 'part' AS item_kind, x.supplier, x.warranty_until FROM parts x ${J} AND x.warranty_until >= ?3
+       UNION ALL SELECT x.case_id, c.case_no, x.supplier AS item, 'external' AS item_kind, x.supplier, x.warranty_until FROM external_costs x ${J} AND x.warranty_until >= ?3
+       ORDER BY 6, 2 LIMIT 50) g) AS g`)
+    .bind(envName, vehicleId, berlinDate()).first();
   const rate = r.rate === null || r.rate === '' ? null : Number(r.rate);
   const by = (txt) => {
     const m = new Map();
@@ -346,7 +350,9 @@ export async function vehicleCosts(env, envName, vehicleId) {
     const k = computeCosts(rate, work.get(id) || [], parts.get(id) || [], ext.get(id) || []);
     actual += k.actual_net; estimate += k.estimate_net; unvalued += k.unvalued_items;
   }
-  return { actual_net: round2(actual), estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0 };
+  // laufende Gewährleistungen (heute noch gültig) aus Teilen/Fremdleistungen der Vorgänge – getrennt von der Kostensumme
+  const warranties = JSON.parse(r.g || '[]');
+  return { actual_net: round2(actual), estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0, warranties };
 }
 const round2 = (n) => Math.round(n * 100) / 100;
 
