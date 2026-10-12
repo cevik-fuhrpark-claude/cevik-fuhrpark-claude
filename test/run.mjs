@@ -3373,6 +3373,42 @@ await test('Prüf-/Wartungsarten werden in der App-Sprache angezeigt (gespeicher
   // keine Anzeige der Prüfart ohne mk() in Prüfterminen/Fahrzeugakte
   ok(!/\$\{esc\(((m|r|h|x|me|fi|pi|i)\.)?kind\)\}/.test(app.replace(/esc\(t\([^)]*\)\)/g, '')), 'Prüfart überall übersetzt');
 });
+await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis wie die bisherigen Einzelabfragen', async () => {
+  const { recipientsFor } = await import('../src/notify.js');
+  const db = env.DB;
+  const byRole = async (e, roles, extra = '', args = []) => (await db.prepare(`SELECT id FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN (${roles.map(() => '?').join(',')}) ${extra}`).bind(e, ...roles, ...args).all()).results.map((r) => r.id);
+  const cases = (await db.prepare(`SELECT * FROM cases ORDER BY created_at LIMIT 40`).all()).results;
+  ok(cases.length >= 10, 'genügend Vorgänge');
+  const kinds = ['created', 'received', 'priority_changed', 'approved', 'rework', 'acknowledged', 'waiting_parts', 'cost_limit', 'cost_approved', 'released', 'safety_lock', 'comment'];
+  let compared = 0; let withDrivers = 0;
+  for (const c of cases) {
+    const site = c.workshop_site || c.suggested_workshop_site;
+    const reporter = (await db.prepare('SELECT id FROM users WHERE id=? AND active=1').bind(c.reporter_id).all()).results.map((r) => r.id);
+    const ws = site ? await byRole(c.environment, ['workshop'], 'AND workshop_site=?', [site]) : [];
+    const lead = await byRole(c.environment, ['fleet', 'owner']); const dispo = await byRole(c.environment, ['dispatch']);
+    const drv = (await db.prepare(`SELECT u.id FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`).bind(c.vehicle_id, new Date().toISOString(), c.environment, c.reporter_id).all()).results.map((r) => r.id);
+    const urgent = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
+    const expect = {
+      created: [...lead, ...(urgent ? [...dispo, ...ws] : []), ...(c.safety_lock ? drv : [])],
+      received: reporter, priority_changed: [...reporter, ...(c.status !== 'gemeldet' ? ws : [])],
+      approved: [...ws, ...reporter], rework: ws, acknowledged: lead, waiting_parts: [...lead, ...dispo], cost_limit: lead, cost_approved: ws,
+      released: [...reporter, ...dispo, ...lead, ...ws, ...drv], safety_lock: [...reporter, ...dispo, ...lead, ...ws, ...drv],
+      comment: [...reporter, ...lead, ...(c.status !== 'gemeldet' ? ws : [])],
+    };
+    if (drv.length) withDrivers++;
+    for (const k of kinds) {
+      const q0 = QSTAT.n;
+      const { list } = await recipientsFor(env, c, k, {});
+      eq(QSTAT.n - q0, 1, `${k}: genau eine Abfrage`);
+      eq([...new Set(list.map((u) => u.id))].sort().join(','), [...new Set(expect[k])].sort().join(','), `${c.case_no} ${k}: gleiche Empfänger`);
+      for (const u of list) eq(!!u.assigned, drv.includes(u.id) && !reporter.includes(u.id) && !lead.includes(u.id), `${k}: assigned nur für zugeordnete Fahrer`);
+      ok(list.every((u) => Object.keys(u).every((x) => ['id', 'language', 'role', 'assigned'].includes(x))), 'nur id/Sprache/Rolle');
+      compared++;
+    }
+  }
+  console.log(`     ${compared} Vergleiche, ${withDrivers} Vorgänge mit zugeordneten Fahrern`);
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);

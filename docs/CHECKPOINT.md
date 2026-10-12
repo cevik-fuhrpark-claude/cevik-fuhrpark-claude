@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 137 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 138 automatisierte Abnahmetests (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -363,6 +363,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 11.10.2026: **Bußgeld-Fahrerkandidaten in der App-Sprache** (`since`/`assign_evidence`/`check_at` additiv, übernommener Nachweis bleibt deutsch); Rauchtest legt zweites Schreiben mit Kandidaten an (Gegenprobe ohne Fix schlug an). 137 Tests grün, Rauchtest Englisch 465 Ansichten ohne Auffälligkeit.
 - **Sitzungsende 11.10.2026 ca. 23:55 UTC** (Sitzung ab 23:15 UTC, vom Auftraggeber unterbrochen): Filter „Prognose ≤ 30 Tage“, Rauchtest Englisch + Fachwortprüfung, Zuordnungs-Nachweis und Bußgeld-Kandidaten übersetzt. Keine neuen Antworten des Auftraggebers (Postfach geprüft). **Nächster Schritt:** Kandidaten-Begründung am Handy umbrechen statt abschneiden (`white-space:normal` an `.sub` in der Kandidatenliste, `public/app.js`), dann `pruefen.sh --schnell`; danach Antworten auf offene Fragen prüfen.
 - 12.10.2026: **Fuhrparkagent-Abfragebudget 44 → 38** (Testsuite-Höchstwert; Profil 150 Lkw/3000 Vorgänge: Folgelauf 31 → 25): Einstellungen, Empfänger, Restarbeiten sicherheitsrelevant, Sperren, Freigaben mit Restarbeiten, nicht zugestellte dringende Push und ruhende Fahrzeuge kommen als JSON-Arrays aus **einer** D1-Abfrage (`agentBasics` in `src/agent.js`, gleiche Bedingungen wie vorher). Neuer Test: Agent ≤ 40 Abfragen. 137 Tests grün, `pruefen.sh --schnell` grün, Lasttest bestanden.
+- 12.10.2026: **Empfängerermittlung in einer Abfrage** (`candidateUsers` in `src/notify.js`): Melder, Leitung/Inhaber/Dispo, Werkstatt des Standorts und zugeordnete Fahrer kommen aus **einer** D1-Abfrage, die Auswahl je Ereignis danach im Speicher (vorher bis zu 5 Abfragen je Hinweis). Beispiel „Auftrag Mängelbeseitigung aus Prüfung“ 37 → ≤ 34 Abfragen. Neuer Test vergleicht für 40 Vorgänge × 12 Ereignisarten mit den bisherigen Einzelabfragen (gleiche Empfänger, `assigned` nur für zugeordnete Fahrer, genau 1 Abfrage). 138 Tests grün, `pruefen.sh --schnell` grün, Lasttest bestanden.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

@@ -45,32 +45,36 @@ export function localizedTitle(n, lang) {
 
 export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.filter((k) => MUTABLE_KINDS.includes(k)) : []; } catch { return []; } }
 
-async function usersByRole(env, environment, roles, extraWhere = '', extraArgs = []) {
-  return (await env.DB.prepare(`SELECT id, language, role FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN (${roles.map(() => '?').join(',')}) ${extraWhere}`)
-    .bind(environment, ...roles, ...extraArgs).all()).results;
-}
-
-// Fahrer mit aktueller Zuordnung zum Fahrzeug (Sperre/Aufhebung/Freigabe betrifft sie direkt). Sie sehen fremde Vorgänge
-// nicht – ihr Hinweis verlinkt daher nicht auf den Vorgang (assigned), sondern erscheint in „Hinweise“/„Mein Fahrzeug“.
-async function assignedDrivers(env, c) {
-  return (await env.DB.prepare(`SELECT u.id, u.language, u.role, 1 AS assigned FROM driver_vehicles d JOIN users u ON u.id=d.user_id
-    WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`)
-    .bind(c.vehicle_id, nowIso(), c.environment, c.reporter_id).all()).results;
+// Alle möglichen Empfänger eines Vorgangs in EINER Abfrage (Abfragebudget je Aufruf): Melder (nur aktiv), Leitung/Inhaber/Dispo
+// der Umgebung, Werkstatt des Standorts und Fahrer mit aktueller Zuordnung zum Fahrzeug. Auswahl je Ereignis danach im Speicher.
+// Fahrer sehen fremde Vorgänge nicht – ihr Hinweis verlinkt daher nicht auf den Vorgang (assigned), sondern erscheint in „Hinweise“/„Mein Fahrzeug“.
+async function candidateUsers(env, c, site) {
+  return (await env.DB.prepare(`SELECT u.id, u.language, u.role, (u.id=?1) AS is_reporter,
+      (u.password_hash IS NOT NULL AND u.environment=?2) AS qualified,
+      (u.role='workshop' AND u.workshop_site IS ?3) AS at_site,
+      (u.role='driver' AND EXISTS (SELECT 1 FROM driver_vehicles d WHERE d.user_id=u.id AND d.vehicle_id=?4 AND (d.valid_to IS NULL OR d.valid_to > ?5))) AS is_assigned
+    FROM users u WHERE u.active=1 AND (u.id=?1 OR (u.password_hash IS NOT NULL AND u.environment=?2 AND (u.role IN ('fleet','owner','dispatch')
+      OR (u.role='workshop' AND u.workshop_site IS ?3)
+      OR (u.role='driver' AND EXISTS (SELECT 1 FROM driver_vehicles d WHERE d.user_id=u.id AND d.vehicle_id=?4 AND (d.valid_to IS NULL OR d.valid_to > ?5))))))`)
+    .bind(c.reporter_id ?? null, c.environment, site || null, c.vehicle_id ?? null, nowIso()).all()).results;
 }
 
 export async function recipientsFor(env, c, kind, ctxData = {}) {
-  const e = c.environment;
   const urgent = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
   const list = [];
   const add = (rows) => { for (const r of rows) if (!list.find((x) => x.id === r.id)) list.push(r); };
-  const reporter = (await env.DB.prepare('SELECT id, language, role FROM users WHERE id=? AND active=1').bind(c.reporter_id).all()).results;
   const site = c.workshop_site || c.suggested_workshop_site;
-  const workshopUsers = site ? await usersByRole(env, e, ['workshop'], 'AND workshop_site=?', [site]) : [];
+  const pool = await candidateUsers(env, c, site);
+  const pick = (u, extra = {}) => ({ id: u.id, language: u.language, role: u.role, ...extra });
+  const reporter = pool.filter((u) => u.is_reporter).map((u) => pick(u));
+  const usersByRole = (roles) => pool.filter((u) => u.qualified && roles.includes(u.role)).map((u) => pick(u));
+  const workshopUsers = site ? pool.filter((u) => u.qualified && u.at_site).map((u) => pick(u)) : [];
+  const assignedDrivers = () => pool.filter((u) => u.qualified && u.is_assigned && u.id !== c.reporter_id).map((u) => pick(u, { assigned: 1 }));
   switch (kind) {
     case 'created':
-      add(await usersByRole(env, e, ['fleet', 'owner']));
-      if (urgent) { add(await usersByRole(env, e, ['dispatch'])); add(workshopUsers); }
-      if (c.safety_lock) add(await assignedDrivers(env, c)); // „nicht fahren“ auch an die anderen Fahrer dieses Fahrzeugs
+      add(usersByRole(['fleet', 'owner']));
+      if (urgent) { add(usersByRole(['dispatch'])); add(workshopUsers); }
+      if (c.safety_lock) add(assignedDrivers()); // „nicht fahren“ auch an die anderen Fahrer dieses Fahrzeugs
       break;
     case 'received': case 'rejected': case 'priority_changed':
       add(reporter);
@@ -81,24 +85,24 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       if (kind === 'approved') add(reporter);
       break;
     case 'acknowledged': case 'started': case 'waiting_parts': case 'resumed': case 'quality_check': case 'open_item_safety':
-      add(await usersByRole(env, e, ['fleet', 'owner']));
-      if (kind === 'waiting_parts') add(await usersByRole(env, e, ['dispatch']));
+      add(usersByRole(['fleet', 'owner']));
+      if (kind === 'waiting_parts') add(usersByRole(['dispatch']));
       break;
     case 'cost_limit':
-      add(await usersByRole(env, e, ['fleet', 'owner']));
+      add(usersByRole(['fleet', 'owner']));
       break;
     case 'cost_approved':
       add(workshopUsers);
       break;
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
-      add(reporter); add(await usersByRole(env, e, ['dispatch', 'fleet', 'owner'])); add(workshopUsers);
-      add(await assignedDrivers(env, c));
+      add(reporter); add(usersByRole(['dispatch', 'fleet', 'owner'])); add(workshopUsers);
+      add(assignedDrivers());
       break;
     case 'comment': {
       // Optional gezielt: payload.notify ⊆ ['reporter','fleet','workshop'] (Standard: alle Beteiligten)
       const want = Array.isArray(ctxData.payload?.notify) && ctxData.payload.notify.length ? new Set(ctxData.payload.notify) : null;
       if (!want || want.has('reporter')) add(reporter);
-      if (!want || want.has('fleet')) add(await usersByRole(env, e, ['fleet', 'owner']));
+      if (!want || want.has('fleet')) add(usersByRole(['fleet', 'owner']));
       if ((!want || want.has('workshop')) && c.status !== 'gemeldet') add(workshopUsers);
       break;
     }
