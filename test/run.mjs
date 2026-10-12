@@ -2714,6 +2714,17 @@ await test('Mengenbegrenzung je Benutzer für Uploads/Importe (429), Fenster get
   } finally { LIMITS.import = saved; }
   const r = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;HU;01.01.2026;x', { 'content-type': 'text/csv' });
   eq(r.status, 200, 'normaler Betrieb nicht betroffen');
+  // Vorschauen zählen getrennt von Übernahmen: aufgebrauchte Übernahmen sperren die Vorschau nicht und umgekehrt
+  const fid = users.fleet.id;
+  const win = Math.floor(Date.now() / 1000 / 3600) * 3600;
+  await env.DB.prepare('INSERT OR REPLACE INTO rate_limits(key, window_start, count) VALUES (?,?,?)').bind(`import:${fid}`, win, LIMITS.import[0]).run();
+  eq((await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;HU;01.01.2026;x', { 'content-type': 'text/csv' })).status, 200, 'Vorschau trotz aufgebrauchter Übernahmen');
+  const full = await users.fleet.req('POST', '/api/maintenance/import', 'FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;HU;01.01.2026;x', { 'content-type': 'text/csv' });
+  eq(full.status, 429, 'Übernahme begrenzt'); eq(full.data.error, 'rate_limited');
+  await env.DB.prepare('INSERT OR REPLACE INTO rate_limits(key, window_start, count) VALUES (?,?,?)').bind(`preview:${fid}`, win, LIMITS.preview[0]).run();
+  eq((await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;HU;01.01.2026;x', { 'content-type': 'text/csv' })).status, 429, 'Vorschau ebenfalls begrenzt');
+  ok(LIMITS.preview[0] > LIMITS.import[0], 'mehr Vorschauen als Übernahmen');
+  await env.DB.prepare("DELETE FROM rate_limits WHERE key IN (?, ?)").bind(`import:${fid}`, `preview:${fid}`).run();
 });
 
 console.log('Ruhende Fahrzeuge');

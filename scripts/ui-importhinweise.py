@@ -27,7 +27,7 @@ with sync_playwright() as p:
     if s['s']==200: api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW})
     api('POST','/api/login',{'username':'i.inhaber','password':PW})
     api('POST','/api/vehicles',{'vin':'VAK656EBDG1613170','plate':'SZ-YC 5514','site':'Dortmund'})
-    # Importe sind je Person auf 20/Std. begrenzt: Prüftermine/Verträge als Fuhrparkleitung, Reifen (nur Inhaber) als Inhaber
+    # Vorschauen sind je Person begrenzt (120/Std., Übernahmen 20/Std.): Prüftermine/Verträge als Fuhrparkleitung, Reifen (nur Inhaber) als Inhaber
     u=api('POST','/api/users',{'username':'i.leitung','display_name':'I Leitung','role':'fleet','environment':'production'})
     if u['s'] in (200,201): a.evaluate(JS,['POST','/api/invite/accept',{'token':u['d']['invite_token'],'password':PW}]); api('POST','/api/login',{'username':'i.inhaber','password':PW})
     for lang in ['uk','en','de']:

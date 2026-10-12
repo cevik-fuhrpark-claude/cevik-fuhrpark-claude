@@ -199,7 +199,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request)), 201);
   if (path === '/api/vehicles/import' && m === 'POST') {
-    await rateLimit(env, 'import', user.id);
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await veh.importVehiclesCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
@@ -227,7 +227,7 @@ async function handleApi(request, env, ctx, url) {
     return json(ov);
   }
   if (path === '/api/contracts/import' && m === 'POST') {
-    await rateLimit(env, 'import', user.id);
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
     if (text.length > 300000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await contracts.importContracts(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));
@@ -254,7 +254,7 @@ async function handleApi(request, env, ctx, url) {
     return new Response(maint.maintenanceHistoryCsv(h), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-durchgefuehrte-pruefungen_${h.from}_${h.to}.csv"`, ...(h.truncated ? { 'x-cfp-truncated': String(h.max) } : {}) } });
   }
   if (path === '/api/maintenance/import' && m === 'POST') {
-    await rateLimit(env, 'import', user.id);
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await maint.importMaintenanceCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
@@ -273,7 +273,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
   if (path === '/api/tires/fleet' && m === 'GET') return json(await tires.fleetTires(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/tires/import' && m === 'POST') {
-    await rateLimit(env, 'import', user.id);
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await tires.importTireSpecs(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
@@ -396,7 +396,7 @@ async function handleApi(request, env, ctx, url) {
     return json(ov);
   }
   if (path === '/api/tacho/import' && m === 'POST') {
-    await rateLimit(env, 'import', user.id);
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
     if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
     return json(await tacho.importDownloads(env, user, envName, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));

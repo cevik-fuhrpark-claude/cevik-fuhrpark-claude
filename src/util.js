@@ -211,7 +211,9 @@ export function berlinDateTime(iso) {
 }
 
 // Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)
-export const LIMITS = { upload: [60, 600], import: [20, 3600] };
+// Importe: Übernehmen 20/Std.; Vorschauen (dry_run, schreiben nichts) eigenes Fenster 120/Std. – Datei korrigieren und erneut prüfen
+// soll die Übernahme nicht aufbrauchen (5 Importarten × mehrere Vorschauen je Datei)
+export const LIMITS = { upload: [60, 600], import: [20, 3600], preview: [120, 3600] };
 export async function rateLimit(env, action, userId) {
   const [max, windowSec] = LIMITS[action];
   const win = Math.floor(Date.now() / 1000 / windowSec) * windowSec;
