@@ -1976,6 +1976,14 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   eq((await users.prodFleet.get(base)).data.notes.length, 0, 'Testhinweise nicht im Betrieb');
   const me = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID);
   eq(me.notes.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'Fahrer sieht nur freigegebene, ohne Verfasser'); ok(!('created_by_name' in me.notes[0]));
+  // Integrations-API /v1/availability: nur mit include=notes, nur für Fahrer freigegebene, ohne Verfasser, Umgebung getrennt
+  const IH = { authorization: 'Bearer integration-token-xyz' };
+  ok(!('notes' in (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, IH)).data.vehicles[0]), 'ohne include keine Hinweise (unverändert)');
+  const avn = (await anon.req('GET', '/api/integration/v1/availability?environment=test&include=notes', undefined, IH)).data.vehicles;
+  ok(avn.every((v) => Array.isArray(v.notes)), 'notes[] je Fahrzeug');
+  const vn = avn.find((v) => v.id === VID).notes;
+  eq(vn.map((n) => n.text).join('|'), 'Ladeetage oben hakt – bekannt, Termin folgt', 'nur für Fahrer freigegebene'); eq(Object.keys(vn[0]).sort().join(), 'created_at,text', 'ohne Verfasser');
+  eq((await anon.req('GET', '/api/integration/v1/availability?environment=production&include=notes', undefined, IH)).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'Betrieb sieht Testhinweise nicht');
   eq((await users.driver.post(`${base}/${a.data.id}/archive`)).status, 403);
   eq((await users.prodFleet.post(`${base}/${a.data.id}/archive`)).status, 404, 'andere Umgebung');
   eq((await users.ws.post(`${base}/${a.data.id}/archive`)).status, 200);
@@ -1983,6 +1991,7 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   eq((await users.fleet.get(base)).data.notes.length, 1);
   const ar = (await users.fleet.get(base + '?archived=1')).data.notes; eq(ar.length, 1); ok(ar[0].archived_at && ar[0].archived_by_name, 'Archiv mit Zeitpunkt und Person');
   eq((await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'archiviert → beim Fahrer weg');
+  eq((await anon.req('GET', '/api/integration/v1/availability?environment=test&include=notes', undefined, IH)).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'archiviert → nicht mehr in der API');
   eq((await users.fleet.post('/api/vehicles/VIN:UNBEKANNT123/notes', { text: 'gibt es nicht' })).status, 404);
   ok((await owner.get('/api/admin/audit?action=vehicle.note')).data.entries.length >= 3, 'protokolliert');
   const tl = (await users.fleet.get(`/api/vehicles/${VID}/timeline?types=note`)).data.items;

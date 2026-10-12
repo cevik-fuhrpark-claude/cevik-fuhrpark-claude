@@ -49,9 +49,17 @@ export async function integrationRouter(request, env, ctx, url) {
     let list = await listVehicles(env, { role: 'owner' }, envParam(url));
     const sel = siteSelection(list, url.searchParams.get('site'));
     if (sel.site) list = list.filter((v) => sel.match(v.site));
+    // optional ?include=notes: aktive, für Fahrer freigegebene Hinweise zum Fahrzeug (nur Text + Zeitpunkt, ohne Verfasser – Datensparsamkeit)
+    let notesBy = null;
+    if (url.searchParams.get('include') === 'notes') {
+      notesBy = new Map();
+      const nr = (await env.DB.prepare('SELECT vehicle_id, text, created_at FROM vehicle_notes WHERE environment=? AND archived_at IS NULL AND for_driver=1 ORDER BY created_at DESC, rowid DESC')
+        .bind(envParam(url)).all()).results;
+      for (const n of nr) { if (!notesBy.has(n.vehicle_id)) notesBy.set(n.vehicle_id, []); notesBy.get(n.vehicle_id).push({ text: n.text, created_at: n.created_at }); }
+    }
     return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
-      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
+      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }
   if (p === '/v1/findings' && m === 'GET') {
     const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;
