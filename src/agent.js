@@ -11,7 +11,7 @@ import { documentFindings } from './vehicles.js';
 import { contractFindings } from './contracts.js';
 import { claimFindings } from './claims.js';
 import { staleBefore } from './cases.js';
-import { latestKmByVehicle, kmDue, maintenanceEventLists } from './maintenance.js';
+import { latestKmByVehicle, kmDue, ruleDueKm, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
@@ -235,10 +235,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const rules = (await env.DB.prepare(`SELECT m.*, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
     const warnDays = Number(settings.get('maintenance_warn_days')) || 30;
     const warnKm = Number(settings.get('maintenance_warn_km')) > 0 ? Number(settings.get('maintenance_warn_km')) : null;
-    const latestKm = rules.some((r) => r.interval_km) ? await latestKmByVehicle(env) : new Map();
+    const latestKm = rules.some((r) => ruleDueKm(r) !== null) ? await latestKmByVehicle(env) : new Map();
     const fmtKm = (n) => n.toLocaleString('de-DE');
     for (const r of rules) {
-      // Kilometer-Intervall (nur wenn Intervall, letzte Durchführung in km und ein km-Stand belegt sind)
+      // km-Fälligkeit (belegt oder aus Intervall + letzter Durchführung in km) – nur mit belegtem km-Stand
       const k = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
       if (k && k.km_status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
         message: `${r.plate}: ${r.kind} war bei ${fmtKm(k.next_due_km)} km fällig – Stand ${fmtKm(k.current_km)} km (abgelesen ${berlinDateTime(k.km_measured_at).slice(0, 10)}).`, next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
@@ -256,9 +256,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // HU/SP nach StVZO Anlage VIII: gespiegelte Fälligkeiten aktualisieren (nur Betrieb-Lauf, protokolliert) und Befunde bilden
     const todayB = berlinDate();
-    if (environment === 'production') await syncHuSpDues(env, { today: todayB, warnDays });
+    // Betrieb: Eingangsdaten der Synchronisierung weiterverwenden (spart 3 Abfragen; Spiegelung ändert nur berechnete Termine, nicht die Bewertung)
+    const huspIn = environment === 'production' ? (await syncHuSpDues(env, { today: todayB, warnDays })).inputs : await loadHuSpInputs(env);
     const H_LABEL = { HU: 'HU', SP: 'SP' };
-    for (const [vid, x] of await loadHuSpInputs(env)) {
+    for (const [vid, x] of huspIn) {
       if (!x.v.active) continue; // außer Betrieb: Prüfpflicht ruht (Anlage VIII Nr. 2.7)
       const res = huSpFor(x, todayB, warnDays);
       for (const kind of ['HU', 'SP']) {

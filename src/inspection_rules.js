@@ -217,6 +217,7 @@ export async function syncHuSpDues(env, { today, warnDays = 30, actorId = null, 
         changes.push({ vehicle_id: x.v.id, plate: x.v.plate, kind, from: r.next_due_date || null, to: target || null, status: kind === 'HU' ? res.hu.status : res.sp.status });
         stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, due_source='berechnet', interval_months=?, updated_at=? WHERE id=?`)
           .bind(target || null, kind === 'HU' ? res.hu.interval_months : null, now, r.id));
+        Object.assign(r, { next_due_date: target || null, due_source: 'berechnet' }); // Eingangsdaten auf Stand halten (Weiterverwendung im Agenten)
       }
     }
   }
@@ -226,5 +227,5 @@ export async function syncHuSpDues(env, { today, warnDays = 30, actorId = null, 
       .bind(actorId, now, JSON.stringify(changes)));
     for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
   }
-  return { changed: changes.length, changes };
+  return { changed: changes.length, changes, inputs: byV };
 }

@@ -1,6 +1,6 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
-import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, num } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
@@ -87,9 +87,16 @@ export function kmForecastDate(remaining, rate, latestAt) {
   if (days > 3 * 365) return null; // zu weit weg für eine belastbare Hochrechnung
   return new Date(dayOf(latestAt) + days * 86400000).toISOString().slice(0, 10);
 }
-export function kmDue(rule, latest, warnKm, today = null) {
+// km-Fälligkeit: belegter Wert (due_km) vor „km bei letzter Durchführung + Intervall km“; sonst keine
+export function ruleDueKm(rule) {
+  if (!rule) return null;
+  if (rule.due_km !== null && rule.due_km !== undefined) return rule.due_km;
   if (!rule.interval_km || rule.last_done_km === null || rule.last_done_km === undefined) return null;
-  const next = rule.last_done_km + rule.interval_km;
+  return rule.last_done_km + rule.interval_km;
+}
+export function kmDue(rule, latest, warnKm, today = null) {
+  const next = ruleDueKm(rule);
+  if (next === null) return null;
   if (!latest) return { next_due_km: next, current_km: null, km_measured_at: null, km_remaining: null, km_status: 'ohne_km' };
   const remaining = next - latest.km;
   const st = remaining < 0 ? 'ueberfaellig' : warnKm && remaining <= warnKm ? 'faellig' : 'ok';
@@ -190,7 +197,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   const siteOptions = sel.options; const siteSel = sel.site; const sKey = sel.site !== null;
   const vehicles = sKey ? allVehicles.filter((v) => sel.match(v.site)) : allVehicles;
   const vIds = new Set(vehicles.map((v) => v.id));
-  const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.last_done_date, m.next_due_date, m.planned_date, m.evidence, m.updated_at
+  const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.due_km, m.last_done_date, m.next_due_date, m.planned_date, m.evidence, m.updated_at
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results.filter((r) => vIds.has(r.vehicle_id));
   const vmap = new Map(vehicles.map((v) => [v.id, v]));
   // HU/SP zentral nach StVZO Anlage VIII (inspection_rules.js)
@@ -215,7 +222,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
     const status = kmd && kmd.km_status !== 'ohne_km' && RANK[kmd.km_status] > RANK[dateStatus] ? kmd.km_status : dateStatus;
     return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: r.last_done_date,
       next_due_date: r.next_due_date, planned_date: r.planned_date || null, interval_months: r.interval_months, days, status, evidence: r.evidence, updated_at: r.updated_at,
-      interval_km: r.interval_km, last_done_km: r.last_done_km, ...(kmd || { next_due_km: null, km_remaining: null, km_status: null }) };
+      interval_km: r.interval_km, last_done_km: r.last_done_km, due_km: r.due_km ?? null, ...(kmd || { next_due_km: null, km_remaining: null, km_status: null }) };
   }).sort((a, b) => (RANK[b.status] >= 3 ? RANK[b.status] : 0) - (RANK[a.status] >= 3 ? RANK[a.status] : 0) || (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
   const has = new Set(rules.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP').map((r) => `${r.vehicle_id}|${r.kind}`));
   // Nicht SP-pflichtige Fahrzeuge brauchen keinen SP-Eintrag
@@ -262,9 +269,9 @@ export const csvCell = (x) => {
 const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
 
 export function maintenanceCsv(ov) {
-  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)'].join(';')];
-  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : ''].join(';'));
-  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', '', ''].join(';'));
+  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)', 'km bei letzter Prüfung', 'Intervall km'].join(';')];
+  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : '', r.kind === 'HU' || r.kind === 'SP' ? '' : r.last_done_km ?? '', r.interval_km ?? ''].join(';'));
+  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', '', '', '', ''].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 
@@ -275,18 +282,23 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   if (table.length - 1 > MAX_ROWS) throw bad('validation', `Maximal ${MAX_ROWS} Zeilen je Import.`);
   const head = table[0].map((h) => h.toLowerCase());
-  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  // Datums-/Monatsspalten nie aus km-Spalten lesen („Fällig bei km“, „Intervall km“, „km bei letzter Prüfung“)
+  const col = (names) => head.findIndex((h) => !h.includes('km') && names.some((n) => h.startsWith(n)));
+  const kmCol = (test) => head.findIndex((h) => h.includes('km') && test(h));
+  const ck = { due: kmCol((h) => /f(ä|ae)llig/.test(h) && !/prognose|voraussichtlich|rest/.test(h)),
+    last: kmCol((h) => /letzte|zuletzt/.test(h) && h !== 'letzter km-stand'), // „Letzter km-Stand“ = aktueller Zählerstand, nicht die Prüfung
+    interval: kmCol((h) => h.startsWith('intervall')) };
   const ci = { plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), kind: col(['art', 'prüfart', 'pruefart', 'prüfung', 'pruefung']),
     due: col(['nächster', 'naechster', 'fällig', 'faellig', 'termin']), last: col(['letzte', 'zuletzt']), interval: col(['intervall']), evidence: col(['nachweis', 'quelle', 'beleg']) };
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
   if (ci.kind < 0 || ci.evidence < 0) throw bad('validation', 'Spalten Art und Nachweis erforderlich.');
-  if (ci.due < 0 && ci.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
+  if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
 
   const vehicles = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1').all()).results;
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = new Map();
   for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
-  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, evidence, due_source FROM maintenance_rules ORDER BY created_at').all()).results;
+  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source FROM maintenance_rules ORDER BY created_at').all()).results;
   const ruleOf = new Map();
   for (const r of existing) if (!ruleOf.has(`${r.vehicle_id}|${r.kind}`)) ruleOf.set(`${r.vehicle_id}|${r.kind}`, r);
 
@@ -314,7 +326,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (!kind) return skip(`Prüfart unbekannt: ${get(cells, ci.kind) || '–'}`);
     const evidence = get(cells, ci.evidence);
     // Lückenzeile aus dem eigenen Export („kein Termin hinterlegt“), nicht ausgefüllt: ruhiger Hinweis statt „Nachweis fehlt“
-    if (!evidence && !get(cells, ci.due).trim() && !get(cells, ci.last).trim()) return skip('Kein Termin eingetragen – Zeile bleibt unverändert');
+    const kmRaw = [ck.due, ck.last, ck.interval].map((i) => get(cells, i).trim());
+    if (!evidence && !get(cells, ci.due).trim() && !get(cells, ci.last).trim() && !kmRaw.some(Boolean)) return skip('Kein Termin eingetragen – Zeile bleibt unverändert');
     if (!evidence) return skip('Nachweis/Quelle fehlt');
     if (evidence.length > 300) return skip('Nachweis zu lang (max. 300 Zeichen)');
     const due = parseDueDate(get(cells, ci.due));
@@ -328,17 +341,27 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     const husp = kind === 'HU' || kind === 'SP';
     // HU/SP: Fälligkeit nur aus Nachweis (Plakette/Beleg) oder zentral nach StVZO Anlage VIII – nie aus einem pauschalen Intervall
     if (husp) interval = null;
+    // Kilometer (nicht HU/SP – dort zählt nur die Zeit): belegte Fälligkeit, km bei letzter Prüfung, Intervall km
+    let dueKm = null, lastKm = null, intervalKm = null;
+    if (!husp) {
+      const kmNum = (raw, min, max) => { if (!raw) return null; let n; try { n = num(raw, { min, max, field: 'km', grouped: true }); } catch { return NaN; } return Number.isInteger(n) ? n : NaN; };
+      dueKm = kmNum(kmRaw[0], 1, 5000000); if (Number.isNaN(dueKm)) return skip(`km ungültig: ${kmRaw[0]}`);
+      lastKm = kmNum(kmRaw[1], 0, 5000000); if (Number.isNaN(lastKm)) return skip(`km ungültig: ${kmRaw[1]}`);
+      intervalKm = kmNum(kmRaw[2], 100, 1000000); if (Number.isNaN(intervalKm)) return skip(`km ungültig: ${kmRaw[2]}`);
+      if (dueKm !== null && lastKm !== null && dueKm <= lastKm) return skip('Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung');
+    }
     let next = due.date;
     if (!next && last.date && interval) next = addMonths(last.date, interval);
-    if (!next && !last.date) return skip('Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben');
+    if (!next && !last.date && dueKm === null && lastKm === null) return skip('Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben');
     if (next && last.date && last.date > next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
     const ev = due.month_only ? `${evidence} (Plakette ${get(cells, ci.due)}: fällig bis Monatsende)` : evidence;
     const key = `${v.id}|${kind}`;
-    const sortKey = next || last.date;
+    const sortKey = next || last.date || '';
+    const sortKm = dueKm ?? lastKm ?? -1;
     const prev = planned.get(key);
-    if (prev && prev.sortKey >= sortKey) return skip(`Doppelt in der Datei (Zeile ${prev.line} ist gleich oder neuer)`);
+    if (prev && (prev.sortKey > sortKey || (prev.sortKey === sortKey && prev.sortKm >= sortKm))) return skip(`Doppelt in der Datei (Zeile ${prev.line} ist gleich oder neuer)`);
     if (prev) result.skipped.push({ line: prev.line, plate: prev.plate, reason: `Ersetzt durch Zeile ${line} (neuerer Beleg)` });
-    planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy, sortKey, husp, dueSource: due.date ? 'nachweis' : 'berechnet' });
+    planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy, sortKey, sortKm, husp, dueKm, lastKm, intervalKm, dueSource: due.date ? 'nachweis' : 'berechnet' });
   });
 
   const now = nowIso();
@@ -348,6 +371,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     const skipRow = (reason) => result.skipped.push({ line: p.line, plate: p.plate, reason });
     let action; let next = p.next; let last = p.last;
     if (!cur) action = 'neu';
+    else if (!p.next && !p.last) { next = cur.next_due_date; last = cur.last_done_date; action = 'unverändert'; } // nur km-Angaben
     else if (p.next) {
       if (cur.next_due_date && cur.next_due_date > p.next) { skipRow(`Vorhandener Termin ${cur.next_due_date} ist neuer – nicht überschrieben`); continue; }
       if (cur.last_done_date && p.last && cur.last_done_date > p.last) last = cur.last_done_date;
@@ -359,18 +383,39 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       next = iv ? addMonths(p.last, iv) : p.husp ? null : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
       action = cur.last_done_date === p.last && cur.next_due_date === next ? 'unverändert' : 'aktualisiert';
     }
-    result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, matched_by: p.matchedBy, action });
+    // km-Teil: nie einen höheren vorhandenen km-Stand/eine spätere km-Fälligkeit überschreiben; belegter Wert nur, wenn er von „letzte + Intervall“ abweicht
+    const km = { last: cur ? cur.last_done_km : null, interval: cur ? cur.interval_km : null, due: cur ? cur.due_km : null };
+    if (!p.husp && (p.dueKm !== null || p.lastKm !== null || p.intervalKm !== null)) {
+      if (p.lastKm !== null && km.last !== null && p.lastKm < km.last) { skipRow(`Vorhandener km-Stand der letzten Prüfung ${km.last} ist höher – nicht überschrieben`); continue; }
+      // neuere Durchführung: höherer km-Stand als bisher bzw. (ohne bisherigen km-Stand) am/nach der belegten Fälligkeit
+      // oder mit späterer Fälligkeit aus „letzte + Intervall“ (wie bei Daten: der spätere Beleg gilt)
+      const ivNew = p.intervalKm ?? km.interval;
+      const advanced = p.lastKm !== null && (km.last !== null ? p.lastKm > km.last : km.due !== null && (p.lastKm >= km.due || (!!ivNew && p.lastKm + ivNew > km.due)));
+      const curEff = ruleDueKm(cur);
+      if (p.dueKm !== null && !advanced && curEff !== null && p.dueKm < curEff) { skipRow(`Vorhandene km-Fälligkeit ${curEff} ist höher – nicht überschrieben`); continue; }
+      const nl = p.lastKm ?? km.last; const ni = p.intervalKm ?? km.interval;
+      const derived = nl !== null && ni ? nl + ni : null;
+      let explicit = p.dueKm !== null ? p.dueKm : advanced ? null : km.due; // neuere Durchführung: alter Beleg gilt nicht mehr
+      if (explicit !== null && explicit === derived) explicit = null;
+      if (explicit !== null && nl !== null && explicit <= nl) { skipRow('Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung'); continue; }
+      if (!p.next && !p.last && explicit === null && derived === null) { skipRow('km-Intervall fehlt: „Intervall km“ oder „Fällig bei km“ angeben'); continue; }
+      const changed = nl !== km.last || ni !== km.interval || explicit !== km.due;
+      Object.assign(km, { last: nl, interval: ni, due: explicit });
+      if (cur && changed && action === 'unverändert') action = 'aktualisiert';
+    }
+    const dueKmEff = p.husp ? null : ruleDueKm({ due_km: km.due, last_done_km: km.last, interval_km: km.interval });
+    result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, next_due_km: dueKmEff, previous_due_km: cur && !p.husp ? ruleDueKm(cur) : null, last_done_km: p.husp ? null : km.last, interval_km: p.husp ? null : km.interval, matched_by: p.matchedBy, action });
     if (action === 'neu') {
       result.created++;
       const ruleId = uuid();
-      stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
-        VALUES (?,?,?,?,NULL,?,NULL,?,?,?,?,?,?)`).bind(ruleId, p.vehicle_id, p.kind, p.interval, last, next, p.evidence, user.id, now, now, p.dueSource));
-      if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, evidence: p.evidence, source: 'import', user_id: user.id }));
+      stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ruleId, p.vehicle_id, p.kind, p.interval, km.interval, last, km.last, km.due, next, p.evidence, user.id, now, now, p.dueSource));
+      if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else if (action === 'aktualisiert') {
       result.updated++;
-      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, evidence=?, updated_at=?, due_source=? WHERE id=?`)
-        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, p.evidence, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp ? 'berechnet' : cur.due_source || null), cur.id));
-      if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, evidence: p.evidence, source: 'import', user_id: user.id }));
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, due_source=? WHERE id=?`)
+        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, p.evidence, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp ? 'berechnet' : cur.due_source || null), cur.id));
+      if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;
   }
   result.skipped.sort((a, b) => a.line - b.line);

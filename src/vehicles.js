@@ -7,7 +7,7 @@ import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js'
 import { sha256Hex, berlinDateTime, hideDriverName } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
-import { REQUIRED_KINDS, kmDue, KM_RATE_WINDOW_DAYS } from './maintenance.js';
+import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS } from './maintenance.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -130,11 +130,11 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const resultMissing = v.active && !v.eval_excluded ? maintenanceHistory.filter((e) => e.result === null && ['erfasst', 'erledigt'].includes(e.source) && REQUIRED_KINDS.includes(e.kind)
     && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
   // Fahrleistungs-Prognose für km-Fälligkeiten (nur Planungshilfe, gleiche Regel wie die Prüftermin-Übersicht) – Abfrage nur bei km-Regeln
-  if (!tl && odometer[0] && maintenance.some((m) => m.interval_km && m.last_done_km !== null)) {
+  if (!tl && odometer[0] && maintenance.some((m) => ruleDueKm(m) !== null)) {
     const b = await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first();
     const latest = { km: odometer[0].km, measured_at: odometer[0].measured_at, base_km: b ? b.km : null, base_at: b ? b.measured_at : null };
     const today = berlinDate();
-    for (const m of maintenance) if (m.interval_km && m.last_done_km !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
+    for (const m of maintenance) if (ruleDueKm(m) !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
   }
   const out = { failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
@@ -414,6 +414,11 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const lastDate = str(body.last_done_date, { max: 10 });
   const lastKm = body.last_done_km ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   const husp = kind === 'HU' || kind === 'SP';
+  // Belegte km-Fälligkeit (Serviceanzeige/Wartungsheft); HU/SP richten sich nur nach der Zeit
+  let dueKm = body.due_km ? Math.round(num(body.due_km, { min: 1, max: 5000000, field: 'km', grouped: true })) : null;
+  if (husp && dueKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
+  if (dueKm !== null && lastKm !== null && dueKm <= lastKm) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
+  if (dueKm !== null && km && lastKm !== null && dueKm === lastKm + km) dueKm = null; // ergibt sich ohnehin aus Intervall
   let nextDue = str(body.next_due_date, { max: 10 });
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
@@ -422,8 +427,8 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const id = uuid();
   const now = nowIso();
-  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, nextDue, evidence, user.id, now, now, dueSource)];
+  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource)];
   if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
   await env.DB.batch(stmts);
   if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
@@ -513,7 +518,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
   const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
   await env.DB.batch([
-    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
+    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=NULL, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
       .bind(date, km, next, evidence, nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
     ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=?').bind(result, ruleId, date)] : []),
