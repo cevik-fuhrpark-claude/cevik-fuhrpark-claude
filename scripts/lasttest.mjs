@@ -106,6 +106,8 @@ for (let k = 0; k < 10; k++) {
   await timed('Fahrerliste', () => owner.get('/api/drivers'));
   await timed('Fahrerakte', () => owner.get(`/api/drivers/${drvIds[(k * 37) % drvIds.length]}`));
   await timed('Auslesungen Übersicht', () => owner.get('/api/tacho'));
+  await timed('Auslesungen Standort', () => owner.get('/api/tacho?site=M%C3%BCnchen'));
+  await timed('Fahrerliste Standort', () => owner.get('/api/drivers?site=ohne'));
 }
 // Fahrzeugverträge (synthetisch): je Fahrzeug Leasing mit km-Kontingent + Versicherung; Enddaten so gestreut, dass viele Agent-Befunde
 // (abgelaufen, läuft aus, Kündigungstag, km über/Prognose) gleichzeitig entstehen – Worst Case für das Abfragebudget des Fuhrparkagenten.
@@ -124,6 +126,7 @@ await timed('Verträge-Import Vorschau', () => owner.req('POST', '/api/contracts
 for (let k = 0; k < 10; k++) {
   await timed('Verträge Übersicht', () => owner.get('/api/contracts'));
   await timed('Verträge Handlungsbedarf', () => owner.get('/api/contracts?filter=aktion'));
+  await timed('Verträge Standort', () => owner.get('/api/contracts?site=Dortmund'));
 }
 await timed('Verträge CSV-Export', () => owner.get('/api/contracts?format=csv'));
 // Prüfregeln mit geplantem Werkstatttermin (synthetisch, direkt in der DB): je Lkw UVV und Tachograph, fällig in −10 … +80 Tagen, jede zweite eingeplant
@@ -159,6 +162,7 @@ for (const [i, id] of ids.slice(0, 600).entries()) {
 }
 for (let k = 0; k < 10; k++) {
   await timed('Versicherungsfälle Übersicht', () => owner.get('/api/claims?filter=alle'));
+  await timed('Versicherungsfälle Standort', () => owner.get('/api/claims?filter=alle&site=Dortmund'));
   await timed('Kostenbericht inkl. Erstatt.', () => owner.get('/api/reports/costs'));
   await timed('Zeitleiste inkl. Vers.-Fälle', () => owner.get(`/api/vehicles/${vehicles[k % vehicles.length].id}/timeline`));
 }
