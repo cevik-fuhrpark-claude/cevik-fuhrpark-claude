@@ -325,3 +325,11 @@ export function hideDriverName(user, row, nameKey, roleKey) {
   if (user.role === 'viewer' && isDriver) { row[nameKey] = null; row[nameKey + '_hidden'] = true; }
   return row;
 }
+
+// LIKE in SQLite/D1 ignoriert Groß-/Kleinschreibung nur für A–Z („гальма“ ≠ „Гальма“, „öl“ ≠ „Öl“). Für Suchen daher
+// Schreibweisen-Varianten: wie eingegeben, klein, GROSS, Anfang groß – als LIKE-Muster '%…%' mit maskierten Platzhaltern (ESCAPE '\\').
+export const likeEsc = (x) => '%' + String(x).replace(/[\\%_]/g, (ch) => '\\' + ch) + '%';
+export function caseVariants(w) {
+  const lo = w.toLocaleLowerCase('de');
+  return [...new Set([w, lo, w.toLocaleUpperCase('de'), lo.charAt(0).toLocaleUpperCase('de') + lo.slice(1)])];
+}

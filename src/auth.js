@@ -1,7 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDate, isCalendarDate,
+  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDate, isCalendarDate, likeEsc, caseVariants,
 } from './util.js';
 
 export const ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
@@ -379,6 +379,13 @@ export function effectiveEnv(user, request) {
 }
 
 // Protokoll (nur Inhaber): wer hat wann was geändert/exportiert; Details ohne Geheimnisse
+
+// Protokoll-Suche: Kennung, Details, Name/Benutzername der handelnden Person; Groß-/Kleinschreibung auch bei Kyrillisch/Umlauten egal
+function auditQ(qs, where, args) {
+  const vs = caseVariants(qs);
+  where.push('(' + vs.map(() => "a.target LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\'").join(' OR ') + ')');
+  for (const v of vs) args.push(...Array(4).fill(likeEsc(v)));
+}
 export async function listAudit(env, user, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
   const limit = Math.min(Math.max(Number(query.limit) || 200, 1), 1000);
@@ -395,7 +402,7 @@ export async function listAudit(env, user, query = {}) {
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
   const where = ['a.created_at < ?']; const args = [before];
   if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
-  if (qs.length >= 2) { where.push("(a.target LIKE ?1x ESCAPE '\\' OR a.detail LIKE ?1x ESCAPE '\\' OR u.username LIKE ?1x ESCAPE '\\' OR u.display_name LIKE ?1x ESCAPE '\\')".replaceAll('?1x', '?')); args.push(...Array(4).fill('%' + esc(qs) + '%')); }
+  if (qs.length >= 2) auditQ(qs, where, args);
   const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
     .bind(...args, limit).all()).results;
@@ -419,7 +426,7 @@ export async function auditCsv(env, user, query, csvCell) {
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
   const where = ['a.created_at >= ?', 'a.created_at < ?']; const args = [lo, hi];
   if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
-  if (qs.length >= 2) { where.push("(a.target LIKE ?1x ESCAPE '\\' OR a.detail LIKE ?1x ESCAPE '\\' OR u.username LIKE ?1x ESCAPE '\\' OR u.display_name LIKE ?1x ESCAPE '\\')".replaceAll('?1x', '?')); args.push(...Array(4).fill('%' + esc(qs) + '%')); }
+  if (qs.length >= 2) auditQ(qs, where, args);
   const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')}
     ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...args, AUDIT_CSV_MAX + 1).all()).results;

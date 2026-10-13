@@ -2827,6 +2827,10 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
     const last = db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get(); ok(last && JSON.parse(last.detail).rows === 2 && JSON.parse(last.detail).action === 'probe.', 'Export protokolliert');
     r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02&q=HYPERLINK'); eq(dec(r).trim().split('\r\n').length, 2, 'CSV mit Suche');
     eq((await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02')).headers.get('x-cfp-truncated'), null);
+    // Groß-/Kleinschreibung auch außerhalb A–Z (SQLite-LIKE nur ASCII)
+    ins.run('aucsv-4', null, 'probe.kyr', 'Олег Ölwechsel', null, '2019-06-01T10:00:00.000Z');
+    for (const q of ['олег', 'ОЛЕГ', 'Олег', 'ölwechsel', 'ÖLWECHSEL']) eq((await owner.get('/api/admin/audit?limit=1000&q=' + encodeURIComponent(q))).data.entries.filter((e) => e.id.startsWith('aucsv-')).map((e) => e.id).join(), 'aucsv-4', 'Protokoll-Suche: ' + q);
+    eq(dec(await owner.get('/api/admin/audit?format=csv&from=2019-06-01&to=2019-06-01&q=' + encodeURIComponent('олег'))).trim().split('\r\n').length, 2, 'CSV-Suche kyrillisch');
     db.exec('BEGIN'); for (let i = 0; i < 20000; i++) ins.run('aucsv-m' + i, null, 'probe.menge', null, null, '2020-03-02T10:00:00.000Z'); db.exec('COMMIT');
     r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02'); eq(r.headers.get('x-cfp-truncated'), '20000'); eq(dec(r).trim().split('\r\n').length, 20001);
   } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare("DELETE FROM audit_log WHERE id LIKE 'aucsv-%'").run(); }

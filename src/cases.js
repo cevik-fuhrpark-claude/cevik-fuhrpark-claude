@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -127,18 +127,16 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
   const q = String(query.q || '').trim().slice(0, 60);
   if (q.length >= 2) {
-    const like = (x) => '%' + x.replace(/[\\%_]/g, (ch) => '\\' + ch) + '%';
+    const like = likeEsc;
     const plateKey = q.toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
     const plateLike = plateKey.length >= 2 ? '%' + plateKey + '%' : '\u0000';
     // LIKE in SQLite/D1 ignoriert Groß-/Kleinschreibung nur für A–Z: „гальма“ fände „Гальма …“ nicht, „öl“ nicht „Ölwechsel“.
     // Deshalb je Suchwort Schreibweisen-Varianten (wie eingegeben, klein, GROSS, Wortanfang groß); mehrere Wörter: alle müssen
     // in der Beschreibung vorkommen (Reihenfolge egal, höchstens 5) – eine Abfrage, keine Schemaänderung.
-    const cap = (w) => w.charAt(0).toLocaleUpperCase('de') + w.slice(1);
     const words = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 5);
     const wordSql = []; const wordArgs = [];
     for (const w of words) {
-      const lo = w.toLocaleLowerCase('de');
-      const vs = [...new Set([w, lo, w.toLocaleUpperCase('de'), cap(lo)])];
+      const vs = caseVariants(w);
       wordSql.push(`(${vs.map(() => `c.description LIKE ? ESCAPE '\\'`).join(' OR ')})`); wordArgs.push(...vs.map(like));
     }
     where.push(`((${wordSql.join(' AND ')}) OR c.case_no LIKE ? ESCAPE '\\' OR REPLACE(REPLACE(UPPER(v.plate),' ',''),'-','') LIKE ?)`);
