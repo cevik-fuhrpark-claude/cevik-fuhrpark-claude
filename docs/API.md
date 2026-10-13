@@ -32,7 +32,7 @@ Parameter `environment=production|test` (Standard: production).
     "gps_time": "2026-10-10T08:20:00Z", "lat": 51.52, "lon": 7.42, "km": 456789, "speed": 0, "ignition": false } ] }
 ```
 Regeln: Zuordnung nur über FIN oder bestätigtes Mapping (`telematics_mappings`). Nur Kennzeichen → Prüffall in
-`telematics_unmatched`, keine Zuordnung. Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen.
+`telematics_unmatched`, keine Zuordnung; der Prüffall nennt einen Kennzeichen-**Vorschlag** (`candidate_vehicle_id`) nur, wenn das Kennzeichen eindeutig ist (Vergleich ohne Leerzeichen/Bindestriche, Groß-/Kleinschreibung auch bei Umlauten egal; zuerst aktive, dann ruhende, dann außer Betrieb genommene Fahrzeuge – zwei gleiche in derselben Stufe = kein Vorschlag). Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen.
 `gps_time` bitte mit Zeitzone (`Z` oder `+02:00`); ohne Zeitzone wird sie als UTC gelesen. Der Tages-km-Stand (höchstens einer je Fahrzeug und Tag) gilt je Berliner Kalendertag.
 Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben – **je Fahrzeug und Tag ein Wert** (der jüngste) und nur, wenn er nicht kleiner ist als der zuvor erfasste km-Stand (`odometer_written` zählt neue/aktualisierte Tageswerte). GPS-Zeiten mehr als 10 Minuten in der Zukunft werden verworfen (`rejected`). Max. 500 Einträge je Aufruf; die Verarbeitung braucht unabhängig von der Menge ≤ 10 Datenbankanweisungen.
 

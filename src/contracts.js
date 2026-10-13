@@ -2,7 +2,7 @@
 // Grundsätze: Alle Angaben nur laut Vertrag (Pflicht-Nachweis); die App berechnet nur, was sich daraus ergibt
 // (spätester Kündigungstag = Vertragsende − Kündigungsfrist; km seit Übernahme; lineare Prognose, deutlich als Prognose gekennzeichnet).
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -242,7 +242,6 @@ export async function contractFindings(env, settings) {
 // Nur eindeutige Fahrzeuge (FIN, sonst eindeutiges Kennzeichen); vorhandene Verträge (gleiches Fahrzeug, Art und Vertragsnummer
 // bzw. ohne Nummer gleicher Partner und Beginn) bleiben unverändert – der Import überschreibt nie.
 const MAX_IMPORT = 500;
-const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 const normVin = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const KIND_ALIASES = { leasing: 'leasing', leasingvertrag: 'leasing', miete: 'miete', mietvertrag: 'miete', vermietung: 'miete', rental: 'miete', finanzierung: 'finanzierung', kredit: 'finanzierung', darlehen: 'finanzierung',
   versicherung: 'versicherung', 'kfz-versicherung': 'versicherung', haftpflicht: 'versicherung', vollkasko: 'versicherung', teilkasko: 'versicherung', wartung: 'wartung', wartungsvertrag: 'wartung', service: 'wartung', 'full-service': 'wartung', sonstiges: 'sonstiges', sonstige: 'sonstiges', vertrag: 'sonstiges' };

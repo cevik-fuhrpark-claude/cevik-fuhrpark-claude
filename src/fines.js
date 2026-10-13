@@ -1,5 +1,5 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, normPlate } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -8,7 +8,6 @@ export const OFFENSES = ['geschwindigkeit', 'abstand', 'parken', 'rotlicht', 'le
 export const FINE_STATUSES = ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert', 'beantwortet', 'bezahlt', 'eingestellt', 'erledigt'];
 const BASES = ['zuordnung', 'tourenplan', 'telematik', 'fahrerangabe', 'manuell'];
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
-const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 
 function shape(f, user) {
   if (isMgr(user)) return f;

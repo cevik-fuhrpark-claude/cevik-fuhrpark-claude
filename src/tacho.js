@@ -5,7 +5,7 @@
 // Umsetzung (vorsichtige Lesart): Das früheste nicht kopierte Ereignis liegt unmittelbar nach der letzten Auslesung,
 // daher „spätestens fällig“ = letzte erfasste Auslesung + 28 bzw. + 90 Tage. Ohne erfasste Auslesung wird KEINE Frist
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
 import { siteSelection } from './reports.js';
 import { audit } from './auth.js';
 
@@ -141,7 +141,6 @@ export function tachoCsv(ov, cell) {
 // Datum (JJJJ-MM-TT oder TT.MM.JJJJ), Nachweis/Datei (sonst Pflichtangabe `source` für alle Zeilen).
 // Zuordnung nur eindeutig: Fahrer über Personalnummer, sonst exakt gleicher Name; Fahrzeug über FIN, sonst eindeutiges Kennzeichen.
 const MAX_IMPORT = 2000;
-const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 const normName = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 function parseDay(raw) {
   const t = String(raw || '').trim(); let m;

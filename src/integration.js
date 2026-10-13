@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
@@ -175,18 +175,29 @@ export async function integrationRouter(request, env, ctx, url) {
     // (vorher bis zu 4 Abfragen je Eintrag – bei 500 Einträgen weit über der Grenze je Aufruf).
     const rows = items.map((it) => {
       const ext = String(it.external_id || '').slice(0, 80);
-      return { it, ext, vin: it.vin ? normalizeVin(it.vin) : null, plate: it.plate ? String(it.plate).toUpperCase().slice(0, 20) : null };
+      return { it, ext, vin: it.vin ? normalizeVin(it.vin) : null, plate: it.plate ? String(it.plate).trim().toUpperCase().slice(0, 20) : null };
     });
     const J = (a) => JSON.stringify([...new Set(a.filter(Boolean))]);
     const [maps, byVin, plates, latest] = await Promise.all([
       env.DB.prepare('SELECT external_id, vehicle_id FROM telematics_mappings WHERE provider=? AND external_id IN (SELECT value FROM json_each(?))').bind(provider, J(rows.map((r) => r.ext))).all(),
       env.DB.prepare('SELECT id, vin FROM vehicles WHERE vin IN (SELECT value FROM json_each(?))').bind(J(rows.map((r) => r.vin))).all(),
-      env.DB.prepare(`SELECT id, REPLACE(UPPER(plate),' ','') AS k FROM vehicles WHERE REPLACE(UPPER(plate),' ','') IN (SELECT value FROM json_each(?))`).bind(J(rows.map((r) => r.plate && r.plate.replace(/ /g, '')))).all(),
+      // Kennzeichen-Kandidat: Vergleich in JS (UPPER in SQL nur A–Z; „SZ YC 5517“ = „SZ-YC5517“, Umlaut-Kennzeichen wie „TÜ-…“)
+      rows.some((r) => r.plate) ? env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all() : { results: [] },
       env.DB.prepare('SELECT vehicle_id, gps_time FROM telematics_latest WHERE provider=?').bind(provider).all(),
     ]);
     const mapOf = new Map(maps.results.map((r) => [r.external_id, r.vehicle_id]));
     const vinOf = new Map(byVin.results.map((r) => [r.vin, r.id]));
-    const plateOf = new Map(plates.results.map((r) => [r.k, r.id]));
+    // Nur ein eindeutiger Kandidat wird vorgeschlagen (Bestätigung bleibt Pflicht): zuerst aktive, bewertete Fahrzeuge,
+    // dann ruhende, dann außer Betrieb – mehrere Fahrzeuge mit gleichem Kennzeichen in derselben Stufe = kein Vorschlag.
+    const tierOf = (v) => (v.active ? (v.eval_excluded ? 1 : 0) : 2);
+    const plateIdx = new Map();
+    for (const v of plates.results) {
+      const k = normPlate(v.plate); if (!k) continue;
+      const cur = plateIdx.get(k); const t = tierOf(v);
+      if (!cur || t < cur.t) plateIdx.set(k, { t, id: v.id, n: 1 });
+      else if (t === cur.t) cur.n++;
+    }
+    const plateCandidate = (p) => { const e = p && plateIdx.get(normPlate(p)); return e && e.n === 1 ? e.id : null; };
     const lastGps = new Map(latest.results.map((r) => [r.vehicle_id, r.gps_time]));
     // Gesammelte Schreibzugriffe: je Tabelle EINE Anweisung über json_each (jede Anweisung zählt zum Abfragebudget)
     const unmatched = new Map(); const latestRows = new Map(); const odo = new Map();
@@ -202,7 +213,7 @@ export async function integrationRouter(request, env, ctx, url) {
       const lon = Number.isFinite(Number(it.lon)) && Math.abs(Number(it.lon)) <= 180 ? Number(it.lon) : null;
       const validPos = lat !== null && lon !== null && !(lat === 0 && lon === 0);
       if (!vehicleId) {
-        unmatched.set(ext, { ext, plate, vin, cand: plate ? plateOf.get(plate.replace(/ /g, '')) || null : null });
+        unmatched.set(ext, { ext, plate, vin, cand: plateCandidate(plate) });
         res.unmatched++;
         continue;
       }

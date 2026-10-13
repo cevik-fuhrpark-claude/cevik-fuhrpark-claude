@@ -4193,6 +4193,12 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   const dq = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim');
   ok(dq.some((i) => i.case_id === c2 && i.severity === 'hinweis' && i.plate === 'VT-IC 2'), 'Hinweis bei Unfall ohne Versicherungsfall');
   ok(!dq.some((i) => i.case_id === cid || i.case_id === c3), 'mit Versicherungsfall bzw. ohne Unfall kein Hinweis');
+  // Ukrainisch in Großbuchstaben bzw. „Дтп“: lower() wirkt in SQLite/D1 nur auf A–Z – wurde vorher nicht erkannt
+  const c4 = (await users.fleet.post('/api/cases', { vehicle_id: W, description: 'АВАРІЯ НА ТРАСІ, ДЗЕРКАЛО', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const c5 = (await users.fleet.post('/api/cases', { vehicle_id: W, description: 'Дтп біля складу', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const c6 = (await users.fleet.post('/api/cases', { vehicle_id: W, description: 'UNFALL beim Rangieren', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const dq2 = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim').map((i) => i.case_id);
+  ok([c4, c5, c6].every((x) => dq2.includes(x)), 'Unfall in Großbuchstaben (UK/DE) und „Дтп“ erkannt');
   eq((await users.prodFleet.get('/api/admin/data-quality')).data.items.some((i) => i.case_id === c2), false, 'Umgebung');
   // Fuhrparkagent: Nachfassen nur mit eingestellter Frist (leer = aus), Bezug Meldedatum, nur offene Fälle
   eq((await users.fleet.put(`/api/cases/${c2}/claim`, { insurer: 'Andere AG', reported_on: day(-10), evidence: 'Meldung per Telefon, Vermerk' })).status, 200);
@@ -5694,6 +5700,26 @@ await test('Integrations-API: falsche Tokens je Netzadresse begrenzt (429 auch m
   const n = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='integration.token_limited'`).first()).n;
   eq(n, 1, 'Protokolleintrag');
   await env.DB.prepare(`DELETE FROM rate_limits WHERE key LIKE 'intfail:%'`).run();
+});
+
+await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlauten, nur eindeutig, nie automatische Zuordnung', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  eq((await owner.post('/api/vehicles', { plate: 'TÜ-TL 7', vin: 'WDB96340310999101', site: 'Dortmund' })).status, 201);
+  const r = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [
+    { external_id: 'TL-UML', plate: 'tü tl7', gps_time: '2026-10-10T08:00:00Z', lat: 51.5, lon: 7.4 },
+    { external_id: 'TL-HY', plate: 'SZ KC5515', gps_time: '2026-10-10T08:00:00Z' },
+    { external_id: 'TL-DUP', plate: 'dq-xy 1', gps_time: '2026-10-10T08:00:00Z' },
+    { external_id: 'TL-NONE', plate: 'XX-NO 1', gps_time: '2026-10-10T08:00:00Z' },
+  ] }, H);
+  eq(r.status, 200); eq(r.data.matched, 0, 'Kennzeichen allein ordnet nie zu'); eq(r.data.unmatched, 4);
+  const um = new Map((await users.fleet.get('/api/telematics')).data.unmatched.filter((u) => u.provider === 'yellowfox').map((u) => [u.external_id, u]));
+  eq(um.get('TL-UML').candidate_vehicle_id, 'VIN:WDB96340310999101', 'Umlaut-Kennzeichen klein geschrieben');
+  eq(um.get('TL-UML').candidate_plate, 'TÜ-TL 7');
+  eq(um.get('TL-HY').candidate_vehicle_id, 'VIN:WDB9630051L917317', 'ohne Bindestrich');
+  eq(um.get('TL-DUP').candidate_vehicle_id, null, 'zwei Fahrzeuge mit gleichem Kennzeichen → kein Vorschlag');
+  eq(um.get('TL-NONE').candidate_vehicle_id, null);
+  ok(!(await users.fleet.get('/api/vehicles/VIN:WDB96340310999101')).data.telematics.length, 'keine Position am Fahrzeug');
+  await env.DB.prepare(`DELETE FROM telematics_unmatched WHERE provider='yellowfox' AND external_id LIKE 'TL-%'`).run();
 });
 
 await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-Endpunkte, Test und Betrieb)', async () => {

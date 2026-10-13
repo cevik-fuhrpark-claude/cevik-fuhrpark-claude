@@ -1,10 +1,13 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso, berlinDate, berlinDaySql } from './util.js';
+import { forbidden, nowIso, berlinDate, berlinDaySql, normPlate, caseVariants } from './util.js';
+
+// Unfall-Wortstämme auf Ukrainisch: lower() wirkt in SQLite/D1 nur auf A–Z – daher alle Schreibweisen (klein, GROSS, Anfang groß)
+// einzeln suchen („АВАРІЯ“, „Дтп“ wurden vorher nicht erkannt). Deutsch/Englisch genügt lower().
+const ACC_CYR = [...new Set(['аварі', 'дтп'].flatMap(caseVariants))];
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 
-const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
   duplicate_plate: 'fehler', vin_similar: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
@@ -92,8 +95,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Vorgänge der letzten 365 Tage, deren Beschreibung „Unfall“ nennt (DE/UK/EN), ohne erfassten Versicherungsfall – nur Hinweis (Wortsuche, keine Bewertung)
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.created_at FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.created_at >= ? AND c.status<>'abgelehnt' AND v.eval_excluded=0
-      AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR instr(lower(c.description),'дтп')>0 OR instr(lower(c.description),'аварі')>0 OR instr(c.description,'ДТП')>0 OR instr(c.description,'Аварі')>0)
-      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString()).all(),
+      AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
+      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString(), ...ACC_CYR).all(),
     // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher ohne Vorgang zum Fahrzeug seit dem Prüfdatum
     defectsWithoutCaseQuery(env, envName).all(),
     // Nachprüfung (nächste spätere Durchführung derselben Prüfart, ≤ 365 Tage, am/nach dem Freigabetag des Mängelauftrags) erneut mit erheblichen Mängeln

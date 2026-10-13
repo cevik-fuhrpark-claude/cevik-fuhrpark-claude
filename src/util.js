@@ -326,6 +326,10 @@ export function hideDriverName(user, row, nameKey, roleKey) {
   return row;
 }
 
+// Kennzeichen-Vergleichsschlüssel: Groß-/Kleinschreibung, Leerzeichen und Bindestriche egal, Umlaute (TÜ, LÖ, MÜ …) bleiben erhalten.
+// In SQL ist UPPER() nur für A–Z wirksam – Kennzeichen daher in JS vergleichen, nicht per UPPER() in der Abfrage.
+export const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+
 // LIKE in SQLite/D1 ignoriert Groß-/Kleinschreibung nur für A–Z („гальма“ ≠ „Гальма“, „öl“ ≠ „Öl“). Für Suchen daher
 // Schreibweisen-Varianten: wie eingegeben, klein, GROSS, Anfang groß – als LIKE-Muster '%…%' mit maskierten Platzhaltern (ESCAPE '\\').
 export const likeEsc = (x) => '%' + String(x).replace(/[\\%_]/g, (ch) => '\\' + ch) + '%';
