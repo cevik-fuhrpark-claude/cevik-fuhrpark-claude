@@ -3,7 +3,7 @@
 import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, num } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
-import { MAINT_KINDS, maintEventStmt } from './vehicles.js';
+import { MAINT_KINDS, ONE_TIME_KINDS, maintEventStmt } from './vehicles.js';
 import { siteSelection } from './reports.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
@@ -19,6 +19,7 @@ const KIND_ALIASES = new Map([
   ['sp', 'SP'], ['sicherheitsprüfung', 'SP'], ['sicherheitspruefung', 'SP'],
   ['uvv', 'UVV'], ['uvv-prüfung', 'UVV'], ['uvv-pruefung', 'UVV'],
   ['feuerloescher', 'Feuerlöscher'], ['feuerlöscherprüfung', 'Feuerlöscher'], ['verbandskasten', 'Verbandkasten'], ['erste-hilfe-kasten', 'Verbandkasten'], ['spanngurte', 'Ladungssicherung'], ['zurrgurte', 'Ladungssicherung'],
+  ['rückrufaktion', 'Rückruf'], ['rueckruf', 'Rückruf'], ['rueckrufaktion', 'Rückruf'], ['werkstattaktion', 'Rückruf'], ['herstelleraktion', 'Rückruf'], ['recall', 'Rückruf'],
   ['tachograph', 'Tachograph'], ['tacho', 'Tachograph'], ['tachoprüfung', 'Tachograph'], ['tachopruefung', 'Tachograph'], ['fahrtenschreiber', 'Tachograph'], ['kontrollgerät', 'Tachograph'],
 ]);
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -110,7 +111,7 @@ export function kmDue(rule, latest, warnKm, today = null) {
   }
   return out;
 }
-const RANK = { ueberfaellig: 4, ungeklaert: 3, faellig: 2, ok: 1, erste_sp: 1, nicht_pflichtig: 0, ohne_termin: 0 };
+const RANK = { ueberfaellig: 4, ungeklaert: 3, faellig: 2, ok: 1, erste_sp: 1, nicht_pflichtig: 0, ohne_termin: 0, erledigt: 0 };
 
 function daysUntil(due, today) {
   return Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
@@ -218,7 +219,8 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
         evidence: r.evidence, updated_at: r.updated_at, interval_km: null, last_done_km: r.last_done_km, next_due_km: null, km_remaining: null, km_status: null };
     }
     const days = r.next_due_date ? daysUntil(r.next_due_date, today) : null;
-    const dateStatus = days === null ? 'ohne_termin' : days < 0 ? 'ueberfaellig' : days <= warnDays ? 'faellig' : 'ok';
+    // Einmalige Aktion (Rückruf) erledigt und keine neue Frist laut Schreiben → „erledigt“ statt „ohne Termin“
+    const dateStatus = days === null && r.last_done_date && ONE_TIME_KINDS.includes(r.kind) ? 'erledigt' : days === null ? 'ohne_termin' : days < 0 ? 'ueberfaellig' : days <= warnDays ? 'faellig' : 'ok';
     const kmd = kmDue(r, latestKm.get(r.vehicle_id), warnKm, today);
     // Gesamtstatus: das Strengere aus Datum und Kilometern
     const status = kmd && kmd.km_status !== 'ohne_km' && RANK[kmd.km_status] > RANK[dateStatus] ? kmd.km_status : dateStatus;
@@ -268,7 +270,7 @@ export const csvCell = (x) => {
   if (/^[=+\-@\t\r]/.test(s) && !/^-\d+(?:[.,]\d+)?$/.test(s)) s = "'" + s;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
+const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', erledigt: 'erledigt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
 
 export function maintenanceCsv(ov) {
   const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)', 'km bei letzter Prüfung', 'Intervall km'].join(';')];
@@ -326,6 +328,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     }
     const kind = normalizeKind(get(cells, ci.kind));
     if (!kind) return skip(`Prüfart unbekannt: ${get(cells, ci.kind) || '–'}`);
+    // mehrere Rückrufe je Fahrzeug möglich – der Import kennt nur eine Zeile je Fahrzeug+Art und würde einen offenen Rückruf überschreiben
+    if (ONE_TIME_KINDS.includes(kind)) return skip('Rückrufe einzeln in der Fahrzeugakte erfassen');
     const evidence = get(cells, ci.evidence);
     // Lückenzeile aus dem eigenen Export („kein Termin hinterlegt“), nicht ausgefüllt: ruhiger Hinweis statt „Nachweis fehlt“
     const kmRaw = [ck.due, ck.last, ck.interval].map((i) => get(cells, i).trim());

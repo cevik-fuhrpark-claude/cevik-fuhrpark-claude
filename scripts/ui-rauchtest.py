@@ -131,6 +131,11 @@ with sync_playwright() as p:
     if cp['s'] != 200:
         problems.append(f'Vorbereitung Prüfung mit Mängeln: {cp}')
     # Pflichtprüfung ohne Ergebnis: „Heute zu tun“ der Leitung zeigt „Pflichtprüfung ohne Prüfergebnis“, Datenqualität mit Direktfilter
+    # Herstellerrückruf: einer offen mit Frist laut Schreiben, einer erledigt (Status „erledigt“ in Übersicht/Akte)
+    rk = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'Rückruf', 'next_due_date': (datetime.date.today() + datetime.timedelta(days=20)).isoformat(), 'evidence': 'Rauchtest Herstellerschreiben A'})
+    assert rk.get('s') == 201, rk
+    rk2 = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'Rückruf', 'evidence': 'Rauchtest Herstellerschreiben B'})
+    assert api('POST', f"/api/maintenance/{(rk2.get('d') or {}).get('id')}/complete", {'done_date': datetime.date.today().isoformat(), 'evidence': 'Rauchtest Rückruf erledigt'}).get('s') == 200
     sp = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'SP', 'last_done_date': '2025-12-01', 'interval_months': 6, 'evidence': 'Rauchtest'})
     cs = api('POST', f"/api/maintenance/{(sp.get('d') or {}).get('id')}/complete", {'done_date': (datetime.date.today() - datetime.timedelta(days=2)).isoformat(), 'evidence': 'Rauchtest SP-Bericht'})
     if cs['s'] != 200:

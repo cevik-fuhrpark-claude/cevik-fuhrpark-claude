@@ -3944,6 +3944,31 @@ await test('Prüfarten Ausrüstung: Feuerlöscher, Verbandkasten, Ladungssicheru
   ok(v.maintenance.some((m) => m.kind === 'Feuerlöscher'), 'in der Fahrzeugakte');
   ok(!(await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.plate === 'VT-FL 1' && i.check === 'missing_inspection' && /Feuer/.test(i.detail)), 'keine Pflichtprüfung');
 });
+await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schreiben, mehrere je Fahrzeug, nach Durchführung „erledigt“, nicht per CSV', async () => {
+  const { normalizeKind } = await import('../src/maintenance.js');
+  eq(normalizeKind('Rückrufaktion'), 'Rückruf'); eq(normalizeKind('recall'), 'Rückruf'); eq(normalizeKind('rückruf'), 'Rückruf');
+  ok((await users.fleet.get('/api/meta')).data.maintenance_kinds.includes('Rückruf'), 'Meta');
+  const VR = 'VIN:WDB96340310555651';
+  const iv = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', interval_months: 12, next_due_date: '2099-01-31', evidence: 'Herstellerschreiben Test' });
+  eq(iv.status, 400, 'kein Intervall'); ok(/einmalige Aktion/.test(iv.data.error?.message || JSON.stringify(iv.data)), 'verständliche Meldung');
+  eq((await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', interval_km: 50000, evidence: 'Herstellerschreiben Test' })).status, 400, 'auch kein km-Intervall');
+  const a = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', next_due_date: '2099-01-31', evidence: 'Herstellerschreiben Test A (Frist laut Schreiben)' });
+  eq(a.status, 201); eq(a.data.next_due_date, '2099-01-31');
+  const b = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', evidence: 'Herstellerschreiben Test B (ohne Frist)' });
+  eq(b.status, 201); eq(b.data.next_due_date, null, 'keine erfundene Frist');
+  let ov = (await users.fleet.get('/api/maintenance')).data;
+  const ra = ov.rows.find((x) => x.id === a.data.id), rb = ov.rows.find((x) => x.id === b.data.id);
+  eq(ra.status, 'ok'); eq(rb.status, 'ohne_termin', 'offen ohne Frist');
+  eq((await users.ws.post(`/api/maintenance/${a.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Werkstattrechnung Rückruf A' })).status, 200, 'Werkstatt erledigt');
+  ov = (await users.fleet.get('/api/maintenance')).data;
+  const done = ov.rows.find((x) => x.id === a.data.id);
+  eq(done.status, 'erledigt'); eq(done.next_due_date, null, 'keine Folgefrist'); eq(ov.rows.find((x) => x.id === b.data.id).status, 'ohne_termin', 'zweiter Rückruf bleibt offen');
+  ok(!ov.rows.some((x) => x.status === 'erledigt' && x.kind !== 'Rückruf'), '„erledigt“ nur für einmalige Aktionen');
+  const csvT = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
+  ok(csvT.includes('Rückruf') && csvT.includes(';erledigt;'), 'CSV mit Status erledigt');
+  const imp = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\n;WDB96340310555651;Rückrufaktion;2099-05-31;;;Schreiben', { 'content-type': 'text/csv' });
+  eq(imp.status, 200); eq(imp.data.created, 0); ok(/einzeln in der Fahrzeugakte/.test(imp.data.skipped[0].reason), 'Import verweist auf Fahrzeugakte');
+});
 await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji), Entfalten ergibt Original; 900 Termine schnell', async () => {
   const { icsCalendar } = await import('../src/util.js');
   const long = 'Werkstatttermin Ölwechsel – SZ-YC 5513 · Привіт світ 😀 '.repeat(4); const ascii = 'A'.repeat(200);
@@ -5076,7 +5101,7 @@ await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) l
   const gaps = lines.filter((l) => l.includes(';kein Termin hinterlegt;'));
   ok(gaps.length > 0, 'Testdaten mit Lücken');
   eq(mr.data.skipped.filter((s) => s.reason === gapReason).length, gaps.length, 'jede Lückenzeile mit ruhigem Hinweis');
-  ok(mr.data.skipped.every((s) => s.reason === gapReason || /^Kein Datum/.test(s.reason)), 'sonst nur Zeilen ohne Datum (km-Fälligkeit/ungeklärt): ' + JSON.stringify(mr.data.skipped.filter((s) => s.reason !== gapReason)));
+  ok(mr.data.skipped.every((s) => s.reason === gapReason || /^Kein Datum/.test(s.reason) || s.reason === 'Rückrufe einzeln in der Fahrzeugakte erfassen'), 'sonst nur Zeilen ohne Datum (km-Fälligkeit/ungeklärt) bzw. Rückrufe: ' + JSON.stringify(mr.data.skipped.filter((s) => s.reason !== gapReason)));
   // Arbeitsweise „Lücken in Excel füllen“: Termin + Nachweis in eine Lückenzeile eintragen → genau ein neuer Termin
   const c = gaps[0].split(';'); c[5] = '2027-03-31'; c[7] = ''; c[8] = 'Prüfbericht Testlauf';
   const fr = await dry('/api/maintenance/import', [lines[0], c.join(';')].join('\r\n'));
