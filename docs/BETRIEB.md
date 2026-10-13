@@ -161,6 +161,31 @@ ebenfalls an, der UI-Rauchtest meldet CSP-Verstöße. Prüfen nach dem Deploymen
 Gespeichert werden nur Tag, Umgebung, Funktionspfad (IDs, Kennzeichen, Token durch `:id` ersetzt) und Zähler (Tabelle `usage_daily`);
 **keine** Benutzer-ID, Rolle, IP-Adresse oder Inhalte. Ein zusätzlicher Schreibzugriff je angemeldetem Aufruf (nach der Antwort, blockiert nichts).
 
+## Telematik-Einspeisung überwachen
+Ob die Telematik-Daten (Webfleet/YellowFox) noch ankommen, zeigt die App selbst unter **Mehr → Telematik** („Letzter Datenempfang“, darunter
+„Empfang je Anbieter“). Für eine automatische Überwachung (z. B. ein eigener n8n-Workflow – **nicht** die bestehenden Workflows des ChatGPT-Portals ändern)
+gibt es einen rein lesenden, datensparsamen Endpunkt:
+
+```bash
+curl -s -H "Authorization: Bearer $INTEGRATION_TOKEN_READ" \
+  "https://cevik-fuhrpark-claude.y-cevik.workers.dev/api/integration/v1/telematics/status"
+```
+Antwort (Aufbau; Werte nur zur Veranschaulichung, nicht aus dem Betrieb):
+```json
+{ "schema_version": "1.0", "generated_at": "…",
+  "providers": [ { "provider": "yellowfox", "devices": 0, "vehicles": 0, "last_received": "…", "last_gps_time": "…",
+                   "unmatched": 0, "mappings": 0, "plate_mismatches": 0, "km_rejected": 0 } ],
+  "vehicles_total": 0, "vehicles_without_data": 0, "unmatched_truncated": false }
+```
+- Dafür genügt das **Lese-Token** (`INTEGRATION_TOKEN_READ`); es kann nichts einspeisen oder ändern.
+- Enthält nur Zähler und Zeitpunkte – keine Positionen, Geräte-IDs, Kennzeichen oder Personen.
+- **Die App legt keinen Grenzwert fest.** Ab wann ein altes `last_received` als Ausfall gilt (z. B. nachts/am Wochenende normal), entscheidet der Betrieb
+  und trägt es im eigenen Überwachungs-Workflow ein. Sinnvolle Prüfpunkte: `last_received` je Anbieter, Anstieg von `unmatched` (neue Geräte ohne Zuordnung →
+  Mehr → Telematik → Prüffälle), `plate_mismatches`/`km_rejected` > 0 (Details unter Mehr → Datenqualität), `vehicles_without_data`.
+- `providers` enthält immer beide Anbieter; `last_received: null` und `devices: 0` = von diesem Anbieter kam noch nie ein Stand.
+  Telematik-Daten sind gemeinsame Stammdaten (keine Trennung Test/Betrieb).
+- Abrufhäufigkeit: alle 15–60 Minuten reicht; mehr als 30 ungültige Token-Versuche in 15 Minuten sperren die Netzadresse vorübergehend (siehe `docs/API.md`).
+
 ## Was die App bewusst nicht tut
 Keine automatische technische Fahrzeugfreigabe, keine Bestellungen oder kostenpflichtigen Aufträge, keine erfundenen Fristen,
 Preise oder Kilometerstände, keine Fahrerzuordnung allein über Namen oder Kennzeichen.
