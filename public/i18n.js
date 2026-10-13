@@ -741,6 +741,8 @@ const V_MORE = [
   ['HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.', 'ТО/SP залежать лише від часу – не вказуйте строк за пробігом.', 'HU/SP depend on time only – do not enter a mileage due.'],
   ['Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', '«Строк за км» не перевищує пробіг під час останньої перевірки.', '“Due at km” is not above the mileage at the last inspection.'],
   ['Ablesedatum darf nicht in der Zukunft liegen.', 'Дата зчитування пробігу не може бути в майбутньому.', 'The reading date must not be in the future.'],
+  ['Dieser Rückruf ist bereits durchgeführt.', 'Це відкликання вже виконано.', 'This recall has already been carried out.'],
+  ['Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.', 'Відкликання – одноразова акція: не вказуйте наступний строк.', 'A recall is a one-off action – do not enter a follow-up deadline.'],
   ['Rückruf ist eine einmalige Aktion – kein Intervall angeben.', 'Відкликання – одноразова акція: не вказуйте інтервал.', 'A recall is a one-off action – do not enter an interval.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }

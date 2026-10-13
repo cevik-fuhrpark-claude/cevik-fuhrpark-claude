@@ -3964,6 +3964,11 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   const done = ov.rows.find((x) => x.id === a.data.id);
   eq(done.status, 'erledigt'); eq(done.next_due_date, null, 'keine Folgefrist'); eq(ov.rows.find((x) => x.id === b.data.id).status, 'ohne_termin', 'zweiter Rückruf bleibt offen');
   ok(!ov.rows.some((x) => x.status === 'erledigt' && x.kind !== 'Rückruf'), '„erledigt“ nur für einmalige Aktionen');
+  ok(done.evidence.includes('Herstellerschreiben Test A') && done.evidence.includes('Werkstattrechnung Rückruf A'), 'Referenz laut Schreiben bleibt, Durchführung ergänzt');
+  const again = await users.ws.post(`/api/maintenance/${a.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'nochmal' });
+  eq(again.status, 409, 'Rückruf nur einmal durchführbar'); eq(again.data.error, 'already_done');
+  eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'x', next_due_date: '2099-01-01' })).status, 400, 'keine Folgefrist');
+  eq((await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === b.data.id).status, 'ohne_termin', 'abgewiesene Durchführung ändert nichts');
   const csvT = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
   ok(csvT.includes('Rückruf') && csvT.includes(';erledigt;'), 'CSV mit Status erledigt');
   const imp = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\n;WDB96340310555651;Rückrufaktion;2099-05-31;;;Schreiben', { 'content-type': 'text/csv' });
