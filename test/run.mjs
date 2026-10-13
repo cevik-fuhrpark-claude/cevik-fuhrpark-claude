@@ -2403,6 +2403,14 @@ await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis
   ok(Array.isArray(aw.notes), 'kombiniert: notes'); eq(aw.warranties.map((w) => w.item).join(), 'Bosch-Dienst,Lichtmaschine', 'API: laufende, nach Datum');
   eq(Object.keys(aw.warranties[0]).sort().join(), 'case_no,item,item_kind,warranty_until', 'nur Bezeichnung/Art/Datum/Vorgang');
   eq((await av('environment=production&include=warranties')).find((v) => v.id === V).warranties.length, 0, 'API: Umgebung getrennt');
+  // include=winter: Winterreifen-Status (gleiche Regel wie App), Anhänger nicht pflichtig, ohne include kein Feld
+  ok(!('winter' in (await av('environment=test'))[0]), 'ohne include kein winter');
+  const awin = await av('environment=test&include=winter');
+  ok(awin.every((v) => ['erfuellt', 'nicht_erfuellt', 'unbekannt', 'nicht_pflichtig'].includes(v.winter.status)), 'Status je Fahrzeug');
+  ok(awin.filter((v) => v.kind === 'anhaenger').every((v) => v.winter.status === 'nicht_pflichtig'), 'Anhänger nicht pflichtig');
+  const ftw = (await users.fleet.get('/api/tires/fleet')).data.rows;
+  for (const r of ftw) { const a = awin.find((v) => v.id === r.vehicle_id); if (a) eq(a.winter.status, r.winter, 'API = App ' + r.plate); }
+  eq(Object.keys(awin[0].winter).sort().join(), 'missing,noncompliant,status');
   // Meldetag = Berliner Kalendertag – Liste (SQL) und Vorgangsdetail (JS) entscheiden gleich, auch um 00:30 Uhr Berliner Zeit
   const { berlinDayStartIso } = await import('../src/util.js');
   const D = day(-5);

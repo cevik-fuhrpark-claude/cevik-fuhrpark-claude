@@ -5,6 +5,7 @@ import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
 import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
+import { winterMarks, winterStatus } from './tires.js';
 import { dataQuality, CHECKS } from './quality.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
@@ -115,9 +116,17 @@ export async function integrationRouter(request, env, ctx, url) {
         WHERE c.environment=?1 ORDER BY g.warranty_until, g.created_at`).bind(envParam(url), berlinDate()).all()).results;
       for (const w of wr) { if (!warrBy.has(w.vehicle_id)) warrBy.set(w.vehicle_id, []); warrBy.get(w.vehicle_id).push({ item: w.item, item_kind: w.item_kind, warranty_until: w.warranty_until, case_no: w.case_no }); }
     }
+    // optional ?include=winter: Winterreifen-Status je Fahrzeug (StVO § 2 Abs. 3a, nur aus Erfasstem; Anhänger nicht_pflichtig) – keine Personen
+    let winterBy = null;
+    if (inc.has('winter')) {
+      winterBy = new Map();
+      const te = (await env.DB.prepare('SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? ORDER BY created_at DESC').bind(envParam(url)).all()).results;
+      const byV = new Map(); for (const e of te) { if (!byV.has(e.vehicle_id)) byV.set(e.vehicle_id, []); byV.get(e.vehicle_id).push(e); }
+      for (const v of list) { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); winterBy.set(v.id, { status: w.status, missing: w.missing, noncompliant: w.noncompliant }); }
+    }
     return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
-      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, next_due_km: v.next_due_km ?? null, next_due_km_kind: v.next_due_km_kind ?? null, km_remaining: v.km_remaining ?? null, open_recalls: v.open_recalls ?? 0, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
+      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, next_due_km: v.next_due_km ?? null, next_due_km_kind: v.next_due_km_kind ?? null, km_remaining: v.km_remaining ?? null, open_recalls: v.open_recalls ?? 0, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}), ...(winterBy ? { winter: winterBy.get(v.id) } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }
   if (p === '/v1/findings' && m === 'GET') {
     const [rows, names] = await Promise.all([env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all().then((r) => r.results), personNames(env, envParam(url))]);
