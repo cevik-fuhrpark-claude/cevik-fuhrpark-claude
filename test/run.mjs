@@ -823,6 +823,12 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   const dws = (await users.dispatch.get('/api/tires/winter?site=' + encodeURIComponent(vSite || 'ohne'))).data;
   ok(dws.noncompliant.some((x) => x.vehicle_id === V2), 'Standortfilter enthält V2');
   eq((await users.dispatch.get('/api/tires/winter?site=GIBTSNICHT')).data.totals.vehicles, 0);
+  // Werkstatt-Startseite: gleicher Arbeitsvorrat (beide Werkstätten, Fahrzeuge sind nicht an Werkstätten gebunden); Direktsprung in die Reiter
+  for (const w of [users.ws, users.wsMuc]) { const r = (await w.get('/api/tires/winter')).data; eq(r.totals.nicht_erfuellt, dw.data.totals.nicht_erfuellt, 'Werkstatt = Disposition'); eq(r.totals.unbekannt, dw.data.totals.unbekannt); }
+  { const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(/\[\/\^#\\\/tires\(\?:\\\?f=\\w\+\)\?\$\/, viewFleetTires\]/.test(app), 'Route #/tires?f= vorhanden');
+    ok(/async function workshopBoard[\s\S]*?wsWinter\(/.test(app), 'Werkstatt-Startseite zeigt Winter-Arbeitsvorrat');
+    for (const f of ['winter_bad', 'winter_unknown']) ok(app.includes(`#/tires?f=${f}`), 'Link auf Reiter ' + f); }
   // Fahrer (zugeordnet) darf bei Sichtprüfung die Kennzeichnung angeben
   eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', winter_mark: '3pmsf' })).status, 201);
   eq((await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.positions.find((x) => x.position === 'VA-L').winter_mark, '3pmsf');

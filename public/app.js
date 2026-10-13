@@ -174,7 +174,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 const routeArg = (x) => { if (x === undefined) return undefined; try { return decodeURIComponent(x); } catch { return x; } };
 
@@ -384,6 +384,8 @@ async function workshopBoard() {
     const nr = (await api('GET', '/api/me/inspections-without-result')).items;
     if (nr.length) html += `<h2>${esc(t('res_missing_mine'))} <span class="chip">${nr.length}</span></h2><p class="small muted">${esc(t('res_missing_hint'))}</p><div class="list">${nr.map((r) => `<a class="row" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}?ev=${encodeURIComponent(r.id)}">${plate(r.plate)}<span class="title">${esc(mk(r.kind))} · ${fmtD(r.done_date)}</span><span class="chip">${esc(t('res_add_go'))} ›</span></a>`).join('')}</div>`;
   } catch {}
+  // Winterreifen: Lkw ohne Alpine-Symbol laut Erfassung als Arbeitsvorrat (umrüsten bzw. Erfassung nachholen) – nur Information, keine Sperre
+  html += await wsWinter(vsDef('tireSite'));
   return html + `<p><a href="#/cases">${esc(t('all'))}</a> · <a href="#/plan">${esc(t('wplan'))} ›</a></p>${helpLink('ws')}`;
 }
 async function viewHome() {
@@ -469,6 +471,14 @@ function dispoCases(cs, hasOther = false, coupled = new Map()) {
   const list = [...byV.values()].sort((a, b) => b.r - a.r || a.c.plate.localeCompare(b.c.plate));
   if (!list.length) return hasOther ? '' : `<section class="panel good"><b>${esc(t('dispo_all_ok'))}</b></section>`;
   return `<h2>${esc(t('dispo_not_plannable'))}</h2><div class="list">${list.map(({ r, c }) => `<a class="row ${r === 3 ? 'p-kritisch' : 'p-mittel'}" href="#/cases/${esc(c.id)}">${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(r === 3 ? t('locked') + ' – ' + t('do_not_drive') : t('st_' + c.status))}</span><span class="chip ${r === 3 ? 'kritisch' : 'mittel'}">${esc(t('since'))} ${fmtDT(r === 3 ? c.created_at : c.updated_at)}</span><span class="sub">${esc(c.case_no)}${coupled.has(c.vehicle_id) ? ` · <b>${esc(t(coupled.get(c.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(c.vehicle_id).plate)}</b>` : ''}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.planned_date && c.status !== 'abschlusskontrolle' ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(c.planned_date) : ''}${partsEta(c)}</span></a>`).join('')}</div>`;
+}
+
+// Werkstatt-Startseite: Winterreifen-Arbeitsvorrat (gleiche Daten wie Disposition, Standort wie Reifen – Flotte); Sprung in die passenden Reiter
+async function wsWinter(vsite = '') {
+  const r = await api('GET', '/api/tires/winter' + (vsite ? '?site=' + encodeURIComponent(vsite) : '')).catch(() => null);
+  if (!r || (!r.totals.nicht_erfuellt && !r.totals.unbekannt)) return '';
+  const rows = r.noncompliant.map((x) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(t('winter_bad').replace('{p}', x.noncompliant.join(', ')))}</span><span class="chip mittel">${esc(t('ws_nicht_erfuellt'))}</span>${x.missing.length ? `<span class="sub">${esc(t('winter_missing').replace('{p}', x.missing.join(', ')))}</span>` : ''}</a>`).join('');
+  return `<section id="wswinter"><h2>${esc(t('ws_winter'))}${r.totals.nicht_erfuellt ? ` <span class="chip">${r.totals.nicht_erfuellt}</span>` : ''}</h2><p class="small muted">${esc(t('ws_winter_hint'))}</p>${rows ? `<div class="list">${rows}</div><p class="small noprint"><a href="#/tires?f=winter_bad" id="wswbad">${esc(t('ws_winter_show'))} ›</a></p>` : ''}${r.totals.unbekannt ? `<p class="small noprint"><a href="#/tires?f=winter_unknown" id="wswunk">${esc(t('ws_winter_unknown').replace('{n}', r.totals.unbekannt))} ›</a></p>` : ''}</section>`;
 }
 
 // Disposition: Lkw ohne ausreichende Winterkennzeichnung (laut Erfasstem) – nur Information, keine Sperre (situative Pflicht bei Glätte)
@@ -2472,6 +2482,10 @@ async function viewDefects() {
 // ---------- Reifen über die Flotte ----------
 async function viewFleetTires() {
   const r = await api('GET', '/api/tires/fleet' + (vsDef('tireSite') ? '?site=' + encodeURIComponent(vsDef('tireSite')) : ''));
+  // Direktsprung von der Werkstatt-Startseite (#/tires?f=winter_bad|winter_unknown): Reiter übernehmen, danach normale Bedienung
+  const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
+  if (hf && ['attention', 'stale', 'never', 'winter_bad', 'winter_unknown', 'age', 'all'].includes(hf)) S.tireFilter = hf;
+  if (hf) try { history.replaceState(null, '', '#/tires'); } catch {} // Reiterwechsel danach nicht vom Link überschrieben
   const f = S.tireFilter || 'attention';
   const sel = { attention: (x) => x.status === 'unter_minimum' || x.status === 'warnung', never: (x) => x.measured_positions === 0, stale: (x) => x.stale && x.measured_positions > 0, winter_bad: (x) => x.winter === 'nicht_erfuellt', winter_unknown: (x) => x.winter === 'unbekannt', age: (x) => x.age_warn > 0, all: () => true }[f] || (() => true);
   const rows = r.rows.filter(sel);

@@ -15,6 +15,7 @@ run_smoke() {
 step "UI-Leerlauf (geteiltes Tablet)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-leerlauf.py > /tmp/cfp-leerlauf.log 2>&1 || { tail -20 /tmp/cfp-leerlauf.log; fail "Leerlauftest"; }; tail -1 /tmp/cfp-leerlauf.log
 step "UI-Prüfhinweise in der App-Sprache"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-pruefhinweise.py > /tmp/cfp-hinweise.log 2>&1 || { tail -20 /tmp/cfp-hinweise.log; fail "Prüfhinweise"; }; tail -1 /tmp/cfp-hinweise.log
 step "UI-Import-Hinweise in der App-Sprache"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-importhinweise.py > /tmp/cfp-import.log 2>&1 || { tail -20 /tmp/cfp-import.log; fail "Import-Hinweise"; }; tail -1 /tmp/cfp-import.log
+step "UI-Werkstatt Winterreifen"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-winter-werkstatt.py > /tmp/cfp-winter.log 2>&1 || { tail -20 /tmp/cfp-winter.log; fail "Werkstatt Winterreifen"; }; tail -1 /tmp/cfp-winter.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
