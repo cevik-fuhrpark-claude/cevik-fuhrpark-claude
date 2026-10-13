@@ -174,14 +174,15 @@ Antwort (Aufbau; Werte nur zur Veranschaulichung, nicht aus dem Betrieb):
 ```json
 { "schema_version": "1.0", "generated_at": "…",
   "providers": [ { "provider": "yellowfox", "devices": 0, "vehicles": 0, "last_received": "…", "last_gps_time": "…",
-                   "unmatched": 0, "mappings": 0, "plate_mismatches": 0, "km_rejected": 0 } ],
+                   "unmatched": 0, "mappings": 0, "plate_mismatches": 0, "km_rejected": 0, "inactive_vehicle_reports": 0 } ],
   "vehicles_total": 0, "vehicles_without_data": 0, "trailers_with_data": 0, "unmatched_truncated": false }
 ```
 - Dafür genügt das **Lese-Token** (`INTEGRATION_TOKEN_READ`); es kann nichts einspeisen oder ändern.
 - Enthält nur Zähler und Zeitpunkte – keine Positionen, Geräte-IDs, Kennzeichen oder Personen.
 - **Die App legt keinen Grenzwert fest.** Ab wann ein altes `last_received` als Ausfall gilt (z. B. nachts/am Wochenende normal), entscheidet der Betrieb
   und trägt es im eigenen Überwachungs-Workflow ein. Sinnvolle Prüfpunkte: `last_received` je Anbieter, Anstieg von `unmatched` (neue Geräte ohne Zuordnung →
-  Mehr → Telematik → Prüffälle), `plate_mismatches`/`km_rejected` > 0 (Details unter Mehr → Datenqualität), `vehicles_without_data`.
+  Mehr → Telematik → Prüffälle), `plate_mismatches`/`km_rejected` > 0 (Details unter Mehr → Datenqualität), `inactive_vehicle_reports` > 0 (Gerät liefert für ein außer Betrieb
+  genommenes Fahrzeug – verkauft? Gerät ausbauen bzw. Zuordnung lösen; Details unter Mehr → Datenqualität), `vehicles_without_data`.
 - `providers` enthält immer beide Anbieter; `last_received: null` und `devices: 0` = von diesem Anbieter kam noch nie ein Stand.
   Telematik-Daten sind gemeinsame Stammdaten (keine Trennung Test/Betrieb).
 - Abrufhäufigkeit: alle 15–60 Minuten reicht; mehr als 30 ungültige Token-Versuche in 15 Minuten sperren die Netzadresse vorübergehend (siehe `docs/API.md`).

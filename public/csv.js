@@ -9,9 +9,22 @@ export function toCsv(header, rows) {
   return '﻿' + [header, ...rows].map((r) => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
 }
 // Datenqualität: Befunde mit Beschriftungen in der App-Sprache (t = Übersetzungsfunktion)
-export function dataQualityCsv(items, t) {
+export function dataQualityCsv(items, t, fmtD = null) {
   return toCsv([t('dq_col_severity'), t('dq_col_check'), t('dq_col_object'), t('dq_col_detail')],
-    items.map((i) => [t('dq_sev_' + i.severity), t('dq_' + i.check), i.plate || i.driver_name || '', i.detail || '']));
+    items.map((i) => [t('dq_sev_' + i.severity), t('dq_' + i.check), i.plate || i.driver_name || '', fmtD ? dqDetailText(i, t, fmtD) : i.detail || '']));
+}
+// [CLAUDE] Datenqualität: Detail in der App-Sprache (Ansicht und CSV). Server liefert detail (deutsch, für Integrations-API)
+// und ggf. detail_args (sprachneutral); ohne detail_args werden ISO-Daten im Detail lokal formatiert.
+export function dqDetailText(i, t, fmtD) {
+  const a = i.detail_args;
+  if (!i.detail) return '';
+  if (i.check === 'km_stale') return fmtD(i.detail);
+  if (i.check === 'telematics_vehicle_inactive') return i.detail.replace('außer Betrieb seit', t('inactive_since'));
+  if (!a) return i.detail.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d));
+  if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}`;
+  if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
+  if (a.result) return `${a.kind} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
+  return i.detail;
 }
 // Mängelstatistik: je Prüfpunkt bzw. je Fahrzeug (alle Fahrzeuge mit Kontrollen im Zeitraum, auch ohne Mangel).
 // label(k) = Prüfpunkt-Bezeichnung in der App-Sprache, d(iso) = Datum; leere Zelle = kein Wert.

@@ -4977,6 +4977,21 @@ await test('Datenqualität als CSV (Browser): Formelschutz, BOM, alle Prüfungen
   ok(csv.startsWith('\ufeffSchweregrad;Prüfung;Fahrzeug / Person;Detail\r\n'), 'Kopfzeile/BOM');
   eq(csv.trim().split('\r\n').length, items.length + 1, 'eine Zeile je Befund');
   ok(!/;dq_/.test(csv), 'keine unübersetzten Schlüssel');
+  // Detail in der App-Sprache (gleiche Funktion wie die Ansicht): Vertragsart, Prüfergebnis, Mängelauftrag, Einladung, ISO-Datum
+  const { dqDetailText } = await import('../public/csv.js');
+  const fd = (iso) => iso.split('-').reverse().join('/');
+  for (const lang of ['de', 'uk', 'en']) {
+    const tl = (k) => STRINGS[lang][k] || k;
+    const miss = ['dq_invite_expired', 'dq_defect_case', 'inactive_since', 'ck_leasing', 'res_gefaehrliche_maengel', 'role_fleet'].filter((k) => !STRINGS[lang][k]); eq(miss.join(','), '', lang + ': Detail-Texte');
+    eq(dqDetailText({ check: 'contract_no_document', detail: 'Leasing · X', detail_args: { contract_kind: 'miete', partner: 'X' } }, tl, fd), `${tl('ck_miete')} · X`);
+    eq(dqDetailText({ check: 'invite_pending', detail: 'A (fleet)', detail_args: { name: 'A', role: 'fleet', expired: true } }, tl, fd), `A (${tl('role_fleet')}) – ${tl('dq_invite_expired')}`);
+    eq(dqDetailText({ check: 'reinspection_defects_again', detail: 'x', detail_args: { kind: 'UVV', done_date: '2026-10-01', result: 'verkehrsunsicher', case_no: 'S-1', first_date: '2026-09-01' } }, tl, fd),
+      `UVV 01/10/2026 · ${tl('res_verkehrsunsicher')} · ${tl('dq_defect_case').replace('{no}', 'S-1').replace('{d}', '01/09/2026')}`);
+    eq(dqDetailText({ check: 'accident_no_claim', detail: 'S-2026-0001 · 2026-10-13' }, tl, fd), 'S-2026-0001 · 13/10/2026', 'ISO-Datum lokal');
+  }
+  const csvUk = dataQualityCsv(items, (k) => STRINGS.uk[k] || k, fd);
+  eq(csvUk.trim().split('\r\n').length, items.length + 1, 'UK-CSV: eine Zeile je Befund');
+  ok(!csvUk.includes('Einladung abgelaufen') && !csvUk.includes('Mängelauftrag'), 'UK-CSV ohne deutsche Detailtexte');
 });
 
 await test('Mängelstatistik als CSV (Browser): je Prüfpunkt und je Fahrzeug, Beschriftungen DE/UK/EN, Zeilen = Bericht', async () => {

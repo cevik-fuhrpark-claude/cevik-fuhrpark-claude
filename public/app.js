@@ -1,7 +1,7 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
 import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason } from './i18n.js';
 import { svg as qrSvg } from './qr.js';
-import { dataQualityCsv, defectItemsCsv, defectVehiclesCsv, readCsvFile } from './csv.js';
+import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, readCsvFile } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -32,15 +32,7 @@ const dtFmt = (kind) => { const loc = S.lang === 'uk' ? 'uk-UA' : S.lang === 'en
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
 // Kalenderdatum „JJJJ-MM-TT“ bleibt dieser Tag; Zeitstempel → Berliner Kalendertag
 const fmtD = (iso) => { if (!iso) return '–'; const d = new Date(iso.length === 10 ? iso + 'T12:00:00Z' : iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt(iso.length === 10 ? 'd10' : 'd').format(d); };
-// [CLAUDE] Datenqualität: Detail in der Sprache der Oberfläche – Server liefert detail (deutsch, für CSV/API) und ggf. detail_args (sprachneutral)
-const dqDetail = (i) => { const a = i.detail_args;
-  if (i.check === 'km_stale') return fmtD(i.detail);
-  if (i.check === 'telematics_vehicle_inactive') return i.detail.replace('außer Betrieb seit', t('inactive_since'));
-  if (!a) return i.detail.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d));
-  if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}`;
-  if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
-  if (a.result) return `${a.kind} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
-  return i.detail; };
+const dqDetail = (i) => dqDetailText(i, t, fmtD);
 const hrs = (n) => (n === null || n === undefined ? '–' : String(Math.round(n * 100) / 100).replace('.', ','));
 const eur = (n) => (n === null || n === undefined ? '–' : new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n));
 // Datei-Links: Inhaber mit umgeschalteter Ansicht (Test/Betrieb) braucht die Umgebung als Parameter, da Links keine Header senden
@@ -2383,7 +2375,7 @@ async function viewQuality(pre) {
   $$('[data-dq]').forEach((b) => (b.onclick = () => { S.dqFilter = b.dataset.dq; viewQuality(); }));
   $$('[data-dqsev]').forEach((b) => (b.onclick = () => { S.dqSev = b.dataset.dqsev; viewQuality(); }));
   const dqs = $('#dqsite'); if (dqs) dqs.onchange = () => { S.dqSite = dqs.value; viewQuality(); };
-  const dc = $('#dqcsv'); if (dc) dc.onclick = () => download(new Blob([dataQualityCsv(items, t)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-datenqualitaet_${r.environment}_${bDate()}.csv`);
+  const dc = $('#dqcsv'); if (dc) dc.onclick = () => download(new Blob([dataQualityCsv(items, t, fmtD)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-datenqualitaet_${r.environment}_${bDate()}.csv`);
 }
 
 // ---------- Nutzungsstatistik (Inhaber, ohne Personenbezug) ----------
