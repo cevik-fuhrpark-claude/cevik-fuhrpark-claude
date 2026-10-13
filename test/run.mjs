@@ -250,6 +250,7 @@ await test('T09: Upload nur PNG/JPEG/WEBP/PDF, byteidentisch, Rechte beim Downlo
   eq((await users.driver.req('POST', `/api/cases/${CK}/files`, big, { 'x-filename': 'gross.jpg' })).status, 400);
   const dl = await users.driver.get(`/api/files/${up.data.id}`);
   eq(dl.status, 200); eq(dl.data.length, png.length); ok(dl.data.every((b, i) => b === png[i]), 'Bytegleich');
+  eq(dl.headers.get('cache-control'), 'private, max-age=300', 'Vorgangsfotos kurz privat zwischengespeichert');
   eq((await users.driver2.get(`/api/files/${up.data.id}`)).status, 404, 'Fremder Fahrer');
   eq((await users.prodFleet.get(`/api/files/${up.data.id}`)).status, 404, 'Betrieb');
 });
@@ -881,7 +882,9 @@ await test('Schreiben als PDF anhängen; Fahrer darf es lesen, anderer nicht', a
   const pdf = new TextEncoder().encode('%PDF-1.4 Test');
   const up = await users.fleet.req('POST', `/api/fines/${FINE}/files`, pdf, { 'x-filename': 'anhoerung.pdf' });
   eq(up.status, 201);
-  eq((await users.driver.get(`/api/files/${up.data.id}`)).status, 200);
+  const fdl = await users.driver.get(`/api/files/${up.data.id}`);
+  eq(fdl.status, 200);
+  ok((fdl.headers.get('cache-control') || '').includes('no-store'), 'Behördenschreiben nie im Browser-Cache (geteilte Tablets)');
   eq((await users.ws.get(`/api/files/${up.data.id}`)).status, 404);
 });
 await test('Lesezugriff sieht Bußgelder ohne Fahreridentität und interne Notiz (wie CSV ohne Fahrer)', async () => {
@@ -5304,6 +5307,18 @@ await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-En
   const app = JSON.stringify((await users.fleet.get('/api/master')).data);
   ok(ppl.some((n) => app.includes(n)), 'Gegenprobe: App zeigt der Fuhrparkleitung den Fahrernamen');
   console.log(`     ${calls} Abrufe gegen ${ppl.length} Namen/Kennungen geprüft, ${fi.length} fahrerbezogene Befunde geschwärzt`);
+});
+await test('Push-Texte (Sperrbildschirm): keine Personennamen in Titel/Text aller Benachrichtigungen der Testsuite', async () => {
+  // Push erscheint auf dem Sperrbildschirm, auch auf geteilten Geräten: nur Vorgangsnummer, Kennzeichen, Priorität, Aktenzeichen, Codes
+  const ppl = (await env.DB.prepare(`SELECT display_name AS n FROM users UNION SELECT username FROM users UNION SELECT display_name FROM drivers UNION SELECT personnel_no FROM drivers WHERE personnel_no IS NOT NULL`).all()).results
+    .map((r) => String(r.n)).filter((n) => n.length >= 5);
+  const rows = (await env.DB.prepare('SELECT kind, title, body FROM notifications').all()).results;
+  const kinds = new Set(rows.map((r) => r.kind));
+  for (const k of ['created', 'fine', 'agent', 'inspection_defect']) ok(kinds.has(k), `Testbestand ohne Benachrichtigungsart ${k}`);
+  const hits = [];
+  for (const r of rows) for (const n of ppl) if (`${r.title} ${r.body}`.includes(n)) hits.push(`${r.kind}: „${n}“`);
+  ok(!hits.length, `Personenname im Push-Text: ${[...new Set(hits)].slice(0, 8).join('; ')}`);
+  console.log(`     ${rows.length} Benachrichtigungen (${kinds.size} Arten) gegen ${ppl.length} Namen/Kennungen geprüft`);
 });
 
 await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI-Rauchtest im Druckmodus geprüft', async () => {

@@ -1119,7 +1119,8 @@ export async function downloadFile(env, user, envName, fileId) {
     headers: {
       'content-type': f.content_type,
       'content-disposition': `${f.content_type === 'application/pdf' ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(f.filename)}`,
-      'cache-control': 'private, max-age=300',
+      // Behördenschreiben (Bußgeld/Anhörung) sind personenbezogen: auf geteilten Tablets nicht im Browser-Cache ablegen
+      'cache-control': f.fine_id ? 'private, no-store' : 'private, max-age=300',
       'x-content-type-options': 'nosniff',
     },
   });
