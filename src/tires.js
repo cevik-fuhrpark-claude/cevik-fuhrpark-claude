@@ -71,6 +71,12 @@ export function winterStatus(kind, { marks, seen }) {
   return { status: noncompliant.length ? 'nicht_erfuellt' : missing.length ? 'unbekannt' : 'erfuellt', required, missing, noncompliant };
 }
 
+// Offene Werkstattaufträge „Winterreifen“ (cases.tire_order='winter') je Fahrzeug: vehicle_id → {id, case_no}; nur Auftragsnummer, keine Personen
+export async function openWinterOrders(env, envName, vehicleId = null) {
+  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no FROM cases WHERE environment=? AND tire_order='winter' AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')${vehicleId ? ' AND vehicle_id=?' : ''}`)
+    .bind(...(vehicleId ? [envName, vehicleId] : [envName])).all()).results;
+  return new Map(r.map((x) => [x.vehicle_id, { id: x.id, case_no: x.case_no }]));
+}
 const canWrite = (u) => ['owner', 'fleet', 'workshop'].includes(u.role);
 const canMeasure = (u) => ['owner', 'fleet', 'workshop', 'driver'].includes(u.role);
 
@@ -79,7 +85,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
     if (!a) throw forbidden('Reifendaten nur für zugeordnete Fahrzeuge.');
   }
-  const v = await env.DB.prepare('SELECT id, plate, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
   const history = (await env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, u.role AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
@@ -100,12 +106,13 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
   const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null;
   const wm = winterMarks(history);
+  const wOrder = v.kind === 'anhaenger' ? null : (await openWinterOrders(env, envName, vehicleId)).get(vehicleId) || null;
   const dots = currentDots(history); const today = berlinDate();
   const positions = Object.entries(latest).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: x.tread_mm === undefined || x.tread_mm === null ? 'unbekannt' : x.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && x.tread_mm < warn ? 'warnung' : 'ok',
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: winterStatus(v.kind, wm) };
+  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: { ...winterStatus(v.kind, wm), open_order: wOrder } };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -256,6 +263,7 @@ export async function fleetTires(env, user, envName, query = {}) {
   // Winterkennzeichnung je Fahrzeug (gleiche Regel wie Fahrzeugakte)
   const evByV = new Map();
   for (const e of ev) { if (!evByV.has(e.vehicle_id)) evByV.set(e.vehicle_id, []); evByV.get(e.vehicle_id).push(e); }
+  const wOrders = await openWinterOrders(env, envName);
   const now = Date.now();
   const rank = { unter_minimum: 3, warnung: 2, ok: 1, unbekannt: 0 };
   const rows = vehicles.map((v) => {
@@ -273,7 +281,7 @@ export async function fleetTires(env, user, envName, query = {}) {
     // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
     const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));
     const oldestDot = ages.reduce((o, a) => (!o || a.dot_date < o.dot_date ? a : o), null);
-    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant,
+    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wOrders.get(v.id) || null,
       dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
@@ -290,9 +298,10 @@ export async function winterFleet(env, user, envName, query = {}) {
   const sel = siteSelection(all, query.site);
   const trucks = all.filter((v) => v.kind !== 'anhaenger' && sel.match(v.site));
   const ev = (await env.DB.prepare('SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? ORDER BY created_at DESC').bind(envName).all()).results;
+  const wOrders = await openWinterOrders(env, envName);
   const byV = new Map();
   for (const e of ev) { if (!byV.has(e.vehicle_id)) byV.set(e.vehicle_id, []); byV.get(e.vehicle_id).push(e); }
-  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing }; });
+  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing, open_order: wOrders.get(v.id) || null }; });
   const count = (s) => rows.filter((r) => r.status === s).length;
   return { site: sel.site, totals: { vehicles: rows.length, nicht_erfuellt: count('nicht_erfuellt'), unbekannt: count('unbekannt'), erfuellt: count('erfuellt') },
     noncompliant: rows.filter((r) => r.status === 'nicht_erfuellt') };

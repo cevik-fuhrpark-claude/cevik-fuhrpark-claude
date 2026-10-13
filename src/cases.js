@@ -5,6 +5,7 @@ import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
 import { siteSelection } from './reports.js';
+import { winterMarks, winterStatus } from './tires.js';
 
 export const PRIORITIES = ['niedrig', 'mittel', 'kritisch'];
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
@@ -540,6 +541,48 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   return { id: created.id, case_no: created.case_no, status: r.status, priority, driveability };
 }
 
+// Werkstattauftrag „Umrüstung Winterreifen“ (Inhaber/Fuhrparkleitung) aus der Winterlage eines Lkw laut Reifenerfassung:
+// „nicht erfüllt“ → Umrüstung der Positionen ohne Alpine-Symbol; „nicht vollständig erfasst“ → Winterkennzeichnung prüfen und erfassen.
+// Wie Auftrag aus Prüftermin: Meldung mit Herkunft „wartung“, direkt an die gewählte Werkstatt freigegeben, fahrbereit (Information,
+// keine Sperre – situative Pflicht StVO § 2 Abs. 3a). Je Fahrzeug und Umgebung höchstens ein offener Auftrag. Erledigt ist die Lage erst,
+// wenn die Werkstatt die Reifen mit Winterkennzeichnung erfasst – der Auftrag ersetzt die Erfassung nicht.
+export async function orderWinterTires(env, ctx, user, envName, vehicleId, body = {}) {
+  if (!isManager(user)) throw forbidden();
+  const v = await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.active,
+      (SELECT json_object('id', c.id, 'case_no', c.case_no, 'request_key', c.request_key, 'reporter_id', c.reporter_id) FROM cases c WHERE c.vehicle_id=v.id AND c.tire_order='winter' AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
+      (SELECT code FROM workshops WHERE code=?3 AND active=1) AS ws_code
+    FROM vehicles v WHERE v.id=?1`).bind(vehicleId, envName, wsParam(body)).first();
+  if (!v) throw notFound();
+  if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+  if (v.kind === 'anhaenger') throw bad('validation', 'Anhänger sind von der Winterreifenpflicht nicht betroffen.');
+  const open = v.open_case ? JSON.parse(v.open_case) : null;
+  // Wiederholung desselben Absendens (Doppelklick/Netzabbruch) → derselbe Auftrag statt Fehler
+  if (open && body.request_key && open.request_key === String(body.request_key) && open.reporter_id === user.id) return { id: open.id, case_no: open.case_no, duplicate: true };
+  if (open) throw conflict('order_exists', `Für die Winterreifen dieses Fahrzeugs gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
+  const ev = (await env.DB.prepare('SELECT position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC').bind(envName, vehicleId).all()).results;
+  const w = winterStatus(v.kind, winterMarks(ev));
+  if (w.status === 'erfuellt') throw conflict('winter_ok', 'Winterreifen laut Erfassung bereits erfüllt – kein Auftrag nötig.');
+  const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+  if (!v.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
+  const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
+  const note = str(body.note, { max: 1000 });
+  // Termin vor dem Anlegen prüfen (sonst bliebe bei ungültigem Termin eine nicht freigegebene Meldung zurück)
+  const planned = body.planned_date ? planDate(body.planned_date) : null;
+  if (planned && planned < berlinDate()) throw bad('validation', 'Werkstatttermin darf nicht in der Vergangenheit liegen.');
+  const parts = [];
+  if (w.noncompliant.length) parts.push(`ohne Alpine-Symbol: ${w.noncompliant.join(', ')}`);
+  if (w.missing.length) parts.push(`nicht erfasst: ${w.missing.join(', ')}`);
+  const description = (w.status === 'nicht_erfuellt' ? 'Umrüstung auf Winterreifen (Alpine-Symbol)' : 'Winterreifen prüfen und Winterkennzeichnung erfassen')
+    + ` – Positionen laut Reifenerfassung ${parts.join('; ')}. Wechsel mit Winterkennzeichnung in der Fahrzeugakte → Reifen erfassen.${note ? ' – ' + note : ''}`;
+  const requestKey = str(body.request_key, { max: 64 }) || uuid();
+  const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: vehicleId, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
+    { origin: 'wartung', tire_order: 'winter', site_checked: true });
+  if (created.duplicate) return { id: created.id, case_no: created.case_no, duplicate: true };
+  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'mw-' + requestKey, expected_version: 1,
+    note: `Auftrag Winterreifen${note ? ': ' + note : ''}`, payload: { workshop_site: site, ...(planned ? { planned_date: planned } : {}) } });
+  return { id: created.id, case_no: created.case_no, status: r.status, winter: w.status };
+}
+
 export async function createCase(env, ctx, user, envName, body) {
   return (await createCases(env, ctx, user, envName, [body]))[0];
 }
@@ -612,7 +655,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     rows.push({ id, case_no: caseNo, vehicle_id: x.vehicleId, reporter_name_note: x.reporterNote, description: x.description, location_note: x.location,
       priority: x.reportedPriority, driveability: x.driveability, safety_lock: safetyLock, lock_reason: lockReason, site: x.suggested, origin: x.origin,
       parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash,
-      maintenance_rule_id: internal.maintenance_rule_id || null, maintenance_event_id: internal.maintenance_event_id || null });
+      maintenance_rule_id: internal.maintenance_rule_id || null, maintenance_event_id: internal.maintenance_event_id || null, tire_order: internal.tire_order || null });
     events.push({ id: uuid(), case_id: id, payload: JSON.stringify({ priority: x.reportedPriority, driveability: x.driveability, safety_lock: !!safetyLock, origin: x.origin, parent_case_id: x.parentId }) });
     results[i] = { id, case_no: caseNo, duplicate: false, safety_lock: !!safetyLock };
   });
@@ -620,9 +663,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
-        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,version,created_at,updated_at)
+        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,tire_order,version,created_at,updated_at)
         SELECT ${v('id')}, ${v('case_no')}, ?1, ${v('vehicle_id')}, ?2, ${v('reporter_name_note')}, ${v('description')}, ${v('location_note')}, ${v('priority')}, ${v('priority')},
-          ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, ${v('maintenance_rule_id')}, ${v('maintenance_event_id')}, 1, ?3, ?3
+          ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, ${v('maintenance_rule_id')}, ${v('maintenance_event_id')}, ${v('tire_order')}, 1, ?3, ?3
         FROM json_each(?4)`).bind(envName, user.id, now, JSON.stringify(rows)),
       env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         SELECT ${v('id')}, ${v('case_id')}, ?1, ?2, ?3, 'create', NULL, 'gemeldet', NULL, 1, NULL, ${v('payload')}, ?4 FROM json_each(?5)`)

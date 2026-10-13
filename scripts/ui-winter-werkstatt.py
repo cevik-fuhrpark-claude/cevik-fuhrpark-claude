@@ -61,6 +61,28 @@ with sync_playwright() as p:
         if SHOTS: d.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/todowinter_{lang}_{w}.png')
         q.click('#todowinter'); q.wait_for_selector('[data-tf="winter_bad"][aria-pressed="true"]'); check(True,'Direktsprung Reiter')
         check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
+    # Inhaber: Werkstattauftrag „Umrüstung auf Winterreifen“ aus Fahrzeugakte → Reifen; danach Auftragsnummer in Akte und Werkstatt-Startseite
+    WO={'de':'Werkstattauftrag: Umrüstung auf Winterreifen','uk':'Замовлення майстерні: переобування на зимові шини','en':'Workshop order: change to winter tyres'}
+    for lang in ['de','uk','en']:
+      for w,h in [(390,844),(820,1180),(1366,900)]:
+        c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
+        errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.evaluate(JS,['POST','/api/login',{'username':'w.inhaber','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#wodet',state='attached')
+        q.evaluate("()=>{let d=document.querySelector('#wodet'); while(d){ if(d.tagName==='DETAILS') d.open=true; d=d.parentElement }}")
+        check(WO[lang] in q.inner_text('#wodet summary'),f'Auftragsformular beschriftet ({lang} {w})')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+        if SHOTS: q.locator('#wodet').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wo_{lang}_{w}.png')
+        if lang=='en' and w==1366:
+          q.select_option('#woform select[name=workshop_site]','DORTMUND'); q.click('#woform button'); q.wait_for_selector('#wolink')
+          check('S-' in q.inner_text('#wolink') or 'T-' in q.inner_text('#wolink'),'Auftragsnummer in der Akte')
+        check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
+    c=br.new_context(viewport={'width':390,'height':844},locale='de-DE'); q=c.new_page(); q.goto(B)
+    q.evaluate(JS,['POST','/api/login',{'username':'w.werkstatt','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':'de'}])
+    q.goto(B+'/#/'); q.wait_for_selector('#wswinter')
+    check('🔧 Werkstattauftrag' in q.inner_text('#wswinter'),'Werkstatt-Startseite zeigt Auftrag')
+    if SHOTS: q.locator('#wswinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wswinter_order_390.png')
+    c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)

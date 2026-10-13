@@ -816,7 +816,7 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   eq(dw.data.totals.nicht_erfuellt, ft.totals.winter_noncompliant, 'gleiche Zahl wie Reifen – Flotte');
   eq(dw.data.totals.unbekannt, ft.totals.winter_unknown);
   eq(dw.data.totals.vehicles, ft.rows.filter((x) => x.winter !== 'nicht_pflichtig').length, 'Anhänger nicht gezählt');
-  ok(dw.data.noncompliant.every((x) => Object.keys(x).sort().join(',') === 'missing,noncompliant,plate,site,status,vehicle_id'), 'nur Winterangaben');
+  ok(dw.data.noncompliant.every((x) => Object.keys(x).sort().join(',') === 'missing,noncompliant,open_order,plate,site,status,vehicle_id'), 'nur Winterangaben');
   eq((await users.driver.get('/api/tires/winter')).status, 403);
   eq((await users.prodFleet.get('/api/tires/winter')).data.noncompliant.some((x) => x.vehicle_id === V2), false, 'Umgebungen getrennt');
   const vSite = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V2).first()).site;
@@ -874,6 +874,48 @@ await test('Reifenpositionen je Fahrzeugart: Lkw ohne AH-Achsen, Anhänger nur A
   // Oberfläche nutzt die Liste aus der Antwort
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('(d.allowed_positions || S.meta.tire_positions)'), 'Formular filtert Positionen');
+});
+await test('Werkstattauftrag Winterreifen: nur Leitung, nur Lkw mit Winterlage nicht erfüllt/unbekannt, Positionen im Auftrag, direkt an Werkstatt, je Fahrzeug ein offener Auftrag, sichtbar in allen Winterlisten', async () => {
+  eq((await users.fleet.post('/api/vehicles', { vin: 'WDB96340310888801', plate: 'TT-WIN 1', site: 'Dortmund' })).status, 201);
+  const WV = 'VIN:WDB96340310888801';
+  const tr = await env.DB.prepare(`SELECT id FROM vehicles WHERE kind='anhaenger' AND active=1 LIMIT 1`).first();
+  const O = (u, id, b) => u.post(`/api/vehicles/${id}/tires/winter-order`, b);
+  eq((await O(users.ws, WV, { workshop_site: 'DORTMUND' })).status, 403, 'Werkstatt legt keinen Auftrag an');
+  eq((await O(users.dispatch, WV, { workshop_site: 'DORTMUND' })).status, 403, 'Disposition nicht');
+  eq((await O(users.fleet, tr.id, { workshop_site: 'DORTMUND' })).status, 400, 'Anhänger nicht betroffen');
+  eq((await O(users.fleet, WV, { workshop_site: 'GIBTSNICHT' })).status, 400, 'unbekannte Werkstatt');
+  eq((await O(users.fleet, WV, {})).status, 400, 'Werkstatt Pflicht');
+  eq((await O(users.fleet, WV, { workshop_site: 'DORTMUND', planned_date: '2020-01-01' })).status, 400, 'Termin in der Vergangenheit');
+  eq((await env.DB.prepare(`SELECT COUNT(*) n FROM cases WHERE vehicle_id=?`).bind(WV).first()).n, 0, 'abgewiesene Aufträge legen nichts an');
+  // VA-L erfüllt, VA-R nur M+S, HA nicht erfasst → Umrüstauftrag nennt VA-R und die fehlenden Positionen
+  await users.ws.post(`/api/vehicles/${WV}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', winter_mark: '3pmsf' });
+  await users.ws.post(`/api/vehicles/${WV}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-R', winter_mark: 'ms' });
+  const r = await O(users.fleet, WV, { workshop_site: 'DORTMUND', note: 'vor Wintereinbruch', request_key: 'wo-1' });
+  eq(r.status, 201); eq(r.data.status, 'werkstatt_freigegeben'); eq(r.data.winter, 'nicht_erfuellt');
+  const c = await env.DB.prepare('SELECT * FROM cases WHERE id=?').bind(r.data.id).first();
+  eq(c.origin, 'wartung'); eq(c.tire_order, 'winter'); eq(c.environment, 'test'); eq(c.safety_lock, 0, 'keine Sperre');
+  ok(c.description.startsWith('Umrüstung auf Winterreifen') && c.description.includes('ohne Alpine-Symbol: VA-R') && c.description.includes('nicht erfasst: HA-L-aussen, HA-R-aussen') && c.description.includes('vor Wintereinbruch'), c.description);
+  ok(!c.description.includes('VA-L,') && !/VA-L(?!-)/.test(c.description.replace('VA-R', '')), 'erfüllte Position nicht im Auftrag');
+  eq((await O(users.fleet, WV, { workshop_site: 'DORTMUND', request_key: 'wo-1' })).data.id, r.data.id, 'gleicher request_key → derselbe Auftrag');
+  const dup = await O(users.fleet, WV, { workshop_site: 'DORTMUND' });
+  eq(dup.status, 409); eq(dup.data.error, 'order_exists'); eq(dup.data.case_no, r.data.case_no);
+  // Werkstatt sieht den Auftrag, Listen zeigen die Auftragsnummer
+  ok((await users.ws.get('/api/cases')).data.cases.some((x) => x.id === r.data.id), 'Werkstatt Dortmund sieht Auftrag');
+  eq((await users.fleet.get(`/api/vehicles/${WV}/tires`)).data.winter.open_order.case_no, r.data.case_no);
+  eq((await users.dispatch.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === WV).open_order.case_no, r.data.case_no, 'Disposition sieht Auftragsnummer');
+  eq((await users.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === WV).winter_order.case_no, r.data.case_no);
+  eq((await users.prodFleet.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === WV)?.open_order ?? null, null, 'Betrieb getrennt');
+  ok((await users.fleet.get('/api/tires/fleet')).data.rows.filter((x) => x.kind === 'anhaenger').every((x) => x.winter_order === null), 'Anhänger nie');
+  // Abgelehnter Auftrag zählt nicht mehr als offen
+  await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
+  eq((await users.fleet.get(`/api/vehicles/${WV}/tires`)).data.winter.open_order, null, 'abgeschlossen/abgelehnt = kein offener Auftrag');
+  // Nach Umrüstung erfüllt → kein Auftrag mehr nötig
+  await users.ws.post(`/api/vehicles/${WV}/tires/events`, { event_type: 'wechsel', position: 'VA-R', positions: ['HA-L-aussen', 'HA-R-aussen'], size: '315/70 R22.5', winter_mark: '3pmsf' });
+  const okr = await O(users.fleet, WV, { workshop_site: 'DORTMUND' });
+  eq(okr.status, 409); eq(okr.data.error, 'winter_ok');
+  // Fahrzeug wieder aus der Testflotte nehmen (andere Tests zählen aktive Fahrzeuge)
+  await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
+  eq((await O(users.fleet, WV, { workshop_site: 'DORTMUND' })).status, 400, 'außer Betrieb');
 });
 await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {
   eq(dotDate('0118'), '2018-01-01'); eq(dotDate('DOT XX 5320'), '2020-12-28'); eq(dotDate('5321'), null, '2021 hat keine KW 53'); eq(dotDate('0024'), null); eq(dotDate('abcd'), null);
