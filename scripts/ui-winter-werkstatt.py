@@ -60,5 +60,22 @@ with sync_playwright() as p:
         if SHOTS: d.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/todowinter_{lang}_{w}.png')
         q.click('#todowinter'); q.wait_for_selector('[data-tf="winter_bad"][aria-pressed="true"]'); check(True,'Direktsprung Reiter')
         check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
+    # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
+    for w,h in [(390,844),(1366,900)]:
+        c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
+        errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.evaluate(JS,['POST','/api/login',{'username':'w.werkstatt','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':'de'}])
+        q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#tf',state='attached')
+        q.evaluate("()=>{let d=document.querySelector('#tf'); while(d){ if(d.tagName==='DETAILS') d.open=true; d=d.parentElement }}"); q.select_option('#tf select[name=event_type]','wechsel')
+        q.select_option('#tf select[name=position]','VA-L'); q.click('#tfmore summary')
+        if w==390: check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'Formular ohne waagrechtes Scrollen')
+        if SHOTS: q.locator('#tfmore').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/tfmore_{w}.png')
+        if w==1366:
+          for pz in ['VA-R','HA-L-aussen','HA-R-aussen']: q.check(f'#tfmore input[value="{pz}"]')
+          q.fill('#tf input[name=size]','315/70 R22.5'); q.select_option('#tf select[name=winter_mark]','3pmsf'); q.click('#tf button.btn')
+          q.wait_for_function("()=>!document.querySelector('#twinter') || !document.querySelector('#twinter').innerText.includes('VA-R')")
+          wi=a.evaluate(JS,['GET','/api/tires/winter'])['d']
+          check(not any(x['plate']=='SZ-YC 9901' for x in wi['noncompliant']),'nach Sammel-Erfassung nicht mehr „nicht erfüllt“')
+        check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'alles grün'); raise SystemExit(1 if fails else 0)

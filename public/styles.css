@@ -278,3 +278,4 @@ table.paper td:last-child { min-width: 30%; }
 
 @media print { table.printsm th, table.printsm td { font-size: 8.5pt; padding: 3px 4px; overflow-wrap: break-word; hyphens: auto; } }
 .vnotes { margin: 0; padding-left: 18px; } .vnotes li { margin: 6px 0; } .vnotes-drv { margin-top: 8px; padding: 8px 10px; border-left: 4px solid var(--mid); background: var(--mid-bg); border-radius: 6px; } .vnotes-drv p { margin: 4px 0; }
+.tfpos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 2px 12px; margin: 4px 0 8px; }

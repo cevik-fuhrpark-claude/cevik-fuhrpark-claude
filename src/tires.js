@@ -114,6 +114,9 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const position = oneOf(body.position, POSITIONS, 'Position');
+  // Sammel-Erfassung (z. B. Umrüstung auf Winterreifen): gleiche Angaben für weitere Positionen, atomar in einem Batch
+  const extra = Array.isArray(body.positions) ? body.positions.map((p) => oneOf(p, POSITIONS, 'Position')) : [];
+  const positions = [...new Set([position, ...extra])];
   const tread = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true });
   const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', nullable: true });
   if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
@@ -129,14 +132,15 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   }
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
-  const id = uuid();
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, position, type, tread, pressure, size, str(body.brand, { max: 60 }), dot, odo, caseId,
-    str(body.note, { max: 1000 }), user.id, now, winter).run();
+  const brand = str(body.brand, { max: 60 }); const note = str(body.note, { max: 1000 });
+  const ids = positions.map(() => uuid());
+  await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter)));
+  const id = ids[0];
   const warnings = [];
   if (tread !== null && tread < LEGAL_MIN_TREAD_MM) warnings.push(`Profiltiefe ${tread} mm liegt unter dem gesetzlichen Minimum von ${LEGAL_MIN_TREAD_MM} mm.`);
-  return { id, warnings };
+  return { id, ids, positions, warnings };
 }
 
 export async function setTireSpec(env, user, vehicleId, body) {

@@ -841,6 +841,17 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   const mw1 = await mw(); eq(mw1.status, 'nicht_erfuellt'); eq(mw1.noncompliant.join(','), 'VA-R'); eq(Object.keys(mw1).sort().join(','), 'noncompliant,status');
   await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' });
   eq(await mw(), null, 'nach Korrektur kein Hinweis');
+  // Sammel-Erfassung (Umrüstung): gleiche Angaben für mehrere Positionen, alles oder nichts
+  { const cnt = async () => (await env.DB.prepare('SELECT COUNT(*) n FROM tire_events WHERE vehicle_id=?').bind(V1).first()).n;
+    const n0 = await cnt();
+    eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', positions: ['HA-R-aussen', 'GIBTSNICHT'], size: '315/70 R22.5', winter_mark: '3pmsf' })).status, 400);
+    eq(await cnt(), n0, 'ungültige Position → nichts gespeichert');
+    const rm = await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', positions: ['HA-R-aussen', 'HA-L-aussen', 'HA-L-innen', 'HA-R-innen'], size: '315/70 R22.5', dot: '2324', winter_mark: '3pmsf' });
+    eq(rm.status, 201); eq(rm.data.positions.join(','), 'HA-L-aussen,HA-R-aussen,HA-L-innen,HA-R-innen', 'doppelte Position nur einmal'); eq(rm.data.ids.length, 4); eq(rm.data.id, rm.data.ids[0]);
+    eq(await cnt(), n0 + 4);
+    const tp = (await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.positions;
+    for (const p of ['HA-L-aussen', 'HA-R-aussen', 'HA-L-innen', 'HA-R-innen']) { const x = tp.find((y) => y.position === p); eq(x.winter_mark, '3pmsf', p); eq(x.dot, '2324', p); }
+    eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', positions: ['VA-R'], size: '1' })).status, 403, 'Fahrer: kein Wechsel'); }
   await W({ event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' });
   eq((await st()).status, 'erfuellt');
 });

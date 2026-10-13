@@ -1448,6 +1448,7 @@ async function renderTires(id, el) {
     <details><summary>${esc(t('record_tire'))}</summary><form id="tf">
       <label>${esc(t('kind'))}</label><select name="event_type">${S.meta.tire_events.filter((e) => canWrite || ['messung', 'sichtpruefung'].includes(e)).map((e) => `<option value="${e}">${esc(t('te_' + e))}</option>`).join('')}</select>
       <label>${esc(t('position'))}</label><select name="position">${S.meta.tire_positions.map((p) => `<option>${esc(p)}</option>`).join('')}</select>
+      <details id="tfmore"><summary class="small">${esc(t('tire_more_pos'))}</summary><p class="small muted">${esc(t('tire_more_pos_hint'))}</p><div class="tfpos">${S.meta.tire_positions.map((p) => `<label class="check"><input type="checkbox" name="positions" value="${esc(p)}"> ${esc(p)}</label>`).join('')}</div></details>
       <label>${esc(t('tread'))}</label><input name="tread_mm" inputmode="decimal"><label>${esc(t('pressure'))}</label><input name="pressure_bar" inputmode="decimal">
       <label>${esc(t('tire_sizes'))}</label><input name="size" placeholder="315/70 R22.5"><label>${esc(t('brand'))}</label><input name="brand"><label>${esc(t('dot'))}</label><input name="dot" inputmode="numeric">
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
@@ -1458,9 +1459,10 @@ async function renderTires(id, el) {
   const tf = $('#tf', el);
   tf.onsubmit = async (e) => {
     e.preventDefault();
-    const b = Object.fromEntries(new FormData(tf));
+    const fd = new FormData(tf); const b = Object.fromEntries(fd);
     for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); (r.warnings || []).forEach((w) => toast(w, true)); if (!r.warnings || !r.warnings.length) toast('✓'); renderTires(id, el); }
+    b.positions = fd.getAll('positions'); if (!b.positions.length) delete b.positions;
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); (r.warnings || []).forEach((w) => toast(w, true)); if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.join(', ') : '✓'); renderTires(id, el); }
     catch (err) { toast(err.message, true); }
   };
   $$('[data-ver]', el).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/specs`, { axle: b.dataset.ver, size: b.dataset.size, verified: true }); renderTires(id, el); } catch (err) { toast(err.message, true); } }));
