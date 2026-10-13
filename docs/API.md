@@ -8,7 +8,7 @@ Authentifizierung: `Authorization: Bearer <Token>` (Cloudflare-Secrets; ohne Sec
 - `INTEGRATION_TOKEN` – lesen und Telematik schreiben.
 - optional `INTEGRATION_TOKEN_NEXT` – gleiche Rechte; für einen Token-Wechsel ohne Ausfall: neues Token als `_NEXT` setzen, n8n umstellen, dann `INTEGRATION_TOKEN` ersetzen und `_NEXT` löschen.
 - optional `INTEGRATION_TOKEN_READ` – nur lesen (schreibende Aufrufe → 403 `read_only_token`).
-Tokens müssen mindestens 16 Zeichen haben.
+Tokens müssen mindestens 16 Zeichen haben. Ungültige Tokens: 401 `invalid_token`; nach 30 ungültigen Versuchen in 15 Min. von derselben Netzadresse 429 `rate_limited` für diese Adresse (auch mit gültigem Token, bis das Fenster abläuft), Protokoll `integration.token_limited`.
 Parameter `environment=production|test` (Standard: production).
 
 | Methode & Pfad | Zweck |

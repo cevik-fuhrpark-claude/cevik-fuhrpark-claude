@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 194 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 195 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -538,6 +538,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - 13.10.2026: **Integrations-API auf Datensparsamkeit geprüft** – neuer Test ruft alle 10 Lese-Endpunkte in Test und Betrieb ab und sucht nach sämtlichen Konto-/Benutzer-/Fahrernamen und Personalnummern (Wächter: neue GET-Endpunkte müssen in die Liste). **Gefunden und behoben:** `/v1/findings` und `/v1/master` gaben Befundtexte aus Fahrerakte/Fahrerkarte mit Fahrernamen weiter (Freigabe vom 10.10. umfasst nur Inhaber/Fuhrparkleitung, keine technische Schnittstelle). Jetzt „Fahrer/in (Name nur in der App)“ + `person_redacted: true`, auch im Master-Eingang; App unverändert. `docs/API.md` ergänzt. 193 Tests grün.
 - 13.10.2026: Kompakte Drucktabellen (`table.printsm`: Lager, Bestellvorschlag, Lagerjournal u. a.) trennen Wörter mit Silbentrennung statt mitten im Wort („Zuga ng“ → „Zugang“). Rauchtest hell und Ukrainisch: 26 Druckansichten ohne Überlauf.
 - 13.10.2026: **Wächter Anmeldepflicht**: Test prüft, dass vor der Sitzungsprüfung in `handleApi` nur die 7 bewusst öffentlichen Pfade stehen (Gesundheit, Integrations-API mit eigenem Token, Ersteinrichtung, Einladung, Login), `fetch()` nur `/healthz` und `/api/` kennt, und ruft alle 54 fest verdrahteten API-Pfade ohne Anmeldung mit GET/POST auf (→ 401). Gegenprobe: eine testweise oberhalb eingefügte Route lässt den Test fehlschlagen. Ist-Stand war sicher. 194 Tests grün.
+- 13.10.2026: **Integrations-API: Begrenzung falscher Tokens je Netzadresse** (wie Login-Schutz): 30 ungültige Tokens in 15 Min. → 429 für diese Adresse (auch mit gültigem Token, damit Durchprobieren nichts verrät), andere Adressen/n8n unberührt, eigener Zähler (`rate_limits`, Schlüssel = gekürzter IP-Hash, Aufräumen wie bisher), Protokoll `integration.token_limited` einmal je Fenster (im Protokoll rot). Eine zusätzliche Abfrage je Integrationsaufruf. `docs/API.md`/`BETRIEB.md` ergänzt. 195 Tests grün.
 
 ## Offene Fragen an den Auftraggeber
 - **n8n-Anmeldung (Wiederaufnahmepunkt Telematik-Übernahme):** Inhaber meldet sich selbst in Chrome (Claude-in-Chrome-Profil) unter https://yilmazcevik.app.n8n.cloud an und schreibt „drin“. Danach liest Claude nur lesend die Workflows k5DduArvxYLg3Eok, hreGSvOvRfi3OJsZ, QUYcJ63975Lq7dFR, iR3x5eaIUw2zVCpw, DAPynydnq2P6Ld7N (Graph, Endpunkte, Retry/Fehlerbehandlung, Credentials-Typen ohne Werte, letzte Executions). Stand 10.10.2026 18:00: Editor-Login fehlte (Weiterleitung auf /signin; Cloud-Dashboard war angemeldet).

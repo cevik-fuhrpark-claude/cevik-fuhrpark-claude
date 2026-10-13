@@ -5261,6 +5261,19 @@ await test('Anmeldepflicht: nur bewusst öffentliche Pfade vor der Sitzungsprüf
   console.log(`     ${paths.length} Pfade × GET/POST ohne Anmeldung → 401; ${ALLOWED.length} öffentliche Pfade`);
 });
 
+await test('Integrations-API: falsche Tokens je Netzadresse begrenzt (429 auch mit gültigem Token), andere Adressen unberührt, Protokoll einmal', async () => {
+  const bad = { authorization: 'Bearer falsch-falsch-falsch-123', 'cf-connecting-ip': '203.0.113.77' };
+  const good = { authorization: 'Bearer integration-token-xyz', 'cf-connecting-ip': '203.0.113.77' };
+  for (let i = 0; i < 30; i++) eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, bad)).status, 401, `Versuch ${i + 1}:`);
+  eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, bad)).status, 429, 'nach 30 Fehlversuchen');
+  eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, good)).status, 429, 'gesperrte Adresse verrät nicht, ob ein Token stimmt');
+  eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { ...good, 'cf-connecting-ip': '198.51.100.9' })).status, 200, 'andere Adresse');
+  eq((await anon.req('POST', '/api/login', { username: 'gibtsnicht', password: 'x' }, { 'cf-connecting-ip': '203.0.113.77' })).status, 401, 'Login-Zähler getrennt');
+  const n = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='integration.token_limited'`).first()).n;
+  eq(n, 1, 'Protokolleintrag');
+  await env.DB.prepare(`DELETE FROM rate_limits WHERE key LIKE 'intfail:%'`).run();
+});
+
 await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-Endpunkte, Test und Betrieb)', async () => {
   const fs = await import('node:fs');
   const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');

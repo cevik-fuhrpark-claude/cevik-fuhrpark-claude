@@ -1,5 +1,6 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex } from './util.js';
+import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
 import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
@@ -8,17 +9,31 @@ import { dataQuality, CHECKS } from './quality.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
 // und INTEGRATION_TOKEN_READ (nur lesen, z. B. für Auswertungen). Ergebnis: 'write' oder 'read'.
-function checkToken(request, env) {
+// Falsche Tokens je Netzadresse begrenzen (wie Login): ab TOKEN_FAIL_LIMIT.max Fehlversuchen im Fenster wird diese Adresse
+// für den Rest des Fensters abgewiesen – auch mit gültigem Token, damit Durchprobieren nichts verrät. Einmal im Protokoll vermerkt.
+export const TOKEN_FAIL_LIMIT = { max: 30, windowSec: 900 };
+async function checkToken(request, env) {
   const full = [env.INTEGRATION_TOKEN, env.INTEGRATION_TOKEN_NEXT].filter(Boolean);
   const read = [env.INTEGRATION_TOKEN_READ].filter(Boolean);
   if (!full.length && !read.length) throw new HttpError(503, 'integration_disabled', 'Integrations-API ist nicht aktiviert (Secret INTEGRATION_TOKEN fehlt).');
+  const ip = request.headers.get('cf-connecting-ip') || 'unbekannt';
+  const key = 'intfail:' + (await sha256Hex('cfp-ip:' + ip)).slice(0, 24);
+  const win = Math.floor(Date.now() / 1000 / TOKEN_FAIL_LIMIT.windowSec) * TOKEN_FAIL_LIMIT.windowSec;
+  const row = await env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(key, win).first();
+  if (row && row.count >= TOKEN_FAIL_LIMIT.max) throw new HttpError(429, 'rate_limited', 'Zu viele ungültige Token-Versuche von dieser Adresse. Bitte in 15 Minuten erneut versuchen.');
   const h = request.headers.get('authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
   // alle Vergleiche ausführen (gleiche Laufzeit unabhängig vom Treffer)
   let scope = null;
   for (const t of full) if (timingSafeEqual(token, t)) scope = 'write';
   for (const t of read) if (timingSafeEqual(token, t) && !scope) scope = 'read';
-  if (!scope || token.length < 16) throw new HttpError(401, 'invalid_token', 'Ungültiges Integrations-Token.');
+  if (!scope || token.length < 16) {
+    const c = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
+      ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
+      RETURNING count`).bind(key, win).first();
+    if (c && c.count === TOKEN_FAIL_LIMIT.max) await audit(env, null, 'integration.token_limited', null, { failures: c.count, minutes: TOKEN_FAIL_LIMIT.windowSec / 60 });
+    throw new HttpError(401, 'invalid_token', 'Ungültiges Integrations-Token.');
+  }
   return scope;
 }
 
@@ -51,7 +66,7 @@ function redactInbox(m, names) {
 const envParam = (url) => (url.searchParams.get('environment') === 'test' ? 'test' : 'production');
 
 export async function integrationRouter(request, env, ctx, url) {
-  const scope = checkToken(request, env);
+  const scope = await checkToken(request, env);
   const p = url.pathname.replace('/api/integration', '');
   const m = request.method;
   if (m !== 'GET' && scope !== 'write') throw new HttpError(403, 'read_only_token', 'Dieses Token darf nur lesen.');
