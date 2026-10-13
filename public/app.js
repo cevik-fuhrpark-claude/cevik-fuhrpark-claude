@@ -2461,7 +2461,7 @@ function helpWire(parts, want) {
       $$('li', el).forEach((li, i) => li.classList.toggle('hit', !!m && m.steps.includes(i)));
       const tl = $(`[data-hn="${s.name}"]`); if (tl) tl.hidden = el.hidden;
     }
-    $('#hres').textContent = !res ? '' : res.length ? t('help_hits').replace('{n}', res.length) : t('help_none');
+    $('#hres').textContent = !res ? '' : res.length === 1 ? t('help_hits1') : res.length ? t('help_hits').replace('{n}', res.length) : t('help_none');
   };
   if (document.getElementById('hq').value) run(); // vorbelegter Suchbegriff: erst filtern, dann zum Abschnitt springen
   if (want && parts.includes(want)) go(want);

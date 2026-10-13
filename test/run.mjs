@@ -5099,8 +5099,22 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   for (const lang of ['de', 'uk', 'en']) {
     const w = STRINGS[lang].help_stock_t.split(/[\s:&,]+/).filter((x) => x.length > 4).pop();
     ok(helpMatches(sections(lang), w).some((m) => m.name === 'stock'), `Suche ${lang}: ${w}`);
-    for (const k of ['help_search', 'help_toc', 'help_hits', 'help_none', 'help_page']) ok(STRINGS[lang][k], `${k} ${lang}`);
+    for (const k of ['help_search', 'help_toc', 'help_hits', 'help_hits1', 'help_none', 'help_page']) ok(STRINGS[lang][k], `${k} ${lang}`);
     ok(STRINGS[lang].help_hits.includes('{n}'), 'Platzhalter {n}');
+    ok(!STRINGS[lang].help_hits1.includes('{n}') && STRINGS[lang].help_hits1.includes('1'), 'Einzahl ohne Platzhalter');
+  }
+  // Apostroph-Varianten und getippte Anführungszeichen (UK/EN-Texte schreiben ’, Tastaturen liefern ' oder ʼ)
+  {
+    const all = (lang) => Object.keys(STRINGS[lang]).filter((k) => /^help_[a-z]+_t$/.test(k)).map((k) => k.slice(5, -2)).map((n) => ({ name: n, title: STRINGS[lang][`help_${n}_t`], steps: STRINGS[lang][`help_${n}_s`].split('|') }));
+    eq(helpNorm('Обовʼязково'), helpNorm('обов’язково')); eq(helpNorm("обов'язково"), helpNorm('обов’язково'));
+    eq(helpNorm('"Fahrzeug sperren"'), 'fahrzeug sperren'); eq(helpNorm('«Огляд»'), 'огляд'); eq(helpNorm('„Heute zu tun“'), 'heute zu tun');
+    for (const [lang, q, n] of [['uk', "зв'язку", 'offline'], ['uk', 'памʼять', 'drivers'], ['en', "supplier's", 'stock'], ['en', "trailer's", 'tires'], ['de', '"Fahrzeug sperren"', 'fleet']]) {
+      ok(helpMatches(all(lang), q).some((m) => m.name === n && m.steps.length), `Suche ${lang}: ${q} → ${n}`);
+    }
+    // jedes Wort mit Apostroph aus den UK/EN-Hilfetexten ist mit getipptem ' auffindbar
+    let cnt = 0;
+    for (const lang of ['uk', 'en']) for (const s of all(lang)) for (const w of s.steps.join(' ').match(/[\p{L}]+’[\p{L}]*/gu) || []) { cnt++; ok(helpMatches([s], w.replace(/’/g, "'")).length === 1, `${lang} ${s.name}: ${w}`); }
+    ok(cnt >= 20, 'Wörter mit Apostroph geprüft: ' + cnt);
   }
   // „Hilfe zu dieser Seite“: jeder genannte Abschnitt existiert in den Hilfetexten; Route mit ?s=
   const links = [...app.matchAll(/helpLink\('([a-z]+)'\)/g)].map((m) => m[1]);
@@ -5132,6 +5146,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   const searchSrc = app.slice(app.indexOf('async function viewSearch('), app.indexOf('\n}\n', app.indexOf('async function viewSearch(')));
   ok(/helpMatches\(helpSections\(S\.me\.role\)/.test(searchSrc) && searchSrc.includes('id="ghelp"'), 'Globale Suche findet Hilfe-Abschnitte der eigenen Rolle');
   ok(searchSrc.includes('b.title_hit - a.title_hit'), 'Suche: Titeltreffer zuerst');
+  ok(app.includes("res.length === 1 ? t('help_hits1')"), 'Trefferzeile: Einzahl bei genau einem Abschnitt');
   ok(/'\/help\.js'/.test(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')), 'help.js im Offline-Cache');
 });
 
