@@ -5232,6 +5232,38 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   console.log(`     Cron mit vollem Datenbestand: Betrieb ${cronN[0]}, Test ${cronN[1]} Abfragen`);
 });
 
+await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-Endpunkte, Test und Betrieb)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
+  const y = BERLIN_TODAY.slice(0, 4);
+  const EP = { '/v1/vehicles': '', '/v1/cases': '', '/v1/availability': '?include=notes,warranties', '/v1/findings': '', '/v1/kpi': `?from=${y}-01&to=${COST_TO}`,
+    '/v1/costs': `?from=${y}-01&to=${COST_TO}`, '/v1/maintenance': '', '/v1/maintenance/history': `?from=${y}-01-01&to=${BERLIN_TODAY}`, '/v1/data-quality': '', '/v1/master': '' };
+  // Wächter: neue Lese-Endpunkte müssen in diese Liste (und damit in die Prüfung)
+  const gets = [...src.matchAll(/p === '(\/v1\/[^']*)' && m === 'GET'/g)].map((x) => x[1]);
+  eq(gets.filter((g) => !(g in EP)).join(','), '', 'GET-Endpunkt ohne Datensparsamkeits-Prüfung:');
+  // Personen: Anzeigenamen und Benutzernamen aller Konten, Namen und Personalnummern aller Fahrer (beide Umgebungen)
+  const ppl = (await env.DB.prepare(`SELECT display_name AS n FROM users UNION SELECT username FROM users UNION SELECT display_name FROM drivers UNION SELECT personnel_no FROM drivers WHERE personnel_no IS NOT NULL`).all()).results
+    .map((r) => String(r.n)).filter((n) => n.length >= 5);
+  ok(ppl.length >= 6, `zu wenige Personen im Testbestand (${ppl.length})`);
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const hits = []; let calls = 0;
+  for (const environment of ['test', 'production']) for (const [ep, q] of Object.entries(EP)) {
+    const r = await anon.req('GET', `/api/integration/v1${ep.slice(3)}${q}${q ? '&' : '?'}environment=${environment}`, undefined, H);
+    eq(r.status, 200, `${ep} (${environment}):`); calls++;
+    const txt = JSON.stringify(r.data);
+    for (const n of ppl) if (txt.includes(n)) hits.push(`${ep} (${environment}): „${n}“`);
+  }
+  ok(!hits.length, `Personenbezug in Integrations-API: ${[...new Set(hits)].slice(0, 8).join('; ')}`);
+  // Fahrerbezogene Befunde bleiben erhalten (Code, Schweregrad, Fahrer-ID), nur der Name ist ersetzt; in der App sieht die Leitung ihn weiterhin
+  const fi = (await anon.req('GET', '/api/integration/v1/findings?environment=test', undefined, H)).data.findings.filter((f) => f.person_redacted);
+  ok(fi.length >= 1 && fi.every((f) => f.message.includes('Fahrer/in (Name nur in der App)') && f.subject_key && f.severity), 'fahrerbezogene Befunde geschwärzt, aber vorhanden');
+  const ms = (await anon.req('GET', '/api/integration/v1/master?environment=test', undefined, H)).data;
+  ok(ms.inbox.filter((x) => x.person_redacted).every((x) => x.payload.message.includes('Name nur in der App')), 'Master-Eingang geschwärzt');
+  const app = JSON.stringify((await users.fleet.get('/api/master')).data);
+  ok(ppl.some((n) => app.includes(n)), 'Gegenprobe: App zeigt der Fuhrparkleitung den Fahrernamen');
+  console.log(`     ${calls} Abrufe gegen ${ppl.length} Namen/Kennungen geprüft, ${fi.length} fahrerbezogene Befunde geschwärzt`);
+});
+
 await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI-Rauchtest im Druckmodus geprüft', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

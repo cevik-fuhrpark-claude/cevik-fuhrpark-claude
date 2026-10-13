@@ -22,6 +22,32 @@ function checkToken(request, env) {
   return scope;
 }
 
+// Datensparsamkeit: Befunde aus Fahrerakte/Fahrerkarte nennen in der App den Fahrernamen (Sichtbarkeit laut Freigabe nur Inhaber/
+// Fuhrparkleitung). Über die technische Schnittstelle wird der Name ersetzt; Code, Schweregrad, Frist und subject_key (Fahrer-ID) bleiben.
+const PERSON_FINDINGS = ['DRIVER_DOC_EXPIRED', 'DRIVER_DOC_EXPIRES_SOON', 'LICENSE_CHECK_DUE', 'LICENSE_CHECK_FAILED', 'TACHO_CARD_OVERDUE', 'TACHO_CARD_DUE'];
+const REDACTED = 'Fahrer/in (Name nur in der App)';
+async function personNames(env, environment) {
+  const rows = (await env.DB.prepare(`SELECT f.id, d.display_name AS name FROM agent_findings f JOIN drivers d ON d.id = substr(f.subject_key, 1, instr(f.subject_key || '|', '|') - 1)
+    WHERE f.environment=? AND f.finding_code IN (SELECT value FROM json_each(?))`).bind(environment, JSON.stringify(PERSON_FINDINGS)).all()).results;
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+function redactText(text, name) {
+  if (text == null) return text;
+  let t = String(text);
+  if (name) t = t.split(`Fahrer ${name}`).join(REDACTED).split(name).join(REDACTED);
+  return t;
+}
+function redactFinding(f, names) {
+  if (!PERSON_FINDINGS.includes(f.finding_code)) return f;
+  return { ...f, message: redactText(f.message, names.get(f.id)), next_action: redactText(f.next_action, names.get(f.id)), person_redacted: true };
+}
+function redactInbox(m, names) {
+  const code = m.payload && m.payload.finding_code;
+  if (!PERSON_FINDINGS.includes(code)) return m;
+  const n = names.get(m.finding_id);
+  return { ...m, decision_note: redactText(m.decision_note, n), payload: { ...m.payload, message: redactText(m.payload.message, n), next_action: redactText(m.payload.next_action, n) }, person_redacted: true };
+}
+
 const envParam = (url) => (url.searchParams.get('environment') === 'test' ? 'test' : 'production');
 
 export async function integrationRouter(request, env, ctx, url) {
@@ -79,8 +105,8 @@ export async function integrationRouter(request, env, ctx, url) {
       vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, next_due_km: v.next_due_km ?? null, next_due_km_kind: v.next_due_km_kind ?? null, km_remaining: v.km_remaining ?? null, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }
   if (p === '/v1/findings' && m === 'GET') {
-    const rows = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all()).results;
-    return json({ schema_version: '1.0', findings: rows });
+    const [rows, names] = await Promise.all([env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all().then((r) => r.results), personNames(env, envParam(url))]);
+    return json({ schema_version: '1.0', findings: rows.map((f) => redactFinding(f, names)) });
   }
   // Kennzahlen Instandhaltung (nur Anzahlen/Dauern, keine Personen) – gleiche Berechnung wie in der App
   if (p === '/v1/kpi' && m === 'GET') return json({ schema_version: '1.0', ...(await kpiReport(env, { role: 'owner' }, envParam(url), Object.fromEntries(url.searchParams))) });
@@ -106,7 +132,10 @@ export async function integrationRouter(request, env, ctx, url) {
     return json({ schema_version: '1.0', generated_at: q.generated_at, environment: q.environment, stale_days: q.stale_days, vehicles_checked: q.vehicles_checked,
       checks: CHECKS, counts: q.counts, by_severity, items });
   }
-  if (p === '/v1/master' && m === 'GET') return json({ schema_version: '1.0', ...(await masterPanel(env, envParam(url))) });
+  if (p === '/v1/master' && m === 'GET') {
+    const [mp, names] = await Promise.all([masterPanel(env, envParam(url)), personNames(env, envParam(url))]);
+    return json({ schema_version: '1.0', ...mp, findings: mp.findings.map((f) => redactFinding(f, names)), inbox: mp.inbox.map((x) => redactInbox(x, names)) });
+  }
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung
   if (p === '/v1/telematics' && m === 'POST') {
