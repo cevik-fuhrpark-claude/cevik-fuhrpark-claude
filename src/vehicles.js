@@ -8,6 +8,7 @@ import { sha256Hex, berlinDateTime, hideDriverName } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS } from './maintenance.js';
+import { winterMarks, winterStatus } from './tires.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
@@ -372,7 +373,7 @@ export async function myVehicles(env, user, envName) {
     if (p && p.id !== v.id) coupledOf.set(v.id, p);
   }
   const ids = JSON.stringify([...new Set([...vs.map((v) => v.id), ...[...coupledOf.values()].map((p) => p.id)])]);
-  const [locks, mine, rules, kms, notes, warnKmRow] = await Promise.all([
+  const [locks, mine, rules, kms, notes, warnKmRow, tireEv] = await Promise.all([
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
@@ -386,7 +387,11 @@ export async function myVehicles(env, user, envName) {
     // Hinweise zum Fahrzeug, die ausdrücklich für Fahrer freigegeben sind (ohne Verfasser)
     env.DB.prepare(`SELECT vehicle_id, text, created_at, valid_until FROM vehicle_notes WHERE environment=? AND for_driver=1 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?) AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC, rowid DESC`).bind(envName, berlinDate(), ids).all(),
     env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_km'`).first(),
+    // Winterkennzeichnung der Reifen (nur eigene Lkw, ohne Personen) – gleiche Regel wie Fahrzeugakte
+    env.DB.prepare(`SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC`).bind(envName, JSON.stringify(vs.map((v) => v.id))).all(),
   ]);
+  const tiresBy = new Map();
+  for (const e of tireEv.results) { if (!tiresBy.has(e.vehicle_id)) tiresBy.set(e.vehicle_id, []); tiresBy.get(e.vehicle_id).push(e); }
   // Wartung nach km für den Fahrer: nur überschritten bzw. innerhalb der eingestellten Vorwarnung (ohne Schwelle nur überschritten),
   // gerechnet ab dem letzten erfassten km-Stand – gleiche Regel wie die Prüftermin-Übersicht (kmDue); ohne km-Stand nichts
   const warnKm = Number(warnKmRow && warnKmRow.value) > 0 ? Number(warnKmRow.value) : null;
@@ -413,6 +418,8 @@ export async function myVehicles(env, user, envName) {
         .filter((x) => x.k && ['ueberfaellig', 'faellig'].includes(x.k.km_status)).sort((a, b) => a.k.km_remaining - b.k.km_remaining).slice(0, 4)
         .map(({ r, k }) => ({ kind: r.kind, next_due_km: k.next_due_km, km_remaining: k.km_remaining, status: k.km_status, planned_date: r.planned_date >= today ? r.planned_date : null })),
       notes: notes.results.filter((n) => n.vehicle_id === v.id).slice(0, 10).map(({ text, created_at }) => ({ text, created_at })),
+      // Winterreifen: nur „nicht erfüllt“ laut Erfassung (Information für die Fahrt bei Glätte, StVO § 2 Abs. 3a); nicht erfasst = null (kein Rauschen)
+      winter: v.kind === 'anhaenger' ? null : (({ status, noncompliant }) => (status === 'nicht_erfuellt' ? { status, noncompliant } : null))(winterStatus(v.kind, winterMarks(tiresBy.get(v.id) || []))),
       coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked }))(coupledOf.get(v.id)) : null,
     })),
   };

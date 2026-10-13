@@ -826,6 +826,13 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   // Fahrer (zugeordnet) darf bei Sichtprüfung die Kennzeichnung angeben
   eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', winter_mark: '3pmsf' })).status, 201);
   eq((await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.positions.find((x) => x.position === 'VA-L').winter_mark, '3pmsf');
+  // Fahrer „Mein Fahrzeug“: Hinweis nur bei „nicht erfüllt“ (nicht erfasst = kein Hinweis), nur Positionen, keine Personen
+  const mw = async () => (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1).winter;
+  eq(await mw(), null, 'nicht vollständig erfasst → kein Hinweis');
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-R', winter_mark: 'keine' })).status, 201);
+  const mw1 = await mw(); eq(mw1.status, 'nicht_erfuellt'); eq(mw1.noncompliant.join(','), 'VA-R'); eq(Object.keys(mw1).sort().join(','), 'noncompliant,status');
+  await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' });
+  eq(await mw(), null, 'nach Korrektur kein Hinweis');
   await W({ event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' });
   eq((await st()).status, 'erfuellt');
 });
