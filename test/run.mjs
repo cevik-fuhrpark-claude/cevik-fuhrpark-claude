@@ -5880,9 +5880,16 @@ await test('Datenqualität: Telematik sendet nach „außer Betrieb nehmen“ we
   let it = await items(); eq(it.length, 1, 'Befund nach weiterer Lieferung'); eq(it[0].severity, 'hinweis'); eq(it[0].plate, 'TÜ-IN 88');
   ok(/^Webfleet IN-88: \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} · außer Betrieb seit \d{2}\.\d{2}\.\d{4}$/.test(it[0].detail), it[0].detail);
   ok((await anon.req('GET', '/api/integration/v1/data-quality', undefined, H)).data.items.some((i) => i.check === 'telematics_vehicle_inactive' && i.vehicle_id === VID), 'auch Integrations-API');
+  const wfInact = async () => (await anon.req('GET', '/api/integration/v1/telematics/status', undefined, H)).data.providers.find((x) => x.provider === 'webfleet').inactive_vehicle_reports;
+  const dqInact = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_vehicle_inactive' && i.detail.startsWith('Webfleet')).length;
+  eq(await wfInact(), await dqInact(), 'Zustand: inactive_vehicle_reports = Datenqualität'); ok((await wfInact()) >= 1, 'Zähler ≥ 1');
+  eq((await anon.req('GET', '/api/integration/v1/telematics/status', undefined, H)).data.providers.find((x) => x.provider === 'yellowfox').inactive_vehicle_reports, 0, 'YellowFox: 0');
+  eq((await users.fleet.get('/api/telematics')).data.by_provider.find((x) => x.provider === 'webfleet').inactive_vehicle_reports, await wfInact(), 'Übersicht wie Zustand');
+  const inactBefore = await wfInact();
   // ohne Protokolleintrag (z. B. außer Betrieb laut Import) kein Befund – kein geschätzter Zeitpunkt
   await env.DB.prepare(`UPDATE audit_log SET action='vehicle.deactivate_x' WHERE target=? AND action='vehicle.deactivate'`).bind(VID).run();
   eq((await items()).length, 0, 'ohne Zeitpunkt kein Befund');
+  eq(await wfInact(), inactBefore - 1, 'Zustand: ohne Protokollzeitpunkt zählt nichts');
   await env.DB.prepare(`UPDATE audit_log SET action='vehicle.deactivate' WHERE target=? AND action='vehicle.deactivate_x'`).bind(VID).run();
   eq((await users.fleet.post(`/api/vehicles/${VID}/active`, { active: true })).status, 200);
   eq((await items()).length, 0, 'wieder in Betrieb: kein Befund');

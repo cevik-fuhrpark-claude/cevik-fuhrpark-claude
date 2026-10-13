@@ -30,13 +30,16 @@ export async function telematicsOverview(env, user, query = {}) {
       WHERE v.active=1 AND v.eval_excluded=0
       GROUP BY v.id HAVING COALESCE(v.kind,'')<>'anhaenger' OR COUNT(t.vehicle_id) > 0
       ORDER BY MAX(t.gps_time) IS NOT NULL, MAX(t.gps_time), v.plate`).all(),
-    // je Anbieter: Geräte, Fahrzeuge, letzter Empfang – fällt eine Quelle aus, ist das hier sichtbar (kein Grenzwert)
-    env.DB.prepare(`SELECT provider, COUNT(*) AS devices, COUNT(DISTINCT vehicle_id) AS vehicles, MAX(received_at) AS last_received, MAX(gps_time) AS last_gps_time
-      FROM telematics_latest GROUP BY provider`).all(),
+    // je Anbieter: Geräte, Fahrzeuge, letzter Empfang – fällt eine Quelle aus, ist das hier sichtbar (kein Grenzwert).
+    // inactive_vehicle_reports: Geräte, die nach „außer Betrieb nehmen“ (Protokollzeitpunkt) weiter liefern – gleiche Regel wie
+    // Datenqualität telematics_vehicle_inactive; ohne Protokolleintrag zählt nichts (kein geschätzter Zeitpunkt).
+    env.DB.prepare(`SELECT t.provider, COUNT(*) AS devices, COUNT(DISTINCT t.vehicle_id) AS vehicles, MAX(t.received_at) AS last_received, MAX(t.gps_time) AS last_gps_time,
+      SUM(CASE WHEN v.active=0 AND t.gps_time > (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=t.vehicle_id AND a.action='vehicle.deactivate') THEN 1 ELSE 0 END) AS inactive_vehicle_reports
+      FROM telematics_latest t LEFT JOIN vehicles v ON v.id=t.vehicle_id GROUP BY t.provider`).all(),
   ]);
   const byP = new Map(perProvider.results.map((r) => [r.provider, r]));
   const by_provider = PROVIDERS.map((provider) => { const r = byP.get(provider) || {};
-    return { provider, devices: r.devices || 0, vehicles: r.vehicles || 0, last_received: r.last_received || null, last_gps_time: r.last_gps_time || null }; });
+    return { provider, devices: r.devices || 0, vehicles: r.vehicles || 0, last_received: r.last_received || null, last_gps_time: r.last_gps_time || null, inactive_vehicle_reports: r.inactive_vehicle_reports || 0 }; });
   const plate_mismatches = reported.results.filter((r) => r.source_plate && normPlate(r.source_plate) !== normPlate(r.plate))
     .map(({ vehicle_id, plate, provider, external_id, match_basis, source_plate, received_at }) => ({ vehicle_id, plate, provider, external_id, match_basis, source_plate, received_at }));
   // km-Stand des Geräts kleiner als der erfasste – nicht übernommen (nur Hinweis, keine Korrektur, kein Grenzwert)
