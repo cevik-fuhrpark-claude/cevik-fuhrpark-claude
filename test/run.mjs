@@ -5124,6 +5124,48 @@ await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), D
   }
 });
 
+await test('Alle Kalender-Exporte (.ics): RFC 5545 – CRLF, Zeilen ≤ 75 Oktette, BEGIN/END paarig, Pflichtfelder, eindeutige UID, gültige Daten', async () => {
+  const { readFileSync } = await import('node:fs');
+  const urls = { contracts: '/api/contracts?format=ics', maintenance: '/api/maintenance?format=ics', plan: '/api/workshop/plan?format=ics', fines: '/api/fines?format=ics', followups: '/api/cases?format=ics' };
+  const routes = (readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8').match(/text\/calendar/g) || []).length;
+  ok(routes <= Object.keys(urls).length, `${routes} Kalender-Antworten im Router, ${Object.keys(urls).length} geprüft – neuen Export hier ergänzen`);
+  let events = 0;
+  for (const [name, u] of Object.entries(urls)) for (const who of [owner, users.fleet]) {
+    const r = await who.get(u);
+    eq(r.status, 200, `${name}:`);
+    ok((r.headers.get('content-type') || '').startsWith('text/calendar; charset=utf-8'), `${name}: Inhaltstyp`);
+    ok(/attachment; filename="[a-z0-9_.-]+\.ics"/.test(r.headers.get('content-disposition') || ''), `${name}: Dateiname ${r.headers.get('content-disposition')}`);
+    const raw = r.data; const text = new TextDecoder().decode(raw);
+    ok(text.endsWith('\r\n') && !/[^\r]\n/.test(text), `${name}: Zeilenende CRLF`);
+    const phys = text.slice(0, -2).split('\r\n');
+    for (const l of phys) ok(new TextEncoder().encode(l).length <= 75, `${name}: Zeile > 75 Oktette: ${l}`);
+    // entfalten (Fortsetzungszeile beginnt mit Leerzeichen)
+    const lines = text.slice(0, -2).replace(/\r\n /g, '').split('\r\n');
+    eq(lines[0], 'BEGIN:VCALENDAR', `${name}: Anfang`); eq(lines[lines.length - 1], 'END:VCALENDAR', `${name}: Ende`);
+    ok(lines.includes('VERSION:2.0') && lines.some((l) => l.startsWith('PRODID:')), `${name}: VERSION/PRODID`);
+    const stack = []; const uids = new Set(); let ev = null;
+    for (const l of lines) {
+      ok(/^[A-Z][A-Z0-9-]*[;:]/.test(l), `${name}: ungültige Zeile ${l}`);
+      if (l.startsWith('BEGIN:')) { stack.push(l.slice(6)); if (l === 'BEGIN:VEVENT') ev = {}; continue; }
+      if (l.startsWith('END:')) { eq(stack.pop(), l.slice(4), `${name}: BEGIN/END`);
+        if (l === 'END:VEVENT') { events++;
+          for (const k of ['UID', 'DTSTAMP', 'DTSTART', 'SUMMARY']) ok(ev[k], `${name}: ${k} fehlt`);
+          ok(!uids.has(ev.UID), `${name}: UID doppelt ${ev.UID}`); uids.add(ev.UID);
+          const d = ev.DTSTART.match(/^;VALUE=DATE:(\d{4})(\d{2})(\d{2})$/); ok(d, `${name}: DTSTART ${ev.DTSTART}`);
+          const dt = new Date(Date.UTC(+d[1], +d[2] - 1, +d[3])); eq(dt.toISOString().slice(0, 10), `${d[1]}-${d[2]}-${d[3]}`, `${name}: Datum gültig`);
+          if (ev.DTEND) ok(ev.DTEND.slice(-8) > ev.DTSTART.slice(-8), `${name}: DTEND nach DTSTART`);
+          ok(/^:\d{8}T\d{6}Z$/.test(ev.DTSTAMP), `${name}: DTSTAMP ${ev.DTSTAMP}`);
+          ok(!/(^|[^\\])[,;]/.test(ev.SUMMARY.slice(1)), `${name}: Komma/Semikolon in SUMMARY nicht maskiert: ${ev.SUMMARY}`);
+          ev = null; }
+        continue; }
+      if (ev && stack[stack.length - 1] === 'VEVENT') { const k = l.match(/^[A-Z-]+/)[0]; ev[k] = l.slice(k.length); }
+    }
+    eq(stack.length, 0, `${name}: offene Blöcke`);
+    if (process.env.CFP_ICS) console.log(`     ${name}: ${uids.size} Termine`);
+  }
+  ok(events >= 3, `nur ${events} Termine geprüft – Testdaten?`);
+});
+
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {
   // Erster Aufruf spielt einmalig die Schema-Migration ein (live bereits erfolgreich gelaufen) – ausgenommen
   const worst = QSTAT.perRequest.slice(1).sort((a, b) => b.n - a.n).slice(0, 5);
