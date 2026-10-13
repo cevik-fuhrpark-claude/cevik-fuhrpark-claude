@@ -92,6 +92,14 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   if (user.role === 'driver') throw forbidden('Fahrzeugakten sind für Fahrer nicht freigegeben.');
   const v = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
+  // außer Betrieb: Zeitpunkt (und für Inhaber/Fuhrparkleitung Grund und Person) laut letztem Protokolleintrag – ohne Eintrag (z. B. Import) null
+  const deact = !v.active && !tl ? await env.DB.prepare(`SELECT a.created_at, a.detail, u.display_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
+    WHERE a.target=? AND a.action='vehicle.deactivate' ORDER BY a.created_at DESC LIMIT 1`).bind(vehicleId).first() : null;
+  let inactiveInfo = null;
+  if (deact) {
+    let reason = null; try { reason = JSON.parse(deact.detail || '{}').reason || null; } catch { reason = null; }
+    inactiveInfo = isManager(user) ? { since: deact.created_at, reason, by_name: deact.display_name || null } : { since: deact.created_at };
+  }
   let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
@@ -152,7 +160,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     const today = berlinDate();
     for (const m of maintenance) if (ruleDueKm(m) !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
   }
-  const out = { failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
+  const out = { inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);

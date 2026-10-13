@@ -174,7 +174,7 @@ with sync_playwright() as p:
       return { s: r.status, d: await r.json().catch(() => null) }; }""", {'provider': 'yellowfox', 'items': [{'external_id': 'RT-INACT-1', 'vin': ivin, 'lat': 51.52, 'lon': 7.45, 'gps_time': (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5)).strftime('%Y-%m-%dT%H:%M:%SZ')}]})
     if da['s'] != 200 or ti['s'] != 200 or (ti['d'] or {}).get('matched') != 1:
         problems.append(f'Vorbereitung Telematik außer Betrieb: {da} {ti}')
-    ROUTES['fleet'] += ['quality?f=telematics_vehicle_inactive']
+    ROUTES['fleet'] += ['quality?f=telematics_vehicle_inactive', f'vehicles/{ivid}']
     ROUTES['owner'] += ['quality?f=inspection_no_result']
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']

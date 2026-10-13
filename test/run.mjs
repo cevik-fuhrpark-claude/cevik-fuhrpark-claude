@@ -5870,6 +5870,12 @@ await test('Datenqualität: Telematik sendet nach „außer Betrieb nehmen“ we
   const d = await users.fleet.post(`/api/vehicles/${VID}/active`, { active: false, reason: 'verkauft (Test)' });
   eq(d.status, 200); eq(d.data.telematics_devices, 1, 'Abmelde-Antwort: Gerät noch zugeordnet'); eq(d.data.running_contracts, 0);
   eq((await items()).length, 0, 'Stand vor dem Abmelden: kein Befund');
+  // Fahrzeugakte: „außer Betrieb seit“ laut Protokoll; Grund und Person nur für Inhaber/Fuhrparkleitung
+  const ia = (await users.fleet.get(`/api/vehicles/${VID}`)).data.inactive_info;
+  ok(ia && ia.since && ia.reason === 'verkauft (Test)' && ia.by_name, 'Akte: seit/Grund/Person ' + JSON.stringify(ia));
+  const iw = (await users.ws.get(`/api/vehicles/${VID}`)).data.inactive_info;
+  ok(iw && iw.since === ia.since && !('reason' in iw) && !('by_name' in iw), 'Werkstatt: nur Zeitpunkt ' + JSON.stringify(iw));
+  eq((await users.fleet.get(`/api/vehicles/${V1}`)).data.inactive_info, null, 'aktives Fahrzeug: null');
   eq((await send(new Date(Date.now() + 1000).toISOString())).data.matched, 1, 'Gerät liefert weiter');
   let it = await items(); eq(it.length, 1, 'Befund nach weiterer Lieferung'); eq(it[0].severity, 'hinweis'); eq(it[0].plate, 'TÜ-IN 88');
   ok(/^Webfleet IN-88: \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} · außer Betrieb seit \d{2}\.\d{2}\.\d{4}$/.test(it[0].detail), it[0].detail);
