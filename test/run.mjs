@@ -855,6 +855,26 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   await W({ event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' });
   eq((await st()).status, 'erfuellt');
 });
+await test('Reifenpositionen je Fahrzeugart: Lkw ohne AH-Achsen, Anhänger nur AH/Reserve – Auswahl und Server gleich, alles oder nichts', async () => {
+  const tr = await env.DB.prepare(`SELECT id FROM vehicles WHERE kind='anhaenger' AND active=1 LIMIT 1`).first();
+  ok(tr, 'Testdaten enthalten einen Anhänger');
+  const cnt = async (id) => (await env.DB.prepare('SELECT COUNT(*) n FROM tire_events WHERE vehicle_id=?').bind(id).first()).n;
+  const lk = (await users.ws.get(`/api/vehicles/${V1}/tires`)).data.allowed_positions;
+  const ah = (await users.ws.get(`/api/vehicles/${tr.id}/tires`)).data.allowed_positions;
+  ok(lk.includes('VA-L') && lk.includes('HA-R-innen') && lk.includes('Reserve') && !lk.some((p) => p.startsWith('AH')), 'Lkw: VA/LA/HA + Reserve');
+  eq(ah.join(','), 'AH1-L,AH1-R,AH2-L,AH2-R,AH3-L,AH3-R,Reserve', 'Anhänger: nur AH + Reserve');
+  const n1 = await cnt(V1); const n2 = await cnt(tr.id);
+  const r1 = await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'AH1-L', tread_mm: 8 });
+  eq(r1.status, 400); ok(/Lkw/.test(r1.data.error_message || r1.data.message || JSON.stringify(r1.data)), 'Meldung nennt Lkw');
+  eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', positions: ['AH2-R'], tread_mm: 8 })).status, 400, 'eine falsche Zusatzposition → nichts');
+  eq((await users.ws.post(`/api/vehicles/${tr.id}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 8 })).status, 400, 'Anhänger: keine Lenkachse');
+  eq(await cnt(V1), n1); eq(await cnt(tr.id), n2, 'nichts gespeichert');
+  const ok1 = await users.ws.post(`/api/vehicles/${tr.id}/tires/events`, { event_type: 'messung', position: 'AH1-L', positions: ['AH1-R', 'Reserve'], tread_mm: 9 });
+  eq(ok1.status, 201); eq(ok1.data.positions.join(','), 'AH1-L,AH1-R,Reserve');
+  // Oberfläche nutzt die Liste aus der Antwort
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('(d.allowed_positions || S.meta.tire_positions)'), 'Formular filtert Positionen');
+});
 await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {
   eq(dotDate('0118'), '2018-01-01'); eq(dotDate('DOT XX 5320'), '2020-12-28'); eq(dotDate('5321'), null, '2021 hat keine KW 53'); eq(dotDate('0024'), null); eq(dotDate('abcd'), null);
   eq(ageMonths('2018-01-01', '2024-01-01'), 72); eq(ageMonths('2018-01-15', '2024-01-14'), 71);

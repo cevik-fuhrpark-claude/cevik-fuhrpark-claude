@@ -6,6 +6,10 @@ import { siteSelection } from './reports.js';
 export const AXLES = ['lenkachse', 'liftachse', 'antriebsachse', 'anhaenger'];
 export const POSITIONS = ['VA-L', 'VA-R', 'LA-L', 'LA-R', 'HA-L-aussen', 'HA-L-innen', 'HA-R-innen', 'HA-R-aussen',
   'AH1-L', 'AH1-R', 'AH2-L', 'AH2-R', 'AH3-L', 'AH3-R', 'Reserve'];
+// Positionen je Fahrzeugart: Lkw ohne Anhängerachsen, Anhänger nur AH-Achsen; Reserve bei beiden (Achszahl bleibt offen, Stammdaten geben sie nicht her)
+export function positionsForKind(kind) {
+  return kind === 'anhaenger' ? POSITIONS.filter((p) => p.startsWith('AH') || p === 'Reserve') : POSITIONS.filter((p) => !p.startsWith('AH'));
+}
 export const TIRE_EVENTS = ['messung', 'wechsel', 'reparatur', 'sichtpruefung'];
 // Gesetzliche Mindestprofiltiefe in Deutschland (StVZO § 36) für Lkw-Reifen: 1,6 mm
 export const LEGAL_MIN_TREAD_MM = 1.6;
@@ -101,7 +105,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: x.tread_mm === undefined || x.tread_mm === null ? 'unbekannt' : x.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && x.tread_mm < warn ? 'warnung' : 'ok',
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: winterStatus(v.kind, wm) };
+  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: winterStatus(v.kind, wm) };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -111,12 +115,15 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
     if (!a) throw forbidden('Nur für zugeordnete Fahrzeuge.');
   }
-  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const position = oneOf(body.position, POSITIONS, 'Position');
   // Sammel-Erfassung (z. B. Umrüstung auf Winterreifen): gleiche Angaben für weitere Positionen, atomar in einem Batch
   const extra = Array.isArray(body.positions) ? body.positions.map((p) => oneOf(p, POSITIONS, 'Position')) : [];
   const positions = [...new Set([position, ...extra])];
+  const allowed = positionsForKind(v.kind);
+  const wrong = positions.filter((p) => !allowed.includes(p));
+  if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).');
   const tread = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true });
   const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', nullable: true });
   if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
