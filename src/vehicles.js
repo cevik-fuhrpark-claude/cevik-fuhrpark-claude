@@ -129,9 +129,13 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     : [];
   // Letzter Telematik-Stand (nur Inhaber, Fuhrparkleitung, Disposition – Positionsdaten sind über die Fahrerzuordnung personenbeziehbar)
   const telematics = !tl && (isManager(user) || user.role === 'dispatch')
-    ? (await env.DB.prepare('SELECT provider, external_id, match_basis, gps_time, received_at, lat, lon, km, speed, ignition, source_plate FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
-      // Gerät meldet ein anderes Kennzeichen (gleiche Regel wie Datenqualität telematics_plate_mismatch) – nur Hinweis, keine Korrektur
-      .map(({ source_plate, ...x }) => ({ ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null }))
+    ? (await env.DB.prepare(`SELECT t.provider, t.external_id, t.match_basis, t.gps_time, t.received_at, t.lat, t.lon, t.km, t.speed, t.ignition, t.source_plate,
+        (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1) AS prev_km
+        FROM telematics_latest t WHERE t.vehicle_id=? ORDER BY t.gps_time DESC`).bind(vehicleId).all()).results
+      // Gerät meldet ein anderes Kennzeichen (gleiche Regel wie Datenqualität telematics_plate_mismatch) – nur Hinweis, keine Korrektur;
+      // km kleiner als der zuvor erfasste Stand (gleiche Regel wie telematics_km_rejected) → km_rejected_below = erfasster Stand
+      .map(({ source_plate, prev_km, ...x }) => ({ ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null,
+        km_rejected_below: x.km !== null && prev_km !== null && x.gps_time && Math.round(x.km) < prev_km ? prev_km : null }))
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
   const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);

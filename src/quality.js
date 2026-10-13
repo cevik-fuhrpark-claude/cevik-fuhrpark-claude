@@ -33,6 +33,8 @@ export const CHECKS = {
   km_rule_no_base: 'luecke',
   // Telematik-Gerät (zugeordnet über FIN oder bestätigtes Mapping) meldet beim letzten Stand ein anderes Kennzeichen als das Fahrzeug
   telematics_plate_mismatch: 'fehler',
+  // letzter Telematik-km-Stand kleiner als der zuvor erfasste km-Stand – wird nicht in die Akte übernommen (Gerätezähler/Zuordnung prüfen)
+  telematics_km_rejected: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -112,7 +114,10 @@ export async function dataQuality(env, user, envName, query = {}) {
       GROUP BY n.id ORDER BY n.done_date DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
     noResultQuery(env).all(),
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
-    env.DB.prepare('SELECT vehicle_id, provider, external_id, source_plate FROM telematics_latest WHERE source_plate IS NOT NULL').all(),
+    // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
+    env.DB.prepare(`SELECT t.vehicle_id, t.provider, t.external_id, t.source_plate, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at
+      FROM telematics_latest t LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
+      WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL)`).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -174,7 +179,11 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}` });
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
-  for (const r of telPlates.results) { const v = vById.get(r.vehicle_id); if (v && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`); }
+  for (const r of telPlates.results) {
+    const v = vById.get(r.vehicle_id); if (!v) continue;
+    if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
+    if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`);
+  }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {
     if (d.user_id && !d.u_active) addD('driver_account_inactive', d);

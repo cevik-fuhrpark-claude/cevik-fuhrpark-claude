@@ -5799,6 +5799,24 @@ await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlaut
   await env.DB.prepare(`DELETE FROM telematics_unmatched WHERE provider='yellowfox' AND external_id LIKE 'TL-%'`).run();
 });
 
+await test('Datenqualität: Telematik-km kleiner als erfasster km-Stand → Hinweis (nicht übernommen), verschwindet mit plausiblem Stand', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' }; const VID = 'VIN:WDB96340310999101';
+  const before = (await env.DB.prepare('SELECT id FROM odometer_readings WHERE vehicle_id=?').bind(VID).all()).results.map((r) => r.id);
+  eq((await users.fleet.post(`/api/vehicles/${VID}/odometer`, { km: '612000' })).status, 201);
+  const send = (km) => anon.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'TL-KM', vin: 'WDB96340310999101', km, gps_time: new Date(Date.now() + 1000).toISOString() }] }, H);
+  const hint = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_km_rejected' && i.vehicle_id === VID);
+  let r = await send(98765.4); eq(r.data.matched, 1); eq(r.data.odometer_written, 0, 'kleinerer km-Stand wird nicht übernommen');
+  let h = await hint(); eq(h.length, 1, 'Hinweis in der Datenqualität'); eq(h[0].severity, 'hinweis');
+  const vtk = async () => (await users.fleet.get(`/api/vehicles/${VID}`)).data.telematics.find((x) => x.provider === 'yellowfox');
+  eq((await vtk()).km_rejected_below, 612000, 'Fahrzeugakte: Hinweis mit erfasstem Stand'); ok(!('prev_km' in (await vtk())), 'kein Rohfeld');
+  ok(h[0].detail.startsWith('YellowFox TL-KM: 98765 km (') && h[0].detail.includes('< 612000 km ('), h[0].detail);
+  ok((await anon.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, H)).data.items.some((i) => i.check === 'telematics_km_rejected'), 'auch Integrations-API');
+  eq((await users.ws.get('/api/admin/data-quality')).status, 403, 'Werkstatt sieht Datenqualität nicht');
+  r = await send(612100); eq(r.data.odometer_written, 1, 'plausibler Stand wird übernommen'); eq((await hint()).length, 0, 'Hinweis verschwindet'); eq((await vtk()).km_rejected_below, null, 'Fahrzeugakte: Hinweis weg');
+  await env.DB.prepare('DELETE FROM telematics_latest WHERE provider=? AND vehicle_id=?').bind('yellowfox', VID).run();
+  await env.DB.prepare(`DELETE FROM odometer_readings WHERE vehicle_id=? AND id NOT IN (SELECT value FROM json_each(?))`).bind(VID, JSON.stringify(before)).run();
+});
+
 await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-Endpunkte, Test und Betrieb)', async () => {
   const fs = await import('node:fs');
   const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
