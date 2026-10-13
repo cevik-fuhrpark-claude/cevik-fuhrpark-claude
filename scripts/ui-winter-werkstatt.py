@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test: Werkstatt-Startseite „Winterreifen – Lkw ohne Alpine-Symbol“ (DE/UK/EN, 390/820/1366 px):
+# [CLAUDE] UI-Test: Werkstatt-Startseite und Inhaber „Heute zu tun“ „Winterreifen – Lkw ohne Alpine-Symbol“ (DE/UK/EN, 390/820/1366 px):
 # Abschnitt erscheint mit Kennzeichen/Position, Link führt in Reifen – Flotte mit Reiter „Winter nicht erfüllt“ (aria-pressed),
 # Reiterwechsel danach bleibt erhalten; kein JS-Fehler, kein waagrechtes Scrollen. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
 import os
@@ -45,5 +45,20 @@ with sync_playwright() as p:
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/wswinter_tires_{lang}_{w}.png')
         check(not errs,'keine JS-Fehler '+';'.join(errs))
         c.close()
+    # Inhaber/Fuhrparkleitung: „Heute zu tun“ mit Gruppe Winterreifen und Direktsprung
+    for lang,lbl in [('de','Winterreifen: Lkw ohne Alpine-Symbol'),('uk','Зимові шини: вантажівки без альпійського символу'),('en','Winter tyres: trucks without Alpine symbol')]:
+      for w,h in [(390,844),(1366,900)]:
+        print('— Inhaber',lang,w)
+        c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
+        errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.evaluate(JS,['POST','/api/login',{'username':'w.inhaber','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        q.goto(B+'/#/'); q.wait_for_selector('#todowinter',state='attached')
+        d=q.locator('details',has=q.locator('#todowinter'))
+        check(lbl in d.locator('summary').inner_text(),'Gruppe „Heute zu tun“'); d.locator('summary').click()
+        check('SZ-YC 9901' in d.inner_text() and 'VA-R' in d.inner_text(),'Kennzeichen + Position')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+        if SHOTS: d.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/todowinter_{lang}_{w}.png')
+        q.click('#todowinter'); q.wait_for_selector('[data-tf="winter_bad"][aria-pressed="true"]'); check(True,'Direktsprung Reiter')
+        check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'alles grün'); raise SystemExit(1 if fails else 0)

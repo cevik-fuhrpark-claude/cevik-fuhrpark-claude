@@ -506,7 +506,7 @@ async function dispoPlanned(vsite = '') {
 
 // Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
 async function fleetTodo() {
-  const [cs, ov, fs, tc, dr, ct, cl] = await Promise.all([
+  const [cs, ov, fs, tc, dr, ct, cl, wi] = await Promise.all([
     api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []),
     api('GET', '/api/maintenance').catch(() => null),
     api('GET', '/api/fines?status=open').then((r) => r.fines).catch(() => []),
@@ -514,6 +514,8 @@ async function fleetTodo() {
     isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(() => []) : [],
     isMgr() ? api('GET', '/api/contracts?filter=aktion').then((r) => r.contracts).catch(() => []) : [],
     isMgr() ? api('GET', '/api/claims?filter=offen').then((r) => r.claims.filter((c) => c.followup_due)).catch(() => []) : [],
+    // Lkw ohne Alpine-Symbol laut Erfassung – Entscheidung zur Umrüstung liegt bei der Fuhrparkleitung (nur Information, keine Sperre)
+    isMgr() ? api('GET', '/api/tires/winter').then((r) => r.noncompliant).catch(() => []) : [],
   ]);
   const today = bDate();
   const in7 = bDate(7);
@@ -536,10 +538,11 @@ async function fleetTodo() {
     ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
       (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
     ['todo_claims', cl, (c) => `#/cases/${c.case_id}`, (c) => `${c.case_no} · ${c.plate} · ${c.insurer} · ${t('claim_days_open').replace('{n}', c.days_open)}`, ''],
+    ['todo_winter', wi, (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${t('winter_bad').replace('{p}', x.noncompliant.join(', '))}`, ''],
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
-  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="#/plan">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="#/plan?s=mdue">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="#/quality?f=inspection_no_result">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
+  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="#/plan">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="#/plan?s=mdue">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_winter' ? `<p class="small"><a href="#/tires?f=winter_bad" id="todowinter">${esc(t('ws_winter_show'))} ›</a></p>` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="#/quality?f=inspection_no_result">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
 }
 
 const recentRepeat = (c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000;
