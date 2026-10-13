@@ -78,7 +78,7 @@ function requireRole(user, roles) {
 
 const STATUS_DE_ICS = { gemeldet: 'gemeldet', werkstatt_freigegeben: 'an Werkstatt freigegeben', in_reparatur: 'in Reparatur', wartet_teile: 'wartet auf Teile', abschlusskontrolle: 'Abschlusskontrolle' };
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net',
+  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'tire_warn_age_years', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
@@ -176,7 +176,7 @@ async function handleApi(request, env, ctx, url) {
     let vapid = null;
     try { vapid = (await getVapid(env)).publicKey; } catch {}
     return json({ workshops, checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
-      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, doc_kinds: veh.DOC_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, fine_kinds: fines.FINE_KINDS, fine_offenses: fines.OFFENSES, fine_statuses: fines.FINE_STATUSES, vapid_public_key: vapid, app_name: env.APP_NAME });
+      driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, doc_kinds: veh.DOC_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, tire_winter_marks: tires.WINTER_MARKS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, fine_kinds: fines.FINE_KINDS, fine_offenses: fines.OFFENSES, fine_statuses: fines.FINE_STATUSES, vapid_public_key: vapid, app_name: env.APP_NAME });
   }
 
   // Benutzer

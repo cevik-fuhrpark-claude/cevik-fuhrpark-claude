@@ -9,6 +9,63 @@ export const POSITIONS = ['VA-L', 'VA-R', 'LA-L', 'LA-R', 'HA-L-aussen', 'HA-L-i
 export const TIRE_EVENTS = ['messung', 'wechsel', 'reparatur', 'sichtpruefung'];
 // Gesetzliche Mindestprofiltiefe in Deutschland (StVZO § 36) für Lkw-Reifen: 1,6 mm
 export const LEGAL_MIN_TREAD_MM = 1.6;
+// Winterkennzeichnung (StVO § 2 Abs. 3a): bei Glätte/Schnee nur mit Alpine-Symbol (3PMSF); reine M+S-Reifen genügen seit 01.10.2024 nicht mehr.
+// Lkw (N2/N3): Antriebsachsen und vordere Lenkachsen; Anhänger sind keine Kfz und nicht betroffen.
+export const WINTER_MARKS = ['3pmsf', 'ms', 'keine'];
+const WINTER_BASE = ['VA-L', 'VA-R', 'HA-L-aussen', 'HA-R-aussen'];
+const WINTER_TWIN = ['HA-L-innen', 'HA-R-innen'];
+// DOT-Code: letzte 4 Ziffern = Herstellwoche (01–53) und -jahr (JJ) → Montag dieser ISO-Woche (JJJJ-MM-TT); ungültig → null.
+export function dotDate(dot) {
+  const d = String(dot || '').replace(/\s/g, '').slice(-4);
+  if (!/^\d{4}$/.test(d)) return null;
+  const w = Number(d.slice(0, 2)); const y = 2000 + Number(d.slice(2));
+  if (w < 1 || w > 53) return null;
+  const jan4 = Date.UTC(y, 0, 4);
+  const mon = jan4 - ((new Date(jan4).getUTCDay() + 6) % 7) * 86400000 + (w - 1) * 7 * 86400000;
+  if (new Date(mon + 3 * 86400000).getUTCFullYear() !== y) return null; // KW 53 gibt es nicht in jedem Jahr
+  return new Date(mon).toISOString().slice(0, 10);
+}
+// Alter in vollen Monaten bis heute (Berliner Kalendertag)
+export function ageMonths(isoDay, today = berlinDate()) {
+  const [y1, m1, d1] = isoDay.split('-').map(Number); const [y2, m2, d2] = today.split('-').map(Number);
+  return Math.max(0, (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0));
+}
+// aktueller DOT je Position (neueste zuerst): letzter Eintrag mit DOT; ein Wechsel ohne DOT = neuer Reifen, Alter unbekannt
+export function currentDots(events) {
+  const out = {};
+  for (const e of events) {
+    if (e.position in out) continue;
+    if (e.dot && dotDate(e.dot)) out[e.position] = { dot: e.dot, dot_date: dotDate(e.dot) };
+    else if (e.event_type === 'wechsel') out[e.position] = null;
+  }
+  return out;
+}
+// events: Reifenereignisse EINES Fahrzeugs, neueste zuerst → aktuelle Kennzeichnung je Position (null = nicht erfasst).
+// Ein Wechsel ohne Angabe setzt auf „nicht erfasst“ zurück (neuer Reifen, Kennzeichnung unbekannt).
+export function winterMarks(events) {
+  const marks = {}; const seen = new Set();
+  for (const e of events) {
+    seen.add(e.position);
+    if (e.position in marks) continue;
+    if (e.winter_mark) marks[e.position] = e.winter_mark;
+    else if (e.event_type === 'wechsel') marks[e.position] = null;
+  }
+  return { marks, seen };
+}
+// DOT-Felder je Position: Herstellwoche, Alter in Monaten, über Warnalter (nur wenn Einstellung gesetzt)
+function dotAge(d, today, ageYears) {
+  if (!d) return { dot: null, dot_date: null, age_months: null, age_warn: false };
+  const m = ageMonths(d.dot_date, today);
+  return { dot: d.dot, dot_date: d.dot_date, age_months: m, age_warn: ageYears !== null && m >= ageYears * 12 };
+}
+// Status je Fahrzeug: erfuellt / nicht_erfuellt / unbekannt / nicht_pflichtig (Anhänger). Zwillingsbereifung (innen) nur, wenn dort Ereignisse erfasst sind.
+export function winterStatus(kind, { marks, seen }) {
+  if (kind === 'anhaenger') return { status: 'nicht_pflichtig', required: [], missing: [], noncompliant: [] };
+  const required = [...WINTER_BASE, ...WINTER_TWIN.filter((p) => seen.has(p))].sort((a, b) => POSITIONS.indexOf(a) - POSITIONS.indexOf(b));
+  const noncompliant = required.filter((p) => marks[p] === 'ms' || marks[p] === 'keine');
+  const missing = required.filter((p) => !marks[p]);
+  return { status: noncompliant.length ? 'nicht_erfuellt' : missing.length ? 'unbekannt' : 'erfuellt', required, missing, noncompliant };
+}
 
 const canWrite = (u) => ['owner', 'fleet', 'workshop'].includes(u.role);
 const canMeasure = (u) => ['owner', 'fleet', 'workshop', 'driver'].includes(u.role);
@@ -18,7 +75,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
     if (!a) throw forbidden('Reifendaten nur für zugeordnete Fahrzeuge.');
   }
-  const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
   const history = (await env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, u.role AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
@@ -35,13 +92,16 @@ export async function tireOverview(env, user, envName, vehicleId) {
     }
     latest[e.position] = cur;
   }
-  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
-  const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
+  const sRows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('tire_warn_tread_mm','tire_warn_age_years')`).all()).results;
+  const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
+  const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null;
+  const wm = winterMarks(history);
+  const dots = currentDots(history); const today = berlinDate();
   const positions = Object.entries(latest).map(([position, x]) => ({
-    position, last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
+    position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: x.tread_mm === undefined || x.tread_mm === null ? 'unbekannt' : x.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && x.tread_mm < warn ? 'warnung' : 'ok',
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn };
+  return { vehicle: v, specs, positions, history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: winterStatus(v.kind, wm) };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -60,18 +120,20 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const size = str(body.size, { max: 40 });
   if (type === 'wechsel' && !size) throw bad('validation', 'Beim Reifenwechsel ist die Reifengröße Pflicht.');
   const dot = str(body.dot, { max: 20 });
-  if (dot && !/^[0-9]{4}$/.test(dot.replace(/\s/g, '').slice(-4))) throw bad('validation', 'DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).');
+  if (dot && !dotDate(dot)) throw bad('validation', 'DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).');
+  if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.');
   const caseId = body.case_id ? str(body.case_id, { max: 40 }) : null;
   if (caseId) {
     const c = await env.DB.prepare('SELECT id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
   }
+  const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   const id = uuid();
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, position, type, tread, pressure, size, str(body.brand, { max: 60 }), dot, odo, caseId,
-    str(body.note, { max: 1000 }), user.id, now).run();
+  await env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, position, type, tread, pressure, size, str(body.brand, { max: 60 }), dot, odo, caseId,
+    str(body.note, { max: 1000 }), user.id, now, winter).run();
   const warnings = [];
   if (tread !== null && tread < LEGAL_MIN_TREAD_MM) warnings.push(`Profiltiefe ${tread} mm liegt unter dem gesetzlichen Minimum von ${LEGAL_MIN_TREAD_MM} mm.`);
   return { id, warnings };
@@ -164,14 +226,15 @@ export async function tireFindings(env, environment, settings = null) {
 export async function fleetTires(env, user, envName, query = {}) {
   if (!['owner', 'fleet', 'workshop', 'viewer'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Math.round(Number(query.stale_days) || 90), 1), 3650);
-  const warnRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
-  const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
+  const sRows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('tire_warn_tread_mm','tire_warn_age_years')`).all()).results;
+  const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
+  const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null; const today = berlinDate();
   const allVehicles = (await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE active=1 AND eval_excluded=0 ORDER BY plate').all()).results;
   // optional nur ein Standort laut Fahrzeugstamm (Schreibweise egal, 'ohne' = ohne Standort)
   const sel = siteSelection(allVehicles, query.site);
   const vehicles = sel.site !== null ? allVehicles.filter((v) => sel.match(v.site)) : allVehicles;
   // je Fahrzeug+Position letzte Profilmessung (Wechsel ohne Messung setzt den Messwert zurück)
-  const ev = (await env.DB.prepare(`SELECT vehicle_id, position, event_type, tread_mm, created_at FROM tire_events WHERE environment=? ORDER BY created_at DESC`).bind(envName).all()).results;
+  const ev = (await env.DB.prepare(`SELECT vehicle_id, position, event_type, tread_mm, winter_mark, dot, created_at FROM tire_events WHERE environment=? ORDER BY created_at DESC`).bind(envName).all()).results;
   const latest = new Map();
   for (const e of ev) {
     const k = `${e.vehicle_id}|${e.position}`;
@@ -179,6 +242,9 @@ export async function fleetTires(env, user, envName, query = {}) {
     if (e.tread_mm !== null) latest.set(k, { vehicle_id: e.vehicle_id, position: e.position, tread_mm: e.tread_mm, at: e.created_at });
     else if (e.event_type === 'wechsel') latest.set(k, { vehicle_id: e.vehicle_id, position: e.position, tread_mm: null, at: e.created_at });
   }
+  // Winterkennzeichnung je Fahrzeug (gleiche Regel wie Fahrzeugakte)
+  const evByV = new Map();
+  for (const e of ev) { if (!evByV.has(e.vehicle_id)) evByV.set(e.vehicle_id, []); evByV.get(e.vehicle_id).push(e); }
   const now = Date.now();
   const rank = { unter_minimum: 3, warnung: 2, ok: 1, unbekannt: 0 };
   const rows = vehicles.map((v) => {
@@ -192,16 +258,23 @@ export async function fleetTires(env, user, envName, query = {}) {
       if (!oldest || p.at < oldest) oldest = p.at;
     }
     const ageDays = oldest ? Math.floor((now - Date.parse(oldest)) / 86400000) : null;
-    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
+    const w = winterStatus(v.kind, winterMarks(evByV.get(v.id) || []));
+    // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
+    const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));
+    const oldestDot = ages.reduce((o, a) => (!o || a.dot_date < o.dot_date ? a : o), null);
+    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant,
+      dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
-  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, stale_days: staleDays, site: sel.site, site_options: sel.options, rows,
-    totals: { vehicles: rows.length, below_min: count((r) => r.status === 'unter_minimum'), warn: count((r) => r.status === 'warnung'), never_measured: count((r) => r.measured_positions === 0), stale: count((r) => r.stale && r.measured_positions > 0) } };
+  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, stale_days: staleDays, site: sel.site, site_options: sel.options, rows,
+    totals: { vehicles: rows.length, below_min: count((r) => r.status === 'unter_minimum'), warn: count((r) => r.status === 'warnung'), never_measured: count((r) => r.measured_positions === 0), stale: count((r) => r.stale && r.measured_positions > 0),
+      winter_noncompliant: count((r) => r.winter === 'nicht_erfuellt'), winter_unknown: count((r) => r.winter === 'unbekannt'), winter_ok: count((r) => r.winter === 'erfuellt'), age_warn: count((r) => r.age_warn > 0) } };
 }
 
 // Reifen-Übersicht als CSV (Excel DE): je Fahrzeug Status aus gemessenen Werten und hinterlegte Reifengrößen je Achse
 // (z. B. für den Reifendienst). Größen „ungeprüft“ = Quellwert, nicht am Fahrzeug bestätigt. Spalten „Größe …“ statt „Reifen …“:
 // die Datei ist eine Auswertung und soll nicht versehentlich den Reifengrößen-Import (Quelldatei) überschreiben.
+const WS_DE = { erfuellt: 'erfüllt', nicht_erfuellt: 'nicht erfüllt', unbekannt: 'nicht vollständig erfasst', nicht_pflichtig: 'nicht betroffen (Anhänger)' };
 const TS_DE = { unter_minimum: 'unter gesetzlichem Minimum', warnung: 'unter Warnschwelle', ok: 'in Ordnung', unbekannt: 'kein Messwert' };
 export async function fleetTiresCsv(env, ov, csvCell) {
   const specs = (await env.DB.prepare('SELECT vehicle_id, axle, size, verified FROM tire_specs WHERE vehicle_id IN (SELECT value FROM json_each(?))')
@@ -210,7 +283,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
   for (const s of specs) { if (!byV.has(s.vehicle_id)) byV.set(s.vehicle_id, {}); byV.get(s.vehicle_id)[s.axle] = s; }
   const mm = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const head = ['Kennzeichen', 'Fahrzeugart', 'Standort', 'Status', 'Kleinste Profiltiefe (mm)', 'Gemessene Positionen', `Unter ${mm(ov.legal_min_tread_mm)} mm`, 'Unter Warnschwelle',
-    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} Tage`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft'];
+    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} Tage`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter'];
   const lines = [head.join(';')];
   for (const r of ov.rows) {
     const sp = byV.get(r.vehicle_id) || {};
@@ -218,7 +291,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
     const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
     lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
       r.oldest_measure_at ? berlinDate(r.oldest_measure_at) : '', r.oldest_age_days ?? '', r.measured_positions ? (r.stale ? 'ja' : 'nein') : '',
-      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked].join(';'));
+      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

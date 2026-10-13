@@ -2,6 +2,7 @@
 import worker from '../src/worker.js';
 import { makeEnv, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
+import { dotDate, ageMonths } from '../src/tires.js';
 import { b64urlEncode, b64urlDecode, concatBytes } from '../src/util.js';
 
 let passed = 0; let failed = 0; const failures = [];
@@ -769,6 +770,80 @@ await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitun
     eq(n, all.rows.length, 'Summe über Standorte');
     eq((await users.fleet.get('/api/tires/fleet?site=GIBTSNICHT')).data.rows.length, 0);
   } finally { await env.DB.prepare('UPDATE vehicles SET site=? WHERE id=?').bind(old, V1).run(); }
+});
+await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status je Lkw nur aus Erfasstem, Anhänger nicht betroffen', async () => {
+  const W = (b) => users.ws.post(`/api/vehicles/${V2}/tires/events`, b);
+  const st = async () => (await users.fleet.get(`/api/vehicles/${V2}/tires`)).data.winter;
+  let w = await st();
+  eq(w.status, 'unbekannt', 'ohne Angaben nie „erfüllt“'); eq(w.missing.join(','), 'VA-L,VA-R,HA-L-aussen,HA-R-aussen');
+  eq((await W({ event_type: 'sichtpruefung', position: 'VA-L', winter_mark: 'schnee' })).status, 400, 'unbekannte Kennzeichnung');
+  for (const pos of ['VA-L', 'VA-R', 'HA-L-aussen', 'HA-R-aussen']) eq((await W({ event_type: 'sichtpruefung', position: pos, winter_mark: '3pmsf' })).status, 201);
+  w = await st(); eq(w.status, 'erfuellt'); eq(w.missing.length, 0);
+  // Zwillingsbereifung: innen erst gefordert, wenn dort etwas erfasst ist
+  await W({ event_type: 'sichtpruefung', position: 'HA-L-innen' });
+  w = await st(); eq(w.status, 'unbekannt'); eq(w.missing.join(','), 'HA-L-innen');
+  await W({ event_type: 'sichtpruefung', position: 'HA-L-innen', winter_mark: '3pmsf' });
+  eq((await st()).status, 'erfuellt');
+  // Liftachse ist weder Antriebs- noch Lenkachse
+  await W({ event_type: 'sichtpruefung', position: 'LA-L', winter_mark: 'keine' });
+  eq((await st()).status, 'erfuellt', 'Liftachse nicht gefordert');
+  // Wechsel ohne Angabe = neuer Reifen, Kennzeichnung unbekannt; spätere Angabe ohne Wechsel bleibt gültig
+  eq((await W({ event_type: 'wechsel', position: 'VA-R', size: '315/70 R22.5' })).status, 201);
+  w = await st(); eq(w.status, 'unbekannt'); eq(w.missing.join(','), 'VA-R');
+  await W({ event_type: 'messung', position: 'HA-R-aussen', pressure_bar: 8.5 });
+  eq((await st()).missing.join(','), 'VA-R', 'Messung ohne Angabe ändert die Kennzeichnung nicht');
+  await W({ event_type: 'wechsel', position: 'VA-R', size: '315/70 R22.5', winter_mark: 'ms' });
+  w = await st(); eq(w.status, 'nicht_erfuellt', 'reine M+S genügen nicht mehr'); eq(w.noncompliant.join(','), 'VA-R');
+  const ov = (await users.fleet.get(`/api/vehicles/${V2}/tires`)).data;
+  eq(ov.positions.find((x) => x.position === 'VA-R').winter_mark, 'ms'); eq(ov.history[0].winter_mark, 'ms');
+  // Flotte + CSV
+  const ft = (await users.fleet.get('/api/tires/fleet')).data;
+  const r2 = ft.rows.find((x) => x.vehicle_id === V2);
+  eq(r2.winter, 'nicht_erfuellt'); eq(r2.winter_noncompliant.join(','), 'VA-R'); ok(ft.totals.winter_noncompliant >= 1);
+  eq(r2.measured_positions, 0, 'Sichtprüfungen/Luftdruck zählen nicht als Profilmessung');
+  const tr = (await env.DB.prepare(`SELECT id FROM vehicles WHERE kind='anhaenger' AND active=1 AND eval_excluded=0 LIMIT 1`).first());
+  if (tr) eq(ft.rows.find((x) => x.vehicle_id === tr.id).winter, 'nicht_pflichtig', 'Anhänger nicht betroffen');
+  eq(ft.totals.winter_noncompliant + ft.totals.winter_unknown + ft.totals.winter_ok + ft.rows.filter((x) => x.winter === 'nicht_pflichtig').length, ft.rows.length, 'jede Zeile genau ein Winterstatus');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
+  const hd = csv[0].split(';'); const line = csv.find((l) => l.startsWith(r2.plate + ';')).split(';');
+  eq(line.length, hd.length); eq(line[hd.indexOf('Winterreifen (Alpine-Symbol)')], 'nicht erfüllt'); eq(line[hd.indexOf('Winter: Positionen ohne Alpine-Symbol')], 'VA-R');
+  eq((await users.prodFleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V2).winter, 'unbekannt', 'Umgebungen getrennt');
+  // Fahrer (zugeordnet) darf bei Sichtprüfung die Kennzeichnung angeben
+  eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', winter_mark: '3pmsf' })).status, 201);
+  eq((await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.positions.find((x) => x.position === 'VA-L').winter_mark, '3pmsf');
+  await W({ event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' });
+  eq((await st()).status, 'erfuellt');
+});
+await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {
+  eq(dotDate('0118'), '2018-01-01'); eq(dotDate('DOT XX 5320'), '2020-12-28'); eq(dotDate('5321'), null, '2021 hat keine KW 53'); eq(dotDate('0024'), null); eq(dotDate('abcd'), null);
+  eq(ageMonths('2018-01-01', '2024-01-01'), 72); eq(ageMonths('2018-01-15', '2024-01-14'), 71);
+  const W = (b) => users.ws.post(`/api/vehicles/${V2}/tires/events`, b);
+  eq((await W({ event_type: 'wechsel', position: 'HA-R-innen', size: '315/70 R22.5', dot: '9924' })).status, 400, 'Woche 99');
+  const ny = (Number(BERLIN_TODAY.slice(2, 4)) + 1) % 100;
+  const fut = await W({ event_type: 'wechsel', position: 'HA-R-innen', size: '315/70 R22.5', dot: '01' + String(ny).padStart(2, '0') });
+  eq(fut.status, 400, 'Zukunft'); ok(/Zukunft/.test(fut.data.error?.message || JSON.stringify(fut.data)));
+  eq((await W({ event_type: 'wechsel', position: 'HA-R-innen', size: '315/70 R22.5', dot: '0118', winter_mark: '3pmsf' })).status, 201);
+  let p = (await users.fleet.get(`/api/vehicles/${V2}/tires`)).data;
+  let pos = p.positions.find((x) => x.position === 'HA-R-innen');
+  eq(pos.dot_date, '2018-01-01'); eq(pos.age_months, ageMonths('2018-01-01', BERLIN_TODAY)); eq(pos.age_warn, false, 'ohne Einstellung keine Warnung'); eq(p.warn_age_years, null);
+  let r = (await users.fleet.get('/api/tires/fleet')).data;
+  let row = r.rows.find((x) => x.vehicle_id === V2);
+  eq(row.oldest_dot_date, '2018-01-01'); eq(row.age_warn, 0); eq(r.totals.age_warn, 0);
+  try {
+    eq((await owner.put('/api/settings', { tire_warn_age_years: 6 })).status, 200);
+    pos = (await users.fleet.get(`/api/vehicles/${V2}/tires`)).data.positions.find((x) => x.position === 'HA-R-innen');
+    eq(pos.age_warn, true);
+    r = (await users.fleet.get('/api/tires/fleet')).data; row = r.rows.find((x) => x.vehicle_id === V2);
+    eq(row.age_warn, 1); ok(r.totals.age_warn >= 1); eq(r.warn_age_years, 6);
+    const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
+    const hd = csv[0].split(';'); const line = csv.find((l) => l.startsWith(row.plate + ';')).split(';');
+    eq(line.length, hd.length); eq(line[hd.indexOf('Ältester Reifen (Herstellwoche laut DOT)')], '2018-01-01'); eq(line[hd.indexOf('Reifen über Warnalter')], '1');
+  } finally { await owner.put('/api/settings', { tire_warn_age_years: '' }); }
+  // Wechsel ohne DOT: neuer Reifen, Alter unbekannt (nie vom alten Reifen übernommen)
+  await W({ event_type: 'wechsel', position: 'HA-R-innen', size: '315/70 R22.5', winter_mark: '3pmsf' });
+  pos = (await users.fleet.get(`/api/vehicles/${V2}/tires`)).data.positions.find((x) => x.position === 'HA-R-innen');
+  eq(pos.dot, null); eq(pos.age_months, null);
+  eq((await users.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V2).oldest_dot_date, null);
 });
 await test('Reifenwechsel nur mit Größe; danach ist der alte Messwert nicht mehr maßgeblich', async () => {
   eq((await users.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L' })).status, 400);
