@@ -808,6 +808,21 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   const hd = csv[0].split(';'); const line = csv.find((l) => l.startsWith(r2.plate + ';')).split(';');
   eq(line.length, hd.length); eq(line[hd.indexOf('Winterreifen (Alpine-Symbol)')], 'nicht erfüllt'); eq(line[hd.indexOf('Winter: Positionen ohne Alpine-Symbol')], 'VA-R');
   eq((await users.prodFleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V2).winter, 'unbekannt', 'Umgebungen getrennt');
+  // Disposition-Startseite: /api/tires/winter – gleiche Regel wie Flotte, nur Lkw, keine Messwerte/Personen; Fahrer nicht
+  const dw = await users.dispatch.get('/api/tires/winter');
+  eq(dw.status, 200);
+  const d2 = dw.data.noncompliant.find((x) => x.vehicle_id === V2);
+  ok(d2, 'V2 als nicht wintertauglich gemeldet'); eq(d2.noncompliant.join(','), 'VA-R');
+  eq(dw.data.totals.nicht_erfuellt, ft.totals.winter_noncompliant, 'gleiche Zahl wie Reifen – Flotte');
+  eq(dw.data.totals.unbekannt, ft.totals.winter_unknown);
+  eq(dw.data.totals.vehicles, ft.rows.filter((x) => x.winter !== 'nicht_pflichtig').length, 'Anhänger nicht gezählt');
+  ok(dw.data.noncompliant.every((x) => Object.keys(x).sort().join(',') === 'missing,noncompliant,plate,site,status,vehicle_id'), 'nur Winterangaben');
+  eq((await users.driver.get('/api/tires/winter')).status, 403);
+  eq((await users.prodFleet.get('/api/tires/winter')).data.noncompliant.some((x) => x.vehicle_id === V2), false, 'Umgebungen getrennt');
+  const vSite = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V2).first()).site;
+  const dws = (await users.dispatch.get('/api/tires/winter?site=' + encodeURIComponent(vSite || 'ohne'))).data;
+  ok(dws.noncompliant.some((x) => x.vehicle_id === V2), 'Standortfilter enthält V2');
+  eq((await users.dispatch.get('/api/tires/winter?site=GIBTSNICHT')).data.totals.vehicles, 0);
   // Fahrer (zugeordnet) darf bei Sichtprüfung die Kennzeichnung angeben
   eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', winter_mark: '3pmsf' })).status, 201);
   eq((await users.fleet.get(`/api/vehicles/${V1}/tires`)).data.positions.find((x) => x.position === 'VA-L').winter_mark, '3pmsf');

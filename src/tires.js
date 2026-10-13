@@ -271,6 +271,22 @@ export async function fleetTires(env, user, envName, query = {}) {
       winter_noncompliant: count((r) => r.winter === 'nicht_erfuellt'), winter_unknown: count((r) => r.winter === 'unbekannt'), winter_ok: count((r) => r.winter === 'erfuellt'), age_warn: count((r) => r.age_warn > 0) } };
 }
 
+// Winterreifen-Lage je Lkw (Disposition-Startseite): nur Erfasstes, gleiche Regel wie Fahrzeugakte; Anhänger nicht betroffen.
+// Reine Information – situative Pflicht (StVO § 2 Abs. 3a), keine Sperre. Keine Personen, keine Messwerte.
+export async function winterFleet(env, user, envName, query = {}) {
+  if (!['owner', 'fleet', 'workshop', 'viewer', 'dispatch'].includes(user.role)) throw forbidden();
+  const all = (await env.DB.prepare(`SELECT id, plate, kind, site FROM vehicles WHERE active=1 AND eval_excluded=0 ORDER BY plate`).all()).results;
+  const sel = siteSelection(all, query.site);
+  const trucks = all.filter((v) => v.kind !== 'anhaenger' && sel.match(v.site));
+  const ev = (await env.DB.prepare('SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? ORDER BY created_at DESC').bind(envName).all()).results;
+  const byV = new Map();
+  for (const e of ev) { if (!byV.has(e.vehicle_id)) byV.set(e.vehicle_id, []); byV.get(e.vehicle_id).push(e); }
+  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing }; });
+  const count = (s) => rows.filter((r) => r.status === s).length;
+  return { site: sel.site, totals: { vehicles: rows.length, nicht_erfuellt: count('nicht_erfuellt'), unbekannt: count('unbekannt'), erfuellt: count('erfuellt') },
+    noncompliant: rows.filter((r) => r.status === 'nicht_erfuellt') };
+}
+
 // Reifen-Übersicht als CSV (Excel DE): je Fahrzeug Status aus gemessenen Werten und hinterlegte Reifengrößen je Achse
 // (z. B. für den Reifendienst). Größen „ungeprüft“ = Quellwert, nicht am Fahrzeug bestätigt. Spalten „Größe …“ statt „Reifen …“:
 // die Datei ist eine Auswertung und soll nicht versehentlich den Reifengrößen-Import (Quelldatei) überschreiben.
