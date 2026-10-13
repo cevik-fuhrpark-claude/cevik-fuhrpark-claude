@@ -1,6 +1,6 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, isCalendarDate, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
@@ -11,7 +11,6 @@ import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS } from './mainten
 import { winterMarks, winterStatus } from './tires.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
-const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
 // Rückruf: einmalige Hersteller-/Werkstattaktion (Schreiben bzw. KBA-Referenz als Nachweis), Frist nur laut Schreiben, kein Intervall
 export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Feuerlöscher', 'Verbandkasten', 'Ladungssicherung', 'Rückruf', 'Sonstiges'];
@@ -291,8 +290,13 @@ export async function upsertVehicle(env, user, body) {
   if (!isManager(user)) throw forbidden();
   const row = vehicleRow(user, body);
   await upsertVehicleRows(env, [row]);
-  await audit(env, user.id, 'vehicle.upsert', row.id, { plate: row.plate });
-  return { id: row.id };
+  // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
+  // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.
+  const k = normPlate(row.plate);
+  const duplicates = (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>?').bind(row.id).all()).results
+    .filter((v) => normPlate(v.plate) === k).map((v) => ({ id: v.id, plate: v.plate, active: !!v.active, eval_excluded: !!v.eval_excluded }));
+  await audit(env, user.id, 'vehicle.upsert', row.id, duplicates.length ? { plate: row.plate, duplicate_plate_of: duplicates.map((d) => d.id) } : { plate: row.plate });
+  return { id: row.id, duplicate_plates: duplicates };
 }
 
 // Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent

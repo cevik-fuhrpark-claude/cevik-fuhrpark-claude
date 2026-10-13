@@ -1,6 +1,6 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
-import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, num } from './util.js';
+import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, num, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, maintEventStmt } from './vehicles.js';
@@ -22,7 +22,6 @@ const KIND_ALIASES = new Map([
   ['rückrufaktion', 'Rückruf'], ['rueckruf', 'Rückruf'], ['rueckrufaktion', 'Rückruf'], ['werkstattaktion', 'Rückruf'], ['herstelleraktion', 'Rückruf'], ['recall', 'Rückruf'],
   ['tachograph', 'Tachograph'], ['tacho', 'Tachograph'], ['tachoprüfung', 'Tachograph'], ['tachopruefung', 'Tachograph'], ['fahrtenschreiber', 'Tachograph'], ['kontrollgerät', 'Tachograph'],
 ]);
-const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 
 export function normalizeKind(raw) {
   const s = String(raw || '').trim();

@@ -2115,8 +2115,12 @@ await test('Gespann: Sperre des gekoppelten Anhängers in Fahrzeugliste, „Mein
 await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhaber/Fuhrparkleitung, ändert nichts', async () => {
   eq((await users.ws.get('/api/admin/data-quality')).status, 403);
   // Lkw mit Anhängerkennzeichen, das es nicht gibt; zweites Fahrzeug mit gleichem Kennzeichen (anders geschrieben)
-  eq((await owner.post('/api/vehicles', { plate: 'DQ-XY 1', vin: 'WDB96340310999001', trailer_plate: 'DQ-AH 404' })).status, 201);
-  eq((await owner.post('/api/vehicles', { plate: 'DQ XY1', vin: 'WDB96340310999002', site: 'Dortmund' })).status, 201);
+  { const r1 = await owner.post('/api/vehicles', { plate: 'DQ-XY 1', vin: 'WDB96340310999001', trailer_plate: 'DQ-AH 404' }); eq(r1.status, 201); eq(r1.data.duplicate_plates.length, 0, 'eindeutig: leer'); }
+  { const r2 = await owner.post('/api/vehicles', { plate: 'DQ XY1', vin: 'WDB96340310999002', site: 'Dortmund' }); eq(r2.status, 201);
+    // Speichern bleibt möglich, Antwort nennt das andere Fahrzeug (Schreibweise egal), eigenes Fahrzeug nie; Protokoll vermerkt es
+    eq(JSON.stringify(r2.data.duplicate_plates), JSON.stringify([{ id: 'VIN:WDB96340310999001', plate: 'DQ-XY 1', active: true, eval_excluded: false }]), 'Hinweis gleiches Kennzeichen');
+    eq((await owner.post('/api/vehicles', { plate: 'DQ XY1', vin: 'WDB96340310999002', site: 'Dortmund' })).data.duplicate_plates.length, 1, 'erneutes Speichern: nur das andere');
+    ok((await owner.get('/api/admin/audit?action=vehicle.upsert')).data.entries.some((e) => JSON.stringify(e).includes('VIN:WDB96340310999002') && JSON.stringify(e).includes('duplicate_plate_of')), 'protokolliert');  }
   // fest gekoppeltes Gespann mit unterschiedlichem bzw. gleichem Standort
   for (const [plate, vin, site, extra] of [['DQ-GS 1', 'WDB96340310999003', 'Dortmund', { trailer_plate: 'DQ-GA 1' }], ['DQ-GA 1', 'WDB96340310999004', 'Hamm', { kind: 'anhaenger' }],
     ['DQ-GS 2', 'WDB96340310999005', 'Dortmund', { trailer_plate: 'DQ-GA 2' }], ['DQ-GA 2', 'WDB96340310999006', 'dortmund ', { kind: 'anhaenger' }]]) {

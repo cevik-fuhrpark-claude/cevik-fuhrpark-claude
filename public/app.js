@@ -1076,7 +1076,14 @@ function vehicleForm(v = {}) {
 async function saveVehicleForm(form) {
   const b = Object.fromEntries(new FormData(form));
   for (const k in b) if (b[k] === '') delete b[k];
-  return api('POST', '/api/vehicles', b);
+  const r = await api('POST', '/api/vehicles', b);
+  // Hinweis, wenn dasselbe Kennzeichen schon an einem anderen Fahrzeug steht (gespeichert wird trotzdem – Mensch entscheidet)
+  const d = r && r.duplicate_plates;
+  if (d && d.length) {
+    const lst = d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '') + (!x.active ? ' (' + t('inactive_vehicles') + ')' : x.eval_excluded ? ' (' + t('eval_excluded') + ')' : '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '');
+    setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(b.plate || '').toUpperCase()).replace('{list}', lst), true), 400);
+  }
+  return r;
 }
 async function viewVehicles() {
   const inact = !!S.vehInactive && isMgr();
