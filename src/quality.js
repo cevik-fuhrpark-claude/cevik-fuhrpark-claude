@@ -1,6 +1,6 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso, berlinDate, berlinDaySql, normPlate, caseVariants } from './util.js';
+import { forbidden, nowIso, berlinDate, berlinDateTime, berlinDaySql, normPlate, caseVariants } from './util.js';
 
 // Unfall-Wortstämme auf Ukrainisch: lower() wirkt in SQLite/D1 nur auf A–Z – daher alle Schreibweisen (klein, GROSS, Anfang groß)
 // einzeln suchen („АВАРІЯ“, „Дтп“ wurden vorher nicht erkannt). Deutsch/Englisch genügt lower().
@@ -35,6 +35,8 @@ export const CHECKS = {
   telematics_plate_mismatch: 'fehler',
   // letzter Telematik-km-Stand kleiner als der zuvor erfasste km-Stand – wird nicht in die Akte übernommen (Gerätezähler/Zuordnung prüfen)
   telematics_km_rejected: 'hinweis',
+  // Telematik-Gerät liefert nach dem Zeitpunkt „außer Betrieb genommen“ (Protokoll) weiter Daten – verkauft/abgemeldet? Zuordnung bzw. Gerät prüfen
+  telematics_vehicle_inactive: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -115,9 +117,13 @@ export async function dataQuality(env, user, envName, query = {}) {
     noResultQuery(env).all(),
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
-    env.DB.prepare(`SELECT t.vehicle_id, t.provider, t.external_id, t.source_plate, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at
-      FROM telematics_latest t LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
-      WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL)`).all(),
+    // außerdem: Stände außer Betrieb genommener Fahrzeuge mit dem letzten Zeitpunkt „außer Betrieb genommen“ laut Protokoll (ohne Protokolleintrag kein Befund)
+    env.DB.prepare(`SELECT t.vehicle_id, t.provider, t.external_id, t.source_plate, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at,
+      v.active AS v_active, v.plate AS v_plate,
+      CASE WHEN v.active=0 THEN (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=t.vehicle_id AND a.action='vehicle.deactivate') END AS deact_at
+      FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
+      LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
+      WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) OR v.active=0`).all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -180,6 +186,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
   for (const r of telPlates.results) {
+    if (!r.v_active && r.deact_at && r.gps_time && r.gps_time > r.deact_at) add('telematics_vehicle_inactive', { id: r.vehicle_id, plate: r.v_plate }, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${berlinDateTime(r.gps_time)} · außer Betrieb seit ${berlinDate(r.deact_at).split('-').reverse().join('.')}`.replace(/\s+:/, ':'));
     const v = vById.get(r.vehicle_id); if (!v) continue;
     if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
     if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`);

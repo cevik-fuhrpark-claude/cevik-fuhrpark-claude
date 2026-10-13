@@ -166,6 +166,15 @@ with sync_playwright() as p:
     if tt['s'] != 200 or (tt['d'] or {}).get('matched') != 1:
         problems.append(f'Vorbereitung Telematik-Anhänger: {tt}')
     ROUTES['fleet'] += [f'vehicles/{tvid}']
+    # Fahrzeug außer Betrieb genommen, Gerät liefert weiter: Datenqualität „Telematik sendet für außer Betrieb genommenes Fahrzeug“
+    ivin = 'WDB96340310123477'; ivid = 'VIN:' + ivin
+    api('POST', '/api/vehicles', {'plate': 'RT-AB 9', 'vin': ivin, 'site': 'Dortmund'})
+    da = api('POST', f'/api/vehicles/{ivid}/active', {'active': False, 'reason': 'Rauchtest verkauft'})
+    ti = adm.evaluate("""async (b) => { const r = await fetch('/api/integration/v1/telematics', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cfp': '1', authorization: 'Bearer integration-token-xyz' }, body: JSON.stringify(b) });
+      return { s: r.status, d: await r.json().catch(() => null) }; }""", {'provider': 'yellowfox', 'items': [{'external_id': 'RT-INACT-1', 'vin': ivin, 'lat': 51.52, 'lon': 7.45, 'gps_time': (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5)).strftime('%Y-%m-%dT%H:%M:%SZ')}]})
+    if da['s'] != 200 or ti['s'] != 200 or (ti['d'] or {}).get('matched') != 1:
+        problems.append(f'Vorbereitung Telematik außer Betrieb: {da} {ti}')
+    ROUTES['fleet'] += ['quality?f=telematics_vehicle_inactive']
     ROUTES['owner'] += ['quality?f=inspection_no_result']
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']

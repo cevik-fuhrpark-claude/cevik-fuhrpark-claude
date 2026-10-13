@@ -5861,6 +5861,32 @@ await test('Datenqualität: Telematik-km kleiner als erfasster km-Stand → Hinw
   await env.DB.prepare(`DELETE FROM odometer_readings WHERE vehicle_id=? AND id NOT IN (SELECT value FROM json_each(?))`).bind(VID, JSON.stringify(before)).run();
 });
 
+await test('Datenqualität: Telematik sendet nach „außer Betrieb nehmen“ weiter → Hinweis (nur mit Protokollzeitpunkt), Abmelde-Antwort nennt Geräte', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' }; const VIN = 'WDB96340310888802'; const VID = 'VIN:' + VIN;
+  eq((await users.fleet.post('/api/vehicles', { plate: 'TÜ-IN 88', vin: VIN, site: 'Dortmund' })).status, 201);
+  const send = (gps) => anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'IN-88', vin: VIN, gps_time: gps, lat: 51.5, lon: 7.4 }] }, H);
+  const items = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_vehicle_inactive' && i.vehicle_id === VID);
+  eq((await send(new Date(Date.now() - 3600000).toISOString())).data.matched, 1);
+  const d = await users.fleet.post(`/api/vehicles/${VID}/active`, { active: false, reason: 'verkauft (Test)' });
+  eq(d.status, 200); eq(d.data.telematics_devices, 1, 'Abmelde-Antwort: Gerät noch zugeordnet'); eq(d.data.running_contracts, 0);
+  eq((await items()).length, 0, 'Stand vor dem Abmelden: kein Befund');
+  eq((await send(new Date(Date.now() + 1000).toISOString())).data.matched, 1, 'Gerät liefert weiter');
+  let it = await items(); eq(it.length, 1, 'Befund nach weiterer Lieferung'); eq(it[0].severity, 'hinweis'); eq(it[0].plate, 'TÜ-IN 88');
+  ok(/^Webfleet IN-88: \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} · außer Betrieb seit \d{2}\.\d{2}\.\d{4}$/.test(it[0].detail), it[0].detail);
+  ok((await anon.req('GET', '/api/integration/v1/data-quality', undefined, H)).data.items.some((i) => i.check === 'telematics_vehicle_inactive' && i.vehicle_id === VID), 'auch Integrations-API');
+  // ohne Protokolleintrag (z. B. außer Betrieb laut Import) kein Befund – kein geschätzter Zeitpunkt
+  await env.DB.prepare(`UPDATE audit_log SET action='vehicle.deactivate_x' WHERE target=? AND action='vehicle.deactivate'`).bind(VID).run();
+  eq((await items()).length, 0, 'ohne Zeitpunkt kein Befund');
+  await env.DB.prepare(`UPDATE audit_log SET action='vehicle.deactivate' WHERE target=? AND action='vehicle.deactivate_x'`).bind(VID).run();
+  eq((await users.fleet.post(`/api/vehicles/${VID}/active`, { active: true })).status, 200);
+  eq((await items()).length, 0, 'wieder in Betrieb: kein Befund');
+  eq((await users.fleet.post(`/api/vehicles/${V1}/active`, { active: true })).data.telematics_devices, 0, 'Aktivieren: kein Gerätehinweis');
+  const plan = (await env.DB.prepare(`EXPLAIN QUERY PLAN SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=? AND a.action='vehicle.deactivate'`).bind(VID).all()).results.map((r) => r.detail).join(' ');
+  ok(plan.includes('idx_audit_target_action'), 'Index genutzt: ' + plan);
+  await env.DB.prepare('DELETE FROM telematics_latest WHERE vehicle_id=?').bind(VID).run();
+  await env.DB.prepare('UPDATE vehicles SET active=0 WHERE id=?').bind(VID).run();
+});
+
 await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-Endpunkte, Test und Betrieb)', async () => {
   const fs = await import('node:fs');
   const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
