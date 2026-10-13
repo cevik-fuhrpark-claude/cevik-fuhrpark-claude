@@ -5144,6 +5144,15 @@ await test('Exporte und Rollen: Fahrer bekommt keinen Export; Personen-/Kostenda
   const got = {}; for (const k of Object.keys(all)) got[k] = (await viewer.get(all[k])).status;
   eq(Object.keys(got).filter((k) => got[k] !== 200).sort().join(','), ['audit', 'claims', 'contracts', 'contracts_ics', 'drivers', 'journal', 'reorder', 'stock', 'tacho'].sort().join(','), 'Lesezugriff: gesperrte Exporte');
   ok(!new TextDecoder('utf-8', { ignoreBOM: true }).decode((await viewer.get(all.fines + '&with_driver=1')).data).split('\r\n')[0].includes('Fahrer'), 'Lesezugriff: keine Fahrerspalte');
+  // Lesezugriff: in keinem erlaubten Export steht ein Fahrername (Gegenprobe: Fuhrparkleitung sieht ihn in Vorgängen/Bußgeldern)
+  const drvNames = (await owner.get('/api/users')).data.users.filter((u) => u.role === 'driver').map((u) => u.display_name);
+  ok(drvNames.length >= 2, 'Testfahrer vorhanden');
+  for (const k of Object.keys(got).filter((x) => got[x] === 200)) {
+    const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await viewer.get(all[k])).data);
+    for (const n of drvNames) ok(!txt.includes(n), `Lesezugriff ${k}: Fahrername „${n}“ im Export`);
+  }
+  const fleetCases = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(all.cases)).data);
+  ok(drvNames.some((n) => fleetCases.includes(n)), 'Gegenprobe: Leitung sieht Fahrernamen in Vorgängen');
   // Werkstatt: eigene Arbeitsgrundlagen (Fahrzeuge, Prüftermine, Plan, Aufträge, Reifen, Lager) als Datei
   for (const k of ['vehicles', 'maint', 'plan_ics', 'cases', 'tires', 'stock', 'reorder', 'journal', 'load']) eq((await users.ws.get(all[k])).status, 200, `Werkstatt ${k}:`);
 });
