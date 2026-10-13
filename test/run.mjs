@@ -658,6 +658,25 @@ await test('Telematik-Prüffälle: Zuordnung nur durch Fuhrpark mit Nachweis; da
   const bad = vrows.filter((v) => v.kind === 'anhaenger' || !v.active || v.eval_excluded).map((v) => v.id);
   ok(bad.length && !pos.some((x) => bad.includes(x.vehicle_id)), 'keine Anhänger, ruhenden oder inaktiven Fahrzeuge');
   eq(pos.length, vrows.length - bad.length, 'alle übrigen Fahrzeuge enthalten');
+  // CSV „Letzter Stand je Fahrzeug“: gleiche Zeilen/Reihenfolge wie die Ansicht, Berliner Zeit, nur Inhaber/Fuhrparkleitung
+  for (const r of ['ws', 'dispatch', 'driver']) eq((await users[r].get('/api/telematics?format=csv')).status, 403, `${r}: kein Telematik-Export`);
+  const { parseCsv } = await import('../src/util.js');
+  const tcsv = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/telematics?format=csv')).data).replace(/^\ufeff/, ''));
+  eq(tcsv.length, pos.length + 1, 'eine Zeile je Fahrzeug');
+  eq(tcsv.slice(1).map((x) => x[0]).join(','), pos.map((x) => x.plate).join(','), 'Reihenfolge wie Ansicht');
+  const c2 = tcsv.find((x) => x[0] === p2.plate);
+  ok(c2[2] === '10.10.2026 12:00' && c2[5] === 'webfleet' && Number(c2[4]) >= 0, 'GPS-Zeit Berlin, Anbieter, Alter ' + JSON.stringify(c2));
+  ok(tcsv.slice(1).filter((x) => x[2] === 'keine Daten').every((x) => x[4] === ''), 'ohne Daten: kein Alter');
+  // Standortfilter (Schreibweise egal): nur Fahrzeuge dieses Standorts, Abweichungsliste bleibt vollständig; CSV folgt dem Filter
+  ok(p2.site && ov2.site_options.includes(p2.site), 'Standortauswahl ' + JSON.stringify(ov2.site_options));
+  const fs = (await users.fleet.get('/api/telematics?site=' + encodeURIComponent('  ' + p2.site.toUpperCase() + ' '))).data;
+  eq(fs.site, p2.site, 'Anzeige-Schreibweise');
+  eq(fs.positions.map((x) => x.vehicle_id).join(), pos.filter((x) => x.site && x.site.trim().toLowerCase() === p2.site.toLowerCase()).map((x) => x.vehicle_id).join(), 'nur dieser Standort');
+  ok(fs.positions.length < pos.length || ov2.site_options.length === 1, 'Filter wirkt');
+  eq(fs.plate_mismatches.length, ov2.plate_mismatches.length, 'Abweichungen ungefiltert');
+  const fcsv = await users.fleet.get('/api/telematics?format=csv&site=' + encodeURIComponent(p2.site));
+  eq(parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode(fcsv.data).replace(/^\ufeff/, '')).length, fs.positions.length + 1, 'CSV gefiltert');
+  ok((fcsv.headers.get('content-disposition') || '').includes('_' + p2.site.replace(/[^\w-]/g, '') + '.csv'), 'Dateiname mit Standort');
   eq((await users.fleet.req('DELETE', '/api/telematics/mappings?provider=webfleet&external_id=WF-2')).status, 200);
   ok((await owner.get('/api/admin/audit?action=telematics.')).data.entries.length >= 2, 'protokolliert');
 });
@@ -5552,7 +5571,7 @@ await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), D
     'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
     'fuhrpark-fahrer': '/api/drivers?format=csv', 'fuhrpark-auslesungen': '/api/tacho?format=csv', 'fuhrpark-bussgelder': '/api/fines?format=csv', 'fuhrpark-vorgaenge': '/api/cases?format=csv',
-    'fuhrpark-versicherungsfaelle': '/api/claims?format=csv',
+    'fuhrpark-versicherungsfaelle': '/api/claims?format=csv', 'fuhrpark-telematik-stand': '/api/telematics?format=csv',
   };
   // Wächter: jede CSV-Antwort im Router steht in dieser Liste (neue Exporte fallen sofort auf)
   const routes = (readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8').match(/text\/csv/g) || []).length;
@@ -5766,9 +5785,15 @@ await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlaut
   // Telematik-Übersicht zeigt dieselbe Abweichung (Fahrzeug, Gerät, gemeldetes Kennzeichen)
   const tmm = async () => (await users.fleet.get('/api/telematics')).data.plate_mismatches.filter((x) => x.vehicle_id === 'VIN:WDB96340310999101');
   let tm = await tmm(); eq(tm.length, 1, 'Übersicht markiert Abweichung'); eq(tm[0].source_plate, 'SZ-YC 5531'); eq(tm[0].plate, 'TÜ-TL 7'); eq(tm[0].external_id, 'TL-VIN'); eq(tm[0].provider, 'yellowfox');
+  const { parseCsv: pc } = await import('../src/util.js');
+  const trow = pc(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/telematics?format=csv')).data).replace(/^\ufeff/, '')).find((x) => x[0] === 'TÜ-TL 7');
+  eq(trow && trow[6], 'yellowfox TL-VIN: SZ-YC 5531', 'CSV: abweichend gemeldetes Kennzeichen');
+  const vtel = async () => (await users.fleet.get('/api/vehicles/VIN:WDB96340310999101')).data.telematics.find((x) => x.provider === 'yellowfox');
+  let vt = await vtel(); eq(vt.reported_plate, 'SZ-YC 5531', 'Fahrzeugakte: Hinweis abweichendes Kennzeichen'); eq(vt.external_id, 'TL-VIN'); ok(!('source_plate' in vt), 'Rohwert nicht doppelt');
   eq((await owner.get('/api/vehicles/VIN:WDB96340310999101')).data.vehicle.plate, 'TÜ-TL 7', 'Stamm unverändert');
   await send('tü tl 7'); eq((await mism()).length, 0, 'gleiches Kennzeichen anders geschrieben: kein Befund');
   eq((await tmm()).length, 0, 'Übersicht: Schreibweise egal');
+  eq((await vtel()).reported_plate, null, 'Fahrzeugakte: Schreibweise egal');
   await send('SZ-YC 5531'); await send(undefined); eq((await mism()).length, 0, 'ohne Kennzeichen: kein Befund (letzter Stand zählt)');
   await env.DB.prepare(`DELETE FROM telematics_latest WHERE provider='yellowfox' AND vehicle_id='VIN:WDB96340310999101'`).run();
   await env.DB.prepare(`DELETE FROM telematics_unmatched WHERE provider='yellowfox' AND external_id LIKE 'TL-%'`).run();

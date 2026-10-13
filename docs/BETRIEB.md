@@ -54,7 +54,7 @@ Format, Spaltenzahl je Zeile, Formelschutz und Rechte prüft `npm test` für jed
 | Lager, Bestellvorschlag, Lagerjournal | ✓ | ✓ | ✓ | – | – | – |
 | Wiedervorlagen (.ics) | ✓ | ✓ | – | ✓ | ✓ | – |
 | Durchgeführte Prüfungen, Kosten, Kennzahlen, Bußgelder (+ .ics; Fahrernamen nur Inhaber/Leitung) | ✓ | ✓ | – | – | ✓ | – |
-| Verträge (+ .ics), Fahrer, Auslesungen, Versicherungsfälle | ✓ | ✓ | – | – | – | – |
+| Verträge (+ .ics), Fahrer, Auslesungen, Versicherungsfälle, Telematik – letzter Stand je Fahrzeug | ✓ | ✓ | – | – | – | – |
 | Protokoll (Audit-Log) | ✓ | – | – | – | – | – |
 
 Exporte mit Personen- oder Kostenbezug werden im Protokoll vermerkt.

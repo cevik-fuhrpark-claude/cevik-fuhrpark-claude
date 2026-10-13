@@ -129,7 +129,9 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     : [];
   // Letzter Telematik-Stand (nur Inhaber, Fuhrparkleitung, Disposition – Positionsdaten sind über die Fahrerzuordnung personenbeziehbar)
   const telematics = !tl && (isManager(user) || user.role === 'dispatch')
-    ? (await env.DB.prepare('SELECT provider, match_basis, gps_time, received_at, lat, lon, km, speed, ignition FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
+    ? (await env.DB.prepare('SELECT provider, external_id, match_basis, gps_time, received_at, lat, lon, km, speed, ignition, source_plate FROM telematics_latest WHERE vehicle_id=? ORDER BY gps_time DESC').bind(vehicleId).all()).results
+      // Gerät meldet ein anderes Kennzeichen (gleiche Regel wie Datenqualität telematics_plate_mismatch) – nur Hinweis, keine Korrektur
+      .map(({ source_plate, ...x }) => ({ ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null }))
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
   const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);

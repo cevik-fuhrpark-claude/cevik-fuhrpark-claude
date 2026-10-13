@@ -1,12 +1,13 @@
 // [CLAUDE] Telematik-Prüffälle: Geräte ohne sichere Zuordnung (keine FIN, kein bestätigtes Mapping) und bestätigte Zuordnungen.
 // Zuordnung nur durch Inhaber/Fuhrparkleitung mit Nachweis – nie automatisch über das Kennzeichen.
-import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate } from './util.js';
+import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate, berlinDateTime } from './util.js';
 import { audit } from './auth.js';
+import { siteSelection } from './reports.js';
 
 const PROVIDERS = ['webfleet', 'yellowfox'];
 const canManage = (u) => ['owner', 'fleet'].includes(u.role);
 
-export async function telematicsOverview(env, user) {
+export async function telematicsOverview(env, user, query = {}) {
   if (!canManage(user)) throw forbidden();
   const [unmatched, mappings, latest, reported, positions] = await Promise.all([
     env.DB.prepare(`SELECT t.provider, t.external_id, t.source_plate, t.source_vin, t.candidate_vehicle_id, v.plate AS candidate_plate, t.last_seen
@@ -25,8 +26,25 @@ export async function telematicsOverview(env, user) {
       GROUP BY v.id ORDER BY MAX(t.gps_time) IS NOT NULL, MAX(t.gps_time), v.plate`).all(),
   ]);
   const plate_mismatches = reported.results.filter((r) => normPlate(r.source_plate) !== normPlate(r.plate));
-  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches,
-    positions: positions.results.map((r) => ({ ...r, providers: r.providers ? r.providers.split(',').sort() : [] })) };
+  // Standortfilter nur für „Letzter Stand je Fahrzeug“ (Schreibweise egal wie in anderen Übersichten); Abweichungen bleiben vollständig
+  const sel = siteSelection(positions.results, query.site);
+  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches, site: sel.site, site_options: sel.options,
+    positions: positions.results.filter((r) => sel.match(r.site)).map((r) => ({ ...r, providers: r.providers ? r.providers.split(',').sort() : [] })) };
+}
+
+// „Letzter Stand je Fahrzeug“ als CSV (Excel DE) – z. B. für die Rückfrage beim Telematik-Anbieter oder der Werkstatt.
+// Reine Information wie in der Ansicht: Alter in Stunden ab Abrufzeitpunkt, keine Bewertung, kein Grenzwert.
+export function positionsCsv(ov, csvCell, now = Date.now()) {
+  const mism = new Map();
+  for (const m of ov.plate_mismatches) { if (!mism.has(m.vehicle_id)) mism.set(m.vehicle_id, []); mism.get(m.vehicle_id).push(`${m.provider} ${m.external_id || ''}: ${m.source_plate}`.replace(/\s+:/, ':')); }
+  const head = ['Kennzeichen', 'Standort', 'Letzte GPS-Zeit', 'Empfangen', 'Alter GPS-Stand (Stunden)', 'Anbieter', 'Gerät meldet anderes Kennzeichen'];
+  const lines = [head.join(';')];
+  for (const r of ov.positions) {
+    const age = r.gps_time ? Math.floor((now - Date.parse(r.gps_time)) / 3600000) : null;
+    lines.push([csvCell(r.plate), csvCell(r.site), r.gps_time ? berlinDateTime(r.gps_time) : 'keine Daten', r.received_at ? berlinDateTime(r.received_at) : '',
+      age === null || !(age >= 0) ? '' : age, csvCell(r.providers.join(', ')), csvCell((mism.get(r.vehicle_id) || []).join(' | '))].join(';'));
+  }
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
 export async function confirmMapping(env, user, body) {

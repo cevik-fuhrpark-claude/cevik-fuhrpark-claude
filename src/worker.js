@@ -291,7 +291,11 @@ async function handleApi(request, env, ctx, url) {
     return json(await tires.importTireSpecs(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
 
-  if (path === '/api/telematics' && m === 'GET') return json(await telem.telematicsOverview(env, user));
+  if (path === '/api/telematics' && m === 'GET') {
+    const ov = await telem.telematicsOverview(env, user, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') return new Response(telem.positionsCsv(ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-telematik-stand_${berlinDate()}${ov.site ? '_' + ov.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    return json(ov);
+  }
   if (path === '/api/telematics/mappings' && m === 'POST') return json(await telem.confirmMapping(env, user, await readJson(request)), 201);
   if (path === '/api/telematics/mappings' && m === 'DELETE') return json(await telem.removeMapping(env, user, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/data-quality' && m === 'GET') return json(await dataQuality(env, user, envName, Object.fromEntries(url.searchParams)));
