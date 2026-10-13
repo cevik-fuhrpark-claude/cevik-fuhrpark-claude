@@ -22,7 +22,7 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · Hilfe je Rolle mit Suche · Deu
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Exporte je Rolle, Sicherung, Prüfskripte |
 
 ```bash
-npm test                                            # 195 Abnahmetests (Node ≥ 22)
+npm test                                            # 196 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

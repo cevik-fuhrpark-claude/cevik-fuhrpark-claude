@@ -3,6 +3,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 // Zähler ausgeführter SQL-Anweisungen (für Abfragebudget je Aufruf im Lasttest)
 export const QSTAT = { n: 0, written: 0, perRequest: [], trace: process.env.CFP_QTRACE ? [] : null };
+// Antwort-Header jeder API-Antwort der Testsuite (Wächter: Sicherheitsheader, kein öffentliches Caching, Cookie-Attribute)
+export const HSTAT = { responses: [] };
 // CFP_QPLAN=1: Abfrageplan jeder neuen SQL-Anweisung prüfen und Volltabellen-Suchen am Ende ausgeben (Index-Suche)
 export const QPLAN = process.env.CFP_QPLAN ? new Map() : null;
 function planCheck(db, sql) {
@@ -109,6 +111,7 @@ export class Client {
     const res = await this.worker.fetch(new Request('https://app.test' + path, { method, headers: h, body: b }), this.env, ctx);
     await ctx.flush();
     QSTAT.perRequest.push({ method, path: path.split('?')[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ':id').replace(/VIN:[A-Z0-9]+/g, ':vin'), n: QSTAT.n - q0, sql: QSTAT.trace ? QSTAT.trace.slice(t0) : undefined });
+    HSTAT.responses.push({ method, path: path.split('?')[0], status: res.status, h: Object.fromEntries(res.headers) });
     const sc = res.headers.get('set-cookie');
     if (sc) { const v = sc.split(';')[0]; this.cookie = v.endsWith('=') ? '' : v; }
     const ct = res.headers.get('content-type') || '';

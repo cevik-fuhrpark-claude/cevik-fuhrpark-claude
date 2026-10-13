@@ -1,6 +1,6 @@
 // [CLAUDE] Automatisierte Abnahmetests (Node >= 22, ohne Fremdpakete): node --experimental-sqlite test/run.mjs
 import worker from '../src/worker.js';
-import { makeEnv, Client, QSTAT } from './harness.mjs';
+import { makeEnv, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { b64urlEncode, b64urlDecode, concatBytes } from '../src/util.js';
 
@@ -5348,6 +5348,25 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   ok(/@media print[\s\S]*?\.print-only \{ display: block !important; \}/.test(css) && /^\.print-only \{ display: none; \}/m.test(css), 'Druck-CSS für .print-only');
   ok(/@media print \{[\s\S]*?\.noprint \{ display: none !important; \}/.test(css), 'Druck-CSS blendet .noprint aus');
   console.log(`     ${printing.length} Druckansichten, davon ${Object.keys(EXEMPT).length} ohne Personenvermerk (Formular/Aufkleber)`);
+});
+
+await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
+  const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
+  ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
+  const bad = new Map(); const note = (k, r) => { if (!bad.has(k)) bad.set(k, `${r.method} ${r.path} (${r.status})`); };
+  for (const r of R) {
+    for (const [k, v] of [['x-content-type-options', 'nosniff'], ['x-frame-options', 'DENY'], ['referrer-policy', 'same-origin']]) if (r.h[k] !== v) note(`${k} fehlt`, r);
+    if (!/^max-age=\d{7,}/.test(r.h['strict-transport-security'] || '')) note('HSTS fehlt', r);
+    const cc = r.h['cache-control'] || '';
+    if (!/no-store|private/.test(cc) || /public/.test(cc)) note(`Cache-Control „${cc}“`, r);
+    const sc = r.h['set-cookie'];
+    if (sc && !(/HttpOnly/.test(sc) && /Secure/.test(sc) && /SameSite=(Lax|Strict)/.test(sc) && /Path=\//.test(sc))) note('Cookie-Attribute', r);
+    if (r.status >= 500) note('Serverfehler', r);
+  }
+  ok(!bad.size, [...bad].map(([k, v]) => `${k}: ${v}`).join('; '));
+  const cookies = R.filter((r) => r.h['set-cookie']);
+  ok(cookies.length >= 5, 'Anmeldungen mit Cookie aufgezeichnet');
+  console.log(`     ${R.length} API-Antworten geprüft, davon ${cookies.length} mit Sitzungscookie`);
 });
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
