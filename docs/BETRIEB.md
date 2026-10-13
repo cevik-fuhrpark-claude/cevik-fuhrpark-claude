@@ -43,6 +43,23 @@ Berechnung zentral im Server (`src/inspection_rules.js`), nie im Browser:
 - Fahrzeugdaten (zGM laut F.2, Erstzulassung laut B) in der Fahrzeugakte unter „Prüfrelevante Fahrzeugdaten“ – nur mit Nachweis.
 - Jede Neuberechnung einer gespeicherten Fälligkeit steht im Audit-Log (`maintenance.husp_recalc`, von/nach).
 
+## Exporte (CSV, Kalender) – wer bekommt was
+Alle CSV-Dateien: UTF-8 mit BOM, Semikolon, CRLF, Dezimalkomma – Doppelklick öffnet sie in deutschem Excel. Kalender (.ics) sind einmalige Kopien (kein Abo).
+Format, Spaltenzahl je Zeile, Formelschutz und Rechte prüft `npm test` für jeden Export; ein neuer Export ohne Eintrag im Test lässt die Suite fehlschlagen.
+
+| Export | Inhaber | Fuhrparkleitung | Werkstatt | Disposition | Lesezugriff | Fahrer |
+|---|---|---|---|---|---|---|
+| Fahrzeuge, Prüftermine (+ .ics), Vorgänge, Werkstattplan (.ics) | ✓ | ✓ | ✓ | ✓ | ✓ | – |
+| Reifen, Werkstattauslastung | ✓ | ✓ | ✓ | – | ✓ | – |
+| Lager, Bestellvorschlag, Lagerjournal | ✓ | ✓ | ✓ | – | – | – |
+| Wiedervorlagen (.ics) | ✓ | ✓ | – | ✓ | ✓ | – |
+| Durchgeführte Prüfungen, Kosten, Kennzahlen, Bußgelder (+ .ics; Fahrernamen nur Inhaber/Leitung) | ✓ | ✓ | – | – | ✓ | – |
+| Verträge (+ .ics), Fahrer, Auslesungen, Versicherungsfälle | ✓ | ✓ | – | – | – | – |
+| Protokoll (Audit-Log) | ✓ | – | – | – | – | – |
+
+Exporte mit Personen- oder Kostenbezug werden im Protokoll vermerkt.
+Hilfe in der App: „Ausdrucke & Exporte“.
+
 ## Sicherung & Wiederherstellung
 **Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.
 

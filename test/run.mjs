@@ -5139,6 +5139,11 @@ await test('Exporte und Rollen: Fahrer bekommt keinen Export; Personen-/Kostenda
     eq((await owner.get(u)).status, 200, `Inhaber ${k}:`);
   }
   for (const k of personal) for (const r of ['ws', 'dispatch']) eq((await users[r].get(all[k])).status, 403, `${r} ${k}:`);
+  // Lesezugriff (Hilfe „Was Sie sehen“): lesen + exportieren außer Fahrerakte, Verträge, Versicherung, Lager, Protokoll; Bußgelder ohne Fahrernamen – wie docs/BETRIEB.md „Exporte“
+  const viewer = await invite(owner, { username: 'test.lesen.exporte', display_name: 'Test Lesezugriff Exporte', role: 'viewer', environment: 'test' });
+  const got = {}; for (const k of Object.keys(all)) got[k] = (await viewer.get(all[k])).status;
+  eq(Object.keys(got).filter((k) => got[k] !== 200).sort().join(','), ['audit', 'claims', 'contracts', 'contracts_ics', 'drivers', 'journal', 'reorder', 'stock', 'tacho'].sort().join(','), 'Lesezugriff: gesperrte Exporte');
+  ok(!new TextDecoder('utf-8', { ignoreBOM: true }).decode((await viewer.get(all.fines + '&with_driver=1')).data).split('\r\n')[0].includes('Fahrer'), 'Lesezugriff: keine Fahrerspalte');
   // Werkstatt: eigene Arbeitsgrundlagen (Fahrzeuge, Prüftermine, Plan, Aufträge, Reifen, Lager) als Datei
   for (const k of ['vehicles', 'maint', 'plan_ics', 'cases', 'tires', 'stock', 'reorder', 'journal', 'load']) eq((await users.ws.get(all[k])).status, 200, `Werkstatt ${k}:`);
 });
