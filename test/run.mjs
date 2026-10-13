@@ -5124,6 +5124,25 @@ await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), D
   }
 });
 
+await test('Exporte und Rollen: Fahrer bekommt keinen Export; Personen-/Kostendaten (Fahrer, Auslesungen, Bußgelder, Versicherung, Kosten, Verträge, Protokoll) nicht für Werkstatt/Disposition', async () => {
+  const y = BERLIN_TODAY.slice(0, 4);
+  const all = { vehicles: '/api/vehicles?format=csv', maint: '/api/maintenance?format=csv', maint_ics: '/api/maintenance?format=ics', plan_ics: '/api/workshop/plan?format=ics', cases: '/api/cases?format=csv',
+    tires: '/api/tires/fleet?format=csv', stock: '/api/stock?format=csv', reorder: '/api/stock?reorder=1&format=csv', journal: `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, load: '/api/reports/workshop-load?weeks=4&format=csv',
+    contracts: '/api/contracts?format=csv', contracts_ics: '/api/contracts?format=ics', history: `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, costs: `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`,
+    kpi: `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`, drivers: '/api/drivers?format=csv', tacho: '/api/tacho?format=csv', fines: '/api/fines?format=csv', fines_ics: '/api/fines?format=ics', claims: '/api/claims?format=csv',
+    followups_ics: '/api/cases?format=ics', audit: `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}` };
+  const personal = ['contracts', 'contracts_ics', 'costs', 'kpi', 'drivers', 'tacho', 'fines', 'fines_ics', 'claims', 'audit'];
+  for (const [k, u] of Object.entries(all)) {
+    eq((await users.driver.get(u)).status, 403, `Fahrer ${k}:`);
+    eq((await anon.get(u)).status, 401, `ohne Anmeldung ${k}:`);
+    eq((await users.fleet.get(u)).status, k === 'audit' ? 403 : 200, `Fuhrparkleitung ${k}:`);
+    eq((await owner.get(u)).status, 200, `Inhaber ${k}:`);
+  }
+  for (const k of personal) for (const r of ['ws', 'dispatch']) eq((await users[r].get(all[k])).status, 403, `${r} ${k}:`);
+  // Werkstatt: eigene Arbeitsgrundlagen (Fahrzeuge, Prüftermine, Plan, Aufträge, Reifen, Lager) als Datei
+  for (const k of ['vehicles', 'maint', 'plan_ics', 'cases', 'tires', 'stock', 'reorder', 'journal', 'load']) eq((await users.ws.get(all[k])).status, 200, `Werkstatt ${k}:`);
+});
+
 await test('Alle Kalender-Exporte (.ics): RFC 5545 – CRLF, Zeilen ≤ 75 Oktette, BEGIN/END paarig, Pflichtfelder, eindeutige UID, gültige Daten', async () => {
   const { readFileSync } = await import('node:fs');
   const urls = { contracts: '/api/contracts?format=ics', maintenance: '/api/maintenance?format=ics', plan: '/api/workshop/plan?format=ics', fines: '/api/fines?format=ics', followups: '/api/cases?format=ics' };
