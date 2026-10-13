@@ -931,3 +931,7 @@ Object.assign(STRINGS.en, { imp_plate_conflict: '{n} row(s): plate will also be 
 Object.assign(STRINGS.de, { fine_vehicle_ambiguous: 'Kennzeichen steht an mehreren aktiven Fahrzeugen – nicht zugeordnet, damit kein falscher Fahrer ermittelt wird. Bitte Fahrzeugstamm prüfen (Datenqualität).' });
 Object.assign(STRINGS.uk, { fine_vehicle_ambiguous: 'Цей номер має кілька активних транспортних засобів – не призначено, щоб не визначити не того водія. Перевірте дані транспорту («Якість даних»).' });
 Object.assign(STRINGS.en, { fine_vehicle_ambiguous: 'This plate is on several active vehicles – not assigned, so that no wrong driver is identified. Please check the vehicle master data (data quality).' });
+// [CLAUDE] Datenqualität: Telematik-Gerät meldet anderes Kennzeichen (13.10.2026)
+Object.assign(STRINGS.de, { dq_telematics_plate_mismatch: 'Telematik-Gerät meldet anderes Kennzeichen' });
+Object.assign(STRINGS.uk, { dq_telematics_plate_mismatch: 'Телематичний пристрій передає інший номер' });
+Object.assign(STRINGS.en, { dq_telematics_plate_mismatch: 'Telematics device reports a different plate' });

@@ -31,6 +31,8 @@ export const CHECKS = {
   inspection_no_result: 'hinweis',
   // Wartungsregel mit Intervall km, aber ohne km-Stand der letzten Durchführung und ohne belegte km-Fälligkeit – km-Fälligkeit nicht berechenbar
   km_rule_no_base: 'luecke',
+  // Telematik-Gerät (zugeordnet über FIN oder bestätigtes Mapping) meldet beim letzten Stand ein anderes Kennzeichen als das Fahrzeug
+  telematics_plate_mismatch: 'fehler',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -63,7 +65,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
     env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL
@@ -109,6 +111,8 @@ export async function dataQuality(env, user, envName, query = {}) {
       AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       GROUP BY n.id ORDER BY n.done_date DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
     noResultQuery(env).all(),
+    // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
+    env.DB.prepare('SELECT vehicle_id, provider, external_id, source_plate FROM telematics_latest WHERE source_plate IS NOT NULL').all(),
   ]);
   const vs = veh.results;
   const items = [];
@@ -169,6 +173,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]} · Mängelauftrag ${d.case_no} zur Prüfung vom ${d.first_date.split('-').reverse().join('.')}` });
   for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}` });
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
+  const PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
+  for (const r of telPlates.results) { const v = vById.get(r.vehicle_id); if (v && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`); }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {
     if (d.user_id && !d.u_active) addD('driver_account_inactive', d);

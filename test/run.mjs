@@ -5748,6 +5748,16 @@ await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlaut
   eq(um.get('TL-DUP').candidate_vehicle_id, null, 'zwei Fahrzeuge mit gleichem Kennzeichen → kein Vorschlag');
   eq(um.get('TL-NONE').candidate_vehicle_id, null);
   ok(!(await users.fleet.get('/api/vehicles/VIN:WDB96340310999101')).data.telematics.length, 'keine Position am Fahrzeug');
+  // Datenqualität: über FIN zugeordnetes Gerät meldet ein anderes Kennzeichen (z. B. falsch konfiguriertes Gerät) → Befund, keine Korrektur
+  const send = (plate) => anon.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'TL-VIN', vin: 'WDB96340310999101', plate, gps_time: new Date().toISOString() }] }, H);
+  const mism = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_plate_mismatch' && i.vehicle_id === 'VIN:WDB96340310999101');
+  eq((await send('SZ-YC 5531')).data.matched, 1, 'FIN gewinnt');
+  let mm = await mism(); eq(mm.length, 1); eq(mm[0].severity, 'fehler'); eq(mm[0].detail, 'YellowFox TL-VIN → SZ-YC 5531');
+  ok((await anon.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, H)).data.items.some((i) => i.check === 'telematics_plate_mismatch'), 'auch Integrations-API');
+  eq((await owner.get('/api/vehicles/VIN:WDB96340310999101')).data.vehicle.plate, 'TÜ-TL 7', 'Stamm unverändert');
+  await send('tü tl 7'); eq((await mism()).length, 0, 'gleiches Kennzeichen anders geschrieben: kein Befund');
+  await send('SZ-YC 5531'); await send(undefined); eq((await mism()).length, 0, 'ohne Kennzeichen: kein Befund (letzter Stand zählt)');
+  await env.DB.prepare(`DELETE FROM telematics_latest WHERE provider='yellowfox' AND vehicle_id='VIN:WDB96340310999101'`).run();
   await env.DB.prepare(`DELETE FROM telematics_unmatched WHERE provider='yellowfox' AND external_id LIKE 'TL-%'`).run();
 });
 
