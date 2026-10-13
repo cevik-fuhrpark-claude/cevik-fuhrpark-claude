@@ -11,7 +11,7 @@ Push-Benachrichtigungen mit Zustell-/Lesequittung · Fuhrparkagent + Management-
 Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen) und Auslesungen Fahrerkarte/Fahrtenschreiber · Bußgelder & Anhörungen ·
 Versicherungsfälle · Reifen je Fahrzeug · Ersatzteillager mit Bestellvorschlag · Werkstattplan und Disposition (Verfügbarkeit, Sperren) ·
 Kennzahlen Instandhaltung, Mängelstatistik, Kosten je Fahrzeug · Datenqualität (Lücken/Widersprüche, CSV) · Protokoll und Datensicherung ·
-Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
+Druck/PDF, CSV- und Kalender-Exporte je Rolle · Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
 
 **Technik:** Cloudflare Worker + D1 (EU) + KV (EU) + Workers AI, PWA ohne Framework, keine Laufzeitabhängigkeiten.
 
@@ -19,10 +19,10 @@ Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Te
 |---|---|
 | `docs/CHECKPOINT.md` | Projektstand, Infrastruktur, Backlog – Startpunkt jeder Entwicklungssitzung |
 | `docs/API.md` | App- und Integrationsschnittstellen, Befehle, Befundcodes |
-| `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Sicherung |
+| `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Exporte je Rolle, Sicherung, Prüfskripte |
 
 ```bash
-npm test                                            # 183 Abnahmetests (Node ≥ 22)
+npm test                                            # 191 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
