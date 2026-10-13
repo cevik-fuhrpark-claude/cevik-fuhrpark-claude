@@ -13,7 +13,7 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'settings', 'help', 'new', 'check'],
+    'owner': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
     'fleet': ['', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
     'workshop': ['', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check', 'help?q=foto'],
@@ -73,11 +73,12 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['cases/', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'defects', 'vehicles/qr', 'vehicles/qr/'],
+    'owner': ['cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'vehicles/qr', 'vehicles/qr/'],
     'workshop': ['cases/', 'stock/reorder', 'plan'],
     'driver': ['check/paper'],
 }
-PRINT_CHECK = """() => {
+# Ausdruckvermerk: Druckzeitpunkt (Datum + Uhrzeit), angemeldete Person und „CEVIK“ – außer Papier-Formular/QR-Bogen
+PRINT_CHECK = """(who) => {
   const out = [];
   const W = document.documentElement.clientWidth;
   const app = document.querySelector('#app') || document.body;
@@ -95,6 +96,12 @@ PRINT_CHECK = """() => {
   for (const el of app.querySelectorAll('button, input:not([type=hidden]), select, textarea')) if (shown(el)) { out.push(`Bedienelement im Ausdruck: ${el.outerHTML.slice(0, 70)}`); break; }
   const po = [...app.querySelectorAll('.print-only')].some(shown);
   if (!po && !app.querySelector('.qrsheet, table.paper')) out.push('kein Ausdruckvermerk (print-only)');
+  if (po) {
+    const txt = [...app.querySelectorAll('.print-only')].filter(shown).map((e) => e.textContent).join(' ');
+    if (!txt.includes(who)) out.push(`Ausdruckvermerk ohne Person „${who}“: ${txt.slice(0, 80)}`);
+    if (!/\\d{1,4}[.\\/-]\\d{1,2}[.\\/-]\\d{1,4}/.test(txt) || !/\\d{1,2}:\\d{2}/.test(txt)) out.push(`Ausdruckvermerk ohne Datum/Uhrzeit: ${txt.slice(0, 80)}`);
+    if (!txt.includes('CEVIK')) out.push(`Ausdruckvermerk ohne „CEVIK“: ${txt.slice(0, 80)}`);
+  }
   return out;
 }"""
 
@@ -399,7 +406,7 @@ with sync_playwright() as p:
         pg.emulate_media(media='print')
         pg.wait_for_timeout(100)
         where = f'{role} Druck #/{r}'
-        res = pg.evaluate(PRINT_CHECK)
+        res = pg.evaluate(PRINT_CHECK, 'Rauchtest Inhaber' if role == 'owner' else f'Rauchtest {role}')
         for x in res:
             problems.append(f'{where}: {x}')
         if OUT:

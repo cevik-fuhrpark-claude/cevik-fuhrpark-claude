@@ -5232,5 +5232,49 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   console.log(`     Cron mit vollem Datenbestand: Betrieb ${cronN[0]}, Test ${cronN[1]} Abfragen`);
 });
 
+await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI-Rauchtest im Druckmodus geprüft', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const smoke = fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8');
+  // Gemeinsamer Kopf: Druckzeit (fmtDT), angemeldete Person, App-Kennung; nur im Ausdruck sichtbar
+  const ph = app.match(/function printHead\(parts\) \{([\s\S]*?)\n\}/);
+  ok(ph, 'printHead() fehlt');
+  for (const x of ["class=\"print-only", "t('printed_at')", 'fmtDT(new Date().toISOString())', 'S.me.display_name', 'CEVIK']) ok(ph[1].includes(x), `printHead ohne ${x}`);
+  // Ansichten ohne Personen-Vermerk (bewusst): leeres Papier-Formular und QR-Aufkleberbogen
+  const EXEMPT = { viewCheckPaper: 'leeres Formular zum Ausfüllen', viewQrSheet: 'Aufkleber' };
+  // Funktionen der App zerlegen
+  const fns = {}; const re = /^(?:async )?function (\w+)\(/gm; const starts = [];
+  for (let m; (m = re.exec(app));) starts.push([m[1], m.index]);
+  starts.forEach(([n, i], k) => { fns[n] = app.slice(i, k + 1 < starts.length ? starts[k + 1][1] : app.length); });
+  const printing = Object.keys(fns).filter((n) => /window\.print\(\)/.test(fns[n]));
+  ok(printing.length >= 14, `nur ${printing.length} Druckansichten gefunden`);
+  // Route je Ansicht aus der Router-Tabelle (Platzhalter → „…/“ wie im Rauchtest)
+  const routeOf = {};
+  for (const m of app.matchAll(/\[\/\^#\\\/(.*?)\$\/, (?:\(\w*\) => )?(\w+)/g)) {
+    const base = m[1].replace(/\(\?:[^()]*\)\?/g, '').replace(/\((?:[^()]|\([^()]*\))*\)/g, '').replace(/\\\//g, '/').replace(/\?$/, '');
+    const fn = m[2] === 'viewPlan' || /viewPlan/.test(m[0]) ? 'viewPlan' : m[2];
+    (routeOf[fn] = routeOf[fn] || []).push(base);
+  }
+  const pm = smoke.match(/PRINT = \{([\s\S]*?)\n\}/); ok(pm, 'PRINT-Liste im Rauchtest fehlt');
+  const covered = new Set([...pm[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+  const miss = [];
+  for (const n of printing) {
+    const body = fns[n];
+    if (!EXEMPT[n]) {
+      const head = body.includes('printHead(') || (/class="print-only/.test(body) && body.includes("t('printed_at')") && body.includes('fmtDT(new Date().toISOString())') && body.includes('S.me.display_name'));
+      if (!head) miss.push(`${n}: kein Ausdruckvermerk (printHead)`);
+    }
+    const rs = routeOf[n] || [];
+    if (!rs.length) miss.push(`${n}: keine Route gefunden`);
+    else if (!rs.some((r) => covered.has(r))) miss.push(`${n}: Route ${rs.join('|')} fehlt in PRINT (scripts/ui-rauchtest.py)`);
+  }
+  ok(!miss.length, miss.join('; '));
+  // Druck-CSS: Vermerk sichtbar, Bedienelemente ausgeblendet
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/@media print[\s\S]*?\.print-only \{ display: block !important; \}/.test(css) && /^\.print-only \{ display: none; \}/m.test(css), 'Druck-CSS für .print-only');
+  ok(/@media print \{[\s\S]*?\.noprint \{ display: none !important; \}/.test(css), 'Druck-CSS blendet .noprint aus');
+  console.log(`     ${printing.length} Druckansichten, davon ${Object.keys(EXEMPT).length} ohne Personenvermerk (Formular/Aufkleber)`);
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 if (failed) { console.log('Fehlgeschlagen:', failures.join(' | ')); process.exit(1); }
