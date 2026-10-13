@@ -934,3 +934,9 @@ Object.assign(STRINGS.en, { err_order_exists: 'There is already an open workshop
 Object.assign(STRINGS.de, { wo_case: 'Auftrag Winterreifen – Lage laut Reifenerfassung', wo_case_hint: 'Vor dem Abschluss die gewechselten bzw. geprüften Reifen in der Fahrzeugakte → Reifen mit Winterkennzeichnung erfassen – erst dann gilt die Winterlage als erfüllt.' });
 Object.assign(STRINGS.uk, { wo_case: 'Замовлення «Зимові шини» – стан згідно з записами шин', wo_case_hint: 'Перед завершенням внесіть замінені або перевірені шини в картку ТЗ → Шини із зимовим маркуванням – лише тоді вимогу вважатимуть виконаною.' });
 Object.assign(STRINGS.en, { wo_case: 'Winter tyre order – status according to tyre records', wo_case_hint: 'Before closing, record the changed or checked tyres with their winter marking in the vehicle file → Tyres – only then is the winter status compliant.' });
+Object.assign(STRINGS.de, { wo_tag: 'Winterreifen' });
+Object.assign(STRINGS.uk, { wo_tag: 'Зимові шини' });
+Object.assign(STRINGS.en, { wo_tag: 'Winter tyres' });
+STRINGS.de.help_tires_s += '|Im Werkstattplan und in der Disposition tragen Winterreifen-Aufträge das Etikett „❄ Winterreifen“ – mit Termin am geplanten Tag, sonst unter „Ohne Termin“.';
+STRINGS.uk.help_tires_s += '|У плані майстерні та в диспетчерській замовлення на зимові шини позначені «❄ Зимові шини» – з датою в запланований день, інакше в розділі «Без терміну».';
+STRINGS.en.help_tires_s += '|In the workshop plan and dispatch, winter tyre orders carry the label “❄ Winter tyres” – with a date on the planned day, otherwise under “Without date”.';

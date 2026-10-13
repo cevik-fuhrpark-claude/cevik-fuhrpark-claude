@@ -922,6 +922,27 @@ await test('Werkstattauftrag Winterreifen: nur Leitung, nur Lkw mit Winterlage n
   await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
   eq((await O(users.fleet, WV, { workshop_site: 'DORTMUND' })).status, 400, 'außer Betrieb');
 });
+await test('Werkstattplan: Winterreifen-Auftrag mit Termin erscheint am geplanten Tag, gekennzeichnet (tire_order) – Liste, Disposition und Kalenderdatei', async () => {
+  eq((await users.fleet.post('/api/vehicles', { vin: 'WDB96340310888802', plate: 'TT-WIN 2', site: 'Dortmund' })).status, 201);
+  const WV = 'VIN:WDB96340310888802';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const r = await users.fleet.post(`/api/vehicles/${WV}/tires/winter-order`, { workshop_site: 'DORTMUND', planned_date: day(2), request_key: 'wo-plan-1' });
+  eq(r.status, 201); eq(r.data.winter, 'unbekannt', 'nichts erfasst → prüfen und erfassen');
+  for (const u of [users.fleet, users.ws, users.dispatch]) {
+    const p = (await u.get('/api/workshop/plan?days=7')).data;
+    const it = p.days.find((d) => d.date === day(2))?.items.find((i) => i.id === r.data.id);
+    ok(it, 'am geplanten Tag im Plan'); eq(it.tire_order, 'winter'); eq(it.type, 'case');
+    ok(p.days.flatMap((d) => d.items).filter((i) => i.type === 'case' && i.id !== r.data.id).every((i) => i.tire_order === null), 'andere Aufträge ohne Kennzeichnung');
+  }
+  ok(!(await users.wsMuc.get('/api/workshop/plan')).data.days.some((d) => d.items.some((i) => i.id === r.data.id)), 'fremde Werkstatt sieht ihn nicht');
+  const ics = (await users.fleet.get('/api/workshop/plan?days=7&format=ics')).data; const icsT = typeof ics === 'string' ? ics : new TextDecoder().decode(ics);
+  ok(icsT.includes(r.data.case_no) && icsT.includes('Winterreifen'), 'Kalender nennt Winterreifen');
+  ok(!icsT.includes('Positionen laut Reifenerfassung'), 'Kalender ohne Beschreibung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2, 'Plan und Disposition kennzeichnen Winterreifen-Aufträge');
+  await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
+  await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
+});
 await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {
   eq(dotDate('0118'), '2018-01-01'); eq(dotDate('DOT XX 5320'), '2020-12-28'); eq(dotDate('5321'), null, '2021 hat keine KW 53'); eq(dotDate('0024'), null); eq(dotDate('abcd'), null);
   eq(ageMonths('2018-01-01', '2024-01-01'), 72); eq(ageMonths('2018-01-15', '2024-01-14'), 71);

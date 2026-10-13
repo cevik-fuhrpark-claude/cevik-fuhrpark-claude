@@ -90,6 +90,19 @@ with sync_playwright() as p:
       check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
       if SHOTS: q.locator('#cwinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/cwinter_{lang}_390.png')
     c.close()
+    # Werkstattplan: Winterreifen-Auftrag gekennzeichnet (übersetztes Etikett „❄ Winterreifen“), 390/820/1366 px DE/UK/EN
+    for lang,lbl in [('de','Winterreifen'),('uk','Зимові шини'),('en','Winter tyres')]:
+      for w,h in [(390,844),(820,1180),(1366,900)]:
+        c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
+        errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.evaluate(JS,['POST','/api/login',{'username':'w.werkstatt','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        q.goto(B+'/#/plan'); q.reload(); q.wait_for_selector('.wotag')
+        row=q.locator(f'a[href="#/cases/{cid}"]').first
+        check(lbl in row.inner_text(),f'Werkstattplan kennzeichnet Winterauftrag ({lang} {w})')
+        check(q.locator('.wotag').count()==1,'nur der Winterauftrag gekennzeichnet')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+        if SHOTS: row.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/plan_wo_{lang}_{w}.png')
+        check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
