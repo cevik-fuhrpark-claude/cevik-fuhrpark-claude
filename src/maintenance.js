@@ -434,6 +434,86 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   return result;
 }
 
+// Rückruf-Import (z. B. Hersteller-/KBA-Liste je FIN): je Zeile ein einmaliger Rückruf (Prüfart „Rückruf“) mit Referenz als Nachweis.
+// Frist nur, wenn sie in der Liste steht (nie erfunden). Idempotent: gleiche Referenz am selben Fahrzeug wird nicht doppelt angelegt;
+// eine fehlende Frist wird ergänzt, eine abweichende nie überschrieben (Hinweis), ein bereits durchgeführter Rückruf bleibt unverändert.
+export async function importRecallsCsv(env, user, text, { dryRun = false } = {}) {
+  if (!WRITE_ROLES.includes(user.role)) throw forbidden('Nur Inhaber und Fuhrparkleitung dürfen Rückrufe importieren.');
+  const table = parseCsv(text);
+  if (table.length < 2) throw bad('validation', 'CSV leer.');
+  if (table.length - 1 > MAX_ROWS) throw bad('validation', `Maximal ${MAX_ROWS} Zeilen je Import.`);
+  const head = table[0].map((h) => h.toLowerCase());
+  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  const ci = { plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell', 'vin']), ref: col(['referenz', 'rückruf', 'rueckruf', 'aktion', 'kba', 'nachweis']),
+    due: col(['frist', 'fällig', 'faellig', 'nächster', 'naechster', 'termin']), note: col(['bemerkung', 'beschreibung', 'maßnahme', 'massnahme']) };
+  if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
+  if (ci.ref < 0) throw bad('validation', 'Spalte „Referenz“ (Rückrufnummer laut Schreiben) erforderlich.');
+  const vehicles = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1').all()).results;
+  const byId = new Map(vehicles.map((v) => [v.id, v]));
+  const byPlate = new Map();
+  for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
+  // vorhandene Rückrufe: Nachweis = Referenz (offen) bzw. „Referenz · Durchführung: …“ (erledigt)
+  const existing = (await env.DB.prepare(`SELECT id, vehicle_id, next_due_date, last_done_date, evidence FROM maintenance_rules WHERE kind='Rückruf'`).all()).results;
+  // Referenz = Text vor „ – Bemerkung“ bzw. „ · Durchführung: …“ (Groß-/Kleinschreibung egal)
+  const refOf = (e) => String(e || '').split(' · Durchführung: ')[0].split(' – ')[0].trim().toLowerCase();
+  const known = new Map(existing.map((x) => [`${x.vehicle_id}|${refOf(x.evidence)}`, x]));
+  const result = { dry_run: !!dryRun, created: 0, updated: 0, unchanged: 0, skipped: [], rows: [] };
+  const seen = new Set();
+  const stmts = []; const now = nowIso();
+  const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
+  table.slice(1).forEach((cells, idx) => {
+    const line = cells.line || idx + 2;
+    const plateRaw = get(cells, ci.plate);
+    const skip = (reason) => result.skipped.push({ line, plate: plateRaw || get(cells, ci.vin), reason });
+    if (cells.every((c) => !String(c || '').trim())) return;
+    let v = null; let matchedBy = null;
+    const vinRaw = normalizeVin(get(cells, ci.vin));
+    if (vinRaw) {
+      if (!isValidVin(vinRaw)) return skip('FIN ungültig');
+      v = byId.get(`VIN:${vinRaw}`);
+      if (!v) return skip('FIN nicht im Fahrzeugstamm');
+      matchedBy = 'FIN';
+    } else {
+      const hit = byPlate.get(normPlate(plateRaw));
+      if (!plateRaw || !hit) return skip('Kennzeichen nicht im Fahrzeugstamm');
+      if (hit === 'mehrdeutig') return skip('Kennzeichen mehrdeutig – FIN angeben');
+      v = hit; matchedBy = 'Kennzeichen';
+    }
+    const ref = get(cells, ci.ref);
+    if (!ref) return skip('Referenz fehlt');
+    const note = get(cells, ci.note);
+    const evidence = note ? `${ref} – ${note}` : ref;
+    if (evidence.length > 250) return skip('Referenz/Bemerkung zu lang (max. 250 Zeichen)');
+    const due = parseDueDate(get(cells, ci.due));
+    if (due.error) return skip(due.error);
+    const key = `${v.id}|${refOf(ref)}`;
+    if (seen.has(key)) return skip('doppelt in der Datei');
+    seen.add(key);
+    const cur = known.get(`${v.id}|${refOf(ref)}`);
+    let action; const row = { line, plate: v.plate, vehicle_id: v.id, reference: ref, next_due_date: due.date, matched_by: matchedBy };
+    if (!cur) {
+      action = 'neu'; result.created++;
+      stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
+        VALUES (?,?,'Rückruf',NULL,NULL,NULL,NULL,NULL,?,?,?,?,?,?)`).bind(uuid(), v.id, due.date, evidence, user.id, now, now, due.date ? 'nachweis' : null));
+    } else if (cur.last_done_date) {
+      action = 'erledigt'; result.unchanged++; // bereits durchgeführt – bleibt unverändert row.done_on = cur.last_done_date;
+    } else if (due.date && !cur.next_due_date) {
+      action = 'aktualisiert'; result.updated++;
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, due_source='nachweis', updated_at=? WHERE id=? AND last_done_date IS NULL`).bind(due.date, now, cur.id));
+    } else {
+      action = 'unverändert'; result.unchanged++;
+      if (due.date && cur.next_due_date && due.date !== cur.next_due_date) { row.note = `Frist in der Liste (${due.date}) weicht ab – vorhandene Frist ${cur.next_due_date} bleibt; in der Fahrzeugakte prüfen`; row.previous_due_date = cur.next_due_date; }
+    }
+    row.action = action; result.rows.push(row);
+  });
+  result.skipped.sort((a, b) => a.line - b.line);
+  if (!dryRun) {
+    for (let i = 0; i < stmts.length; i += 200) await env.DB.batch(stmts.slice(i, i + 200));
+    await audit(env, user.id, 'maintenance.recall_import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
+  }
+  return result;
+}
+
 // Kalenderdatei (iCalendar, RFC 5545) mit allen belegten Prüfterminen als ganztägige Termine + Erinnerung (Vorlauf = maintenance_warn_days)
 export function maintenanceIcs(ov, stamp = new Date().toISOString()) {
   const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: r.id, date: r.next_due_date, summary: `${r.kind} fällig – ${r.plate || r.vehicle_id}`,

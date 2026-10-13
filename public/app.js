@@ -1969,7 +1969,8 @@ async function viewMaint() {
     <form id="mhf" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label>${esc(t('from'))}</label><input type="date" name="from" value="${esc(ov.today.slice(0, 4))}-01-01" required></div><div><label>${esc(t('to'))}</label><input type="date" name="to" value="${esc(ov.today)}" required></div>
     <div><label>${esc(t('kind'))}</label><select name="kind"><option value="">${esc(t('filter_all'))}</option>${(S.meta.maintenance_kinds || []).map((k) => `<option value="${esc(k)}">${esc(mk(k))}</option>`).join('')}</select></div>
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="mhcsv">${esc(t('export_csv'))}</button></div></form><div id="mhres"></div></details>`;
-  if (isMgr()) html += `<section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>`;
+  if (isMgr()) html += `<section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>
+    <section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_recalls'))}</h2><p class="small muted">${esc(t('import_recalls_hint'))}</p><input type="file" id="rimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_recalls'))}"><div id="rimpr"></div></section>`;
   render(html, 'more');
   $$('[data-mf]').forEach((b) => (b.onclick = () => { S.maintFilter = b.dataset.mf; viewMaint(); }));
   const msel = $('#msite'); if (msel) msel.onchange = () => { S.maintSite = msel.value; viewMaint(); };
@@ -2004,6 +2005,23 @@ async function viewMaint() {
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
     };
     try { show(await api('POST', '/api/maintenance/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+  };
+  // Rückruf-Import (Hersteller-/KBA-Liste): Vorschau, dann Übernehmen; Frist nur laut Liste, vorhandene Frist wird nie überschrieben
+  const rinp = $('#rimp');
+  if (rinp) rinp.onchange = async () => {
+    const file = rinp.files[0]; if (!file) return;
+    const text = await readCsvFile(file);
+    const show = (r, applied) => {
+      const box = $('#rimpr'); if (!box) return;
+      const act = (a) => (a === 'erledigt' ? t('ms_erledigt') : t('ia_' + a));
+      box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_aktualisiert'))}: ${r.updated} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
+        ${r.rows.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('line'))}</th><th></th><th>${esc(t('recall_ref'))}</th><th>${esc(t('next_due'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td>${x.line}</td><td style="white-space:nowrap">${esc(x.plate)}</td><td>${esc(x.reference)}${x.note ? `<br><span class="small muted">${esc(reasonText(x.note))}</span>` : ''}</td><td>${x.next_due_date ? fmtD(x.next_due_date) : esc(t('vi_recall_open'))}</td><td><span class="chip ${x.action === 'neu' ? 'ok' : x.action === 'aktualisiert' ? 'mittel' : ''}">${esc(act(x.action))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${skipList(r.skipped, t('skipped'), !applied)}
+        ${!applied && (r.created || r.updated) ? `<div class="actions"><button type="button" class="btn" id="rapply">${esc(t('apply_import'))}</button></div>` : ''}`;
+      const ap = $('#rapply');
+      if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/recalls/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
+    };
+    try { show(await api('POST', '/api/maintenance/recalls/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
 }
 

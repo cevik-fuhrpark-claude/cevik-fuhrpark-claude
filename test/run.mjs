@@ -1168,8 +1168,8 @@ await test('CSV-Dateien aus Excel (Windows-1252) werden erkannt: Umlaute in Kopf
   eq(JSON.stringify(parseCsv('a,b\n1,2')), '[["a","b"],["1","2"]]', 'Komma');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!/await (file|f)\.text\(\)/.test(app), 'kein CSV-Import liest mehr nur UTF-8');
-  eq((app.match(/accept="\.csv,\.txt,text\/csv,text\/plain"/g) || []).length, 5, 'Dateiauswahl nimmt auch .txt (Unicode-Text)');
-  eq((app.match(/await readCsvFile\(/g) || []).length, 5, 'alle fünf CSV-Importe (Fahrzeugstamm, Reifen, Prüftermine, Verträge, Auslesungen)');
+  eq((app.match(/accept="\.csv,\.txt,text\/csv,text\/plain"/g) || []).length, 6, 'Dateiauswahl nimmt auch .txt (Unicode-Text)');
+  eq((app.match(/await readCsvFile\(/g) || []).length, 6, 'alle sechs CSV-Importe (Fahrzeugstamm, Reifen, Prüftermine, Rückrufe, Verträge, Auslesungen)');
 });
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
@@ -4009,6 +4009,39 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(!(await users.fleet.get('/api/workshop/plan')).data.maintenance_due.some((i) => i.id === b.data.id), 'mit offenem Werkstattauftrag nicht doppelt');
   eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Werkstattrechnung Rückruf B' })).status, 200);
   eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.vin === 'WDB96340310555651').open_recalls, 0, 'nach Durchführung 0');
+});
+await test('Rückruf-Import (Hersteller-/KBA-Liste): Vorschau, je Fahrzeug+Referenz einmal, Frist nur laut Liste, vorhandene Frist nie überschrieben, erledigte unverändert', async () => {
+  const H = { 'content-type': 'text/csv' };
+  const VIN = 'WDB96340310555651';
+  eq((await users.ws.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Referenz\n' + VIN + ';X', H)).status, 403, 'Werkstatt darf nicht importieren');
+  eq((await users.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Frist\n' + VIN + ';2099-01-01', H)).status, 400, 'Referenz-Spalte Pflicht');
+  const csv = ['Kennzeichen;FIN;Referenz;Frist;Bemerkung', `;${VIN};RA-2026-01;;Lenkgetriebe prüfen`, 'VT-FL 1;;RA-2026-02;30.06.2099;', `;${VIN};ra-2026-01;;`, ';WDB00000000000000;RA-2026-01;;',
+    'UNBEKANNT 1;;RA-2026-01;;', `;${VIN};;2099-01-01;`, `;${VIN};RA-2026-03;31.02.2099;`, `;${VIN};Herstellerschreiben Test A (Frist laut Schreiben);;`].join('\n');
+  const pre = await users.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', csv, H);
+  eq(pre.status, 200); eq(pre.data.created, 2, 'zwei neue Rückrufe'); eq(pre.data.unchanged, 1, 'erledigter Rückruf erkannt');
+  eq(pre.data.rows.find((x) => x.reference === 'RA-2026-02').next_due_date, '2099-06-30', 'Frist laut Liste (TT.MM.JJJJ)');
+  eq(pre.data.rows.find((x) => x.reference === 'RA-2026-01').next_due_date, null, 'ohne Frist keine erfundene');
+  eq(pre.data.rows.find((x) => x.reference.startsWith('Herstellerschreiben Test A')).action, 'erledigt', 'bereits durchgeführt bleibt');
+  const reasons = pre.data.skipped.map((x) => x.reason);
+  ok(reasons.includes('doppelt in der Datei') && reasons.includes('Referenz fehlt') && reasons.includes('Kennzeichen nicht im Fahrzeugstamm') && reasons.some((r) => /^Datum ungültig/.test(r)), 'Gründe: ' + JSON.stringify(reasons));
+  const { IMPORT_REASONS_FIXED, IMPORT_REASONS_TPL } = await import('../public/i18n.js');
+  ok(pre.data.skipped.every((x) => IMPORT_REASONS_FIXED.includes(x.reason) || IMPORT_REASONS_TPL.some((re) => re.test(x.reason))), 'alle Gründe übersetzbar');
+  eq((await users.fleet.get('/api/maintenance')).data.rows.filter((x) => x.kind === 'Rückruf' && /^RA-2026/.test(x.evidence)).length, 0, 'Vorschau ändert nichts');
+  const go = await users.fleet.req('POST', '/api/maintenance/recalls/import', csv, H);
+  eq(go.status, 200); eq(go.data.created, 2);
+  let rows = (await users.fleet.get('/api/maintenance')).data.rows.filter((x) => x.kind === 'Rückruf' && /^RA-2026/.test(x.evidence));
+  eq(rows.length, 2); eq(rows.find((x) => x.evidence === 'RA-2026-01 – Lenkgetriebe prüfen').status, 'ohne_termin');
+  // zweiter Lauf: idempotent; fehlende Frist wird ergänzt, abweichende nie überschrieben
+  const again = await users.fleet.req('POST', '/api/maintenance/recalls/import', `FIN;Referenz;Frist\n${VIN};RA-2026-01;2099-03-31\n${VIN};RA-2026-02;2099-12-31`, H);
+  eq(again.data.created, 0, 'nicht doppelt'); eq(again.data.updated, 1, 'fehlende Frist ergänzt');
+  const r2 = again.data.rows.find((x) => x.reference === 'RA-2026-02');
+  eq(r2.action, 'unverändert'); eq(r2.previous_due_date, '2099-06-30'); ok(/weicht ab/.test(r2.note), 'Hinweis auf abweichende Frist');
+  ok(IMPORT_REASONS_TPL.some((re) => re.test(r2.note)), 'Hinweis übersetzbar');
+  rows = (await users.fleet.get('/api/maintenance')).data.rows.filter((x) => x.kind === 'Rückruf' && /^RA-2026/.test(x.evidence));
+  eq(rows.find((x) => x.evidence.startsWith('RA-2026-01')).next_due_date, '2099-03-31'); eq(rows.find((x) => x.evidence === 'RA-2026-02').next_due_date, '2099-06-30', 'vorhandene Frist bleibt');
+  ok((await owner.get('/api/admin/audit?action=maintenance')).data.entries.some((e) => e.action === 'maintenance.recall_import'), 'Protokoll');
+  // aufräumen: als durchgeführt eintragen (nachfolgende Tests zählen offene Rückrufe nicht)
+  for (const r of rows) eq((await users.fleet.post(`/api/maintenance/${r.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Test erledigt' })).status, 200);
 });
 await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji), Entfalten ergibt Original; 900 Termine schnell', async () => {
   const { icsCalendar } = await import('../src/util.js');

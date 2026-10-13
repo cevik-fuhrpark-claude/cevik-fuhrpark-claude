@@ -85,7 +85,7 @@ const SETTINGS_KEYS = [
 // Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
 const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
-  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
+  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/recalls\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
   /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
@@ -252,6 +252,12 @@ async function handleApi(request, env, ctx, url) {
     if (url.searchParams.get('format') !== 'csv') return json(h);
     await auth.audit(env, user.id, 'maintenance.history_export', null, { rows: h.rows.length, from: h.from, to: h.to, kind: h.kind, ...(h.truncated ? { truncated: true } : {}) });
     return new Response(maint.maintenanceHistoryCsv(h), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-durchgefuehrte-pruefungen_${h.from}_${h.to}.csv"`, ...(h.truncated ? { 'x-cfp-truncated': String(h.max) } : {}) } });
+  }
+  if (path === '/api/maintenance/recalls/import' && m === 'POST') {
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
+    const text = await request.text();
+    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    return json(await maint.importRecallsCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if (path === '/api/maintenance/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
