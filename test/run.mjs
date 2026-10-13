@@ -5232,6 +5232,35 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   console.log(`     Cron mit vollem Datenbestand: Betrieb ${cronN[0]}, Test ${cronN[1]} Abfragen`);
 });
 
+await test('Anmeldepflicht: nur bewusst öffentliche Pfade vor der Sitzungsprüfung; alle übrigen API-Pfade ohne Anmeldung 401', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const start = src.indexOf('async function handleApi('); const gate = src.indexOf('const user = await auth.getSessionUser(env, request);', start);
+  ok(start > 0 && gate > start, 'handleApi/Sitzungsprüfung nicht gefunden');
+  const pre = src.slice(start, gate);
+  // Erlaubt vor der Anmeldung: Gesundheitsprüfung, Integrations-API (eigenes Bearer-Token), Ersteinrichtung, Einladung, Login
+  const ALLOWED = ['/api/health', '/api/integration/', '/api/setup/status', '/api/setup', '/api/invite/', '/api/invite/accept', '/api/login'];
+  const found = [...pre.matchAll(/path(?:\.startsWith\(|\s*===\s*)'([^']+)'/g)].map((x) => x[1]);
+  eq([...new Set(found)].filter((x) => !ALLOWED.includes(x)).join(','), '', 'Pfad vor der Sitzungsprüfung (öffentlich!):');
+  ok(!/path\.match\(|\.test\(path\)|url\.pathname/.test(pre.replace('try { path = decodeURIComponent(url.pathname); }', '').replace('let path = url.pathname;', '')), 'Muster-Route vor der Sitzungsprüfung');
+  // Außerhalb von /api nur /healthz und statische Dateien
+  const fe = src.slice(src.indexOf('async fetch(request, env, ctx)'));
+  eq([...fe.slice(0, fe.indexOf('async scheduled')).matchAll(/url\.pathname(?:\s*===\s*|\.startsWith\()'([^']+)'/g)].map((x) => x[1]).join(','), '/healthz,/api/', 'Einstiegspunkte in fetch():');
+  // Laufzeit: jeder fest verdrahtete API-Pfad nach der Sitzungsprüfung liefert ohne Anmeldung 401 (GET und POST mit CSRF-Header)
+  const post = src.slice(gate);
+  const paths = [...new Set([...post.matchAll(/path\s*===\s*'(\/api\/[^']+)'/g)].map((x) => x[1]))];
+  ok(paths.length >= 40, `nur ${paths.length} Pfade gefunden`);
+  for (const pth of paths) for (const mth of ['GET', 'POST']) {
+    const r = await anon.req(mth, pth, mth === 'POST' ? {} : undefined);
+    eq(r.status, 401, `${mth} ${pth} ohne Anmeldung:`);
+  }
+  // Öffentliche Pfade verraten ohne gültige Daten nichts
+  const inv = await anon.get('/api/invite/' + 'x'.repeat(43));
+  ok(inv.status >= 400 && !JSON.stringify(inv.data || {}).includes('display_name'), 'ungültige Einladung ohne Namen');
+  eq((await anon.req('GET', '/api/integration/v1/vehicles')).status, 401, 'Integrations-API ohne Token');
+  console.log(`     ${paths.length} Pfade × GET/POST ohne Anmeldung → 401; ${ALLOWED.length} öffentliche Pfade`);
+});
+
 await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-Endpunkte, Test und Betrieb)', async () => {
   const fs = await import('node:fs');
   const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
