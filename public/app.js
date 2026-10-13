@@ -2306,6 +2306,17 @@ async function viewWsLoad() {
 }
 
 // ---------- Telematik-Prüffälle und Zuordnungen ----------
+// Letzter Stand je Fahrzeug: ohne Daten zuerst, dann ältester; nur Alter anzeigen, keine Bewertung (kein Grenzwert vorgegeben)
+function tmAge(iso) {
+  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+  if (!(h >= 0)) return '';
+  return h >= 48 ? t('tm_age_d').replace('{n}', Math.floor(h / 24)) : t('tm_age_h').replace('{n}', h);
+}
+function tmPositions(list) {
+  const none = list.filter((x) => !x.gps_time).length;
+  return `<details class="panel" id="tmpos"><summary><b>${esc(t('tm_positions'))}</b> <span class="chip">${list.length}</span>${none ? ` <span class="chip mittel">${esc(t('tm_no_data'))}: ${none}</span>` : ''}</summary>
+    <p class="small muted">${esc(t('tm_positions_hint'))}</p><div class="list">${list.map((x) => `<a class="row${x.gps_time ? '' : ' p-mittel'}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title" style="white-space:normal">${x.gps_time ? `${fmtDT(x.gps_time)} <span class="chip">${esc(tmAge(x.gps_time))}</span>` : esc(t('tm_no_data'))}</span><span class="sub">${esc(x.site || '')}${x.providers.length ? ' · ' + esc(x.providers.join(', ')) : ''}</span></a>`).join('') || '<p class="muted">–</p>'}</div></details>`;
+}
 async function viewTelematics() {
   const r = await api('GET', '/api/telematics');
   const vs = await vehiclesCached();
@@ -2314,6 +2325,7 @@ async function viewTelematics() {
     <div class="stats"><div><b>${r.latest.vehicles}</b>${esc(t('tm_with_data'))}</div><div><b style="${r.unmatched.length ? 'color:var(--mid)' : ''}">${r.unmatched.length}</b>${esc(t('tm_unmatched'))}</div><div><b>${r.mappings.length}</b>${esc(t('tm_mappings'))}</div></div>
     ${r.latest.last_received ? `<p class="small muted">${esc(t('tm_last'))}: ${fmtDT(r.latest.last_received)}</p>` : r.unmatched.length ? '' : `<div class="panel">${esc(t('tm_none'))}</div>`}
     ${(r.plate_mismatches || []).length ? `<section class="panel" id="tmmism"><h2 style="margin-top:0">${esc(t('dq_telematics_plate_mismatch'))} <span class="chip kritisch">${r.plate_mismatches.length}</span></h2><p class="small muted">${esc(t('tm_mismatch_hint'))}</p><div class="list">${r.plate_mismatches.map((x) => `<a class="row p-kritisch" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(x.provider)} · ${esc(x.external_id || '')} → ${esc(t('tm_reports'))} <b>${esc(x.source_plate)}</b></span><span class="sub">${fmtDT(x.received_at)}</span></a>`).join('')}</div><p class="small"><a href="#/quality?f=telematics_plate_mismatch">${esc(t('show_in_dq'))} ›</a></p></section>` : ''}
+    ${r.latest.vehicles ? tmPositions(r.positions || []) : ''}
     <h2>${esc(t('tm_unmatched'))}</h2><div class="list">${r.unmatched.map((u, i) => `<div class="row p-mittel"><span class="chip">${esc(u.provider)}</span><span class="title" style="white-space:normal">${esc(u.external_id)}${u.source_plate ? ' · ' + esc(u.source_plate) : ''}${u.source_vin ? ' · FIN ' + esc(u.source_vin) : ''}</span><span></span>
       <form class="sub" data-map="${i}" style="white-space:normal;display:grid;gap:6px;margin-top:6px"><label>${esc(t('vehicle'))}</label><select name="vehicle_id" required><option value="">–</option>${opts(null)}</select>${u.candidate_plate ? `<span class="small muted">${esc(t('tm_candidate'))}: ${esc(u.candidate_plate)}</span>` : ''}<label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" placeholder="${esc(t('tm_evidence_ph'))}"><button class="btn secondary">${esc(t('tm_confirm'))}</button></form></div>`).join('') || `<p class="muted">–</p>`}</div>
     <h2>${esc(t('tm_mappings'))}</h2><div class="list">${r.mappings.map((m) => `<div class="row">${plate(m.plate)}<span class="title" style="white-space:normal">${esc(m.provider)} · ${esc(m.external_id)}</span><button type="button" class="btn secondary" data-unmap="${esc(m.provider)}|${esc(m.external_id)}">${esc(t('tm_remove'))}</button><span class="sub" style="white-space:normal">${esc(m.evidence)} · ${esc(m.confirmed_by_name || '')} · ${fmtDT(m.confirmed_at)}</span></div>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');

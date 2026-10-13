@@ -649,6 +649,15 @@ await test('Telematik-Prüffälle: Zuordnung nur durch Fuhrpark mit Nachweis; da
   eq((await users.ws.get(`/api/vehicles/${V2}`)).data.telematics.length, 0, 'Werkstatt sieht keine Position');
   const ov2 = (await users.fleet.get('/api/telematics')).data;
   ok(!ov2.unmatched.some((u) => u.external_id === 'WF-2') && ov2.mappings.some((m) => m.external_id === 'WF-2' && m.confirmed_by_name), 'Prüffall erledigt, Mapping mit Person');
+  // Letzter Stand je Fahrzeug: nur aktive, bewertete Kraftfahrzeuge; ohne Daten zuerst, danach ältester Stand; keine Anhänger/ruhenden
+  const pos = ov2.positions; const p2 = pos.find((x) => x.vehicle_id === V2);
+  ok(p2 && Date.parse(p2.gps_time) === Date.parse('2026-10-10T10:00:00Z') && p2.providers.includes('webfleet'), 'Stand mit Anbieter ' + JSON.stringify(p2));
+  const rank = (x) => (x.gps_time ? 1 : 0);
+  ok(pos.every((x, i) => i === 0 || rank(pos[i - 1]) < rank(x) || (rank(pos[i - 1]) === rank(x) && (!x.gps_time || pos[i - 1].gps_time <= x.gps_time))), 'Reihenfolge: ohne Daten, dann ältester');
+  const vrows = (await env.DB.prepare("SELECT id, kind, active, eval_excluded FROM vehicles").all()).results;
+  const bad = vrows.filter((v) => v.kind === 'anhaenger' || !v.active || v.eval_excluded).map((v) => v.id);
+  ok(bad.length && !pos.some((x) => bad.includes(x.vehicle_id)), 'keine Anhänger, ruhenden oder inaktiven Fahrzeuge');
+  eq(pos.length, vrows.length - bad.length, 'alle übrigen Fahrzeuge enthalten');
   eq((await users.fleet.req('DELETE', '/api/telematics/mappings?provider=webfleet&external_id=WF-2')).status, 200);
   ok((await owner.get('/api/admin/audit?action=telematics.')).data.entries.length >= 2, 'protokolliert');
 });

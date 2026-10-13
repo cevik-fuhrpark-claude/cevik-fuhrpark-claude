@@ -8,7 +8,7 @@ const canManage = (u) => ['owner', 'fleet'].includes(u.role);
 
 export async function telematicsOverview(env, user) {
   if (!canManage(user)) throw forbidden();
-  const [unmatched, mappings, latest, reported] = await Promise.all([
+  const [unmatched, mappings, latest, reported, positions] = await Promise.all([
     env.DB.prepare(`SELECT t.provider, t.external_id, t.source_plate, t.source_vin, t.candidate_vehicle_id, v.plate AS candidate_plate, t.last_seen
       FROM telematics_unmatched t LEFT JOIN vehicles v ON v.id=t.candidate_vehicle_id ORDER BY t.last_seen DESC LIMIT 500`).all(),
     env.DB.prepare(`SELECT m.provider, m.external_id, m.vehicle_id, v.plate, m.evidence, m.confirmed_at, u.display_name AS confirmed_by_name
@@ -17,9 +17,16 @@ export async function telematicsOverview(env, user) {
     // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch)
     env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at
       FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.source_plate IS NOT NULL ORDER BY v.plate, t.provider`).all(),
+    // Letzter Stand je bewertetem, aktivem Kraftfahrzeug (ohne Anhänger): ohne Daten zuerst, dann ältester Stand zuerst.
+    // Reine Information – keine Frist, kein Grenzwert (ob das Fahrzeug stand oder das Gerät ausgefallen ist, steht nicht fest).
+    env.DB.prepare(`SELECT v.id AS vehicle_id, v.plate, v.site, MAX(t.gps_time) AS gps_time, MAX(t.received_at) AS received_at, group_concat(t.provider) AS providers
+      FROM vehicles v LEFT JOIN telematics_latest t ON t.vehicle_id=v.id
+      WHERE v.active=1 AND v.eval_excluded=0 AND COALESCE(v.kind,'')<>'anhaenger'
+      GROUP BY v.id ORDER BY MAX(t.gps_time) IS NOT NULL, MAX(t.gps_time), v.plate`).all(),
   ]);
   const plate_mismatches = reported.results.filter((r) => normPlate(r.source_plate) !== normPlate(r.plate));
-  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches };
+  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches,
+    positions: positions.results.map((r) => ({ ...r, providers: r.providers ? r.providers.split(',').sort() : [] })) };
 }
 
 export async function confirmMapping(env, user, body) {
