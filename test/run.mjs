@@ -5831,6 +5831,8 @@ await test('Datenqualität: Telematik-km kleiner als erfasster km-Stand → Hinw
   eq(st.data.providers.map((x) => x.provider).join(), 'webfleet,yellowfox', 'beide Anbieter, auch ohne Daten');
   ok(yf.km_rejected >= 1 && yf.devices >= 1 && yf.vehicles >= 1 && yf.last_received && yf.last_gps_time, 'Zähler YellowFox ' + JSON.stringify(yf));
   eq(yf.km_rejected, ov.km_rejected.filter((k) => k.provider === 'yellowfox').length, 'gleiche Regel wie Übersicht');
+  const byp = ov.by_provider.find((x) => x.provider === 'yellowfox'); eq(ov.by_provider.length, 2, 'Übersicht: beide Anbieter');
+  eq(byp.devices, yf.devices); eq(byp.last_received, yf.last_received, 'Übersicht: Empfang je Anbieter wie Zustand');
   eq(st.data.vehicles_without_data, ov.positions.filter((x) => !x.gps_time).length); eq(st.data.vehicles_total, ov.positions.length);
   const stTxt = JSON.stringify(st.data); ok(!stTxt.includes('TL-KM') && !stTxt.includes(pk.plate) && !stTxt.includes('"lat"'), 'keine Geräte-ID, kein Kennzeichen, keine Position');
   eq((await stat('falsch-falsch-falsch-123')).status, 401, 'Token Pflicht');

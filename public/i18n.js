@@ -949,3 +949,7 @@ Object.assign(STRINGS.en, { tm_reports: 'reports', tm_mismatch_hint: 'The device
 Object.assign(STRINGS.de, { tm_positions: 'Letzter Stand je Fahrzeug', tm_no_data: 'keine Telematikdaten', tm_age_h: 'vor {n} Std.', tm_age_d: 'vor {n} Tagen', tm_positions_hint: 'Aktive Fahrzeuge ohne Anhänger: ohne Daten zuerst, dann ältester Stand zuerst (GPS-Zeit). Nur zur Information – ein alter Stand kann Stillstand oder Geräteausfall bedeuten.' });
 Object.assign(STRINGS.uk, { tm_positions: 'Останні дані по транспорту', tm_no_data: 'немає даних телематики', tm_age_h: '{n} год. тому', tm_age_d: '{n} дн. тому', tm_positions_hint: 'Активний транспорт без причепів: спочатку без даних, потім найстаріші дані (час GPS). Лише для інформації – старі дані можуть означати простій або несправність пристрою.' });
 Object.assign(STRINGS.en, { tm_positions: 'Latest data per vehicle', tm_no_data: 'no telematics data', tm_age_h: '{n} h ago', tm_age_d: '{n} days ago', tm_positions_hint: 'Active vehicles excluding trailers: without data first, then oldest data first (GPS time). For information only – old data may mean the vehicle was parked or the device failed.' });
+// [CLAUDE] Telematik-Übersicht: Empfang je Anbieter (13.10.2026)
+Object.assign(STRINGS.de, { tm_devices: 'Geräte: {n}' });
+Object.assign(STRINGS.uk, { tm_devices: 'пристроїв: {n}' });
+Object.assign(STRINGS.en, { tm_devices: 'devices: {n}' });

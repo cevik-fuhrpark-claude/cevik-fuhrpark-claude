@@ -165,17 +165,11 @@ export async function integrationRouter(request, env, ctx, url) {
   // Telematik-Zustand für die Überwachung der Einspeisung (z. B. n8n): nur Zähler und Zeitpunkte je Anbieter –
   // keine Positionen, keine Geräte-IDs, keine Kennzeichen (Datensparsamkeit). Reine Information, kein Grenzwert.
   if (p === '/v1/telematics/status' && m === 'GET') {
-    const [ov, per] = await Promise.all([
-      telematicsOverview(env, { role: 'owner' }),
-      env.DB.prepare(`SELECT provider, COUNT(*) AS devices, COUNT(DISTINCT vehicle_id) AS vehicles, MAX(received_at) AS last_received, MAX(gps_time) AS last_gps_time
-        FROM telematics_latest GROUP BY provider`).all(),
-    ]);
-    const byP = new Map(per.results.map((r) => [r.provider, r]));
+    const ov = await telematicsOverview(env, { role: 'owner' });
     const cnt = (list, prov) => list.filter((x) => x.provider === prov).length;
     return json({ schema_version: '1.0', generated_at: nowIso(),
-      providers: ov.providers.map((prov) => { const r = byP.get(prov) || {};
-        return { provider: prov, devices: r.devices || 0, vehicles: r.vehicles || 0, last_received: r.last_received || null, last_gps_time: r.last_gps_time || null,
-          unmatched: cnt(ov.unmatched, prov), mappings: cnt(ov.mappings, prov), plate_mismatches: cnt(ov.plate_mismatches, prov), km_rejected: cnt(ov.km_rejected, prov) }; }),
+      providers: ov.by_provider.map((r) => ({ ...r, unmatched: cnt(ov.unmatched, r.provider), mappings: cnt(ov.mappings, r.provider),
+        plate_mismatches: cnt(ov.plate_mismatches, r.provider), km_rejected: cnt(ov.km_rejected, r.provider) })),
       vehicles_total: ov.positions.length, vehicles_without_data: ov.positions.filter((x) => !x.gps_time).length,
       unmatched_truncated: ov.unmatched.length >= 500 });
   }
