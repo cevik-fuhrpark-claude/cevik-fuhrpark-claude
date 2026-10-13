@@ -170,7 +170,9 @@ export async function integrationRouter(request, env, ctx, url) {
     return json({ schema_version: '1.0', generated_at: nowIso(),
       providers: ov.by_provider.map((r) => ({ ...r, unmatched: cnt(ov.unmatched, r.provider), mappings: cnt(ov.mappings, r.provider),
         plate_mismatches: cnt(ov.plate_mismatches, r.provider), km_rejected: cnt(ov.km_rejected, r.provider) })),
-      vehicles_total: ov.positions.length, vehicles_without_data: ov.positions.filter((x) => !x.gps_time).length,
+      // Zählung wie bisher nur Kraftfahrzeuge; Anhänger mit eigenem Gerät additiv
+      vehicles_total: ov.positions.filter((x) => x.kind !== 'anhaenger').length, vehicles_without_data: ov.positions.filter((x) => x.kind !== 'anhaenger' && !x.gps_time).length,
+      trailers_with_data: ov.positions.filter((x) => x.kind === 'anhaenger').length,
       unmatched_truncated: ov.unmatched.length >= 500 });
   }
 

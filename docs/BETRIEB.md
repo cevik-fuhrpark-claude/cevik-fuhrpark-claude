@@ -175,7 +175,7 @@ Antwort (Aufbau; Werte nur zur Veranschaulichung, nicht aus dem Betrieb):
 { "schema_version": "1.0", "generated_at": "…",
   "providers": [ { "provider": "yellowfox", "devices": 0, "vehicles": 0, "last_received": "…", "last_gps_time": "…",
                    "unmatched": 0, "mappings": 0, "plate_mismatches": 0, "km_rejected": 0 } ],
-  "vehicles_total": 0, "vehicles_without_data": 0, "unmatched_truncated": false }
+  "vehicles_total": 0, "vehicles_without_data": 0, "trailers_with_data": 0, "unmatched_truncated": false }
 ```
 - Dafür genügt das **Lese-Token** (`INTEGRATION_TOKEN_READ`); es kann nichts einspeisen oder ändern.
 - Enthält nur Zähler und Zeitpunkte – keine Positionen, Geräte-IDs, Kennzeichen oder Personen.

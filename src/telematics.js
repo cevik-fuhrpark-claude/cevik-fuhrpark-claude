@@ -21,12 +21,15 @@ export async function telematicsOverview(env, user, query = {}) {
       FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
       LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
       WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) ORDER BY v.plate, t.provider`).all(),
-    // Letzter Stand je bewertetem, aktivem Kraftfahrzeug (ohne Anhänger): ohne Daten zuerst, dann ältester Stand zuerst.
+    // Letzter Stand je bewertetem, aktivem Kraftfahrzeug; Anhänger nur, wenn sie ein eigenes Gerät haben (sonst fiele dessen Ausfall nirgends auf).
+    // Ohne Daten zuerst, dann ältester Stand zuerst.
     // Reine Information – keine Frist, kein Grenzwert (ob das Fahrzeug stand oder das Gerät ausgefallen ist, steht nicht fest).
-    env.DB.prepare(`SELECT v.id AS vehicle_id, v.plate, v.site, MAX(t.gps_time) AS gps_time, MAX(t.received_at) AS received_at, group_concat(t.provider) AS providers
+    env.DB.prepare(`SELECT v.id AS vehicle_id, v.plate, v.site, CASE WHEN COALESCE(v.kind,'')='anhaenger' THEN 'anhaenger' ELSE 'kfz' END AS kind,
+      MAX(t.gps_time) AS gps_time, MAX(t.received_at) AS received_at, group_concat(t.provider) AS providers
       FROM vehicles v LEFT JOIN telematics_latest t ON t.vehicle_id=v.id
-      WHERE v.active=1 AND v.eval_excluded=0 AND COALESCE(v.kind,'')<>'anhaenger'
-      GROUP BY v.id ORDER BY MAX(t.gps_time) IS NOT NULL, MAX(t.gps_time), v.plate`).all(),
+      WHERE v.active=1 AND v.eval_excluded=0
+      GROUP BY v.id HAVING COALESCE(v.kind,'')<>'anhaenger' OR COUNT(t.vehicle_id) > 0
+      ORDER BY MAX(t.gps_time) IS NOT NULL, MAX(t.gps_time), v.plate`).all(),
     // je Anbieter: Geräte, Fahrzeuge, letzter Empfang – fällt eine Quelle aus, ist das hier sichtbar (kein Grenzwert)
     env.DB.prepare(`SELECT provider, COUNT(*) AS devices, COUNT(DISTINCT vehicle_id) AS vehicles, MAX(received_at) AS last_received, MAX(gps_time) AS last_gps_time
       FROM telematics_latest GROUP BY provider`).all(),
@@ -53,13 +56,13 @@ export async function telematicsOverview(env, user, query = {}) {
 export function positionsCsv(ov, csvCell, now = Date.now()) {
   const mism = new Map();
   for (const m of ov.plate_mismatches) { if (!mism.has(m.vehicle_id)) mism.set(m.vehicle_id, []); mism.get(m.vehicle_id).push(`${m.provider} ${m.external_id || ''}: ${m.source_plate}`.replace(/\s+:/, ':')); }
-  const head = ['Kennzeichen', 'Standort', 'Letzte GPS-Zeit', 'Empfangen', 'Alter GPS-Stand (Stunden)', 'Anbieter', 'Gerät meldet anderes Kennzeichen', 'Geräte-km kleiner als erfasst (nicht übernommen)'];
+  const head = ['Kennzeichen', 'Standort', 'Letzte GPS-Zeit', 'Empfangen', 'Alter GPS-Stand (Stunden)', 'Anbieter', 'Gerät meldet anderes Kennzeichen', 'Geräte-km kleiner als erfasst (nicht übernommen)', 'Anhänger'];
   const lines = [head.join(';')];
   for (const r of ov.positions) {
     const age = r.gps_time ? Math.floor((now - Date.parse(r.gps_time)) / 3600000) : null;
     lines.push([csvCell(r.plate), csvCell(r.site), r.gps_time ? berlinDateTime(r.gps_time) : 'keine Daten', r.received_at ? berlinDateTime(r.received_at) : '',
       age === null || !(age >= 0) ? '' : age, csvCell(r.providers.join(', ')), csvCell((mism.get(r.vehicle_id) || []).join(' | ')),
-      csvCell((r.km_rejected || []).map((k) => `${k.provider} ${k.external_id || ''}: ${k.km} km (${berlinDate(k.gps_time)}) < ${k.recorded_km} km (${berlinDate(k.recorded_at)})`.replace(/\s+:/, ':')).join(' | '))].join(';'));
+      csvCell((r.km_rejected || []).map((k) => `${k.provider} ${k.external_id || ''}: ${k.km} km (${berlinDate(k.gps_time)}) < ${k.recorded_km} km (${berlinDate(k.recorded_at)})`.replace(/\s+:/, ':')).join(' | ')), r.kind === 'anhaenger' ? 'ja' : ''].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }

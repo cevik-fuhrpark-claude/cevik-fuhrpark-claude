@@ -678,6 +678,24 @@ await test('Telematik-Prüffälle: Zuordnung nur durch Fuhrpark mit Nachweis; da
   const fcsv = await users.fleet.get('/api/telematics?format=csv&site=' + encodeURIComponent(p2.site));
   eq(parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode(fcsv.data).replace(/^\ufeff/, '')).length, fs.positions.length + 1, 'CSV gefiltert');
   ok((fcsv.headers.get('content-disposition') || '').includes('_' + p2.site.replace(/[^\w-]/g, '') + '.csv'), 'Dateiname mit Standort');
+  // Anhänger mit eigenem Gerät erscheinen zusätzlich (Vermerk kind=anhaenger, CSV-Spalte „Anhänger“); Status zählt Kfz unverändert
+  const trl = (await env.DB.prepare("SELECT id, vin, plate FROM vehicles WHERE kind='anhaenger' AND active=1 AND eval_excluded=0 AND vin IS NOT NULL AND id NOT IN (SELECT vehicle_id FROM telematics_latest) LIMIT 1").first());
+  ok(trl, 'Test-Anhänger vorhanden');
+  const st0 = (await anon.req('GET', '/api/integration/v1/telematics/status', undefined, H)).data;
+  eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'TRL-1', vin: trl.vin, gps_time: '2026-10-10T09:00:00Z', lat: 51.4, lon: 7.3 }] }, H)).data.matched, 1, 'Anhänger-Gerät über FIN zugeordnet');
+  const ov3 = (await users.fleet.get('/api/telematics')).data;
+  const pt = ov3.positions.find((x) => x.vehicle_id === trl.id);
+  ok(pt && pt.kind === 'anhaenger' && pt.providers.includes('yellowfox'), 'Anhänger mit Gerät in „Letzter Stand je Fahrzeug“ ' + JSON.stringify(pt));
+  ok(ov3.positions.filter((x) => x.kind === 'anhaenger').every((x) => x.gps_time), 'Anhänger ohne Gerät weiterhin nicht enthalten');
+  ok(ov3.positions.filter((x) => x.vehicle_id !== trl.id).every((x) => x.kind === 'kfz'), 'übrige als kfz');
+  const st1 = (await anon.req('GET', '/api/integration/v1/telematics/status', undefined, H)).data;
+  eq(st1.vehicles_total, st0.vehicles_total, 'Kfz-Zählung unverändert'); eq(st1.vehicles_without_data, st0.vehicles_without_data);
+  eq(st1.trailers_with_data, st0.trailers_with_data + 1, 'Anhänger mit Gerät gezählt');
+  const tc3 = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/telematics?format=csv')).data).replace(/^﻿/, ''));
+  eq(tc3[0][8], 'Anhänger', 'CSV-Spalte');
+  ok(tc3.find((x) => x[0] === trl.plate)[8] === 'ja' && tc3.find((x) => x[0] === p2.plate)[8] === '', 'CSV-Vermerk nur beim Anhänger');
+  ok((await users.fleet.get(`/api/vehicles/${encodeURIComponent(trl.id)}`)).data.telematics.some((x) => x.provider === 'yellowfox'), 'Fahrzeugakte des Anhängers zeigt Stand');
+  await env.DB.prepare("DELETE FROM telematics_latest WHERE provider='yellowfox' AND vehicle_id=?").bind(trl.id).run();
   eq((await users.fleet.req('DELETE', '/api/telematics/mappings?provider=webfleet&external_id=WF-2')).status, 200);
   ok((await owner.get('/api/admin/audit?action=telematics.')).data.entries.length >= 2, 'protokolliert');
 });

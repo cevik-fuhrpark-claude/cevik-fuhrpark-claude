@@ -158,6 +158,14 @@ with sync_playwright() as p:
     if tel['s'] != 200 or (tel['d'] or {}).get('odometer_rejected') != 1:
         problems.append(f'Vorbereitung Telematik-km: {tel}')
     ROUTES['fleet'] += [f'vehicles/{kvid}', 'quality?f=telematics_km_rejected']
+    # Anhänger mit eigenem Telematik-Gerät: erscheint in „Letzter Stand je Fahrzeug“ mit Vermerk „Anhänger“, Fahrzeugakte zeigt den Stand
+    tvin = 'WSM00000003123456'; tvid = 'VIN:' + tvin
+    api('POST', '/api/vehicles', {'plate': 'RT-AH 7', 'vin': tvin, 'site': 'Dortmund', 'kind': 'anhaenger'})
+    tt = adm.evaluate("""async (b) => { const r = await fetch('/api/integration/v1/telematics', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cfp': '1', authorization: 'Bearer integration-token-xyz' }, body: JSON.stringify(b) });
+      return { s: r.status, d: await r.json().catch(() => null) }; }""", {'provider': 'webfleet', 'items': [{'external_id': 'RT-TRL-1', 'vin': tvin, 'lat': 51.51, 'lon': 7.46, 'gps_time': (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=30)).strftime('%Y-%m-%dT%H:%M:%SZ')}]})
+    if tt['s'] != 200 or (tt['d'] or {}).get('matched') != 1:
+        problems.append(f'Vorbereitung Telematik-Anhänger: {tt}')
+    ROUTES['fleet'] += [f'vehicles/{tvid}']
     ROUTES['owner'] += ['quality?f=inspection_no_result']
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
