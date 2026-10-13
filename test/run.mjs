@@ -943,6 +943,36 @@ await test('Werkstattplan: Winterreifen-Auftrag mit Termin erscheint am geplante
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
   await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
 });
+await test('Winterreifen-Auftrag: „Zur Abschlusskontrolle“ verlangt Bestätigung, solange die Winterlage nicht erfüllt ist; Stand im Verlauf; nach Erfassung ohne Bestätigung', async () => {
+  const mk = async (vin, plate) => {
+    eq((await users.fleet.post('/api/vehicles', { vin, plate, site: 'Dortmund' })).status, 201);
+    const V = 'VIN:' + vin; const o = await users.fleet.post(`/api/vehicles/${V}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o.status, 201);
+    const id = o.data.id;
+    const cmd = async (action, payload = {}, note = null) => { const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case; return users.ws.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note }); };
+    eq((await cmd('start_repair')).status, 200);
+    eq((await cmd('record_work', { hours: 1, description: 'Reifen geprüft' })).status, 200);
+    const items = (await users.ws.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+    eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    return { V, id, cmd };
+  };
+  const ev = async (id) => JSON.parse((await env.DB.prepare(`SELECT payload FROM case_events WHERE case_id=? AND action='request_quality_check' ORDER BY created_at DESC LIMIT 1`).bind(id).first()).payload || '{}');
+  // a) ohne Erfassung: abgewiesen, mit Bestätigung möglich, Stand im Verlauf
+  const a = await mk('WDB96340310888803', 'TT-WIN 3');
+  const r1 = await a.cmd('request_quality_check', {}, 'Reifen sind Sommerreifen, Kunde informiert');
+  eq(r1.status, 400); eq(r1.data.error, 'winter_open');
+  eq((await users.fleet.get(`/api/cases/${a.id}`)).data.case.status, 'in_reparatur', 'nichts geändert');
+  eq((await a.cmd('request_quality_check', { confirm_winter_open: true }, 'Umrüstung erst nächste Woche, Reifen bestellt')).status, 200);
+  const p1 = await ev(a.id); eq(p1.winter_status, 'unbekannt'); eq(p1.winter_open_confirmed, true); ok(p1.missing.includes('VA-L'), JSON.stringify(p1));
+  // b) nach Erfassung mit Alpine-Symbol: ohne Bestätigung
+  const b = await mk('WDB96340310888804', 'TT-WIN 4');
+  eq((await users.ws.post(`/api/vehicles/${b.V}/tires/events`, { event_type: 'wechsel', position: 'VA-L', positions: ['VA-R', 'HA-L-aussen', 'HA-R-aussen'], size: '315/70 R22.5', winter_mark: '3pmsf' })).status, 201);
+  eq((await b.cmd('request_quality_check', {}, 'Winterreifen montiert')).status, 200);
+  const p2 = await ev(b.id); eq(p2.winter_status, 'erfuellt'); eq(p2.winter_open_confirmed, undefined);
+  // andere Aufträge unverändert (keine Winterangabe im Verlauf)
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('name="confirm_winter_open" required') && app.includes("'confirm', 'confirm_winter_open'"), 'Formular fragt Bestätigung ab');
+  for (const x of [a, b]) { await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(x.id).run(); await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(x.V).run(); }
+});
 await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {
   eq(dotDate('0118'), '2018-01-01'); eq(dotDate('DOT XX 5320'), '2020-12-28'); eq(dotDate('5321'), null, '2021 hat keine KW 53'); eq(dotDate('0024'), null); eq(dotDate('abcd'), null);
   eq(ageMonths('2018-01-01', '2024-01-01'), 72); eq(ageMonths('2018-01-15', '2024-01-14'), 71);

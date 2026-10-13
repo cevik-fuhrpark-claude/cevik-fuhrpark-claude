@@ -111,6 +111,29 @@ with sync_playwright() as p:
     check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
     if SHOTS: q.screenshot(path=f'{SHOTS}/cases_wo_en_390.png')
     c.close()
+    # Werkstatt: „Zur Abschlusskontrolle“ bei nicht erfüllter Winterlage → Hinweis + Pflicht-Bestätigung, Verlauf zeigt den Stand (DE/UK/EN 390, EN 1366)
+    c=br.new_context(viewport={'width':390,'height':844},locale='de-DE'); q=c.new_page(); q.goto(B)
+    errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+    q.evaluate(JS,['POST','/api/login',{'username':'w.werkstatt','password':PW}])
+    def wcmd(action,payload={},note=None):
+        cur=q.evaluate(JS,['GET','/api/cases/'+cid])['d']['case']
+        return q.evaluate(JS,['POST',f'/api/cases/{cid}/commands',{'action':action,'command_id':'ui-'+action+str(cur['version']),'expected_version':cur['version'],'payload':payload,'note':note}])
+    check(wcmd('start_repair')['s']==200,'Reparatur begonnen')
+    check(wcmd('record_work',{'hours':1,'description':'Reifen geprüft'})['s']==200,'Arbeit erfasst')
+    items=[{'key':x['key'],'result':'ok'} for x in q.evaluate(JS,['GET','/api/meta'])['d']['checklist']]
+    check(q.evaluate(JS,['POST','/api/inspections',{'kind':'nach_reparatur','case_id':cid,'request_key':'ui-wq-insp','items':items}])['s']==201,'Kontrolle erfasst')
+    WQ={'de':'noch nicht erfüllt','uk':'ще не виконана','en':'not yet compliant'}
+    for lang in ['de','uk','en']:
+      q.evaluate(JS,['PATCH','/api/me',{'language':lang}]); q.goto(B+'/#/cases/'+cid); q.reload(); q.wait_for_selector('[data-act="request_quality_check"]')
+      q.click('[data-act="request_quality_check"]'); q.wait_for_selector('#wqopen')
+      check(WQ[lang] in q.inner_text('#wqopen'),f'Hinweis Winterlage beim Abschluss ({lang})')
+      check(q.locator('#af input[name=confirm_winter_open]').get_attribute('required') is not None,'Bestätigung Pflicht')
+      check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+      if SHOTS: q.locator('#af').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wq_{lang}_390.png')
+    q.fill('#af textarea[name=note]','Umrüstung nächste Woche'); q.check('#af input[name=confirm_winter_open]'); q.click('#af button.btn:not(.secondary)')
+    q.wait_for_selector('.wqev'); check('VA-R' in q.inner_text('.wqev'),'Verlauf zeigt bestätigten Stand mit Positionen')
+    if SHOTS: q.locator('.wqev').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wq_ev_en_390.png')
+    check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)

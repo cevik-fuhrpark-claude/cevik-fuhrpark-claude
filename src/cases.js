@@ -231,7 +231,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (mevent) mevent.reinspection = mevent.reinspection ? JSON.parse(mevent.reinspection) : null;
   const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
   // Auftrag „Winterreifen“: aktuelle Winterlage laut Reifenerfassung (erledigt erst mit Erfassung inkl. Winterkennzeichnung)
-  const tireWinter = c.tire_order === 'winter' ? (({ status, noncompliant, missing }) => ({ status, noncompliant, missing }))(winterStatus(vehicle?.kind || 'lkw', winterMarks((await env.DB.prepare('SELECT position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC').bind(c.environment, c.vehicle_id).all()).results))) : null;
+  const tireWinter = c.tire_order === 'winter' ? await caseWinter(env, c, vehicle?.kind) : null;
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
@@ -586,6 +586,14 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   return { id: created.id, case_no: created.case_no, status: r.status, winter: w.status };
 }
 
+// Aktuelle Winterlage laut Reifenerfassung für einen Winterreifen-Auftrag (Vorgangsansicht, Abschlussprüfung)
+async function caseWinter(env, c, kind) {
+  const k = kind || (await env.DB.prepare('SELECT kind FROM vehicles WHERE id=?').bind(c.vehicle_id).first())?.kind || 'lkw';
+  const ev = (await env.DB.prepare('SELECT position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC').bind(c.environment, c.vehicle_id).all()).results;
+  const { status, noncompliant, missing } = winterStatus(k, winterMarks(ev));
+  return { status, noncompliant, missing };
+}
+
 export async function createCase(env, ctx, user, envName, body) {
   return (await createCases(env, ctx, user, envName, [body]))[0];
 }
@@ -918,6 +926,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten verhindern die Abschlusskontrolle.');
       requireNote('Bitte kurz zusammenfassen, was repariert wurde.');
+      // Winterreifen-Auftrag: Winterlage laut Reifenerfassung noch nicht erfüllt → nur mit ausdrücklicher Bestätigung (keine Sperre, Grund steht im Vermerk)
+      if (c.tire_order === 'winter') {
+        const w = await caseWinter(env, c);
+        if (w.status !== 'erfuellt' && !p.confirm_winter_open) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
+        payload = { winter_status: w.status, ...(w.status !== 'erfuellt' ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
+      }
       toStatus = 'abschlusskontrolle';
       notifyKind = 'quality_check';
       break;
