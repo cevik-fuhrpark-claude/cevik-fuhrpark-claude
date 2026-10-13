@@ -3983,6 +3983,8 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe'), 'CSV-Kopf: Rückrufe am Ende');
   ok(vcsv.find((l) => l.startsWith('VT-FL 1;')).endsWith(';1'), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
+  const iav = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles;
+  eq(iav.find((x) => x.plate === 'VT-FL 1').open_recalls, 1, 'Integrations-API: offene Rückrufe'); ok(iav.every((x) => Number.isInteger(x.open_recalls)), 'immer eine Zahl');
   // Werkstattplan „Fällig – ohne Termin“: offener Rückruf ohne Frist mit Referenz, erledigter nicht; mit Werkstattauftrag nicht doppelt
   let wp = (await users.fleet.get('/api/workshop/plan')).data.maintenance_due;
   const wb = wp.find((i) => i.id === b.data.id);
