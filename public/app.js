@@ -2392,7 +2392,7 @@ function helpSections(r) {
 }
 
 // Link „Hilfe zu dieser Seite“ – nur wenn die Rolle den Abschnitt sieht
-const helpLink = (n) => (S.me && helpSections(S.me.role).includes(n) ? `<p class="small" style="margin:4px 0 12px"><a href="#/help?s=${n}">${esc(t('help_page'))} ›</a></p>` : '');
+const helpLink = (n) => (S.me && helpSections(S.me.role).includes(n) ? `<p class="small noprint" style="margin:4px 0 12px"><a href="#/help?s=${n}">${esc(t('help_page'))} ›</a></p>` : '');
 
 // Hilfe: Trefferzeile + Inhaltsverzeichnis (Sprungmarken als Knöpfe – die Raute gehört dem Router)
 function helpToc(parts) {
@@ -2468,14 +2468,16 @@ async function viewFleetTires() {
   const cls = { unter_minimum: 'kritisch', warnung: 'mittel', ok: 'ok', unbekannt: '' };
   const tabs = [['attention', `${t('ts_unter_minimum')} / ${t('ts_warnung')}`, r.totals.below_min + r.totals.warn], ['stale', t('tires_stale').replace('{d}', r.stale_days), r.totals.stale], ['never', t('tires_never'), r.totals.never_measured], ['winter_bad', t('tires_winter_bad'), r.totals.winter_noncompliant], ['winter_unknown', t('tires_winter_unknown'), r.totals.winter_unknown], ...(r.warn_age_years !== null ? [['age', t('tires_age_tab').replace('{y}', r.warn_age_years), r.totals.age_warn]] : []), ['all', t('filter_all'), r.totals.vehicles]].filter(([k, , n]) => n || k === f || !(k.startsWith('winter') || k === 'age'));
   render(`<h1>${esc(t('fleet_tires'))}</h1>${helpLink('tires')}<p class="small muted">${esc(t('tires_rule').replace('{min}', String(r.legal_min_tread_mm).replace('.', ',')).replace('{warn}', r.warn_tread_mm === null ? '–' : String(r.warn_tread_mm).replace('.', ',')))}</p>
-    ${(r.site_options || []).length > 1 || r.site ? `<div class="panel">${siteSelect('tsite', '', r.site_options, r.site)}</div>` : ''}
-    <div class="actions" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
-    <div class="actions"><button type="button" class="btn secondary" id="trcsv">${esc(t('export_csv'))}</button></div>
+    ${(r.site_options || []).length > 1 || r.site ? `<div class="panel noprint">${siteSelect('tsite', '', r.site_options, r.site)}</div>` : ''}
+    <div class="actions noprint" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}" aria-pressed="${f === k}">${esc(l)} (${n})</button>`).join('')}</div>
+    <div class="actions noprint"><button type="button" class="btn secondary" id="trcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="trprt">${esc(t('print'))}</button></div>
+    ${printHead([`${t('print_filter')}: ${(tabs.find(([k]) => k === f) || [, t('filter_all')])[1]}`, r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', rows.length)])}
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(String(x.min_tread_mm).replace('.', ',')) + ' mm'}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span>${x.winter === 'nicht_erfuellt' ? `<span class="chip kritisch">${esc(t('ws_nicht_erfuellt'))}</span>` : ''}<span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${x.measured_positions} ${esc(t('positions'))}`, x.below_min && `${x.below_min}× < ${String(r.legal_min_tread_mm).replace('.', ',')} mm`, x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`, x.oldest_dot_months !== null && `${esc(t('tires_oldest_dot'))} ${esc(tireAge(x.oldest_dot_months))}${x.age_warn ? ` (${x.age_warn}× ${esc(t('tire_age_warn').replace('{y}', r.warn_age_years))})` : ''}`, (f === 'winter_bad' || f === 'winter_unknown') && x.winter_noncompliant.length && esc(t('winter_bad').replace('{p}', x.winter_noncompliant.join(', '))), (f === 'winter_bad' || f === 'winter_unknown') && x.winter_missing.length && esc(t('winter_missing').replace('{p}', x.winter_missing.join(', ')))].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>${f === 'winter_bad' || f === 'winter_unknown' ? `<p class="small muted">${esc(t('winter_rule'))}</p>` : ''}`, 'more');
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
   // CSV: alle Fahrzeuge (gewählter Standort) mit Status und Reifengrößen je Achse – unabhängig vom Filterknopf
   $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-reifen_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const ts = $('#tsite'); if (ts) ts.onchange = () => { S.tireSite = ts.value; viewFleetTires(); };
+  $('#trprt').onclick = () => window.print();
 }
 
 // ---------- Mehr / Benutzer / Einstellungen ----------
