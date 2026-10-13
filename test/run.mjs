@@ -906,11 +906,16 @@ await test('Werkstattauftrag Winterreifen: nur Leitung, nur Lkw mit Winterlage n
   eq((await users.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === WV).winter_order.case_no, r.data.case_no);
   eq((await users.prodFleet.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === WV)?.open_order ?? null, null, 'Betrieb getrennt');
   ok((await users.fleet.get('/api/tires/fleet')).data.rows.filter((x) => x.kind === 'anhaenger').every((x) => x.winter_order === null), 'Anhänger nie');
+  // Vorgang zeigt die aktuelle Winterlage (Werkstatt sieht, was noch fehlt)
+  const cd = (await users.ws.get(`/api/cases/${r.data.id}`)).data;
+  eq(cd.tire_winter.status, 'nicht_erfuellt'); eq(cd.tire_winter.noncompliant.join(','), 'VA-R');
+  eq((await users.ws.get(`/api/cases/${(await env.DB.prepare(`SELECT id FROM cases WHERE environment='test' AND tire_order IS NULL LIMIT 1`).first()).id}`)).data.tire_winter ?? null, null, 'andere Vorgänge ohne Winterangabe');
   // Abgelehnter Auftrag zählt nicht mehr als offen
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
   eq((await users.fleet.get(`/api/vehicles/${WV}/tires`)).data.winter.open_order, null, 'abgeschlossen/abgelehnt = kein offener Auftrag');
   // Nach Umrüstung erfüllt → kein Auftrag mehr nötig
   await users.ws.post(`/api/vehicles/${WV}/tires/events`, { event_type: 'wechsel', position: 'VA-R', positions: ['HA-L-aussen', 'HA-R-aussen'], size: '315/70 R22.5', winter_mark: '3pmsf' });
+  eq((await users.fleet.get(`/api/cases/${r.data.id}`)).data.tire_winter.status, 'erfuellt', 'Vorgang zeigt erfüllt nach Erfassung');
   const okr = await O(users.fleet, WV, { workshop_site: 'DORTMUND' });
   eq(okr.status, 409); eq(okr.data.error, 'winter_ok');
   // Fahrzeug wieder aus der Testflotte nehmen (andere Tests zählen aktive Fahrzeuge)

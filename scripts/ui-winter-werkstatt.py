@@ -82,6 +82,13 @@ with sync_playwright() as p:
     q.goto(B+'/#/'); q.wait_for_selector('#wswinter')
     check('🔧 Werkstattauftrag' in q.inner_text('#wswinter'),'Werkstatt-Startseite zeigt Auftrag')
     if SHOTS: q.locator('#wswinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wswinter_order_390.png')
+    cid=next((x['id'] for x in q.evaluate(JS,['GET','/api/cases'])['d']['cases'] if x.get('tire_order')=='winter'),None)
+    check(cid is not None,'Werkstatt sieht Winterauftrag in der Liste')
+    for lang,lbl in [('de','Auftrag Winterreifen'),('uk','Замовлення «Зимові шини»'),('en','Winter tyre order')]:
+      q.evaluate(JS,['PATCH','/api/me',{'language':lang}]); q.goto(B+'/#/cases/'+cid); q.reload(); q.wait_for_function("l=>document.querySelector('#cwinter') && document.querySelector('#cwinter').innerText.includes(l)",arg=lbl)
+      tx=q.inner_text('#cwinter'); check(lbl in tx and 'VA-R' in tx,f'Vorgang zeigt Winterlage ({lang})')
+      check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+      if SHOTS: q.locator('#cwinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/cwinter_{lang}_390.png')
     c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:

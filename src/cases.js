@@ -230,12 +230,15 @@ export async function getCaseDetail(env, user, envName, caseId) {
       FROM maintenance_events e WHERE e.id=?`).bind(c.maintenance_event_id).first() : null;
   if (mevent) mevent.reinspection = mevent.reinspection ? JSON.parse(mevent.reinspection) : null;
   const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
+  // Auftrag „Winterreifen“: aktuelle Winterlage laut Reifenerfassung (erledigt erst mit Erfassung inkl. Winterkennzeichnung)
+  const tireWinter = c.tire_order === 'winter' ? (({ status, noncompliant, missing }) => ({ status, noncompliant, missing }))(winterStatus(vehicle?.kind || 'lkw', winterMarks((await env.DB.prepare('SELECT position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC').bind(c.environment, c.vehicle_id).all()).results))) : null;
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
+    tire_winter: tireWinter,
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
