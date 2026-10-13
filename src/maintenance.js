@@ -329,7 +329,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     const kind = normalizeKind(get(cells, ci.kind));
     if (!kind) return skip(`Prüfart unbekannt: ${get(cells, ci.kind) || '–'}`);
     // mehrere Rückrufe je Fahrzeug möglich – der Import kennt nur eine Zeile je Fahrzeug+Art und würde einen offenen Rückruf überschreiben
-    if (ONE_TIME_KINDS.includes(kind)) return skip('Rückrufe einzeln in der Fahrzeugakte erfassen');
+    if (ONE_TIME_KINDS.includes(kind)) return skip('Rückrufe über „Rückrufe importieren“ oder einzeln in der Fahrzeugakte erfassen');
     const evidence = get(cells, ci.evidence);
     // Lückenzeile aus dem eigenen Export („kein Termin hinterlegt“), nicht ausgefüllt: ruhiger Hinweis statt „Nachweis fehlt“
     const kmRaw = [ck.due, ck.last, ck.interval].map((i) => get(cells, i).trim());

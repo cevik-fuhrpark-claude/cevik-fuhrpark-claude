@@ -797,7 +797,7 @@ const IMPORT_FIXED = [
   ['Kennzeichen nicht im Fahrzeugstamm', 'Номерного знака немає в реєстрі транспорту', 'Licence plate not in the vehicle master data'],
   ['Kennzeichen mehrdeutig – FIN angeben', 'Номерний знак неоднозначний – вкажіть VIN', 'Licence plate ambiguous – please give the VIN'],
   ['Nachweis/Quelle fehlt', 'Відсутній підтверджувальний документ/джерело', 'Evidence/source missing'],
-  ['Rückrufe einzeln in der Fahrzeugakte erfassen', 'Відкликання вносьте окремо в картці транспорту', 'Enter recalls individually in the vehicle file'],
+  ['Rückrufe über „Rückrufe importieren“ oder einzeln in der Fahrzeugakte erfassen', 'Відкликання вносьте через «Імпорт відкликань» або окремо в картці транспорту', 'Enter recalls via “Import recalls” or individually in the vehicle file'],
   ['Kein Termin eingetragen – Zeile bleibt unverändert', 'Дату не вказано – рядок залишається без змін', 'No date entered – row left unchanged'],
   ['Nachweis zu lang (max. 300 Zeichen)', 'Підтвердження занадто довге (макс. 300 символів)', 'Evidence too long (max. 300 characters)'],
   ['Letzte Prüfung bitte taggenau (JJJJ-MM-TT oder TT.MM.JJJJ)', 'Останню перевірку вкажіть з точністю до дня (РРРР-ММ-ДД або ДД.ММ.РРРР)', 'Please give the last inspection to the day (YYYY-MM-DD or DD.MM.YYYY)'],

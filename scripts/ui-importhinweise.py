@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test: Zeilenhinweise der Import-Vorschauen (Prüftermine, Verträge, Reifengrößen; Auslesungen: falsche Datei) in der App-Sprache DE/UK/EN bei 390/820/1366 px;
+# [CLAUDE] UI-Test: Zeilenhinweise der Import-Vorschauen (Prüftermine inkl. Rückruf-Zeile, Verträge, Reifengrößen; Auslesungen: falsche Datei) in der App-Sprache DE/UK/EN bei 390/820/1366 px;
 # Werte aus der Datei bleiben wörtlich. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -6,7 +6,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 # Prüftermine als Windows-1252 (wie Excel unter deutschem Windows speichert), Verträge/Reifen als UTF-8
-MCSV='FIN;Art;Nächster Termin;Nachweis\nVAK656EBDG1613170;Ölxyz;2027-01-31;Beleg\n;HU;2027-01-31;Plakette\n'.encode('cp1252')
+MCSV='FIN;Art;Nächster Termin;Nachweis\nVAK656EBDG1613170;Ölxyz;2027-01-31;Beleg\n;HU;2027-01-31;Plakette\nVAK656EBDG1613170;Rückruf;2027-01-31;Schreiben 12A\n'.encode('cp1252')
 TCSV=b'Quelle;Kennzeichen;FIN;Reifen Lenkachse\nListe;XX-NIE 7;WDB00000000000000;315/80 R22.5\n'
 CCSV=b'Kennzeichen;Vertragsart;Vertragspartner;Vertragsbeginn\nXX-NIE 9;Leasing;Muster GmbH;2026-01-01\nSZ-YC 5514;Zauber;Muster GmbH;2026-01-01\n'
 # Fristen-Übersicht der App (Export „Auslesungen“) versehentlich im Auslese-Import → klare Meldung in der App-Sprache
@@ -14,9 +14,9 @@ ACSV='\ufeffArt;Fahrer/Kennzeichen;Personalnummer;Standort;Letzte Auslesung;Spä
 AEXP={'de':'Fristen-Übersicht dieser App','uk':'огляд строків із цього застосунку','en':"this app's deadline overview"}
 GAP={'de':'Lückenzeilen ohne Eintrag','uk':'Рядки-пропуски без даних','en':'Gap rows without entry'}
 TEXP={'uk':'Рядок 2 · XX-NIE 7: VIN немає в реєстрі транспорту','en':'Line 2 · XX-NIE 7: VIN not in the vehicle master data','de':'Zeile 2 · XX-NIE 7: FIN nicht im Fahrzeugstamm'}
-EXP={'uk':(['Невідомий вид перевірки: Ölxyz','Номерного знака немає в реєстрі транспорту'],['Транспорт не знайдено: XX-NIE 9','Невідомий вид договору: Zauber']),
-     'en':(['Unknown inspection type: Ölxyz','Licence plate not in the vehicle master data'],['Vehicle not found: XX-NIE 9','Unknown contract type: Zauber']),
-     'de':(['Prüfart unbekannt: Ölxyz','Kennzeichen nicht im Fahrzeugstamm'],['Fahrzeug nicht gefunden: XX-NIE 9','Vertragsart unbekannt: Zauber'])}
+EXP={'uk':(['Невідомий вид перевірки: Ölxyz','Номерного знака немає в реєстрі транспорту','через «Імпорт відкликань»'],['Транспорт не знайдено: XX-NIE 9','Невідомий вид договору: Zauber']),
+     'en':(['Unknown inspection type: Ölxyz','Licence plate not in the vehicle master data','via “Import recalls”'],['Vehicle not found: XX-NIE 9','Unknown contract type: Zauber']),
+     'de':(['Prüfart unbekannt: Ölxyz','Kennzeichen nicht im Fahrzeugstamm','über „Rückrufe importieren“'],['Fahrzeug nicht gefunden: XX-NIE 9','Vertragsart unbekannt: Zauber'])}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

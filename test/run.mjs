@@ -3972,7 +3972,7 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   const csvT = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
   ok(csvT.includes('Rückruf') && csvT.includes(';erledigt;'), 'CSV mit Status erledigt');
   const imp = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\n;WDB96340310555651;Rückrufaktion;2099-05-31;;;Schreiben', { 'content-type': 'text/csv' });
-  eq(imp.status, 200); eq(imp.data.created, 0); ok(/einzeln in der Fahrzeugakte/.test(imp.data.skipped[0].reason), 'Import verweist auf Fahrzeugakte');
+  eq(imp.status, 200); eq(imp.data.created, 0); ok(/einzeln in der Fahrzeugakte/.test(imp.data.skipped[0].reason) && /„Rückrufe importieren“/.test(imp.data.skipped[0].reason), 'Import verweist auf Rückruf-Import bzw. Fahrzeugakte');
   // Vorgang am Fahrzeug: offener Rückruf ohne Frist erscheint in der Kurzinfo (mit Referenz), erledigter nicht
   const cs = await users.fleet.post('/api/cases', { vehicle_id: VR, description: 'Rückruf-Kurzinfo: Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
   eq(cs.status, 201);
@@ -5175,7 +5175,7 @@ await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) l
   const gaps = lines.filter((l) => l.includes(';kein Termin hinterlegt;'));
   ok(gaps.length > 0, 'Testdaten mit Lücken');
   eq(mr.data.skipped.filter((s) => s.reason === gapReason).length, gaps.length, 'jede Lückenzeile mit ruhigem Hinweis');
-  ok(mr.data.skipped.every((s) => s.reason === gapReason || /^Kein Datum/.test(s.reason) || s.reason === 'Rückrufe einzeln in der Fahrzeugakte erfassen'), 'sonst nur Zeilen ohne Datum (km-Fälligkeit/ungeklärt) bzw. Rückrufe: ' + JSON.stringify(mr.data.skipped.filter((s) => s.reason !== gapReason)));
+  ok(mr.data.skipped.every((s) => s.reason === gapReason || /^Kein Datum/.test(s.reason) || s.reason === 'Rückrufe über „Rückrufe importieren“ oder einzeln in der Fahrzeugakte erfassen'), 'sonst nur Zeilen ohne Datum (km-Fälligkeit/ungeklärt) bzw. Rückrufe: ' + JSON.stringify(mr.data.skipped.filter((s) => s.reason !== gapReason)));
   // Arbeitsweise „Lücken in Excel füllen“: Termin + Nachweis in eine Lückenzeile eintragen → genau ein neuer Termin
   const c = gaps[0].split(';'); c[5] = '2027-03-31'; c[7] = ''; c[8] = 'Prüfbericht Testlauf';
   const fr = await dry('/api/maintenance/import', [lines[0], c.join(';')].join('\r\n'));
