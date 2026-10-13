@@ -482,19 +482,21 @@ const wsParam = (body) => String(body.workshop_site ?? '').trim().slice(0, 20);
 export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body = {}) {
   if (!isManager(user)) throw forbidden();
   // Prüftermin, offener Auftrag und Werkstatt in einer Abfrage (Abfragebudget je Aufruf); Prüfreihenfolge der Fehler unverändert
-  const rule = await env.DB.prepare(`SELECT m.id, m.kind, m.vehicle_id, m.planned_date, v.active, v.plate,
+  const rule = await env.DB.prepare(`SELECT m.id, m.kind, m.vehicle_id, m.planned_date, m.last_done_date, m.evidence, v.active, v.plate,
       (SELECT json_object('id', c.id, 'case_no', c.case_no) FROM cases c WHERE c.maintenance_rule_id=m.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
       (SELECT code FROM workshops WHERE code=?3 AND active=1) AS ws_code
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?1`).bind(ruleId, envName, wsParam(body)).first();
   if (!rule) throw notFound('Prüftermin nicht gefunden.');
   if (!rule.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   const open = rule.open_case ? JSON.parse(rule.open_case) : null;
+  if (rule.kind === 'Rückruf' && rule.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
   if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
   const note = str(body.note, { max: 1000 });
-  const description = `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
+  // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
+  const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '').slice(0, 200)})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
   // Verknüpfung mit dem Prüftermin im selben atomaren Batch wie die Meldung (vorher eigenes UPDATE danach)
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],

@@ -4004,6 +4004,8 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(wp.filter((i) => i.kind !== 'Rückruf').every((i) => !('recall_ref' in i) && i.status !== 'ohne_termin'), 'andere Prüfungen ohne Termin weiter nicht im Plan, ohne Nachweistext');
   const ord = await users.fleet.post(`/api/maintenance/${b.data.id}/order`, { workshop_site: 'DORTMUND', note: 'Rückruf B', request_key: rk() });
   eq(ord.status, 201);
+  ok((await users.fleet.get(`/api/cases/${ord.data.id}`)).data.case.description.startsWith('Herstellerrückruf durchführen (Referenz: Herstellerschreiben Test B'), 'Auftrag nennt die Referenz');
+  eq((await users.fleet.post(`/api/maintenance/${a.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() })).status, 409, 'kein Auftrag für erledigten Rückruf');
   ok(!(await users.fleet.get('/api/workshop/plan')).data.maintenance_due.some((i) => i.id === b.data.id), 'mit offenem Werkstattauftrag nicht doppelt');
   eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Werkstattrechnung Rückruf B' })).status, 200);
   eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.vin === 'WDB96340310555651').open_recalls, 0, 'nach Durchführung 0');
