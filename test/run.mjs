@@ -829,6 +829,8 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
     ok(/\[\/\^#\\\/tires\(\?:\\\?f=\\w\+\)\?\$\/, viewFleetTires\]/.test(app), 'Route #/tires?f= vorhanden');
     ok(/async function workshopBoard[\s\S]*?wsWinter\(/.test(app), 'Werkstatt-Startseite zeigt Winter-Arbeitsvorrat');
     for (const f of ['winter_bad', 'winter_unknown']) ok(app.includes(`#/tires?f=${f}`), 'Link auf Reiter ' + f);
+    ok(/'winter_closed', 'age', 'all'\]\.includes\(hf\)/.test(app) && /winter_closed: \(x\) => !!x\.winter_closed_order/.test(app), 'Reiter „Winterauftrag abgeschlossen, Lage offen“ (Direktsprung + Filter)');
+    ok(/\.filter\(\(\[k, , n\]\) => n \|\| k === f \|\| !\(k\.startsWith\('winter'\)/.test(app), 'Winter-Reiter nur bei Treffern');
     ok(/async function fleetTodo[\s\S]*?\/api\/tires\/winter[\s\S]*?\['todo_winter', wi,/.test(app), 'Fuhrparkleitung „Heute zu tun“ mit Winterreifen'); }
   { const fl = (await users.fleet.get('/api/tires/winter')).data; eq(fl.totals.nicht_erfuellt, dw.data.totals.nicht_erfuellt, 'Fuhrparkleitung = Disposition'); }
   // Fahrer (zugeordnet) darf bei Sichtprüfung die Kennzeichnung angeben

@@ -961,3 +961,10 @@ STRINGS.en.help_tires_s += '|If a winter tyre order was released within the last
 Object.assign(STRINGS.de, { wo_case_hint_closed: 'Auftrag abgeschlossen – die Winterlage ist laut Reifenerfassung weiterhin offen. Reifen in der Fahrzeugakte → Reifen mit Winterkennzeichnung erfassen oder dort einen neuen Auftrag anlegen.' });
 Object.assign(STRINGS.uk, { wo_case_hint_closed: 'Замовлення закрито – за обліком шин питання зимових шин досі відкрите. Внесіть шини із зимовим маркуванням у картку ТЗ → Шини або створіть там нове замовлення.' });
 Object.assign(STRINGS.en, { wo_case_hint_closed: 'Order closed – according to the tyre records the winter status is still open. Record the tyres with their winter marking in the vehicle file → Tyres, or create a new order there.' });
+// [CLAUDE] Reifen – Flotte: Reiter „Winterauftrag abgeschlossen, Lage offen“ (nur bei Treffern, 13.10.2026)
+Object.assign(STRINGS.de, { tires_winter_closed: 'Winterauftrag abgeschlossen, Lage offen' });
+Object.assign(STRINGS.uk, { tires_winter_closed: 'Зимове замовлення закрито, питання відкрите' });
+Object.assign(STRINGS.en, { tires_winter_closed: 'Winter order closed, status open' });
+STRINGS.de.help_tires_s += '|Reifen – Flotte zeigt solche Fahrzeuge zusätzlich im Reiter „Winterauftrag abgeschlossen, Lage offen“ – nur, wenn es Treffer gibt.';
+STRINGS.uk.help_tires_s += '|«Шини – автопарк» додатково показує такі ТЗ у вкладці «Зимове замовлення закрито, питання відкрите» – лише якщо такі є.';
+STRINGS.en.help_tires_s += '|Tyres – fleet also lists these vehicles in the tab “Winter order closed, status open” – only when there are any.';

@@ -161,6 +161,11 @@ with sync_playwright() as p:
           d=q.locator('details',has=q.locator('#todowinter')); d.locator('summary').click()
           check(CL[lang][2] in d.inner_text() and cur['case_no'] in d.inner_text(),f'Heute zu tun: Kurzhinweis ({lang})')
           if SHOTS: d.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/todo_woclosed_{lang}_390.png')
+          q.goto(B+'/#/tires?f=winter_closed'); q.wait_for_selector('[data-tf="winter_closed"][aria-pressed="true"]')
+          tb=q.inner_text('[data-tf="winter_closed"]'); check({'de':'Winterauftrag abgeschlossen, Lage offen','uk':'Зимове замовлення закрито, питання відкрите','en':'Winter order closed, status open'}[lang] in tb and '(1)' in tb,f'Reifen – Flotte: Reiter abgeschlossen/offen ({lang})')
+          lt=q.inner_text('.list'); check(cur['case_no'] in lt and q.locator('.list a.row').count()==1,'Reiter zeigt genau das Fahrzeug mit Auftragsnummer')
+          check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'Reiter ohne waagrechtes Scrollen')
+          if SHOTS: q.screenshot(path=f'{SHOTS}/tires_woclosed_{lang}_390.png')
         check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:
