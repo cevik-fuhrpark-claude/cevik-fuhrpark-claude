@@ -170,7 +170,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const provider = String(body.provider || '').toLowerCase();
     if (!['webfleet', 'yellowfox'].includes(provider)) throw bad('validation', 'provider muss webfleet oder yellowfox sein.');
     const now = nowIso();
-    const res = { matched: 0, unmatched: 0, rejected: 0, odometer_written: 0 };
+    const res = { matched: 0, unmatched: 0, rejected: 0, odometer_written: 0, odometer_rejected: 0 };
     // Abfragebudget: Zuordnungen, Fahrzeuge und letzte Stände gesammelt laden, Schreibzugriffe gesammelt ausführen
     // (vorher bis zu 4 Abfragen je Eintrag – bei 500 Einträgen weit über der Grenze je Aufruf).
     const rows = items.map((it) => {
@@ -236,6 +236,12 @@ export async function integrationRouter(request, env, ctx, url) {
       ON CONFLICT(vehicle_id,provider) DO UPDATE SET external_id=excluded.external_id, match_basis=excluded.match_basis, source_plate=excluded.source_plate, gps_time=excluded.gps_time, received_at=excluded.received_at,
         lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
+    // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)
+    const rejPos = stmts.length;
+    if (odo.size) stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?1)
+      WHERE ${X('km')} < (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1)
+        OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at < ${X('t')} AND d.km > ${X('km')})`)
+      .bind(JSON.stringify([...odo.values()])));
     const odoPos = stmts.length;
     // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage);
     // der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
@@ -247,7 +253,10 @@ export async function integrationRouter(request, env, ctx, url) {
       ON CONFLICT DO NOTHING`).bind(`telematik:${provider}`, now, JSON.stringify([...odo.values()])));
     if (stmts.length) {
       const out = await env.DB.batch(stmts);
-      if (odo.size) res.odometer_written = (out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0;
+      if (odo.size) {
+        res.odometer_written = (out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0;
+        res.odometer_rejected = (out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].n) || 0;
+      }
     }
     return json({ ok: true, ...res });
   }

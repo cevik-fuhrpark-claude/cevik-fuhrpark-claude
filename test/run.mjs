@@ -601,18 +601,18 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
   eq(bulk.status, 200); eq(bulk.data.matched, 250); eq(bulk.data.unmatched, 250);
   ok(QSTAT.n - q0 <= 20, `≤ 20 Abfragen für 500 Einträge (${QSTAT.n - q0})`);
   eq(bulk.data.odometer_written, 1, 'je Fahrzeug und Tag ein km-Stand (der jüngste)');
-  eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: many.slice(1, 2) }, H)).data.odometer_written, 0, 'gleicher Stand nicht doppelt');
+  { const same = (await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: many.slice(1, 2) }, H)).data; eq(same.odometer_written, 0, 'gleicher Stand nicht doppelt'); eq(same.odometer_rejected, 0, 'gleicher Stand ist keine Ablehnung'); }
   const telRows = async () => (await owner.get(`/api/vehicles/VIN:WMA15SZZ2HM722774`)).data.odometer.filter((o) => o.source === 'telematik:webfleet');
   const day = (await telRows()).filter((o) => o.measured_at.startsWith('2026-10-10'));
   eq(day.length, 1); eq(day[0].km, 812600 + 499, 'jüngster Wert des Tages');
   // jüngere GPS-Zeit, aber kleinerer km-Stand (Gerätefehler/Tausch): nicht übernommen
   const lower = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'BULK-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-10T12:00:00Z', km: 100 }] }, H);
-  eq(lower.data.matched, 1); eq(lower.data.odometer_written, 0, 'kleinerer km-Stand nicht in die Akte');
+  eq(lower.data.matched, 1); eq(lower.data.odometer_written, 0, 'kleinerer km-Stand nicht in die Akte'); eq(lower.data.odometer_rejected, 1, 'als abgelehnt gezählt');
   // Tagesgrenze und Vortag (zweites Fahrzeug, zurückliegende Tage)
   eq((await owner.post('/api/vehicles', { plate: 'TT-TEL 1', vin: 'WDB96340310777777', site: 'Dortmund' })).status < 300, true, 'Testfahrzeug Telematik');
   const tel = (gps, km) => anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-TT', vin: 'WDB96340310777777', gps_time: gps, km }] }, H);
   eq((await tel('2026-10-07T10:00:00Z', 500000)).data.odometer_written, 1);
-  eq((await tel('2026-10-08T06:00:00Z', 400)).data.odometer_written, 0, 'am Folgetag nicht kleiner als der Vortag');
+  { const f = (await tel('2026-10-08T06:00:00Z', 400)).data; eq(f.odometer_written, 0, 'am Folgetag nicht kleiner als der Vortag'); eq(f.odometer_rejected, 1, 'Folgetag kleiner: gezählt'); }
   eq((await tel('2026-10-08T07:00:00Z', 500100)).data.odometer_written, 1, 'Folgetag mit größerem Wert');
   eq((await owner.get('/api/vehicles/VIN:WDB96340310777777')).data.odometer.filter((o) => o.source === 'telematik:webfleet' && o.measured_at < '2026-10-09').length, 2, 'zwei Tage → zwei Zeilen');
   // Tagesgrenze nach Berliner Zeit: 09.10. 22:30 UTC = 10.10. 00:30 Berlin → derselbe Tag wie 10.10. 08:00 UTC (eine Zeile, jüngster Wert)
@@ -5805,14 +5805,27 @@ await test('Datenqualität: Telematik-km kleiner als erfasster km-Stand → Hinw
   eq((await users.fleet.post(`/api/vehicles/${VID}/odometer`, { km: '612000' })).status, 201);
   const send = (km) => anon.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'TL-KM', vin: 'WDB96340310999101', km, gps_time: new Date(Date.now() + 1000).toISOString() }] }, H);
   const hint = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_km_rejected' && i.vehicle_id === VID);
-  let r = await send(98765.4); eq(r.data.matched, 1); eq(r.data.odometer_written, 0, 'kleinerer km-Stand wird nicht übernommen');
+  let r = await send(98765.4); eq(r.data.matched, 1); eq(r.data.odometer_written, 0, 'kleinerer km-Stand wird nicht übernommen'); eq(r.data.odometer_rejected, 1, 'Zähler odometer_rejected');
   let h = await hint(); eq(h.length, 1, 'Hinweis in der Datenqualität'); eq(h[0].severity, 'hinweis');
   const vtk = async () => (await users.fleet.get(`/api/vehicles/${VID}`)).data.telematics.find((x) => x.provider === 'yellowfox');
   eq((await vtk()).km_rejected_below, 612000, 'Fahrzeugakte: Hinweis mit erfasstem Stand'); ok(!('prev_km' in (await vtk())), 'kein Rohfeld');
   ok(h[0].detail.startsWith('YellowFox TL-KM: 98765 km (') && h[0].detail.includes('< 612000 km ('), h[0].detail);
   ok((await anon.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, H)).data.items.some((i) => i.check === 'telematics_km_rejected'), 'auch Integrations-API');
   eq((await users.ws.get('/api/admin/data-quality')).status, 403, 'Werkstatt sieht Datenqualität nicht');
-  r = await send(612100); eq(r.data.odometer_written, 1, 'plausibler Stand wird übernommen'); eq((await hint()).length, 0, 'Hinweis verschwindet'); eq((await vtk()).km_rejected_below, null, 'Fahrzeugakte: Hinweis weg');
+  // Telematik-Übersicht: Liste km_rejected, Zeile „Letzter Stand je Fahrzeug“ und CSV-Spalte (gleiche Regel)
+  const ovk = async () => (await users.fleet.get('/api/telematics')).data;
+  let ov = await ovk(); const kr = ov.km_rejected.filter((k) => k.vehicle_id === VID);
+  eq(kr.length, 1, 'Übersicht: km_rejected'); eq(kr[0].km, 98765); eq(kr[0].recorded_km, 612000); eq(kr[0].external_id, 'TL-KM');
+  ok(!('prev_km' in kr[0]) && !('km' in (ov.plate_mismatches[0] || {})), 'keine Rohfelder');
+  const pk = ov.positions.find((x) => x.vehicle_id === VID); ok(pk, 'Fahrzeug in „Letzter Stand“');
+  eq(pk.km_rejected.length, 1); eq(pk.km_rejected[0].recorded_km, 612000); ok(!('vehicle_id' in pk.km_rejected[0]), 'ohne Dopplung');
+  const { parseCsv } = await import('../src/util.js');
+  const kcsv = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/telematics?format=csv')).data).replace(/^\ufeff/, ''));
+  eq(kcsv[0][7], 'Geräte-km kleiner als erfasst (nicht übernommen)', 'CSV-Spalte');
+  const krow = kcsv.find((x) => x[0] === pk.plate); ok(krow[7].startsWith('yellowfox TL-KM: 98765 km (') && krow[7].includes('< 612000 km ('), krow[7]);
+  ok(kcsv.slice(1).every((x) => (x[7] === '') === !ov.positions.find((p) => p.plate === x[0]).km_rejected.length), 'Spalte nur bei Abweichung gefüllt');
+  r = await send(612100); eq(r.data.odometer_written, 1, 'plausibler Stand wird übernommen'); eq(r.data.odometer_rejected, 0); eq((await hint()).length, 0, 'Hinweis verschwindet'); eq((await vtk()).km_rejected_below, null, 'Fahrzeugakte: Hinweis weg');
+  ov = await ovk(); eq(ov.km_rejected.filter((k) => k.vehicle_id === VID).length, 0, 'Übersicht: Hinweis weg'); eq(ov.positions.find((x) => x.vehicle_id === VID).km_rejected.length, 0);
   await env.DB.prepare('DELETE FROM telematics_latest WHERE provider=? AND vehicle_id=?').bind('yellowfox', VID).run();
   await env.DB.prepare(`DELETE FROM odometer_readings WHERE vehicle_id=? AND id NOT IN (SELECT value FROM json_each(?))`).bind(VID, JSON.stringify(before)).run();
 });

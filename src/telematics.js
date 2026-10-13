@@ -1,6 +1,6 @@
 // [CLAUDE] Telematik-Prüffälle: Geräte ohne sichere Zuordnung (keine FIN, kein bestätigtes Mapping) und bestätigte Zuordnungen.
 // Zuordnung nur durch Inhaber/Fuhrparkleitung mit Nachweis – nie automatisch über das Kennzeichen.
-import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate, berlinDateTime } from './util.js';
+import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate, berlinDateTime, berlinDate } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -15,9 +15,12 @@ export async function telematicsOverview(env, user, query = {}) {
     env.DB.prepare(`SELECT m.provider, m.external_id, m.vehicle_id, v.plate, m.evidence, m.confirmed_at, u.display_name AS confirmed_by_name
       FROM telematics_mappings m JOIN vehicles v ON v.id=m.vehicle_id LEFT JOIN users u ON u.id=m.confirmed_by ORDER BY v.plate`).all(),
     env.DB.prepare(`SELECT COUNT(*) AS vehicles, MAX(received_at) AS last_received FROM telematics_latest`).first(),
-    // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch)
-    env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at
-      FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.source_plate IS NOT NULL ORDER BY v.plate, t.provider`).all(),
+    // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch),
+    // und Geräte, deren letzter km-Stand kleiner ist als der davor erfasste (gleiche Regel wie telematics_km_rejected) – eine Abfrage
+    env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at
+      FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
+      LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
+      WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) ORDER BY v.plate, t.provider`).all(),
     // Letzter Stand je bewertetem, aktivem Kraftfahrzeug (ohne Anhänger): ohne Daten zuerst, dann ältester Stand zuerst.
     // Reine Information – keine Frist, kein Grenzwert (ob das Fahrzeug stand oder das Gerät ausgefallen ist, steht nicht fest).
     env.DB.prepare(`SELECT v.id AS vehicle_id, v.plate, v.site, MAX(t.gps_time) AS gps_time, MAX(t.received_at) AS received_at, group_concat(t.provider) AS providers
@@ -25,11 +28,18 @@ export async function telematicsOverview(env, user, query = {}) {
       WHERE v.active=1 AND v.eval_excluded=0 AND COALESCE(v.kind,'')<>'anhaenger'
       GROUP BY v.id ORDER BY MAX(t.gps_time) IS NOT NULL, MAX(t.gps_time), v.plate`).all(),
   ]);
-  const plate_mismatches = reported.results.filter((r) => normPlate(r.source_plate) !== normPlate(r.plate));
+  const plate_mismatches = reported.results.filter((r) => r.source_plate && normPlate(r.source_plate) !== normPlate(r.plate))
+    .map(({ vehicle_id, plate, provider, external_id, match_basis, source_plate, received_at }) => ({ vehicle_id, plate, provider, external_id, match_basis, source_plate, received_at }));
+  // km-Stand des Geräts kleiner als der erfasste – nicht übernommen (nur Hinweis, keine Korrektur, kein Grenzwert)
+  const km_rejected = reported.results.filter((r) => r.km !== null && r.prev_km !== null && r.gps_time && Math.round(r.km) < r.prev_km)
+    .map((r) => ({ vehicle_id: r.vehicle_id, plate: r.plate, provider: r.provider, external_id: r.external_id, km: Math.round(r.km), gps_time: r.gps_time, recorded_km: r.prev_km, recorded_at: r.prev_at }));
+  const kmRej = new Map();
+  for (const k of km_rejected) { if (!kmRej.has(k.vehicle_id)) kmRej.set(k.vehicle_id, []); kmRej.get(k.vehicle_id).push(k); }
   // Standortfilter nur für „Letzter Stand je Fahrzeug“ (Schreibweise egal wie in anderen Übersichten); Abweichungen bleiben vollständig
   const sel = siteSelection(positions.results, query.site);
-  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches, site: sel.site, site_options: sel.options,
-    positions: positions.results.filter((r) => sel.match(r.site)).map((r) => ({ ...r, providers: r.providers ? r.providers.split(',').sort() : [] })) };
+  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches, km_rejected, site: sel.site, site_options: sel.options,
+    positions: positions.results.filter((r) => sel.match(r.site)).map((r) => ({ ...r, providers: r.providers ? r.providers.split(',').sort() : [],
+      km_rejected: (kmRej.get(r.vehicle_id) || []).map(({ provider, external_id, km, gps_time, recorded_km, recorded_at }) => ({ provider, external_id, km, gps_time, recorded_km, recorded_at })) })) };
 }
 
 // „Letzter Stand je Fahrzeug“ als CSV (Excel DE) – z. B. für die Rückfrage beim Telematik-Anbieter oder der Werkstatt.
@@ -37,12 +47,13 @@ export async function telematicsOverview(env, user, query = {}) {
 export function positionsCsv(ov, csvCell, now = Date.now()) {
   const mism = new Map();
   for (const m of ov.plate_mismatches) { if (!mism.has(m.vehicle_id)) mism.set(m.vehicle_id, []); mism.get(m.vehicle_id).push(`${m.provider} ${m.external_id || ''}: ${m.source_plate}`.replace(/\s+:/, ':')); }
-  const head = ['Kennzeichen', 'Standort', 'Letzte GPS-Zeit', 'Empfangen', 'Alter GPS-Stand (Stunden)', 'Anbieter', 'Gerät meldet anderes Kennzeichen'];
+  const head = ['Kennzeichen', 'Standort', 'Letzte GPS-Zeit', 'Empfangen', 'Alter GPS-Stand (Stunden)', 'Anbieter', 'Gerät meldet anderes Kennzeichen', 'Geräte-km kleiner als erfasst (nicht übernommen)'];
   const lines = [head.join(';')];
   for (const r of ov.positions) {
     const age = r.gps_time ? Math.floor((now - Date.parse(r.gps_time)) / 3600000) : null;
     lines.push([csvCell(r.plate), csvCell(r.site), r.gps_time ? berlinDateTime(r.gps_time) : 'keine Daten', r.received_at ? berlinDateTime(r.received_at) : '',
-      age === null || !(age >= 0) ? '' : age, csvCell(r.providers.join(', ')), csvCell((mism.get(r.vehicle_id) || []).join(' | '))].join(';'));
+      age === null || !(age >= 0) ? '' : age, csvCell(r.providers.join(', ')), csvCell((mism.get(r.vehicle_id) || []).join(' | ')),
+      csvCell((r.km_rejected || []).map((k) => `${k.provider} ${k.external_id || ''}: ${k.km} km (${berlinDate(k.gps_time)}) < ${k.recorded_km} km (${berlinDate(k.recorded_at)})`.replace(/\s+:/, ':')).join(' | '))].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }

@@ -152,7 +152,12 @@ with sync_playwright() as p:
         o = api('POST', f'/api/vehicles/{kvid}/odometer', {'km': km, 'measured_on': (datetime.date.today() - datetime.timedelta(days=n)).isoformat()})
         if o['s'] != 201:
             problems.append(f'Vorbereitung km-Prognose: {o}')
-    ROUTES['fleet'] += [f'vehicles/{kvid}']
+    # Telematik-Stand mit kleinerem km-Stand als erfasst (nicht übernommen): Telematik-Übersicht „⚠ km“, Fahrzeugakte, Datenqualität
+    tel = adm.evaluate("""async (b) => { const r = await fetch('/api/integration/v1/telematics', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cfp': '1', authorization: 'Bearer integration-token-xyz' }, body: JSON.stringify(b) });
+      return { s: r.status, d: await r.json().catch(() => null) }; }""", {'provider': 'yellowfox', 'items': [{'external_id': 'RT-TEL-1', 'vin': kvin, 'km': 90000, 'lat': 51.5, 'lon': 7.4, 'gps_time': (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).strftime('%Y-%m-%dT%H:%M:%SZ')}]})
+    if tel['s'] != 200 or (tel['d'] or {}).get('odometer_rejected') != 1:
+        problems.append(f'Vorbereitung Telematik-km: {tel}')
+    ROUTES['fleet'] += [f'vehicles/{kvid}', 'quality?f=telematics_km_rejected']
     ROUTES['owner'] += ['quality?f=inspection_no_result']
     ROUTES['fleet'] += ['quality?f=inspection_no_result']
     ROUTES['owner'] += [f'vehicles/{vid}', f'vehicles/{vid}/timeline']
