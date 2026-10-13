@@ -4715,7 +4715,13 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(links.length >= 8, 'Seitenhilfe-Links: ' + links.length);
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
-  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'costs', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
+  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'costs', 'exports', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
+  // Ausdrucke & Exporte: Inhaber/Fuhrparkleitung/Werkstatt/Lesezugriff; nennt nur Funktionen, die es gibt (Druck/PDF, CSV, .ics, Fahrernamen-Haken)
+  ok(/\['owner', 'fleet', 'workshop'\]\.includes\(r\)\) parts\.splice\(parts\.indexOf\('stock'\) \+ 1, 0, 'exports'\)/.test(app), 'Hilfe Exporte für Leitung/Werkstatt');
+  for (const lang of ['de', 'uk', 'en']) {
+    const s = STRINGS[lang].help_exports_s;
+    ok(s.includes(STRINGS[lang].print.split(' ')[0]) && s.includes('CSV') && s.includes('.ics') && s.includes(STRINGS[lang].with_driver_names.split(' (')[0]), `help_exports ${lang} nennt die Knöpfe wie in der App`);
+  }
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].help_viewer_t && STRINGS[lang].help_viewer_s.split('|').length === 8, `help_viewer ${lang}`);
   ok(app.includes('[/^#\\/help(?:\\?s=([\\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp]'), 'Route #/help?s=<Abschnitt>&q=<Suchbegriff>');
   {
@@ -5082,6 +5088,40 @@ await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) l
   const { STRINGS, translateImportReason } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].err_wrong_file_tacho, `err_wrong_file_tacho (${l})`);
   ok(translateImportReason('en', gapReason) === 'No date entered – row left unchanged', 'Hinweis übersetzt');
+});
+
+await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), Dateiname, gleiche Spaltenzahl je Zeile, Formelschutz', async () => {
+  const { parseCsv } = await import('../src/util.js');
+  const { readFileSync } = await import('node:fs');
+  const y = BERLIN_TODAY.slice(0, 4);
+  const urls = {
+    'fuhrpark-fahrzeuge': '/api/vehicles?format=csv', 'fuhrpark-vertraege': '/api/contracts?format=csv', 'fuhrpark-prueftermine': '/api/maintenance?format=csv',
+    'fuhrpark-durchgefuehrte-pruefungen': `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, 'fuhrpark-reifen': '/api/tires/fleet?format=csv',
+    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`,
+    'werkstatt-auslastung': '/api/reports/workshop-load?weeks=4&format=csv', 'fuhrpark-kennzahlen': `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`,
+    'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
+    'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
+    'fuhrpark-fahrer': '/api/drivers?format=csv', 'fuhrpark-auslesungen': '/api/tacho?format=csv', 'fuhrpark-bussgelder': '/api/fines?format=csv', 'fuhrpark-vorgaenge': '/api/cases?format=csv',
+    'fuhrpark-versicherungsfaelle': '/api/claims?format=csv',
+  };
+  // Wächter: jede CSV-Antwort im Router steht in dieser Liste (neue Exporte fallen sofort auf)
+  const routes = (readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8').match(/text\/csv/g) || []).length;
+  ok(routes <= Object.keys(urls).length, `${routes} CSV-Antworten im Router, ${Object.keys(urls).length} geprüft – neuen Export hier ergänzen`);
+  for (const [name, u] of Object.entries(urls)) {
+    const r = await owner.get(u);
+    eq(r.status, 200, `${name}:`);
+    ok((r.headers.get('content-type') || '').startsWith('text/csv; charset=utf-8'), `${name}: Inhaltstyp`);
+    ok(/attachment; filename="[a-z0-9_.-]+\.csv"/.test(r.headers.get('content-disposition') || ''), `${name}: Dateiname ${r.headers.get('content-disposition')}`);
+    eq(r.headers.get('cache-control'), 'no-store', `${name}: kein Zwischenspeichern`);
+    const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+    ok(text.startsWith('﻿'), `${name}: BOM fehlt (Excel liest Umlaute sonst falsch)`);
+    ok(!/[^\r]\n/.test(text), `${name}: Zeilenende ohne CR`);
+    const rows = parseCsv(text);
+    ok(rows.length >= 1 && rows[0].length >= 2, `${name}: Kopfzeile mit Semikolon`);
+    const bad = rows.filter((x) => x.length !== rows[0].length);
+    ok(!bad.length, `${name}: ${bad.length} Zeile(n) mit abweichender Spaltenzahl (Kopf ${rows[0].length}, z. B. Zeile ${bad[0] && bad[0].line}: ${bad[0] && bad[0].length})`);
+    for (const row of rows) for (const c of row) ok(!/^[=+@]/.test(c) && !(/^-/.test(c) && !/^-\d+(?:[.,]\d+)?$/.test(c)), `${name}: ungeschützte Zelle ${c}`);
+  }
 });
 
 await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudflare-Grenze je Aufruf, Gratis-Tarif)', async () => {

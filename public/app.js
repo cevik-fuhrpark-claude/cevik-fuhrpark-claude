@@ -2353,12 +2353,14 @@ const helpHash = (q) => '#/help' + (q ? '?q=' + encodeURIComponent(q) : '');
 // Hilfe-Abschnitte je Rolle (Reihenfolge = Anzeige)
 function helpSections(r) {
   // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
-  if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'push'];
+  if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'exports', 'push'];
   const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
+  // Ausdrucke & Exporte: Rollen mit CSV-/Druck-Funktionen (Fahrer/Dispo nur Vorgangsliste drucken – dort genügt der Knopf)
+  if (['owner', 'fleet', 'workshop'].includes(r)) parts.splice(parts.indexOf('stock') + 1, 0, 'exports');
   if (r === 'dispatch') parts.unshift('dispo');
   if (r === 'driver') parts.unshift('myveh', 'myfines');
   return parts;
