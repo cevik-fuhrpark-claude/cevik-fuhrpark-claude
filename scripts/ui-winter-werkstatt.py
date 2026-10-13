@@ -103,6 +103,14 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
         if SHOTS: row.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/plan_wo_{lang}_{w}.png')
         check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
+    # Vorgangsliste (Werkstatt) kennzeichnet den Winterauftrag ebenfalls
+    c=br.new_context(viewport={'width':390,'height':844},locale='de-DE'); q=c.new_page(); q.goto(B)
+    q.evaluate(JS,['POST','/api/login',{'username':'w.werkstatt','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':'en'}])
+    q.goto(B+'/#/cases'); q.reload(); q.wait_for_selector(f'a[href="#/cases/{cid}"]')
+    check('Winter tyres' in q.locator(f'a[href="#/cases/{cid}"]').first.inner_text(),'Vorgangsliste kennzeichnet Winterauftrag (en 390)')
+    check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+    if SHOTS: q.screenshot(path=f'{SHOTS}/cases_wo_en_390.png')
+    c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)

@@ -939,7 +939,7 @@ await test('Werkstattplan: Winterreifen-Auftrag mit Termin erscheint am geplante
   ok(icsT.includes(r.data.case_no) && icsT.includes('Winterreifen'), 'Kalender nennt Winterreifen');
   ok(!icsT.includes('Positionen laut Reifenerfassung'), 'Kalender ohne Beschreibung');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2, 'Plan und Disposition kennzeichnen Winterreifen-Aufträge');
+  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2 && app.includes('${woTag(c)}${esc(c.description)}'), 'Plan, Disposition und Vorgangsliste kennzeichnen Winterreifen-Aufträge');
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
   await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
 });
