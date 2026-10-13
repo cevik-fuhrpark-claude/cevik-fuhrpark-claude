@@ -935,3 +935,7 @@ Object.assign(STRINGS.en, { fine_vehicle_ambiguous: 'This plate is on several ac
 Object.assign(STRINGS.de, { dq_telematics_plate_mismatch: 'Telematik-Gerät meldet anderes Kennzeichen' });
 Object.assign(STRINGS.uk, { dq_telematics_plate_mismatch: 'Телематичний пристрій передає інший номер' });
 Object.assign(STRINGS.en, { dq_telematics_plate_mismatch: 'Telematics device reports a different plate' });
+// [CLAUDE] Telematik-Übersicht: abweichend gemeldete Kennzeichen (13.10.2026)
+Object.assign(STRINGS.de, { tm_reports: 'meldet', tm_mismatch_hint: 'Das Gerät ist über FIN oder bestätigte Zuordnung diesem Fahrzeug zugeordnet, meldet aber ein anderes Kennzeichen. Nichts wird automatisch geändert – Gerätekonfiguration beim Anbieter oder Fahrzeugstamm prüfen.' });
+Object.assign(STRINGS.uk, { tm_reports: 'передає', tm_mismatch_hint: 'Пристрій призначено цьому транспортному засобу за VIN або підтвердженою прив’язкою, але він передає інший номер. Нічого не змінюється автоматично – перевірте налаштування пристрою в постачальника або дані транспортного засобу.' });
+Object.assign(STRINGS.en, { tm_reports: 'reports', tm_mismatch_hint: 'The device is assigned to this vehicle by VIN or a confirmed mapping but reports a different plate. Nothing is changed automatically – check the device configuration at the provider or the vehicle master data.' });

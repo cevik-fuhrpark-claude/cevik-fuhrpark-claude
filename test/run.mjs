@@ -5754,8 +5754,12 @@ await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlaut
   eq((await send('SZ-YC 5531')).data.matched, 1, 'FIN gewinnt');
   let mm = await mism(); eq(mm.length, 1); eq(mm[0].severity, 'fehler'); eq(mm[0].detail, 'YellowFox TL-VIN → SZ-YC 5531');
   ok((await anon.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, H)).data.items.some((i) => i.check === 'telematics_plate_mismatch'), 'auch Integrations-API');
+  // Telematik-Übersicht zeigt dieselbe Abweichung (Fahrzeug, Gerät, gemeldetes Kennzeichen)
+  const tmm = async () => (await users.fleet.get('/api/telematics')).data.plate_mismatches.filter((x) => x.vehicle_id === 'VIN:WDB96340310999101');
+  let tm = await tmm(); eq(tm.length, 1, 'Übersicht markiert Abweichung'); eq(tm[0].source_plate, 'SZ-YC 5531'); eq(tm[0].plate, 'TÜ-TL 7'); eq(tm[0].external_id, 'TL-VIN'); eq(tm[0].provider, 'yellowfox');
   eq((await owner.get('/api/vehicles/VIN:WDB96340310999101')).data.vehicle.plate, 'TÜ-TL 7', 'Stamm unverändert');
   await send('tü tl 7'); eq((await mism()).length, 0, 'gleiches Kennzeichen anders geschrieben: kein Befund');
+  eq((await tmm()).length, 0, 'Übersicht: Schreibweise egal');
   await send('SZ-YC 5531'); await send(undefined); eq((await mism()).length, 0, 'ohne Kennzeichen: kein Befund (letzter Stand zählt)');
   await env.DB.prepare(`DELETE FROM telematics_latest WHERE provider='yellowfox' AND vehicle_id='VIN:WDB96340310999101'`).run();
   await env.DB.prepare(`DELETE FROM telematics_unmatched WHERE provider='yellowfox' AND external_id LIKE 'TL-%'`).run();

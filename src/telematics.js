@@ -1,6 +1,6 @@
 // [CLAUDE] Telematik-Prüffälle: Geräte ohne sichere Zuordnung (keine FIN, kein bestätigtes Mapping) und bestätigte Zuordnungen.
 // Zuordnung nur durch Inhaber/Fuhrparkleitung mit Nachweis – nie automatisch über das Kennzeichen.
-import { bad, forbidden, notFound, conflict, str, oneOf, nowIso } from './util.js';
+import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate } from './util.js';
 import { audit } from './auth.js';
 
 const PROVIDERS = ['webfleet', 'yellowfox'];
@@ -8,14 +8,18 @@ const canManage = (u) => ['owner', 'fleet'].includes(u.role);
 
 export async function telematicsOverview(env, user) {
   if (!canManage(user)) throw forbidden();
-  const [unmatched, mappings, latest] = await Promise.all([
+  const [unmatched, mappings, latest, reported] = await Promise.all([
     env.DB.prepare(`SELECT t.provider, t.external_id, t.source_plate, t.source_vin, t.candidate_vehicle_id, v.plate AS candidate_plate, t.last_seen
       FROM telematics_unmatched t LEFT JOIN vehicles v ON v.id=t.candidate_vehicle_id ORDER BY t.last_seen DESC LIMIT 500`).all(),
     env.DB.prepare(`SELECT m.provider, m.external_id, m.vehicle_id, v.plate, m.evidence, m.confirmed_at, u.display_name AS confirmed_by_name
       FROM telematics_mappings m JOIN vehicles v ON v.id=m.vehicle_id LEFT JOIN users u ON u.id=m.confirmed_by ORDER BY v.plate`).all(),
     env.DB.prepare(`SELECT COUNT(*) AS vehicles, MAX(received_at) AS last_received FROM telematics_latest`).first(),
+    // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch)
+    env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at
+      FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.source_plate IS NOT NULL ORDER BY v.plate, t.provider`).all(),
   ]);
-  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest };
+  const plate_mismatches = reported.results.filter((r) => normPlate(r.source_plate) !== normPlate(r.plate));
+  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, plate_mismatches };
 }
 
 export async function confirmMapping(env, user, body) {
