@@ -1016,6 +1016,7 @@ await test('Winterreifen-Auftrag abgeschlossen, Winterlage weiter offen: Hinweis
   r = await view(); eq(r.a.status, 'erfuellt'); eq(r.a.closed_order, null); eq(r.f.winter_closed_order, null);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('id="woclosed"') && (app.match(/wo_closed_short/g) || []).length >= 4, 'Akte, Winterlisten, Heute zu tun, Reifen – Flotte zeigen den Hinweis');
+  ok(app.includes("'wo_case_hint_closed' : 'wo_case_hint'"), 'Vorgang nach Abschluss ohne „Vor dem Abschluss“-Hinweis');
   await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(V).run();
 });
 await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {

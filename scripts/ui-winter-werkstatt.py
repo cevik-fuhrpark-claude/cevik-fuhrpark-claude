@@ -153,6 +153,10 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
         if SHOTS: q.locator('#woclosed').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/woclosed_{lang}_{w}.png')
         if w==390:
+          CH={'de':'Auftrag abgeschlossen','uk':'Замовлення закрито','en':'Order closed'}
+          q.goto(B+'/#/cases/'+cid); q.wait_for_selector('#cwhint')
+          check(CH[lang] in q.inner_text('#cwhint'),f'Vorgang nach Abschluss: kein „Vor dem Abschluss“-Hinweis ({lang})')
+          if SHOTS: q.locator('#cwinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/cwinter_closed_{lang}_390.png')
           q.goto(B+'/#/'); q.wait_for_selector('#todowinter',state='attached')
           d=q.locator('details',has=q.locator('#todowinter')); d.locator('summary').click()
           check(CL[lang][2] in d.inner_text() and cur['case_no'] in d.inner_text(),f'Heute zu tun: Kurzhinweis ({lang})')
