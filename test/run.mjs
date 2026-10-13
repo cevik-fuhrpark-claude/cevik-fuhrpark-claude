@@ -1207,6 +1207,13 @@ await test('Vorgangssuche: Beschreibung, Nummer, Kennzeichen ohne Leerzeichen; R
   eq((await users.fleet.get('/api/cases?q=--')).data.cases.length, 0, 'nur Trennzeichen');
   const drv = (await users.driver.get('/api/cases?q=szyc')).data.cases.length; const drvAll = (await users.driver.get('/api/cases?limit=500')).data.cases.length;
   ok(drv <= drvAll, 'Fahrer sieht nur eigene');
+  // Groß-/Kleinschreibung auch außerhalb A–Z (SQLite-LIKE kann das nur für ASCII): Ukrainisch, Umlaute; mehrere Wörter in beliebiger Reihenfolge
+  const uk = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Гальма скриплять, Ölverlust links', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk() });
+  eq(uk.status, 201, 'Meldung auf Ukrainisch');
+  const hit = async (q) => (await users.fleet.get('/api/cases?status=all&q=' + encodeURIComponent(q))).data.cases.some((c) => c.id === uk.data.id);
+  for (const q of ['гальма', 'ГАЛЬМА', 'Гальма', 'скриплять', 'ölverlust', 'ÖLVERLUST', 'Ölverlust', 'links гальма', 'ölverlust  Гальма']) ok(await hit(q), 'gefunden: ' + q);
+  for (const q of ['гальма rückleuchte', 'гальмо', 'öl_verlust']) ok(!(await hit(q)), 'nicht gefunden: ' + q);
+  ok(await hit(uk.data.case_no), 'Nummer weiterhin');
 });
 
 console.log('Kostenbericht');
@@ -5147,6 +5154,10 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(/helpMatches\(helpSections\(S\.me\.role\)/.test(searchSrc) && searchSrc.includes('id="ghelp"'), 'Globale Suche findet Hilfe-Abschnitte der eigenen Rolle');
   ok(searchSrc.includes('b.title_hit - a.title_hit'), 'Suche: Titeltreffer zuerst');
   ok(app.includes("res.length === 1 ? t('help_hits1')"), 'Trefferzeile: Einzahl bei genau einem Abschnitt');
+  // Lagerliste und globale Suche (Lager): gleiche Normalisierung – „bremsbelaege“/„BREMSBELAGE“ finden „Bremsbeläge“
+  ok(app.includes("data-s=\"${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}\"") && app.includes("const q = helpNorm($('#q').value); const f = $('#sf').value;"), 'Lagerliste: helpNorm auf beiden Seiten');
+  ok(searchSrc.includes('helpNorm(x).includes(hq)'), 'Globale Suche Lager: helpNorm');
+  for (const q of ['bremsbelaege', 'BREMSBELAGE', 'Bremsbeläge vorne', 'brems']) ok(helpNorm('Bremsbeläge vorne A 000 420').includes(helpNorm(q)), 'Lager: ' + q);
   ok(/'\/help\.js'/.test(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')), 'help.js im Offline-Cache');
 });
 
