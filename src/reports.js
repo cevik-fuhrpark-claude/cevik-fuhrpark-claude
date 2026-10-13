@@ -538,10 +538,14 @@ export async function workshopPlan(env, user, envName, query = {}) {
     if (o) Object.assign(i, { status: o.status, next_due_km: o.next_due_km ?? null, km_remaining: o.km_remaining ?? null, km_status: o.km_status ?? null });
   }
   const DUE = ['ueberfaellig', 'faellig'];
-  const maintenance_due = ov.rows.filter((r) => DUE.includes(r.status) && !(r.planned_date && r.planned_date >= today) && !r.open_order)
+  // + offene Herstellerrückrufe ohne Frist (noch nicht durchgeführt): keine erfundene Frist, aber Werkstattarbeit, die eingeplant werden kann;
+  // Referenz laut Nachweis (Schreiben/KBA-Nr.) wie in der Vorgangs-Kurzinfo – sonst kein Nachweistext
+  const openRecall = (r) => r.kind === 'Rückruf' && r.status === 'ohne_termin' && !r.last_done_date;
+  const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || openRecall(r)) && !(r.planned_date && r.planned_date >= today) && !r.open_order)
     .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: r.status,
       next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null,
-      by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null }))
+      by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null,
+      ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
   for (const i of maintenance_due) i.other_dates = others(i, null);
   return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned, maintenance_due, warn_km: ov.warn_km };

@@ -3983,6 +3983,15 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe'), 'CSV-Kopf: Rückrufe am Ende');
   ok(vcsv.find((l) => l.startsWith('VT-FL 1;')).endsWith(';1'), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
+  // Werkstattplan „Fällig – ohne Termin“: offener Rückruf ohne Frist mit Referenz, erledigter nicht; mit Werkstattauftrag nicht doppelt
+  let wp = (await users.fleet.get('/api/workshop/plan')).data.maintenance_due;
+  const wb = wp.find((i) => i.id === b.data.id);
+  ok(wb, 'offener Rückruf ohne Frist im Plan'); eq(wb.status, 'ohne_termin'); ok(wb.recall_ref.includes('Test B'), 'Referenz laut Nachweis');
+  ok(!wp.some((i) => i.id === a.data.id), 'erledigter Rückruf nicht im Plan');
+  ok(wp.filter((i) => i.kind !== 'Rückruf').every((i) => !('recall_ref' in i) && i.status !== 'ohne_termin'), 'andere Prüfungen ohne Termin weiter nicht im Plan, ohne Nachweistext');
+  const ord = await users.fleet.post(`/api/maintenance/${b.data.id}/order`, { workshop_site: 'DORTMUND', note: 'Rückruf B', request_key: rk() });
+  eq(ord.status, 201);
+  ok(!(await users.fleet.get('/api/workshop/plan')).data.maintenance_due.some((i) => i.id === b.data.id), 'mit offenem Werkstattauftrag nicht doppelt');
   eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Werkstattrechnung Rückruf B' })).status, 200);
   eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.vin === 'WDB96340310555651').open_recalls, 0, 'nach Durchführung 0');
 });
