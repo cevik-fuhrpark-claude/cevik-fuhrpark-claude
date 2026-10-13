@@ -925,3 +925,6 @@ Object.assign(STRINGS.en, { tires_winter_closed: 'Winter order closed, status op
 Object.assign(STRINGS.de, { dup_plate_warn: 'Hinweis: Kennzeichen {p} ist auch an einem anderen Fahrzeug vergeben (FIN {list}). Gespeichert – bitte FIN prüfen: Tippfehler oder Doppelanlage? Siehe Datenqualität.' });
 Object.assign(STRINGS.uk, { dup_plate_warn: 'Увага: номер {p} уже призначено іншому транспортному засобу (VIN {list}). Збережено – перевірте VIN: помилка введення чи дубль? Див. «Якість даних».' });
 Object.assign(STRINGS.en, { dup_plate_warn: 'Note: plate {p} is also assigned to another vehicle (VIN {list}). Saved – please check the VIN: typo or duplicate entry? See data quality.' });
+Object.assign(STRINGS.de, { imp_plate_conflict: '{n} Zeile(n): Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich' });
+Object.assign(STRINGS.uk, { imp_plate_conflict: 'Рядків: {n} – номер після імпорту буде й в іншого транспортного засобу. Перевірте VIN (помилка чи дубль?). Імпорт усе одно можливий' });
+Object.assign(STRINGS.en, { imp_plate_conflict: '{n} row(s): plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible' });

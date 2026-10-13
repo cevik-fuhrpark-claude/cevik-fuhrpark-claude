@@ -658,7 +658,17 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
     result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: changes.length || !ex.active ? 'geändert' : 'unverändert', changes, reactivated: !ex.active });
   }
   result.preview.sort((a, b) => a.line - b.line);
-  result.counts = { neu: result.preview.filter((p) => p.action === 'neu').length, geaendert: result.preview.filter((p) => p.action === 'geändert').length, unveraendert: result.preview.filter((p) => p.action === 'unverändert').length };
+  // Hinweis (keine Sperre): Kennzeichen nach dem Import an mehreren Fahrzeugen (Schreibweise egal) – meist Tippfehler in der FIN
+  // oder Doppelanlage (vgl. SZ-YC 5539). Maßgeblich ist das Kennzeichen nach dem Import: Datei vor Bestand.
+  const effPlate = new Map((await env.DB.prepare('SELECT id, plate FROM vehicles').all()).results.map((v) => [v.id, v.plate]));
+  for (const r of rows.values()) effPlate.set(r.id, r.plate);
+  const byKey = new Map();
+  for (const [id, pl] of effPlate) { const k = normPlate(pl); if (k) byKey.set(k, [...(byKey.get(k) || []), id]); }
+  for (const pv of result.preview) {
+    const others = (byKey.get(normPlate(pv.plate)) || []).filter((id) => id !== 'VIN:' + pv.vin);
+    if (others.length) pv.plate_conflict = others.map((id) => id.replace(/^VIN:/, ''));
+  }
+  result.counts = { neu: result.preview.filter((p) => p.action === 'neu').length, geaendert: result.preview.filter((p) => p.action === 'geändert').length, unveraendert: result.preview.filter((p) => p.action === 'unverändert').length, plate_conflict: result.preview.filter((p) => p.plate_conflict).length };
   if (dryRun) return result;
   for (const r of rows.values()) delete r._line;
   await upsertVehicleRows(env, [...rows.values()], { keepExisting: true });

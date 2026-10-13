@@ -2967,6 +2967,15 @@ await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten
   const ch = await owner.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;FIN;Standort\nIM-P 1 NEU;WDB96340310888001;München', H);
   const row = ch.data.preview[0];
   eq(row.action, 'geändert'); ok(row.changes.some((c) => c.field === 'plate' && c.to === 'IM-P 1 NEU') && row.changes.some((c) => c.field === 'site' && c.from === 'Dortmund'), 'Änderungen benannt');
+  eq(pre.data.counts.plate_conflict, 0, 'ohne gleiches Kennzeichen kein Hinweis'); ok(!pre.data.preview.some((x) => x.plate_conflict));
+  // Kennzeichen nach dem Import an zwei Fahrzeugen (FIN-Tippfehler, andere Schreibweise; auch innerhalb der Datei) → Hinweis, Import bleibt möglich
+  const dup = await owner.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;FIN\nim-p2;WDB96340310888012\nIM-Q 7;WDB96340310888013\nIM Q7;WDB96340310888014\nIM-P 1;WDB96340310888001', H);
+  const pc = new Map(dup.data.preview.map((x) => [x.vin, x.plate_conflict]));
+  eq(JSON.stringify(pc.get('WDB96340310888012')), JSON.stringify(['WDB96340310888002']), 'gegen Bestand');
+  eq(JSON.stringify(pc.get('WDB96340310888013')), JSON.stringify(['WDB96340310888014']), 'innerhalb der Datei');
+  eq(pc.get('WDB96340310888001'), undefined, 'eigenes Fahrzeug zählt nicht'); eq(dup.data.counts.plate_conflict, 3);
+  // Umbenennung in der Datei hebt den Konflikt auf (maßgeblich ist das Kennzeichen nach dem Import)
+  eq((await owner.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;FIN\nIM-P 2;WDB96340310888012\nIM-P 2 ALT;WDB96340310888002', H)).data.counts.plate_conflict, 0, 'Datei vor Bestand');
   for (const v of ['WDB96340310888001', 'WDB96340310888002']) await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Import' });
 });
 
