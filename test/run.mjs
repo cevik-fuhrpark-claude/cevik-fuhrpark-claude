@@ -905,6 +905,9 @@ await test('Werkstattauftrag Winterreifen: nur Leitung, nur Lkw mit Winterlage n
   eq((await users.dispatch.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === WV).open_order.case_no, r.data.case_no, 'Disposition sieht Auftragsnummer');
   eq((await users.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === WV).winter_order.case_no, r.data.case_no);
   eq((await users.prodFleet.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === WV)?.open_order ?? null, null, 'Betrieb getrennt');
+  { const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
+    const hd = csv[0].split(';'); const line = csv.find((l) => l.startsWith('TT-WIN 1;')).split(';');
+    eq(line.length, hd.length); eq(line[hd.indexOf('Winter: offener Werkstattauftrag')], r.data.case_no, 'Reifen-CSV nennt Auftragsnummer'); }
   ok((await users.fleet.get('/api/tires/fleet')).data.rows.filter((x) => x.kind === 'anhaenger').every((x) => x.winter_order === null), 'Anhänger nie');
   // Vorgang zeigt die aktuelle Winterlage (Werkstatt sieht, was noch fehlt)
   const cd = (await users.ws.get(`/api/cases/${r.data.id}`)).data;
