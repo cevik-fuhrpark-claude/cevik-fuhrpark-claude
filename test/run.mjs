@@ -3983,6 +3983,12 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe'), 'CSV-Kopf: Rückrufe am Ende');
   ok(vcsv.find((l) => l.startsWith('VT-FL 1;')).endsWith(';1'), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
+  // Rückrufschreiben als eigene Dokumentart in der Fahrzeugakte (Meta, Upload, Anzeige; Übersetzung je Sprache)
+  ok((await users.fleet.get('/api/meta')).data.doc_kinds.includes('rueckruf'), 'Dokumentart Rückrufschreiben');
+  const rpdf = new TextEncoder().encode('%PDF-1.4\n% Rueckrufschreiben Test\n%%EOF');
+  eq((await users.fleet.req('POST', `/api/vehicles/${VR}/documents?kind=rueckruf&note=${encodeURIComponent('Test B')}`, rpdf, { 'content-type': 'application/pdf', 'x-filename': 'Rueckruf.pdf' })).status, 201);
+  eq((await users.fleet.get(`/api/vehicles/${VR}`)).data.documents.find((x) => x.doc_kind === 'rueckruf').doc_note, 'Test B');
+  { const { STRINGS } = await import('../public/i18n.js'); ok(['de', 'uk', 'en'].every((l) => STRINGS[l].dk_rueckruf), 'dk_rueckruf in DE/UK/EN'); }
   const iav = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles;
   eq(iav.find((x) => x.plate === 'VT-FL 1').open_recalls, 1, 'Integrations-API: offene Rückrufe'); ok(iav.every((x) => Number.isInteger(x.open_recalls)), 'immer eine Zahl');
   // Werkstattplan „Fällig – ohne Termin“: offener Rückruf ohne Frist mit Referenz, erledigter nicht; mit Werkstattauftrag nicht doppelt

@@ -668,7 +668,7 @@ Historie:\n${history}`;
 }
 
 // Dokumentablage je Fahrzeug: PDF/JPG/PNG/WEBP bis 5 MB, max. 30 je Fahrzeug und Umgebung, Dubletten (SHA-256) werden erkannt
-export const DOC_KINDS = ['zulassung', 'pruefbericht', 'rechnung', 'versicherung', 'leasing', 'foto', 'sonstiges'];
+export const DOC_KINDS = ['zulassung', 'pruefbericht', 'rechnung', 'versicherung', 'leasing', 'rueckruf', 'foto', 'sonstiges'];
 const MAX_VEHICLE_DOCS = 30;
 export async function uploadVehicleDocument(env, user, envName, vehicleId, request, query = {}) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();

@@ -277,7 +277,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Fahrzeugdokumente mit Gültig-bis-Datum (z. B. Versicherung, Leasing) – nur wenn das Datum beim Hochladen angegeben wurde
-    const DOC_LABEL = { zulassung: 'Zulassung', pruefbericht: 'Prüfbericht', rechnung: 'Rechnung', versicherung: 'Versicherung', leasing: 'Leasing/Miete', foto: 'Foto', sonstiges: 'Dokument' };
+    const DOC_LABEL = { zulassung: 'Zulassung', pruefbericht: 'Prüfbericht', rechnung: 'Rechnung', versicherung: 'Versicherung', leasing: 'Leasing/Miete', rueckruf: 'Rückrufschreiben', foto: 'Foto', sonstiges: 'Dokument' };
     for (const d of await documentFindings(env, environment)) {
       const days = Math.round((Date.parse(d.valid_until) - Date.parse(today)) / 86400000);
       const label = DOC_LABEL[d.doc_kind] || 'Dokument';
