@@ -3559,8 +3559,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   vk = await vrow(users.fleet);
   eq(vk.next_due_km, 380000, 'belegte km-Fälligkeit, kleinste zuerst'); eq(vk.next_due_km_kind, 'Inspektion'); eq(vk.km_remaining, -20000);
   const vcs = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km'), 'CSV-Kopf: km-Spalten am Ende');
-  ok(vcs.find((l) => l.startsWith('WP-LN 1;')).endsWith(';380000;Inspektion;-20000'), 'CSV-Zeile: km-Fälligkeit');
+  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe'), 'CSV-Kopf: km-Spalten am Ende');
+  ok(vcs.find((l) => l.startsWith('WP-LN 1;')).endsWith(';380000;Inspektion;-20000;0'), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
   const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
   eq(JSON.stringify([av.next_due_km, av.next_due_km_kind, av.km_remaining]), JSON.stringify([380000, 'Inspektion', -20000]), 'Integrations-API: km-Fälligkeit');
@@ -3975,6 +3975,16 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   const rec = vi.inspections_due.filter((m) => m.kind === 'Rückruf');
   eq(rec.length, 1, 'nur der offene Rückruf'); eq(rec[0].next_due_date, null); ok(rec[0].recall_ref.includes('Test B'), 'Referenz laut Nachweis');
   ok(vi.inspections_due.filter((m) => m.kind !== 'Rückruf').every((m) => !('recall_ref' in m)), 'andere Prüfungen ohne Nachweistext');
+  // Fahrzeugliste + CSV: Anzahl offener Rückrufe (erledigter zählt nicht), Fahrer erhalten das Feld nicht
+  const vl = (await users.fleet.get('/api/vehicles')).data.vehicles;
+  eq(vl.find((x) => x.vin === 'WDB96340310555651').open_recalls, 1, 'Liste: ein offener Rückruf');
+  ok(vl.filter((x) => x.vin !== 'WDB96340310555651').every((x) => x.open_recalls === 0), 'andere Fahrzeuge: 0');
+  const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
+  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe'), 'CSV-Kopf: Rückrufe am Ende');
+  ok(vcsv.find((l) => l.startsWith('VT-FL 1;')).endsWith(';1'), 'CSV-Zeile: 1 offener Rückruf');
+  ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
+  eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Werkstattrechnung Rückruf B' })).status, 200);
+  eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.vin === 'WDB96340310555651').open_recalls, 0, 'nach Durchführung 0');
 });
 await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji), Entfalten ergibt Original; 900 Termine schnell', async () => {
   const { icsCalendar } = await import('../src/util.js');
