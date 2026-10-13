@@ -629,6 +629,7 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
     eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer integration-token-next-123' })).status, 200, 'neues Token gilt parallel');
     const R = { authorization: 'Bearer integration-token-read-456' };
     eq((await anon.req('GET', '/api/integration/v1/findings', undefined, R)).status, 200, 'Lesen erlaubt');
+    eq((await anon.req('GET', '/api/integration/v1/telematics/status', undefined, R)).status, 200, 'Telematik-Zustand mit Lese-Token');
     eq((await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [] }, R)).status, 403, 'Schreiben verboten');
   } finally { delete env.INTEGRATION_TOKEN_NEXT; delete env.INTEGRATION_TOKEN_READ; }
 });
@@ -5824,7 +5825,17 @@ await test('Datenqualität: Telematik-km kleiner als erfasster km-Stand → Hinw
   eq(kcsv[0][7], 'Geräte-km kleiner als erfasst (nicht übernommen)', 'CSV-Spalte');
   const krow = kcsv.find((x) => x[0] === pk.plate); ok(krow[7].startsWith('yellowfox TL-KM: 98765 km (') && krow[7].includes('< 612000 km ('), krow[7]);
   ok(kcsv.slice(1).every((x) => (x[7] === '') === !ov.positions.find((p) => p.plate === x[0]).km_rejected.length), 'Spalte nur bei Abweichung gefüllt');
+  // Integrations-API Telematik-Zustand: nur Zähler/Zeitpunkte je Anbieter, keine Geräte-IDs/Kennzeichen/Positionen
+  const stat = async (tok = 'integration-token-xyz') => anon.req('GET', '/api/integration/v1/telematics/status', undefined, { authorization: 'Bearer ' + tok });
+  let st = await stat(); eq(st.status, 200); const yf = st.data.providers.find((x) => x.provider === 'yellowfox');
+  eq(st.data.providers.map((x) => x.provider).join(), 'webfleet,yellowfox', 'beide Anbieter, auch ohne Daten');
+  ok(yf.km_rejected >= 1 && yf.devices >= 1 && yf.vehicles >= 1 && yf.last_received && yf.last_gps_time, 'Zähler YellowFox ' + JSON.stringify(yf));
+  eq(yf.km_rejected, ov.km_rejected.filter((k) => k.provider === 'yellowfox').length, 'gleiche Regel wie Übersicht');
+  eq(st.data.vehicles_without_data, ov.positions.filter((x) => !x.gps_time).length); eq(st.data.vehicles_total, ov.positions.length);
+  const stTxt = JSON.stringify(st.data); ok(!stTxt.includes('TL-KM') && !stTxt.includes(pk.plate) && !stTxt.includes('"lat"'), 'keine Geräte-ID, kein Kennzeichen, keine Position');
+  eq((await stat('falsch-falsch-falsch-123')).status, 401, 'Token Pflicht');
   r = await send(612100); eq(r.data.odometer_written, 1, 'plausibler Stand wird übernommen'); eq(r.data.odometer_rejected, 0); eq((await hint()).length, 0, 'Hinweis verschwindet'); eq((await vtk()).km_rejected_below, null, 'Fahrzeugakte: Hinweis weg');
+  eq((await stat()).data.providers.find((x) => x.provider === 'yellowfox').km_rejected, yf.km_rejected - 1, 'Zustand: Zähler sinkt');
   ov = await ovk(); eq(ov.km_rejected.filter((k) => k.vehicle_id === VID).length, 0, 'Übersicht: Hinweis weg'); eq(ov.positions.find((x) => x.vehicle_id === VID).km_rejected.length, 0);
   await env.DB.prepare('DELETE FROM telematics_latest WHERE provider=? AND vehicle_id=?').bind('yellowfox', VID).run();
   await env.DB.prepare(`DELETE FROM odometer_readings WHERE vehicle_id=? AND id NOT IN (SELECT value FROM json_each(?))`).bind(VID, JSON.stringify(before)).run();
@@ -5835,7 +5846,7 @@ await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-En
   const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
   const y = BERLIN_TODAY.slice(0, 4);
   const EP = { '/v1/vehicles': '', '/v1/cases': '', '/v1/availability': '?include=notes,warranties', '/v1/findings': '', '/v1/kpi': `?from=${y}-01&to=${COST_TO}`,
-    '/v1/costs': `?from=${y}-01&to=${COST_TO}`, '/v1/maintenance': '', '/v1/maintenance/history': `?from=${y}-01-01&to=${BERLIN_TODAY}`, '/v1/data-quality': '', '/v1/master': '' };
+    '/v1/costs': `?from=${y}-01&to=${COST_TO}`, '/v1/maintenance': '', '/v1/maintenance/history': `?from=${y}-01-01&to=${BERLIN_TODAY}`, '/v1/data-quality': '', '/v1/master': '', '/v1/telematics/status': '' };
   // Wächter: neue Lese-Endpunkte müssen in diese Liste (und damit in die Prüfung)
   const gets = [...src.matchAll(/p === '(\/v1\/[^']*)' && m === 'GET'/g)].map((x) => x[1]);
   eq(gets.filter((g) => !(g in EP)).join(','), '', 'GET-Endpunkt ohne Datensparsamkeits-Prüfung:');
