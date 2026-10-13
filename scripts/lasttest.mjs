@@ -200,6 +200,29 @@ for (let k = 0; k < 5; k++) {
   await timed('API /v1/maintenance/history', () => integ('/v1/maintenance/history?environment=test&from=' + day(365)));
   await timed('API /v1/maintenance', () => integ('/v1/maintenance?environment=test'));
 }
+// Telematik (synthetisch): je Fahrzeug ein Gerät bei beiden Anbietern, zwei Einspeisungsrunden; 10 Fahrzeuge außer Betrieb genommen,
+// danach liefern deren Geräte weiter (Worst Case für telematics_vehicle_inactive / inactive_vehicle_reports)
+{ const post = (body) => owner.req('POST', '/api/integration/v1/telematics', body, IH).then((r) => must(r, 'Telematik-Einspeisung'));
+  const feed = async (round) => { for (const provider of ['webfleet', 'yellowfox']) for (let i = 0; i < vehicles.length; i += 500) {
+    const items = vehicles.slice(i, i + 500).map((v, j) => ({ external_id: `${provider}-${i + j}`, vin: v.vin, lat: 51 + j / 1000, lon: 7 + j / 1000,
+      km: 100000 + (i + j) * 10 + round * 50, gps_time: new Date(round ? Date.now() + 1000 + j * 100 : Date.now() - 3600000 + j * 100).toISOString() }));
+    await timed('Telematik-Einspeisung (≤500)', () => post({ provider, items })); } };
+  await feed(0);
+  // direkt in der DB (die Lasttest-Fahrzeuge haben offene Vorgänge; „außer Betrieb nehmen“ lehnt das ab) – mit Protokolleintrag wie die App
+  { const at = new Date().toISOString(); const off = vehicles.slice(0, 10);
+    await env.DB.batch([...off.map((v) => env.DB.prepare('UPDATE vehicles SET active=0 WHERE id=?').bind(v.id)),
+      ...off.map((v, j) => env.DB.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)').bind(`lt-deact-${j}`, null, 'vehicle.deactivate', v.id, '{"reason":"Lasttest"}', at))]); }
+  await feed(1);
+  for (let k = 0; k < 5; k++) {
+    await timed('Telematik-Übersicht', () => owner.get('/api/telematics').then((r) => must(r, 'Telematik-Übersicht')));
+    await timed('Telematik CSV', () => owner.get('/api/telematics?format=csv').then((r) => must(r, 'Telematik CSV')));
+    await timed('API /v1/telematics/status', () => integ('/v1/telematics/status'));
+  }
+  const st = await integ('/v1/telematics/status');
+  console.log(`Telematik (synthetisch): ${st.data.providers.map((p) => `${p.provider} ${p.devices} Geräte, außer Betrieb sendet weiter ${p.inactive_vehicle_reports}`).join(' · ')}`);
+  if (CHECK && st.data.providers.some((p) => p.inactive_vehicle_reports !== 10)) { console.error('Telematik: inactive_vehicle_reports ≠ 10 – Lasttest-Daten prüfen'); process.exitCode = 1; }
+  await env.DB.batch(vehicles.slice(0, 10).map((v) => env.DB.prepare('UPDATE vehicles SET active=1 WHERE id=?').bind(v.id)));
+}
 await timed('Datenqualität inkl. Prüfmängel', () => owner.get('/api/admin/data-quality'));
 await timed('API /v1/data-quality', () => integ('/v1/data-quality?environment=test'));
 await timed('Eigene Prüfungen ohne Ergebnis', () => owner.get('/api/me/inspections-without-result').then((r) => must(r, 'me/inspections-without-result')));
