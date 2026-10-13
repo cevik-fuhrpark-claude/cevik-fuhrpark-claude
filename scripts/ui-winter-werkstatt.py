@@ -134,6 +134,30 @@ with sync_playwright() as p:
     q.wait_for_selector('.wqev'); check('VA-R' in q.inner_text('.wqev'),'Verlauf zeigt bestätigten Stand mit Positionen')
     if SHOTS: q.locator('.wqev').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wq_ev_en_390.png')
     check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
+    # Inhaber: technische Freigabe des Winterauftrags trotz offener Lage → Akte zeigt „Auftrag abgeschlossen, Lage offen“ (+ neues Formular), Heute zu tun/Werkstatt-Startseite Kurzform
+    api('POST','/api/login',{'username':'w.inhaber','password':PW})
+    cur=api('GET','/api/cases/'+cid)['d']['case']
+    rel=api('POST',f'/api/cases/{cid}/commands',{'action':'technical_release','command_id':'ui-rel-'+str(cur['version']),'expected_version':cur['version'],'note':'Sichtprüfung ok','payload':{'confirm':True}})
+    check(rel['s']==200,'Winterauftrag technisch freigegeben '+('' if rel['s']==200 else str(rel)))
+    CL={'de':('abgeschlossen','weiterhin offen','Lage weiter offen'),'uk':('закрито','досі відкрите','досі відкрите'),'en':('closed on','still open','still open')}
+    for lang in ['de','uk','en']:
+      for w,h in [(390,844),(820,1180),(1366,900)]:
+        c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
+        errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.evaluate(JS,['POST','/api/login',{'username':'w.inhaber','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#woclosed',state='attached')
+        q.evaluate("()=>{let d=document.querySelector('#woclosed'); while(d){ if(d.tagName==='DETAILS') d.open=true; d=d.parentElement }}")
+        tx=q.inner_text('#woclosed'); check(CL[lang][0] in tx and CL[lang][1] in tx and cur['case_no'] in tx,f'Akte: Auftrag abgeschlossen, Lage offen ({lang} {w})')
+        check(q.locator(f'#woclosed a[href="#/cases/{cid}"]').count()==1,'Link auf abgeschlossenen Auftrag')
+        check(q.locator('#wodet').count()==1,'neuer Auftrag weiter möglich')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
+        if SHOTS: q.locator('#woclosed').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/woclosed_{lang}_{w}.png')
+        if w==390:
+          q.goto(B+'/#/'); q.wait_for_selector('#todowinter',state='attached')
+          d=q.locator('details',has=q.locator('#todowinter')); d.locator('summary').click()
+          check(CL[lang][2] in d.inner_text() and cur['case_no'] in d.inner_text(),f'Heute zu tun: Kurzhinweis ({lang})')
+          if SHOTS: d.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/todo_woclosed_{lang}_390.png')
+        check(not errs,'keine JS-Fehler '+';'.join(errs)); c.close()
     # Werkstatt: Umrüstung über „Gleiche Angaben auch für weitere Positionen“ → Lkw verschwindet aus „nicht erfüllt“
     for w,h in [(390,844),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)

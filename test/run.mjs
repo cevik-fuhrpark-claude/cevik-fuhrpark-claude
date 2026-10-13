@@ -816,7 +816,7 @@ await test('Winterreifen (StVO § 2 Abs. 3a): Alpine-Symbol je Position, Status 
   eq(dw.data.totals.nicht_erfuellt, ft.totals.winter_noncompliant, 'gleiche Zahl wie Reifen – Flotte');
   eq(dw.data.totals.unbekannt, ft.totals.winter_unknown);
   eq(dw.data.totals.vehicles, ft.rows.filter((x) => x.winter !== 'nicht_pflichtig').length, 'Anhänger nicht gezählt');
-  ok(dw.data.noncompliant.every((x) => Object.keys(x).sort().join(',') === 'missing,noncompliant,open_order,plate,site,status,vehicle_id'), 'nur Winterangaben');
+  ok(dw.data.noncompliant.every((x) => Object.keys(x).sort().join(',') === 'closed_order,missing,noncompliant,open_order,plate,site,status,vehicle_id'), 'nur Winterangaben');
   eq((await users.driver.get('/api/tires/winter')).status, 403);
   eq((await users.prodFleet.get('/api/tires/winter')).data.noncompliant.some((x) => x.vehicle_id === V2), false, 'Umgebungen getrennt');
   const vSite = (await env.DB.prepare('SELECT site FROM vehicles WHERE id=?').bind(V2).first()).site;
@@ -975,6 +975,48 @@ await test('Winterreifen-Auftrag: „Zur Abschlusskontrolle“ verlangt Bestäti
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('name="confirm_winter_open" required') && app.includes("'confirm', 'confirm_winter_open'"), 'Formular fragt Bestätigung ab');
   for (const x of [a, b]) { await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(x.id).run(); await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(x.V).run(); }
+});
+await test('Winterreifen-Auftrag abgeschlossen, Winterlage weiter offen: Hinweis in Akte, Winterliste, Reifen – Flotte und CSV; verschwindet bei neuem Auftrag, Erfassung, Ablehnung, nach 60 Tagen', async () => {
+  eq((await users.fleet.post('/api/vehicles', { vin: 'WDB96340310888805', plate: 'TT-WIN 5', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310888805';
+  const o = await users.fleet.post(`/api/vehicles/${V}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o.status, 201);
+  const close = (id, at) => env.DB.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).bind(at, id).run();
+  const view = async () => {
+    const a = (await users.fleet.get(`/api/vehicles/${V}/tires`)).data.winter;
+    const w = (await users.fleet.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === V) || null;
+    const f = (await users.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V);
+    return { a, w, f };
+  };
+  let r = await view();
+  eq(r.a.open_order.case_no, o.data.case_no); eq(r.a.closed_order, null, 'offen → kein Abschluss-Hinweis');
+  await close(o.data.id, new Date().toISOString());
+  r = await view();
+  eq(r.a.status, 'unbekannt'); eq(r.a.open_order, null); eq(r.a.closed_order.case_no, o.data.case_no); ok(r.a.closed_order.closed_at);
+  eq(r.f.winter_closed_order.case_no, o.data.case_no); eq(r.w, null, 'Winterliste der Disposition zeigt nur „nicht erfüllt“');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
+  const col = csv[0].split(';').indexOf('Winter: Auftrag abgeschlossen, Lage offen'); ok(col > 0, 'CSV-Spalte');
+  eq(csv.find((l) => l.startsWith('TT-WIN 5;')).split(';')[col], o.data.case_no);
+  // nicht erfüllt (Sommerreifen erfasst) → auch in der Winterliste
+  eq((await users.ws.post(`/api/vehicles/${V}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5', winter_mark: 'keine' })).status, 201);
+  r = await view(); eq(r.a.status, 'nicht_erfuellt'); eq(r.w.closed_order.case_no, o.data.case_no); eq(r.w.open_order, null);
+  // nur Auftragsnummer/Abschlusszeit – kein Personenbezug im Objekt
+  eq(Object.keys(r.a.closed_order).sort().join(','), 'case_no,closed_at,id');
+  // neuer Auftrag offen → nur der offene Auftrag
+  const o2 = await users.fleet.post(`/api/vehicles/${V}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o2.status, 201);
+  r = await view(); eq(r.a.open_order.case_no, o2.data.case_no); eq(r.a.closed_order, null); eq(r.w.closed_order, null); eq(r.f.winter_closed_order, null);
+  // abgelehnt zählt nicht als abgeschlossen; der ältere Abschluss gilt weiter
+  await env.DB.prepare(`UPDATE cases SET status='abgelehnt', closed_at=? WHERE id=?`).bind(new Date().toISOString(), o2.data.id).run();
+  r = await view(); eq(r.a.closed_order.case_no, o.data.case_no);
+  // älter als 60 Tage → kein Hinweis mehr
+  await close(o.data.id, new Date(Date.now() - 61 * 86400000).toISOString());
+  r = await view(); eq(r.a.closed_order, null); eq(r.f.winter_closed_order, null);
+  // erfüllt → kein Hinweis, auch bei frischem Abschluss
+  await close(o.data.id, new Date().toISOString());
+  eq((await users.ws.post(`/api/vehicles/${V}/tires/events`, { event_type: 'wechsel', position: 'VA-L', positions: ['VA-R', 'HA-L-aussen', 'HA-R-aussen'], size: '315/70 R22.5', winter_mark: '3pmsf' })).status, 201);
+  r = await view(); eq(r.a.status, 'erfuellt'); eq(r.a.closed_order, null); eq(r.f.winter_closed_order, null);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="woclosed"') && (app.match(/wo_closed_short/g) || []).length >= 4, 'Akte, Winterlisten, Heute zu tun, Reifen – Flotte zeigen den Hinweis');
+  await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(V).run();
 });
 await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-Woche, nicht in der Zukunft), Alter je Position, Warnalter nur per Einstellung', async () => {
   eq(dotDate('0118'), '2018-01-01'); eq(dotDate('DOT XX 5320'), '2020-12-28'); eq(dotDate('5321'), null, '2021 hat keine KW 53'); eq(dotDate('0024'), null); eq(dotDate('abcd'), null);

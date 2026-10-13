@@ -71,11 +71,23 @@ export function winterStatus(kind, { marks, seen }) {
   return { status: noncompliant.length ? 'nicht_erfuellt' : missing.length ? 'unbekannt' : 'erfuellt', required, missing, noncompliant };
 }
 
-// Offene Werkstattaufträge „Winterreifen“ (cases.tire_order='winter') je Fahrzeug: vehicle_id → {id, case_no}; nur Auftragsnummer, keine Personen
-export async function openWinterOrders(env, envName, vehicleId = null) {
-  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no FROM cases WHERE environment=? AND tire_order='winter' AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')${vehicleId ? ' AND vehicle_id=?' : ''}`)
-    .bind(...(vehicleId ? [envName, vehicleId] : [envName])).all()).results;
-  return new Map(r.map((x) => [x.vehicle_id, { id: x.id, case_no: x.case_no }]));
+// Werkstattaufträge „Winterreifen“ (cases.tire_order='winter') je Fahrzeug, eine Abfrage; nur Auftragsnummer, keine Personen.
+// open: offene Aufträge (vehicle_id → {id, case_no}); closed: zuletzt freigegebener Auftrag der letzten 60 Tage (→ {id, case_no, closed_at}) –
+// nur aussagekräftig, solange die Winterlage danach nicht erfüllt ist und kein neuer Auftrag offen ist („Auftrag abgeschlossen, Lage offen“).
+export const WINTER_CLOSED_DAYS = 60;
+export async function winterOrders(env, envName, vehicleId = null) {
+  const since = new Date(Date.now() - WINTER_CLOSED_DAYS * 86400000).toISOString();
+  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no, status, closed_at FROM cases WHERE environment=? AND tire_order='winter'
+    AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at > ?))${vehicleId ? ' AND vehicle_id=?' : ''} ORDER BY closed_at DESC`)
+    .bind(...(vehicleId ? [envName, since, vehicleId] : [envName, since])).all()).results;
+  const open = new Map(); const closed = new Map();
+  for (const x of r) {
+    if (x.status !== 'fahrzeug_freigegeben') open.set(x.vehicle_id, { id: x.id, case_no: x.case_no });
+    else if (!closed.has(x.vehicle_id)) closed.set(x.vehicle_id, { id: x.id, case_no: x.case_no, closed_at: x.closed_at });
+  }
+  // Hinweis nur bei offener Lage ohne neuen Auftrag
+  const closedIfOpen = (vid, status) => (['nicht_erfuellt', 'unbekannt'].includes(status) && !open.has(vid) ? closed.get(vid) || null : null);
+  return { open, closedIfOpen };
 }
 const canWrite = (u) => ['owner', 'fleet', 'workshop'].includes(u.role);
 const canMeasure = (u) => ['owner', 'fleet', 'workshop', 'driver'].includes(u.role);
@@ -106,13 +118,14 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
   const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null;
   const wm = winterMarks(history);
-  const wOrder = v.kind === 'anhaenger' ? null : (await openWinterOrders(env, envName, vehicleId)).get(vehicleId) || null;
+  const wo = v.kind === 'anhaenger' ? null : await winterOrders(env, envName, vehicleId);
+  const wOrder = wo ? wo.open.get(vehicleId) || null : null;
   const dots = currentDots(history); const today = berlinDate();
   const positions = Object.entries(latest).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: x.tread_mm === undefined || x.tread_mm === null ? 'unbekannt' : x.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && x.tread_mm < warn ? 'warnung' : 'ok',
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: { ...winterStatus(v.kind, wm), open_order: wOrder } };
+  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status) : null }; })() };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -263,7 +276,7 @@ export async function fleetTires(env, user, envName, query = {}) {
   // Winterkennzeichnung je Fahrzeug (gleiche Regel wie Fahrzeugakte)
   const evByV = new Map();
   for (const e of ev) { if (!evByV.has(e.vehicle_id)) evByV.set(e.vehicle_id, []); evByV.get(e.vehicle_id).push(e); }
-  const wOrders = await openWinterOrders(env, envName);
+  const wo = await winterOrders(env, envName);
   const now = Date.now();
   const rank = { unter_minimum: 3, warnung: 2, ok: 1, unbekannt: 0 };
   const rows = vehicles.map((v) => {
@@ -281,7 +294,7 @@ export async function fleetTires(env, user, envName, query = {}) {
     // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
     const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));
     const oldestDot = ages.reduce((o, a) => (!o || a.dot_date < o.dot_date ? a : o), null);
-    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wOrders.get(v.id) || null,
+    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wo.open.get(v.id) || null, winter_closed_order: v.kind === 'anhaenger' ? null : wo.closedIfOpen(v.id, w.status),
       dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
@@ -298,10 +311,10 @@ export async function winterFleet(env, user, envName, query = {}) {
   const sel = siteSelection(all, query.site);
   const trucks = all.filter((v) => v.kind !== 'anhaenger' && sel.match(v.site));
   const ev = (await env.DB.prepare('SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? ORDER BY created_at DESC').bind(envName).all()).results;
-  const wOrders = await openWinterOrders(env, envName);
+  const wo = await winterOrders(env, envName);
   const byV = new Map();
   for (const e of ev) { if (!byV.has(e.vehicle_id)) byV.set(e.vehicle_id, []); byV.get(e.vehicle_id).push(e); }
-  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing, open_order: wOrders.get(v.id) || null }; });
+  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing, open_order: wo.open.get(v.id) || null, closed_order: wo.closedIfOpen(v.id, w.status) }; });
   const count = (s) => rows.filter((r) => r.status === s).length;
   return { site: sel.site, totals: { vehicles: rows.length, nicht_erfuellt: count('nicht_erfuellt'), unbekannt: count('unbekannt'), erfuellt: count('erfuellt') },
     noncompliant: rows.filter((r) => r.status === 'nicht_erfuellt') };
@@ -319,7 +332,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
   for (const s of specs) { if (!byV.has(s.vehicle_id)) byV.set(s.vehicle_id, {}); byV.get(s.vehicle_id)[s.axle] = s; }
   const mm = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const head = ['Kennzeichen', 'Fahrzeugart', 'Standort', 'Status', 'Kleinste Profiltiefe (mm)', 'Gemessene Positionen', `Unter ${mm(ov.legal_min_tread_mm)} mm`, 'Unter Warnschwelle',
-    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} Tage`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter'];
+    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} Tage`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen'];
   const lines = [head.join(';')];
   for (const r of ov.rows) {
     const sp = byV.get(r.vehicle_id) || {};
@@ -327,7 +340,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
     const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
     lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
       r.oldest_measure_at ? berlinDate(r.oldest_measure_at) : '', r.oldest_age_days ?? '', r.measured_positions ? (r.stale ? 'ja' : 'nein') : '',
-      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn].join(';'));
+      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn, r.winter_closed_order ? r.winter_closed_order.case_no : ''].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
