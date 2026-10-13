@@ -4131,6 +4131,9 @@ await test('Vertragsdokument: nur Dokument desselben Fahrzeugs und derselben Umg
   eq((await users.fleet.patch(`/api/contracts/${c.data.id}`, { file_id: null })).status, 200);
   dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
   ok(dq.some((i) => i.check === 'contract_no_document' && i.vehicle_id === V && i.severity === 'hinweis'), 'Hinweis: Vertrag ohne Dokument');
+  { const it = dq.find((i) => i.check === 'contract_no_document' && i.vehicle_id === V); eq(it.detail_args.contract_kind, 'leasing', 'sprachneutral: Vertragsart'); eq(it.detail_args.partner, 'Doc-Leasing');
+    const ia = (await anon.req('GET', '/api/integration/v1/data-quality', undefined, { authorization: 'Bearer integration-token-xyz' })).data.items.find((i) => i.check === 'contract_no_document' && i.vehicle_id === V);
+    ok(ia && !('detail_args' in ia), 'Integrations-API ohne detail_args'); }
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id).file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.documents.filter((x) => x.id === f1).length, 1, 'Dokument bleibt');
   const au = (await owner.get('/api/admin/audit?action=contract')).data.entries.find((e) => e.action === 'contract.update' && e.target === c.data.id && /file_id/.test(JSON.stringify(e.detail)));
@@ -4779,6 +4782,8 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   { const r = await users.fleet.post(`/api/maintenance/${rule2.data.id}/complete`, { done_date: day(0), evidence: 'UVV-Nachprüfung 5504', result: 'gefaehrliche_maengel' }); eq(r.status, 200, JSON.stringify(r.data)); }
   const ag = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2);
   ok(ag.length === 1 && ag[0].severity === 'luecke' && ag[0].detail.includes('gefährliche Mängel') && ag[0].detail.includes(o3.data.case_no), 'Wiederholungsmangel: ' + JSON.stringify(ag));
+  eq(JSON.stringify(ag[0].detail_args), JSON.stringify({ kind: ag[0].detail_args.kind, done_date: day(0), result: 'gefaehrliche_maengel', case_no: o3.data.case_no, first_date: ag[0].detail_args.first_date }), 'sprachneutral');
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(ag[0].detail_args.first_date) && ag[0].detail.startsWith(ag[0].detail_args.kind + ' '), 'Datum ISO, Art wie Detail');
   eq((await owner.get('/api/admin/data-quality', { 'x-cfp-env': 'production' })).data.items.filter((i) => i.check === 'reinspection_defects_again' && i.vehicle_id === VR2).length, 0, 'Betrieb sieht Testauftrag nicht');
   // Kennzahlen: Mängelbeseitigung aus Prüfungen (Zeitraum deckt alle Prüfdaten dieses Tests ab)
   const kq = `/api/reports/kpi?from=${day(-5).slice(0, 7)}&to=${day(0).slice(0, 7)}`;

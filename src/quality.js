@@ -128,6 +128,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const vs = veh.results;
   const items = [];
   const add = (check, v, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: v && v.id || null, plate: v && v.plate || null, detail });
+  const addA = (check, v, detail, detail_args) => items.push({ check, severity: CHECKS[check], vehicle_id: v && v.id || null, plate: v && v.plate || null, detail, detail_args });
   const byPlate = new Map();
   for (const v of vs) { const k = normPlate(v.plate); byPlate.set(k, [...(byPlate.get(k) || []), v]); }
   for (const [, list] of byPlate) if (list.length > 1) for (const v of list) add('duplicate_plate', v, list.filter((x) => x !== v).map((x) => x.id).join(', '));
@@ -172,16 +173,20 @@ export async function dataQuality(env, user, envName, query = {}) {
   const CK_DE = { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' };
   for (const c of ctr.results) {
     const v = { id: c.vehicle_id, plate: c.plate };
-    if (!c.active) add('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`);
-    else if (c.km_allowance && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) add('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`);
+    // detail bleibt deutsch (CSV, Integrations-API); detail_args sprachneutral für die Oberfläche (DE/UK/EN)
+    const ca = { contract_kind: c.kind, partner: c.partner };
+    if (!c.active) addA('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
+    else if (c.km_allowance && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) addA('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
-    if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) add('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`);
+    if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) addA('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
   }
   for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
-  for (const d of defects.results) items.push({ check: 'inspection_defects_no_case', severity: CHECKS.inspection_defects_no_case, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]}` });
+  for (const d of defects.results) items.push({ check: 'inspection_defects_no_case', severity: CHECKS.inspection_defects_no_case, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]}`,
+    detail_args: { kind: d.kind, done_date: d.done_date, result: d.result } });
   for (const d of again.results) items.push({ check: 'reinspection_defects_again', severity: CHECKS.reinspection_defects_again, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id,
-    detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]} · Mängelauftrag ${d.case_no} zur Prüfung vom ${d.first_date.split('-').reverse().join('.')}` });
+    detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]} · Mängelauftrag ${d.case_no} zur Prüfung vom ${d.first_date.split('-').reverse().join('.')}`,
+    detail_args: { kind: d.kind, done_date: d.done_date, result: d.result, case_no: d.case_no, first_date: d.first_date } });
   for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}` });
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
@@ -198,7 +203,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (d.has_card && !d.has_download) addD('driver_card_no_download', d);
   }
   for (const u of acc.results) items.push({ check: 'driver_account_no_file', severity: CHECKS.driver_account_no_file, vehicle_id: null, plate: null, detail: u.display_name });
-  for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}` });
+  for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}`,
+    detail_args: { name: u.display_name, role: u.role, expired: u.expires_at < nowIso() } });
   const rank = { fehler: 0, luecke: 1, hinweis: 2 };
   items.sort((a, b) => rank[a.severity] - rank[b.severity] || a.check.localeCompare(b.check) || String(a.plate || a.driver_name).localeCompare(String(b.plate || b.driver_name)));
   // optional nur ein Standort laut Fahrzeugstamm: fahrzeugbezogene Befunde dieses Standorts; Personen-/Konto-/Einladungsbefunde
