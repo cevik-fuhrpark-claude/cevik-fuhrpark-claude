@@ -246,7 +246,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
       AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ORDER BY created_at DESC LIMIT 20`).bind(c.vehicle_id, envName, c.id).all()).results;
     if (user.role === 'workshop') others = others.filter((o) => o.workshop_site === user.workshop_site && o.status !== 'gemeldet');
     const soon = berlinDate(new Date(Date.now() + 30 * 86400000).toISOString());
-    const due = (await env.DB.prepare(`SELECT kind, next_due_date FROM maintenance_rules WHERE vehicle_id=? AND next_due_date IS NOT NULL AND next_due_date <= ? ORDER BY next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results;
+    // + offene Herstellerrückrufe auch ohne Frist (mit Referenz laut Nachweis) – typischer Fall „beim selben Werkstattaufenthalt mit erledigen“
+    const due = (await env.DB.prepare(`SELECT kind, next_due_date, CASE WHEN kind='Rückruf' THEN evidence END AS recall_ref FROM maintenance_rules WHERE vehicle_id=?
+      AND ((next_due_date IS NOT NULL AND next_due_date <= ?) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results
+      .map(({ recall_ref, ...m }) => (recall_ref ? { ...m, recall_ref } : m));
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
         (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until)) FROM

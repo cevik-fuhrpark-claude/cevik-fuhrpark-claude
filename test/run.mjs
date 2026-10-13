@@ -3968,6 +3968,13 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(csvT.includes('Rückruf') && csvT.includes(';erledigt;'), 'CSV mit Status erledigt');
   const imp = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\n;WDB96340310555651;Rückrufaktion;2099-05-31;;;Schreiben', { 'content-type': 'text/csv' });
   eq(imp.status, 200); eq(imp.data.created, 0); ok(/einzeln in der Fahrzeugakte/.test(imp.data.skipped[0].reason), 'Import verweist auf Fahrzeugakte');
+  // Vorgang am Fahrzeug: offener Rückruf ohne Frist erscheint in der Kurzinfo (mit Referenz), erledigter nicht
+  const cs = await users.fleet.post('/api/cases', { vehicle_id: VR, description: 'Rückruf-Kurzinfo: Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(cs.status, 201);
+  const vi = (await users.fleet.get(`/api/cases/${cs.data.id}`)).data.vehicle_info;
+  const rec = vi.inspections_due.filter((m) => m.kind === 'Rückruf');
+  eq(rec.length, 1, 'nur der offene Rückruf'); eq(rec[0].next_due_date, null); ok(rec[0].recall_ref.includes('Test B'), 'Referenz laut Nachweis');
+  ok(vi.inspections_due.filter((m) => m.kind !== 'Rückruf').every((m) => !('recall_ref' in m)), 'andere Prüfungen ohne Nachweistext');
 });
 await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji), Entfalten ergibt Original; 900 Termine schnell', async () => {
   const { icsCalendar } = await import('../src/util.js');
