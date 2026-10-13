@@ -928,3 +928,6 @@ Object.assign(STRINGS.en, { dup_plate_warn: 'Note: plate {p} is also assigned to
 Object.assign(STRINGS.de, { imp_plate_conflict: '{n} Zeile(n): Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich' });
 Object.assign(STRINGS.uk, { imp_plate_conflict: 'Рядків: {n} – номер після імпорту буде й в іншого транспортного засобу. Перевірте VIN (помилка чи дубль?). Імпорт усе одно можливий' });
 Object.assign(STRINGS.en, { imp_plate_conflict: '{n} row(s): plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible' });
+Object.assign(STRINGS.de, { fine_vehicle_ambiguous: 'Kennzeichen steht an mehreren aktiven Fahrzeugen – nicht zugeordnet, damit kein falscher Fahrer ermittelt wird. Bitte Fahrzeugstamm prüfen (Datenqualität).' });
+Object.assign(STRINGS.uk, { fine_vehicle_ambiguous: 'Цей номер має кілька активних транспортних засобів – не призначено, щоб не визначити не того водія. Перевірте дані транспорту («Якість даних»).' });
+Object.assign(STRINGS.en, { fine_vehicle_ambiguous: 'This plate is on several active vehicles – not assigned, so that no wrong driver is identified. Please check the vehicle master data (data quality).' });

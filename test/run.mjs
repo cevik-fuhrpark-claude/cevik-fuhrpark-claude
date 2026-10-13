@@ -5715,6 +5715,22 @@ await test('Integrations-API: falsche Tokens je Netzadresse begrenzt (429 auch m
   await env.DB.prepare(`DELETE FROM rate_limits WHERE key LIKE 'intfail:%'`).run();
 });
 
+await test('Bußgeld: Kennzeichen an zwei aktiven Fahrzeugen → keine Zuordnung (mehrdeutig); ruhendes zählt nach dem bewerteten', async () => {
+  for (const [plate, vin] of [['BG-AM 1', 'WDB96340310999201'], ['BG AM1', 'WDB96340310999202']]) eq((await owner.post('/api/vehicles', { plate, vin, site: 'Hamm' })).status, 201);
+  const body = { kind: 'anhoerung', authority: 'Stadt Hamm', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'bg-am 1' };
+  const a = await users.fleet.post('/api/fines', { ...body, reference: 'AZ-AMB-1' });
+  eq(a.status, 201); eq(a.data.vehicle_matched, false); eq(a.data.vehicle_ambiguous, true, 'mehrdeutig');
+  eq((await users.fleet.get(`/api/fines/${a.data.id}`)).data.fine.vehicle_id, null);
+  eq((await users.fleet.post('/api/vehicles/VIN:WDB96340310999202/evaluation', { excluded: true, reason: 'Doppelanlage (Test)' })).status, 200);
+  try {
+    const b = await users.fleet.post('/api/fines', { ...body, reference: 'AZ-AMB-2' });
+    eq(b.data.vehicle_matched, true); eq(b.data.vehicle_ambiguous, undefined);
+    eq((await users.fleet.get(`/api/fines/${b.data.id}`)).data.fine.vehicle_id, 'VIN:WDB96340310999201', 'bewertetes Fahrzeug vor ruhendem');
+  } finally { for (const v of ['WDB96340310999201', 'WDB96340310999202']) eq((await owner.post(`/api/vehicles/VIN:${v}/active`, { active: false, reason: 'Testdaten Bußgeld mehrdeutig' })).status, 200); }
+  const { pickVehicleByPlate } = await import('../src/util.js');
+  eq(pickVehicleByPlate([{ id: 'A', plate: 'X-1', active: 0 }, { id: 'B', plate: 'x 1', active: 1, eval_excluded: 1 }], 'X1').vehicle.id, 'B', 'ruhend vor außer Betrieb');
+  eq(pickVehicleByPlate([], 'X1').ambiguous, false);
+});
 await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlauten, nur eindeutig, nie automatische Zuordnung', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
   eq((await owner.post('/api/vehicles', { plate: 'TÜ-TL 7', vin: 'WDB96340310999101', site: 'Dortmund' })).status, 201);

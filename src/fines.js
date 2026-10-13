@@ -1,5 +1,5 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, normPlate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -108,7 +108,10 @@ export async function createFine(env, user, envName, body) {
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10 });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
-  const veh = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1').all()).results.find((v) => normPlate(v.plate) === normPlate(plate));
+  // nur aktive Fahrzeuge; bei gleichem Kennzeichen zählt das bewertete vor dem ruhenden, sonst mehrdeutig = keine Zuordnung
+  // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung)
+  const pick = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE active=1').all()).results, plate);
+  const veh = pick.vehicle;
   const reference = str(body.reference, { max: 80 });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
   if (reference) {
@@ -125,9 +128,9 @@ export async function createFine(env, user, envName, body) {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'eingegangen',?,?,?,?)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
       str(body.location, { max: 200 }), plate, veh ? veh.id : null, num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true }), due,
       str(body.note, { max: 2000 }), user.id, now, now),
-    env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) VALUES (?,?,?,?,?,?,?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify({ vehicle_matched: !!veh }), now),
+    env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) VALUES (?,?,?,?,?,?,?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now),
   ]);
-  return { id, fine_no: fineNo, vehicle_matched: !!veh };
+  return { id, fine_no: fineNo, vehicle_matched: !!veh, ...(pick.ambiguous ? { vehicle_ambiguous: true } : {}) };
 }
 
 export async function fineCommand(env, ctx, user, envName, id, body) {

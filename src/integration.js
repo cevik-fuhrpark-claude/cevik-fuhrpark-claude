@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex, normPlate } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex, pickVehicleByPlate } from './util.js';
 import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
@@ -187,17 +187,8 @@ export async function integrationRouter(request, env, ctx, url) {
     ]);
     const mapOf = new Map(maps.results.map((r) => [r.external_id, r.vehicle_id]));
     const vinOf = new Map(byVin.results.map((r) => [r.vin, r.id]));
-    // Nur ein eindeutiger Kandidat wird vorgeschlagen (Bestätigung bleibt Pflicht): zuerst aktive, bewertete Fahrzeuge,
-    // dann ruhende, dann außer Betrieb – mehrere Fahrzeuge mit gleichem Kennzeichen in derselben Stufe = kein Vorschlag.
-    const tierOf = (v) => (v.active ? (v.eval_excluded ? 1 : 0) : 2);
-    const plateIdx = new Map();
-    for (const v of plates.results) {
-      const k = normPlate(v.plate); if (!k) continue;
-      const cur = plateIdx.get(k); const t = tierOf(v);
-      if (!cur || t < cur.t) plateIdx.set(k, { t, id: v.id, n: 1 });
-      else if (t === cur.t) cur.n++;
-    }
-    const plateCandidate = (p) => { const e = p && plateIdx.get(normPlate(p)); return e && e.n === 1 ? e.id : null; };
+    // Nur ein eindeutiger Kandidat wird vorgeschlagen (Bestätigung bleibt Pflicht): gemeinsame Regel `pickVehicleByPlate`
+    const plateCandidate = (p) => { const r = p ? pickVehicleByPlate(plates.results, p) : null; return r && r.vehicle ? r.vehicle.id : null; };
     const lastGps = new Map(latest.results.map((r) => [r.vehicle_id, r.gps_time]));
     // Gesammelte Schreibzugriffe: je Tabelle EINE Anweisung über json_each (jede Anweisung zählt zum Abfragebudget)
     const unmatched = new Map(); const latestRows = new Map(); const odo = new Map();
