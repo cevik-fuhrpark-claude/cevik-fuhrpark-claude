@@ -6195,7 +6195,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
   const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
   ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);
   const { STRINGS } = await import('../public/i18n.js');
-  for (const l of ['de', 'uk', 'en']) for (const k of ['av_with_findings', 'vfind_n', 'vfind_crit', 'vsort_findings']) ok(STRINGS[l][k] && (['av_with_findings', 'vsort_findings'].includes(k) || STRINGS[l][k].includes('{n}')), `${l}: ${k}`);
+  for (const l of ['de', 'uk', 'en']) for (const k of ['av_with_findings', 'vfind_n', 'vfind_crit', 'vsort_findings', 'af_shown', 'af_filter']) ok(STRINGS[l][k] && (['av_with_findings', 'vsort_findings', 'af_filter'].includes(k) || STRINGS[l][k].includes('{n}')), `${l}: ${k}`);
 });
 
 await test('Agentenbefunde als CSV (Browser, Management-Panel): Spalten DE/UK/EN, Meldung in der App-Sprache, Formelschutz, eine Zeile je Befund', async () => {

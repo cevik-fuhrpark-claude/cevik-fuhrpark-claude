@@ -36,6 +36,16 @@ with sync_playwright() as p:
         lines=open(dl.value.path(),encoding='utf-8-sig',newline='').read().strip().split('\r\n')
         check(len(lines)==N+1,f'{w}px: CSV {len(lines)-1} Zeilen in {dc*1000:.0f} ms')
         if CHECK and w==1366: check(dc<2,f'{w}px: CSV < 2 s')
+        # Filter Schweregrad (synthetisch: Schweregrade reihum → je N/4) + Freitextsuche; CSV exportiert die angezeigte Auswahl
+        vis="()=>[...document.querySelectorAll('#afl [data-afi]')].filter(r=>r.style.display!=='none').length"
+        t0=time.perf_counter(); q.click('[data-afsev="kritisch"]'); q.wait_for_selector('[data-afsev="kritisch"]:not(.secondary)'); df=time.perf_counter()-t0
+        nk=q.evaluate(vis); check(nk==(N+3)//4,f'{w}px: Filter kritisch {nk} Zeilen in {df*1000:.0f} ms')
+        with q.expect_download() as dl: q.click('#afcsv')
+        check(len(open(dl.value.path(),encoding='utf-8-sig',newline='').read().strip().split('\r\n'))==nk+1,f'{w}px: CSV = gefilterte Auswahl')
+        q.click('[data-afsev="all"]'); q.wait_for_selector('[data-afsev="all"]:not(.secondary)')
+        t0=time.perf_counter(); q.fill('#afq',f'Lasttest-Befund {N}'); ds=time.perf_counter()-t0
+        check(q.evaluate(vis)==1 and str(N) in q.inner_text('#afcnt'),f'{w}px: Suche 1 Treffer in {ds*1000:.0f} ms, Hinweis „{q.inner_text("#afcnt")}“')
+        q.fill('#afq','')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{w}px: kein Querscrollen')
         check(not errs,f'{w}px: keine Skriptfehler {errs}')
         c.close()
