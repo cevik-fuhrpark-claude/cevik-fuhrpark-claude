@@ -3919,6 +3919,7 @@ await test('Zwei-Faktor-Anmeldung (TOTP): RFC-6238-Werte, Einrichten, Anmeldung 
   const keys = Object.keys(STRINGS.de).filter((k) => k.startsWith('tf_') || k.startsWith('err_totp') || k === 'err_wrong_password' || k.startsWith('help_login2fa'));
   ok(keys.length >= 30, `Texte (${keys.length})`);
   for (const l of ['uk', 'en']) for (const k of keys) ok(STRINGS[l][k], `${l}.${k} fehlt`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tf_admin_hint.includes('{n}'), `${l}: Platzhalter {n} im Verwaltungshinweis`);
 });
 
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {

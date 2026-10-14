@@ -2859,7 +2859,9 @@ async function loadTotp() {
 async function viewUsers() {
   const us = (await api('GET', '/api/users')).users;
   const roles = S.me.role === 'owner' ? ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'] : ['driver', 'workshop', 'viewer'];
-  render(`<h1>${esc(t('users'))}</h1><div id="inv"></div>
+  // Hinweis (nur Anzeige, keine Pflicht): aktive Verwaltungskonten im Betrieb ohne Zwei-Faktor-Anmeldung
+  const no2fa = us.filter((u) => u.active && u.has_password && u.environment === 'production' && ['owner', 'fleet'].includes(u.role) && !u.has_totp);
+  render(`<h1>${esc(t('users'))}</h1>${no2fa.length ? `<div class="panel warn small" role="note">${esc(t('tf_admin_hint').replace('{n}', no2fa.length))} <a href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}<div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
       <label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('username'))}</label><input name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
       <label>${esc(t('role'))}</label><select name="role" id="rs">${roles.map((r) => `<option value="${r}">${esc(t('role_' + r))}</option>`).join('')}</select>
