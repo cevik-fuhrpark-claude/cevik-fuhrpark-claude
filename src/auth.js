@@ -541,8 +541,10 @@ export async function listAudit(env, user, query = {}) {
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
   const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
-  const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
+  // Betroffenes Konto bzw. Fahrzeug (target) zur Anzeige auflösen – je Eintrag zwei Primärschlüssel-Zugriffe, keine Zusatzabfrage
+  const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username,
+    tu.display_name AS target_name, tu.username AS target_username, tv.plate AS target_plate
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
     .bind(...args, limit).all()).results;
   const entries = rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
   return { entries, person, vehicle };

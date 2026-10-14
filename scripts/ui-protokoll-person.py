@@ -1,12 +1,13 @@
 # [CLAUDE] UI-Test: Protokoll je Person und je Fahrzeug (Fahrzeugakte → „Protokoll“). Benutzer → „Protokoll“ öffnet das Protokoll gefiltert auf die Person (handelnd oder betroffen),
 # Adresse wird bereinigt, „Alle Personen“ hebt den Filter auf. DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler.
-# Aktionen erscheinen als Text in der App-Sprache mit Code daneben, Detailschlüssel in der App-Sprache. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# Aktionen erscheinen als Text in der App-Sprache mit Code daneben, Detailschlüssel in der App-Sprache, „Betrifft“ verlinkt Konto/Fahrzeug. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ALL={'de':'Alle Personen','uk':'Усі особи','en':'All persons'}
+AT={'de':'Betrifft','uk':'Стосується','en':'Concerns'}
 LOGIN={'de':'Anmeldung','uk':'Вхід','en':'Sign-in'}
 fails=[]
 def check(c,m):
@@ -36,6 +37,7 @@ with sync_playwright() as p:
         check(q.evaluate('()=>location.hash')=='#/audit',f'{lang} {w}px: Adresse bereinigt')
         rows=q.locator('.list .row').count(); check(rows>=2,f'{lang} {w}px: Einträge ({rows})')
         check(LOGIN[lang] in q.inner_text('.list') and 'login' in q.inner_text('.list'),f'{lang} {w}px: Aktion als Text „{LOGIN[lang]}“ mit Code')
+        check(q.locator('.list a.autgt', has_text='PP Leitung').count()>=1 and f'{AT[lang]}: PP Leitung' in q.inner_text('.list'),f'{lang} {w}px: „{AT[lang]}: PP Leitung“ (Benutzer angelegt)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/protokoll_person_{lang}_{w}.png',full_page=True)
         q.click('#aupx'); q.wait_for_function("()=>!document.querySelector('#aupers')")
@@ -45,6 +47,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/vehicles/'+VID); q.wait_for_selector(f'a[href="#/audit?v={VID}"]'); q.click(f'a[href="#/audit?v={VID}"]'); q.wait_for_selector('#auveh')
         check('PP-PR 1' in q.inner_text('#auveh') and q.evaluate('()=>location.hash')=='#/audit',f'{lang} {w}px: Fahrzeug genannt, Adresse bereinigt')
         check(VSAVE[lang] in q.inner_text('.list') and q.locator('.list .row').count()==1,f'{lang} {w}px: nur Einträge des Fahrzeugs („{VSAVE[lang]}“)')
+        check(q.locator('.list a.autgt[href="#/vehicles/'+VID+'"]').count()==1,f'{lang} {w}px: „{AT[lang]}: PP-PR 1“ verlinkt die Fahrzeugakte')
         check(KZ[lang] in q.inner_text('.list'),f'{lang} {w}px: Detail in der App-Sprache („{KZ[lang]}“)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen (Fahrzeug)')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/protokoll_fahrzeug_{lang}_{w}.png',full_page=True)

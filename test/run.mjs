@@ -3066,6 +3066,7 @@ await test('Protokoll je Person (?user=): handelnd oder betroffen, Ansicht + CSV
     eq(r.data.person.id, fid); eq(r.data.person.username, fname, 'Name für die Anzeige');
     ok(r.data.entries.every((e) => e.actor_id === fid || e.target === fid), 'nur handelnd oder betroffen');
     eq(r.data.entries.filter((e) => e.id.startsWith('aupers-')).map((e) => e.id).sort().join(), 'aupers-1,aupers-2');
+    const e2 = r.data.entries.find((e) => e.id === 'aupers-2'); eq(e2.target_username, fname, 'Betrifft: Konto aufgelöst'); eq(r.data.entries.find((e) => e.id === 'aupers-1').target_username, null, 'Fahrzeug-Ziel ist kein Konto');
     ok(!('person' in (await owner.get('/api/admin/audit?limit=1')).data), 'ohne Filter kein person-Feld');
     eq((await owner.get('/api/admin/audit?limit=1000&action=probe.betrifft&user=' + fid)).data.entries.map((e) => e.id).join(), 'aupers-2', 'kombiniert mit Bereich');
     eq((await owner.get('/api/admin/audit?user=gibt-es-nicht')).status, 404);
@@ -3094,6 +3095,9 @@ await test('Protokoll je Fahrzeug (?vehicle=): nur Einträge mit Fahrzeug als Zi
     ins.run('auveh-3', users.fleet.id, 'vehicle.spec', 'VIN:ANDERES1', JSON.stringify({ x: v.id }), '2021-06-01T10:00:00.000Z');
     const r = await owner.get('/api/admin/audit?limit=1000&vehicle=' + encodeURIComponent(v.id)); eq(r.status, 200);
     eq(r.data.vehicle.plate, v.plate); ok(r.data.entries.every((e) => e.target === v.id), 'nur Ziel = Fahrzeug');
+    ok(r.data.entries.every((e) => e.target_plate === v.plate && e.target_name === null), 'Betrifft: Kennzeichen aufgelöst');
+    const app2 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(app2.includes('href="#/vehicles/${esc(e.target)}">${esc(e.target_plate)}') && app2.includes("e.target !== e.actor_id"), 'Ansicht verlinkt Betroffenes (Fahrzeug/Konto, nicht die Person selbst)');
     eq(r.data.entries.filter((e) => e.id.startsWith('auveh-')).map((e) => e.id).sort().join(), 'auveh-1,auveh-2');
     eq((await owner.get(`/api/admin/audit?limit=1000&vehicle=${encodeURIComponent(v.id)}&user=${users.fleet.id}`)).data.entries.filter((e) => e.id.startsWith('auveh-')).map((e) => e.id).join(), 'auveh-1', 'kombiniert mit Person');
     eq((await owner.get('/api/admin/audit?vehicle=VIN:GIBTESNICHT0')).status, 404);
