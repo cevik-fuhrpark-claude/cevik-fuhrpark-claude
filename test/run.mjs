@@ -6778,6 +6778,23 @@ await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne ver
   eq((await owner.get('/api/admin/audit?action=invite.accept')).data.entries.filter((e) => e.detail === null || typeof e.detail === 'object').length >= 1, true);
   const fl = (await users.fleet.get('/api/users')).data.users; ok(fl.every((x) => 'last_login' in x), 'auch für die Fuhrparkleitung');
   for (const k of ['last_login', 'last_login_none']) for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k], `${k} ${l}`);
+  // Berechtigungsübersicht als CSV (im Browser erzeugt): Spalten in der App-Sprache, Status, keine Kennungen/Personalnummer, Formelschutz
+  const { usersCsv } = await import('../public/csv.js');
+  const ul = (await owner.get('/api/users')).data.users;
+  for (const lang of ['de', 'uk', 'en']) {
+    const tl = (k) => STRINGS[lang][k] ?? k;
+    for (const k of ['display_name', 'username', 'role', 'workshop', 'environment', 'status', 'tf_chip', 'uc_push', 'last_login', 'uc_yes', 'uc_no', 'uc_btn', 'uc_hint', 'active', 'inactive', 'dq_invite_pending', 'env_testname', 'env_prod']) ok(STRINGS[lang][k], `${k} ${lang}`);
+    const csv = usersCsv(ul, tl, (c) => 'WS ' + c, (iso) => iso.slice(0, 10));
+    const lines = csv.slice(1).trim().split('\r\n'); eq(lines.length, ul.length + 1, 'eine Zeile je Konto');
+    eq(lines[0].split(';').length, 9); ok(!lines[0].includes('role_') && !lines[0].includes('uc_'), 'Kopf übersetzt ' + lang);
+    ok(!ul.some((u) => csv.includes(u.id)), 'keine internen Kennungen');
+  }
+  const tde = (k) => STRINGS.de[k] ?? k;
+  const de = usersCsv(ul, tde, (c) => 'WS ' + c, (iso) => iso.slice(0, 10)).split('\r\n');
+  ok(de.some((l) => l.startsWith('Offen;test.kdoffen;') && l.includes(';aktiv;nein;0;')), de.find((l) => l.includes('kdoffen')));
+  const ev = usersCsv([{ display_name: '=HYPERLINK("x")', username: 'x', role: 'driver', environment: 'production', has_password: 0, active: 1, has_totp: 0, push_devices: 0, last_login: null }], tde, (c) => c, (x) => x);
+  ok(ev.includes(`"'=HYPERLINK(""x"")"`) && ev.includes('Einladung'), ev);
+  ok(app.includes("usersCsv(us, t, wsName, fmtDT)"), 'Knopf in der Benutzerliste');
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

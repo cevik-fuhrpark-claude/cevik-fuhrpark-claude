@@ -32,6 +32,13 @@ export function agentFindingsCsv(findings, t, msg, next, d) {
   return toCsv([t('afc_severity'), t('afc_label'), t('afc_code'), t('afc_message'), t('afc_next'), t('afc_owner'), t('afc_since')],
     findings.map((f) => [t('asev_' + f.severity), t('fc_' + f.finding_code) === 'fc_' + f.finding_code ? '' : t('fc_' + f.finding_code), f.finding_code, msg(f), next(f.next_action), t('role_' + f.owner_role), d(f.first_seen)]));
 }
+// [CLAUDE] Berechtigungsübersicht (Benutzer): wer hat welche Rolle, aktiv?, 2FA, Push, letzte Anmeldung – für die regelmäßige Prüfung
+// der Zugänge (ausgeschiedene Personen). Keine Kennungen/Hashes, keine Personalnummer. ws(code) = Werkstattname, d(iso) = Zeitpunkt.
+export function usersCsv(us, t, ws, d) {
+  return toCsv([t('display_name'), t('username'), t('role'), t('workshop'), t('environment'), t('status'), t('tf_chip'), t('uc_push'), t('last_login')],
+    us.map((u) => [u.display_name, u.username, t('role_' + u.role), u.workshop_site ? ws(u.workshop_site) : '', u.environment === 'test' ? t('env_testname') : t('env_prod'),
+      !u.has_password ? t('dq_invite_pending') : u.active ? t('active') : t('inactive'), u.has_totp ? t('uc_yes') : t('uc_no'), u.push_devices || 0, u.last_login ? d(u.last_login) : '']));
+}
 // Mängelstatistik: je Prüfpunkt bzw. je Fahrzeug (alle Fahrzeuge mit Kontrollen im Zeitraum, auch ohne Mangel).
 // label(k) = Prüfpunkt-Bezeichnung in der App-Sprache, d(iso) = Datum; leere Zelle = kein Wert.
 export function defectItemsCsv(r, t, label, d) {
