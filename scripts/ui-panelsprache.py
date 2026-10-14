@@ -27,7 +27,13 @@ with sync_playwright() as p:
     # HU belegt, aber ohne zulässige Gesamtmasse → HU-Frist ungeklärt (Hinweis „Fahrzeugklasse fehlt“)
     r=api('POST','/api/vehicles/VIN:WDB96340310888001/maintenance',{'kind':'HU','last_done_date':'2026-03-15','interval_months':12,'evidence':'UI-Test HU-Bericht'})
     check(r['s'] in (200,201),'HU angelegt '+str(r['s']))
+    # Zweites Fahrzeug mit kritischem, noch nicht bewertetem Vorgang → kritischer Agentenbefund („Heute zu tun“ der Leitung)
+    api('POST','/api/vehicles',{'vin':'WDB96340310888002','plate':'PS-ANL 2','site':'Dortmund'})
+    r=api('POST','/api/cases',{'vehicle_id':'VIN:WDB96340310888002','description':'UI-Test: Bremsleitung undicht','priority':'kritisch','driveability':'nicht_fahrbereit','request_key':'ps-krit-1'})
+    check(r['s'] in (200,201),'kritischer Vorgang angelegt '+str(r['s']))
     check(api('POST','/api/agent/run')['s']==200,'Agent gelaufen')
+    v2=[v for v in api('GET','/api/vehicles')['d']['vehicles'] if v['plate']=='PS-ANL 2'][0]
+    check(v2['agent_findings_critical']>=1,f"PS-ANL 2 hat kritische Agentenbefunde ({v2['agent_findings_critical']})")
     vid=api('GET','/api/vehicles/VIN:WDB96340310888001')['d']['vehicle']['id']
     for lang in ['uk','en','de']:
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -65,6 +71,19 @@ with sync_playwright() as p:
         q.click('#vafm'); q.wait_for_selector('#afq')
         check(q.input_value('#afq')=='PS-ANL 1',f'Akte → Panel {lang} {w}px: Suche auf Kennzeichen')
         q.fill('#afq','')
+        # Startseite „Heute zu tun“: Gruppe „Fahrzeuge mit kritischen Agentenbefunden“ → gefilterte, nach Befunden sortierte Fahrzeugliste
+        TODO={'de':'Fahrzeuge mit kritischen Agentenbefunden','uk':'Транспорт із критичними висновками агента','en':'Vehicles with critical agent findings'}
+        q.goto(B+'/#/'); q.wait_for_selector('#todovfind')
+        grp=q.locator('details.panel',has=q.locator('#todovfind')); gt=grp.inner_text()
+        check(TODO[lang] in gt and 'PS-ANL 2' in gt and 'PS-ANL 1' not in gt,f'Start {lang} {w}px: Gruppe kritische Agentenbefunde nur mit PS-ANL 2')
+        check(grp.evaluate('e=>e.open'),f'Start {lang} {w}px: Gruppe aufgeklappt (kritisch)')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'Start {lang} {w}px: kein Querscrollen')
+        if SHOTS: grp.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/start_{lang}_{w}.png')
+        q.click('#todovfind'); q.wait_for_selector('[data-av="with_findings"]:not(.secondary)')
+        check(q.evaluate('()=>location.hash')=='#/vehicles',f'Start → Liste {lang} {w}px: Adresse ohne Parameter')
+        check(q.eval_on_selector('#vsort','e=>e.value')=='findings' and 'PS-ANL 2' in q.inner_text('#vl a.row >> nth=0'),f'Start → Liste {lang} {w}px: kritische zuerst')
+        check(not errs,f'Start {lang} {w}px: keine Skriptfehler {errs}')
+        q.select_option('#vsort','plate'); q.click('[data-av="all"]')
         # Fahrzeugliste: Chip „N× Agentenbefund offen“ und Filter „Mit Agentenbefunden“ (nur Leitung)
         VF={'de':['Agentenbefund offen','Mit Agentenbefunden'],'uk':['Відкриті висновки агента','З висновками агента'],'en':['agent finding open','With agent findings']}
         q.goto(B+'/#/vehicles'); q.wait_for_selector('[data-af]')

@@ -6194,7 +6194,15 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
   const iv = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles; ok(iv.every((x) => !('agent_findings_open' in x)), 'Integrations-API unverändert');
   const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
   ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);
+  // „Heute zu tun“ (Leitung): Gruppe „Fahrzeuge mit kritischen Agentenbefunden“ aus derselben Liste, Direktsprung in die gefilterte Fahrzeugliste
+  { const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(/async function fleetTodo[\s\S]*?\/api\/vehicles'\)\.then\(\(r\) => r\.vehicles\.filter\(\(v\) => v\.agent_findings_critical > 0\)\)[\s\S]*?\['todo_vfind_crit', af,/.test(app), '„Heute zu tun“: Gruppe kritische Agentenbefunde');
+    ok(app.includes('href="#/vehicles?f=with_findings"') && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
+    ok(/VEH_AV_LINK\.includes\(hf\) && \(hf !== 'with_findings' \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
+    const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
+    eq(crit, env.DB.db.prepare("SELECT COUNT(DISTINCT f.vehicle_id) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen' AND f.severity='kritisch'").get().n, 'Anzahl Fahrzeuge mit kritischen Befunden = Datenbank'); }
   const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['todo_vfind_crit', 'show_in_vlist']) ok(STRINGS[l][k], `${l}: ${k}`);
   for (const l of ['de', 'uk', 'en']) for (const k of ['av_with_findings', 'vfind_n', 'vfind_crit', 'vsort_findings', 'af_shown', 'af_filter']) ok(STRINGS[l][k] && (['av_with_findings', 'vsort_findings', 'af_filter'].includes(k) || STRINGS[l][k].includes('{n}')), `${l}: ${k}`);
 });
 
