@@ -3083,6 +3083,32 @@ await test('Protokoll je Person (?user=): handelnd oder betroffen, Ansicht + CSV
   ok(app.includes('href="#/audit?u=${esc(u.id)}"') && app.includes("'&user=' + encodeURIComponent(pu)"), 'Benutzer-Link und Filter in der Oberfläche');
 });
 
+await test('Protokoll je Fahrzeug (?vehicle=): nur Einträge mit Fahrzeug als Ziel, Ansicht + CSV, Kennzeichen im Dateinamen, Link in der Akte nur Inhaber', async () => {
+  const db = env.DB.db;
+  const v = db.prepare("SELECT id, plate FROM vehicles WHERE plate IS NOT NULL AND plate<>'' ORDER BY id LIMIT 1").get(); ok(v, 'Fahrzeug');
+  const ins = db.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)');
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  try {
+    ins.run('auveh-1', users.fleet.id, 'vehicle.spec', v.id, null, '2021-06-01T08:00:00.000Z');
+    ins.run('auveh-2', null, 'maintenance.husp_recalc', v.id, null, '2021-06-01T09:00:00.000Z');
+    ins.run('auveh-3', users.fleet.id, 'vehicle.spec', 'VIN:ANDERES1', JSON.stringify({ x: v.id }), '2021-06-01T10:00:00.000Z');
+    const r = await owner.get('/api/admin/audit?limit=1000&vehicle=' + encodeURIComponent(v.id)); eq(r.status, 200);
+    eq(r.data.vehicle.plate, v.plate); ok(r.data.entries.every((e) => e.target === v.id), 'nur Ziel = Fahrzeug');
+    eq(r.data.entries.filter((e) => e.id.startsWith('auveh-')).map((e) => e.id).sort().join(), 'auveh-1,auveh-2');
+    eq((await owner.get(`/api/admin/audit?limit=1000&vehicle=${encodeURIComponent(v.id)}&user=${users.fleet.id}`)).data.entries.filter((e) => e.id.startsWith('auveh-')).map((e) => e.id).join(), 'auveh-1', 'kombiniert mit Person');
+    eq((await owner.get('/api/admin/audit?vehicle=VIN:GIBTESNICHT0')).status, 404);
+    eq((await owner.get('/api/admin/audit?vehicle=' + encodeURIComponent("VIN:X' OR 1=1"))).status, 400);
+    eq((await users.fleet.get('/api/admin/audit?vehicle=' + encodeURIComponent(v.id))).status, 403);
+    const c = await owner.get(`/api/admin/audit?format=csv&from=2021-06-01&to=2021-06-01&vehicle=${encodeURIComponent(v.id)}`);
+    eq(dec(c).trim().split('\r\n').length, 3, 'CSV: Kopf + 2'); ok((c.headers.get('content-disposition') || '').includes('_' + v.plate.replace(/[^\w.-]/g, '_') + '.csv'), 'Dateiname mit Kennzeichen');
+    eq(JSON.parse(db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get().detail).vehicle, v.id, 'Export vermerkt Fahrzeug');
+    const plan = db.prepare("EXPLAIN QUERY PLAN SELECT a.id FROM audit_log a WHERE a.created_at < '9999' AND a.target = 'x' ORDER BY a.created_at DESC LIMIT 100").all().map((x) => x.detail).join(' | ');
+    ok(/idx_audit_target_action|idx_audit_created/.test(plan), plan);
+  } finally { db.prepare("DELETE FROM audit_log WHERE id LIKE 'auveh-%'").run(); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.me.role === 'owner' ? `<a class=\"btn secondary\" href=\"#/audit?v=${esc(v.id)}\"") && app.includes("'&vehicle=' + encodeURIComponent(pv)"), 'Akte-Link nur Inhaber, Filter in Ansicht und CSV');
+});
+
 await test('Vorgangsliste: Sortierung älteste zuerst / zuletzt geändert vor dem LIMIT, unbekannt = Dringlichkeit', async () => {
   const all = (await users.fleet.get('/api/cases?status=&limit=500')).data.cases; ok(all.length >= 3);
   const byCreated = all.map((c) => c.created_at).sort();
@@ -5575,7 +5601,7 @@ await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route 
   const tpls = [...new Set([...[...src.matchAll(/href="(#\/[^"]*)"/g)].map((m) => m[1]), ...strs])];
   ok(tpls.length > 60, 'Links gefunden: ' + tpls.length);
   const sample = (tpl, norm) => {
-    const vinCtx = /^#\/((vehicles|new|check|v|vehicles\/qr)\/|emergency\?v=)\$\{/.test(tpl);
+    const vinCtx = /^#\/((vehicles|new|check|v|vehicles\/qr)\/|(emergency|audit)\?v=)\$\{/.test(tpl);
     let first = true;
     const h = tpl.replace(/\$\{([^}]*)\}/g, (_, e) => { const vin = vinCtx && first; first = false; return vin ? (e.includes('encodeURIComponent') ? 'VIN%3AWDB96340310123456' : 'VIN:WDB96340310123456') : 'abc-123'; });
     return norm ? h.replace(/%3A/gi, ':') : h;

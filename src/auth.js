@@ -497,6 +497,20 @@ function auditUser(query, where, args) {
   where.push('(a.actor_id = ? OR a.target = ?)'); args.push(id, id);
   return id;
 }
+// Protokoll je Fahrzeug: Einträge mit dem Fahrzeug als Ziel (Stammdaten, Status, Bewertung, Prüftermine, Fahrerzuordnung, Hinweise, Telematik)
+function auditVehicle(query, where, args) {
+  if (query.vehicle === undefined || query.vehicle === '') return null;
+  const id = String(query.vehicle);
+  if (!/^VIN:[A-Z0-9]{1,40}$/.test(id)) throw bad('validation', 'Unbekanntes Fahrzeug.');
+  where.push('a.target = ?'); args.push(id);
+  return id;
+}
+async function auditVehicleRow(env, id) {
+  if (!id) return null;
+  const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(id).first();
+  if (!v) throw new HttpError(404, 'not_found', 'Unbekanntes Fahrzeug.');
+  return v;
+}
 async function auditPerson(env, id) {
   if (!id) return null;
   const p = await env.DB.prepare('SELECT id, display_name, username FROM users WHERE id=?').bind(id).first();
@@ -526,11 +540,12 @@ export async function listAudit(env, user, query = {}) {
   if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
+  const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
   const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
     .bind(...args, limit).all()).results;
   const entries = rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
-  return { entries, person };
+  return { entries, person, vehicle };
 }
 
 // Protokoll als CSV (nur Inhaber): Zeitraum nach Berliner Kalendertagen (max. 366 Tage), optional Bereich (Präfix wie in der Ansicht),
@@ -552,13 +567,14 @@ export async function auditCsv(env, user, query, csvCell) {
   if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
+  const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
   const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')}
     ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...args, AUDIT_CSV_MAX + 1).all()).results;
   const truncated = rows.length > AUDIT_CSV_MAX; if (truncated) rows.length = AUDIT_CSV_MAX;
   const lines = [['Zeitpunkt', 'Aktion', 'Person', 'Benutzername', 'Betrifft (Kennung)', 'Details'].join(';')];
   for (const r of rows) lines.push([berlinDateTime(r.created_at), csvCell(r.action), csvCell(r.actor_name || (r.actor_username ? '' : 'System')), csvCell(r.actor_username), csvCell(r.target), csvCell(r.detail)].join(';'));
-  return { csv: '\uFEFF' + lines.join('\r\n') + '\r\n', rows: rows.length, truncated, from, to, prefix, q: qs.length >= 2, person };
+  return { csv: '\uFEFF' + lines.join('\r\n') + '\r\n', rows: rows.length, truncated, from, to, prefix, q: qs.length >= 2, person, vehicle };
 }
 
 // Kurzlebige Tabellen aufräumen (Cron): abgelaufene Sitzungen, alte Zählerfenster, alte Fehlversuche ohne aktive Sperre

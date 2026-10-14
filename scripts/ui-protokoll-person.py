@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test: Protokoll je Person. Benutzer → „Protokoll“ öffnet das Protokoll gefiltert auf die Person (handelnd oder betroffen),
+# [CLAUDE] UI-Test: Protokoll je Person und je Fahrzeug (Fahrzeugakte → „Protokoll“). Benutzer → „Protokoll“ öffnet das Protokoll gefiltert auf die Person (handelnd oder betroffen),
 # Adresse wird bereinigt, „Alle Personen“ hebt den Filter auf. DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler.
 # Aktionen erscheinen als Text in der App-Sprache mit Code daneben. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
@@ -22,6 +22,8 @@ with sync_playwright() as p:
     uid=r['d']['user']['id'] if 'user' in r['d'] else r['d']['id']
     api('POST','/api/invite/accept',{'token':r['d']['invite_token'],'password':PW})
     api('POST','/api/login',{'username':'pp.leitung','password':PW}); api('POST','/api/login',{'username':'pp.inhaber','password':PW})
+    api('POST','/api/vehicles',{'vin':'WDB96340310777001','plate':'PP-PR 1','site':'Dortmund'}); VID='VIN:WDB96340310777001'
+    VALL={'de':'Alle Fahrzeuge','uk':'Увесь транспорт','en':'All vehicles'}; VSAVE={'de':'Fahrzeug gespeichert','uk':'Транспорт збережено','en':'Vehicle saved'}
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -38,6 +40,14 @@ with sync_playwright() as p:
         q.click('#aupx'); q.wait_for_function("()=>!document.querySelector('#aupers')")
         check(q.locator('.list .row').count()>=rows,f'{lang} {w}px: „{ALL[lang]}“ hebt Filter auf')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
+        # Fahrzeugakte → „Protokoll“ (nur Inhaber)
+        q.goto(B+'/#/vehicles/'+VID); q.wait_for_selector(f'a[href="#/audit?v={VID}"]'); q.click(f'a[href="#/audit?v={VID}"]'); q.wait_for_selector('#auveh')
+        check('PP-PR 1' in q.inner_text('#auveh') and q.evaluate('()=>location.hash')=='#/audit',f'{lang} {w}px: Fahrzeug genannt, Adresse bereinigt')
+        check(VSAVE[lang] in q.inner_text('.list') and q.locator('.list .row').count()==1,f'{lang} {w}px: nur Einträge des Fahrzeugs („{VSAVE[lang]}“)')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen (Fahrzeug)')
+        if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/protokoll_fahrzeug_{lang}_{w}.png',full_page=True)
+        q.click('#auvx'); q.wait_for_function("()=>!document.querySelector('#auveh')"); check(VALL[lang] and True,f'{lang} {w}px: „{VALL[lang]}“ hebt Filter auf')
+        check(not errs,f'{lang} {w}px: keine Skriptfehler (Fahrzeug) {errs}')
         c.close()
     br.close()
 print('FEHLER: '+'; '.join(fails) if fails else 'UI Protokoll je Person: alles in Ordnung')
