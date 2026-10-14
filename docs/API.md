@@ -50,7 +50,53 @@ Wiederholte Läufe erzeugen keine Dubletten. Ein übergeordneter Master-Agent ka
 
 Befundcodes: `CRITICAL_UNTRIAGED`, `TRIAGE_OVERDUE`, `TRIAGE_OPEN`, `WORKSHOP_ACK_MISSING`, `WORKSHOP_ACK_PENDING`,
 `NO_FLEET_RECIPIENT`, `NO_WORKSHOP_RECIPIENT`, `WAITING_PARTS`, `COST_APPROVAL_PENDING`, `INSPECTION_DEFECTS_NO_CASE`, `REINSPECTION_PENDING`, `INSPECTION_RESULT_MISSING` (hinweis, ohne Push: Pflichtprüfung ohne Ergebnis wie Datenqualität `inspection_no_result`), `QC_PENDING`, `SAFETY_OPEN_ITEMS`, `VEHICLE_LOCKED`,
-`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`, `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN`, `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON`, `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`, `CONTRACT_ENDED`, `CONTRACT_ENDS_SOON`, `CONTRACT_NOTICE_DUE`, `CONTRACT_KM_OVER`, `CONTRACT_KM_FORECAST`, `CLAIM_OPEN_LONG`., `CASE_FOLLOWUP_DUE` (hinweis: selbst gesetzte Wiedervorlage erreicht), `CASE_STALE` (hinweis, nur mit Einstellung `case_stale_days`: bewerteter/übernommener/in Reparatur befindlicher Vorgang ohne Änderung seit so vielen Tagen; Text nennt das Datum der letzten Änderung)
+`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`, `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN`, `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON`, `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`, `CONTRACT_ENDED`, `CONTRACT_ENDS_SOON`, `CONTRACT_NOTICE_DUE`, `CONTRACT_KM_OVER`, `CONTRACT_KM_FORECAST`, `CLAIM_OPEN_LONG`, `CASE_FOLLOWUP_DUE` (hinweis: selbst gesetzte Wiedervorlage erreicht), `CASE_STALE` (hinweis, nur mit Einstellung `case_stale_days`: bewerteter/übernommener/in Reparatur befindlicher Vorgang ohne Änderung seit so vielen Tagen; Text nennt das Datum der letzten Änderung)
+
+Weitere Befundcodes (Ergänzung 14.10.2026, vorher nur in der App sichtbar):
+`INSPECTION_UNCLEAR` (hinweis: HU/SP-Frist ungeklärt, Grundlage fehlt – siehe Fahrzeugakte), `STOCK_ORDER_OVERDUE` (hinweis, Werkstatt: Liefertermin einer Lagerbestellung laut Lieferant überschritten),
+`TACHO_VU_OVERDUE` (handeln: Massenspeicher-Auslesung überfällig, 90 Tage, FPersV § 2 Abs. 5) / `TACHO_VU_DUE` (hinweis: bald fällig) – nur für Fahrzeuge mit mindestens einer erfassten Auslesung,
+`TACHO_CARD_OVERDUE` (handeln: Fahrerkarten-Auslesung überfällig, 28 Tage) / `TACHO_CARD_DUE` (hinweis), `DRIVER_DOC_EXPIRED` (kritisch bei Führerschein/Fahrerkarte, sonst handeln) / `DRIVER_DOC_EXPIRES_SOON` (hinweis),
+`LICENSE_CHECK_DUE` (handeln: Führerscheinkontrolle fällig) / `LICENSE_CHECK_FAILED` (kritisch: letzte Kontrolle nicht in Ordnung). Die personenbezogenen Codes (`DRIVER_DOC_*`, `LICENSE_CHECK_*`, `TACHO_CARD_*`) liefert `/v1/findings` ohne Namen (`person_redacted: true`).
+Ein Test prüft, dass jeder im Code erzeugte Befundcode hier steht.
+
+### Prüfcodes der Datenqualität (`/v1/data-quality`, `GET /api/admin/data-quality`)
+Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Auswertungen, `hinweis` = sollte gepflegt werden. Es wird nie etwas automatisch geändert. Die Integrations-API liefert in `items` nur fahrzeugbezogene Befunde (personen-/kontobezogene wie `driver_*`, `invite_pending` nur in `counts`). Ein Test prüft, dass jeder Prüfcode hier steht.
+
+| `check` | Schweregrad | Bedeutung |
+|---|---|---|
+| `duplicate_plate` | `fehler` | Kennzeichen mehrfach vergeben |
+| `vin_similar` | `fehler` | FIN fast gleich wie bei einem anderen Fahrzeug (Tippfehler oder Doppelanlage?) |
+| `trailer_unknown` | `fehler` | Anhängerkennzeichen ohne Anhänger im Bestand |
+| `trailer_multi` | `fehler` | Anhänger mehreren Lkw zugeordnet |
+| `assignment_inactive_user` | `fehler` | Zuordnung zu deaktiviertem Fahrer |
+| `missing_site` | `luecke` | Standort fehlt |
+| `no_km` | `luecke` | Noch kein Kilometerstand |
+| `km_stale` | `hinweis` | Kilometerstand veraltet (letzte Ablesung) |
+| `missing_inspection` | `luecke` | Pflichtprüfung ohne Termin |
+| `km_inspection_rejected` | `hinweis` | Kontrolle mit km-Stand kleiner als in der Akte (nicht übernommen) |
+| `missing_manufacturer` | `hinweis` | Hersteller fehlt |
+| `missing_build_year` | `hinweis` | Baujahr fehlt |
+| `invite_pending` | `hinweis` | Einladung nicht angenommen |
+| `trailer_without_truck` | `hinweis` | Anhänger keinem Lkw zugeordnet |
+| `coupled_site_mismatch` | `hinweis` | Gekoppelter Anhänger an anderem Standort |
+| `site_spelling` | `hinweis` | Standort abweichend geschrieben |
+| `driver_account_inactive` | `fehler` | Fahrerakte mit deaktiviertem App-Konto |
+| `driver_no_license` | `luecke` | Fahrer ohne Führerschein-Nachweis |
+| `driver_card_no_download` | `luecke` | Fahrerkarte ohne erfasste Auslesung |
+| `vu_no_download` | `hinweis` | Massenspeicher ohne erfasste Auslesung |
+| `driver_account_no_file` | `hinweis` | Fahrer-Konto ohne Fahrerakte |
+| `contract_vehicle_inactive` | `fehler` | Vertrag läuft, Fahrzeug außer Betrieb (Vertrag beenden?) |
+| `contract_km_no_reading` | `luecke` | Vertrag mit km-Kontingent ohne km-Stand seit Vertragsbeginn |
+| `leasing_doc_no_contract` | `hinweis` | Leasing-/Mietdokument ohne erfassten Vertrag |
+| `contract_no_document` | `hinweis` | Leasing-/Miet-/Finanzierungsvertrag ohne verknüpftes Vertragsdokument |
+| `accident_no_claim` | `hinweis` | Vorgang nennt „Unfall“ – kein Versicherungsfall |
+| `inspection_defects_no_case` | `luecke` | Prüfung mit erheblichen/gefährlichen Mängeln – kein Vorgang seit der Prüfung |
+| `reinspection_defects_again` | `luecke` | Nachprüfung nach Mängelauftrag erneut mit erheblichen Mängeln |
+| `inspection_no_result` | `hinweis` | Pflichtprüfung ohne Prüfergebnis (in der App erfasst, ≤ 180 Tage) |
+| `km_rule_no_base` | `luecke` | Wartung nach km ohne Ausgangs-km |
+| `telematics_plate_mismatch` | `fehler` | Telematik-Gerät meldet anderes Kennzeichen |
+| `telematics_km_rejected` | `hinweis` | Telematik-km-Stand kleiner als in der Akte (nicht übernommen) |
+| `telematics_vehicle_inactive` | `hinweis` | Telematik sendet für außer Betrieb genommenes Fahrzeug |
 
 ## 2. App-API (Sitzungscookie)
 Schreibende Aufrufe brauchen den Header `x-cfp: 1` und gleiche Herkunft. Umgebung = Umgebung des Benutzers;

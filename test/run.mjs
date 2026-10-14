@@ -6008,6 +6008,22 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   console.log(`     ${printing.length} Druckansichten, davon ${Object.keys(EXEMPT).length} ohne Personenvermerk (Formular/Aufkleber)`);
 });
 
+await test('Doku-Wächter: jeder Befundcode des Fuhrparkagenten und jeder Datenqualitäts-Prüfcode steht in docs/API.md', async () => {
+  const fs = await import('node:fs');
+  const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'schema.js').map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  // Befundcodes: code: 'X' und code: Bedingung ? 'X' : 'Y'
+  const codes = new Set();
+  for (const m of src.matchAll(/code:\s*(?:[^,}?]*\?\s*)?'([A-Z][A-Z0-9_]+)'(?:\s*:\s*'([A-Z][A-Z0-9_]+)')?/g)) { codes.add(m[1]); if (m[2]) codes.add(m[2]); }
+  ok(codes.size >= 40 && codes.has('TIRE_WARN') && codes.has('TIRE_BELOW_MINIMUM'), `nur ${codes.size} Befundcodes erkannt`);
+  const missing = [...codes].filter((c) => !api.includes('`' + c + '`'));
+  ok(!missing.length, `Befundcodes fehlen in docs/API.md: ${missing.join(', ')}`);
+  const { CHECKS } = await import('../src/quality.js');
+  const dq = Object.keys(CHECKS).filter((c) => !new RegExp('^\\| `' + c + '` \\| `' + CHECKS[c] + '` \\|', 'm').test(api));
+  ok(!dq.length, `Prüfcodes (mit Schweregrad) fehlen in der Tabelle docs/API.md: ${dq.join(', ')}`);
+  console.log(`     ${codes.size} Befundcodes, ${Object.keys(CHECKS).length} Datenqualitäts-Prüfcodes dokumentiert`);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
