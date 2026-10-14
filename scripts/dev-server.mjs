@@ -21,6 +21,16 @@ if (existsSync(join(root, '_headers'))) {
 const staticHeaders = (path) => Object.assign({}, ...headerRules.filter((r) => r.path === '/*' || r.path === path).map((r) => r.h));
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  // Nur lokal (nicht im Worker): synthetische offene Agentenbefunde für den Browser-Lasttest (scripts/ui-lastpanel.py)
+  if (url.pathname === '/__dev/seed-findings' && req.method === 'POST') {
+    const n = Math.min(Number(url.searchParams.get('n')) || 0, 20000); const envName = url.searchParams.get('env') || 'production';
+    const { FINDING_LABELS } = await import('../public/finding-labels.js'); const codes = Object.keys(FINDING_LABELS.de);
+    const sev = ['kritisch', 'handeln', 'hinweis', 'info']; const now = new Date().toISOString();
+    const st = env.DB.db.prepare(`INSERT OR IGNORE INTO agent_findings (id, environment, finding_code, subject_key, severity, message, next_action, owner_role, requires_decision, status, fingerprint, first_seen, last_seen)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'fleet', 0, 'offen', ?, ?, ?)`);
+    for (let i = 0; i < n; i++) st.run(`last-${envName}-${i}`, envName, codes[i % codes.length], `last|${i}`, sev[i % 4], `Lasttest-Befund ${i + 1}`, 'Prüfen', `fp${i}`, now, now);
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ seeded: n })); return;
+  }
   if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') {
     const chunks = []; for await (const c of req) chunks.push(c);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;
