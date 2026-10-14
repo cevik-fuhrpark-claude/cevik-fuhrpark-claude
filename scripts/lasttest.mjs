@@ -221,6 +221,13 @@ for (let k = 0; k < 5; k++) {
   const st = await integ('/v1/telematics/status');
   console.log(`Telematik (synthetisch): ${st.data.providers.map((p) => `${p.provider} ${p.devices} Geräte, außer Betrieb sendet weiter ${p.inactive_vehicle_reports}`).join(' · ')}`);
   if (CHECK && st.data.providers.some((p) => p.inactive_vehicle_reports !== 10)) { console.error('Telematik: inactive_vehicle_reports ≠ 10 – Lasttest-Daten prüfen'); process.exitCode = 1; }
+  // Datenqualität und Fuhrparkagent auch im Zustand „außer Betrieb, Gerät liefert weiter“ messen (vor der Wiederinbetriebnahme)
+  const dqOff = await timed('Datenqualität (10 außer Betrieb)', () => owner.get('/api/admin/data-quality').then((r) => must(r, 'Datenqualität außer Betrieb')));
+  const nInactive = (dqOff.data.items || []).filter((i) => i.check === 'telematics_vehicle_inactive').length;
+  console.log(`Datenqualität (synthetisch): telematics_vehicle_inactive ${nInactive} Befunde`);
+  if (CHECK && nInactive !== 20) { console.error('Datenqualität: telematics_vehicle_inactive ≠ 20 (10 Fahrzeuge × 2 Anbieter) – Lasttest-Daten prüfen'); process.exitCode = 1; }
+  await timed('API /v1/data-quality (außer Betrieb)', () => integ('/v1/data-quality?environment=test'));
+  await timed('Fuhrparkagent (10 außer Betrieb)', () => owner.post('/api/agent/run'));
   await env.DB.batch(vehicles.slice(0, 10).map((v) => env.DB.prepare('UPDATE vehicles SET active=1 WHERE id=?').bind(v.id)));
 }
 await timed('Datenqualität inkl. Prüfmängel', () => owner.get('/api/admin/data-quality'));
