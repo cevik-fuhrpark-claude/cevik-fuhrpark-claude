@@ -80,7 +80,7 @@ function requireRole(user, roles) {
 
 const STATUS_DE_ICS = { gemeldet: 'gemeldet', werkstatt_freigegeben: 'an Werkstatt freigegeben', in_reparatur: 'in Reparatur', wartet_teile: 'wartet auf Teile', abschlusskontrolle: 'Abschlusskontrolle' };
 const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'tire_warn_age_years', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net',
+  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'tire_warn_age_years', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net', 'user_unused_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
 ];
 
@@ -209,7 +209,12 @@ async function handleApi(request, env, ctx, url) {
   }
 
   // Benutzer
-  if (path === '/api/users' && m === 'GET') return json({ users: await auth.listUsers(env, user) });
+  // unused_days = Einstellung „Konten ohne Anmeldung seit … Tagen melden“ (leer = aus, keine eigene Vorgabe) – nur für den Hinweis in der Ansicht
+  if (path === '/api/users' && m === 'GET') {
+    const list = await auth.listUsers(env, user);
+    const ud = Math.floor(Number((await env.DB.prepare(`SELECT value FROM settings WHERE key='user_unused_days'`).first())?.value));
+    return json({ users: list, unused_days: ud > 0 ? ud : null });
+  }
   if (path === '/api/users' && m === 'POST') return json(await auth.createUser(env, user, await readJson(request)), 201);
   let mm;
   if ((mm = path.match(/^\/api\/users\/([\w-]+)$/)) && m === 'PATCH') return json(await auth.updateUser(env, user, mm[1], await readJson(request)));

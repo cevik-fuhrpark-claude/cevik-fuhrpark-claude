@@ -6829,12 +6829,48 @@ await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne b
   for (const lang of ['de', 'uk', 'en']) for (const k of ['ufilter', 'ufilter_all', 'ufilter_active', 'ufilter_inactive', 'ufilter_invite', 'ufilter_locked', 'ufilter_shown', 'status', 'role']) ok(STRINGS[lang][k], `${k} ${lang}`);
   for (const lang of ['de', 'uk', 'en']) for (const k of ['usort_role', 'usort_name', 'usort_login_oldest', 'uc_print', 'sort_by', 'print', 'print_count']) ok(STRINGS[lang][k], `${k} ${lang}`);
   const fn = app.slice(app.indexOf('async function viewUsers('), app.indexOf('async function viewSettings('));
-  ok(/const USER_SORTS = \['role', 'name', 'login_oldest'\];/.test(app) && fn.includes("sortPref('users', USER_SORTS, 'role')") && fn.includes("sortPref('users_filter', USER_FILTERS, 'all')") && fn.includes('const us = sortUsers(filterUsers(all, ufi), uso);'), 'Sortierung/Auswahl gemerkt und vor Anzeige/CSV angewandt');
-  ok(fn.indexOf('sortUsers(filterUsers(all, ufi), uso)') < fn.indexOf('usersCsv(us, t, wsName, fmtDT)'), 'CSV in derselben Reihenfolge und Auswahl');
+  ok(/const USER_SORTS = \['role', 'name', 'login_oldest'\];/.test(app) && fn.includes("sortPref('users', USER_SORTS, 'role')") && fn.includes("sortPref('users_filter', USER_FILTERS, 'all')") && fn.includes('const us = sortUsers(filterUsers(all, ufi, ud), uso);'), 'Sortierung/Auswahl gemerkt und vor Anzeige/CSV angewandt');
+  ok(fn.indexOf('sortUsers(filterUsers(all, ufi, ud), uso)') > 0 && fn.indexOf('sortUsers(filterUsers(all, ufi, ud), uso)') < fn.indexOf('usersCsv(us, t, wsName, fmtDT)'), 'CSV in derselben Reihenfolge und Auswahl');
   ok(fn.includes('const no2fa = all.filter(') && fn.includes('const noPush = all.filter('), 'Hinweise (2FA/Push) unabhängig von der Auswahl');
   ok(fn.includes("printHead([t('uc_print'), ufi !== 'all' ? `${t('ufilter')}: ${ufLabel(ufi)}` : '', `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])") && fn.includes("$('#uprt').onclick = () => window.print()"), 'druckbar mit Vermerk (Auswahl, Sortierung, Anzahl)');
   ok(fn.includes('<th class="noprint"></th>') && fn.includes('<td class="noprint">${u.id !== S.me.id'), 'Spalte mit Bedienknöpfen nicht im Ausdruck');
   ok(/'wsload', 'users'\]/.test(fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
+});
+
+await test('Benutzerliste: Hinweis „lange nicht angemeldet“ nur mit Einstellung (leer = aus), Bezug letzte Anmeldung sonst Anlage, nur aktive Konten, Auswahl/Kennzeichnung, nichts automatisch deaktiviert', async () => {
+  const { isUnusedUser, filterUsers } = await import('../public/csv.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = await import('node:fs');
+  const now = Date.parse('2026-10-14T12:00:00Z'); const ago = (d) => new Date(now - d * 86400000).toISOString();
+  ok(!isUnusedUser({ has_password: 1, active: 1, last_login: ago(400) }, null, now), 'Einstellung leer = aus');
+  ok(!isUnusedUser({ has_password: 1, active: 1, last_login: ago(400) }, 0, now) && !isUnusedUser({ has_password: 1, active: 1, last_login: ago(400) }, -5, now), '0/negativ = aus');
+  ok(isUnusedUser({ has_password: 1, active: 1, last_login: ago(91) }, 90, now), 'letzte Anmeldung älter');
+  ok(!isUnusedUser({ has_password: 1, active: 1, last_login: ago(89) }, 90, now), 'letzte Anmeldung jünger');
+  ok(!isUnusedUser({ has_password: 1, active: 1, last_login: ago(10), created_at: ago(500) }, 90, now), 'Anmeldung zählt vor Anlage');
+  ok(isUnusedUser({ has_password: 1, active: 1, last_login: null, created_at: ago(120) }, 90, now), 'ohne Anmeldung: Anlage als Bezug');
+  ok(!isUnusedUser({ has_password: 1, active: 1, last_login: null, created_at: ago(3) }, 90, now), 'frisch angelegt zählt nicht');
+  ok(!isUnusedUser({ has_password: 1, active: 1, last_login: null, created_at: null }, 90, now), 'ohne Bezug nie');
+  ok(!isUnusedUser({ has_password: 1, active: 0, last_login: ago(400) }, 90, now) && !isUnusedUser({ has_password: 0, active: 1, created_at: ago(400) }, 90, now), 'deaktiviert/Einladung offen zählen nicht');
+  const pool = [{ username: 'a', has_password: 1, active: 1, last_login: new Date(Date.now() - 100 * 86400000).toISOString() }, { username: 'b', has_password: 1, active: 1, last_login: new Date().toISOString() }];
+  eq(filterUsers(pool, 'unused', 30).map((u) => u.username).join(''), 'a'); eq(filterUsers(pool, 'unused', null).length, 0, 'Auswahl ohne Einstellung leer');
+  // API: Einstellung nur Inhaber, unused_days in der Benutzerliste (auch Fuhrparkleitung), leer = null
+  eq((await owner.get('/api/users')).data.unused_days, null, 'Standard aus');
+  eq((await users.fleet.put('/api/settings', { user_unused_days: 60 })).status, 403);
+  eq((await owner.put('/api/settings', { user_unused_days: 60 })).status, 200);
+  eq((await owner.get('/api/settings')).data.values.user_unused_days, '60');
+  eq((await owner.get('/api/users')).data.unused_days, 60);
+  eq((await users.fleet.get('/api/users')).data.unused_days, 60, 'Fuhrparkleitung sieht die Tage');
+  eq((await owner.put('/api/settings', { user_unused_days: 0 })).status, 200); eq((await owner.get('/api/users')).data.unused_days, null, '0 = aus');
+  eq((await owner.put('/api/settings', { user_unused_days: '' })).status, 200); eq((await owner.get('/api/users')).data.unused_days, null, 'leer = aus');
+  ok((await owner.get('/api/users')).data.users.every((u) => 'created_at' in u && 'last_login' in u), 'Bezugsfelder geliefert');
+  for (const lang of ['de', 'uk', 'en']) for (const k of ['ufilter_unused', 'unused_chip', 'unused_admin_hint', 'unused_show', 'unused_setting', 'unused_setting_hint']) ok(STRINGS[lang][k], `${k} ${lang}`);
+  for (const lang of ['de', 'uk', 'en']) { ok(STRINGS[lang].unused_admin_hint.includes('{n}') && STRINGS[lang].unused_admin_hint.includes('{d}') && STRINGS[lang].ufilter_unused.includes('{d}'), `Platzhalter ${lang}`); ok(STRINGS[lang].help_exports_s.includes(STRINGS[lang].unused_setting.split(' (')[0].slice(0, 20)), `Hilfe nennt Einstellung ${lang}`); }
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function viewUsers('), app.indexOf('async function viewSettings('));
+  ok(fn.includes("if (ufi === 'unused' && !ud) ufi = 'all';") && fn.includes("(k !== 'unused' || ud)") && fn.includes('filterUsers(all, ufi, ud)'), 'Auswahl nur mit Einstellung');
+  ok(fn.includes('const unused = ud ? all.filter((u) => isUnusedUser(u, ud)) : [];'), 'Hinweis über alle Konten');
+  ok(!/data-act[^\n]*unused|unused[^\n]*\/active/.test(fn.slice(fn.indexOf('const unused'), fn.indexOf('const unused') + 200)), 'kein automatisches Deaktivieren');
+  ok(app.includes("${field('user_unused_days', t('unused_setting'))}"), 'Feld in Einstellungen');
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

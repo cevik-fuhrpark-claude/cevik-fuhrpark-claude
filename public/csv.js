@@ -47,11 +47,21 @@ export function sortUsers(us, mode) {
   return us;
 }
 
+// „Lange nicht angemeldet“ (Einstellung user_unused_days, leer/0 = aus → nie): nur aktive Konten mit Passwort; Bezug = letzte
+// protokollierte Anmeldung, ohne protokollierte Anmeldung der Anlagezeitpunkt (frisch angelegte Konten zählen nicht sofort).
+export function isUnusedUser(u, days, nowMs = Date.now()) {
+  const d = Math.floor(Number(days));
+  if (!(d > 0) || !u.has_password || !u.active) return false;
+  const ref = Date.parse(u.last_login || u.created_at || '');
+  return Number.isFinite(ref) && ref < nowMs - d * 86400000;
+}
+
 // Benutzerliste eingrenzen (Ansicht, Druck und CSV gleich): all | active | inactive (deaktiviert) | invite (Einladung offen)
-// | locked (gesperrt nach Fehlversuchen) | r_<rolle>. Unbekannte Auswahl = alle. Gibt eine neue Liste zurück.
-export function filterUsers(us, f) {
+// | locked (gesperrt nach Fehlversuchen) | unused (lange nicht angemeldet, siehe isUnusedUser) | r_<rolle>. Unbekannte Auswahl = alle. Gibt eine neue Liste zurück.
+export function filterUsers(us, f, unusedDays) {
   const now = new Date().toISOString();
   const pick = {
+    unused: (u) => isUnusedUser(u, unusedDays),
     active: (u) => u.has_password && u.active,
     inactive: (u) => u.has_password && !u.active,
     invite: (u) => !u.has_password,
