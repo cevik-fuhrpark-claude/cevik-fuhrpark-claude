@@ -62,6 +62,13 @@ with sync_playwright() as p:
         # Befund ohne Vorgang, aber mit Fahrzeug: Link zur Fahrzeugakte
         check(q.locator(f'a[data-afv][href="#/vehicles/{vid}"]').count()>=1,f'{lang} {w}px: Link Befund → Fahrzeugakte')
         q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#vaf summary')
+        # Druck/PDF: zugeklappte „Offene Agentenbefunde“ werden mitgedruckt und danach wieder zugeklappt
+        if w==390:
+            check(not q.eval_on_selector('#vaf','e=>e.open'),f'Akte {lang}: ohne kritische Befunde zugeklappt')
+            q.evaluate("()=>window.dispatchEvent(new Event('beforeprint'))"); q.emulate_media(media='print')
+            check(q.is_visible('#vaf') and q.eval_on_selector('#vaf','e=>e.open') and EXP[lang][0] in q.inner_text('#vaf'),f'Akte {lang}: Agentenbefunde im Ausdruck')
+            q.emulate_media(media='screen'); q.evaluate("()=>window.dispatchEvent(new Event('afterprint'))")
+            check(not q.eval_on_selector('#vaf','e=>e.open'),f'Akte {lang}: nach dem Druck wieder zugeklappt')
         q.click('#vaf summary'); vt=q.inner_text('#vaf')
         for e in EXP[lang]+[UNCL[lang]]: check(e in vt,f'Akte {lang} {w}px: {e}')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'Akte {lang} {w}px: kein Querscrollen')

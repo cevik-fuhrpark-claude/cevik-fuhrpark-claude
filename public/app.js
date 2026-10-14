@@ -1741,16 +1741,17 @@ async function viewCosts() {
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, actual: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
   const vs = [...byV.entries()].sort((a, b) => b[1].actual - a[1].actual);
   const kmBy = new Map((rep.vehicles || []).map((v) => [v.vehicle_id, v]));
-  let html = `<h1>${esc(t('costs_report'))}</h1>${helpLink('costs')}<form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+  // Ausdruck (Besprechung/Ablage): Zeitraum und Standort im Vermerk, weil das Formular nicht mitgedruckt wird
+  let html = `<h1>${esc(t('costs_report'))}</h1>${printHead([`${t('period')}: ${from} – ${to}`, site ? `${t('site')}: ${site === 'ohne' ? t('cs_nosite') : site}` : ''])}${helpLink('costs')}<form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     ${(rep.site_options || []).length > 1 || site ? `<div>${siteSelect('crsite', 'site', rep.site_options, site)}</div>` : ''}
-    <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn" id="csv">${esc(t('export_csv'))}</button></div></form>
+    <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn" id="csv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="costprt">${esc(t('print'))}</button></div></form>
     <section class="panel"><dl class="kv"><dt>${esc(t('cost_actual'))}</dt><dd><b>${eur(rep.totals.actual_net)}</b></dd><dt>${esc(t('cost_estimate'))}</dt><dd>${eur(rep.totals.estimate_net)}</dd>
     <dt>${esc(t('hours'))}</dt><dd>${esc(String(rep.totals.hours).replace('.', ','))}</dd><dt>${esc(t('unvalued_positions'))}</dt><dd>${rep.totals.unvalued_items ? `<span class="chip kritisch">${rep.totals.unvalued_items}</span>` : '0'}</dd></dl>
     <p class="small muted" style="margin-top:8px">${esc(t('cost_rules'))}${rep.hourly_rate_net === null ? ' ' + esc(t('no_rate')) : ''} ${esc(t('cost_per_km_rule'))}</p></section>`;
   const sites = rep.sites || [];
   if (sites.length > 1) html += `<section class="panel" id="costsites"><h3>${esc(t('cs_title'))}</h3><dl class="kv">${sites.map((s) => `<dt>${esc(s.site === 'ohne' ? t('cs_nosite') : s.site)}</dt><dd><b>${eur(s.actual_net)}</b>${s.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(s.estimate_net) : ''}${s.unvalued_items ? ` · <span class="chip kritisch">${s.unvalued_items} ${esc(t('unvalued_short'))}</span>` : ''} · ${esc(t('cs_vehicles').replace('{n}', s.vehicles))}</dd>`).join('')}</dl><p class="small muted" style="margin-top:8px">${esc(t('cs_rule'))}</p></section>`;
-  html += `<div class="list">${vs.map(([id, v]) => `<details class="row" style="display:block"><summary style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer">${plate(v.plate || id)}<span class="title">${eur(Math.round(v.actual * 100) / 100)}</span>${v.estimate ? `<span class="chip">${esc(t('estimate'))}: ${eur(Math.round(v.estimate * 100) / 100)}</span>` : ''}${v.unvalued ? `<span class="chip kritisch">${v.unvalued} ${esc(t('unvalued_short'))}</span>` : ''}${(() => { const k = kmBy.get(id); return k && k.km ? `<span class="chip">${fmtKm(k.km)} · ${k.cost_per_km !== null ? Number(k.cost_per_km).toLocaleString('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' €/km' : '–'}${k.complete ? '' : ' (' + esc(t('incomplete')) + ')'}</span>` : ''; })()}</summary>
+  html += `<div class="list print-summary">${vs.map(([id, v]) => `<details class="row" style="display:block"><summary style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer">${plate(v.plate || id)}<span class="title">${eur(Math.round(v.actual * 100) / 100)}</span>${v.estimate ? `<span class="chip">${esc(t('estimate'))}: ${eur(Math.round(v.estimate * 100) / 100)}</span>` : ''}${v.unvalued ? `<span class="chip kritisch">${v.unvalued} ${esc(t('unvalued_short'))}</span>` : ''}${(() => { const k = kmBy.get(id); return k && k.km ? `<span class="chip">${fmtKm(k.km)} · ${k.cost_per_km !== null ? Number(k.cost_per_km).toLocaleString('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' €/km' : '–'}${k.complete ? '' : ' (' + esc(t('incomplete')) + ')'}</span>` : ''; })()}</summary>
     <dl class="kv" style="margin-top:8px">${v.months.map((m) => `<dt>${esc(m.month)}</dt><dd>${eur(m.actual_net)}${m.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(m.estimate_net) : ''}${m.unvalued_items ? ' · ' + m.unvalued_items + ' ' + esc(t('unvalued_short')) : ''} · ${esc(String(m.hours).replace('.', ','))} h</dd>`).join('')}</dl>
     <p><a href="#/vehicles/${encodeURIComponent(id)}">${esc(t('vehicle'))} ›</a></p></details>`).join('') || `<p class="muted">${esc(t('no_costs'))}</p>`}</div>`;
   const cc = rep.contract_costs;
@@ -1763,6 +1764,7 @@ async function viewCosts() {
     <div class="list">${cl.items.length ? cl.items.map((x) => `<a class="row" href="#/cases/${encodeURIComponent(x.case_id)}">${plate(x.plate || x.vehicle_id)}<span class="title">${eur(x.reimbursed_net)}</span><span class="chip">${fmtD(x.reimbursed_on)}</span><span class="sub" style="white-space:normal">${esc(x.case_no)} · ${esc(x.insurer)}${x.claim_no ? ' · ' + esc(x.claim_no) : ''}</span></a>`).join('') : `<p class="muted">${esc(t('cr_none'))}</p>`}</div>`;
   render(html, 'more');
   const cr = $('#cr');
+  $('#costprt').onclick = () => window.print();
   cr.onsubmit = (e) => { e.preventDefault(); S.costFrom = cr.from.value; S.costTo = cr.to.value; S.costSite = cr.site ? cr.site.value : ''; viewCosts(); };
   $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${cr.from.value}&to=${cr.to.value}${cr.site && cr.site.value ? '&site=' + encodeURIComponent(cr.site.value) : ''}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${cr.from.value}_${cr.to.value}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
 }
@@ -2030,9 +2032,10 @@ async function viewMaster() {
 }
 
 // ---------- Prüftermine (Fuhrpark gesamt) ----------
-// Druck/PDF: Prüfhistorie der Fahrzeugakte („Bisherige Durchführungen“) immer mitdrucken, danach wieder zuklappen
-window.addEventListener('beforeprint', () => { const mh = document.querySelector('#mhist'); if (mh && !mh.open) { mh.open = true; mh.dataset.printOpened = '1'; } });
-window.addEventListener('afterprint', () => { const mh = document.querySelector('#mhist'); if (mh && mh.dataset.printOpened) { mh.open = false; delete mh.dataset.printOpened; } });
+// Druck/PDF: Prüfhistorie der Fahrzeugakte („Bisherige Durchführungen“) und „Offene Agentenbefunde“ immer mitdrucken, danach wieder zuklappen
+const PRINT_OPEN = '#mhist, #vaf';
+window.addEventListener('beforeprint', () => { for (const d of document.querySelectorAll(PRINT_OPEN)) if (!d.open) { d.open = true; d.dataset.printOpened = '1'; } });
+window.addEventListener('afterprint', () => { for (const d of document.querySelectorAll(PRINT_OPEN)) if (d.dataset.printOpened) { d.open = false; delete d.dataset.printOpened; } });
 // Download mit Hinweis, wenn der Server die Datei begrenzt hat (Header x-cfp-truncated)
 function downloadChecked(blob, name) { download(blob, name); if (blob.cfpTruncated) toast(t('export_truncated').replace('{n}', blob.cfpTruncated), true); }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
@@ -2140,11 +2143,11 @@ async function viewKpi() {
   let r;
   try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${vsDef('kpiVsite') ? '&vsite=' + encodeURIComponent(vsDef('kpiVsite')) : ''}`); } catch (err) { render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const st = (x) => (x.n ? `${dur(x.median_h)} <span class="small muted">(P90 ${dur(x.p90_h)}, n=${x.n})</span>` : '–');
-  let html = `<h1>${esc(t('kpi'))}</h1>${helpLink('kpi')}<form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+  let html = `<h1>${esc(t('kpi'))}</h1>${printHead([`${t('period')}: ${from} – ${to}`, r.site ? `${t('workshop')}: ${r.site === 'ohne' ? t('cs_nosite') : wsName(r.site)}` : '', r.vehicle_site ? `${t('kpi_vsite')}: ${r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site}` : ''])}${helpLink('kpi')}<form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     ${r.sites.length > 1 || r.site ? `<div><label>${esc(t('workshop'))}</label><select name="site"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...r.sites, ...(r.site ? [r.site] : [])])].map((x) => `<option value="${esc(x)}"${x === r.site ? ' selected' : ''}>${esc(x === 'ohne' ? t('kpi_no_site') : wsName(x))}</option>`).join('')}</select></div>` : ''}
     ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('kvsite', 'vsite', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
-    <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button></div></form>${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}${r.vehicle_site ? `<p class="small muted">${esc(t('kpi_vsite_hint'))}</p>` : ''}${r.by_priority.length ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kcsvv">${esc(t('kpi_csv_veh'))}</button><button type="button" class="btn secondary" id="kcsvp">${esc(t('kpi_csv_prio'))}</button></div>` : ''}`;
+    <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="kpiprt">${esc(t('print'))}</button></div></form>${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}${r.vehicle_site ? `<p class="small muted">${esc(t('kpi_vsite_hint'))}</p>` : ''}${r.by_priority.length ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kcsvv">${esc(t('kpi_csv_veh'))}</button><button type="button" class="btn secondary" id="kcsvp">${esc(t('kpi_csv_prio'))}</button></div>` : ''}`;
   html += r.by_priority.length ? r.by_priority.map((p) => `<section class="panel ${p.priority === 'kritisch' ? 'alert' : ''}"><h3>${esc(p.priority === 'alle' ? t('filter_all') : t('prio_' + p.priority))}</h3><dl class="kv">
     <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}${p.duplicates ? ` (${esc(t('kpi_dupes').replace('{n}', p.duplicates))})` : ''}` : ''}</dd>
     <dt>${esc(t('kpi_triage'))}</dt><dd>${st(p.triage)}</dd><dt>${esc(t('kpi_ack'))}</dt><dd>${st(p.workshop_ack)}</dd><dt>${esc(t('kpi_total'))}</dt><dd>${st(p.created_to_release)}</dd><dt>${esc(t('kpi_parts'))}</dt><dd>${dur(p.parts_wait_h)}</dd></dl></section>`).join('') : `<p class="muted">–</p>`;
@@ -2173,6 +2176,7 @@ async function viewKpi() {
     <dt>${esc(t('kpi_id_reinsp'))}</dt><dd>${idf.reinspected}${idf.defects_again ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_again'))} ${idf.defects_again}</b>` : ''}</dd></dl><p class="small muted">${esc(t('kpi_id_rule'))}</p></section>`;
   html += `<p class="small muted">${esc(t('kpi_rules'))}</p>`;
   render(html, 'more');
+  $('#kpiprt').onclick = () => window.print();
   const f = $('#kf2'); f.onsubmit = (e) => { e.preventDefault(); S.kpiFrom = f.from.value; S.kpiTo = f.to.value; S.kpiSite = f.site ? f.site.value : ''; S.kpiVsite = f.vsite ? f.vsite.value : ''; viewKpi(); };
   const kq = `/api/reports/kpi?from=${from}&to=${to}${r.site ? '&site=' + encodeURIComponent(r.site) : ''}${r.vehicle_site ? '&vsite=' + encodeURIComponent(r.vehicle_site) : ''}&format=csv`;
   for (const [id, part, name] of [['#kcsvv', 'vehicles', 'fahrzeuge'], ['#kcsvp', 'priority', 'dringlichkeit']]) {
