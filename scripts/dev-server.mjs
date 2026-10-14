@@ -31,6 +31,25 @@ http.createServer(async (req, res) => {
     for (let i = 0; i < n; i++) st.run(`last-${envName}-${i}`, envName, codes[i % codes.length], `last|${i}`, sev[i % 4], `Lasttest-Befund ${i + 1}`, 'Prüfen', `fp${i}`, now, now);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ seeded: n })); return;
   }
+  // Nur lokal (nicht im Worker): HTML-Einschleusungs-Probe für den UI-Rauchtest (CFP_XSS=1 python3 scripts/ui-rauchtest.py).
+  // Hängt an alle Freitext-Spalten (Beschreibung, Name, Kennzeichen, Standort, Nachweis, Vermerk …) eine HTML-Probe an.
+  // IDs, Zeitstempel, Datumswerte, Statuswerte/Aufzählungen, JSON und Schlüssel bleiben unverändert, damit die App funktionsfähig bleibt;
+  // Spalten mit CHECK-Bedingung lehnt SQLite ab (wird übersprungen). Antwort: Anzahl veränderter Werte je Tabelle.Spalte.
+  if (url.pathname === '/__dev/taint' && req.method === 'POST') {
+    const probe = url.searchParams.get('probe') || '"\'><b data-xss=1>X</b>';
+    const db = env.DB.db; const out = {};
+    const SKIP = /(^id$|_id$|_ids$|_at$|_on$|_until$|_from$|_to$|date|time|^environment$|status|role|^kind$|hash|key$|^key|token|fingerprint|json|payload|args|password|salt|lang|^vin$|code$|valuation|priority|driveability|severity|^result|origin|action|scope|type$|subject|workshop_site|unit$|month|_by$|^source$|tire_order|position|endpoint|^auth$|p256dh|due_source|^ua$|^ip|^username$|_ref$|check_item|^value$|^month$|^day$|^site_key|duplicate_of|followup_on|^mime|^ext$|^size|^dot$|season|^axle|^tread|^owner_role|^decision$|^category$|^recipient)/;
+    for (const { name: t } of db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('migrations','schema_migrations','settings','sessions','push_subscriptions','login_attempts','rate_limits','case_counters','fine_counters','cmd_guard','usage_daily','invites')`).all()) {
+      for (const c of db.prepare(`PRAGMA table_info("${t}")`).all()) {
+        if (!/TEXT/i.test(c.type) || c.pk || SKIP.test(c.name)) continue;
+        try {
+          const r = db.prepare(`UPDATE "${t}" SET "${c.name}" = "${c.name}" || ? WHERE "${c.name}" IS NOT NULL AND "${c.name}" <> '' AND substr("${c.name}",1,1) NOT IN ('{','[') AND "${c.name}" NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]*'`).run(probe);
+          if (r.changes) out[`${t}.${c.name}`] = Number(r.changes);
+        } catch { /* CHECK-/UNIQUE-Bedingung: Spalte ist keine Freitext-Spalte */ }
+      }
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ tainted: out })); return;
+  }
   if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') {
     const chunks = []; for await (const c of req) chunks.push(c);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;

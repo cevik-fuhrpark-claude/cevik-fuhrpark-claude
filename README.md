@@ -24,8 +24,8 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · Hilfe je Rolle mit Suche · Deu
 | `docs/RUNDGANG.md` | Ablaufplan Testrundgang (Fahrer → Leitung → Werkstatt → Freigabe) mit erwarteten Ergebnissen |
 
 ```bash
-npm test                                            # 219 Abnahmetests (Node ≥ 22)
-sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
+npm test                                            # 220 Abnahmetests (Node ≥ 22)
+sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
 Deployment: Push auf `main` → Cloudflare Workers Builds (`node scripts/build-schema.mjs`, `npx wrangler deploy`).

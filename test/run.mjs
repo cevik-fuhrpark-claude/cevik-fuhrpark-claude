@@ -6339,6 +6339,25 @@ await test('Testrundgang laut docs/RUNDGANG.md: Schalter „nur lesen“ an, Tes
   } finally { eq((await owner.put('/api/settings', { test_master_readonly: null })).status, 200); }
 });
 
+await test('HTML-Einschleusungs-Probe: Dev-Endpunkte nur im lokalen Dev-Server, Probe Teil der vollen Prüfung, Oberfläche maskiert < > " \' &', async () => {
+  const fs = await import('node:fs');
+  const rd = (p) => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).map((f) => rd('../src/' + f)).join('\n');
+  ok(!src.includes('__dev'), 'Worker enthält keinen /__dev-Endpunkt');
+  const r = await worker.fetch(new Request('https://x.test/__dev/taint', { method: 'POST', headers: { 'x-cfp': '1', origin: 'https://x.test' } }), makeEnv(), { waitUntil() {} });
+  ok(r.status !== 200 || !(await r.text()).includes('tainted'), 'Worker beantwortet /__dev/taint nicht');
+  ok(rd('../scripts/dev-server.mjs').includes("'/__dev/taint'"), 'Dev-Server bietet /__dev/taint');
+  const rt = rd('../scripts/ui-rauchtest.py');
+  ok(rt.includes("CFP_XSS") && rt.includes('[data-xss]') && rt.includes("'/__dev/taint'"), 'Rauchtest kennt die Probe');
+  ok(/run_smoke CFP_XSS=1/.test(rd('../scripts/pruefen.sh')), 'volle Prüfung führt die Probe aus');
+  // zentrale Maskierung der Oberfläche: alle fünf HTML-Sonderzeichen
+  const app = rd('../public/app.js'); const m = app.match(/const esc = \(v\) => (.+);\n/);
+  ok(m, 'esc() in public/app.js gefunden');
+  const esc = new Function('v', `return (${m[1]});`);
+  eq(esc(`"'><b data-xss=1>X</b>&`), '&quot;&#39;&gt;&lt;b data-xss=1&gt;X&lt;/b&gt;&amp;');
+  eq(esc(null), ''); eq(esc(0), '0');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

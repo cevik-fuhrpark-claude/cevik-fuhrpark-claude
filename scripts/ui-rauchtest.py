@@ -1,6 +1,9 @@
 # [CLAUDE] UI-Rauchtest: alle Ansichten je Rolle in Handy-, Tablet- und PC-Breite aufrufen
 # Voraussetzung: lokaler Entwicklungsserver mit frischer In-Memory-DB (sh scripts/restart-dev.sh) und Python-Playwright.
-# Aufruf: [CFP_LANG=uk|en] [CFP_SCHEME=dark] python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
+# Aufruf: [CFP_LANG=uk|en] [CFP_SCHEME=dark] [CFP_XSS=1] python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
+# CFP_XSS=1: HTML-Einschleusungs-Probe – nach der Vorbereitung hängt der Dev-Server (/__dev/taint) an alle Freitexte der Datenbank
+# '"'><b data-xss=1>X</b>' an; jede Ansicht (Bildschirm + Druck) darf kein Element mit data-xss enthalten (Freitext muss als Text
+# erscheinen). Layout-/Kontrast-/Sprachprüfungen entfallen in diesem Modus (lange Probetexte), JS-Fehler zählen weiter.
 # Zusätzlich: Kontrast WCAG AA (Handy-Breite) und Druckansichten (A4).
 # Prüft je Ansicht: keine JavaScript-Fehler, keine Fehlermeldung (rote Meldung), keine waagrechte Scrollleiste der Seite,
 # Überschrift vorhanden. Nur synthetische Testdaten (Kennzeichen RT-…), nichts verlässt den Rechner.
@@ -353,6 +356,17 @@ with sync_playwright() as p:
     if st2['s'] not in (200, 201):
         problems.append(f'Vorbereitung Lager 2: {st2}')
 
+    XSS = os.environ.get('CFP_XSS') == '1'
+    if XSS:
+        tr = adm.evaluate("async () => (await fetch('/__dev/taint', { method: 'POST' })).json()")
+        tainted = tr.get('tainted') or {}
+        print(f'XSS-Probe in {len(tainted)} Spalten, {sum(tainted.values())} Werten')
+        for col in ('vehicles.plate', 'vehicles.site', 'cases.description', 'users.display_name', 'fines.authority', 'stock_items.name', 'vehicle_contracts.partner', 'drivers.display_name', 'maintenance_rules.evidence'):
+            if col not in tainted:
+                problems.append(f'XSS-Probe: Spalte {col} nicht verändert')
+    xss_seen = [0]
+    XSS_CHECK = """() => { const el = document.querySelector('[data-xss]'); const txt = document.body.innerText.includes('<b data-xss=1>X</b>');
+      return { inj: el ? (el.parentElement ? el.parentElement.outerHTML.slice(0, 160) : el.outerHTML) : null, txt }; }"""
     # Sprache für alle Rauchtest-Konten (CFP_LANG=uk|en): lange ukrainische Texte dürfen das Layout nicht sprengen
     LANG = os.environ.get('CFP_LANG')
     if LANG:
@@ -381,6 +395,12 @@ with sync_playwright() as p:
                     problems.append(f'{where}: Fehlermeldung „{err.first.text_content()}“')
                 if not pg.locator('h1').count():
                     problems.append(f'{where}: keine Überschrift')
+                if XSS:
+                    x = pg.evaluate(XSS_CHECK)
+                    if x['inj']:
+                        problems.append(f'{where}: HTML aus Freitext eingeschleust: {x["inj"]}')
+                    xss_seen[0] += 1 if x['txt'] else 0
+                    continue
                 # Route nicht gefunden → App springt auf die Startseite (außer die Ansicht selbst leitet bewusst weiter)
                 if r and pg.evaluate('location.hash') in ('', '#/') :
                     problems.append(f'{where}: auf Startseite umgeleitet (Route fehlt?)')
@@ -435,6 +455,12 @@ with sync_playwright() as p:
         pg.emulate_media(media='print')
         pg.wait_for_timeout(100)
         where = f'{role} Druck #/{r}'
+        if XSS:
+            x = pg.evaluate(XSS_CHECK)
+            if x['inj']:
+                problems.append(f'{where}: HTML aus Freitext eingeschleust: {x["inj"]}')
+            pg.emulate_media(media='screen')
+            continue
         res = pg.evaluate(PRINT_CHECK, 'Rauchtest Inhaber' if role == 'owner' else f'Rauchtest {role}')
         for x in res:
             problems.append(f'{where}: {x}')
@@ -442,10 +468,12 @@ with sync_playwright() as p:
             os.makedirs(OUT, exist_ok=True)
             pg.pdf(path=os.path.join(OUT, f"druck_{role}_{r.replace('/', '_').replace(':', '')}.pdf"), format='A4')
         pg.emulate_media(media='screen')
+    if XSS and xss_seen[0] < 50:
+        problems.append(f'XSS-Probe: Probetext nur in {xss_seen[0]} Ansichten als Text sichtbar (Probe wirkungslos?)')
     br.close()
 
 n = sum(len(v) for v in ROUTES.values()) * len(SIZES)
-print(f'{n} Ansichten geprüft, {len(print_routes)} Druckansichten, {len(problems)} Auffälligkeiten')
+print(f'{n} Ansichten geprüft, {len(print_routes)} Druckansichten, {len(problems)} Auffälligkeiten' + (f' (XSS-Probe: Probetext in {xss_seen[0]} Ansichten als Text)' if XSS else ''))
 for x in problems:
     print('  - ' + x)
 sys.exit(1 if problems else 0)
