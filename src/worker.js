@@ -1,6 +1,7 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly } from './util.js';
 import * as auth from './auth.js';
+import * as totp from './totp.js';
 import { personExport } from './privacy.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
@@ -117,11 +118,17 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/invite/accept' && m === 'POST') {
     const r = await auth.acceptInvite(env, request, await readJson(request));
+    if (r.second_factor) return json({ second_factor: r.second_factor, challenge: r.challenge });
     return json({ user: r.user }, 200, { 'set-cookie': r.cookie });
   }
   if (path === '/api/login' && m === 'POST') {
     const r = await auth.login(env, request, await readJson(request));
+    if (r.second_factor) return json({ second_factor: r.second_factor, challenge: r.challenge });
     return json({ user: r.user }, 200, { 'set-cookie': r.cookie });
+  }
+  if (path === '/api/login/totp' && m === 'POST') {
+    const r = await auth.loginSecondFactor(env, request, await readJson(request));
+    return json({ user: r.user, ...(r.recovery_left !== undefined ? { recovery_left: r.recovery_left } : {}) }, 200, { 'set-cookie': r.cookie });
   }
 
   // ---- Ab hier: angemeldet ----
@@ -134,8 +141,8 @@ async function handleApi(request, env, ctx, url) {
 
   if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user) });
   if (path === '/api/me' && m === 'GET') {
-    const row = await env.DB.prepare('SELECT language, home_site FROM users WHERE id=?').bind(user.id).first();
-    return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null }, active_environment: envName });
+    const row = await env.DB.prepare('SELECT language, home_site, totp_enabled_at FROM users WHERE id=?').bind(user.id).first();
+    return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null, totp_enabled: !!row.totp_enabled_at }, active_environment: envName });
   }
   if (path === '/api/me' && m === 'PATCH') {
     const b = await readJson(request);
@@ -170,6 +177,12 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/me/sessions/revoke-others' && m === 'POST') return json(await auth.revokeOtherSessions(env, user));
   const sm = path.match(/^\/api\/me\/sessions\/([0-9a-f]{16})$/);
   if (sm && m === 'DELETE') return json(await auth.revokeOwnSession(env, user, sm[1]));
+  // Zwei-Faktor-Anmeldung (freiwillig, eigenes Konto); Zurücksetzen nur durch den Inhaber
+  if (path === '/api/me/totp' && m === 'GET') return json(await totp.totpStatus(env, user));
+  if (path === '/api/me/totp/setup' && m === 'POST') return json(await totp.totpSetup(env, user, await readJson(request), auth.audit));
+  if (path === '/api/me/totp/enable' && m === 'POST') return json(await totp.totpEnable(env, user, await readJson(request), auth.audit));
+  if (path === '/api/me/totp/disable' && m === 'POST') return json(await totp.totpDisable(env, user, await readJson(request), auth.audit));
+  if (path === '/api/me/totp/recovery-codes' && m === 'POST') return json(await totp.totpNewRecovery(env, user, await readJson(request), auth.audit));
   if (path === '/api/me/password' && m === 'POST') return json(await auth.changePassword(env, user, await readJson(request)));
 
   if (path === '/api/meta' && m === 'GET') {
@@ -186,6 +199,7 @@ async function handleApi(request, env, ctx, url) {
   let mm;
   if ((mm = path.match(/^\/api\/users\/([\w-]+)$/)) && m === 'PATCH') return json(await auth.updateUser(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/invite$/)) && m === 'POST') return json(await auth.resetInvite(env, user, mm[1]));
+  if ((mm = path.match(/^\/api\/users\/([\w-]+)\/totp-reset$/)) && m === 'POST') return json(await totp.totpReset(env, user, mm[1], auth.audit));
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/unlock$/)) && m === 'POST') return json(await auth.unlockUser(env, user, mm[1]));
   if ((mm = path.match(/^\/api\/users\/([\w-]+)\/revoke-sessions$/)) && m === 'POST') return json(await auth.revokeUserSessions(env, user, mm[1]));
 

@@ -3804,6 +3804,123 @@ await test('Datenauskunft je Person: nur Inhaber, vollständig je Bereich, ohne 
   ok(y.audit_about.length >= 1, 'Protokoll zur Fahrerakte enthalten');
 });
 
+await test('Zwei-Faktor-Anmeldung (TOTP): RFC-6238-Werte, Einrichten, Anmeldung mit Code/Ersatzcode, kein Wiederverwenden, Sperre, Ausschalten, Zurücksetzen nur Inhaber, nie in Sicherung/Auskunft', async () => {
+  const T = await import('../src/totp.js');
+  // RFC 6238 Anhang B (SHA-1, 8 Stellen) und Base32 hin/zurück
+  const rfc = T.base32Encode(new TextEncoder().encode('12345678901234567890'));
+  eq(rfc, 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ');
+  eq(await T.totpAt(rfc, 59000, 8), '94287082'); eq(await T.totpAt(rfc, 1111111109000, 8), '07081804'); eq(await T.totpAt(rfc, 20000000000000, 8), '65353130');
+  eq(T.base32Encode(T.base32Decode(T.newSecret())).length, 32);
+  const next = (sec, k = 1) => T.totpAt(sec, Date.now() + k * T.STEP_SEC * 1000);
+
+  const u = await invite(owner, { username: 'test.zweifaktor', display_name: 'Test Zweifaktor', role: 'viewer', environment: 'test' });
+  const other = new Client(worker, env, 'tf-other');
+  eq((await other.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' })).status, 200);
+  eq((await u.get('/api/me/totp')).data.enabled, false);
+  eq((await u.get('/api/me')).data.user.totp_enabled, false);
+  eq((await u.post('/api/me/totp/enable', { code: '123456' })).data.error, 'totp_no_setup');
+  const wp = await u.post('/api/me/totp/setup', { password: 'falsch-falsch-1' });
+  eq(wp.status, 400, 'falsches Passwort meldet nicht ab'); eq(wp.data.error, 'wrong_password');
+  eq((await u.get('/api/me')).status, 200, 'weiter angemeldet');
+  const su = await u.post('/api/me/totp/setup', { password: 'Sicheres-Passwort-2026' });
+  eq(su.status, 200); ok(/^[A-Z2-7]{32}$/.test(su.data.secret), 'Base32-Geheimnis');
+  ok(su.data.uri.startsWith('otpauth://totp/') && su.data.uri.includes('secret=' + su.data.secret) && su.data.uri.includes('period=30'), 'otpauth-Adresse');
+  eq((await u.get('/api/me/totp')).data.enabled, false, 'erst nach Bestätigung aktiv');
+  eq((await u.post('/api/me/totp/enable', { code: '000000' === await T.totpAt(su.data.secret) ? '111111' : '000000' })).data.error, 'totp_invalid');
+  const c0 = await T.totpAt(su.data.secret);
+  const en = await u.post('/api/me/totp/enable', { code: c0 });
+  eq(en.status, 200); eq(en.data.recovery_codes.length, 10); ok(en.data.recovery_codes.every((c) => /^[a-z2-9]{5}-[a-z2-9]{5}$/.test(c)), 'Format Ersatzcodes');
+  eq(new Set(en.data.recovery_codes).size, 10);
+  eq((await other.get('/api/me')).status, 401, 'andere Sitzung beendet'); eq((await u.get('/api/me')).status, 200, 'eigene Sitzung bleibt');
+  const st = (await u.get('/api/me/totp')).data; eq(st.enabled, true); eq(st.recovery_left, 10);
+  eq((await u.post('/api/me/totp/setup', { password: 'Sicheres-Passwort-2026' })).data.error, 'totp_already');
+  const lst = (await owner.get('/api/users')).data.users.find((x) => x.id === u.id); eq(!!lst.has_totp, true);
+
+  // Anmeldung: Passwort allein ergibt keine Sitzung
+  const c = new Client(worker, env, 'tf-login');
+  const l1 = await c.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' });
+  eq(l1.status, 200); eq(l1.data.second_factor, 'totp'); ok(l1.data.challenge && !l1.data.user, 'nur Anmeldevorgang'); eq(c.cookie, '', 'kein Cookie');
+  eq((await c.get('/api/me')).status, 401);
+  const bad1 = await c.post('/api/login/totp', { challenge: l1.data.challenge, code: '12345' });
+  eq(bad1.status, 401); eq(bad1.data.error, 'totp_invalid'); ok(!('userRow' in bad1.data) && !JSON.stringify(bad1.data).includes('test.zweifaktor'), 'nichts über das Konto');
+  // Code des Einschaltens ist verbraucht (gleicher Zeitschritt)
+  eq((await c.post('/api/login/totp', { challenge: l1.data.challenge, code: c0 })).status, 401, 'verbrauchter Zeitschritt');
+  const code2 = await next(su.data.secret);
+  const ok1 = await c.post('/api/login/totp', { challenge: l1.data.challenge, code: code2 });
+  eq(ok1.status, 200); eq(ok1.data.user.id, u.id); ok(c.cookie, 'Cookie gesetzt'); eq((await c.get('/api/me')).status, 200);
+  eq((await c.post('/api/login/totp', { challenge: l1.data.challenge, code: code2 })).data.error, 'totp_expired', 'Anmeldevorgang nur einmal');
+  // gleicher Code in neuem Anmeldevorgang: abgelehnt (kein zweites Mal)
+  const c2 = new Client(worker, env, 'tf-login2');
+  const l2 = await c2.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' });
+  eq((await c2.post('/api/login/totp', { challenge: l2.data.challenge, code: code2 })).status, 401, 'Wiederverwendung');
+  // Ersatzcode: einmal gültig, Schreibweise egal
+  const rc = en.data.recovery_codes[0];
+  const r1 = await c2.post('/api/login/totp', { challenge: l2.data.challenge, code: ' ' + rc.toUpperCase().replace('-', ' ') + ' ' });
+  eq(r1.status, 200); eq(r1.data.recovery_left, 9);
+  const c3 = new Client(worker, env, 'tf-login3');
+  const l3 = await c3.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' });
+  eq((await c3.post('/api/login/totp', { challenge: l3.data.challenge, code: rc })).status, 401, 'Ersatzcode nur einmal');
+  // höchstens 5 Versuche je Anmeldevorgang, danach neu mit Passwort; falsche Codes zählen zur Kontosperre (8)
+  for (let i = 0; i < 3; i++) eq((await c3.post('/api/login/totp', { challenge: l3.data.challenge, code: '99999' + i })).status, 401);
+  const x5 = await c3.post('/api/login/totp', { challenge: l3.data.challenge, code: '999999' });
+  eq(x5.data.error, 'totp_expired', '5. Fehlversuch beendet den Anmeldevorgang');
+  const l4 = await c3.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' });
+  eq(l4.data.second_factor, 'totp');
+  eq((await c3.post('/api/login/totp', { challenge: l4.data.challenge, code: '888881' })).status, 401);
+  eq((await c3.post('/api/login/totp', { challenge: l4.data.challenge, code: '888882' })).status, 401);
+  const lk = await c3.post('/api/login/totp', { challenge: l4.data.challenge, code: '888883' });
+  eq(lk.status, 429, '8 Fehlversuche → Sperre'); eq(lk.data.error, 'locked');
+  eq((await c3.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' })).status, 429, 'auch Passwort gesperrt');
+  ok((await owner.get('/api/admin/audit?action=login.locked')).data.entries.some((e) => e.target === u.id && e.detail && e.detail.by === 'totp'), 'Sperre protokolliert');
+  eq((await owner.post(`/api/users/${u.id}/unlock`)).status, 200);
+  // Datensicherung und Datenauskunft ohne Geheimnis/Ersatzcodes
+  const bk = await owner.get('/api/admin/backup');
+  const bu = bk.data.data.users.find((x) => x.id === u.id);
+  ok(bu && bu.totp_enabled_at && !('totp_secret' in bu) && !('totp_recovery' in bu) && !('totp_pending' in bu) && !('totp_last_step' in bu), 'Sicherung ohne 2FA-Geheimnis');
+  ok(!JSON.stringify(bk.data).includes(su.data.secret), 'Geheimnis nirgends in der Sicherung'); ok(!('login_challenges' in bk.data.data), 'Anmeldevorgänge nicht gesichert');
+  const dx = (await owner.get(`/api/admin/users/${u.id}/data-export`)).data;
+  ok(!JSON.stringify(dx).includes(su.data.secret) && !('totp_recovery' in dx.user), 'Datenauskunft ohne Geheimnis');
+  // neues Passwort per Einladung ersetzt den zweiten Faktor nicht
+  const ri = await owner.post(`/api/users/${u.id}/invite`);
+  const ci = new Client(worker, env, 'tf-invite');
+  const ia = await ci.post('/api/invite/accept', { token: ri.data.invite_token, password: 'Neues-Passwort-2026x' });
+  eq(ia.status, 200); eq(ia.data.second_factor, 'totp'); eq(ci.cookie, '', 'ohne Code keine Sitzung');
+  eq((await ci.post('/api/login/totp', { challenge: ia.data.challenge, code: en.data.recovery_codes[2] })).status, 200, 'mit Ersatzcode angemeldet');
+  eq((await ci.post('/api/me/password', { old_password: 'Neues-Passwort-2026x', new_password: 'Sicheres-Passwort-2026' })).status, 200);
+  // Zurücksetzen: nur Inhaber, nicht sich selbst
+  eq((await users.fleet.post(`/api/users/${u.id}/totp-reset`)).status, 403, 'Fuhrparkleitung darf nicht');
+  eq((await ci.post(`/api/users/${u.id}/totp-reset`)).status, 403, 'nicht durch die Person selbst');
+  eq((await owner.post(`/api/users/${(await owner.get('/api/me')).data.user.id}/totp-reset`)).status, 400, 'nicht für sich selbst');
+  eq((await owner.post(`/api/users/${u.id}/totp-reset`)).status, 200);
+  eq((await ci.get('/api/me')).status, 401, 'Sitzungen beendet');
+  eq((await owner.post(`/api/users/${u.id}/totp-reset`)).data.error, 'totp_off');
+  const l6 = await u.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' });
+  eq(l6.status, 200); ok(l6.data.user && !l6.data.second_factor, 'wieder nur Passwort');
+  // Ausschalten durch die Person selbst: Passwort + Code
+  const s2 = (await u.post('/api/me/totp/setup', { password: 'Sicheres-Passwort-2026' })).data.secret;
+  const en2 = await u.post('/api/me/totp/enable', { code: await T.totpAt(s2) });
+  eq(en2.status, 200);
+  // neue Ersatzcodes mit dem nächsten Code; die bisherigen werden ungültig
+  const nr = await u.post('/api/me/totp/recovery-codes', { code: await next(s2) });
+  eq(nr.status, 200); eq(nr.data.recovery_codes.length, 10);
+  const c5 = new Client(worker, env, 'tf-login5'); const l5 = await c5.post('/api/login', { username: 'test.zweifaktor', password: 'Sicheres-Passwort-2026' });
+  eq((await c5.post('/api/login/totp', { challenge: l5.data.challenge, code: en2.data.recovery_codes[0] })).status, 401, 'alte Ersatzcodes ungültig');
+  eq((await c5.post('/api/login/totp', { challenge: l5.data.challenge, code: nr.data.recovery_codes[0] })).status, 200, 'neue Ersatzcodes gültig');
+  eq((await u.get('/api/me/totp')).data.recovery_left, 9);
+  eq((await u.post('/api/me/totp/disable', { password: 'falsch-falsch-1', code: await next(s2) })).data.error, 'wrong_password');
+  eq((await u.post('/api/me/totp/disable', { password: 'Sicheres-Passwort-2026', code: '000000' === await next(s2) ? '111111' : '000000' })).data.error, 'totp_invalid');
+  eq((await u.post('/api/me/totp/disable', { password: 'Sicheres-Passwort-2026', code: nr.data.recovery_codes[1] })).status, 200, 'Ausschalten auch mit Ersatzcode');
+  eq((await u.get('/api/me/totp')).data.enabled, false);
+  const au = (await owner.get('/api/admin/audit?action=totp.')).data.entries.map((e) => e.action);
+  for (const a of ['totp.setup_started', 'totp.enable', 'totp.reset', 'totp.disable']) ok(au.includes(a), `Protokoll ${a}`);
+  ok((await owner.get('/api/admin/audit?action=login')).data.entries.some((e) => e.target === u.id && e.detail && e.detail.factor === 'recovery'), 'Anmeldung mit Ersatzcode protokolliert');
+  // Oberfläche: alle Texte DE/UK/EN, Hilfe für jede Rolle
+  const { STRINGS } = await import('../public/i18n.js');
+  const keys = Object.keys(STRINGS.de).filter((k) => k.startsWith('tf_') || k.startsWith('err_totp') || k === 'err_wrong_password' || k.startsWith('help_login2fa'));
+  ok(keys.length >= 30, `Texte (${keys.length})`);
+  for (const l of ['uk', 'en']) for (const k of keys) ok(STRINGS[l][k], `${l}.${k} fehlt`);
+});
+
 await test('API-Doku vollständig: jeder /api/-Pfad des Routers steht in docs/API.md', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
@@ -5295,7 +5412,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(links.length >= 8, 'Seitenhilfe-Links: ' + links.length);
   for (const n of links) ok(STRINGS.de[`help_${n}_t`], `Abschnitt ${n} fehlt`);
   ok(/helpSections\(S\.me\.role\)\.includes\(n\)/.test(app), 'Link nur, wenn die Rolle den Abschnitt sieht');
-  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'costs', 'exports', 'push'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
+  ok(/if \(r === 'viewer'\) return \['viewer', 'kpi', 'costs', 'exports', 'push', 'login2fa'\];/.test(app), 'Lesezugriff: eigener Abschnitt „Was Sie sehen“, keine Hilfe zu Melden/Kontrolle (darf beides nicht)');
   // Ausdrucke & Exporte: Inhaber/Fuhrparkleitung/Werkstatt/Lesezugriff; nennt nur Funktionen, die es gibt (Druck/PDF, CSV, .ics, Fahrernamen-Haken)
   ok(/\['owner', 'fleet', 'workshop'\]\.includes\(r\)\) parts\.splice\(parts\.indexOf\('stock'\) \+ 1, 0, 'exports'\)/.test(app), 'Hilfe Exporte für Leitung/Werkstatt');
   for (const lang of ['de', 'uk', 'en']) {
@@ -5824,7 +5941,7 @@ await test('Anmeldepflicht: nur bewusst öffentliche Pfade vor der Sitzungsprüf
   ok(start > 0 && gate > start, 'handleApi/Sitzungsprüfung nicht gefunden');
   const pre = src.slice(start, gate);
   // Erlaubt vor der Anmeldung: Gesundheitsprüfung, Integrations-API (eigenes Bearer-Token), Ersteinrichtung, Einladung, Login
-  const ALLOWED = ['/api/health', '/api/integration/', '/api/setup/status', '/api/setup', '/api/invite/', '/api/invite/accept', '/api/login'];
+  const ALLOWED = ['/api/health', '/api/integration/', '/api/setup/status', '/api/setup', '/api/invite/', '/api/invite/accept', '/api/login', '/api/login/totp'];
   const found = [...pre.matchAll(/path(?:\.startsWith\(|\s*===\s*)'([^']+)'/g)].map((x) => x[1]);
   eq([...new Set(found)].filter((x) => !ALLOWED.includes(x)).join(','), '', 'Pfad vor der Sitzungsprüfung (öffentlich!):');
   ok(!/path\.match\(|\.test\(path\)|url\.pathname/.test(pre.replace('try { path = decodeURIComponent(url.pathname); }', '').replace('let path = url.pathname;', '')), 'Muster-Route vor der Sitzungsprüfung');

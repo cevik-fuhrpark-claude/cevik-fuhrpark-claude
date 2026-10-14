@@ -19,6 +19,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(userId).first();
     if (!u) throw notFound('Benutzer nicht gefunden.');
     delete u.password_hash; delete u.password_salt;
+    for (const k of ['totp_secret', 'totp_pending', 'totp_last_step', 'totp_recovery']) delete u[k];
     if (!driver) driver = await env.DB.prepare('SELECT * FROM drivers WHERE user_id=?').bind(userId).first();
   } else userId = '\u0000'; // Fahrer ohne App-Konto: nur Fahrerakte
   const did = driver ? driver.id : '\u0000';

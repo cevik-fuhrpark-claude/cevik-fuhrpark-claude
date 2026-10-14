@@ -1,5 +1,5 @@
 // [CLAUDE] Datensicherung zum Herunterladen (nur Inhaber): alle Fachdaten als JSON, ohne Geheimnisse.
-// Nicht enthalten: Passwort-Hashes, Sitzungen, Einladungs-Token, Push-Geräteschlüssel, VAPID-Schlüssel, Dateiinhalte (nur Metadaten).
+// Nicht enthalten: Passwort-Hashes, Zwei-Faktor-Geheimnisse/Ersatzcodes, Sitzungen, Einladungs-Token, Push-Geräteschlüssel, VAPID-Schlüssel, Dateiinhalte (nur Metadaten).
 import { forbidden, nowIso } from './util.js';
 import { audit } from './auth.js';
 import { TABLE_COLUMNS } from './schema.js';
@@ -13,7 +13,7 @@ const TABLES = [
 // Bewusst nicht in der Sicherung (Test prüft, dass jede Tabelle hier oder oben steht):
 export const EXCLUDED = {
   users: 'eigene Abfrage ohne Passwort-Hash', settings: 'eigene Abfrage ohne Schlüssel', sessions: 'Anmeldesitzungen', invites: 'Einladungs-Token',
-  login_attempts: 'Fehlversuche (kurzlebig)', push_subscriptions: 'Geräteschlüssel', cmd_guard: 'technische Sperre', rate_limits: 'Mengenbegrenzung (kurzlebig)',
+  login_attempts: 'Fehlversuche (kurzlebig)', push_subscriptions: 'Geräteschlüssel', cmd_guard: 'technische Sperre', rate_limits: 'Mengenbegrenzung (kurzlebig)', login_challenges: 'Anmeldevorgänge Zwei-Faktor (kurzlebig)',
   usage_daily: 'Nutzungsstatistik ohne Fachbezug', agent_runs: 'Laufprotokoll des Agenten (technisch)',
 };
 export const BACKUP_TABLES = TABLES;
@@ -62,7 +62,8 @@ export async function exportBackup(env, user) {
   }
   for (const t of TABLES) counts[t] = data[t].length;
   // Benutzer: alle Spalten laut Schema außer Passwort-Hash/-Salz (neue Spalten wie push_muted, home_site kommen automatisch mit)
-  const userCols = TABLE_COLUMNS.users.filter((c) => !/^password_/.test(c));
+  // ohne Passwort-Hash/-Salz und ohne Zwei-Faktor-Geheimnis/Ersatzcodes (nur „eingeschaltet seit“ bleibt)
+  const userCols = TABLE_COLUMNS.users.filter((c) => !/^password_|^totp_(secret|pending|last_step|recovery)$/.test(c));
   data.users = (await env.DB.prepare(`SELECT ${userCols.join(', ')}, CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_password FROM users`).all()).results;
   counts.users = data.users.length;
   data.settings = (await env.DB.prepare(`SELECT key, value, updated_at FROM settings WHERE key NOT LIKE '%private%' AND key NOT LIKE '%secret%' AND key NOT LIKE '%token%'`).all()).results;

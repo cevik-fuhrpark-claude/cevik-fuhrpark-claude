@@ -3,6 +3,7 @@ import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
   bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDate, isCalendarDate, likeEsc, caseVariants,
 } from './util.js';
+import { createChallenge, redeemChallenge } from './totp.js';
 
 export const ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
 export const ENVS = ['test', 'production'];
@@ -99,22 +100,62 @@ export async function login(env, request, body) {
     await hashPassword(password); // gleiche Laufzeit, keine Benutzer-Enumeration
   }
   if (!ok) {
-    const failures = (att?.failures || 0) + 1;
-    const locked = failures >= LOCK_AFTER ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null;
-    await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)
-      ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, updated_at=excluded.updated_at`)
-      .bind(username, locked ? 0 : failures, locked, nowIso()).run();
+    const locked = await recordFailure(env, username, att);
     const ipc = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
       ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
       RETURNING count`).bind(ik, win).first();
     if (ipc && ipc.count === IP_FAIL_LIMIT.max) await audit(env, null, 'login.ip_limited', null, { failures: ipc.count, minutes: IP_FAIL_LIMIT.windowSec / 60 });
-    if (locked) await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
+    if (locked) {
+      if (user) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id).run();
+      await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
+    }
     throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
+  }
+  // Zwei-Faktor-Anmeldung eingeschaltet: noch keine Sitzung, nur ein kurzlebiger Anmeldevorgang für den Code.
+  // Fehlversuche bleiben stehen, bis der Code stimmt (falsche Codes zählen zur selben Sperre wie falsche Passwörter).
+  if (user.totp_enabled_at) {
+    return { second_factor: 'totp', challenge: await createChallenge(env, user.id) };
   }
   await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(username).run();
   const cookie = await createSession(env, user.id, request);
   await audit(env, user.id, 'login', user.id, null);
   return { user: publicUser(user), cookie };
+}
+
+// Fehlversuch zählen (Passwort oder Code); ab LOCK_AFTER Sperre für LOCK_MINUTES. Liefert den Sperrzeitpunkt oder null.
+async function recordFailure(env, username, att) {
+  const failures = (att?.failures || 0) + 1;
+  const locked = failures >= LOCK_AFTER ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null;
+  await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)
+    ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, updated_at=excluded.updated_at`)
+    .bind(username, locked ? 0 : failures, locked, nowIso()).run();
+  return locked;
+}
+
+// Zweiter Schritt der Anmeldung: Code aus der Authenticator-App oder ein Ersatzcode
+export async function loginSecondFactor(env, request, body) {
+  let res;
+  try { res = await redeemChallenge(env, body); }
+  catch (e) {
+    // falscher Code: zählt zur Fehlversuch-Sperre des Kontos (Anmeldevorgang verrät den Benutzer nur serverseitig)
+    if (e instanceof HttpError && e.userRow) {
+      const att = await env.DB.prepare('SELECT * FROM login_attempts WHERE key = ?').bind(e.userRow.username).first();
+      const locked = await recordFailure(env, e.userRow.username, att);
+      if (locked) {
+        await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(e.userRow.id).run();
+        await audit(env, null, 'login.locked', e.userRow.id, { username: e.userRow.username, minutes: LOCK_MINUTES, by: 'totp' });
+        throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
+      }
+    }
+    throw e;
+  }
+  const { row, factor } = res;
+  const att = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE key = ?').bind(row.username).first();
+  if (att && att.locked_until && att.locked_until > nowIso()) throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
+  await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(row.username).run();
+  const cookie = await createSession(env, row.id, request);
+  await audit(env, row.id, 'login', row.id, { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) });
+  return { user: publicUser(row), cookie, recovery_left: factor.kind === 'recovery' ? factor.left : undefined };
 }
 
 export async function logout(env, user) {
@@ -190,8 +231,10 @@ export async function acceptInvite(env, request, body) {
     // neues Passwort gesetzt: eine bestehende Fehlversuch-Sperre aufheben
     env.DB.prepare('DELETE FROM login_attempts WHERE key=(SELECT username FROM users WHERE id=?)').bind(row.user_id),
   ]);
-  const cookie = await createSession(env, row.user_id, request);
   const user = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(row.user_id).first();
+  // Neues Passwort ersetzt nicht den zweiten Faktor: mit eingeschalteter Zwei-Faktor-Anmeldung erst nach dem Code anmelden
+  if (user.totp_enabled_at) return { second_factor: 'totp', challenge: await createChallenge(env, user.id) };
+  const cookie = await createSession(env, row.user_id, request);
   return { user: publicUser(user), cookie };
 }
 
@@ -309,7 +352,7 @@ export async function resetInvite(env, actor, userId) {
 
 export async function listUsers(env, actor) {
   if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
-  const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password,
+  const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password, (u.totp_enabled_at IS NOT NULL) AS has_totp,
     CASE WHEN la.locked_until > ?1 THEN la.locked_until END AS locked_until,
     (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS sessions, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS last_seen`;
   const q = actor.role === 'owner'
@@ -444,5 +487,6 @@ export async function cleanupShortLived(env) {
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
     env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(Math.floor(Date.now() / 1000) - 2 * 86400),
     env.DB.prepare('DELETE FROM login_attempts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until < ?)').bind(dayAgo, now),
+    env.DB.prepare('DELETE FROM login_challenges WHERE expires_at < ?').bind(now),
   ]);
 }

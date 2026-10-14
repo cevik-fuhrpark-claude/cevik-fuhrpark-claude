@@ -296,8 +296,34 @@ function viewLogin() {
   bindLang();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value }); S.me = null; let next = '#/'; try { next = sessionStorage.getItem('cfp_after_login') || '#/'; sessionStorage.removeItem('cfp_after_login'); } catch {} location.hash = next; route(); }
-    catch (err) { toast(err.message, true); }
+    try {
+      const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value });
+      if (r.second_factor) { viewLoginCode(r.challenge); return; }
+      afterLogin();
+    } catch (err) { toast(err.message, true); }
+  };
+}
+function afterLogin() { S.me = null; let next = '#/'; try { next = sessionStorage.getItem('cfp_after_login') || '#/'; sessionStorage.removeItem('cfp_after_login'); } catch {} location.hash = next; route(); }
+// Zweiter Schritt: Code aus der Authenticator-App oder Ersatzcode (Passwort bleibt nicht im Speicher der Seite)
+function viewLoginCode(challenge) {
+  render(`<div class="center"><form id="f2" class="narrow panel">
+    <h1>${esc(t('tf_title'))}</h1><p class="small">${esc(t('tf_login_hint'))}</p>
+    <label for="tc">${esc(t('tf_code_or_rc'))}</label><input id="tc" autocomplete="one-time-code" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="14" required>
+    <div class="actions"><button class="btn block">${esc(t('tf_confirm'))}</button></div>
+    <p class="small"><a href="#/login" id="tback">${esc(t('tf_back'))}</a></p>
+  </form></div>`);
+  const inp = $('#tc'); inp.focus();
+  $('#tback').onclick = (e) => { e.preventDefault(); viewLogin(); };
+  $('#f2').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('POST', '/api/login/totp', { challenge, code: inp.value.trim() });
+      if (r.recovery_left !== undefined) toast(t('tf_rc_used').replace('{n}', r.recovery_left));
+      afterLogin();
+    } catch (err) {
+      toast(err.message, true);
+      if (err.code === 'totp_expired' || err.code === 'locked') viewLogin(); else { inp.value = ''; inp.focus(); }
+    }
   };
 }
 function langSelect() {
@@ -333,7 +359,7 @@ async function viewInvite(token) {
   bindLang();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/invite/accept', { token, password: $('#p').value }); await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
+    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value }); if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -2601,8 +2627,8 @@ const helpHash = (q) => '#/help' + (q ? '?q=' + encodeURIComponent(q) : '');
 // Hilfe-Abschnitte je Rolle (Reihenfolge = Anzeige)
 function helpSections(r) {
   // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
-  if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'exports', 'push'];
-  const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline'];
+  if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'exports', 'push', 'login2fa'];
+  const parts = ['report', 'accident', 'prio', 'check', 'push', 'offline', 'login2fa'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
@@ -2740,6 +2766,7 @@ function viewMore() {
   <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
   ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t('home_site_hint'))}</p></div>` : ''}
   <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
+  <details id="tfa"><summary>${esc(t('tf_title'))}${S.me.totp_enabled ? ` <span class="chip ok">${esc(t('tf_chip'))}</span>` : ''}</summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
   <details id="sess"><summary>${esc(t('my_sessions'))}</summary><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div></details>
   <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
   bindLang(true);
@@ -2769,8 +2796,64 @@ function viewMore() {
     const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); loadSessions(); } catch (err) { toast(err.message, true); } };
   };
   sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
+  const tfa = $('#tfa');
+  tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   $('#lo').onclick = async () => { await api('POST', '/api/logout'); clearOfflineData(); resetUserState(); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
+}
+
+// Mein Konto → Zwei-Faktor-Anmeldung: Status, Einrichten (QR + Schlüssel), Ersatzcodes einmalig, neue Ersatzcodes, Ausschalten
+const rcBlock = (codes, extra = '') => `<div class="panel good" id="rcbox"><h3>${esc(t('tf_rc_title'))}</h3><p class="small">${esc(t('tf_rc_hint'))}${extra ? ' ' + esc(extra) : ''}</p>
+  <ul class="rclist" style="font-family:monospace;font-size:1.1em;columns:2;list-style:none;padding:0">${codes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+  <div class="actions noprint"><button type="button" class="btn secondary" id="rccp">${esc(t('copy'))}</button></div></div>`;
+function wireRc(codes) {
+  const cp = $('#rccp'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(codes.join('\n')); toast(t('copied')); } catch { toast(codes.join(' ')); } };
+}
+async function loadTotp() {
+  const box = $('#tfabox'); if (!box) return;
+  const st = await api('GET', '/api/me/totp');
+  S.me.totp_enabled = st.enabled;
+  if (!st.enabled) {
+    box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
+      <form id="tfs"><label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
+    $('#tfs').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api('POST', '/api/me/totp/setup', { password: $('#tfpw').value });
+        $('#tfpw').value = ''; $('#tfs').hidden = true;
+        const key = r.secret.replace(/(.{4})/g, '$1 ').trim();
+        $('#tfstep').innerHTML = `<p class="small">${esc(t('tf_scan'))}</p><div class="qr">${(() => { try { return qrSvg(r.uri, { label: t('tf_title') }); } catch { return ''; } })()}</div>
+          <p class="small">${esc(t('tf_key'))}: <code style="word-break:break-all">${esc(key)}</code></p>
+          <form id="tfe"><label for="tfc">${esc(t('tf_code'))}</label><input id="tfc" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required><div class="actions"><button class="btn">${esc(t('tf_enable'))}</button><button type="button" class="btn secondary" id="tfx">${esc(t('tf_cancel'))}</button></div></form>`;
+        $('#tfx').onclick = () => loadTotp();
+        $('#tfe').onsubmit = async (ev) => {
+          ev.preventDefault();
+          try {
+            const x = await api('POST', '/api/me/totp/enable', { code: $('#tfc').value.trim() });
+            S.me.totp_enabled = true;
+            box.innerHTML = rcBlock(x.recovery_codes, t('tf_others_ended')) + `<div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
+            wireRc(x.recovery_codes);
+            $('#tfdone').onclick = () => loadTotp();
+          } catch (err) { toast(err.message, true); }
+        };
+      } catch (err) { toast(err.message, true); }
+    };
+    return;
+  }
+  box.innerHTML = `<p><span class="chip ok">${esc(t('tf_on').replace('{d}', fmtDT(st.enabled_at)))}</span> <span class="small ${st.recovery_left <= 2 ? '' : 'muted'}">${esc(t('tf_rc_left').replace('{n}', st.recovery_left))}</span></p>
+    <details><summary>${esc(t('tf_rc_new'))}</summary><form id="tfr"><p class="small muted">${esc(t('tf_rc_new_hint'))}</p><label for="tfrc">${esc(t('tf_code'))}</label><input id="tfrc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required><div class="actions"><button class="btn secondary">${esc(t('tf_rc_new'))}</button></div></form></details>
+    <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd"><label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
+    <div id="tfout"></div>`;
+  $('#tfr').onsubmit = async (e) => {
+    e.preventDefault();
+    try { const x = await api('POST', '/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }); $('#tfout').innerHTML = rcBlock(x.recovery_codes); wireRc(x.recovery_codes); $('#tfrc').value = ''; }
+    catch (err) { toast(err.message, true); }
+  };
+  $('#tfd').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }); S.me.totp_enabled = false; toast('✓'); loadTotp(); }
+    catch (err) { toast(err.message, true); }
+  };
 }
 
 async function viewUsers() {
@@ -2784,9 +2867,10 @@ async function viewUsers() {
       ${S.me.role === 'owner' ? `<label>${esc(t('environment'))}</label><select name="environment"><option value="test">${esc(t('env_testname'))}</option><option value="production">${esc(t('env_prod'))}</option></select>` : ''}
       <div class="actions"><button class="btn">${esc(t('new_user'))}</button></div></form></details>
     <div class="scroll"><table class="stack"><thead><tr><th>${esc(t('display_name'))}</th><th>${esc(t('role'))}</th><th>${esc(t('environment'))}</th><th></th></tr></thead><tbody>
-    ${us.map((u) => `<tr><td>${esc(u.display_name)}<div class="small muted">${esc(u.username)}${u.has_password ? '' : ' · ' + esc(t('dq_invite_pending'))}</div>${u.locked_until ? `<span class="chip kritisch">${esc(t('locked_until'))} ${fmtDT(u.locked_until)}</span>` : ''}${u.sessions ? `<div class="small muted">${esc(t('active_sessions').replace('{n}', u.sessions))} · ${fmtDT(u.last_seen)}</div>` : ''}</td><td>${esc(t('role_' + u.role))}${u.workshop_site ? ' · ' + esc(wsName(u.workshop_site)) : ''}</td><td>${u.environment === 'test' ? '<span class="chip test">TEST</span>' : esc(t('env_prod'))}</td><td>${u.id !== S.me.id ? `${u.locked_until ? `<button class="btn secondary" data-unlock="${esc(u.id)}">${esc(t('unlock'))}</button> ` : ''}${u.sessions ? `<button class="btn secondary" data-revoke="${esc(u.id)}" data-name="${esc(u.display_name)}">${esc(t('revoke_sessions'))}</button> ` : ''}<button class="btn secondary" data-inv="${esc(u.id)}">${esc(t('new_invite'))}</button> <button class="btn secondary" data-act="${esc(u.id)}" data-on="${u.active ? 0 : 1}">${esc(u.active ? t('deactivate') : t('activate'))}</button>` : ''}${S.me.role === 'owner' ? ` <button class="btn secondary" data-dex="${esc(u.id)}" data-user="${esc(u.username)}" title="${esc(t('data_export_hint'))}">${esc(t('data_export'))}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`, 'more');
+    ${us.map((u) => `<tr><td>${esc(u.display_name)}<div class="small muted">${esc(u.username)}${u.has_password ? '' : ' · ' + esc(t('dq_invite_pending'))}</div>${u.locked_until ? `<span class="chip kritisch">${esc(t('locked_until'))} ${fmtDT(u.locked_until)}</span>` : ''}${u.has_totp ? ` <span class="chip ok" title="${esc(t('tf_title'))}">${esc(t('tf_chip'))}</span>` : ''}${u.sessions ? `<div class="small muted">${esc(t('active_sessions').replace('{n}', u.sessions))} · ${fmtDT(u.last_seen)}</div>` : ''}</td><td>${esc(t('role_' + u.role))}${u.workshop_site ? ' · ' + esc(wsName(u.workshop_site)) : ''}</td><td>${u.environment === 'test' ? '<span class="chip test">TEST</span>' : esc(t('env_prod'))}</td><td>${u.id !== S.me.id ? `${u.locked_until ? `<button class="btn secondary" data-unlock="${esc(u.id)}">${esc(t('unlock'))}</button> ` : ''}${u.sessions ? `<button class="btn secondary" data-revoke="${esc(u.id)}" data-name="${esc(u.display_name)}">${esc(t('revoke_sessions'))}</button> ` : ''}<button class="btn secondary" data-inv="${esc(u.id)}">${esc(t('new_invite'))}</button> <button class="btn secondary" data-act="${esc(u.id)}" data-on="${u.active ? 0 : 1}">${esc(u.active ? t('deactivate') : t('activate'))}</button>` : ''}${S.me.role === 'owner' && u.has_totp && u.id !== S.me.id ? ` <button class="btn secondary" data-tfr="${esc(u.id)}" data-name="${esc(u.display_name)}">${esc(t('tf_reset'))}</button>` : ''}${S.me.role === 'owner' ? ` <button class="btn secondary" data-dex="${esc(u.id)}" data-user="${esc(u.username)}" title="${esc(t('data_export_hint'))}">${esc(t('data_export'))}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`, 'more');
   $$('[data-revoke]').forEach((b) => (b.onclick = async () => { if (!confirm(t('revoke_sessions_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.revoke}/revoke-sessions`); toast(t('revoked_n').replace('{n}', r.sessions).replace('{p}', r.push_devices)); viewUsers(); } catch (err) { toast(err.message, true); } }));
   $$('[data-dex]').forEach((b) => (b.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const x = await api('GET', `/api/admin/users/${b.dataset.dex}/data-export`); download(x instanceof Blob ? x : new Blob([JSON.stringify(x, null, 1)], { type: 'application/json' }), `datenauskunft_${b.dataset.user}_${bDate()}.json`); } catch (err) { toast(err.message, true); } }));
+  $$('[data-tfr]').forEach((b) => (b.onclick = async () => { if (!confirm(t('tf_reset_confirm').replace('{name}', b.dataset.name))) return; try { await api('POST', `/api/users/${b.dataset.tfr}/totp-reset`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   $$('[data-unlock]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unlock}/unlock`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   const showInvite = (token) => { const link = `${location.origin}/#/invite/${token}`; $('#inv').innerHTML = `<div class="panel good"><p>${esc(t('invite_link'))}</p><input readonly value="${esc(link)}" id="il"><div class="actions"><button class="btn" id="cp">${esc(t('copy'))}</button></div><p class="small muted">${esc(t('invite_qr_hint'))}</p><div class="qr">${(() => { try { return qrSvg(link, { label: t('invite_link') }); } catch { return ''; } })()}</div></div>`; $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(link); toast(t('copied')); } catch { $('#il').select(); } }; window.scrollTo(0, 0); };
   $('#rs').onchange = () => ($('#wsrow').hidden = $('#rs').value !== 'workshop');
