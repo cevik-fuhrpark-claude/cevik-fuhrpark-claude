@@ -364,6 +364,11 @@ with sync_playwright() as p:
         for col in ('vehicles.plate', 'vehicles.site', 'cases.description', 'users.display_name', 'fines.authority', 'stock_items.name', 'vehicle_contracts.partner', 'drivers.display_name', 'maintenance_rules.evidence'):
             if col not in tainted:
                 problems.append(f'XSS-Probe: Spalte {col} nicht verändert')
+        # Eingaben aus der Adresse (Direktsprünge mit Suchbegriff) – dieselbe Probe, URL-kodiert
+        import urllib.parse
+        pq = urllib.parse.quote('"\'><b data-xss=1>X</b>')
+        for rr in ('owner', 'fleet'):
+            ROUTES[rr] += [f'master?q={pq}', f'help?q={pq}', f'search?q={pq}', f'vehicles?f={pq}', f'cases?f={pq}']
     xss_seen = [0]
     XSS_CHECK = """() => { const el = document.querySelector('[data-xss]'); const txt = document.body.innerText.includes('<b data-xss=1>X</b>');
       return { inj: el ? (el.parentElement ? el.parentElement.outerHTML.slice(0, 160) : el.outerHTML) : null, txt }; }"""
