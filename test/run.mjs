@@ -7088,6 +7088,8 @@ await test('Benutzer bearbeiten: Name/Rolle/Werkstatt/Umgebung, Protokoll „ge�
   ok(/if \(roleEnvChange && !confirm\(t\('ue_confirm'\)/.test(app), 'Bestätigung nur bei Rollen-/Umgebungswechsel');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['ue_edit', 'ue_title', 'ue_confirm', 'ue_none', 'ue_saved_ended']) ok(STRINGS[l][k], `${k} ${l}`);
+  ok(/if \(b\.dataset\.on !== '1' && !confirm\(t\('deactivate_confirm'\)/.test(app), 'Deaktivieren mit Rückfrage, Aktivieren ohne');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].deactivate_confirm.includes('{name}') && STRINGS[l].deactivate_confirm.includes(STRINGS[l].activate), 'Rückfrage nennt Aktivieren ' + l);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_title.includes('{name}') && STRINGS[l].ue_confirm.includes('{name}'), 'Platzhalter ' + l);
 });
 
