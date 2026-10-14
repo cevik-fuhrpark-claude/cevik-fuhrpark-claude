@@ -57,6 +57,7 @@ Format, Spaltenzahl je Zeile, Formelschutz und Rechte prüft `npm test` für jed
 | Durchgeführte Prüfungen, Kosten, Kennzahlen, Bußgelder (+ .ics; Fahrernamen nur Inhaber/Leitung) | ✓ | ✓ | – | – | ✓ | – |
 | Verträge (+ .ics), Fahrer, Auslesungen, Versicherungsfälle, Telematik – letzter Stand je Fahrzeug | ✓ | ✓ | – | – | – | – |
 | Protokoll (Audit-Log) | ✓ | – | – | – | – | – |
+| Agentenbefunde (Management-Panel, im Browser erzeugt, in der App-Sprache) | ✓ | ✓ | – | – | – | – |
 
 Exporte mit Personen- oder Kostenbezug werden im Protokoll vermerkt.
 Hilfe in der App: „Ausdrucke & Exporte“.

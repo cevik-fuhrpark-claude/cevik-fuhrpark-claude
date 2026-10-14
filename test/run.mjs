@@ -6167,6 +6167,28 @@ await test('Fahrzeugakte: offene Agentenbefunde des Fahrzeugs für Inhaber/Fuhrp
   ok(plan.some((p) => /idx_findings_vehicle/.test(p.detail)), 'Index idx_findings_vehicle nicht genutzt');
 });
 
+await test('Agentenbefunde als CSV (Browser, Management-Panel): Spalten DE/UK/EN, Meldung in der App-Sprache, Formelschutz, eine Zeile je Befund', async () => {
+  const { agentFindingsCsv } = await import('../public/csv.js');
+  const { STRINGS, translateNextAction } = await import('../public/i18n.js');
+  const { findingMessage } = await import('../public/finding-messages.js');
+  const keys = ['afc_severity', 'afc_label', 'afc_code', 'afc_message', 'afc_next', 'afc_owner', 'afc_since', 'export_csv'];
+  for (const l of ['de', 'uk', 'en']) eq(keys.filter((k) => !STRINGS[l][k]).join(','), '', l + ': Spaltenköpfe');
+  const p = (await users.fleet.get('/api/master')).data;
+  ok(p.findings.length > 5, 'Befunde im Panel');
+  for (const lang of ['de', 'uk', 'en']) {
+    const tl = (k) => STRINGS[lang][k] ?? k;
+    const csv = agentFindingsCsv(p.findings, tl, (f) => findingMessage(f.message_args, f.message, lang), (x) => translateNextAction(lang, x), (iso) => iso.slice(0, 10));
+    const lines = csv.slice(1).trim().split('\r\n');
+    ok(csv.startsWith('\ufeff' + keys.slice(0, 7).map(tl).join(';') + '\r\n'), lang + ': Kopfzeile/BOM');
+    eq(lines.length, p.findings.length + 1, lang + ': eine Zeile je Befund');
+    ok(!/(^|;)(asev_|fc_|role_|afc_)/m.test(csv) && !/[{}]/.test(csv), lang + ': keine unübersetzten Schlüssel/Platzhalter');
+    if (lang !== 'de') ok(!csv.includes('Nachfassen nach') && !csv.includes('Frist nicht konfiguriert') && !csv.includes('Tag(en)'), lang + ': keine deutschen Meldungstexte');
+  }
+  const evil = agentFindingsCsv([{ severity: 'hinweis', finding_code: 'X_UNBEKANNT', message: '=HYPERLINK("x")', message_args: null, next_action: '+1', owner_role: 'fleet', first_seen: '2026-10-14T00:00:00Z' }],
+    (k) => STRINGS.de[k] ?? k, (f) => f.message, (x) => x, (iso) => iso);
+  ok(evil.includes(';X_UNBEKANNT;"\'=HYPERLINK(""x"")";\'+1;'), 'Formelschutz in Meldung/nächstem Schritt, unbekannter Code ohne Kurzbezeichnung: ' + evil);
+});
+
 await test('Wächter Offline-Hülle: jedes von app.js (transitiv) geladene Modul steht im Service-Worker-Cache, jede Cache-Datei existiert', async () => {
   const { readFileSync, existsSync } = await import('node:fs');
   const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

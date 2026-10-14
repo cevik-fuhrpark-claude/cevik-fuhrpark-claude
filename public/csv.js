@@ -26,6 +26,12 @@ export function dqDetailText(i, t, fmtD) {
   if (a.result) return `${a.kind} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
   return i.detail;
 }
+// Agentenbefunde (Management-Panel) in der App-Sprache – zum Abarbeiten in Excel. msg(f) = Meldungstext in der App-Sprache,
+// next(text) = nächster Schritt übersetzt, d(iso) = Zeitpunkt. Kurzbezeichnung leer, wenn für den Code keine existiert.
+export function agentFindingsCsv(findings, t, msg, next, d) {
+  return toCsv([t('afc_severity'), t('afc_label'), t('afc_code'), t('afc_message'), t('afc_next'), t('afc_owner'), t('afc_since')],
+    findings.map((f) => [t('asev_' + f.severity), t('fc_' + f.finding_code) === 'fc_' + f.finding_code ? '' : t('fc_' + f.finding_code), f.finding_code, msg(f), next(f.next_action), t('role_' + f.owner_role), d(f.first_seen)]));
+}
 // Mängelstatistik: je Prüfpunkt bzw. je Fahrzeug (alle Fahrzeuge mit Kontrollen im Zeitraum, auch ohne Mangel).
 // label(k) = Prüfpunkt-Bezeichnung in der App-Sprache, d(iso) = Datum; leere Zelle = kein Wert.
 export function defectItemsCsv(r, t, label, d) {

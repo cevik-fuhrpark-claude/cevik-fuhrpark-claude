@@ -46,6 +46,12 @@ with sync_playwright() as p:
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         if SHOTS:
             q.get_by_text('PS-ANL 1').first.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/panel_{lang}_{w}.png')
+        # CSV der Agentenbefunde in der App-Sprache (Browser erzeugt die Datei)
+        if w==1366:
+            with q.expect_download() as dl: q.click('#afcsv')
+            csv=open(dl.value.path(),encoding='utf-8-sig').read()
+            check(EXP[lang][0] in csv and UNCL[lang] in csv,f'CSV {lang}: Meldungen in der App-Sprache')
+            check(dl.value.suggested_filename.startswith('fuhrpark-agentenbefunde_production_'),'CSV-Dateiname '+dl.value.suggested_filename)
         # Fahrzeugakte: dieselben Befunde des Fahrzeugs im aufklappbaren Abschnitt „Offene Agentenbefunde“
         q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#vaf summary')
         q.click('#vaf summary'); vt=q.inner_text('#vaf')
