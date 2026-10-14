@@ -301,3 +301,15 @@ table.paper td:last-child { min-width: 30%; }
   .guide-sec.alert { border-left: 3px solid #000; }
   .guide-top .qr svg { width: 36mm; }
 }
+/* [CLAUDE] Panne & Notfall: Rufnummer-Zeilen – Knopf auf dem Handy unter dem Text, Art-Chip darf umbrechen */
+.row.emrow, .row.emman { grid-template-columns: auto 1fr auto; }
+.row.emrow .title, .row.emman .title { overflow: visible; white-space: normal; }
+.row.emrow .chip, .row.emman .chip { white-space: normal; }
+.row.emrow > .btn { white-space: nowrap; }
+.emphone { white-space: nowrap; }
+.row.emman { grid-template-columns: 1fr auto; }
+@media (max-width: 599px) {
+  .row.emrow { grid-template-columns: auto 1fr; }
+  .row.emrow > .btn { grid-column: 1 / 3; justify-self: stretch; text-align: center; }
+  .row.emman { grid-template-columns: 1fr; }
+}

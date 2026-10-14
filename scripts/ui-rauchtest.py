@@ -16,13 +16,13 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['guide?l=de', 'guide?l=uk', 'guide?l=en', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
-    'fleet': ['', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
-    'workshop': ['', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'wsload', 'help'],
-    'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check', 'help?q=foto'],
-    'dispatch': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help', 'guide'],
+    'owner': ['emergency', 'emergency/edit', 'guide?l=de', 'guide?l=uk', 'guide?l=en', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
+    'fleet': ['emergency', 'emergency/edit', '', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
+    'workshop': ['emergency', '', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'wsload', 'help'],
+    'driver': ['emergency', '', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check', 'help?q=foto'],
+    'dispatch': ['emergency', 'emergency/edit', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help', 'guide'],
     # Lesezugriff (z. B. Büro/Steuerberatung): nur lesen, keine Meldungen/Kontrollen
-    'viewer': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'fines', 'wsload', 'help', 'help?s=kpi', 'help?s=viewer'],
+    'viewer': ['emergency', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'fines', 'wsload', 'help', 'help?s=kpi', 'help?s=viewer'],
 }
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
 A11Y = """() => {
@@ -210,6 +210,14 @@ with sync_playwright() as p:
     api('POST', f'/api/vehicles/{vid}/contracts', {'kind': 'versicherung', 'partner': 'Rauchtest-Versicherung', 'end_date': (td - datetime.timedelta(days=2)).isoformat(), 'evidence': 'Rauchtest Police'})
     for r in ('owner', 'fleet'):
         ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho', 'vehicles/qr', f'vehicles/qr/{vid}']
+    # Panne & Notfall (synthetische Nummern): für alle, für den Standort Dortmund, für das Fahrzeug
+    for body in ({'kind': 'dispo', 'label': 'Rauchtest Disposition', 'phone': '0000 11111', 'note': 'Rauchtest rund um die Uhr'},
+                 {'kind': 'werkstatt', 'label': 'Rauchtest Werkstatt-Bereitschaft', 'phone': '0000 22222', 'scope': 'site', 'site': 'Dortmund'},
+                 {'kind': 'panne', 'label': 'Rauchtest Schutzbrief', 'phone': '0000 33333', 'scope': 'vehicle', 'vehicle_id': vid, 'note': 'Rauchtest Vertragsnummer angeben'}):
+        r = api('POST', '/api/emergency/contacts', body)
+        if r['s'] != 201:
+            problems.append(f'Vorbereitung Panne & Notfall: {r}')
+    ROUTES['driver'] += [f'emergency?v={vid}']
     ROUTES['driver'] += ['drivers', f'new/{vid}', f'v/{vid}', f'check/{vid}']
     # Gespann: Anhänger RT-AB 102 fest an RT-AB 101 gekoppelt und gesperrt – Fahrer-Startseite, Fahrzeugliste und Scan-Seite zeigen den Zustand
     tvin = 'WDB96340310123457'

@@ -2618,6 +2618,77 @@ await test('Hinweise zum Fahrzeug: „gültig bis“ (optional) – danach nicht
   await env.DB.prepare('UPDATE vehicle_notes SET archived_at=? WHERE id=?').bind(day(-40) + 'T08:00:00.000Z', b.data.id).run();
   tb = await tlOf('Gilt bis nächste Woche'); eq(tb.map((x) => x.note_event).sort().join(), 'add,archive', 'archiviert vor dem Ablaufdatum: kein Ablauf');
 });
+await test('Panne & Notfall: Rufnummern je Umgebung (alle/Standort/Fahrzeug), Fahrer lesen, Pflege nur Inhaber/Leitung/Dispo, Archiv statt Löschen', async () => {
+  const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles; ok(mv.length, 'Fahrer hat ein Fahrzeug');
+  const all = (await users.fleet.get('/api/vehicles')).data.vehicles;
+  const VID = mv[0].id; const vsite = all.find((v) => v.id === VID).site; ok(vsite, 'Fahrzeug des Fahrers hat einen Standort');
+  const other = all.find((v) => v.id !== VID && (v.site || '').trim().toLowerCase() !== vsite.trim().toLowerCase()); ok(other, 'zweites Fahrzeug an anderem Standort');
+  const e0 = await users.driver.get('/api/emergency'); eq(e0.status, 200);
+  eq(e0.data.can_edit, false); ok(e0.data.vehicles.some((v) => v.id === VID), 'Fahrer: zugeordnete Fahrzeuge');
+  const before = e0.data.general.length;
+  eq((await users.driver.post('/api/emergency/contacts', { kind: 'dispo', label: 'X', phone: '0123 456' })).status, 403, 'Fahrer pflegt nicht');
+  eq((await users.ws.post('/api/emergency/contacts', { kind: 'dispo', label: 'Werkstatt', phone: '0123 456' })).status, 403, 'Werkstatt pflegt nicht');
+  eq((await users.driver.get('/api/emergency/contacts')).status, 403);
+  const bad = async (b, code = 400) => { const r = await users.fleet.post('/api/emergency/contacts', b); eq(r.status, code, JSON.stringify(b)); return r.data; };
+  eq((await bad({ kind: 'dispo', label: 'Dispo', phone: 'abc' })).error, 'validation');
+  await bad({ kind: 'dispo', label: 'Dispo', phone: '12' });
+  await bad({ kind: 'dispo', label: 'Dispo', phone: '0123 456 789 012 345 678 90' });
+  await bad({ kind: 'polizei', label: 'Dispo', phone: '0123 456' });
+  await bad({ kind: 'dispo', label: 'D', phone: '0123 456' });
+  await bad({ kind: 'dispo', label: 'Dispo', phone: '0123 456', scope: 'site', site: 'Atlantis' });
+  await bad({ kind: 'dispo', label: 'Dispo', phone: '0123 456', scope: 'site' });
+  await bad({ kind: 'dispo', label: 'Dispo', phone: '0123 456', scope: 'vehicle', vehicle_id: 'VIN:UNBEKANNT123' }, 404);
+  await bad({ kind: 'dispo', label: 'Dispo', phone: '0123 456', scope: 'galaxis' });
+  const g = await users.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Disposition (Test)', phone: '  +49 (0)123  456-78 ', note: 'rund um die Uhr' }); eq(g.status, 201);
+  const s = await users.dispatch.post('/api/emergency/contacts', { kind: 'werkstatt', label: 'Werkstatt-Bereitschaft (Test)', phone: '0123 999', scope: 'site', site: '  ' + vsite.toUpperCase() + ' ' }); eq(s.status, 201, 'Standort, Schreibweise egal');
+  const v = await users.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Schutzbrief (Test)', phone: '0800 111 222', scope: 'vehicle', vehicle_id: VID, note: 'Vertragsnummer angeben' }); eq(v.status, 201);
+  const d = (await users.driver.get('/api/emergency')).data;
+  eq(d.general.length, before + 1); const gg = d.general.find((c) => c.id === g.data.id);
+  eq(gg.phone, '+49 (0)123 456-78', 'Leerzeichen zusammengefasst'); eq(gg.scope, 'all'); eq(gg.note, 'rund um die Uhr');
+  eq(Object.keys(gg).sort().join(), 'id,kind,label,note,phone,scope,site', 'ohne Verfasser/Zeitstempel');
+  const dv = d.vehicles.find((x) => x.id === VID); eq(dv.contacts.map((c) => c.id).join(), [v.data.id, s.data.id].join(), 'Fahrzeug vor Standort');
+  eq(dv.contacts[1].site, vsite.trim(), 'Standort in Anzeige-Schreibweise des Fahrzeugstamms');
+  const o = (await users.driver.get(`/api/emergency?vehicle_id=${encodeURIComponent(other.id)}`)).data;
+  eq(o.vehicles.length, 1); eq(o.vehicles[0].contacts.length, 0, 'anderes Fahrzeug/anderer Standort: keine fremden Nummern'); eq(o.general.length, before + 1);
+  eq((await users.driver.get('/api/emergency?vehicle_id=VIN:UNBEKANNT123')).status, 404);
+  eq((await users.dispatch.get('/api/emergency')).data.vehicles.length, 0, 'Nicht-Fahrer ohne Fahrzeug: nur allgemeine'); eq((await users.dispatch.get('/api/emergency')).data.can_edit, true);
+  eq((await users.prodFleet.get('/api/emergency')).data.general.some((c) => c.id === g.data.id), false, 'Test-Nummern nicht im Betrieb');
+  eq((await users.prodFleet.post(`/api/emergency/contacts/${g.data.id}/archive`)).status, 404, 'andere Umgebung');
+  eq((await users.prodFleet.req('PATCH', `/api/emergency/contacts/${g.data.id}`, { phone: '0123 000' })).status, 404);
+  // Ändern: nur geänderte Felder, Geltung bleibt, Protokoll mit alt/neu
+  const p1 = await users.dispatch.req('PATCH', `/api/emergency/contacts/${s.data.id}`, { phone: '0123 998' }); eq(p1.status, 200); eq(p1.data.changed.join(), 'phone');
+  eq((await users.dispatch.req('PATCH', `/api/emergency/contacts/${s.data.id}`, { phone: '0123 998' })).data.changed.length, 0, 'unverändert');
+  eq((await users.dispatch.req('PATCH', `/api/emergency/contacts/${s.data.id}`, { phone: 'x' })).status, 400);
+  const p2 = await users.fleet.req('PATCH', `/api/emergency/contacts/${s.data.id}`, { scope: 'all' }); eq(p2.data.changed.join(), 'site', 'Geltung auf alle');
+  const l = (await users.fleet.get('/api/emergency/contacts')).data; const ls = l.contacts.find((c) => c.id === s.data.id);
+  eq(ls.scope, 'all'); eq(ls.phone, '0123 998'); eq(ls.changed_by_name, 'Test Fuhrparkleitung'); eq(l.contacts.find((c) => c.id === v.data.id).plate, mv[0].plate);
+  const au = (await owner.get('/api/admin/audit?action=emergency')).data.entries; ok(au.length >= 5, 'protokolliert');
+  ok(au.some((x) => x.action === 'emergency.update' && JSON.stringify(x.detail).includes('0123 999')), 'alt/neu im Protokoll');
+  // Höchstzahl je Umgebung
+  const ids = []; const n0 = l.contacts.length;
+  for (let i = n0; i < 50; i++) { const r = await users.fleet.post('/api/emergency/contacts', { kind: 'sonstiges', label: `Füllnummer ${i}`, phone: `0123 ${1000 + i}` }); eq(r.status, 201); ids.push(r.data.id); }
+  const over = await users.fleet.post('/api/emergency/contacts', { kind: 'sonstiges', label: 'Eine zu viel', phone: '0123 4567' }); eq(over.status, 400); ok(/Höchstens 50/.test(over.data.message));
+  eq((await users.prodFleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Disposition Betrieb', phone: '0123 4567' })).status, 201, 'Betrieb zählt getrennt');
+  for (const id of ids) eq((await users.fleet.post(`/api/emergency/contacts/${id}/archive`)).status, 200);
+  // Archiv: Fahrer sieht archivierte nicht mehr, nicht zweimal archivierbar, Archivliste mit Person
+  eq((await users.driver.post(`/api/emergency/contacts/${v.data.id}/archive`)).status, 403);
+  eq((await users.dispatch.post(`/api/emergency/contacts/${v.data.id}/archive`)).status, 200);
+  eq((await users.dispatch.post(`/api/emergency/contacts/${v.data.id}/archive`)).status, 404, 'nicht zweimal');
+  eq((await users.dispatch.req('PATCH', `/api/emergency/contacts/${v.data.id}`, { phone: '0123 000' })).status, 404, 'archiviert nicht änderbar');
+  eq((await users.driver.get('/api/emergency')).data.vehicles.find((x) => x.id === VID).contacts.length, 0, 'archiviert → beim Fahrer weg');
+  const ar = (await users.fleet.get('/api/emergency/contacts?archived=1')).data.contacts.find((c) => c.id === v.data.id); ok(ar && ar.archived_at && ar.archived_by_name === 'Test Dispo', 'Archiv mit Zeitpunkt und Person');
+  // Oberfläche: Routen, Einstiege (Start Fahrer, Mehr, QR-Scan), Notruf 112 fest, sonst keine Nummern in den Texten; Hilfe DE/UK/EN nennt die Seite
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const x of ['viewEmergency]', 'viewEmergencyEdit]', 'id="emhome"', 'href="#/emergency?v=${esc(v.id)}"', 'href="tel:112"', "localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), d }))", "k.startsWith('cfp_emerg_')"]) ok(app.includes(x), 'Oberfläche: ' + x);
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const lg of ['de', 'uk', 'en']) {
+    for (const k of Object.keys(STRINGS.de).filter((k) => k.startsWith('em_'))) { ok(STRINGS[lg][k], `${lg}.${k}`); ok(!/\d{3,}/.test(STRINGS[lg][k].replace(/112/g, '')), `${lg}.${k}: keine Nummern außer 112`); }
+    ok(STRINGS[lg].help_accident_s.includes(STRINGS[lg].em_title) && STRINGS[lg].help_accident_s.includes(STRINGS[lg].em_manage), `Hilfe ${lg} nennt Seite und Pflege`);
+  }
+  ok(/Вид номера/.test(translateValidation('uk', 'Art der Rufnummer: ungültiger Wert.')), 'Feldname übersetzt');
+  ok(/Phone number/.test(translateValidation('en', 'Telefonnummer ist erforderlich.')), 'Pflichtfeld EN');
+  const rt = fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8'); ok(rt.includes('emergency'), 'Rauchtest öffnet Panne & Notfall');
+});
 
 await test('Gewährleistung an Teilen/Fremdleistungen: optionales Datum, Hinweis bei neuer Meldung am selben Fahrzeug (am Meldedatum gültig), Rechte', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'VT-GW 1', vin: 'WDB96340310555641', site: 'Dortmund' })).status, 201);
@@ -5269,7 +5340,7 @@ await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route 
   const tpls = [...new Set([...[...src.matchAll(/href="(#\/[^"]*)"/g)].map((m) => m[1]), ...strs])];
   ok(tpls.length > 60, 'Links gefunden: ' + tpls.length);
   const sample = (tpl, norm) => {
-    const vinCtx = /^#\/(vehicles|new|check|v|vehicles\/qr)\/\$\{/.test(tpl);
+    const vinCtx = /^#\/((vehicles|new|check|v|vehicles\/qr)\/|emergency\?v=)\$\{/.test(tpl);
     let first = true;
     const h = tpl.replace(/\$\{([^}]*)\}/g, (_, e) => { const vin = vinCtx && first; first = false; return vin ? (e.includes('encodeURIComponent') ? 'VIN%3AWDB96340310123456' : 'VIN:WDB96340310123456') : 'abc-123'; });
     return norm ? h.replace(/%3A/gi, ':') : h;

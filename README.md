@@ -5,7 +5,7 @@ Eigenständig entwickelt von Claude als Vergleichsprojekt; getrennt vom ChatGPT-
 
 **Funktionen:** digitale Fahrzeugakte · Schadensmeldung per Handy mit Foto · Prioritäten niedrig/mittel/kritisch mit
 Sicherheitssperre · Werkstatt-Eingang, Übernahme, Arbeitszeit, Teile, Fremdrechnungen, Restarbeiten · Pflicht-Fahrzeugkontrolle
-nach Reparatur (Mängel werden automatisch Folgeaufträge) · Abfahrtskontrolle · technische Freigabe nur durch Menschen ·
+nach Reparatur (Mängel werden automatisch Folgeaufträge) · Abfahrtskontrolle · Panne & Notfall (Rufnummern je Fahrzeug/Standort, auch ohne Netz) · technische Freigabe nur durch Menschen ·
 Wartung/HU/SP/UVV, Ausrüstung und Herstellerrückrufe mit Nachweis, Prüftermin-Übersicht mit Lückenliste und belegtem CSV-Import · Kilometerstände · Fahrzeugverträge (Leasing/Miete/Versicherung: Kündigungstag, km-Kontingent) · Kosten je Vorgang und Fahrzeug (unbewertet statt 0 €) ·
 Push-Benachrichtigungen mit Zustell-/Lesequittung · Fuhrparkagent + Management-Panel · KI-Analyse der Schadenshistorie ·
 Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen) und Auslesungen Fahrerkarte/Fahrtenschreiber · Bußgelder & Anhörungen ·
@@ -24,7 +24,7 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · Hilfe je Rolle mit Suche · Deu
 | `docs/RUNDGANG.md` | Ablaufplan Testrundgang (Fahrer → Leitung → Werkstatt → Freigabe) mit erwarteten Ergebnissen |
 
 ```bash
-npm test                                            # 220 Abnahmetests (Node ≥ 22)
+npm test                                            # 222 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

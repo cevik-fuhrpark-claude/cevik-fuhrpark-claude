@@ -176,7 +176,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox],
   [/^#\/master(?:\?q=([^&]*))?$/, (q) => viewMaster(q)], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+))?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 const routeArg = (x) => { if (x === undefined) return undefined; try { return decodeURIComponent(x); } catch { return x; } };
 
@@ -240,7 +240,7 @@ function resetUserState() {
   try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}
 }
 function clearOfflineData() {
-  try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_')) localStorage.removeItem(k); } catch {}
+  try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_') || k.startsWith('cfp_emerg_')) localStorage.removeItem(k); } catch {}
 }
 // Leerlauf-Abmeldung auch in der App (Einstellung des Inhabers, Wert kommt vom Server mit /api/me): Der Server meldet erst beim
 // nächsten Aufruf ab – bis dahin stünde auf einem geteilten Tablet die Ansicht der vorherigen Person. Die App leert den Bildschirm
@@ -402,7 +402,7 @@ async function viewHome() {
   }
   let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
   if (S.me.role === 'driver') {
-    html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p>`;
+    html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><a class="btn secondary block" href="#/emergency" id="emhome" style="margin-top:8px">☎ ${esc(t('em_title'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p>`;
     const mvKey = `cfp_myveh_${S.me.id}_${S.me.environment}`;
     let mv = null; let mvOffline = false;
     try { mv = (await api('GET', '/api/me/vehicles')).vehicles; try { localStorage.setItem(mvKey, JSON.stringify({ at: new Date().toISOString(), vehicles: mv })); } catch {} }
@@ -1859,7 +1859,70 @@ async function viewScan(id) {
     ${v.coupled && v.coupled.availability === 'gesperrt' ? `<div class="panel alert" role="alert"><b>${esc(coupledLockedText(v.coupled))}</b></div>` : ''}
     <div class="list"><a class="row" href="#/new/${esc(v.id)}"><span>⚠</span><span class="title">${esc(t('report_damage'))}</span><span></span></a>
     <a class="row" href="#/check/${esc(v.id)}"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>
+    <a class="row" href="#/emergency?v=${esc(v.id)}"><span>☎</span><span class="title">${esc(t('em_title'))}</span><span></span></a>
     ${S.me.role !== 'driver' ? `<a class="row" href="#/vehicles/${esc(v.id)}"><span>${ICON.truck}</span><span class="title">${esc(t('vehicle_file'))}</span><span></span></a>` : ''}</div>`, 'new');
+}
+
+// ---------- Panne & Notfall: Rufnummern für unterwegs (vom Betrieb eingetragen; fest nur Notruf 112) ----------
+const telHref = (p) => 'tel:' + String(p).replace(/[^\d+]/g, '');
+const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle')) : c.scope === 'site' ? `${t('site')}: ${c.site}` : t('em_scope_all'));
+function emRows(list) {
+  return `<div class="list">${list.map((c) => `<div class="row emrow"><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
+}
+async function viewEmergency(vid) {
+  render(`<p class="muted">${esc(t('loading'))}</p>`, 'more');
+  const key = `cfp_emerg_${S.me.id}_${S.me.environment}_${vid || ''}`;
+  let d = null; let cachedAt = null;
+  try { d = await api('GET', '/api/emergency' + (vid ? `?vehicle_id=${encodeURIComponent(vid)}` : '')); try { localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), d })); } catch {} }
+  catch (err) { if (!err.offline) throw err; try { const c = JSON.parse(localStorage.getItem(key) || 'null'); if (c) { d = c.d; cachedAt = c.at; } } catch {} }
+  let html = `<p class="noprint"><a href="${vid ? `#/v/${esc(vid)}` : '#/'}">‹ ${esc(t('back'))}</a></p><h1>${esc(t('em_title'))}</h1>
+    <section class="panel alert" role="note"><p style="margin-top:0"><b>${esc(t('em_112'))}</b></p><a class="btn danger block" href="tel:112" id="em112">${esc(t('em_112_btn'))}</a></section>`;
+  if (!d) html += `<div class="panel alert">${esc(t('offline_view'))}</div><p class="muted">${esc(t('em_offline_none'))}</p>`;
+  else {
+    if (cachedAt) html += `<div class="panel alert">${esc(t('offline_view'))} (${esc(t('as_of'))} ${fmtDT(cachedAt)})</div>`;
+    for (const v of d.vehicles) if (v.contacts.length) html += `<h2>${plate(v.plate)} <span class="small muted">${esc(t('em_for_vehicle'))}</span></h2>${emRows(v.contacts)}`;
+    if (d.general.length) html += `<h2>${esc(t('em_general'))}</h2>${emRows(d.general)}`;
+    if (!d.general.length && !d.vehicles.some((v) => v.contacts.length)) html += `<p class="muted" id="emnone">${esc(t(d.can_edit ? 'em_none_mgr' : 'em_none'))}</p>`;
+    if (d.can_edit && !cachedAt) html += `<div class="actions noprint"><a class="btn secondary" href="#/emergency/edit">${esc(t('em_manage'))}</a></div>`;
+  }
+  html += `<p style="margin-top:16px"><a href="${vid ? `#/new/${esc(vid)}` : '#/new'}">${esc(t('report_damage'))} ›</a> · <a href="#/help?s=accident">${esc(t('help_accident_t'))} ›</a></p>`;
+  render(html, 'more');
+}
+async function viewEmergencyEdit() {
+  render(`<p class="muted">${esc(t('loading'))}</p>`, 'more');
+  const showArch = !!S.emArch;
+  const [d, vs, sites] = await Promise.all([api('GET', '/api/emergency/contacts' + (showArch ? '?archived=1' : '')), vehiclesCached(), api('GET', '/api/sites').then((r) => r.sites.filter((x) => x !== 'ohne')).catch(() => [])]);
+  const edit = S.emEdit ? d.contacts.find((c) => c.id === S.emEdit) : null;
+  const e = edit || { kind: 'dispo', scope: 'all' };
+  const opt = (v, cur, label) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
+  const form = showArch ? '' : `<section class="panel"><h2 style="margin-top:0">${esc(t(edit ? 'em_edit' : 'em_add'))}</h2><form id="emf">
+    <label>${esc(t('em_kind'))}</label><select name="kind">${d.kinds.map((k) => opt(k, e.kind, t('em_kind_' + k))).join('')}</select>
+    <label>${esc(t('em_label'))}</label><input name="label" maxlength="60" required value="${esc(e.label || '')}">
+    <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="30" required value="${esc(e.phone || '')}">
+    <label>${esc(t('em_note'))}</label><input name="note" maxlength="200" value="${esc(e.note || '')}">
+    <label>${esc(t('em_scope'))}</label><select name="scope" id="emscope">${['all', 'site', 'vehicle'].map((k) => opt(k, e.scope, t('em_scope_' + k))).join('')}</select>
+    <div id="emsite"${e.scope === 'site' ? '' : ' hidden'}><label>${esc(t('site'))}</label><select name="site">${[...new Set([...sites, ...(e.site ? [e.site] : [])])].map((x) => opt(x, e.site, x)).join('')}</select></div>
+    <div id="emveh"${e.scope === 'vehicle' ? '' : ' hidden'}><label>${esc(t('vehicle'))}</label><select name="vehicle_id">${vs.slice().sort((a, b) => a.plate.localeCompare(b.plate, 'de')).map((v) => opt(v.id, e.vehicle_id, v.plate)).join('')}</select></div>
+    <div class="actions"><button class="btn">${esc(t('save'))}</button>${edit ? `<button type="button" class="btn secondary" id="emcancel">${esc(t('cancel'))}</button>` : ''}</div></form></section>`;
+  const rows = d.contacts.map((c) => `<div class="row emman"><span class="title"><b>${esc(c.label)}</b> · <a class="emphone" href="${esc(telHref(c.phone))}">${esc(c.phone)}</a> <span class="chip">${esc(t('em_kind_' + c.kind))}</span><br><span class="small">${esc(t('em_scope'))}: ${esc(emScope(c))}${c.note ? ' · ' + esc(c.note) : ''}</span><br><span class="small muted">${showArch ? `${esc(t('em_archived_at'))} ${fmtDT(c.archived_at)} · ${esc(c.archived_by_name || '')}` : `${fmtDT(c.updated_at)} · ${esc(c.changed_by_name || '')}`}</span></span>${showArch ? '' : `<span class="actions" style="margin:0"><button type="button" class="btn secondary" data-emedit="${esc(c.id)}">${esc(t('em_edit'))}</button><button type="button" class="btn secondary" data-emarch="${esc(c.id)}">${esc(t('em_archive'))}</button></span>`}</div>`).join('');
+  render(`<p class="noprint"><a href="#/emergency">‹ ${esc(t('back'))}</a></p><h1>${esc(t('em_manage'))}</h1><p class="small muted">${esc(t('em_manage_hint'))}</p>
+    <div class="actions" role="group" aria-label="${esc(t('em_manage'))}"><button type="button" class="btn ${showArch ? 'secondary' : ''}" data-emtab="0" aria-pressed="${!showArch}">${esc(t('em_active'))}</button><button type="button" class="btn ${showArch ? '' : 'secondary'}" data-emtab="1" aria-pressed="${showArch}">${esc(t('em_archive_list'))}</button></div>
+    ${form}${showArch ? '' : `<p class="small muted" id="emcount">${esc(t('em_count').replace('{n}', d.contacts.length).replace('{m}', d.max_active))}</p>`}
+    <div class="list" id="emlist">${rows || `<p class="muted">–</p>`}</div>`, 'more');
+  $$('[data-emtab]').forEach((b) => (b.onclick = () => { S.emArch = b.dataset.emtab === '1'; S.emEdit = null; viewEmergencyEdit(); }));
+  const f = $('#emf');
+  if (f) {
+    $('#emscope').onchange = () => { const sc = $('#emscope').value; $('#emsite').hidden = sc !== 'site'; $('#emveh').hidden = sc !== 'vehicle'; };
+    const cc = $('#emcancel'); if (cc) cc.onclick = () => { S.emEdit = null; viewEmergencyEdit(); };
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const b = Object.fromEntries(new FormData(f));
+      if (b.scope !== 'site') delete b.site; if (b.scope !== 'vehicle') delete b.vehicle_id;
+      try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b); else await api('POST', '/api/emergency/contacts', b); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { toast(err.message, true); }
+    };
+  }
+  $$('[data-emedit]').forEach((b) => (b.onclick = () => { S.emEdit = b.dataset.emedit; viewEmergencyEdit(); window.scrollTo(0, 0); }));
+  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`); if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
 }
 
 // ---------- QR-Aufkleber je Fahrzeug: Scan öffnet „Schaden melden“ mit vorausgewähltem Fahrzeug ----------
@@ -2652,6 +2715,7 @@ function viewMore() {
     <a class="row" href="#/check"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>
     <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
     <a class="row" href="#/help"><span>?</span><span class="title">${esc(t('help'))}</span><span></span></a>
+    <a class="row" href="#/emergency"><span>☎</span><span class="title">${esc(t('em_title'))}</span><span></span></a>
     ${isMgr() || S.me.role === 'dispatch' ? `<a class="row" href="#/guide"><span>▤</span><span class="title">${esc(t('guide'))}</span><span></span></a>` : ''}
     ${isMgr() ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('drivers'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('my_driver_file'))}</span><span></span></a>` : ''}
     ${isMgr() ? `<a class="row" href="#/contracts"><span>📄</span><span class="title">${esc(t('ct_title'))}</span><span></span></a>` : ''}

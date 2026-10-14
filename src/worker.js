@@ -5,6 +5,7 @@ import { personExport } from './privacy.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
 import * as vnotes from './vnotes.js';
+import * as emergency from './emergency.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
 import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle, nt } from './notify.js';
@@ -205,6 +206,12 @@ async function handleApi(request, env, ctx, url) {
     return json(await veh.importVehiclesCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
+  // Panne & Notfall: Anzeige für alle Rollen, Pflege Inhaber/Fuhrparkleitung/Disposition (je Umgebung)
+  if (path === '/api/emergency' && m === 'GET') return json(await emergency.emergencyView(env, user, envName, Object.fromEntries(url.searchParams)));
+  if (path === '/api/emergency/contacts' && m === 'GET') return json(await emergency.listContacts(env, user, envName, Object.fromEntries(url.searchParams)));
+  if (path === '/api/emergency/contacts' && m === 'POST') return json(await emergency.addContact(env, user, envName, await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/emergency\/contacts\/([\w-]+)$/)) && m === 'PATCH') return json(await emergency.updateContact(env, user, envName, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/emergency\/contacts\/([\w-]+)\/archive$/)) && m === 'POST') return json(await emergency.archiveContact(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/notes$/)) && m === 'GET') return json(await vnotes.listNotes(env, user, envName, mm[1], Object.fromEntries(url.searchParams)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/notes$/)) && m === 'POST') return json(await vnotes.addNote(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/notes\/([\w-]+)\/archive$/)) && m === 'POST') return json(await vnotes.archiveNote(env, user, envName, mm[1], mm[2]));

@@ -29,6 +29,13 @@ CSV-Dateien dürfen UTF-8 (mit oder ohne BOM) oder Windows-1252 sein – also di
 - Ist die App einmal mit Netz geöffnet worden, startet sie auch ohne Netz: Startseite mit „Mein Fahrzeug“ (Stand der letzten Verbindung), Schadensmeldung und Abfahrtskontrolle werden auf dem Gerät gespeichert und automatisch gesendet.
 - Auf dem Gerät gespeichert werden nur Anzeigedaten (Name, Rolle, Fahrzeugliste) – keine Passwörter. „Abmelden“ löscht diese Daten.
 
+## Panne & Notfall (Rufnummern für unterwegs)
+- Seite „Panne & Notfall“ für alle Rollen: Startseite der Fahrer, Mehr, Scan-Seite des Fahrzeug-QR-Aufklebers (dort zusätzlich die Nummern für dieses Fahrzeug). Oben fest nur der Notruf 112 – alle anderen Nummern trägt der Betrieb selbst ein (die App gibt keine vor).
+- Pflege unter „Rufnummern pflegen“ (Inhaber, Fuhrparkleitung, Disposition): Art (Disposition, Pannendienst/Schutzbrief, Werkstatt/Bereitschaft, Versicherung, Sonstiges), Bezeichnung, Telefonnummer, Hinweis (z. B. „Vertragsnummer angeben“), Geltung für alle Fahrzeuge, einen Standort (laut Fahrzeugstamm) oder ein Fahrzeug. Höchstens 50 aktive je Umgebung; Archiv statt Löschen; Protokoll `emergency.*`.
+- Test und Betrieb sind getrennt: Nummern für die Fahrer im Betrieb unter der Ansicht „Betrieb“ eintragen.
+- Ohne Netz zeigt die Seite den zuletzt auf diesem Gerät geladenen Stand (mit Zeitpunkt). Bei der Einführung die Seite daher auf jedem Fahrerhandy einmal mit Netz öffnen.
+- Vor der Einführung: echte Nummern (Disposition, Pannendienst laut Leasing-/Versicherungsvertrag) durch den Inhaber eintragen – Claude trägt keine Nummern ein.
+
 ## Fristen und Kosten
 - Reaktionsfristen (Erstbewertung, Werkstatt-Übernahme) je Priorität unter „Einstellungen“. Leer = keine Frist (der Agent meldet dann „Frist nicht konfiguriert“).
 - Interner Werkstatt-Stundensatz: ohne Wert bleiben Arbeitsstunden „unbewertet“.
