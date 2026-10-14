@@ -2341,6 +2341,76 @@ await test('Push-Einstellungen je Person: nicht dringende Arten stummschaltbar, 
   eq((await users.driver.put('/api/me/notify-prefs', { muted: [] })).data.muted.length, 0);
 });
 
+await test('Ruhezeit je Person: nicht dringende Pushs warten bis zum Ende (Berliner Zeit, über Mitternacht), dringende sofort, danach ein Sammel-Push', async () => {
+  const { quietHoldUntil } = await import('../src/util.js');
+  const { notifyUsers, retryFailedPush } = await import('../src/notify.js');
+  // reine Berechnung: Winterzeit über Mitternacht, Ende exklusiv, Sommerzeit, Zeitumstellung, ungültig
+  eq(quietHoldUntil('22:00', '06:00', Date.parse('2026-01-15T22:30:00Z')), '2026-01-16T05:00:00.000Z', '23:30 Berlin → 06:00 Folgetag');
+  eq(quietHoldUntil('22:00', '06:00', Date.parse('2026-01-16T04:59:00Z')), '2026-01-16T05:00:00.000Z', '05:59 Berlin noch Ruhezeit');
+  eq(quietHoldUntil('22:00', '06:00', Date.parse('2026-01-16T05:00:00Z')), null, '06:00 Berlin vorbei');
+  eq(quietHoldUntil('22:00', '06:00', Date.parse('2026-01-15T20:59:00Z')), null, '21:59 Berlin noch nicht');
+  eq(quietHoldUntil('13:00', '15:30', Date.parse('2026-07-01T12:00:00Z')), '2026-07-01T13:30:00.000Z', 'Sommerzeit');
+  eq(quietHoldUntil('22:00', '06:00', Date.parse('2026-10-24T21:00:00Z')), '2026-10-25T05:00:00.000Z', 'Nacht der Zeitumstellung: 06:00 Winterzeit');
+  eq(quietHoldUntil('08:00', '08:00', Date.parse('2026-07-01T06:00:00Z')), null, 'gleich = aus');
+  eq(quietHoldUntil('8:00', '09:00', Date.parse('2026-07-01T06:30:00Z')), null, 'Format HH:MM');
+  eq(quietHoldUntil(null, null), null);
+  // API: Standard aus, Prüfung, Häkchen und Ruhezeit getrennt änderbar, Protokoll
+  eq((await users.driver.get('/api/me/notify-prefs')).data.quiet, null, 'Standard: keine Ruhezeit');
+  for (const quiet of [{ from: '22:00', to: '22:00' }, { from: '25:00', to: '06:00' }, { from: '22:00' }, { from: '22:00:00', to: '06:00' }]) {
+    const r = await users.driver.put('/api/me/notify-prefs', { quiet }); eq(r.status, 400, JSON.stringify(quiet)); eq(r.data.error, 'validation');
+  }
+  let r = await users.driver.put('/api/me/notify-prefs', { quiet: { from: '22:00', to: '06:00' } });
+  eq(r.status, 200); eq(JSON.stringify(r.data.quiet), '{"from":"22:00","to":"06:00"}');
+  r = await users.driver.put('/api/me/notify-prefs', { muted: ['received'] });
+  eq(JSON.stringify(r.data.quiet), '{"from":"22:00","to":"06:00"}', 'Häkchen ändern die Ruhezeit nicht');
+  r = await users.driver.put('/api/me/notify-prefs', { quiet: { from: '23:00', to: '05:00' } });
+  eq(r.data.muted.join(','), 'received', 'Ruhezeit ändert die Häkchen nicht');
+  ok(env.DB.db.prepare(`SELECT 1 FROM audit_log WHERE action='user.push_quiet' AND actor_id=?`).get(users.driver.id), 'protokolliert');
+  eq((await users.driver.put('/api/me/notify-prefs', { muted: [], quiet: null })).data.quiet, null, 'ausschalten');
+  // Zustellung: Fenster um „jetzt“ (Berliner Uhrzeit ± 1 Std.)
+  const hm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+  const now = Date.now();
+  eq((await users.driver.put('/api/me/notify-prefs', { quiet: { from: hm(now - 3600000), to: hm(now + 3600000) } })).status, 200);
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  eq((await users.driver.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/quiet-1', keys: { p256dh: await key(), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  const tag = 'Ruhezeit-Test ' + rk();
+  try {
+    env.__nowMs = now;
+    for (const i of [1, 2, 3]) await notifyUsers(env, null, 'test', [users.driver.id, users.dispatch.id], { kind: 'agent', title: `${tag} ${i}`, body: 'x', eventKey: `quiet-${i}-` + rk() });
+    await notifyUsers(env, null, 'test', [users.driver.id], { kind: 'agent', title: `${tag} dringend`, body: 'x', eventKey: 'quiet-u-' + rk(), urgent: true });
+    const rows = () => Object.fromEntries(env.DB.db.prepare(`SELECT title, push_status, push_attempts, push_hold_until FROM notifications WHERE user_id=? AND title LIKE ?`).all(users.driver.id, tag + '%').map((x) => [x.title.slice(tag.length + 1), x]));
+    let by = rows();
+    for (const i of ['1', '2', '3']) { eq(by[i].push_status, 'pending', 'zurückgehalten ' + i); eq(by[i].push_attempts, 0); ok(by[i].push_hold_until, 'Ende vermerkt'); }
+    const holdMs = Date.parse(by['1'].push_hold_until);
+    ok(holdMs > now + 55 * 60000 && holdMs <= now + 3600000, 'Ende = Ende der Ruhezeit (≈ 1 Std.)');
+    eq(by.dringend.push_status, 'accepted', 'dringend sofort'); eq(by.dringend.push_hold_until, null);
+    eq(env.DB.db.prepare(`SELECT push_status FROM notifications WHERE user_id=? AND title=?`).get(users.dispatch.id, `${tag} 1`).push_status, 'no_subscription', 'andere Personen unberührt');
+    // In-App sofort sichtbar, mit Ende der Ruhezeit
+    const inbox = (await users.driver.get('/api/notifications')).data.notifications.find((x) => x.title === `${tag} 1`);
+    ok(inbox && inbox.push_hold_until === by['1'].push_hold_until, 'Hinweis steht sofort in der App');
+    // einer schon in der App geöffnet → braucht keinen Push mehr
+    const opened = env.DB.db.prepare('SELECT id FROM notifications WHERE user_id=? AND title=?').get(users.driver.id, `${tag} 3`).id;
+    eq((await users.driver.post(`/api/notifications/${opened}/opened`)).status, 200);
+    // Cron während der Ruhezeit (auch nach > 5 Min.): nichts zugestellt
+    env.__nowMs = now + 10 * 60000;
+    env.DB.db.prepare(`UPDATE notifications SET created_at=? WHERE title LIKE ?`).run(new Date(now - 6 * 60000).toISOString(), tag + '%');
+    await retryFailedPush(env);
+    by = rows(); eq(by['1'].push_status, 'pending', 'Cron hält die Ruhezeit ein'); eq(by['2'].push_status, 'pending');
+    // nach dem Ende: gesammelt zugestellt (ein Netzaufruf für zwei Hinweise), geöffneter bleibt ohne Push
+    env.__nowMs = holdMs + 60000;
+    const q0 = env.DB.db.prepare(`SELECT last_success_at FROM push_subscriptions WHERE endpoint='https://push.example/ok/quiet-1'`).get().last_success_at;
+    await retryFailedPush(env);
+    by = rows();
+    eq(by['1'].push_status, 'accepted', 'nach Ende zugestellt'); eq(by['2'].push_status, 'accepted'); eq(by['1'].push_attempts + by['2'].push_attempts, 2);
+    eq(by['3'].push_status, 'pending', 'geöffneter Hinweis braucht keinen Push');
+    ok(env.DB.db.prepare(`SELECT last_success_at FROM push_subscriptions WHERE endpoint='https://push.example/ok/quiet-1'`).get().last_success_at !== q0 || q0 === null, 'Gerät erreicht');
+  } finally {
+    env.__nowMs = undefined;
+    await users.driver.put('/api/me/notify-prefs', { muted: [], quiet: null });
+    env.DB.db.prepare(`DELETE FROM push_subscriptions WHERE endpoint LIKE '%quiet-%'`).run();
+  }
+});
+
 await test('Sicherung: jede Tabelle ist gesichert oder bewusst ausgenommen (neue Tabellen werden nicht vergessen)', async () => {
   const { BACKUP_TABLES, EXCLUDED } = await import('../src/backup.js');
   const tables = (await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all()).results.map((r) => r.name);

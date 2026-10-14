@@ -1,6 +1,6 @@
 // [CLAUDE] Benachrichtigungen: Ereignis -> Empfänger (nur bestätigte Benutzerkonten) -> In-App + Push
 // Zustände getrennt: gespeichert -> Push vom Dienst angenommen -> am Gerät empfangen -> geöffnet -> übernommen
-import { nowIso, uuid } from './util.js';
+import { nowIso, uuid, quietHoldUntil } from './util.js';
 import { sendPush } from './push.js';
 
 // Priorität im Hinweistext in der Sprache der Person (Sperrbildschirm)
@@ -229,12 +229,19 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   const okSubs = new Set();
   const revoked = new Set();
   const mutedByUser = new Map();
+  const holdByUser = new Map(); // Person in ihrer Ruhezeit → Ende der Ruhezeit (ISO); nicht dringende Pushs warten bis dahin
   let sends = 0; const deferred = new Set();
-  if (all.some((n) => !n.urgent && n.kind)) {
-    for (const u of (await env.DB.prepare('SELECT id, push_muted FROM users WHERE push_muted IS NOT NULL AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
+  if (all.some((n) => !n.urgent)) {
+    const nowMs = env.__nowMs || Date.now();
+    for (const u of (await env.DB.prepare('SELECT id, push_muted, push_quiet_from, push_quiet_to FROM users WHERE (push_muted IS NOT NULL OR push_quiet_from IS NOT NULL) AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) {
+      if (u.push_muted) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
+      const h = quietHoldUntil(u.push_quiet_from, u.push_quiet_to, nowMs);
+      if (h) holdByUser.set(u.id, h);
+    }
   }
   for (const n of notifications) {
     if (!n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
+    if (!n.urgent && holdByUser.has(n.user_id)) { states.push({ id: n.id, s: 'pending', a: 0, h: holdByUser.get(n.user_id) }); continue; }
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
     if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
     if (sends + subs.length > maxSends) { deferred.add(n.id); continue; } // bleibt pending → Cron
@@ -257,6 +264,7 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   // gesammelte Folgehinweise eines verschobenen Trägers bleiben ebenfalls pending (werden einzeln nachgeholt)
   for (const st of [...states]) for (const f of followers.get(st.id) || []) {
     // Stumm geschaltete Art gilt je Hinweis; sonst teilt der Hinweis das Ergebnis des gesammelten Pushs
+    // Ruhezeit: ein dringender Träger nimmt nicht dringende Folgehinweise mit (ein Push je Person) – sie gelten damit als zugestellt
     states.push(!f.urgent && f.kind && mutedByUser.get(f.user_id)?.has(f.kind) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id });
   }
   const now = nowIso();
@@ -264,22 +272,35 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   if (states.length) {
     writes.push(env.DB.prepare(`UPDATE notifications SET push_status=j.s, push_attempts=push_attempts + j.a,
       push_last_error=CASE WHEN j.a=1 THEN j.e ELSE notifications.push_last_error END,
-      push_accepted_at=CASE WHEN j.a=1 THEN j.t ELSE notifications.push_accepted_at END
+      push_accepted_at=CASE WHEN j.a=1 THEN j.t ELSE notifications.push_accepted_at END,
+      push_hold_until=COALESCE(j.h, notifications.push_hold_until)
       FROM (SELECT json_extract(value,'$.id') AS id, json_extract(value,'$.s') AS s, json_extract(value,'$.a') AS a,
-        json_extract(value,'$.e') AS e, json_extract(value,'$.t') AS t FROM json_each(?)) AS j WHERE notifications.id=j.id`).bind(JSON.stringify(states)));
+        json_extract(value,'$.e') AS e, json_extract(value,'$.t') AS t, json_extract(value,'$.h') AS h FROM json_each(?)) AS j WHERE notifications.id=j.id`).bind(JSON.stringify(states)));
   }
   if (okSubs.size) writes.push(env.DB.prepare('UPDATE push_subscriptions SET last_success_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify([...okSubs])));
   if (revoked.size) writes.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify([...revoked])));
   if (writes.length) await env.DB.batch(writes);
 }
 
-// Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche
+// Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche. Wegen Ruhezeit zurückgehaltene Hinweise erst nach deren Ende.
 export async function retryFailedPush(env) {
+  const now = env.__nowMs || Date.now();
+  await releaseQuietPush(env, now);
   const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id, kind FROM notifications
-    WHERE acknowledged_at IS NULL AND created_at > ? AND ((push_status='failed' AND push_attempts < 3) OR (push_status='pending' AND created_at < ?))
+    WHERE acknowledged_at IS NULL AND created_at > ? AND ((push_status='failed' AND push_attempts < 3) OR (push_status='pending' AND push_hold_until IS NULL AND created_at < ?))
     ORDER BY urgent DESC, created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
-    .bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString(), new Date(Date.now() - 5 * 60000).toISOString()).all()).results;
+    .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString()).all()).results;
   await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })));
+  return rows.length;
+}
+
+// Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
+// (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
+export async function releaseQuietPush(env, now = env.__nowMs || Date.now()) {
+  const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id, kind FROM notifications
+    WHERE push_status='pending' AND push_hold_until IS NOT NULL AND push_hold_until <= ? AND acknowledged_at IS NULL AND opened_at IS NULL AND created_at > ?
+    ORDER BY created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
+  if (rows.length) await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })), { collapse: true });
   return rows.length;
 }

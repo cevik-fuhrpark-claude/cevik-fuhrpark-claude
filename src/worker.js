@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
-import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly, QUIET_TIME } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -162,14 +162,26 @@ async function handleApi(request, env, ctx, url) {
     return json({ sites: reports.siteSelection((await env.DB.prepare('SELECT site FROM vehicles').all()).results, null).options });
   }
   if (path === '/api/me/notify-prefs' && m === 'GET') {
-    const row = await env.DB.prepare('SELECT push_muted FROM users WHERE id=?').bind(user.id).first();
-    return json({ kinds: MUTABLE_KINDS, muted: parseMuted(row && row.push_muted) });
+    const row = await env.DB.prepare('SELECT push_muted, push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
+    return json({ kinds: MUTABLE_KINDS, muted: parseMuted(row && row.push_muted), quiet: row && row.push_quiet_from ? { from: row.push_quiet_from, to: row.push_quiet_to } : null });
   }
   if (path === '/api/me/notify-prefs' && m === 'PUT') {
+    // muted und quiet getrennt änderbar: fehlt ein Feld, bleibt der gespeicherte Wert (Häkchen ändern nicht die Ruhezeit und umgekehrt)
     const b = await readJson(request);
-    const muted = Array.isArray(b.muted) ? [...new Set(b.muted.filter((k) => MUTABLE_KINDS.includes(k)))] : [];
-    await env.DB.prepare('UPDATE users SET push_muted=?, updated_at=? WHERE id=?').bind(muted.length ? JSON.stringify(muted) : null, nowIso(), user.id).run();
-    return json({ kinds: MUTABLE_KINDS, muted });
+    const row = await env.DB.prepare('SELECT push_muted, push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
+    const muted = 'muted' in b ? (Array.isArray(b.muted) ? [...new Set(b.muted.filter((k) => MUTABLE_KINDS.includes(k)))] : []) : parseMuted(row && row.push_muted);
+    let qf = row ? row.push_quiet_from : null; let qt = row ? row.push_quiet_to : null;
+    if ('quiet' in b) {
+      if (b.quiet === null || (b.quiet && !b.quiet.from && !b.quiet.to)) { qf = null; qt = null; } else {
+        const q = b.quiet || {};
+        if (!QUIET_TIME.test(String(q.from || '')) || !QUIET_TIME.test(String(q.to || ''))) throw bad('validation', 'Ruhezeit: Uhrzeit im Format HH:MM angeben (von und bis).');
+        if (q.from === q.to) throw bad('validation', 'Ruhezeit: Beginn und Ende dürfen nicht gleich sein.');
+        qf = q.from; qt = q.to;
+      }
+    }
+    await env.DB.prepare('UPDATE users SET push_muted=?, push_quiet_from=?, push_quiet_to=?, updated_at=? WHERE id=?').bind(muted.length ? JSON.stringify(muted) : null, qf, qt, nowIso(), user.id).run();
+    if ('quiet' in b && (qf !== (row && row.push_quiet_from) || qt !== (row && row.push_quiet_to))) await auth.audit(env, user.id, 'user.push_quiet', user.id, { from: qf, to: qt });
+    return json({ kinds: MUTABLE_KINDS, muted, quiet: qf ? { from: qf, to: qt } : null });
   }
   if (path === '/api/me/inspections-without-result' && m === 'GET') return json(await myInspectionsWithoutResult(env, user));
   if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
@@ -514,7 +526,7 @@ async function handleApi(request, env, ctx, url) {
 
   // Benachrichtigungen & Push
   if (path === '/api/notifications' && m === 'GET') {
-    const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
+    const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
       FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ORDER BY n.created_at DESC LIMIT 100`).bind(user.id).all()).results;
     for (const r of rows) { r.title = localizedTitle(r, r.lang); delete r.lang; }
     return json({ notifications: rows, unread: rows.filter((r) => !r.opened_at && !r.acknowledged_at).length });

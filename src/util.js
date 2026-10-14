@@ -224,6 +224,19 @@ export function berlinLocalToIso(v) {
   if (c.getUTCFullYear() !== y || c.getUTCMonth() !== mo - 1 || c.getUTCDate() !== d || h > 23 || mi > 59 || se > 59) return null;
   return new Date(ms - berlinOffsetMs(ms - berlinOffsetMs(ms))).toISOString();
 }
+// Persönliche Ruhezeit (Wanduhrzeit Berlin „HH:MM“–„HH:MM“, auch über Mitternacht, z. B. 22:00–06:00):
+// liegt nowMs darin → Ende der Ruhezeit als UTC-ISO, sonst null. Gleiche oder fehlende Zeiten = keine Ruhezeit.
+export const QUIET_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+export function quietHoldUntil(from, to, nowMs = Date.now()) {
+  if (!QUIET_TIME.test(from || '') || !QUIET_TIME.test(to || '') || from === to) return null;
+  const mins = (x) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5));
+  const local = new Date(nowMs + berlinOffsetMs(nowMs));
+  const cur = local.getUTCHours() * 60 + local.getUTCMinutes();
+  const f = mins(from); const t = mins(to);
+  if (!(f < t ? cur >= f && cur < t : cur >= f || cur < t)) return null;
+  const day = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + (cur < t ? 0 : 1))).toISOString().slice(0, 10);
+  return berlinLocalToIso(`${day}T${to}`);
+}
 const p2 = (n) => (n < 10 ? '0' + n : String(n));
 export function berlinDateTime(iso) {
   const ms = Date.parse(iso);

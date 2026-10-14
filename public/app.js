@@ -2054,14 +2054,25 @@ async function viewInbox() {
     <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
     ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
     <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.notifications.filter(NF[k]).length})</a>`).join('')}</div>` : ''}
-    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.notifications.length ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
+    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.notifications.length ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
   pushPanel($('#push'));
   const np = $('#np');
   np.ontoggle = async () => {
     if (!np.open || np.dataset.loaded) return;
     try {
       const pr = await api('GET', '/api/me/notify-prefs'); np.dataset.loaded = '1';
-      $('#npl').innerHTML = pr.kinds.map((k) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pk="${esc(k)}"${pr.muted.includes(k) ? '' : ' checked'}> ${esc(t('pk_' + k))}</label>`).join('');
+      const q = pr.quiet;
+      $('#npl').innerHTML = pr.kinds.map((k) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pk="${esc(k)}"${pr.muted.includes(k) ? '' : ' checked'}> ${esc(t('pk_' + k))}</label>`).join('')
+        + `<h3 style="margin-top:14px">${esc(t('quiet_title'))}</h3><p class="small muted">${esc(t('quiet_hint'))}</p>
+        <p id="qst"><b>${esc(q ? t('quiet_on').replace('{f}', q.from).replace('{t}', q.to) : t('quiet_none'))}</b></p>
+        <form id="qf" class="grid2"><div><label for="qfrom">${esc(t('quiet_from'))}</label><input id="qfrom" type="time" step="60" required value="${esc(q ? q.from : '')}"></div>
+        <div><label for="qto">${esc(t('quiet_to'))}</label><input id="qto" type="time" step="60" required value="${esc(q ? q.to : '')}"></div>
+        <div class="actions" style="grid-column:1/-1"><button class="btn secondary">${esc(t('quiet_save'))}</button>${q ? `<button type="button" class="btn secondary" id="qoff">${esc(t('quiet_off'))}</button>` : ''}</div></form>`;
+      const qsave = async (quiet) => {
+        try { await api('PUT', '/api/me/notify-prefs', { quiet }); toast('✓'); np.dataset.loaded = ''; np.ontoggle(); } catch (err) { toast(err.message, true); }
+      };
+      $('#qf').onsubmit = (e) => { e.preventDefault(); qsave({ from: $('#qfrom').value.slice(0, 5), to: $('#qto').value.slice(0, 5) }); };
+      const qoff = $('#qoff'); if (qoff) qoff.onclick = () => qsave(null);
       $$('[data-pk]', np).forEach((cb) => (cb.onchange = async () => {
         const muted = $$('[data-pk]', np).filter((x) => !x.checked).map((x) => x.dataset.pk);
         try { await api('PUT', '/api/me/notify-prefs', { muted }); toast('✓'); } catch (err) { toast(err.message, true); }
