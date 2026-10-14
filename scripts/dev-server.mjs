@@ -1,6 +1,6 @@
 // Lokaler Entwicklungsserver: statische Dateien + Worker-API mit SQLite-Nachbildung (nur zum Testen)
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import worker from '../src/worker.js';
 import { makeEnv } from '../test/harness.mjs';
@@ -60,4 +60,8 @@ http.createServer(async (req, res) => {
   let p = join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!existsSync(p) || url.pathname === '/_headers') p = join(root, 'index.html');
   res.writeHead(200, { ...staticHeaders(url.pathname), 'content-type': types[extname(p)] || 'application/octet-stream' }); res.end(readFileSync(p));
-}).listen(PORT, () => console.log('dev on ' + PORT));
+}).listen(PORT, () => {
+  // Prozessnummer je Port ablegen: scripts/restart-dev.sh beendet damit nur den Server auf 8787, nicht einen zweiten (z. B. PORT=8788)
+  try { writeFileSync(`/tmp/cfp-dev-${PORT}.pid`, String(process.pid)); } catch { /* nur Komfort */ }
+  console.log('dev on ' + PORT);
+});
