@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test: Protokoll je Person und je Fahrzeug (Fahrzeugakte → „Protokoll“). Benutzer → „Protokoll“ öffnet das Protokoll gefiltert auf die Person (handelnd oder betroffen),
 # Adresse wird bereinigt, „Alle Personen“ hebt den Filter auf. DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler.
-# Aktionen erscheinen als Text in der App-Sprache mit Code daneben. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# Aktionen erscheinen als Text in der App-Sprache mit Code daneben, Detailschlüssel in der App-Sprache. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -23,6 +23,7 @@ with sync_playwright() as p:
     api('POST','/api/invite/accept',{'token':r['d']['invite_token'],'password':PW})
     api('POST','/api/login',{'username':'pp.leitung','password':PW}); api('POST','/api/login',{'username':'pp.inhaber','password':PW})
     api('POST','/api/vehicles',{'vin':'WDB96340310777001','plate':'PP-PR 1','site':'Dortmund'}); VID='VIN:WDB96340310777001'
+    KZ={'de':'Kennzeichen: PP-PR 1','uk':'Номерний знак: PP-PR 1','en':'Plate: PP-PR 1'}
     VALL={'de':'Alle Fahrzeuge','uk':'Увесь транспорт','en':'All vehicles'}; VSAVE={'de':'Fahrzeug gespeichert','uk':'Транспорт збережено','en':'Vehicle saved'}
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
@@ -44,6 +45,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/vehicles/'+VID); q.wait_for_selector(f'a[href="#/audit?v={VID}"]'); q.click(f'a[href="#/audit?v={VID}"]'); q.wait_for_selector('#auveh')
         check('PP-PR 1' in q.inner_text('#auveh') and q.evaluate('()=>location.hash')=='#/audit',f'{lang} {w}px: Fahrzeug genannt, Adresse bereinigt')
         check(VSAVE[lang] in q.inner_text('.list') and q.locator('.list .row').count()==1,f'{lang} {w}px: nur Einträge des Fahrzeugs („{VSAVE[lang]}“)')
+        check(KZ[lang] in q.inner_text('.list'),f'{lang} {w}px: Detail in der App-Sprache („{KZ[lang]}“)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen (Fahrzeug)')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/protokoll_fahrzeug_{lang}_{w}.png',full_page=True)
         q.click('#auvx'); q.wait_for_function("()=>!document.querySelector('#auveh')"); check(VALL[lang] and True,f'{lang} {w}px: „{VALL[lang]}“ hebt Filter auf')

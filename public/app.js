@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
-import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason, translateNextAction, translateLockReason, auditActionLabel } from './i18n.js';
+import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason, translateNextAction, translateLockReason, auditActionLabel, auditDetailText } from './i18n.js';
 import { findingMessage } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile } from './csv.js';
@@ -2349,7 +2349,7 @@ async function viewAudit(more, uArg, vArg) {
   S.auditRows = more ? [...(S.auditRows || []), ...r.entries] : r.entries;
   S.auditBefore = r.entries.length ? r.entries[r.entries.length - 1].created_at : null;
   const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.', t('export_csv')], ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')]];
-  const det = (d) => (d && typeof d === 'object' ? Object.entries(d).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ') : d || '');
+  const det = (d) => auditDetailText(S.lang, d); // Schlüssel in der Oberflächensprache, Werte unverändert (Rohtext in CSV/Suche)
   const gl = (groups.find(([k]) => k === f) || [])[1];
   render(`<h1>${esc(t('audit'))}</h1><p class="small muted">${esc(t('audit_hint'))}</p>
     ${printHead([t('audit'), f ? `${t('audit_area')}: ${gl || f}` : '', aq.length >= 2 ? `${t('print_search')}: „${aq}“` : '', au ? `${t('audit_until')} ${au.split('-').reverse().join('.')}` : '', pu ? `${t('audit_person')}: ${S.auditUserName || ''}` : '', pv ? `${t('vehicle')}: ${S.auditVehName || ''}` : '', t('print_count').replace('{n}', S.auditRows.length)])}

@@ -1220,3 +1220,58 @@ export function auditActionLabel(lang, code) {
   const e = AUDIT_ACTIONS[code];
   return e ? e[{ de: 0, uk: 1, en: 2 }[lang] ?? 0] : null;
 }
+
+// Protokoll-Details: häufige Schlüssel in der Oberflächensprache. Werte bleiben unverändert (Daten, Kennzeichen, Daten-IDs) –
+// übersetzt werden nur Ja/Nein, Umgebung (test/production) und Rolle; {from,to} wird „alt → neu“, Listen mit Komma.
+// Unbekannte Schlüssel erscheinen roh (künftige Details, Einstellungsschlüssel). CSV und Suche nutzen weiter den Rohtext.
+const AUDIT_DETAIL_KEYS = {
+  environment: ['Umgebung', 'Середовище', 'Environment'], kind: ['Art', 'Вид', 'Kind'], site: ['Standort', 'Локація', 'Site'],
+  rows: ['Zeilen', 'Рядки', 'Rows'], plate: ['Kennzeichen', 'Номерний знак', 'Plate'], note: ['Vermerk', 'Примітка', 'Note'],
+  from: ['von', 'з', 'from'], to: ['bis', 'до', 'to'], vehicle_id: ['Fahrzeug', 'Транспортний засіб', 'Vehicle'],
+  vehicle: ['Fahrzeug', 'Транспортний засіб', 'Vehicle'], phone: ['Rufnummer', 'Номер телефону', 'Phone'],
+  label: ['Bezeichnung', 'Назва', 'Label'], result: ['Ergebnis', 'Результат', 'Result'], done_date: ['durchgeführt am', 'виконано', 'done on'],
+  evidence: ['Nachweis', 'Підтвердження', 'Evidence'], status: ['Status', 'Статус', 'Status'], device: ['Gerät', 'Пристрій', 'Device'],
+  q: ['Suche', 'Пошук', 'Search'], device_id: ['Gerätekennung', 'Ідентифікатор пристрою', 'Device ID'],
+  vsite: ['Fahrzeugstandort', 'Локація ТЗ', 'Vehicle site'], vehicle_site: ['Fahrzeugstandort', 'Локація ТЗ', 'Vehicle site'],
+  username: ['Benutzername', 'Ім’я користувача', 'Username'], role: ['Rolle', 'Роль', 'Role'], reason: ['Grund', 'Причина', 'Reason'],
+  skipped: ['übersprungen', 'пропущено', 'skipped'], created: ['angelegt', 'створено', 'created'], valid_until: ['gültig bis', 'дійсне до', 'valid until'],
+  partner: ['Vertragspartner', 'Контрагент', 'Partner'], gaps: ['Lücken', 'Прогалини', 'Gaps'], planned_date: ['geplant am', 'заплановано на', 'planned for'],
+  filter: ['Auswahl', 'Фільтр', 'Filter'], updated: ['aktualisiert', 'оновлено', 'updated'], unchanged: ['unverändert', 'без змін', 'unchanged'],
+  changed: ['geändert', 'змінено', 'changed'], qty: ['Menge', 'Кількість', 'Quantity'], case_no: ['Vorgang', 'Заявка', 'Case'],
+  driver: ['Fahrer', 'Водій', 'Driver'], weeks: ['Wochen', 'Тижні', 'Weeks'], filename: ['Datei', 'Файл', 'File'], file: ['Datei', 'Файл', 'File'],
+  size: ['Größe (Byte)', 'Розмір (байт)', 'Size (bytes)'], name: ['Name', 'Ім’я', 'Name'], imported: ['importiert', 'імпортовано', 'imported'],
+  minutes: ['Minuten', 'Хвилини', 'Minutes'], for_driver: ['für Fahrer', 'для водіїв', 'for drivers'], truncated: ['gekürzt', 'скорочено', 'truncated'],
+  count: ['Anzahl', 'Кількість', 'Count'], sections: ['Abschnitte', 'Розділи', 'Sections'], factor: ['Verfahren', 'Метод', 'Method'],
+  by: ['Verfahren', 'Метод', 'Method'], recovery_left: ['verbleibende Ersatzcodes', 'залишилось резервних кодів', 'recovery codes left'],
+  failures: ['Fehlversuche', 'Невдалі спроби', 'Failed attempts'], ended_on: ['beendet am', 'завершено', 'ended on'],
+  insurer: ['Versicherer', 'Страховик', 'Insurer'], source: ['Quelle', 'Джерело', 'Source'], active: ['aktiv', 'активний', 'active'],
+  user: ['Person', 'Особа', 'Person'], counted: ['gezählt', 'пораховано', 'counted'], eta: ['erwartet am', 'очікується', 'expected on'],
+  with_driver: ['mit Fahrer', 'з водієм', 'with driver'], ended_previous: ['beendete Zuordnungen', 'завершені призначення', 'ended assignments'],
+  action: ['Bereich', 'Розділ', 'Area'], counts: ['Anzahlen', 'Кількості', 'Counts'], item: ['Artikel', 'Артикул', 'Item'],
+  part: ['Teil', 'Частина', 'Part'], type: ['Typ', 'Тип', 'Type'], neu: ['neu', 'нові', 'new'], geaendert: ['geändert', 'змінено', 'changed'],
+  unveraendert: ['unverändert', 'без змін', 'unchanged'], vorhanden: ['vorhanden', 'вже є', 'existing'], uebersprungen: ['übersprungen', 'пропущено', 'skipped'],
+  plate_conflict: ['Kennzeichen-Konflikt', 'Конфлікт номерного знака', 'plate conflict'],
+  zgm_class: ['zGM-Klasse', 'Клас повної маси', 'GVW class'], zgm_kg: ['zGM (kg)', 'Повна маса (кг)', 'GVW (kg)'],
+  first_registration: ['Erstzulassung', 'Перша реєстрація', 'First registration'], duplicate_plate_of: ['Kennzeichen auch bei', 'Номерний знак також у', 'Plate also on'],
+  end_date: ['Enddatum', 'Дата завершення', 'End date'], downloaded_on: ['ausgelesen am', 'зчитано', 'downloaded on'], checked_on: ['geprüft am', 'перевірено', 'checked on'],
+};
+export const AUDIT_DETAIL_KEY_CODES = Object.keys(AUDIT_DETAIL_KEYS);
+const AUDIT_DETAIL_VALUES = { true: ['ja', 'так', 'yes'], false: ['nein', 'ні', 'no'], test: ['Test', 'Тест', 'Test'], production: ['Betrieb', 'Робочий', 'Production'] };
+export function auditDetailText(lang, detail) {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail === null || detail === undefined ? '' : (typeof detail === 'object' ? JSON.stringify(detail) : String(detail));
+  const li = { de: 0, uk: 1, en: 2 }[lang] ?? 0;
+  const key = (k) => (AUDIT_DETAIL_KEYS[k] ? AUDIT_DETAIL_KEYS[k][li] : k);
+  const isFT = (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 2 && 'from' in v && 'to' in v && [v.from, v.to].every((x) => x === null || typeof x !== 'object');
+  const val = (k, v) => {
+    if (v === null || v === undefined || v === '') return '–';
+    if (typeof v === 'boolean') return AUDIT_DETAIL_VALUES[String(v)][li];
+    if (k === 'environment' && AUDIT_DETAIL_VALUES[v]) return AUDIT_DETAIL_VALUES[v][li];
+    if (k === 'role' && typeof v === 'string' && STRINGS[lang] && STRINGS[lang]['role_' + v]) return STRINGS[lang]['role_' + v];
+    if (Array.isArray(v)) return v.length && v.every((x) => x === null || typeof x !== 'object') ? v.map((x) => (typeof x === 'string' ? key(x) : String(x))).join(', ') : (v.length ? JSON.stringify(v) : '–');
+    if (isFT(v)) return `${val(k, v.from)} → ${val(k, v.to)}`;
+    if (typeof v === 'object' && Object.values(v).every((x) => x === null || typeof x !== 'object')) return Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x)}`).join(', ');
+    if (typeof v === 'object') return Object.values(v).every(isFT) ? Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x.from)} → ${val(f, x.to)}`).join(', ') : JSON.stringify(v);
+    return String(v);
+  };
+  return Object.entries(detail).map(([k, v]) => `${key(k)}: ${val(k, v)}`).join(' · ');
+}

@@ -6980,6 +6980,28 @@ await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code 
   ok(app.includes('auditActionLabel(S.lang, e.action)'), 'Ansicht nutzt Bezeichnung');
 });
 
+await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverändert (nur Ja/Nein, Umgebung, Rolle übersetzt), alt → neu', async () => {
+  const { auditDetailText, AUDIT_DETAIL_KEY_CODES } = await import('../public/i18n.js');
+  // Wächter: jeder Detailschlüssel, der in der Testsuite mindestens 5-mal protokolliert wurde, hat eine Bezeichnung (Einstellungsschlüssel ausgenommen)
+  const cnt = new Map();
+  for (const r of env.DB.db.prepare('SELECT detail FROM audit_log WHERE detail IS NOT NULL').all()) { let o; try { o = JSON.parse(r.detail); } catch { continue; } if (o && typeof o === 'object' && !Array.isArray(o)) for (const k of Object.keys(o)) cnt.set(k, (cnt.get(k) || 0) + 1); }
+  ok(cnt.size >= 40, 'Schlüssel gefunden: ' + cnt.size);
+  const settingKeys = new Set(env.DB.db.prepare('SELECT key FROM settings').all().map((r) => r.key));
+  eq([...cnt].filter(([k, n]) => n >= 5 && !settingKeys.has(k) && !AUDIT_DETAIL_KEY_CODES.includes(k)).map(([k]) => k).sort().join(), '', 'häufige Schlüssel ohne Bezeichnung');
+  const d = { environment: 'production', role: 'workshop', plate: 'SZ-YC 5513', with_driver: false, changed: { end_date: { from: '2026-10-25', to: null } }, phone: { from: '0123', to: '0124' }, rows: 3, unbekannt_x: 'roh', ended_previous: ['SZ-YC 5513'] };
+  eq(auditDetailText('de', d), 'Umgebung: Betrieb · Rolle: Werkstatt · Kennzeichen: SZ-YC 5513 · mit Fahrer: nein · geändert: Enddatum 2026-10-25 → – · Rufnummer: 0123 → 0124 · Zeilen: 3 · unbekannt_x: roh · beendete Zuordnungen: SZ-YC 5513', 'DE');
+  ok(auditDetailText('uk', d).startsWith('Середовище: Робочий · Роль: ') && auditDetailText('uk', d).includes('SZ-YC 5513'), 'UK');
+  ok(auditDetailText('en', d).startsWith('Environment: Production · Role: ') && auditDetailText('en', d).includes('Plate: SZ-YC 5513'), 'EN');
+  eq(auditDetailText('de', { changed: ['active', 'site'] }), 'geändert: aktiv, Standort', 'Liste geänderter Felder');
+  eq(auditDetailText('de', { counts: { neu: 2, uebersprungen: 1 } }), 'Anzahlen: neu 2, übersprungen 1', 'Unterwerte');
+  eq(auditDetailText('de', { from: { a: { b: 1 } } }), 'von: {"a":{"b":1}}', 'tief verschachtelt bleibt JSON');
+  eq(auditDetailText('de', 'freier Text'), 'freier Text', 'Text unverändert');
+  eq(auditDetailText('de', null), '', 'leer');
+  for (const k of AUDIT_DETAIL_KEY_CODES) ok(/^[а-яіїєґ’ ()]+: 1$/i.test(auditDetailText('uk', { [k]: 1 })), `${k} uk übersetzt`);
+  const fs = await import('node:fs');
+  ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('auditDetailText(S.lang, d)'), 'Ansicht nutzt Detailtext');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
