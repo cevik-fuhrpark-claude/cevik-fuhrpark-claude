@@ -3040,6 +3040,9 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
     v = (await owner.get('/api/admin/audit?until=2020-03-02&limit=1000')).data.entries.filter((e) => e.id.startsWith('aucsv-')); eq(v.length, 3);
     eq((await owner.get('/api/admin/audit?until=02.03.2020')).status, 400);
     const last = db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get(); ok(last && JSON.parse(last.detail).rows === 2 && JSON.parse(last.detail).action === 'probe.', 'Export protokolliert');
+    r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02&action=' + encodeURIComponent('probe.eins, anderes.')); eq(dec(r).trim().split('\r\n').length, 3, 'mehrere Bereiche (Komma)');
+    eq((await owner.get('/api/admin/audit?limit=1000&action=' + encodeURIComponent('probe.zwei,anderes.,%'))).data.entries.filter((e) => e.id.startsWith('aucsv-')).map((e) => e.id).sort().join(), 'aucsv-2,aucsv-3', 'Ansicht: mehrere Bereiche, Platzhalter wirkungslos');
+    eq((await owner.get('/api/admin/audit?limit=5&action=' + encodeURIComponent(',,'))).status, 200, 'leere Bereiche = alle');
     r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02&q=HYPERLINK'); eq(dec(r).trim().split('\r\n').length, 2, 'CSV mit Suche');
     eq((await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02')).headers.get('x-cfp-truncated'), null);
     // Groß-/Kleinschreibung auch außerhalb A–Z (SQLite-LIKE nur ASCII)
@@ -6985,6 +6988,11 @@ await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code 
   eq(auditActionLabel('de', 'gibt.es.nicht'), null, 'unbekannt → Code bleibt');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('auditActionLabel(S.lang, e.action)'), 'Ansicht nutzt Bezeichnung');
+  // Jeder Aktionscode ist über die Auswahl „Bereich“ erreichbar (Präfixe, auch mehrere mit Komma)
+  const gsrc = app.slice(app.indexOf('const groups = [['), app.indexOf('const det = (d) => auditDetailText'));
+  const prefixes = [...gsrc.matchAll(/\['([^']*)', t\(/g)].map((m) => m[1]).filter(Boolean).flatMap((x) => x.split(','));
+  ok(prefixes.length >= 15, 'Bereiche gefunden: ' + prefixes.length);
+  eq(AUDIT_ACTION_CODES.filter((c) => !prefixes.some((p) => c.startsWith(p))).join(), '', 'Aktionscodes ohne Bereich');
 });
 
 await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverändert (nur Ja/Nein, Umgebung, Rolle übersetzt), alt → neu', async () => {

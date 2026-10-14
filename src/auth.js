@@ -523,10 +523,21 @@ function auditQ(qs, where, args) {
   where.push('(' + vs.map(() => "a.target LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR tu.username LIKE ? ESCAPE '\\' OR tu.display_name LIKE ? ESCAPE '\\' OR tv.plate LIKE ? ESCAPE '\\'").join(' OR ') + ')');
   for (const v of vs) args.push(...Array(7).fill(likeEsc(v)));
 }
+// Bereich: ein Aktions-Präfix oder mehrere, durch Komma getrennt (z. B. „invite.,password.,totp.“ für Zugang & Sicherheit), höchstens 8 × 40 Zeichen
+function auditPrefix(query) {
+  if (!query.action) return null;
+  const list = [...new Set(String(query.action).slice(0, 400).split(',').map((x) => x.trim().slice(0, 40)).filter(Boolean))].slice(0, 8);
+  return list.length ? list.join(',') : null;
+}
+function auditPrefixWhere(prefix, where, args, esc) {
+  const list = prefix.split(',');
+  where.push('(' + list.map(() => "a.action LIKE ? ESCAPE '\\'").join(' OR ') + ')');
+  for (const p of list) args.push(esc(p) + '%');
+}
 export async function listAudit(env, user, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
   const limit = Math.min(Math.max(Number(query.limit) || 200, 1), 1000);
-  const prefix = query.action ? String(query.action).slice(0, 40) : null;
+  const prefix = auditPrefix(query);
   let before = query.before && /^\d{4}-\d{2}-\d{2}T/.test(query.before) ? query.before : '9999';
   // „bis Datum“ (Berliner Kalendertag einschließlich) – nur wenn kein späterer Blätter-Zeitpunkt gesetzt ist
   if (query.until !== undefined && query.until !== '') {
@@ -538,7 +549,7 @@ export async function listAudit(env, user, query = {}) {
   const qs = String(query.q || '').trim().slice(0, 60);
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
   const where = ['a.created_at < ?']; const args = [before];
-  if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
+  if (prefix) auditPrefixWhere(prefix, where, args, esc);
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
   const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
@@ -563,11 +574,11 @@ export async function auditCsv(env, user, query, csvCell) {
   const next = new Date(Date.parse(to + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
   if ((Date.parse(next) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Höchstens ein Jahr je Export.');
   const lo = berlinDayStartIso(from); const hi = berlinDayStartIso(next);
-  const prefix = query.action ? String(query.action).slice(0, 40) : null;
+  const prefix = auditPrefix(query);
   const qs = String(query.q || '').trim().slice(0, 60);
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
   const where = ['a.created_at >= ?', 'a.created_at < ?']; const args = [lo, hi];
-  if (prefix) { where.push("a.action LIKE ? ESCAPE '\\'"); args.push(esc(prefix) + '%'); }
+  if (prefix) auditPrefixWhere(prefix, where, args, esc);
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
   const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));

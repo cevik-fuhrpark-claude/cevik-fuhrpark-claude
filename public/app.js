@@ -2348,7 +2348,7 @@ async function viewAudit(more, uArg, vArg) {
   if (r.vehicle) S.auditVehName = r.vehicle.plate || r.vehicle.id;
   S.auditRows = more ? [...(S.auditRows || []), ...r.entries] : r.entries;
   S.auditBefore = r.entries.length ? r.entries[r.entries.length - 1].created_at : null;
-  const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.', t('export_csv')], ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')]];
+  const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.', t('export_csv')], ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')], ['invite.,password.,session.,totp.,setup.,integration.', t('au_access')], ['tires.', t('tires')], ['telematics.', t('telematics')], ['emergency.', t('em_title')]];
   const det = (d) => auditDetailText(S.lang, d); // Schlüssel in der Oberflächensprache, Werte unverändert (Rohtext in CSV/Suche)
   const gl = (groups.find(([k]) => k === f) || [])[1];
   // Betrifft: anderes Konto → Protokoll dieser Person, Fahrzeug → Fahrzeugakte (Ausdruck zeigt den Namen ohne Link)

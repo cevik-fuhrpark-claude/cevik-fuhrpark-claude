@@ -1276,6 +1276,6 @@ export function auditDetailText(lang, detail) {
   return Object.entries(detail).map(([k, v]) => `${key(k)}: ${val(k, v)}`).join(' · ');
 }
 
-Object.assign(STRINGS.de, { au_target: 'Betrifft' });
-Object.assign(STRINGS.uk, { au_target: 'Стосується' });
-Object.assign(STRINGS.en, { au_target: 'Concerns' });
+Object.assign(STRINGS.de, { au_target: 'Betrifft', au_access: 'Zugang & Sicherheit' });
+Object.assign(STRINGS.uk, { au_target: 'Стосується', au_access: 'Доступ і безпека' });
+Object.assign(STRINGS.en, { au_target: 'Concerns', au_access: 'Access & security' });
