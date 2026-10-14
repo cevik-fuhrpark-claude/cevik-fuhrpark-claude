@@ -19,6 +19,7 @@ CSV-Dateien dürfen UTF-8 (mit oder ohne BOM) oder Windows-1252 sein – also di
 
 ## Push-Benachrichtigungen
 - Jede Person aktiviert Push auf jedem Gerät selbst unter „Hinweise“. Mehrere Geräte pro Person möglich.
+- **Benutzer-Liste** (Inhaber/Fuhrparkleitung) zeigt je Konto die Zahl angemeldeter Push-Geräte bzw. „kein Push-Gerät“ und oben einen gelben Hinweis, wenn aktive Betriebskonten (außer Lesezugriff) kein Gerät haben – dringende Hinweise wie eine Fahrzeugsperre erreichen sie dann nur beim Öffnen der App. Bei der Einführung Push auf jedem Fahrerhandy einschalten lassen. Nur Anzahl, keine Gerätedetails.
 - iPhone/iPad: zuerst „Teilen → Zum Home-Bildschirm“, dann die App vom Home-Bildschirm öffnen und Push aktivieren (Apple-Vorgabe).
 - Unter „Hinweise → Push für diese Hinweise“ kann jede Person nicht dringende Arten abwählen (bleiben in der App sichtbar). Dringende Hinweise kommen immer.
 - **Ruhezeit je Person** (ebenda, „von–bis“, Uhrzeit Deutschland, auch über Mitternacht, z. B. 22:00–06:00 oder die Ruhezeit am Steuer): in dieser Zeit nur dringende Pushs (kritisch, nicht fahrbereit, Sperre). Andere Hinweise stehen sofort in der App (Push-Status „zurückgehalten (Ruhezeit) bis …“); nach dem Ende stellt der Cron (alle 15 Min.) sie als **einen** Sammel-Push je Person zu – in der App bereits geöffnete nicht mehr. Standard: keine Ruhezeit; die App gibt keine Zeiten vor. Protokoll `user.push_quiet`.

@@ -2412,6 +2412,22 @@ await test('Ruhezeit je Person: nicht dringende Pushs warten bis zum Ende (Berli
   }
 });
 
+await test('Benutzerliste: Anzahl angemeldeter Push-Geräte je Konto (abgemeldete zählen nicht), Hinweis für Betriebskonten ohne Gerät', async () => {
+  const cnt = async () => (await owner.get('/api/users')).data.users.find((u) => u.id === users.driver.id).push_devices;
+  const before = await cnt();
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const ep = 'https://push.example/ok/devcount-' + rk();
+  eq((await users.driver.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: await key(), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  eq(await cnt(), before + 1, 'neues Gerät gezählt');
+  eq((await users.driver.post('/api/push/unsubscribe', { endpoint: ep })).status, 200);
+  eq(await cnt(), before, 'abgemeldetes Gerät zählt nicht');
+  ok((await users.fleet.get('/api/users')).data.users.every((u) => typeof u.push_devices === 'number'), 'auch für die Fuhrparkleitung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/u\.environment === 'production' && u\.role !== 'viewer' && !u\.push_devices/.test(app), 'Hinweis nur für Betriebskonten ohne Gerät');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].push_admin_hint.includes('{n}') && STRINGS[l].push_dev_n.includes('{n}') && STRINGS[l].push_dev_none, `Texte ${l}`);
+});
+
 await test('Sicherung: jede Tabelle ist gesichert oder bewusst ausgenommen (neue Tabellen werden nicht vergessen)', async () => {
   const { BACKUP_TABLES, EXCLUDED } = await import('../src/backup.js');
   const tables = (await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all()).results.map((r) => r.name);
