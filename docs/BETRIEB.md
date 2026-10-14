@@ -22,6 +22,7 @@ CSV-Dateien dürfen UTF-8 (mit oder ohne BOM) oder Windows-1252 sein – also di
 - Unter „Hinweise → Push für diese Hinweise“ kann jede Person nicht dringende Arten abwählen (bleiben in der App sichtbar). Dringende Hinweise kommen immer.
 - „Push vom Dienst angenommen“ ist kein Lesenachweis: Empfang, Öffnen und „Gesehen“ werden getrennt gespeichert.
 - Fehlgeschlagene Pushs werden bis zu 3× wiederholt; dringende, nicht zugestellte Hinweise meldet der Agent.
+- Pushs des Fuhrparkagenten an Inhaber/Fuhrparkleitung kommen in der Sprache der Person und ohne Kennzeichen/Namen (Sperrbildschirm): ein neuer kritischer Befund als Kurzbezeichnung mit Code in Klammern (z. B. „Reifen unter Mindestprofil (TIRE_BELOW_MINIMUM)“), mehrere als „N neue kritische Befunde“, neue Termine/Fristen als ruhige Sammel-Erinnerung („2× Prüftermin bald fällig“). Details stehen im Management-Panel.
 - Neue fällige/überfällige Prüftermine und ablaufende Behördenfristen meldet der Agent als eine ruhige Sammel-Erinnerung je Lauf (Vorlauf = „Vorwarnung Tage“ in den Einstellungen). Fahrzeugverträge (Ende, Kündigungstag, km-Kontingent) mit eigener Vorwarnung „Verträge – Vorwarnung“ (Standard 60 Tage). Versicherungsfälle ohne Regulierung nur, wenn unter Einstellungen „Versicherungsfälle – nachfassen nach Tagen“ eingetragen ist (leer = aus; die App setzt keine eigene Frist). Ebenso Vorgänge ohne Bewegung (bewertet, übernommen oder in Reparatur, aber seit so vielen Tagen keine Änderung – auch kein Kommentar) nur mit „Vorgänge – nachfassen nach Tagen ohne Änderung“.
 
 ## Ohne Netz (Funkloch)

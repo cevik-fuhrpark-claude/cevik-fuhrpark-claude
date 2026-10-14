@@ -6078,6 +6078,24 @@ await test('Wächter: „Nächster Schritt“ jedes Agentenbefunds hat UK/EN-Tex
   console.log(`     ${lits.size} feste next_action-Texte, ${rows.length} davon im Testlauf erzeugt`);
 });
 
+await test('Wächter Offline-Hülle: jedes von app.js (transitiv) geladene Modul steht im Service-Worker-Cache, jede Cache-Datei existiert', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const sw = rd('sw.js');
+  const shell = JSON.parse(sw.match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  const missingFiles = shell.filter((f) => f !== '/' && !existsSync(new URL('../public' + f, import.meta.url)));
+  ok(!missingFiles.length, `SHELL-Datei fehlt in public/: ${missingFiles.join(', ')}`);
+  const seen = new Set(); const todo = ['app.js'];
+  while (todo.length) {
+    const f = todo.pop(); if (seen.has(f)) continue; seen.add(f);
+    for (const m of rd(f).matchAll(/^import [^;]*? from '\.\/([^']+)'/gm)) todo.push(m[1]);
+  }
+  const notCached = [...seen].filter((f) => !shell.includes('/' + f));
+  ok(!notCached.length, `Modul nicht im Offline-Cache (SHELL in public/sw.js, CACHE-Version erhöhen): ${notCached.join(', ')}`);
+  ok(/src="\/app\.js"/.test(rd('index.html')), 'index.html lädt /app.js');
+  console.log(`     ${seen.size} Module, ${shell.length} Hüllen-Dateien`);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
