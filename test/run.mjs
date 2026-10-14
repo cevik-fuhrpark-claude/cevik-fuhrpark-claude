@@ -2388,6 +2388,7 @@ await test('Ruhezeit je Person: nicht dringende Pushs warten bis zum Ende (Berli
     // In-App sofort sichtbar, mit Ende der Ruhezeit
     const inbox = (await users.driver.get('/api/notifications')).data.notifications.find((x) => x.title === `${tag} 1`);
     ok(inbox && inbox.push_hold_until === by['1'].push_hold_until, 'Hinweis steht sofort in der App');
+    ok((await users.driver.get('/api/notifications')).data.quiet?.from, 'Hinweise-Seite kennt die Ruhezeit');
     // einer schon in der App geöffnet → braucht keinen Push mehr
     const opened = env.DB.db.prepare('SELECT id FROM notifications WHERE user_id=? AND title=?').get(users.driver.id, `${tag} 3`).id;
     eq((await users.driver.post(`/api/notifications/${opened}/opened`)).status, 200);

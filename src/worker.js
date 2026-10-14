@@ -529,7 +529,8 @@ async function handleApi(request, env, ctx, url) {
     const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
       FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ORDER BY n.created_at DESC LIMIT 100`).bind(user.id).all()).results;
     for (const r of rows) { r.title = localizedTitle(r, r.lang); delete r.lang; }
-    return json({ notifications: rows, unread: rows.filter((r) => !r.opened_at && !r.acknowledged_at).length });
+    const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
+    return json({ notifications: rows, unread: rows.filter((r) => !r.opened_at && !r.acknowledged_at).length, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
   }
   if ((mm = path.match(/^\/api\/notifications\/([\w-]+)\/(received|opened|ack)$/)) && m === 'POST') {
     const col = { received: 'device_received_at', opened: 'opened_at', ack: 'acknowledged_at' }[mm[2]];

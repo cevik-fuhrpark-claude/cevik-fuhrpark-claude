@@ -2050,7 +2050,7 @@ async function viewInbox() {
   // Gewählter Filter gilt für die App-Sitzung; ohne Wahl: „Ungelesen“, solange es ungelesene gibt, sonst „Alle“
   const nf = NF[S.inboxF] ? S.inboxF : n.notifications.some(NF.unread) ? 'unread' : 'all';
   const shown = n.notifications.filter(NF[nf]);
-  render(`<h1>${esc(t('notifications'))}</h1><section class="panel" id="push"></section>
+  render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>
     <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
     ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
     <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.notifications.filter(NF[k]).length})</a>`).join('')}</div>` : ''}
@@ -2069,7 +2069,7 @@ async function viewInbox() {
         <div><label for="qto">${esc(t('quiet_to'))}</label><input id="qto" type="time" step="60" required value="${esc(q ? q.to : '')}"></div>
         <div class="actions" style="grid-column:1/-1"><button class="btn secondary">${esc(t('quiet_save'))}</button>${q ? `<button type="button" class="btn secondary" id="qoff">${esc(t('quiet_off'))}</button>` : ''}</div></form>`;
       const qsave = async (quiet) => {
-        try { await api('PUT', '/api/me/notify-prefs', { quiet }); toast('✓'); np.dataset.loaded = ''; np.ontoggle(); } catch (err) { toast(err.message, true); }
+        try { await api('PUT', '/api/me/notify-prefs', { quiet }); toast('✓'); await viewInbox(); const d = $('#np'); if (d) d.open = true; } catch (err) { toast(err.message, true); }
       };
       $('#qf').onsubmit = (e) => { e.preventDefault(); qsave({ from: $('#qfrom').value.slice(0, 5), to: $('#qto').value.slice(0, 5) }); };
       const qoff = $('#qoff'); if (qoff) qoff.onclick = () => qsave(null);
