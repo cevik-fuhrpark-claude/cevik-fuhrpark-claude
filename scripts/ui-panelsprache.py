@@ -77,6 +77,7 @@ with sync_playwright() as p:
         # Akte → Management-Panel: Suche ist auf das Kennzeichen eingegrenzt
         q.click('#vafm'); q.wait_for_selector('#afq')
         check(q.input_value('#afq')=='PS-ANL 1',f'Akte → Panel {lang} {w}px: Suche auf Kennzeichen')
+        check(q.evaluate('()=>location.hash')=='#/master',f'Akte → Panel {lang} {w}px: Adresse ohne Parameter')
         q.fill('#afq','')
         # Startseite „Heute zu tun“: Gruppe „Fahrzeuge mit kritischen Agentenbefunden“ → gefilterte, nach Befunden sortierte Fahrzeugliste
         TODO={'de':'Fahrzeuge mit kritischen Agentenbefunden','uk':'Транспорт із критичними висновками агента','en':'Vehicles with critical agent findings'}

@@ -175,7 +175,7 @@ const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox],
-  [/^#\/master$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
+  [/^#\/master(?:\?q=([^&]*))?$/, (q) => viewMaster(q)], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 const routeArg = (x) => { if (x === undefined) return undefined; try { return decodeURIComponent(x); } catch { return x; } };
@@ -1275,7 +1275,7 @@ async function viewVehicle(id, focusEv = null) {
   // Offene Agentenbefunde dieses Fahrzeugs (Server liefert sie nur Inhaber/Fuhrparkleitung); bei kritischen aufgeklappt
   const AFS = { kritisch: 'kritisch', handeln: 'mittel', hinweis: '', info: '' };
   const af = d.agent_findings || [];
-  const afHtml = af.length ? `<details class="panel" id="vaf"${af.some((f) => f.severity === 'kritisch') ? ' open' : ''}><summary><b>${esc(t('veh_findings'))}</b> <span class="chip ${AFS[af[0].severity]}">${af.length}</span></summary><div class="list" style="margin-top:8px">${af.map((f) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}"><span class="chip ${AFS[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${f.case_id ? `<a href="#/cases/${esc(f.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('')}</div><p class="small muted">${esc(t('veh_findings_hint'))} <a class="noprint" href="#/master" id="vafm">${esc(t('nav_master'))} ›</a></p></details>` : '';
+  const afHtml = af.length ? `<details class="panel" id="vaf"${af.some((f) => f.severity === 'kritisch') ? ' open' : ''}><summary><b>${esc(t('veh_findings'))}</b> <span class="chip ${AFS[af[0].severity]}">${af.length}</span></summary><div class="list" style="margin-top:8px">${af.map((f) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}"><span class="chip ${AFS[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${f.case_id ? `<a href="#/cases/${esc(f.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('')}</div><p class="small muted">${esc(t('veh_findings_hint'))} <a class="noprint" href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm">${esc(t('nav_master'))} ›</a></p></details>` : '';
   // Prüfergebnis fehlt (in der App erfasste Pflichtprüfung ohne Ergebnis) – Knopf öffnet das Formular in „Bisherige Durchführungen“
   const rmHtml = (d.result_missing || []).length ? `<div class="panel" id="vrm"><b>${esc(t('dq_inspection_no_result'))}</b><div>${d.result_missing.map((r) => `${esc(mk(r.kind))} · ${fmtD(r.done_date)}`).join(' · ')}</div>${canMaint ? `<div class="actions noprint">${d.result_missing.map((r) => `<button type="button" class="btn secondary" data-rmgo="${esc(r.event_id)}">${esc(t('res_add_go'))}: ${esc(mk(r.kind))}</button>`).join('')}</div>` : ''}</div>` : '';
   let html = `<p class="noprint"><a href="#/vehicles">‹ ${esc(t('back'))}</a></p><div>${plate(v.plate, { big: true, locked: d.cases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)) })}</div>
@@ -1340,8 +1340,6 @@ async function viewVehicle(id, focusEv = null) {
   html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${bDate()}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (canMaint) html += `<section class="panel noprint"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
   render(html, isMgr() ? 'master' : 'vehicles');
-  // „Zum Management-Panel“ aus den Agentenbefunden: Panel gleich auf dieses Kennzeichen eingrenzen (Suche, alle Schweregrade)
-  const vafm = $('#vafm'); if (vafm) vafm.onclick = () => { S.afQ = v.plate; S.afSev = 'all'; };
   if ($('#vnotes')) loadVehicleNotes(v.id);
 
   renderTires(id, $('#tires'));
@@ -2001,7 +1999,9 @@ function fMsg(stored, fallback) {
   return findingMessage(o, fallback, S.lang);
 }
 const fcLabel = (code) => (code && STRINGS.de['fc_' + code] ? `<b style="display:block">${esc(t('fc_' + code))}</b>` : '');
-async function viewMaster() {
+async function viewMaster(q) {
+  // Direktsprung #/master?q=<Kennzeichen> (z. B. aus der Fahrzeugakte): Suche vorbelegen, alle Schweregrade, Adresse ohne Parameter
+  if (q !== undefined) { S.afQ = String(q).slice(0, 80); S.afSev = 'all'; try { history.replaceState(null, '', '#/master'); } catch {} }
   const p = await api('GET', '/api/master');
   // Befunde filtern (nur Anzeige im Browser): Schweregrad + Freitext über den angezeigten Zeilentext; CSV exportiert die angezeigte Auswahl
   if (p.findings.length <= 1) { S.afSev = 'all'; S.afQ = ''; } // Filterknöpfe/Suchfeld gibt es erst ab zwei Befunden
