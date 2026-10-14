@@ -1,7 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDate, isCalendarDate, likeEsc, caseVariants,
+  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants,
 } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
 import { notifyUsers, nt } from './notify.js';
@@ -285,8 +285,7 @@ async function noteLoginDevice(env, ctx, userRow, request, deviceId) {
     await env.DB.batch(st);
   }
   if (r.known || !r.n) return false;
-  const when = berlinDateTime(now);
-  const text = (l) => ({ title: nt(l, 'new_login'), body: nt(l, 'new_login_body').replace('{d}', label === 'Unbekanntes Gerät' ? nt(l, 'unknown_device') : label).replace('{t}', when) });
+  const text = (l) => ({ title: nt(l, 'new_login'), body: nt(l, 'new_login_body').replace('{d}', label === 'Unbekanntes Gerät' ? nt(l, 'unknown_device') : label).replace('{t}', berlinDateTimeLang(now, l)) });
   try {
     await notifyUsers(env, ctx, userRow.environment, [userRow.id], { kind: 'new_login', ...text('de'), localize: text, langOf: new Map([[userRow.id, userRow.language]]),
       eventKey: `new_login:${userRow.id}:${now}` });
@@ -307,6 +306,30 @@ export async function revokeOwnSession(env, user, sid) {
   const r = await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND substr(token_hash,1,16)=?').bind(user.id, sid).run();
   if (r.meta.changes) await audit(env, user.id, 'session.revoke', user.id, { count: r.meta.changes });
   return { ok: true, revoked: r.meta.changes };
+}
+// ---- Bekannte Geräte (für den Anmelde-Hinweis) – eigene Liste, einzelne vergessen ----
+// Kurzkennung = Anfang des Hashes. „Dieses Gerät“ über den Header x-cfp-device (Gerätekennung aus dem Browser, wird nur gehasht verglichen).
+// Das aktuelle Gerät kann nicht vergessen werden – sonst bliebe evtl. kein bekanntes Gerät, und die nächste Anmeldung wäre wieder „erste Anmeldung“ (ohne Hinweis).
+async function currentDeviceHash(request) {
+  const d = request && request.headers.get('x-cfp-device');
+  return typeof d === 'string' && DEVICE_ID_RE.test(d) ? sha256Hex('cfp-dev:' + d) : null;
+}
+export async function listKnownDevices(env, user, request) {
+  const cur = await currentDeviceHash(request);
+  const since = new Date(Date.now() - KNOWN_DEVICE_DAYS * 86400000).toISOString();
+  const rows = (await env.DB.prepare('SELECT device_hash, label, first_seen, last_seen FROM known_devices WHERE user_id=? AND last_seen >= ? ORDER BY last_seen DESC')
+    .bind(user.id, since).all()).results;
+  return rows.map((r) => ({ id: r.device_hash.slice(0, SID_LEN), device: r.label || 'Unbekanntes Gerät', first_seen: r.first_seen, last_seen: r.last_seen, current: !!cur && r.device_hash === cur }));
+}
+export async function forgetKnownDevice(env, user, request, did) {
+  if (!/^[0-9a-f]{16}$/.test(String(did))) throw bad('invalid_device', 'Ungültiges Gerät.');
+  const cur = await currentDeviceHash(request);
+  if (cur && cur.startsWith(did)) throw bad('current_device', 'Dieses Gerät kann nicht vergessen werden.');
+  const row = await env.DB.prepare('SELECT label FROM known_devices WHERE user_id=? AND substr(device_hash,1,16)=?').bind(user.id, did).first();
+  if (!row) throw new HttpError(404, 'not_found', 'Gerät nicht gefunden.');
+  const r = await env.DB.prepare('DELETE FROM known_devices WHERE user_id=? AND substr(device_hash,1,16)=?').bind(user.id, did).run();
+  await audit(env, user.id, 'user.forget_device', user.id, { device: row.label || null, count: r.meta.changes });
+  return { ok: true, forgotten: r.meta.changes };
 }
 export async function revokeOtherSessions(env, user) {
   const r = await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session).run();
@@ -388,13 +411,15 @@ export async function resetInvite(env, actor, userId) {
 
 export async function listUsers(env, actor) {
   if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
+  const kdSince = new Date(Date.now() - KNOWN_DEVICE_DAYS * 86400000).toISOString();
   const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password, (u.totp_enabled_at IS NOT NULL) AS has_totp,
     CASE WHEN la.locked_until > ?1 THEN la.locked_until END AS locked_until,
     (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS sessions, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS last_seen,
-    (SELECT COUNT(*) FROM push_subscriptions p WHERE p.user_id=u.id AND p.revoked_at IS NULL) AS push_devices`;
+    (SELECT COUNT(*) FROM push_subscriptions p WHERE p.user_id=u.id AND p.revoked_at IS NULL) AS push_devices,
+    (SELECT COUNT(*) FROM known_devices k WHERE k.user_id=u.id AND k.last_seen >= ?3) AS known_devices`;
   const q = actor.role === 'owner'
-    ? env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username ORDER BY u.environment, u.role, u.display_name`).bind(nowIso())
-    : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=?2 ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment);
+    ? env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username ORDER BY u.environment, u.role, u.display_name`).bind(nowIso(), null, kdSince)
+    : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=?2 ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment, kdSince);
   return (await q.all()).results;
 }
 

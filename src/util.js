@@ -244,6 +244,18 @@ export function berlinDateTime(iso) {
   const d = new Date(ms + berlinOffsetMs(ms));
   return `${p2(d.getUTCDate())}.${p2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
 }
+// Datum + Uhrzeit (Berliner Zeit) in der Schreibweise der Sprache – für Hinweistexte (Sperrbildschirm), z. B. Anmelde-Hinweis
+const EN_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function berlinDateTimeLang(iso, lang) {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return '';
+  const d = new Date(ms + berlinOffsetMs(ms));
+  const hm = `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
+  const dmy = `${p2(d.getUTCDate())}.${p2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+  if (lang === 'en') return `${d.getUTCDate()} ${EN_MON[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hm}`;
+  if (lang === 'uk') return `${dmy} о ${hm}`;
+  return `${dmy}, ${hm} Uhr`;
+}
 
 // Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)
 // Importe: Übernehmen 20/Std.; Vorschauen (dry_run, schreiben nichts) eigenes Fenster 120/Std. – Datei korrigieren und erneut prüfen

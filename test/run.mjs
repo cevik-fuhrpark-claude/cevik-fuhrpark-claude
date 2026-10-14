@@ -6725,6 +6725,50 @@ await test('Anmelde-Hinweis bei neuem Gerät: erste Anmeldung still, bekanntes G
   ok(!/clearOfflineData[\s\S]{0,400}cfp_device/.test(app.slice(app.indexOf('function clearOfflineData'), app.indexOf('function clearOfflineData') + 400)), 'Kennung bleibt beim Abmelden');
 });
 
+await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne vergessen (nicht das aktuelle), danach wieder Hinweis, Protokoll, nur eigene, Anzahl in der Benutzerliste, Uhrzeit je Sprache', async () => {
+  const devA = '1a'.repeat(16), devB = '2b'.repeat(16), devC = '3c'.repeat(32);
+  const UA = { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1' };
+  const uu = await invite(owner, { username: 'test.kdliste', display_name: 'Test Geräteliste', role: 'driver', environment: 'test' });
+  const login = async (dev, headers = {}) => { const c = new Client(worker, env, 'kd-' + dev); const r = await c.req('POST', '/api/login', { username: 'test.kdliste', password: 'Sicheres-Passwort-2026', device_id: dev }, headers); eq(r.status, 200, 'Anmeldung'); return c; };
+  const a = await login(devA); await login(devB, UA);
+  const nl = async () => (await a.get('/api/notifications')).data.notifications.filter((x) => x.kind === 'new_login');
+  eq((await nl()).length, 1, 'B war neu');
+  // Liste mit „dieses Gerät“ (Header), ohne Hash
+  let r = await a.req('GET', '/api/me/known-devices', undefined, { 'x-cfp-device': devA });
+  eq(r.status, 200); eq(r.data.devices.length, 2);
+  ok(r.data.devices.every((d) => /^[0-9a-f]{16}$/.test(d.id) && d.first_seen && d.last_seen && !('device_hash' in d)), 'Kurzkennung statt Hash');
+  const cur = r.data.devices.find((d) => d.current), other = r.data.devices.find((d) => !d.current);
+  ok(cur && other && other.device === 'Safari · iPhone', JSON.stringify(r.data.devices));
+  eq((await a.req('GET', '/api/me/known-devices')).data.devices.filter((d) => d.current).length, 0, 'ohne Header: keines als aktuell markiert');
+  // aktuelles Gerät nicht vergessen; ungültige/fremde Kennung
+  r = await a.req('DELETE', `/api/me/known-devices/${cur.id}`, undefined, { 'x-cfp-device': devA }); eq(r.status, 400); eq(r.data.error, 'current_device');
+  eq((await a.req('DELETE', '/api/me/known-devices/zzzz', undefined, { 'x-cfp-device': devA })).status, 404, 'ungültiges Format → keine Route');
+  eq((await a.req('DELETE', '/api/me/known-devices/0000000000000000', undefined, { 'x-cfp-device': devA })).status, 404);
+  eq((await users.driver.req('DELETE', `/api/me/known-devices/${other.id}`)).status, 404, 'fremdes Konto kann nicht vergessen');
+  // vergessen → Protokoll, danach Anmeldung auf B wieder mit Hinweis
+  r = await a.req('DELETE', `/api/me/known-devices/${other.id}`, undefined, { 'x-cfp-device': devA }); eq(r.status, 200); eq(r.data.forgotten, 1);
+  const au = (await owner.get('/api/admin/audit?action=user.forget_device')).data.entries.filter((e) => e.target === uu.id);
+  eq(au.length, 1); eq(au[0].detail.device, 'Safari · iPhone');
+  await login(devB, UA);
+  eq((await nl()).length, 2, 'vergessenes Gerät meldet wieder');
+  // Benutzerliste: Anzahl bekannter Geräte (Inhaber und Fuhrparkleitung)
+  const row = (await owner.get('/api/users')).data.users.find((x) => x.username === 'test.kdliste'); eq(row.known_devices, 2);
+  // Uhrzeit im Hinweis in der Schreibweise der Sprache
+  const { berlinDateTimeLang } = await import('../src/util.js');
+  eq(berlinDateTimeLang('2026-10-14T18:05:00Z', 'de'), '14.10.2026, 20:05 Uhr');
+  eq(berlinDateTimeLang('2026-10-14T18:05:00Z', 'uk'), '14.10.2026 о 20:05');
+  eq(berlinDateTimeLang('2026-01-03T18:05:00Z', 'en'), '3 Jan 2026, 19:05');
+  eq(berlinDateTimeLang('kein Datum', 'de'), '');
+  ok(/^Safari · iPhone · \d\d\.\d\d\.\d{4}, \d\d:\d\d Uhr\./.test((await nl())[0].body), (await nl())[0].body);
+  await a.patch('/api/me', { language: 'en' }); await login(devC, UA);
+  ok(/^Safari · iPhone · \d{1,2} [A-Z][a-z]{2} \d{4}, \d\d:\d\d\./.test((await nl())[0].body), (await nl())[0].body);
+  // Texte DE/UK/EN, App sendet Kennung im Header
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const k of ['kd_title', 'kd_hint', 'kd_forget', 'kd_forget_confirm', 'kd_none', 'kd_n', 'unknown_device_l', 'err_current_device', 'err_invalid_device']) for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k], `${k} ${l}`);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("api('GET', '/api/me/known-devices', undefined, { headers: { 'x-cfp-device': deviceId() } })"), 'Liste mit Gerätekennung');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

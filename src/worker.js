@@ -187,6 +187,9 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
   if (path === '/api/me/sessions' && m === 'GET') return json({ sessions: await auth.listOwnSessions(env, user) });
   if (path === '/api/me/sessions/revoke-others' && m === 'POST') return json(await auth.revokeOtherSessions(env, user));
+  if (path === '/api/me/known-devices' && m === 'GET') return json({ devices: await auth.listKnownDevices(env, user, request) });
+  const kdm = path.match(/^\/api\/me\/known-devices\/([0-9a-f]{16})$/);
+  if (kdm && m === 'DELETE') return json(await auth.forgetKnownDevice(env, user, request, kdm[1]));
   const sm = path.match(/^\/api\/me\/sessions\/([0-9a-f]{16})$/);
   if (sm && m === 'DELETE') return json(await auth.revokeOwnSession(env, user, sm[1]));
   // Zwei-Faktor-Anmeldung (freiwillig, eigenes Konto); Zurücksetzen nur durch den Inhaber

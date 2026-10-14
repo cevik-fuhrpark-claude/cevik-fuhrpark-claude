@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test: Anmelde-Hinweis bei neuem Gerät. Anmeldung über das echte Formular (App erzeugt die Gerätekennung selbst):
-# erstes Gerät still, gleiches Gerät still, zweites Gerät → Hinweis; Hinweis öffnet Mein Konto mit aufgeklappter Geräteliste.
+# erstes Gerät still, gleiches Gerät still, zweites Gerät → Hinweis; Hinweis öffnet Mein Konto mit aufgeklappter Geräteliste;
+# bekannte Geräte mit „dieses Gerät“, ein anderes Gerät vergessen.
 # DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -46,6 +47,13 @@ with sync_playwright() as p:
         link.click(); q.wait_for_function("()=>location.hash==='#/more?o=sess'")
         q.wait_for_function("()=>document.querySelector('#sess') && document.querySelector('#sess').open && !document.querySelector('#sesslist').innerText.includes('…') && document.querySelectorAll('#sesslist .row').length>0")
         check(HINT[lang] in q.inner_text('#sess'),f'{lang} {w}px: Geräteliste offen mit Hinweistext')
+        q.wait_for_function("()=>document.querySelectorAll('#kdlist .row').length>0")
+        check(q.locator('#kdlist .chip.ok').count()==1,f'{lang} {w}px: bekannte Geräte mit genau einem „dieses Gerät“')
+        kd=q.locator('#kdlist [data-kd]').count(); check(kd>=1,f'{lang} {w}px: andere Geräte vergessbar ({kd})')
+        if lang=='en' and w==1366:
+            q.once('dialog',lambda d: d.accept()); q.locator('#kdlist [data-kd]').first.click()
+            q.wait_for_function(f"()=>document.querySelectorAll('#kdlist [data-kd]').length=={kd-1}")
+            check(True,'Gerät vergessen (Bestätigung, Liste neu geladen)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         if SHOTS and w!=820: q.screenshot(path=f'{SHOTS}/neugeraet_konto_{lang}_{w}.png')
