@@ -3053,6 +3053,36 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
   ok(app.includes("t('audit_csv_truncated')") && app.includes('/api/admin/audit?format=csv'), 'Oberfläche');
 });
 
+await test('Protokoll je Person (?user=): handelnd oder betroffen, Ansicht + CSV, Index, Benutzer-Link, Rechte', async () => {
+  const db = env.DB.db;
+  const ins = db.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)');
+  const fid = users.fleet.id; const fname = db.prepare('SELECT username FROM users WHERE id=?').get(fid).username;
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  try {
+    ins.run('aupers-1', fid, 'probe.selbst', 'VIN:X1', null, '2021-05-10T08:00:00.000Z'); // von der Person ausgelöst
+    ins.run('aupers-2', owner.id || null, 'probe.betrifft', fid, null, '2021-05-10T09:00:00.000Z'); // betrifft ihr Konto
+    ins.run('aupers-3', null, 'probe.andere', 'VIN:X2', JSON.stringify({ note: fid }), '2021-05-10T10:00:00.000Z'); // weder noch (nur im Detail erwähnt)
+    const r = await owner.get('/api/admin/audit?limit=1000&user=' + encodeURIComponent(fid)); eq(r.status, 200);
+    eq(r.data.person.id, fid); eq(r.data.person.username, fname, 'Name für die Anzeige');
+    ok(r.data.entries.every((e) => e.actor_id === fid || e.target === fid), 'nur handelnd oder betroffen');
+    eq(r.data.entries.filter((e) => e.id.startsWith('aupers-')).map((e) => e.id).sort().join(), 'aupers-1,aupers-2');
+    ok(!('person' in (await owner.get('/api/admin/audit?limit=1')).data), 'ohne Filter kein person-Feld');
+    eq((await owner.get('/api/admin/audit?limit=1000&action=probe.betrifft&user=' + fid)).data.entries.map((e) => e.id).join(), 'aupers-2', 'kombiniert mit Bereich');
+    eq((await owner.get('/api/admin/audit?user=gibt-es-nicht')).status, 404);
+    eq((await owner.get('/api/admin/audit?user=' + encodeURIComponent("x' OR 1=1"))).status, 400);
+    eq((await users.fleet.get('/api/admin/audit?user=' + fid)).status, 403, 'nur Inhaber');
+    const c = await owner.get(`/api/admin/audit?format=csv&from=2021-05-10&to=2021-05-10&user=${fid}`); eq(c.status, 200);
+    eq(dec(c).trim().split('\r\n').length, 3, 'CSV: Kopf + 2 Zeilen'); ok(!dec(c).includes('probe.andere'));
+    ok((c.headers.get('content-disposition') || '').includes('_' + fname.replace(/[^\w.-]/g, '_') + '.csv'), 'Dateiname mit Benutzername');
+    const last = db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get(); eq(JSON.parse(last.detail).user, fid, 'Export protokolliert Filter');
+    const plan = db.prepare("EXPLAIN QUERY PLAN SELECT a.id FROM audit_log a WHERE a.created_at < '9999' AND (a.actor_id = 'x' OR a.target = 'x') ORDER BY a.created_at DESC LIMIT 100").all().map((x) => x.detail).join(' | ');
+    ok(/idx_audit_actor/.test(plan) || /idx_audit_created/.test(plan), 'Index genutzt: ' + plan);
+    ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_audit_actor'").get(), 'Index vorhanden');
+  } finally { db.prepare("DELETE FROM audit_log WHERE id LIKE 'aupers-%'").run(); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('href="#/audit?u=${esc(u.id)}"') && app.includes("'&user=' + encodeURIComponent(pu)"), 'Benutzer-Link und Filter in der Oberfläche');
+});
+
 await test('Vorgangsliste: Sortierung älteste zuerst / zuletzt geändert vor dem LIMIT, unbekannt = Dringlichkeit', async () => {
   const all = (await users.fleet.get('/api/cases?status=&limit=500')).data.cases; ok(all.length >= 3);
   const byCreated = all.map((c) => c.created_at).sort();

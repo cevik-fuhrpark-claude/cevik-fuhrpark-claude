@@ -344,10 +344,11 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/admin/audit' && m === 'GET') {
     if (url.searchParams.get('format') === 'csv') {
       const r = await auth.auditCsv(env, user, Object.fromEntries(url.searchParams), maint.csvCell);
-      await auth.audit(env, user.id, 'admin.audit_export', null, { from: r.from, to: r.to, action: r.prefix, ...(r.q ? { q: '(Suche)' } : {}), rows: r.rows, ...(r.truncated ? { truncated: true } : {}) });
-      return new Response(r.csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-protokoll_${r.from}_${r.to}.csv"`, ...(r.truncated ? { 'x-cfp-truncated': String(auth.AUDIT_CSV_MAX) } : {}) } });
+      await auth.audit(env, user.id, 'admin.audit_export', null, { from: r.from, to: r.to, action: r.prefix, ...(r.q ? { q: '(Suche)' } : {}), ...(r.person ? { user: r.person.id } : {}), rows: r.rows, ...(r.truncated ? { truncated: true } : {}) });
+      return new Response(r.csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-protokoll_${r.from}_${r.to}${r.person ? '_' + r.person.username.replace(/[^\w.-]/g, '_') : ''}.csv"`, ...(r.truncated ? { 'x-cfp-truncated': String(auth.AUDIT_CSV_MAX) } : {}) } });
     }
-    return json({ entries: await auth.listAudit(env, user, Object.fromEntries(url.searchParams)) });
+    const r = await auth.listAudit(env, user, Object.fromEntries(url.searchParams));
+    return json({ entries: r.entries, ...(r.person ? { person: r.person } : {}) });
   }
 
   // Datenauskunft je Person (Inhaber, Vorbereitung Art. 15 DSGVO)
