@@ -6797,6 +6797,31 @@ await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne ver
   ok(app.includes("usersCsv(us, t, wsName, fmtDT)"), 'Knopf in der Benutzerliste');
 });
 
+await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne bzw. älteste, Einladungen zuletzt), Ansicht/CSV/Druck gleich, druckbar mit Vermerk, Bedienknöpfe nicht im Ausdruck', async () => {
+  const { sortUsers } = await import('../public/csv.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const mk = () => [
+    { display_name: 'Bert', username: 'b', has_password: 1, last_login: '2026-10-01T08:00:00Z' },
+    { display_name: 'Anna', username: 'a', has_password: 1, last_login: '2026-03-01T08:00:00Z' },
+    { display_name: 'Cem', username: 'c', has_password: 0, last_login: null },
+    { display_name: 'Dora', username: 'd', has_password: 1, last_login: null },
+    { display_name: 'Ünal', username: 'u', has_password: 1, last_login: '2026-03-01T08:00:00Z' },
+  ];
+  eq(sortUsers(mk(), 'role').map((u) => u.username).join(''), 'bacdu', 'Rolle = Serverreihenfolge unverändert');
+  eq(sortUsers(mk(), 'name').map((u) => u.username).join(''), 'abcdu', 'Name (deutsche Sortierung, Ü nach D)');
+  eq(sortUsers(mk(), 'login_oldest').map((u) => u.username).join(''), 'daubc', 'ohne Anmeldung → älteste → neueste → offene Einladung');
+  eq(sortUsers([], 'login_oldest').length, 0);
+  for (const lang of ['de', 'uk', 'en']) for (const k of ['usort_role', 'usort_name', 'usort_login_oldest', 'uc_print', 'sort_by', 'print', 'print_count']) ok(STRINGS[lang][k], `${k} ${lang}`);
+  const fn = app.slice(app.indexOf('async function viewUsers('), app.indexOf('async function viewSettings('));
+  ok(/const USER_SORTS = \['role', 'name', 'login_oldest'\];/.test(app) && fn.includes("sortPref('users', USER_SORTS, 'role')") && fn.includes('sortUsers(us, uso)'), 'Sortierung gemerkt und vor Anzeige/CSV angewandt');
+  ok(fn.indexOf('sortUsers(us, uso)') < fn.indexOf('usersCsv(us, t, wsName, fmtDT)'), 'CSV in derselben Reihenfolge');
+  ok(fn.includes("printHead([t('uc_print'), `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])") && fn.includes("$('#uprt').onclick = () => window.print()"), 'druckbar mit Vermerk (Sortierung, Anzahl)');
+  ok(fn.includes('<th class="noprint"></th>') && fn.includes('<td class="noprint">${u.id !== S.me.id'), 'Spalte mit Bedienknöpfen nicht im Ausdruck');
+  ok(/'wsload', 'users'\]/.test(fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

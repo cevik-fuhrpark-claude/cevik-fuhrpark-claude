@@ -34,6 +34,19 @@ export function agentFindingsCsv(findings, t, msg, next, d) {
 }
 // [CLAUDE] Berechtigungsübersicht (Benutzer): wer hat welche Rolle, aktiv?, 2FA, Push, letzte Anmeldung – für die regelmäßige Prüfung
 // der Zugänge (ausgeschiedene Personen). Keine Kennungen/Hashes, keine Personalnummer. ws(code) = Werkstattname, d(iso) = Zeitpunkt.
+// Benutzerliste sortieren (Ansicht, Druck und CSV gleich). 'role' = Reihenfolge des Servers (Umgebung → Rolle → Name).
+// 'login_oldest' für die Zugangsprüfung: zuerst Konten ohne protokollierte Anmeldung, dann die am längsten nicht genutzten;
+// offene Einladungen (noch kein Passwort) zuletzt.
+export function sortUsers(us, mode) {
+  const nm = (a, b) => String(a.display_name || '').localeCompare(String(b.display_name || ''), 'de') || String(a.username || '').localeCompare(String(b.username || ''));
+  if (mode === 'name') us.sort(nm);
+  if (mode === 'login_oldest') {
+    const rank = (u) => (!u.has_password ? 2 : u.last_login ? 1 : 0);
+    us.sort((a, b) => rank(a) - rank(b) || String(a.last_login || '').localeCompare(String(b.last_login || '')) || nm(a, b));
+  }
+  return us;
+}
+
 export function usersCsv(us, t, ws, d) {
   return toCsv([t('display_name'), t('username'), t('role'), t('workshop'), t('environment'), t('status'), t('tf_chip'), t('uc_push'), t('last_login')],
     us.map((u) => [u.display_name, u.username, t('role_' + u.role), u.workshop_site ? ws(u.workshop_site) : '', u.environment === 'test' ? t('env_testname') : t('env_prod'),

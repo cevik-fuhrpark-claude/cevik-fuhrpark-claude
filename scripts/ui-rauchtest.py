@@ -76,7 +76,7 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload'],
+    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users'],
     'workshop': ['cases/', 'stock/reorder', 'plan'],
     'driver': ['check/paper'],
 }
