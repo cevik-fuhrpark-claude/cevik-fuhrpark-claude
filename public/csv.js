@@ -47,6 +47,19 @@ export function sortUsers(us, mode) {
   return us;
 }
 
+// Benutzerliste eingrenzen (Ansicht, Druck und CSV gleich): all | active | inactive (deaktiviert) | invite (Einladung offen)
+// | locked (gesperrt nach Fehlversuchen) | r_<rolle>. Unbekannte Auswahl = alle. Gibt eine neue Liste zurück.
+export function filterUsers(us, f) {
+  const now = new Date().toISOString();
+  const pick = {
+    active: (u) => u.has_password && u.active,
+    inactive: (u) => u.has_password && !u.active,
+    invite: (u) => !u.has_password,
+    locked: (u) => !!u.locked_until && String(u.locked_until) > now,
+  }[f] || (String(f || '').startsWith('r_') ? (u) => u.role === f.slice(2) : () => true);
+  return us.filter(pick);
+}
+
 export function usersCsv(us, t, ws, d) {
   return toCsv([t('display_name'), t('username'), t('role'), t('workshop'), t('environment'), t('status'), t('tf_chip'), t('uc_push'), t('last_login')],
     us.map((u) => [u.display_name, u.username, t('role_' + u.role), u.workshop_site ? ws(u.workshop_site) : '', u.environment === 'test' ? t('env_testname') : t('env_prod'),

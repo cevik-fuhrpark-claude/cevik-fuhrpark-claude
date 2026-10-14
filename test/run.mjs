@@ -6797,7 +6797,7 @@ await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne ver
   ok(app.includes("usersCsv(us, t, wsName, fmtDT)"), 'Knopf in der Benutzerliste');
 });
 
-await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne bzw. älteste, Einladungen zuletzt), Ansicht/CSV/Druck gleich, druckbar mit Vermerk, Bedienknöpfe nicht im Ausdruck', async () => {
+await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne bzw. älteste, Einladungen zuletzt) und Auswahl (Status/Rolle), Ansicht/CSV/Druck gleich, druckbar mit Vermerk, Bedienknöpfe nicht im Ausdruck', async () => {
   const { sortUsers } = await import('../public/csv.js');
   const { STRINGS } = await import('../public/i18n.js');
   const fs = await import('node:fs');
@@ -6813,11 +6813,26 @@ await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne b
   eq(sortUsers(mk(), 'name').map((u) => u.username).join(''), 'abcdu', 'Name (deutsche Sortierung, Ü nach D)');
   eq(sortUsers(mk(), 'login_oldest').map((u) => u.username).join(''), 'daubc', 'ohne Anmeldung → älteste → neueste → offene Einladung');
   eq(sortUsers([], 'login_oldest').length, 0);
+  // Auswahl (Status/Rolle) – neue Liste, Original unverändert
+  const { filterUsers } = await import('../public/csv.js');
+  const fut = new Date(Date.now() + 600000).toISOString(), past = new Date(Date.now() - 600000).toISOString();
+  const pool = [
+    { username: 'a', role: 'driver', has_password: 1, active: 1 },
+    { username: 'b', role: 'fleet', has_password: 1, active: 0 },
+    { username: 'c', role: 'driver', has_password: 0, active: 1 },
+    { username: 'd', role: 'workshop', has_password: 1, active: 1, locked_until: fut },
+    { username: 'e', role: 'viewer', has_password: 1, active: 1, locked_until: past },
+  ];
+  const fu = (f) => filterUsers(pool, f).map((u) => u.username).join('');
+  eq(fu('all'), 'abcde'); eq(fu('active'), 'ade'); eq(fu('inactive'), 'b'); eq(fu('invite'), 'c'); eq(fu('locked'), 'd', 'abgelaufene Sperre zählt nicht');
+  eq(fu('r_driver'), 'ac'); eq(fu('r_owner'), ''); eq(fu('quatsch'), 'abcde', 'unbekannt = alle'); eq(pool.length, 5);
+  for (const lang of ['de', 'uk', 'en']) for (const k of ['ufilter', 'ufilter_all', 'ufilter_active', 'ufilter_inactive', 'ufilter_invite', 'ufilter_locked', 'ufilter_shown', 'status', 'role']) ok(STRINGS[lang][k], `${k} ${lang}`);
   for (const lang of ['de', 'uk', 'en']) for (const k of ['usort_role', 'usort_name', 'usort_login_oldest', 'uc_print', 'sort_by', 'print', 'print_count']) ok(STRINGS[lang][k], `${k} ${lang}`);
   const fn = app.slice(app.indexOf('async function viewUsers('), app.indexOf('async function viewSettings('));
-  ok(/const USER_SORTS = \['role', 'name', 'login_oldest'\];/.test(app) && fn.includes("sortPref('users', USER_SORTS, 'role')") && fn.includes('sortUsers(us, uso)'), 'Sortierung gemerkt und vor Anzeige/CSV angewandt');
-  ok(fn.indexOf('sortUsers(us, uso)') < fn.indexOf('usersCsv(us, t, wsName, fmtDT)'), 'CSV in derselben Reihenfolge');
-  ok(fn.includes("printHead([t('uc_print'), `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])") && fn.includes("$('#uprt').onclick = () => window.print()"), 'druckbar mit Vermerk (Sortierung, Anzahl)');
+  ok(/const USER_SORTS = \['role', 'name', 'login_oldest'\];/.test(app) && fn.includes("sortPref('users', USER_SORTS, 'role')") && fn.includes("sortPref('users_filter', USER_FILTERS, 'all')") && fn.includes('const us = sortUsers(filterUsers(all, ufi), uso);'), 'Sortierung/Auswahl gemerkt und vor Anzeige/CSV angewandt');
+  ok(fn.indexOf('sortUsers(filterUsers(all, ufi), uso)') < fn.indexOf('usersCsv(us, t, wsName, fmtDT)'), 'CSV in derselben Reihenfolge und Auswahl');
+  ok(fn.includes('const no2fa = all.filter(') && fn.includes('const noPush = all.filter('), 'Hinweise (2FA/Push) unabhängig von der Auswahl');
+  ok(fn.includes("printHead([t('uc_print'), ufi !== 'all' ? `${t('ufilter')}: ${ufLabel(ufi)}` : '', `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])") && fn.includes("$('#uprt').onclick = () => window.print()"), 'druckbar mit Vermerk (Auswahl, Sortierung, Anzahl)');
   ok(fn.includes('<th class="noprint"></th>') && fn.includes('<td class="noprint">${u.id !== S.me.id'), 'Spalte mit Bedienknöpfen nicht im Ausdruck');
   ok(/'wsload', 'users'\]/.test(fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
 });

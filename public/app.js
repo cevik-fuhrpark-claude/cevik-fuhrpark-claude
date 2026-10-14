@@ -2,7 +2,7 @@
 import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason, translateNextAction, translateLockReason } from './i18n.js';
 import { findingMessage } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
-import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, readCsvFile } from './csv.js';
+import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, readCsvFile } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -2894,16 +2894,21 @@ async function loadTotp() {
 }
 
 const USER_SORTS = ['role', 'name', 'login_oldest'];
+const USER_ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
+const USER_FILTERS = ['all', 'active', 'inactive', 'invite', 'locked', ...USER_ROLES.map((r) => 'r_' + r)];
 async function viewUsers() {
-  const us = (await api('GET', '/api/users')).users;
-  // Sortierung nur in der Ansicht (Server liefert Umgebung → Rolle → Name), siehe sortUsers() in csv.js
+  const all = (await api('GET', '/api/users')).users;
+  // Sortierung und Auswahl nur in der Ansicht (Server liefert Umgebung → Rolle → Name), siehe sortUsers()/filterUsers() in csv.js
   const uso = S.userSort || (S.userSort = sortPref('users', USER_SORTS, 'role'));
-  sortUsers(us, uso);
-  const roles = S.me.role === 'owner' ? ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'] : ['driver', 'workshop', 'viewer'];
+  const ufi = S.userFilter || (S.userFilter = sortPref('users_filter', USER_FILTERS, 'all'));
+  const us = sortUsers(filterUsers(all, ufi), uso);
+  const roles = S.me.role === 'owner' ? USER_ROLES : ['driver', 'workshop', 'viewer'];
+  const ufLabel = (k) => (k.startsWith('r_') ? t('role_' + k.slice(2)) : t('ufilter_' + k));
+  // Hinweise immer über alle Konten (unabhängig von der Auswahl)
   // Hinweis (nur Anzeige, keine Pflicht): aktive Verwaltungskonten im Betrieb ohne Zwei-Faktor-Anmeldung
-  const no2fa = us.filter((u) => u.active && u.has_password && u.environment === 'production' && ['owner', 'fleet'].includes(u.role) && !u.has_totp);
+  const no2fa = all.filter((u) => u.active && u.has_password && u.environment === 'production' && ['owner', 'fleet'].includes(u.role) && !u.has_totp);
   // Hinweis (nur Anzeige): aktive Betriebskonten ohne angemeldetes Push-Gerät – dringende Hinweise (z. B. Fahrzeugsperre) nur in der App
-  const noPush = us.filter((u) => u.active && u.has_password && u.environment === 'production' && u.role !== 'viewer' && !u.push_devices);
+  const noPush = all.filter((u) => u.active && u.has_password && u.environment === 'production' && u.role !== 'viewer' && !u.push_devices);
   render(`<h1>${esc(t('users'))}</h1>${no2fa.length ? `<div class="panel warn small" role="note">${esc(t('tf_admin_hint').replace('{n}', no2fa.length))} <a href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}${noPush.length ? `<div class="panel warn small" role="note" id="nopush">${esc(t('push_admin_hint').replace('{n}', noPush.length))} <a href="#/help?s=push">${esc(t('help_push_t'))} ›</a></div>` : ''}<div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
       <label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('username'))}</label><input name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
@@ -2911,10 +2916,12 @@ async function viewUsers() {
       <div id="wsrow" hidden><label>${esc(t('workshop'))}</label><select name="workshop_site">${S.meta.workshops.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select></div>
       ${S.me.role === 'owner' ? `<label>${esc(t('environment'))}</label><select name="environment"><option value="test">${esc(t('env_testname'))}</option><option value="production">${esc(t('env_prod'))}</option></select>` : ''}
       <div class="actions"><button class="btn">${esc(t('new_user'))}</button></div></form></details>
-    <div class="actions" style="flex-wrap:wrap"><select id="usort" aria-label="${esc(t('sort_by'))}" style="flex:1 1 100%;max-width:420px">${USER_SORTS.map((k) => `<option value="${k}"${uso === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('usort_' + k))}</option>`).join('')}</select><button type="button" class="btn secondary" id="ucsv" title="${esc(t('uc_hint'))}">${esc(t('uc_btn'))}</button><button type="button" class="btn secondary" id="uprt" title="${esc(t('uc_hint'))}">${esc(t('print'))}</button></div>
-    ${printHead([t('uc_print'), `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])}
+    <div class="actions" style="flex-wrap:wrap"><select id="usort" aria-label="${esc(t('sort_by'))}" style="flex:1 1 100%;max-width:420px">${USER_SORTS.map((k) => `<option value="${k}"${uso === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('usort_' + k))}</option>`).join('')}</select><select id="ufilt" aria-label="${esc(t('ufilter'))}" style="flex:1 1 100%;max-width:420px"><optgroup label="${esc(t('status'))}">${USER_FILTERS.filter((k) => !k.startsWith('r_')).map((k) => `<option value="${k}"${ufi === k ? ' selected' : ''}>${esc(t('ufilter'))}: ${esc(ufLabel(k))}</option>`).join('')}</optgroup><optgroup label="${esc(t('role'))}">${USER_FILTERS.filter((k) => k.startsWith('r_') && (S.me.role === 'owner' || roles.includes(k.slice(2)) || all.some((u) => u.role === k.slice(2)))).map((k) => `<option value="${k}"${ufi === k ? ' selected' : ''}>${esc(t('ufilter'))}: ${esc(ufLabel(k))}</option>`).join('')}</optgroup></select><button type="button" class="btn secondary" id="ucsv" title="${esc(t('uc_hint'))}">${esc(t('uc_btn'))}</button><button type="button" class="btn secondary" id="uprt" title="${esc(t('uc_hint'))}">${esc(t('print'))}</button></div>
+    ${ufi !== 'all' ? `<p class="small muted noprint" id="ufcount">${esc(t('ufilter_shown').replace('{n}', us.length).replace('{m}', all.length))}</p>` : ''}
+    ${printHead([t('uc_print'), ufi !== 'all' ? `${t('ufilter')}: ${ufLabel(ufi)}` : '', `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])}
     <div class="scroll"><table class="stack printsm"><thead><tr><th>${esc(t('display_name'))}</th><th>${esc(t('role'))}</th><th>${esc(t('environment'))}</th><th class="noprint"></th></tr></thead><tbody>
     ${us.map((u) => `<tr><td>${esc(u.display_name)}<div class="small muted">${esc(u.username)}${u.has_password ? '' : ' · ' + esc(t('dq_invite_pending'))}</div>${u.has_password && !u.active ? `<span class="chip">${esc(t('inactive'))}</span> ` : ''}${u.locked_until ? `<span class="chip kritisch">${esc(t('locked_until'))} ${fmtDT(u.locked_until)}</span>` : ''}${u.has_totp ? ` <span class="chip ok" title="${esc(t('tf_title'))}">${esc(t('tf_chip'))}</span>` : ''}${u.sessions ? `<div class="small muted">${esc(t('active_sessions').replace('{n}', u.sessions))} · ${fmtDT(u.last_seen)}</div>` : ''}${u.active && u.has_password && u.role !== 'viewer' ? (u.push_devices ? `<div class="small muted">${esc(t('push_dev_n').replace('{n}', u.push_devices))}</div>` : ` <span class="chip mittel">${esc(t('push_dev_none'))}</span>`) : ''}${u.known_devices ? `<div class="small muted">${esc(t('kd_n').replace('{n}', u.known_devices))}</div>` : ''}${u.has_password ? `<div class="small muted">${u.last_login ? `${esc(t('last_login'))}: ${fmtDT(u.last_login)}` : esc(t('last_login_none'))}</div>` : ''}</td><td>${esc(t('role_' + u.role))}${u.workshop_site ? ' · ' + esc(wsName(u.workshop_site)) : ''}</td><td>${u.environment === 'test' ? '<span class="chip test">TEST</span>' : esc(t('env_prod'))}</td><td class="noprint">${u.id !== S.me.id ? `${u.locked_until ? `<button class="btn secondary" data-unlock="${esc(u.id)}">${esc(t('unlock'))}</button> ` : ''}${u.sessions ? `<button class="btn secondary" data-revoke="${esc(u.id)}" data-name="${esc(u.display_name)}">${esc(t('revoke_sessions'))}</button> ` : ''}<button class="btn secondary" data-inv="${esc(u.id)}">${esc(t('new_invite'))}</button> <button class="btn secondary" data-act="${esc(u.id)}" data-on="${u.active ? 0 : 1}">${esc(u.active ? t('deactivate') : t('activate'))}</button>` : ''}${S.me.role === 'owner' && u.has_totp && u.id !== S.me.id ? ` <button class="btn secondary" data-tfr="${esc(u.id)}" data-name="${esc(u.display_name)}">${esc(t('tf_reset'))}</button>` : ''}${S.me.role === 'owner' ? ` <button class="btn secondary" data-dex="${esc(u.id)}" data-user="${esc(u.username)}" title="${esc(t('data_export_hint'))}">${esc(t('data_export'))}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`, 'more');
+  $('#ufilt').onchange = () => { const v = $('#ufilt').value; S.userFilter = sortPref('users_filter', USER_FILTERS, 'all', USER_FILTERS.includes(v) ? v : 'all'); viewUsers(); };
   $('#usort').onchange = () => { const v = $('#usort').value; S.userSort = sortPref('users', USER_SORTS, 'role', USER_SORTS.includes(v) ? v : 'role'); viewUsers(); };
   $('#uprt').onclick = () => window.print();
   $('#ucsv').onclick = () => download(new Blob([usersCsv(us, t, wsName, fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-benutzer_${bDate()}.csv`);
