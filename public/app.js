@@ -1264,7 +1264,7 @@ async function viewVehicle(id, focusEv = null) {
   // Offene Agentenbefunde dieses Fahrzeugs (Server liefert sie nur Inhaber/Fuhrparkleitung); bei kritischen aufgeklappt
   const AFS = { kritisch: 'kritisch', handeln: 'mittel', hinweis: '', info: '' };
   const af = d.agent_findings || [];
-  const afHtml = af.length ? `<details class="panel" id="vaf"${af.some((f) => f.severity === 'kritisch') ? ' open' : ''}><summary><b>${esc(t('veh_findings'))}</b> <span class="chip ${AFS[af[0].severity]}">${af.length}</span></summary><div class="list" style="margin-top:8px">${af.map((f) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}"><span class="chip ${AFS[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${f.case_id ? `<a href="#/cases/${esc(f.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('')}</div><p class="small muted">${esc(t('veh_findings_hint'))} <a class="noprint" href="#/master">${esc(t('nav_master'))} ›</a></p></details>` : '';
+  const afHtml = af.length ? `<details class="panel" id="vaf"${af.some((f) => f.severity === 'kritisch') ? ' open' : ''}><summary><b>${esc(t('veh_findings'))}</b> <span class="chip ${AFS[af[0].severity]}">${af.length}</span></summary><div class="list" style="margin-top:8px">${af.map((f) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}"><span class="chip ${AFS[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${f.case_id ? `<a href="#/cases/${esc(f.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('')}</div><p class="small muted">${esc(t('veh_findings_hint'))} <a class="noprint" href="#/master" id="vafm">${esc(t('nav_master'))} ›</a></p></details>` : '';
   // Prüfergebnis fehlt (in der App erfasste Pflichtprüfung ohne Ergebnis) – Knopf öffnet das Formular in „Bisherige Durchführungen“
   const rmHtml = (d.result_missing || []).length ? `<div class="panel" id="vrm"><b>${esc(t('dq_inspection_no_result'))}</b><div>${d.result_missing.map((r) => `${esc(mk(r.kind))} · ${fmtD(r.done_date)}`).join(' · ')}</div>${canMaint ? `<div class="actions noprint">${d.result_missing.map((r) => `<button type="button" class="btn secondary" data-rmgo="${esc(r.event_id)}">${esc(t('res_add_go'))}: ${esc(mk(r.kind))}</button>`).join('')}</div>` : ''}</div>` : '';
   let html = `<p class="noprint"><a href="#/vehicles">‹ ${esc(t('back'))}</a></p><div>${plate(v.plate, { big: true, locked: d.cases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)) })}</div>
@@ -1329,6 +1329,8 @@ async function viewVehicle(id, focusEv = null) {
   html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${bDate()}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (canMaint) html += `<section class="panel noprint"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
   render(html, isMgr() ? 'master' : 'vehicles');
+  // „Zum Management-Panel“ aus den Agentenbefunden: Panel gleich auf dieses Kennzeichen eingrenzen (Suche, alle Schweregrade)
+  const vafm = $('#vafm'); if (vafm) vafm.onclick = () => { S.afQ = v.plate; S.afSev = 'all'; };
   if ($('#vnotes')) loadVehicleNotes(v.id);
 
   renderTires(id, $('#tires'));
@@ -1986,6 +1988,7 @@ const fcLabel = (code) => (code && STRINGS.de['fc_' + code] ? `<b style="display
 async function viewMaster() {
   const p = await api('GET', '/api/master');
   // Befunde filtern (nur Anzeige im Browser): Schweregrad + Freitext über den angezeigten Zeilentext; CSV exportiert die angezeigte Auswahl
+  if (p.findings.length <= 1) { S.afSev = 'all'; S.afQ = ''; } // Filterknöpfe/Suchfeld gibt es erst ab zwei Befunden
   const afSev = ['all', 'kritisch', 'handeln', 'hinweis', 'info'].includes(S.afSev) ? S.afSev : 'all';
   const sev = { kritisch: 'kritisch', handeln: 'mittel', hinweis: '', info: '' };
   let html = `<h1>${esc(t('master_title'))}</h1>
@@ -2002,7 +2005,7 @@ async function viewMaster() {
   const afRows = $$('#afl [data-afi]');
   const afShown = () => afRows.filter((r) => r.style.display !== 'none').map((r) => p.findings[Number(r.dataset.afi)]);
   const applyAf = () => {
-    const q = (S.afQ || '').trim().toLocaleLowerCase();
+    const q = $('#afq') ? (S.afQ || '').trim().toLocaleLowerCase() : ''; // ohne Suchfeld (≤ 1 Befund) nie unsichtbar filtern
     for (const r of afRows) r.style.display = (afSev === 'all' || r.dataset.sev === afSev) && (!q || r.textContent.toLocaleLowerCase().includes(q)) ? '' : 'none';
     const c = $('#afcnt'); if (c) { const n = afShown().length; c.textContent = n === p.findings.length ? '' : t('af_shown').replace('{n}', n).replace('{m}', p.findings.length); }
   };

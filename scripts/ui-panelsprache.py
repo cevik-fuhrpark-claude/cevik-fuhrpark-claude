@@ -61,6 +61,10 @@ with sync_playwright() as p:
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'Akte {lang} {w}px: kein Querscrollen')
         check(not errs,f'Akte {lang} {w}px: keine Skriptfehler {errs}')
         if SHOTS: q.locator('#vaf').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/akte_{lang}_{w}.png')
+        # Akte → Management-Panel: Suche ist auf das Kennzeichen eingegrenzt
+        q.click('#vafm'); q.wait_for_selector('#afq')
+        check(q.input_value('#afq')=='PS-ANL 1',f'Akte → Panel {lang} {w}px: Suche auf Kennzeichen')
+        q.fill('#afq','')
         # Fahrzeugliste: Chip „N× Agentenbefund offen“ und Filter „Mit Agentenbefunden“ (nur Leitung)
         VF={'de':['Agentenbefund offen','Mit Agentenbefunden'],'uk':['Відкриті висновки агента','З висновками агента'],'en':['agent finding open','With agent findings']}
         q.goto(B+'/#/vehicles'); q.wait_for_selector('[data-af]')
