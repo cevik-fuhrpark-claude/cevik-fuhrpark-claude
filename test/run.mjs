@@ -7035,7 +7035,7 @@ await test('Hilfe „Benutzer, Zugänge & Protokoll“: nur Inhaber/Fuhrparkleit
     eq(tx.split('|').length, 8, `8 Schritte ${l}`);
     for (const n of [days, after, mins, minLen]) ok(new RegExp(`(^|\\D)${n}(\\D|$)`).test(tx), `${l}: Zahl ${n}`);
     // genannte Knöpfe/Bezeichnungen existieren genau so in der App-Sprache
-    for (const k of ['new_user', 'new_invite', 'inv_expired', 'unlock', 'revoke_sessions', 'deactivate', 'activate', 'tf_chip', 'tf_reset', 'usort_login_oldest', 'ufilter', 'au_access', 'audit_until', 'au_target', 'export_csv', 'print', 'audit', 'users'])
+    for (const k of ['new_user', 'ue_edit', 'new_invite', 'inv_expired', 'unlock', 'revoke_sessions', 'deactivate', 'activate', 'tf_chip', 'tf_reset', 'usort_login_oldest', 'ufilter', 'au_access', 'audit_until', 'au_target', 'export_csv', 'print', 'audit', 'users'])
       ok(tx.includes(S[k]), `${l}: nennt „${S[k]}“ (${k})`);
     ok(tx.includes(S.unused_setting.split(' (')[0]), `${l}: nennt Einstellung`);
     for (const k of ['active', 'inactive', 'locked', 'invite']) ok(tx.includes(S['ufilter_' + k].split(' (')[0]), `${l}: Auswahl ${k}`);
@@ -7043,6 +7043,52 @@ await test('Hilfe „Benutzer, Zugänge & Protokoll“: nur Inhaber/Fuhrparkleit
     const sec = [{ name: 'access', title: S.help_access_t, steps: tx.split('|') }];
     ok(helpMatches(sec, S.revoke_sessions).length === 1 && helpMatches(sec, S.au_target).length === 1, `${l}: Suche`);
   }
+});
+
+await test('Benutzer bearbeiten: Name/Rolle/Werkstatt/Umgebung, Protokoll „geändert alt → neu“, Sitzungen nur bei Rollen-/Umgebungswechsel beendet, Rechte wie beim Anlegen', async () => {
+  const { auditDetailText } = await import('../public/i18n.js');
+  const u = await invite(owner, { username: 'ue.person', display_name: 'UE Person', role: 'driver', environment: 'test' });
+  eq((await u.get('/api/me')).status, 200);
+  // nur Name: Sitzung bleibt
+  const r1 = await owner.patch(`/api/users/${u.id}`, { display_name: 'UE Person Neu' });
+  eq(r1.status, 200); eq(r1.data.changed.join(), 'display_name'); eq(r1.data.sessions_ended, false);
+  eq((await u.get('/api/me')).status, 200, 'Namensänderung lässt angemeldet');
+  // Rolle → Werkstatt ohne Standort abgelehnt, mit Standort ok; Sitzung endet
+  eq((await owner.patch(`/api/users/${u.id}`, { role: 'workshop' })).status, 400, 'Werkstatt braucht Standort');
+  const r2 = await owner.patch(`/api/users/${u.id}`, { role: 'workshop', workshop_site: 'DORTMUND' });
+  eq(r2.status, 200); eq(r2.data.changed.sort().join(), 'role,workshop_site'); eq(r2.data.sessions_ended, true);
+  eq((await u.get('/api/me')).status, 401, 'Rollenwechsel beendet Sitzung');
+  const e = (await owner.get(`/api/admin/audit?user=${u.id}&action=user.`)).data.entries.find((x) => x.action === 'user.update' && x.detail?.changed?.role);
+  ok(e, 'Protokoll mit changed');
+  const d = e.detail;
+  eq(JSON.stringify(d.changed.role), JSON.stringify({ from: 'driver', to: 'workshop' })); eq(d.role, 'workshop', 'Grundfelder wie bisher');
+  ok(auditDetailText('de', d).includes('geändert: Rolle Fahrer → Werkstatt, Werkstatt – → DORTMUND'), 'Anzeige: ' + auditDetailText('de', d));
+  ok(auditDetailText('en', d).includes('changed: Role Driver → Workshop'), 'EN');
+  // keine Änderung → kein changed
+  const r3 = await owner.patch(`/api/users/${u.id}`, { role: 'workshop' });
+  eq(r3.status, 200); eq(r3.data.changed.length, 0);
+  // Fuhrparkleitung (Test): nur Fahrer/Werkstatt/Leser der eigenen Umgebung, keine Umgebung, nicht zur Leitung befördern
+  eq((await users.fleet.patch(`/api/users/${u.id}`, { role: 'viewer' })).status, 200, 'Leitung darf Werkstatt → Leser');
+  eq((await users.fleet.patch(`/api/users/${u.id}`, { role: 'fleet' })).status, 403, 'nicht befördern');
+  eq((await users.fleet.patch(`/api/users/${u.id}`, { environment: 'production' })).status, 403, 'keine Umgebung');
+  eq((await users.prodFleet.patch(`/api/users/${u.id}`, { display_name: 'x y' })).status, 403, 'fremde Umgebung');
+  eq((await users.fleet.patch(`/api/users/${users.prodFleet.id}`, { display_name: 'x y' })).status, 403, 'Leitungskonto');
+  eq((await users.driver.patch(`/api/users/${u.id}`, { display_name: 'x y' })).status, 403, 'Fahrer');
+  // eigene Rolle nicht änderbar
+  const me = (await owner.get('/api/me')).data.user || (await owner.get('/api/me')).data;
+  eq((await owner.patch(`/api/users/${me.id}`, { role: 'fleet' })).status, 400, 'eigene Rolle');
+  // Inhaber: Umgebung wechseln
+  const r4 = await owner.patch(`/api/users/${u.id}`, { environment: 'production' });
+  eq(r4.status, 200); eq(r4.data.changed.join(), 'environment'); eq(r4.data.sessions_ended, true);
+  ok(auditDetailText('de', (await owner.get(`/api/admin/audit?user=${u.id}&action=user.`)).data.entries[0].detail).includes('Umgebung Test → Betrieb'), 'Umgebung übersetzt');
+  // Oberfläche: Knopf nur bei erlaubten Konten, Bestätigung bei Rollen-/Umgebungswechsel, Texte DE/UK/EN
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const mayEdit = (u) => u.id !== S.me.id && (S.me.role === 'owner' || (roles.includes(u.role) && u.environment === S.me.environment));"), 'mayEdit wie Server');
+  ok(/if \(roleEnvChange && !confirm\(t\('ue_confirm'\)/.test(app), 'Bestätigung nur bei Rollen-/Umgebungswechsel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['ue_edit', 'ue_title', 'ue_confirm', 'ue_none', 'ue_saved_ended']) ok(STRINGS[l][k], `${k} ${l}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_title.includes('{name}') && STRINGS[l].ue_confirm.includes('{name}'), 'Platzhalter ' + l);
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

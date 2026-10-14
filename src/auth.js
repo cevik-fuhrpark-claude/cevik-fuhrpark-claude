@@ -396,8 +396,11 @@ export async function updateUser(env, actor, userId, body) {
     stmts.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').bind(now, userId));
   }
   await env.DB.batch(stmts);
-  await audit(env, actor.id, 'user.update', userId, { role, environment, active });
-  return { ok: true };
+  // geänderte Felder als alt → neu (Protokoll-Ansicht zeigt „geändert: Rolle Fahrer → Werkstatt“); Grundfelder bleiben wie bisher
+  const changed = {};
+  for (const [k, a, b] of [['role', target.role, role], ['environment', target.environment, environment], ['active', !!target.active, !!active], ['display_name', target.display_name, display], ['workshop_site', target.workshop_site || null, site || null]]) if (a !== b) changed[k] = { from: a, to: b };
+  await audit(env, actor.id, 'user.update', userId, { role, environment, active, ...(Object.keys(changed).length ? { changed } : {}) });
+  return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active };
 }
 
 export async function resetInvite(env, actor, userId) {
