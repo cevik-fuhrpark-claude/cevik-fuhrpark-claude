@@ -13,7 +13,7 @@ const TABLES = [
 // Bewusst nicht in der Sicherung (Test prüft, dass jede Tabelle hier oder oben steht):
 export const EXCLUDED = {
   users: 'eigene Abfrage ohne Passwort-Hash', settings: 'eigene Abfrage ohne Schlüssel', sessions: 'Anmeldesitzungen', invites: 'Einladungs-Token',
-  login_attempts: 'Fehlversuche (kurzlebig)', push_subscriptions: 'Geräteschlüssel', cmd_guard: 'technische Sperre', rate_limits: 'Mengenbegrenzung (kurzlebig)', login_challenges: 'Anmeldevorgänge Zwei-Faktor (kurzlebig)',
+  login_attempts: 'Fehlversuche (kurzlebig)', push_subscriptions: 'Geräteschlüssel', cmd_guard: 'technische Sperre', rate_limits: 'Mengenbegrenzung (kurzlebig)', login_challenges: 'Anmeldevorgänge Zwei-Faktor (kurzlebig)', known_devices: 'Gerätekennungen für den Anmelde-Hinweis',
   usage_daily: 'Nutzungsstatistik ohne Fachbezug', agent_runs: 'Laufprotokoll des Agenten (technisch)',
 };
 export const BACKUP_TABLES = TABLES;

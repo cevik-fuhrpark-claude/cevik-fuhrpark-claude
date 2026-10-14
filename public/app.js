@@ -175,7 +175,7 @@ const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox],
-  [/^#\/master(?:\?q=([^&]*))?$/, (q) => viewMaster(q)], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more$/, viewMore],
+  [/^#\/master(?:\?q=([^&]*))?$/, (q) => viewMaster(q)], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit$/, viewAudit], [/^#\/usage$/, viewUsage], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+))?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 const routeArg = (x) => { if (x === undefined) return undefined; try { return decodeURIComponent(x); } catch { return x; } };
@@ -184,6 +184,8 @@ async function route() {
   // Links mit encodeURIComponent(Fahrzeug-ID) enthalten „VIN%3A…“ – vor dem Abgleich mit den Routen auf „VIN:“ zurückführen
   const h = (location.hash || '#/').replace(/%3A/gi, ':');
   const pub = /^#\/(login|setup|invite\/)/.test(h);
+  // Seitenwechsel während eine Seite noch lädt (langsames Netz, schnelles Tippen): die ältere Seite darf die neuere nicht überschreiben
+  const gen = S.routeGen = (S.routeGen || 0) + 1;
   try {
     if (!S.me && !pub) {
       try { const r = await api('GET', '/api/me'); S.me = r.user; lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false; }
@@ -205,6 +207,9 @@ async function route() {
       if (!m) continue;
       // Optionale Gruppen ohne Treffer bleiben undefined (decodeURIComponent(undefined) ergäbe die Zeichenkette „undefined“), kaputte %-Folgen roh
       await fn(...m.slice(1).map(routeArg));
+      // Inzwischen wurde eine neuere Seite aufgerufen: war sie schon fertig, hat diese (ältere) Seite sie überschrieben → neu aufbauen
+      if (gen !== S.routeGen) { if ((S.routeDone || 0) > gen) route(); return; }
+      S.routeDone = gen;
       // Screenreader/Tastatur: nach Seitenwechsel Fokus auf die Überschrift (nicht bei Neuaufbau derselben Seite)
       // – außer die Ansicht hat selbst ein Feld fokussiert (z. B. Direktsprung ?ev= zum Formular „Prüfergebnis nachtragen“)
       const ae = document.activeElement;
@@ -215,6 +220,7 @@ async function route() {
     }
     location.hash = '#/';
   } catch (e) {
+    if (gen !== S.routeGen) return; // Fehler einer überholten Seite nicht über die aktuelle legen
     render(`<div class="panel alert"><p>${esc(e.message)}</p><button class="btn" id="rl">${esc(t('retry'))}</button></div>`);
     const rl = document.getElementById('rl'); if (rl) rl.onclick = () => location.reload();
   }
@@ -297,11 +303,19 @@ function viewLogin() {
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value });
+      const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value, device_id: deviceId() });
       if (r.second_factor) { viewLoginCode(r.challenge); return; }
       afterLogin();
     } catch (err) { toast(err.message, true); }
   };
+}
+// Gerätekennung für den Anmelde-Hinweis bei neuem Gerät: zufällig, nur in diesem Browser, bleibt beim Abmelden erhalten (keine Zugangsdaten)
+function deviceId() {
+  try {
+    let d = localStorage.getItem('cfp_device');
+    if (!/^[0-9a-f]{32}$/.test(d || '')) { d = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join(''); localStorage.setItem('cfp_device', d); }
+    return d;
+  } catch { return undefined; }
 }
 function afterLogin() { S.me = null; let next = '#/'; try { next = sessionStorage.getItem('cfp_after_login') || '#/'; sessionStorage.removeItem('cfp_after_login'); } catch {} location.hash = next; route(); }
 // Zweiter Schritt: Code aus der Authenticator-App oder Ersatzcode (Passwort bleibt nicht im Speicher der Seite)
@@ -317,7 +331,7 @@ function viewLoginCode(challenge) {
   $('#f2').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      const r = await api('POST', '/api/login/totp', { challenge, code: inp.value.trim() });
+      const r = await api('POST', '/api/login/totp', { challenge, code: inp.value.trim(), device_id: deviceId() });
       if (r.recovery_left !== undefined) toast(t('tf_rc_used').replace('{n}', r.recovery_left));
       afterLogin();
     } catch (err) {
@@ -359,7 +373,7 @@ async function viewInvite(token) {
   bindLang();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value }); if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
+    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -2054,7 +2068,7 @@ async function viewInbox() {
     <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
     ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
     <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.notifications.filter(NF[k]).length})</a>`).join('')}</div>` : ''}
-    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.notifications.length ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
+    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : x.kind === 'new_login' ? '#/more?o=sess' : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.notifications.length ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
   pushPanel($('#push'));
   const np = $('#np');
   np.ontoggle = async () => {
@@ -2746,7 +2760,7 @@ async function viewFleetTires() {
 }
 
 // ---------- Mehr / Benutzer / Einstellungen ----------
-function viewMore() {
+function viewMore(open) {
   render(`<h1>${esc(t('nav_more'))}</h1><div class="list">
     ${S.me.role !== 'driver' ? `<a class="row" href="#/vehicles"><span>${ICON.truck}</span><span class="title">${esc(t('vehicles'))}</span><span></span></a>` : ''}
     <a class="row" href="#/check"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>
@@ -2778,7 +2792,7 @@ function viewMore() {
   ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t('home_site_hint'))}</p></div>` : ''}
   <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
   <details id="tfa"><summary>${esc(t('tf_title'))}${S.me.totp_enabled ? ` <span class="chip ok">${esc(t('tf_chip'))}</span>` : ''}</summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
-  <details id="sess"><summary>${esc(t('my_sessions'))}</summary><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div></details>
+  <details id="sess"><summary>${esc(t('my_sessions'))}</summary><p class="small muted">${esc(t('new_login_hint'))}</p><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div></details>
   <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
   bindLang(true);
   const hs = $('#homesite');
@@ -2807,6 +2821,8 @@ function viewMore() {
     const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); loadSessions(); } catch (err) { toast(err.message, true); } };
   };
   sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
+  // Sprung aus dem Hinweis „Neue Anmeldung auf einem anderen Gerät“: Geräteliste gleich öffnen
+  if (open === 'sess') { sess.open = true; sess.scrollIntoView({ block: 'start' }); }
   const tfa = $('#tfa');
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   $('#lo').onclick = async () => { await api('POST', '/api/logout'); clearOfflineData(); resetUserState(); location.hash = '#/login'; };

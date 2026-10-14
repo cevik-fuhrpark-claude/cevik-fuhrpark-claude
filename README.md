@@ -11,7 +11,7 @@ Push-Benachrichtigungen mit Zustell-/Lesequittung und persönlicher Ruhezeit · 
 Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen) und Auslesungen Fahrerkarte/Fahrtenschreiber · Bußgelder & Anhörungen ·
 Versicherungsfälle · Reifen je Fahrzeug (inkl. Winterreifen-Nachweis und Reifenalter laut DOT) · Ersatzteillager mit Bestellvorschlag · Werkstattplan und Disposition (Verfügbarkeit, Sperren) ·
 Kennzahlen Instandhaltung, Mängelstatistik, Kosten je Fahrzeug · Datenqualität (Lücken/Widersprüche, CSV) · Protokoll und Datensicherung ·
-Druck/PDF, CSV- und Kalender-Exporte je Rolle · freiwillige Zwei-Faktor-Anmeldung (TOTP, Ersatzcodes) · Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
+Druck/PDF, CSV- und Kalender-Exporte je Rolle · freiwillige Zwei-Faktor-Anmeldung (TOTP, Ersatzcodes) · Hinweis bei Anmeldung auf neuem Gerät · Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
 
 **Technik:** Cloudflare Worker + D1 (EU) + KV (EU) + Workers AI, PWA ohne Framework, keine Laufzeitabhängigkeiten.
 
@@ -24,7 +24,7 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · freiwillige Zwei-Faktor-Anmeldu
 | `docs/RUNDGANG.md` | Ablaufplan Testrundgang (Fahrer → Leitung → Werkstatt → Freigabe) mit erwarteten Ergebnissen |
 
 ```bash
-npm test                                            # 225 Abnahmetests (Node ≥ 22)
+npm test                                            # 226 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

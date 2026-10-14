@@ -4,6 +4,7 @@ import {
   bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDate, isCalendarDate, likeEsc, caseVariants,
 } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
+import { notifyUsers, nt } from './notify.js';
 
 export const ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
 export const ENVS = ['test', 'production'];
@@ -76,7 +77,7 @@ async function ipKey(request) {
   return 'loginfail:' + (await sha256Hex('cfp-ip:' + ip)).slice(0, 24);
 }
 
-export async function login(env, request, body) {
+export async function login(env, request, body, ctx = null) {
   const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();
   const password = str(body.password, { required: true, max: 200, field: 'Passwort' });
   const ik = await ipKey(request);
@@ -119,6 +120,7 @@ export async function login(env, request, body) {
   await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(username).run();
   const cookie = await createSession(env, user.id, request);
   await audit(env, user.id, 'login', user.id, null);
+  await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }
 
@@ -133,7 +135,7 @@ async function recordFailure(env, username, att) {
 }
 
 // Zweiter Schritt der Anmeldung: Code aus der Authenticator-App oder ein Ersatzcode
-export async function loginSecondFactor(env, request, body) {
+export async function loginSecondFactor(env, request, body, ctx = null) {
   let res;
   try { res = await redeemChallenge(env, body); }
   catch (e) {
@@ -155,6 +157,7 @@ export async function loginSecondFactor(env, request, body) {
   await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(row.username).run();
   const cookie = await createSession(env, row.id, request);
   await audit(env, row.id, 'login', row.id, { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) });
+  await noteLoginDevice(env, ctx, row, request, body.device_id);
   return { user: publicUser(row), cookie, recovery_left: factor.kind === 'recovery' ? factor.left : undefined };
 }
 
@@ -219,7 +222,7 @@ export async function inviteInfo(env, token) {
   return { row, hash: h };
 }
 
-export async function acceptInvite(env, request, body) {
+export async function acceptInvite(env, request, body, ctx = null) {
   const { row, hash } = await inviteInfo(env, body.token);
   validatePassword(body.password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.password);
@@ -235,6 +238,7 @@ export async function acceptInvite(env, request, body) {
   // Neues Passwort ersetzt nicht den zweiten Faktor: mit eingeschalteter Zwei-Faktor-Anmeldung erst nach dem Code anmelden
   if (user.totp_enabled_at) return { second_factor: 'totp', challenge: await createChallenge(env, user.id) };
   const cookie = await createSession(env, row.user_id, request);
+  await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }
 
@@ -257,6 +261,38 @@ export function deviceFromUa(ua = '') {
   const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : null;
   const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : null;
   return [br, os].filter(Boolean).join(' · ') || 'Unbekanntes Gerät';
+}
+// ---- Anmelde-Hinweis bei neuem Gerät ----
+// Die App erzeugt je Browser eine zufällige Gerätekennung (localStorage, bleibt beim Abmelden erhalten) und sendet sie bei der Anmeldung mit.
+// Gespeichert wird nur ihr Hash je Konto. Meldet sich jemand auf einem Gerät an, das für dieses Konto unbekannt ist (oder ohne Kennung),
+// und hat das Konto schon mindestens ein bekanntes Gerät, bekommt die Person einen Hinweis (App + Push) und das Protokoll „login.new_device“.
+// Erste Anmeldung überhaupt: kein Hinweis. Kein Versand außerhalb der App.
+export const KNOWN_DEVICES_MAX = 20;
+export const KNOWN_DEVICE_DAYS = 400;
+const DEVICE_ID_RE = /^[0-9a-f]{32,64}$/;
+async function noteLoginDevice(env, ctx, userRow, request, deviceId) {
+  const now = nowIso();
+  const h = typeof deviceId === 'string' && DEVICE_ID_RE.test(deviceId) ? await sha256Hex('cfp-dev:' + deviceId) : null;
+  const label = deviceFromUa(request.headers.get('user-agent') || '');
+  const since = new Date(Date.now() - KNOWN_DEVICE_DAYS * 86400000).toISOString();
+  const r = await env.DB.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(device_hash = ?), 0) AS known FROM known_devices WHERE user_id=? AND last_seen >= ?')
+    .bind(h, userRow.id, since).first();
+  if (h) {
+    const st = [env.DB.prepare(`INSERT INTO known_devices(user_id, device_hash, label, first_seen, last_seen) VALUES (?,?,?,?,?)
+      ON CONFLICT(user_id, device_hash) DO UPDATE SET last_seen=excluded.last_seen, label=excluded.label`).bind(userRow.id, h, label, now, now)];
+    if (!r.known) st.push(env.DB.prepare(`DELETE FROM known_devices WHERE user_id=?1 AND device_hash NOT IN
+      (SELECT device_hash FROM known_devices WHERE user_id=?1 ORDER BY last_seen DESC LIMIT ${KNOWN_DEVICES_MAX})`).bind(userRow.id));
+    await env.DB.batch(st);
+  }
+  if (r.known || !r.n) return false;
+  const when = berlinDateTime(now);
+  const text = (l) => ({ title: nt(l, 'new_login'), body: nt(l, 'new_login_body').replace('{d}', label === 'Unbekanntes Gerät' ? nt(l, 'unknown_device') : label).replace('{t}', when) });
+  try {
+    await notifyUsers(env, ctx, userRow.environment, [userRow.id], { kind: 'new_login', ...text('de'), localize: text, langOf: new Map([[userRow.id, userRow.language]]),
+      eventKey: `new_login:${userRow.id}:${now}` });
+  } catch (e) { console.error('new_login notify', e); } // Hinweis darf die Anmeldung nie verhindern
+  await audit(env, userRow.id, 'login.new_device', userRow.id, { device: label, device_id: h ? 'neu' : 'fehlt' });
+  return true;
 }
 const SID_LEN = 16; // Kurzkennung = Anfang des Token-Hashes (aus ihr lässt sich kein Token ableiten)
 export async function listOwnSessions(env, user) {
@@ -489,5 +525,6 @@ export async function cleanupShortLived(env) {
     env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(Math.floor(Date.now() / 1000) - 2 * 86400),
     env.DB.prepare('DELETE FROM login_attempts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until < ?)').bind(dayAgo, now),
     env.DB.prepare('DELETE FROM login_challenges WHERE expires_at < ?').bind(now),
+    env.DB.prepare('DELETE FROM known_devices WHERE last_seen < ?').bind(new Date(Date.now() - KNOWN_DEVICE_DAYS * 86400000).toISOString()),
   ]);
 }

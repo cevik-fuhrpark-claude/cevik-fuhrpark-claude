@@ -26,6 +26,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
   const q = (sql, ...args) => env.DB.prepare(`${sql} LIMIT ${LIMIT}`).bind(...args);
   const stmts = {
     sessions: q('SELECT created_at, last_seen, expires_at, user_agent FROM sessions WHERE user_id=? ORDER BY last_seen DESC', userId),
+    known_devices: q('SELECT label, first_seen, last_seen FROM known_devices WHERE user_id=? ORDER BY first_seen', userId),
     push_devices: q('SELECT device_label, created_at, last_success_at, revoked_at FROM push_subscriptions WHERE user_id=? ORDER BY created_at', userId),
     invites: q('SELECT created_at, expires_at, used_at FROM invites WHERE user_id=? ORDER BY created_at', userId),
     vehicle_assignments: q(`SELECT d.valid_from, d.valid_to, d.evidence, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=? ORDER BY d.valid_from`, userId),

@@ -17,6 +17,7 @@ step "UI-Prüfhinweise in der App-Sprache"; sh scripts/restart-dev.sh > /dev/nul
 step "UI-Import-Hinweise in der App-Sprache"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-importhinweise.py > /tmp/cfp-import.log 2>&1 || { tail -20 /tmp/cfp-import.log; fail "Import-Hinweise"; }; tail -1 /tmp/cfp-import.log
 step "UI-Werkstatt Winterreifen"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-winter-werkstatt.py > /tmp/cfp-winter.log 2>&1 || { tail -20 /tmp/cfp-winter.log; fail "Werkstatt Winterreifen"; }; tail -1 /tmp/cfp-winter.log
 step "UI-Management-Panel in der App-Sprache"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-panelsprache.py > /tmp/cfp-panel.log 2>&1 || { tail -20 /tmp/cfp-panel.log; fail "Panel-Sprache"; }; tail -1 /tmp/cfp-panel.log
+step "UI-Anmelde-Hinweis neues Gerät"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-neues-geraet.py > /tmp/cfp-neugeraet.log 2>&1 || { tail -20 /tmp/cfp-neugeraet.log; fail "Neues Gerät"; }; tail -1 /tmp/cfp-neugeraet.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark

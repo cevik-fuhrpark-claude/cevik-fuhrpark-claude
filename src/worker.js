@@ -117,17 +117,17 @@ async function handleApi(request, env, ctx, url) {
     return json({ username: row.username, display_name: row.display_name, role: row.role, environment: row.environment });
   }
   if (path === '/api/invite/accept' && m === 'POST') {
-    const r = await auth.acceptInvite(env, request, await readJson(request));
+    const r = await auth.acceptInvite(env, request, await readJson(request), ctx);
     if (r.second_factor) return json({ second_factor: r.second_factor, challenge: r.challenge });
     return json({ user: r.user }, 200, { 'set-cookie': r.cookie });
   }
   if (path === '/api/login' && m === 'POST') {
-    const r = await auth.login(env, request, await readJson(request));
+    const r = await auth.login(env, request, await readJson(request), ctx);
     if (r.second_factor) return json({ second_factor: r.second_factor, challenge: r.challenge });
     return json({ user: r.user }, 200, { 'set-cookie': r.cookie });
   }
   if (path === '/api/login/totp' && m === 'POST') {
-    const r = await auth.loginSecondFactor(env, request, await readJson(request));
+    const r = await auth.loginSecondFactor(env, request, await readJson(request), ctx);
     return json({ user: r.user, ...(r.recovery_left !== undefined ? { recovery_left: r.recovery_left } : {}) }, 200, { 'set-cookie': r.cookie });
   }
 

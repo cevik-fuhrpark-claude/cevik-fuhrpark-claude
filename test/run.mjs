@@ -6666,6 +6666,65 @@ await test('Kurzanleitung für Fahrer (Aushang): alle Texte DE/UK/EN, Knopfnamen
   for (const l of ['de', 'uk', 'en']) ok(rt.includes(`guide?l=${l}`), `Rauchtest guide?l=${l}`);
 });
 
+await test('Anmelde-Hinweis bei neuem Gerät: erste Anmeldung still, bekanntes Gerät still, neues/ohne Kennung → Hinweis + Protokoll, Sprache, Einladung, höchstens 20, Bereinigung, nicht in Sicherung, in Auskunft', async () => {
+  const devA = 'a'.repeat(32), devB = 'b1'.repeat(16), devC = 'c'.repeat(32);
+  const UA = { 'user-agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36' };
+  const u = await invite(owner, { username: 'test.geraet', display_name: 'Test Gerät', role: 'driver', environment: 'test' }); // Annahme ohne Kennung: nichts gespeichert
+  const nl = async () => (await u.get('/api/notifications')).data.notifications.filter((x) => x.kind === 'new_login');
+  const login = async (dev, headers = {}) => { const c = new Client(worker, env, 'dev-' + (dev || 'none')); const r = await c.req('POST', '/api/login', { username: 'test.geraet', password: 'Sicheres-Passwort-2026', ...(dev !== undefined ? { device_id: dev } : {}) }, headers); eq(r.status, 200, 'Anmeldung'); return c; };
+  const kd = async () => (await env.DB.prepare('SELECT * FROM known_devices WHERE user_id=?').bind(u.id).all()).results;
+  await login(devA);
+  eq((await nl()).length, 0, 'erste Anmeldung mit Kennung: kein Hinweis'); eq((await kd()).length, 1);
+  ok(!(await kd())[0].device_hash.includes(devA) && /^[0-9a-f]{64}$/.test((await kd())[0].device_hash), 'nur Hash gespeichert');
+  await login(devA);
+  eq((await nl()).length, 0, 'bekanntes Gerät: kein Hinweis');
+  await login(devB, UA);
+  let n = await nl(); eq(n.length, 1, 'neues Gerät: ein Hinweis');
+  eq(n[0].title, 'Neue Anmeldung auf einem anderen Gerät'); ok(n[0].body.startsWith('Chrome · Android · ') && n[0].body.includes('Mein Konto'), n[0].body); eq(n[0].urgent, 0); eq(n[0].case_id, null);
+  await login(devB);
+  eq((await nl()).length, 1, 'jetzt bekannt: kein weiterer Hinweis');
+  await login(undefined); await login('xyz-keine-kennung');
+  eq((await nl()).length, 3, 'ohne/ungültige Kennung zählt als neues Gerät'); eq((await kd()).length, 2, 'ohne Kennung wird nichts gespeichert');
+  ok((await nl())[0].body.startsWith('Unbekanntes Gerät'), 'ohne Browserangabe: Unbekanntes Gerät');
+  const au = (await owner.get('/api/admin/audit?action=login.new_device')).data.entries.filter((e) => e.target === u.id);
+  eq(au.length, 3); ok(au.some((e) => e.detail.device_id === 'fehlt') && au.some((e) => e.detail.device === 'Chrome · Android'), 'Protokoll mit Gerät');
+  ok(!JSON.stringify(au).includes(devB), 'Kennung nicht im Protokoll');
+  // Sprache der Person (gespeichert beim Versand), Hinweis im anderen Konto nicht sichtbar
+  eq((await u.patch('/api/me', { language: 'uk' })).status, 200);
+  await login(devC, UA);
+  n = await nl(); eq(n[0].title, 'Новий вхід на іншому пристрої'); ok(n[0].body.includes('Мій акаунт') && !n[0].body.includes('Mein Konto'), n[0].body);
+  ok(!(await owner.get('/api/notifications')).data.notifications.some((x) => x.kind === 'new_login' && x.body.includes('Android')), 'nur die betroffene Person');
+  await u.patch('/api/me', { language: 'de' });
+  // neues Passwort per Einladungslink auf neuem Gerät → Hinweis
+  const ri = await owner.post(`/api/users/${u.id}/invite`);
+  const ci = new Client(worker, env, 'dev-invite');
+  eq((await ci.post('/api/invite/accept', { token: ri.data.invite_token, password: 'Neues-Sicheres-Pw-77', device_id: 'd'.repeat(32) })).status, 200);
+  const u2 = ci; eq((await u2.get('/api/notifications')).data.notifications.filter((x) => x.kind === 'new_login').length, 5, 'Einladung auf neuem Gerät meldet');
+  // höchstens 20 bekannte Geräte je Konto (älteste fallen heraus)
+  for (let i = 0; i < 22; i++) { const c = new Client(worker, env, 'devmax'); await c.post('/api/login', { username: 'test.geraet', password: 'Neues-Sicheres-Pw-77', device_id: i.toString(16).padStart(32, 'e') }); }
+  eq((await kd()).length, 20, 'Obergrenze 20');
+  // Bereinigung: 400 Tage ohne Anmeldung
+  await env.DB.prepare("UPDATE known_devices SET last_seen='2020-01-01T00:00:00.000Z' WHERE user_id=? AND device_hash IN (SELECT device_hash FROM known_devices WHERE user_id=? LIMIT 5)").bind(u.id, u.id).run();
+  const { cleanupShortLived } = await import('../src/auth.js'); await cleanupShortLived(env);
+  eq((await kd()).length, 15, 'alte Geräte bereinigt');
+  // Sicherung ohne, Datenauskunft mit (ohne Hash)
+  const bk = await owner.get('/api/admin/backup'); ok(!('known_devices' in bk.data.data), 'nicht in der Sicherung');
+  const dx = (await owner.get(`/api/admin/users/${u.id}/data-export`)).data;
+  eq(dx.known_devices.length, 15); ok(dx.known_devices.every((x) => !('device_hash' in x) && x.first_seen && x.last_seen), 'Auskunft ohne Kennung');
+  // Texte DE/UK/EN, App sendet Kennung und verlinkt den Hinweis auf die Geräteliste
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].new_login_hint && STRINGS[l].help_login2fa_s.split('|').length === 5, 'Text ' + l); }
+  const { nt } = await import('../src/notify.js');
+  for (const l of ['uk', 'en']) for (const k of ['new_login', 'new_login_body', 'unknown_device']) ok(nt(l, k) && nt(l, k) !== nt('de', k), `${k} ${l}`);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const p of ["'/api/login', {", "'/api/login/totp', {", "'/api/invite/accept', {"]) ok(new RegExp(p.replace(/[/.()]/g, '\\$&') + "[^\\n]*device_id: deviceId\\(\\)").test(app), 'Kennung bei ' + p);
+  ok(app.includes("x.kind === 'new_login' ? '#/more?o=sess'"), 'Hinweis öffnet Geräteliste');
+  // Seitenwechsel während des Ladens: ältere Seite überschreibt die neuere nicht (Fund beim UI-Test dieses Punkts)
+  ok(/const gen = S\.routeGen = /.test(app) && app.includes('if (gen !== S.routeGen) { if ((S.routeDone || 0) > gen) route(); return; }') && app.includes('if (gen !== S.routeGen) return;'), 'Seitenwechsel-Schutz im Router');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-neues-geraet.py'), 'UI-Test in pruefen.sh');
+  ok(!/clearOfflineData[\s\S]{0,400}cfp_device/.test(app.slice(app.indexOf('function clearOfflineData'), app.indexOf('function clearOfflineData') + 400)), 'Kennung bleibt beim Abmelden');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
