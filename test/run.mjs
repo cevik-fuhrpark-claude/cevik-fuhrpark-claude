@@ -3107,6 +3107,8 @@ await test('Protokoll je Fahrzeug (?vehicle=): nur Einträge mit Fahrzeug als Zi
   } finally { db.prepare("DELETE FROM audit_log WHERE id LIKE 'auveh-%'").run(); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("S.me.role === 'owner' ? `<a class=\"btn secondary\" href=\"#/audit?v=${esc(v.id)}\"") && app.includes("'&vehicle=' + encodeURIComponent(pv)"), 'Akte-Link nur Inhaber, Filter in Ansicht und CSV');
+  ok(app.includes('id="aprt"') && app.includes('<form id="aqf" class="actions noprint"') && /printHead\(\[t\('audit'\)/.test(app), 'Protokoll druckbar mit Vermerk (Filter, Person, Fahrzeug, Anzahl), Bedienelemente nicht im Ausdruck');
+  ok(/PRINT = \{\s*'owner': \[[^\]]*'audit'/.test((await import('node:fs')).readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
 });
 
 await test('Vorgangsliste: Sortierung älteste zuerst / zuletzt geändert vor dem LIMIT, unbekannt = Dringlichkeit', async () => {
@@ -6890,7 +6892,7 @@ await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne b
   ok(fn.includes('const no2fa = all.filter(') && fn.includes('const noPush = all.filter('), 'Hinweise (2FA/Push) unabhängig von der Auswahl');
   ok(fn.includes("printHead([t('uc_print'), ufi !== 'all' ? `${t('ufilter')}: ${ufLabel(ufi)}` : '', `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])") && fn.includes("$('#uprt').onclick = () => window.print()"), 'druckbar mit Vermerk (Auswahl, Sortierung, Anzahl)');
   ok(fn.includes('<th class="noprint"></th>') && fn.includes('<td class="noprint">${u.id !== S.me.id'), 'Spalte mit Bedienknöpfen nicht im Ausdruck');
-  ok(/'wsload', 'users'\]/.test(fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
+  ok(/'wsload', 'users'[,\]]/.test(fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
 });
 
 await test('Benutzerliste: Hinweis „lange nicht angemeldet“ nur mit Einstellung (leer = aus), Bezug letzte Anmeldung sonst Anlage, nur aktive Konten, Auswahl/Kennzeichnung, nichts automatisch deaktiviert', async () => {
