@@ -5979,7 +5979,7 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   ok(ph, 'printHead() fehlt');
   for (const x of ["class=\"print-only", "t('printed_at')", 'fmtDT(new Date().toISOString())', 'S.me.display_name', 'CEVIK']) ok(ph[1].includes(x), `printHead ohne ${x}`);
   // Ansichten ohne Personen-Vermerk (bewusst): leeres Papier-Formular und QR-Aufkleberbogen
-  const EXEMPT = { viewCheckPaper: 'leeres Formular zum Ausfüllen', viewQrSheet: 'Aufkleber' };
+  const EXEMPT = { viewCheckPaper: 'leeres Formular zum Ausfüllen', viewQrSheet: 'Aufkleber', viewDriverGuide: 'Aushang ohne Personennamen (Stand-Datum im Aushang)' };
   // Funktionen der App zerlegen
   const fns = {}; const re = /^(?:async )?function (\w+)\(/gm; const starts = [];
   for (let m; (m = re.exec(app));) starts.push([m[1], m.index]);
@@ -6356,6 +6356,38 @@ await test('HTML-Einschleusungs-Probe: Dev-Endpunkte nur im lokalen Dev-Server, 
   const esc = new Function('v', `return (${m[1]});`);
   eq(esc(`"'><b data-xss=1>X</b>&`), '&quot;&#39;&gt;&lt;b data-xss=1&gt;X&lt;/b&gt;&amp;');
   eq(esc(null), ''); eq(esc(0), '0');
+});
+
+await test('Kurzanleitung für Fahrer (Aushang): alle Texte DE/UK/EN, Knopfnamen sind vorhandene App-Texte, gleiche Schritte je Sprache, keine erfundenen Nummern', async () => {
+  const fs = await import('node:fs');
+  const { STRINGS } = await import('../public/i18n.js');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const GUIDE_SECTIONS = \[([^\]]+)\]/);
+  ok(m, 'GUIDE_SECTIONS in public/app.js');
+  const secs = m[1].match(/'(\w+)'/g).map((x) => x.slice(1, -1));
+  eq(secs.length, 7);
+  ok(/\[\/\^#\\\/guide\(\?:\\\?l=\(de\|uk\|en\)\)\?\$\/, \(l\) => viewDriverGuide\(l\)\]/.test(app), 'Route #/guide?l=de|uk|en');
+  ok(/href="#\/guide"/.test(app.slice(app.indexOf('function viewMore'))), 'Link unter „Mehr“');
+  const keys = ['guide', 'guide_hint', 'guide_lang', 'g_title', 'g_addr', 'g_printed', 'g_phone_dispo', 'g_phone_fleet', ...secs.flatMap((k) => [`g_${k}_t`, `g_${k}`])];
+  const ph = (s) => [...s.matchAll(/\{=?(\w+)\}/g)].map((x) => x[1]).sort().join(',');
+  for (const k of keys) for (const l of ['de', 'uk', 'en']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].trim(), `${l}.${k} fehlt`);
+  let used = 0;
+  for (const k of secs.map((x) => `g_${x}`)) {
+    const parts = { de: STRINGS.de[k].split('|').length, uk: STRINGS.uk[k].split('|').length, en: STRINGS.en[k].split('|').length };
+    ok(parts.de === parts.uk && parts.de === parts.en, `${k}: Schrittzahl je Sprache ${JSON.stringify(parts)}`);
+    eq(ph(STRINGS.uk[k]), ph(STRINGS.de[k]), `${k}: Platzhalter UK`); eq(ph(STRINGS.en[k]), ph(STRINGS.de[k]), `${k}: Platzhalter EN`);
+    for (const p of ph(STRINGS.de[k]).split(',').filter(Boolean)) { used++; for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][p], `${k}: App-Text ${l}.${p} fehlt`); ok(!p.startsWith('g_'), `${k}: verweist auf App-Text, nicht auf Aushangtext (${p})`); }
+    for (const l of ['de', 'uk', 'en']) ok(!/\d{4,}/.test(STRINGS[l][k]), `${l}.${k}: keine Telefonnummern/Ziffernfolgen im Aushang`);
+  }
+  ok(used >= 25, `nur ${used} App-Texte verwendet`);
+  // Knopfnamen stimmen mit den Texten der Oberfläche überein (z. B. „Meldung senden“, untere Leiste „Melden“/„Abfahrtskontrolle“)
+  for (const k of ['send_report', 'nav_new', 'nav_check', 'submit_inspection', 'push_enable', 'nav_more', 'notifications']) ok(app.includes(`t('${k}')`), `${k} wird in der Oberfläche verwendet`);
+  ok(/nicht weiterfahren/.test(STRINGS.de.prio_kritisch_d) && /Disposition/.test(STRINGS.de.outbox_call), 'kritischer Fall: nicht weiterfahren + Disposition anrufen');
+  // Hilfe „Ausdrucke & Exporte“ nennt den Aushang in allen Sprachen
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_exports_s.includes(STRINGS[l].guide.split(' (')[0]), `Hilfe ${l} nennt ${STRINGS[l].guide}`);
+  // Rauchtest öffnet die Ansicht (Bildschirm und Druck) in allen drei Aushangsprachen
+  const rt = fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8');
+  for (const l of ['de', 'uk', 'en']) ok(rt.includes(`guide?l=${l}`), `Rauchtest guide?l=${l}`);
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

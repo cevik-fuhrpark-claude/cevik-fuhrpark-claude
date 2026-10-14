@@ -16,11 +16,11 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
+    'owner': ['guide?l=de', 'guide?l=uk', 'guide?l=en', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
     'fleet': ['', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
     'workshop': ['', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'wsload', 'help'],
     'driver': ['', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check', 'help?q=foto'],
-    'dispatch': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help'],
+    'dispatch': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help', 'guide'],
     # Lesezugriff (z. B. Büro/Steuerberatung): nur lesen, keine Meldungen/Kontrollen
     'viewer': ['', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'fines', 'wsload', 'help', 'help?s=kpi', 'help?s=viewer'],
 }
@@ -76,11 +76,11 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload'],
+    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload'],
     'workshop': ['cases/', 'stock/reorder', 'plan'],
     'driver': ['check/paper'],
 }
-# Ausdruckvermerk: Druckzeitpunkt (Datum + Uhrzeit), angemeldete Person und „CEVIK“ – außer Papier-Formular/QR-Bogen
+# Ausdruckvermerk: Druckzeitpunkt (Datum + Uhrzeit), angemeldete Person und „CEVIK“ – außer Papier-Formular/QR-Bogen/Aushang (ohne Personennamen)
 PRINT_CHECK = """(who) => {
   const out = [];
   const W = document.documentElement.clientWidth;
@@ -98,7 +98,7 @@ PRINT_CHECK = """(who) => {
   }
   for (const el of app.querySelectorAll('button, input:not([type=hidden]), select, textarea')) if (shown(el)) { out.push(`Bedienelement im Ausdruck: ${el.outerHTML.slice(0, 70)}`); break; }
   const po = [...app.querySelectorAll('.print-only')].some(shown);
-  if (!po && !app.querySelector('.qrsheet, table.paper')) out.push('kein Ausdruckvermerk (print-only)');
+  if (!po && !app.querySelector('.qrsheet, table.paper, .guide')) out.push('kein Ausdruckvermerk (print-only)');
   if (po) {
     const txt = [...app.querySelectorAll('.print-only')].filter(shown).map((e) => e.textContent).join(' ');
     if (!txt.includes(who)) out.push(`Ausdruckvermerk ohne Person „${who}“: ${txt.slice(0, 80)}`);
@@ -424,7 +424,7 @@ with sync_playwright() as p:
                     # zusätzlich deutsche Fachwörter ohne Umlaut (z. B. „Inspektion“, „Sonstiges“ – so fiel die fehlende Übersetzung der Prüfarten auf)
                     de = pg.evaluate(r"""() => { const out = []; const DEW = /\b(Inspektion|Sonstiges|Fahrzeug\w*|Vorgang|Vorgänge|Abfahrtskontrolle|Hinweise?|Bremsen|Reifen|Hydraulik|Verbandkasten|Ladungssicherung|Speichern|Abbrechen|Zuordnung|Einstellungen|Nachweis|erledigt|Kennzeichen|Ölwechsel|Feuerlöscher|Prognose|Fahrer|Meldung|Standort|Anhänger)\b/; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
                       while (w.nextNode()) { const x = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
-                        if (x && (/[äöüßÄÖÜ]/.test(x) || DEW.test(x)) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null) out.push(x.slice(0, 60)); } return out; }""")
+                        if (x && (/[äöüßÄÖÜ]/.test(x) || DEW.test(x)) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null && !el.closest('[lang="de"]')) out.push(x.slice(0, 60)); } return out; }""")
                     if de:
                         problems.append(f'{where}: deutscher Text in {LANG}: {de[:4]}')
                 # Datensparsamkeit: Lesezugriff sieht keine Fahrernamen (Melder „Rauchtest driver“) in Vorgängen und Fahrzeugakte

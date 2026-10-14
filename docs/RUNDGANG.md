@@ -20,6 +20,8 @@ Umgebung „Test“ sichtbar; Betriebskonten sehen sie nicht.
    Jeder Einladungslink gilt 7 Tage. Für den Rundgang reicht ein Handy plus ein zweites Gerät oder ein privates
    Browserfenster je Konto (Konten nicht im selben Fenster wechseln).
 4. Optional: in jedem Testkonto unter **„Hinweise“ → Push „Aktivieren“** (iPhone: vorher „Teilen → Zum Home-Bildschirm“).
+5. Optional (für die spätere Einführung): Mehr → **„Kurzanleitung für Fahrer (Aushang)“** in der Sprache der Fahrer ausdrucken,
+   Telefonnummern von Hand eintragen und dem Test-Fahrer geben – zeigt, ob die Anleitung ohne Erklärung verständlich ist.
 
 ## Ablauf und erwartetes Ergebnis
 | # | Wer / Gerät | Schritt | Erwartet |
