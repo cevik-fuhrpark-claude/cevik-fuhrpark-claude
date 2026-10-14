@@ -6107,6 +6107,10 @@ await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE
     const s = readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
     for (const m of s.matchAll(/\bfm\(([^,]+),/g)) for (const q of m[1].matchAll(/'([A-Z_]+)'/g)) used.add(q[1]);
   }
+  for (const f of ['agent.js', 'contracts.js', 'claims.js', 'drivers.js', 'tacho.js', 'fines.js']) {
+    const raw = readFileSync(new URL('../src/' + f, import.meta.url), 'utf8').match(/\bmessage:\s*[`']/g);
+    ok(!raw, `${f}: Befundtext ohne Vorlage (fm(…) aus public/finding-messages.js verwenden)`);
+  }
   const unknown = [...used].filter((k) => !FINDING_MESSAGES.de[k]);
   ok(!unknown.length, `fm() mit unbekannter Vorlage: ${unknown.join(', ')}`);
   const orphan = keys.filter((k) => !used.has(k));
@@ -6121,7 +6125,8 @@ await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE
   // 4) Laufzeit: gespeicherte Befunde dieser Testsuite – Vorlage (DE) ergibt exakt den gespeicherten Text, UK/EN ohne Reste
   const rows = env.DB.db.prepare('SELECT finding_code, message, message_args FROM agent_findings').all();
   const withArgs = rows.filter((r) => r.message_args);
-  ok(withArgs.length >= 10, `nur ${withArgs.length} Befunde mit Vorlage gespeichert`);
+  const noArgs = [...new Set(rows.filter((r) => !r.message_args).map((r) => r.finding_code))];
+  ok(!noArgs.length && withArgs.length >= 50, `Befunde ohne Vorlage (nur deutscher Text): ${noArgs.join(', ')}`);
   const diff = []; const leftovers = [];
   for (const r of withArgs) {
     if (findingMessage(r.message_args, null, 'de') !== r.message) diff.push(`${r.finding_code}: ${r.message}`);

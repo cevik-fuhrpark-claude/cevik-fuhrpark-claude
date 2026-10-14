@@ -5,6 +5,7 @@
 // Umsetzung (vorsichtige Lesart): Das früheste nicht kopierte Ereignis liegt unmittelbar nach der letzten Auslesung,
 // daher „spätestens fällig“ = letzte erfasste Auslesung + 28 bzw. + 90 Tage. Ohne erfasste Auslesung wird KEINE Frist
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
+import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
 import { siteSelection } from './reports.js';
 import { audit } from './auth.js';
@@ -115,15 +116,15 @@ export async function tachoFindings(env, environment, settings) {
   const out = [];
   for (const d of r.drivers) {
     if (d.status === 'ueberfaellig') out.push({ code: 'TACHO_CARD_OVERDUE', subject: `${d.id}|fahrerkarte`, severity: 'handeln', requires_decision: 0,
-      message: `Fahrer ${d.display_name}: Fahrerkarte seit ${d.due} nicht ausgelesen (letzte Auslesung ${d.last}; Frist 28 Tage, FPersV § 2 Abs. 5).`, next_action: 'Fahrerkarte auslesen und Auslesung erfassen.' });
+      ...fm('TACHO_CARD_OVERDUE', { name: d.display_name, due: d.due, last: d.last }), next_action: 'Fahrerkarte auslesen und Auslesung erfassen.' });
     else if (d.status === 'bald') out.push({ code: 'TACHO_CARD_DUE', subject: `${d.id}|fahrerkarte`, severity: 'hinweis', requires_decision: 0,
-      message: `Fahrer ${d.display_name}: Fahrerkarte spätestens am ${d.due} auslesen.`, next_action: 'Auslesung einplanen.' });
+      ...fm('TACHO_CARD_DUE', { name: d.display_name, due: d.due }), next_action: 'Auslesung einplanen.' });
   }
   for (const v of r.vehicles) {
     if (v.status === 'ueberfaellig') out.push({ code: 'TACHO_VU_OVERDUE', vehicle_id: v.id, subject: `${v.id}|massenspeicher`, severity: 'handeln', requires_decision: 0,
-      message: `${v.plate}: Massenspeicher seit ${v.due} nicht ausgelesen (letzte Auslesung ${v.last}; Frist 90 Tage, FPersV § 2 Abs. 5).`, next_action: 'Fahrtenschreiber auslesen und Auslesung erfassen.' });
+      ...fm('TACHO_VU_OVERDUE', { plate: v.plate, due: v.due, last: v.last }), next_action: 'Fahrtenschreiber auslesen und Auslesung erfassen.' });
     else if (v.status === 'bald') out.push({ code: 'TACHO_VU_DUE', vehicle_id: v.id, subject: `${v.id}|massenspeicher`, severity: 'hinweis', requires_decision: 0,
-      message: `${v.plate}: Massenspeicher spätestens am ${v.due} auslesen.`, next_action: 'Auslesung einplanen.' });
+      ...fm('TACHO_VU_DUE', { plate: v.plate, due: v.due }), next_action: 'Auslesung einplanen.' });
   }
   return out;
 }

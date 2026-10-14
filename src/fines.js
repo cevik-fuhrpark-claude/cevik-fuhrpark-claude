@@ -1,4 +1,5 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
+import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
@@ -256,11 +257,11 @@ export async function fineFindings(env, environment, settings = null) {
     const label = `${f.fine_no} (${f.plate || f.plate_in_letter}, ${f.authority})`;
     if (f.response_due) {
       const days = Math.round((Date.parse(f.response_due) - Date.parse(today)) / 86400000);
-      if (days < 0) out.push({ code: 'FINE_OVERDUE', f, severity: 'handeln', requires_decision: 1, message: `${label}: Antwortfrist ${f.response_due} überschritten.`, next_action: 'Sofort beantworten bzw. Fristverlängerung klären.' });
-      else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, message: `${label}: Antwortfrist ${f.response_due} (in ${days} Tag(en)).`, next_action: 'Fahrer ermitteln und Schreiben beantworten.' });
+      if (days < 0) out.push({ code: 'FINE_OVERDUE', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_OVERDUE', { label, due: f.response_due }), next_action: 'Sofort beantworten bzw. Fristverlängerung klären.' });
+      else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: 'Fahrer ermitteln und Schreiben beantworten.' });
     }
-    if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, message: `${label}: Kennzeichen ${f.plate_in_letter} keinem Fahrzeug zugeordnet.`, next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
-    else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, message: `${label}: Fahrer zur Tatzeit noch nicht ermittelt.`, next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
+    if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
+    else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
   }
   return out;
 }

@@ -1,6 +1,7 @@
 // [CLAUDE] Versicherungsfälle je Vorgang (z. B. Unfall, Glasbruch, Sturm): nur Inhaber/Fuhrparkleitung.
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
+import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { csvCell } from './maintenance.js';
@@ -152,6 +153,6 @@ export async function claimFindings(env, environment, settings) {
     FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id
     WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND ic.reported_on <= ?`).bind(environment, limit).all()).results;
   return rows.map((r) => ({ code: 'CLAIM_OPEN_LONG', subject: r.id, case_id: r.case_id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 0,
-    message: `${r.case_no} (${r.plate}): Versicherungsfall bei ${r.insurer}${r.claim_no ? ', Schaden-Nr. ' + r.claim_no : ''} seit ${r.reported_on} ${STATUS_DE[r.status]} (Nachfassen nach ${n} Tagen eingestellt).`,
+    ...fm('CLAIM_OPEN_LONG', { label: `${r.case_no} (${r.plate})`, insurer: r.insurer, claim_no: r.claim_no || null, date: r.reported_on, st: r.status, days: n }),
     next_action: 'Beim Versicherer nach dem Stand fragen; Status bzw. Erstattung mit Nachweis im Vorgang eintragen.' }));
 }

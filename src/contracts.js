@@ -2,6 +2,7 @@
 // Grundsätze: Alle Angaben nur laut Vertrag (Pflicht-Nachweis); die App berechnet nur, was sich daraus ergibt
 // (spätester Kündigungstag = Vertragsende − Kündigungsfrist; km seit Übernahme; lineare Prognose, deutlich als Prognose gekennzeichnet).
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
+import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell } from './maintenance.js';
@@ -217,21 +218,19 @@ export async function contractFindings(env, settings) {
   if (!rows.length) return [];
   const km = new Map(rows.filter((r) => r.latest_km).map((r) => { const [k, at] = r.latest_km.split('|'); return [r.vehicle_id, { km: Number(k), measured_at: at }]; }));
   const today = berlinDate(); const w = warnDaysOf(settings); const out = [];
-  const fmt = (n) => n.toLocaleString('de-DE');
   for (const c of rows) {
     const s = contractStatus(c, km.get(c.vehicle_id), today, w);
-    const label = `${KIND_DE[c.kind]} (${c.partner}${c.contract_no ? ', Nr. ' + c.contract_no : ''})`;
     const base = { vehicle_id: c.vehicle_id, owner_role: 'fleet' };
     if (s.end && s.end.status === 'abgelaufen') out.push({ ...base, code: 'CONTRACT_ENDED', subject: `${c.id}|end`, severity: 'handeln', requires_decision: 1,
-      message: `${c.plate}: ${label} endete laut Eintrag am ${c.end_date} – in der App noch nicht als beendet markiert.`, next_action: 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
+      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date }), next_action: 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
     else if (s.end && s.end.status === 'laeuft_aus') out.push({ ...base, code: 'CONTRACT_ENDS_SOON', subject: `${c.id}|end`, severity: 'hinweis', requires_decision: 0,
-      message: `${c.plate}: ${label} endet am ${c.end_date} (in ${s.end.days} Tag(en)).`, next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
+      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days }), next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
     if (s.notice && s.notice.status === 'bald') out.push({ ...base, code: 'CONTRACT_NOTICE_DUE', subject: `${c.id}|notice`, severity: 'hinweis', requires_decision: 1,
-      message: `${c.plate}: ${label} – Kündigung laut Vertrag spätestens bis ${s.notice.by} (${c.notice_months} Monat(e) vor Ende ${c.end_date}).`, next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
+      ...fm('CONTRACT_NOTICE_DUE', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, by: s.notice.by, months: c.notice_months, end: c.end_date }), next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
     if (s.km && s.km.status === 'ueber') out.push({ ...base, code: 'CONTRACT_KM_OVER', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
-      message: `${c.plate}: ${label} – km-Kontingent ${fmt(c.km_allowance)} km überschritten (seit Übernahme ${fmt(s.km.driven)} km).`, next_action: 'Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.' });
+      ...fm('CONTRACT_KM_OVER', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, allow: c.km_allowance, driven: s.km.driven }), next_action: 'Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.' });
     else if (s.km && s.km.status === 'prognose_ueber') out.push({ ...base, code: 'CONTRACT_KM_FORECAST', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
-      message: `${c.plate}: ${label} – bei gleicher Fahrleistung voraussichtlich ${fmt(s.km.forecast_driven)} km bis Vertragsende (Kontingent ${fmt(c.km_allowance)} km; Prognose).`, next_action: 'Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.' });
+      ...fm('CONTRACT_KM_FORECAST', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, fc: s.km.forecast_driven, allow: c.km_allowance }), next_action: 'Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.' });
   }
   return out;
 }

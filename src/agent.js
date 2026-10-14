@@ -14,7 +14,7 @@ import { staleBefore } from './cases.js';
 import { latestKmByVehicle, kmDue, ruleDueKm, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { findingLabel } from '../public/finding-labels.js';
-import { renderFindingMessage, FINDING_ENUMS } from '../public/finding-messages.js';
+import { findingText as fm, FINDING_ENUMS } from '../public/finding-messages.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -57,9 +57,6 @@ export function reminderBody(codes, lang, environment) {
 // Einzelner neuer kritischer Befund: Kurzbezeichnung in der Sprache der Person statt des rohen Codes (ohne Kennzeichen/Namen –
 // Push-Texte erscheinen auf dem Sperrbildschirm), Code in Klammern für Rückfragen.
 export const criticalBody = (code, lang, environment) => `${findingLabel(code, lang)}${findingLabel(code, lang) !== code ? ` (${code})` : ''}${environment === 'test' ? ' · TEST' : ''}`;
-// Meldungstext aus der gemeinsamen Vorlage (public/finding-messages.js): deutscher Text in `message` (Master, Integrations-API, Protokoll),
-// Vorlagenschlüssel + Werte in `message_args`, damit die Oberfläche denselben Befund in der Sprache der Person zeigt.
-export const fm = (k, a) => ({ message: renderFindingMessage(k, a, 'de'), message_args: JSON.stringify({ k, a }) });
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -332,25 +329,25 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Ersatzteile unter Mindestbestand
     for (const it of await stockFindings(env, environment)) {
-      const ord = it.ordered_on ? ` Bestellt ${it.ordered_qty} ${it.unit} am ${it.ordered_on}${it.ordered_eta ? ', Liefertermin laut Lieferant ' + it.ordered_eta : ''}.` : '';
+      const sa = { site: it.site, name: it.name, pn: it.part_number || null, stock: it.on_hand, unit: it.unit, min: it.min_qty, oq: it.ordered_on ? it.ordered_qty : null, oon: it.ordered_on || null, eta: it.ordered_eta || null };
       if (it.code === 'STOCK_ORDER_OVERDUE') {
         add({ code: 'STOCK_ORDER_OVERDUE', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
-          message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Liefertermin überschritten.${ord} Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.`,
+          ...fm('STOCK_ORDER_OVERDUE', sa),
           next_action: 'Beim Lieferanten nachfragen; bei Eingang Zugang buchen (beendet den Vermerk).' });
         continue;
       }
       add({ code: 'STOCK_BELOW_MIN', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
-        message: `Lager ${it.site}: ${it.name}${it.part_number ? ' (' + it.part_number + ')' : ''} – Bestand ${it.on_hand} ${it.unit}, Mindestbestand ${it.min_qty}.${ord}${ord ? ` Noch zu bestellen: ${it.open} ${it.unit}.` : ''}`,
+        ...(it.ordered_on ? fm('STOCK_BELOW_MIN_ORD', { ...sa, open: it.open }) : fm('STOCK_BELOW_MIN', sa)),
         next_action: 'Nachbestellung prüfen (Bestellung nur nach Freigabe).' });
     }
 
     // Bußgelder: Fristen nur aus dem Schreiben; Fahrer offen; Kennzeichen unbekannt
     // Fahrerakte: Nachweise und Führerscheinkontrolle (Fristen nur laut Dokument)
-    for (const x of await driverFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
-    for (const x of await tachoFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, vehicle_id: x.vehicle_id || null, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
+    for (const x of await driverFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, message_args: x.message_args, next_action: x.next_action });
+    for (const x of await tachoFindings(env, environment, settings)) add({ code: x.code, subject: x.subject, vehicle_id: x.vehicle_id || null, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, message_args: x.message_args, next_action: x.next_action });
 
     for (const x of await fineFindings(env, environment, settings)) {
-      add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, next_action: x.next_action });
+      add({ code: x.code, subject: x.f.id, vehicle_id: x.f.vehicle_id, severity: x.severity, owner_role: 'fleet', requires_decision: x.requires_decision, message: x.message, message_args: x.message_args, next_action: x.next_action });
     }
 
     // Ruhende Fahrzeuge (Inhaberentscheidung): keine fahrzeugbezogenen Bewertungsbefunde; vorgangsbezogene Sicherheitsbefunde bleiben

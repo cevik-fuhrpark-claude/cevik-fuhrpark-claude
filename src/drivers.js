@@ -1,6 +1,7 @@
 // [CLAUDE] Fahrerakte: Fahrer (auch ohne App-Konto), Nachweise mit Gültig-bis laut Dokument, Führerscheinkontrollen, Erinnerungen.
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
+import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
@@ -168,14 +169,14 @@ export async function driverFindings(env, environment, settings = null) {
   for (const d of list) {
     for (const i of d.status.items) {
       if (i.status === 'abgelaufen') out.push({ code: 'DRIVER_DOC_EXPIRED', subject: `${d.id}|${i.kind}`, severity: i.kind === 'fuehrerschein' || i.kind === 'fahrerkarte' ? 'kritisch' : 'handeln', requires_decision: 1,
-        message: `Fahrer ${d.display_name}: ${L[i.kind]} abgelaufen (gültig bis ${i.valid_until}).`, next_action: 'Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.' });
+        ...fm('DRIVER_DOC_EXPIRED', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', date: i.valid_until }), next_action: 'Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.' });
       else if (i.status === 'laeuft_ab') out.push({ code: 'DRIVER_DOC_EXPIRES_SOON', subject: `${d.id}|${i.kind}`, severity: 'hinweis', requires_decision: 0,
-        message: `Fahrer ${d.display_name}: ${L[i.kind]} läuft am ${i.valid_until} ab (in ${i.days} Tagen).`, next_action: 'Verlängerung rechtzeitig veranlassen.' });
+        ...fm('DRIVER_DOC_EXPIRES_SOON', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', date: i.valid_until, days: i.days }), next_action: 'Verlängerung rechtzeitig veranlassen.' });
     }
     if (d.status.check.status === 'faellig') out.push({ code: 'LICENSE_CHECK_DUE', subject: `${d.id}|fs_kontrolle`, severity: 'handeln', requires_decision: 0,
-      message: `Fahrer ${d.display_name}: Führerscheinkontrolle fällig (letzte ${d.status.check.last}).`, next_action: 'Original-Führerschein vorlegen lassen und Kontrolle erfassen.' });
+      ...fm('LICENSE_CHECK_DUE', { name: d.display_name, last: d.status.check.last }), next_action: 'Original-Führerschein vorlegen lassen und Kontrolle erfassen.' });
     else if (d.status.check.status === 'mangel') out.push({ code: 'LICENSE_CHECK_FAILED', subject: `${d.id}|fs_kontrolle`, severity: 'kritisch', requires_decision: 1,
-      message: `Fahrer ${d.display_name}: letzte Führerscheinkontrolle nicht in Ordnung (${d.status.check.last}).`, next_action: 'Einsatz klären; Führerschein prüfen.' });
+      ...fm('LICENSE_CHECK_FAILED', { name: d.display_name, last: d.status.check.last }), next_action: 'Einsatz klären; Führerschein prüfen.' });
   }
   return out;
 }
