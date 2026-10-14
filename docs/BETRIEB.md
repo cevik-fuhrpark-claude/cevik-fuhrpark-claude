@@ -73,7 +73,7 @@ Format, Spaltenzahl je Zeile, Formelschutz und Rechte prüft `npm test` für jed
 | Agentenbefunde (Management-Panel, im Browser erzeugt, in der App-Sprache) | ✓ | ✓ | – | – | – | – |
 
 Exporte mit Personen- oder Kostenbezug werden im Protokoll vermerkt.
-Hilfe in der App: „Ausdrucke & Exporte“.
+Hilfe in der App: „Ausdrucke & Exporte“; Benutzerverwaltung, Zugangsprüfung und Protokoll: „Benutzer, Zugänge & Protokoll“ (Inhaber/Fuhrparkleitung).
 
 ## Sicherung & Wiederherstellung
 **Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.

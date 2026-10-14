@@ -7017,6 +7017,34 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('auditDetailText(S.lang, d)'), 'Ansicht nutzt Detailtext');
 });
 
+await test('Hilfe „Benutzer, Zugänge & Protokoll“: nur Inhaber/Fuhrparkleitung, nennt Knöpfe wie in der App und Grenzwerte wie im Server', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  const { helpMatches } = await import('../public/help.js');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const authSrc = fs.readFileSync(new URL('../src/auth.js', import.meta.url), 'utf8');
+  // Abschnitt nur für Rollen mit Benutzerverwaltung; Seitenhilfe auf Benutzer und Protokoll
+  ok(/if \(\['owner', 'fleet'\]\.includes\(r\)\) parts\.splice\(parts\.indexOf\('stock'\) \+ 1, 0, 'access'\);/.test(app), 'Abschnitt nur Inhaber/Fuhrparkleitung');
+  ok(app.includes("<h1>${esc(t('users'))}</h1>${helpLink('access')}") && app.includes("<h1>${esc(t('audit'))}</h1>${helpLink('access')}"), 'Seitenhilfe Benutzer und Protokoll');
+  // Grenzwerte im Text = Konstanten im Server (keine erfundenen Zahlen)
+  const num = (re) => Number((authSrc.match(re) || [])[1]);
+  const days = num(/const INVITE_DAYS = (\d+);/), after = num(/const LOCK_AFTER = (\d+);/), mins = num(/const LOCK_MINUTES = (\d+);/), minLen = num(/pw\.length < (\d+)\)/);
+  ok(days && after && mins && minLen, 'Konstanten gefunden');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; const tx = S.help_access_s;
+    eq(tx.split('|').length, 8, `8 Schritte ${l}`);
+    for (const n of [days, after, mins, minLen]) ok(new RegExp(`(^|\\D)${n}(\\D|$)`).test(tx), `${l}: Zahl ${n}`);
+    // genannte Knöpfe/Bezeichnungen existieren genau so in der App-Sprache
+    for (const k of ['new_user', 'new_invite', 'inv_expired', 'unlock', 'revoke_sessions', 'deactivate', 'activate', 'tf_chip', 'tf_reset', 'usort_login_oldest', 'ufilter', 'au_access', 'audit_until', 'au_target', 'export_csv', 'print', 'audit', 'users'])
+      ok(tx.includes(S[k]), `${l}: nennt „${S[k]}“ (${k})`);
+    ok(tx.includes(S.unused_setting.split(' (')[0]), `${l}: nennt Einstellung`);
+    for (const k of ['active', 'inactive', 'locked', 'invite']) ok(tx.includes(S['ufilter_' + k].split(' (')[0]), `${l}: Auswahl ${k}`);
+    // Suche findet den Abschnitt über typische Begriffe
+    const sec = [{ name: 'access', title: S.help_access_t, steps: tx.split('|') }];
+    ok(helpMatches(sec, S.revoke_sessions).length === 1 && helpMatches(sec, S.au_target).length === 1, `${l}: Suche`);
+  }
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

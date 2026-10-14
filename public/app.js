@@ -2354,7 +2354,7 @@ async function viewAudit(more, uArg, vArg) {
   // Betrifft: anderes Konto → Protokoll dieser Person, Fahrzeug → Fahrzeugakte (Ausdruck zeigt den Namen ohne Link)
   const auTarget = (e) => (e.target_plate ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/vehicles/${esc(e.target)}">${esc(e.target_plate)}</a>`
     : (e.target_name || e.target_username) && e.target !== e.actor_id ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/audit?u=${esc(e.target)}">${esc(e.target_name || e.target_username)}</a>` : '');
-  render(`<h1>${esc(t('audit'))}</h1><p class="small muted">${esc(t('audit_hint'))}</p>
+  render(`<h1>${esc(t('audit'))}</h1>${helpLink('access')}<p class="small muted">${esc(t('audit_hint'))}</p>
     ${printHead([t('audit'), f ? `${t('audit_area')}: ${gl || f}` : '', aq.length >= 2 ? `${t('print_search')}: „${aq}“` : '', au ? `${t('audit_until')} ${au.split('-').reverse().join('.')}` : '', pu ? `${t('audit_person')}: ${S.auditUserName || ''}` : '', pv ? `${t('vehicle')}: ${S.auditVehName || ''}` : '', t('print_count').replace('{n}', S.auditRows.length)])}
     <form id="aqf" class="actions noprint" style="flex-wrap:wrap;align-items:flex-end;margin-top:0"><div style="flex:1 1 200px"><label for="afsel">${esc(t('audit_area'))}</label><select id="afsel">${groups.map(([k, l]) => `<option value="${esc(k)}"${f === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       <div style="flex:1 1 200px"><label for="aqs">${esc(t('audit_search'))}</label><input id="aqs" name="q" type="search" value="${esc(aq)}" maxlength="60" placeholder="${esc(t('audit_search_ph'))}"></div>
@@ -2679,6 +2679,8 @@ function helpSections(r) {
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy');
+  // Benutzer, Zugänge & Protokoll: Benutzerverwaltung hat Inhaber und Fuhrparkleitung (Protokoll nur Inhaber – im Text vermerkt)
+  if (['owner', 'fleet'].includes(r)) parts.splice(parts.indexOf('stock') + 1, 0, 'access');
   // Ausdrucke & Exporte: Rollen mit CSV-/Druck-Funktionen (Fahrer/Dispo nur Vorgangsliste drucken – dort genügt der Knopf)
   if (['owner', 'fleet', 'workshop'].includes(r)) parts.splice(parts.indexOf('stock') + 1, 0, 'exports');
   if (r === 'dispatch') parts.unshift('dispo');
@@ -2936,7 +2938,7 @@ async function viewUsers() {
   const noPush = all.filter((u) => u.active && u.has_password && u.environment === 'production' && u.role !== 'viewer' && !u.push_devices);
   // Hinweis (nur Anzeige, nichts wird automatisch deaktiviert): aktive Konten ohne Anmeldung seit über ud Tagen
   const unused = ud ? all.filter((u) => isUnusedUser(u, ud)) : [];
-  render(`<h1>${esc(t('users'))}</h1>${no2fa.length ? `<div class="panel warn small" role="note">${esc(t('tf_admin_hint').replace('{n}', no2fa.length))} <a href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}${noPush.length ? `<div class="panel warn small" role="note" id="nopush">${esc(t('push_admin_hint').replace('{n}', noPush.length))} <a href="#/help?s=push">${esc(t('help_push_t'))} ›</a></div>` : ''}${unused.length ? `<div class="panel warn small" role="note" id="unusedhint">${esc(t('unused_admin_hint').replace('{n}', unused.length).replace('{d}', ud))}${ufi !== 'unused' ? `<div class="actions"><button type="button" class="btn secondary" id="ushowunused">${esc(t('unused_show'))}</button></div>` : ''}</div>` : ''}<div id="inv"></div>
+  render(`<h1>${esc(t('users'))}</h1>${helpLink('access')}${no2fa.length ? `<div class="panel warn small" role="note">${esc(t('tf_admin_hint').replace('{n}', no2fa.length))} <a href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}${noPush.length ? `<div class="panel warn small" role="note" id="nopush">${esc(t('push_admin_hint').replace('{n}', noPush.length))} <a href="#/help?s=push">${esc(t('help_push_t'))} ›</a></div>` : ''}${unused.length ? `<div class="panel warn small" role="note" id="unusedhint">${esc(t('unused_admin_hint').replace('{n}', unused.length).replace('{d}', ud))}${ufi !== 'unused' ? `<div class="actions"><button type="button" class="btn secondary" id="ushowunused">${esc(t('unused_show'))}</button></div>` : ''}</div>` : ''}<div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
       <label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('username'))}</label><input name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
       <label>${esc(t('role'))}</label><select name="role" id="rs">${roles.map((r) => `<option value="${r}">${esc(t('role_' + r))}</option>`).join('')}</select>
