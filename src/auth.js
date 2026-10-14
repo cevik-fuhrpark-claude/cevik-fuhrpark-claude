@@ -519,8 +519,9 @@ async function auditPerson(env, id) {
 }
 function auditQ(qs, where, args) {
   const vs = caseVariants(qs);
-  where.push('(' + vs.map(() => "a.target LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\'").join(' OR ') + ')');
-  for (const v of vs) args.push(...Array(4).fill(likeEsc(v)));
+  // auch im betroffenen Konto (Name/Benutzername) und Fahrzeug (Kennzeichen) – z. B. HU/SP-Neuberechnung ohne Kennzeichen im Detail
+  where.push('(' + vs.map(() => "a.target LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR tu.username LIKE ? ESCAPE '\\' OR tu.display_name LIKE ? ESCAPE '\\' OR tv.plate LIKE ? ESCAPE '\\'").join(' OR ') + ')');
+  for (const v of vs) args.push(...Array(7).fill(likeEsc(v)));
 }
 export async function listAudit(env, user, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
@@ -570,12 +571,13 @@ export async function auditCsv(env, user, query, csvCell) {
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
   const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
-  const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id WHERE ${where.join(' AND ')}
+  const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username,
+    COALESCE(tv.plate, tu.display_name, tu.username) AS target_label
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')}
     ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...args, AUDIT_CSV_MAX + 1).all()).results;
   const truncated = rows.length > AUDIT_CSV_MAX; if (truncated) rows.length = AUDIT_CSV_MAX;
-  const lines = [['Zeitpunkt', 'Aktion', 'Person', 'Benutzername', 'Betrifft (Kennung)', 'Details'].join(';')];
-  for (const r of rows) lines.push([berlinDateTime(r.created_at), csvCell(r.action), csvCell(r.actor_name || (r.actor_username ? '' : 'System')), csvCell(r.actor_username), csvCell(r.target), csvCell(r.detail)].join(';'));
+  const lines = [['Zeitpunkt', 'Aktion', 'Person', 'Benutzername', 'Betrifft (Kennung)', 'Betrifft', 'Details'].join(';')];
+  for (const r of rows) lines.push([berlinDateTime(r.created_at), csvCell(r.action), csvCell(r.actor_name || (r.actor_username ? '' : 'System')), csvCell(r.actor_username), csvCell(r.target), csvCell(r.target_label), csvCell(r.detail)].join(';'));
   return { csv: '\uFEFF' + lines.join('\r\n') + '\r\n', rows: rows.length, truncated, from, to, prefix, q: qs.length >= 2, person, vehicle };
 }
 

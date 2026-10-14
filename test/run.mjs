@@ -3021,7 +3021,7 @@ await test('Protokoll als CSV (Inhaber): Berliner Kalendertage, Bereich, ältest
     ins.run('aucsv-2', null, 'probe.zwei', null, null, '2020-03-01T23:30:00.000Z'); // Berlin 02.03. 00:30
     ins.run('aucsv-3', users.fleet.id, 'anderes.x', '=HYPERLINK(1)', null, '2020-03-01T23:40:00.000Z');
     let r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-01'); eq(r.status, 200);
-    let lines = dec(r).trim().split('\r\n'); ok(dec(r).startsWith('\uFEFF'), 'BOM'); eq(lines[0], 'Zeitpunkt;Aktion;Person;Benutzername;Betrifft (Kennung);Details'); eq(lines.length, 2, 'nur 01.03. (Berlin)');
+    let lines = dec(r).trim().split('\r\n'); ok(dec(r).startsWith('\uFEFF'), 'BOM'); eq(lines[0], 'Zeitpunkt;Aktion;Person;Benutzername;Betrifft (Kennung);Betrifft;Details'); eq(lines.length, 2, 'nur 01.03. (Berlin)');
     ok(lines[1].startsWith('01.03.2020 23:59;probe.eins;') && lines[1].includes('"{""a"":1,""b"":""x;y""}"'), 'Zeile mit Details: ' + lines[1]);
     r = await owner.get('/api/admin/audit?format=csv&from=2020-03-01&to=2020-03-02'); lines = dec(r).trim().split('\r\n'); eq(lines.length, 4);
     ok(lines[2].startsWith('02.03.2020 00:30;probe.zwei;System;'), 'ohne Person = System, älteste zuerst');
@@ -3066,6 +3066,7 @@ await test('Protokoll je Person (?user=): handelnd oder betroffen, Ansicht + CSV
     eq(r.data.person.id, fid); eq(r.data.person.username, fname, 'Name für die Anzeige');
     ok(r.data.entries.every((e) => e.actor_id === fid || e.target === fid), 'nur handelnd oder betroffen');
     eq(r.data.entries.filter((e) => e.id.startsWith('aupers-')).map((e) => e.id).sort().join(), 'aupers-1,aupers-2');
+    eq((await owner.get('/api/admin/audit?limit=1000&action=probe.betrifft&q=' + encodeURIComponent(fname))).data.entries.filter((e) => e.id.startsWith('aupers-')).map((e) => e.id).join(), 'aupers-2', 'Suche findet betroffenes Konto');
     const e2 = r.data.entries.find((e) => e.id === 'aupers-2'); eq(e2.target_username, fname, 'Betrifft: Konto aufgelöst'); eq(r.data.entries.find((e) => e.id === 'aupers-1').target_username, null, 'Fahrzeug-Ziel ist kein Konto');
     ok(!('person' in (await owner.get('/api/admin/audit?limit=1')).data), 'ohne Filter kein person-Feld');
     eq((await owner.get('/api/admin/audit?limit=1000&action=probe.betrifft&user=' + fid)).data.entries.map((e) => e.id).join(), 'aupers-2', 'kombiniert mit Bereich');
@@ -3095,6 +3096,7 @@ await test('Protokoll je Fahrzeug (?vehicle=): nur Einträge mit Fahrzeug als Zi
     ins.run('auveh-3', users.fleet.id, 'vehicle.spec', 'VIN:ANDERES1', JSON.stringify({ x: v.id }), '2021-06-01T10:00:00.000Z');
     const r = await owner.get('/api/admin/audit?limit=1000&vehicle=' + encodeURIComponent(v.id)); eq(r.status, 200);
     eq(r.data.vehicle.plate, v.plate); ok(r.data.entries.every((e) => e.target === v.id), 'nur Ziel = Fahrzeug');
+    eq((await owner.get('/api/admin/audit?limit=1000&action=maintenance.husp&q=' + encodeURIComponent(v.plate.toLowerCase()))).data.entries.filter((e) => e.id.startsWith('auveh-')).map((e) => e.id).join(), 'auveh-2', 'Suche findet Kennzeichen des betroffenen Fahrzeugs (ohne Kennzeichen im Detail)');
     ok(r.data.entries.every((e) => e.target_plate === v.plate && e.target_name === null), 'Betrifft: Kennzeichen aufgelöst');
     const app2 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(app2.includes('href="#/vehicles/${esc(e.target)}">${esc(e.target_plate)}') && app2.includes("e.target !== e.actor_id"), 'Ansicht verlinkt Betroffenes (Fahrzeug/Konto, nicht die Person selbst)');
@@ -3104,6 +3106,7 @@ await test('Protokoll je Fahrzeug (?vehicle=): nur Einträge mit Fahrzeug als Zi
     eq((await owner.get('/api/admin/audit?vehicle=' + encodeURIComponent("VIN:X' OR 1=1"))).status, 400);
     eq((await users.fleet.get('/api/admin/audit?vehicle=' + encodeURIComponent(v.id))).status, 403);
     const c = await owner.get(`/api/admin/audit?format=csv&from=2021-06-01&to=2021-06-01&vehicle=${encodeURIComponent(v.id)}`);
+    ok(dec(c).trim().split('\r\n').slice(1).every((l) => l.split(';')[5] === v.plate), 'CSV-Spalte Betrifft = Kennzeichen');
     eq(dec(c).trim().split('\r\n').length, 3, 'CSV: Kopf + 2'); ok((c.headers.get('content-disposition') || '').includes('_' + v.plate.replace(/[^\w.-]/g, '_') + '.csv'), 'Dateiname mit Kennzeichen');
     eq(JSON.parse(db.prepare("SELECT detail FROM audit_log WHERE action='admin.audit_export' ORDER BY rowid DESC LIMIT 1").get().detail).vehicle, v.id, 'Export vermerkt Fahrzeug');
     const plan = db.prepare("EXPLAIN QUERY PLAN SELECT a.id FROM audit_log a WHERE a.created_at < '9999' AND a.target = 'x' ORDER BY a.created_at DESC LIMIT 100").all().map((x) => x.detail).join(' | ');
