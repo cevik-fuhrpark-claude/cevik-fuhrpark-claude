@@ -6008,6 +6008,20 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   console.log(`     ${printing.length} Druckansichten, davon ${Object.keys(EXEMPT).length} ohne Personenvermerk (Formular/Aufkleber)`);
 });
 
+await test('Wächter: jede Agent-Erinnerung (Push) hat Ukrainisch/Englisch und nutzt einen erzeugten Befundcode', async () => {
+  const { REMINDER_LABEL, reminderLabel, reminderBody } = await import('../src/agent.js');
+  const keys = Object.keys(REMINDER_LABEL);
+  ok(keys.length >= 20, 'Erinnerungscodes vorhanden');
+  const miss = [];
+  for (const l of ['uk', 'en']) for (const c of keys) if (!reminderLabel(c, l) || reminderLabel(c, l) === REMINDER_LABEL[c]) miss.push(`${l}:${c}`);
+  ok(!miss.length, `Push-Text nicht übersetzt: ${miss.join(', ')}`);
+  const fs = await import('node:fs');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'schema.js').map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  const dead = keys.filter((c) => !new RegExp(`code:[^,}]*'${c}'`).test(src));
+  ok(!dead.length, `Erinnerungscode wird nirgends erzeugt (Tippfehler?): ${dead.join(', ')}`);
+  eq(reminderBody(['MAINTENANCE_DUE', 'MAINTENANCE_DUE', 'TACHO_VU_DUE'], 'en', 'test'), `2× ${reminderLabel('MAINTENANCE_DUE', 'en')}, 1× ${reminderLabel('TACHO_VU_DUE', 'en')} · TEST`);
+});
+
 await test('Doku-Wächter: jeder Befundcode des Fuhrparkagenten und jeder Datenqualitäts-Prüfcode steht in docs/API.md', async () => {
   const fs = await import('node:fs');
   const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
