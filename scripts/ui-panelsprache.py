@@ -53,6 +53,8 @@ with sync_playwright() as p:
             check(EXP[lang][0] in csv and UNCL[lang] in csv,f'CSV {lang}: Meldungen in der App-Sprache')
             check(dl.value.suggested_filename.startswith('fuhrpark-agentenbefunde_production_'),'CSV-Dateiname '+dl.value.suggested_filename)
         # Fahrzeugakte: dieselben Befunde des Fahrzeugs im aufklappbaren Abschnitt „Offene Agentenbefunde“
+        # Befund ohne Vorgang, aber mit Fahrzeug: Link zur Fahrzeugakte
+        check(q.locator(f'a[data-afv][href="#/vehicles/{vid}"]').count()>=1,f'{lang} {w}px: Link Befund → Fahrzeugakte')
         q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#vaf summary')
         q.click('#vaf summary'); vt=q.inner_text('#vaf')
         for e in EXP[lang]+[UNCL[lang]]: check(e in vt,f'Akte {lang} {w}px: {e}')
