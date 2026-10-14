@@ -6167,6 +6167,32 @@ await test('Fahrzeugakte: offene Agentenbefunde des Fahrzeugs für Inhaber/Fuhrp
   ok(plan.some((p) => /idx_findings_vehicle/.test(p.detail)), 'Index idx_findings_vehicle nicht genutzt');
 });
 
+await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon kritisch) nur für Inhaber/Fuhrparkleitung, je Umgebung, über Index', async () => {
+  const V = 'VIN:WDB96340310777123';
+  const q0 = QSTAT.n;
+  const vl = (await users.fleet.get('/api/vehicles')).data.vehicles;
+  ok(QSTAT.n - q0 <= 50, `Fahrzeugliste ≤ 50 Abfragen (${QSTAT.n - q0})`);
+  const v = vl.find((x) => x.id === V);
+  const db = env.DB.db.prepare("SELECT COUNT(*) AS n, SUM(severity='kritisch') AS c FROM agent_findings WHERE vehicle_id=? AND environment='test' AND status='offen'").get(V);
+  ok(db.n > 0, 'Testfahrzeug hat offene Befunde');
+  eq(v.agent_findings_open, db.n, 'Anzahl offen = Datenbank'); eq(v.agent_findings_critical, db.c || 0, 'davon kritisch = Datenbank');
+  ok(vl.every((x) => Number.isInteger(x.agent_findings_open) && Number.isInteger(x.agent_findings_critical) && x.agent_findings_critical <= x.agent_findings_open && !('af' in x)), 'immer ganze Zahlen, Hilfsfeld entfernt');
+  // Summe über alle Fahrzeuge = offene fahrzeugbezogene Befunde aktiver Fahrzeuge der Umgebung
+  const tot = env.DB.db.prepare("SELECT COUNT(*) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen'").get().n;
+  eq(vl.reduce((s, x) => s + x.agent_findings_open, 0), tot, 'Summe = Datenbank');
+  // Betrieb sieht die Befunde der Testumgebung nicht
+  const pv = (await users.prodFleet.get('/api/vehicles')).data.vehicles.find((x) => x.id === V);
+  eq(pv.agent_findings_open, env.DB.db.prepare("SELECT COUNT(*) AS n FROM agent_findings WHERE vehicle_id=? AND environment='production' AND status='offen'").get(V).n, 'Betrieb: eigene Zahl');
+  for (const c of [users.ws, users.dispatch, users.driver]) {
+    const r = await c.get('/api/vehicles'); ok(r.status === 200 && r.data.vehicles.every((x) => !('agent_findings_open' in x) && !('agent_findings_critical' in x) && !('af' in x)), 'Rolle ohne Leitung: Feld sichtbar');
+  }
+  const iv = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles; ok(iv.every((x) => !('agent_findings_open' in x)), 'Integrations-API unverändert');
+  const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
+  ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['av_with_findings', 'vfind_n', 'vfind_crit']) ok(STRINGS[l][k] && (k === 'av_with_findings' || STRINGS[l][k].includes('{n}')), `${l}: ${k}`);
+});
+
 await test('Agentenbefunde als CSV (Browser, Management-Panel): Spalten DE/UK/EN, Meldung in der App-Sprache, Formelschutz, eine Zeile je Befund', async () => {
   const { agentFindingsCsv } = await import('../public/csv.js');
   const { STRINGS, translateNextAction } = await import('../public/i18n.js');

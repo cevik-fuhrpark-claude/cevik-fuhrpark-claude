@@ -41,8 +41,10 @@ export async function listVehicles(env, user, envName, query = {}) {
         ORDER BY e.result='verkehrsunsicher' DESC, e.done_date DESC LIMIT 1) AS failed_insp,
       (SELECT COUNT(*) FROM vehicle_notes n WHERE n.vehicle_id=v.id AND n.environment=? AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?)) AS notes_active,
       -- offene Herstellerrückrufe (noch nicht durchgeführt; gleiche Regel wie Vorgangs-Kurzinfo „Zum Fahrzeug“), Frist nur laut Schreiben
-      (SELECT COUNT(*) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.kind='Rückruf' AND m.last_done_date IS NULL) AS open_recalls
-    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, active).all()).results;
+      (SELECT COUNT(*) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.kind='Rückruf' AND m.last_done_date IS NULL) AS open_recalls,
+      -- offene Befunde des Fuhrparkagenten (Umgebung der Person) über idx_findings_vehicle; nur Inhaber/Fuhrparkleitung bekommen die Zahlen
+      (SELECT COUNT(*) || '|' || COALESCE(SUM(f.severity='kritisch'), 0) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') AS af
+    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, envName, active).all()).results;
   // letzte Abfahrtskontrolle je Fahrzeug – nur Information (ohne Einsatzplan keine Pflichtbewertung)
   for (const v of rows) { const [at, result] = v.last_check ? v.last_check.split('|') : [null, null]; v.last_check_at = at; v.last_check_result = result; delete v.last_check;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
@@ -50,6 +52,9 @@ export async function listVehicles(env, user, envName, query = {}) {
     // km-Fälligkeit: Rest-km nur mit erfasstem km-Stand (keine Schätzung)
     const [nk, nkk] = v.next_km ? [Number(v.next_km.split('|')[0]), v.next_km.slice(v.next_km.indexOf('|') + 1)] : [null, null];
     v.next_due_km = nk; v.next_due_km_kind = nkk; v.km_remaining = nk !== null && v.last_km !== null && v.last_km !== undefined ? nk - v.last_km : null; delete v.next_km;
+    // Agentenbefunde je Fahrzeug: nur für Inhaber/Fuhrparkleitung (gleiche Sichtbarkeit wie Management-Panel und Fahrzeugakte)
+    if (isManager(user)) { const [an, ac] = String(v.af || '0|0').split('|'); v.agent_findings_open = Number(an) || 0; v.agent_findings_critical = Number(ac) || 0; }
+    delete v.af;
     const fi = v.failed_insp ? v.failed_insp.split('|') : null; v.failed_inspection = fi ? { kind: fi[0], done_date: fi[1], result: fi[2] } : null; delete v.failed_insp; }
   const byPlate = new Map(rows.map((v) => [normPlate(v.plate), v]));
   const pulledBy = new Map();
