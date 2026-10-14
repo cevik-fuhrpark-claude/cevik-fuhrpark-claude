@@ -6873,6 +6873,31 @@ await test('Benutzerliste: Hinweis „lange nicht angemeldet“ nur mit Einstell
   ok(app.includes("${field('user_unused_days', t('unused_setting'))}"), 'Feld in Einstellungen');
 });
 
+await test('Benutzerliste: offene Einladung zeigt Gültigkeit des Links bzw. „abgelaufen“ (Ansicht/CSV), angenommene/Konten mit Passwort ohne Angabe', async () => {
+  const { inviteExpired, usersCsv } = await import('../public/csv.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = await import('node:fs');
+  const r = await owner.post('/api/users', { username: 'inv.ablauf', display_name: 'Inv Ablauf', role: 'driver', environment: 'production' });
+  eq(r.status, 201);
+  const get = async () => (await owner.get('/api/users')).data.users.find((u) => u.username === 'inv.ablauf');
+  const u1 = await get();
+  ok(u1.invite_expires_at > new Date(Date.now() + 6.9 * 86400000).toISOString() && u1.invite_expires_at < new Date(Date.now() + 7.1 * 86400000).toISOString(), 'gültig 7 Tage');
+  ok(!inviteExpired(u1), 'nicht abgelaufen');
+  await env.DB.prepare('UPDATE invites SET expires_at=? WHERE user_id=?').bind(new Date(Date.now() - 60000).toISOString(), u1.id).run();
+  const u2 = await get(); ok(inviteExpired(u2), 'abgelaufen erkannt');
+  const t = (k) => STRINGS.de[k];
+  ok(usersCsv([u2], t, (x) => x, (x) => x).includes(`${t('dq_invite_pending')} (${t('inv_expired')})`), 'CSV-Status nennt Ablauf');
+  ok(!usersCsv([u1], t, (x) => x, (x) => x).includes(t('inv_expired')), 'gültiger Link ohne Vermerk');
+  eq((await owner.post(`/api/users/${u1.id}/invite`, {})).status, 200);
+  ok(!inviteExpired(await get()), 'neuer Link → wieder gültig (neuester zählt)');
+  ok((await owner.get('/api/users')).data.users.filter((u) => u.has_password).every((u) => u.invite_expires_at === null), 'Konten mit Passwort ohne Einladungsangabe');
+  ok(!inviteExpired({ has_password: 1, invite_expires_at: '2000-01-01T00:00:00Z' }), 'mit Passwort nie abgelaufen');
+  for (const lang of ['de', 'uk', 'en']) for (const k of ['inv_expired', 'inv_expired_hint', 'inv_valid_until']) ok(STRINGS[lang][k], `${k} ${lang}`);
+  for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].inv_expired_hint.includes(STRINGS[lang].new_invite), `Hinweis nennt Knopf ${lang}`);
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(inviteExpired(u) ? `<span class=\"chip mittel\"") && app.includes("t('inv_valid_until')"), 'Ansicht zeigt Ablauf/Gültigkeit');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
