@@ -6046,6 +6046,32 @@ await test('Doku-Wächter: jeder Befundcode des Fuhrparkagenten und jeder Datenq
   console.log(`     ${codes.size} Befundcodes, ${Object.keys(CHECKS).length} Datenqualitäts-Prüfcodes dokumentiert`);
 });
 
+await test('Wächter: „Nächster Schritt“ jedes Agentenbefunds hat UK/EN-Text, keine verwaisten Einträge', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const lits = new Set();
+  for (const f of readdirSync(new URL('../src/', import.meta.url))) {
+    if (!f.endsWith('.js')) continue;
+    const s = readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
+    for (const m of s.matchAll(/next_action:\s*([^}\n]*)/g)) {
+      ok(!m[1].includes('`'), `${f}: next_action als Vorlage mit Platzhaltern – nicht übersetzbar: ${m[1].slice(0, 60)}`);
+      for (const q of m[1].matchAll(/'((?:[^'\\]|\\.)*)'/g)) if (q[1].includes(' ')) lits.add(q[1]);
+    }
+  }
+  const { NEXT_ACTION_FIXED, translateNextAction } = await import('../public/i18n.js');
+  ok(lits.size >= 45, `nur ${lits.size} next_action-Texte erkannt`);
+  const miss = [];
+  for (const l of lits) for (const lang of ['uk', 'en']) { const tr = translateNextAction(lang, l); if (!tr || tr === l) miss.push(`${lang}: ${l}`); }
+  ok(!miss.length, `next_action ohne Übersetzung (NEXT_ACTIONS in public/i18n.js):\n${miss.join('\n')}`);
+  const stale = NEXT_ACTION_FIXED.filter((d) => !lits.has(d));
+  ok(!stale.length, `Übersetzung ohne next_action im Code: ${stale.join(' | ')}`);
+  ok(translateNextAction('de', 'Meldung bewerten.') === 'Meldung bewerten.' && translateNextAction('en', 'unbekannt') === 'unbekannt', 'Deutsch/unbekannte Texte müssen unverändert bleiben');
+  // Laufzeit: Befunde des Agenten aus dieser Testsuite sind übersetzbar
+  const rows = env.DB.db.prepare("SELECT DISTINCT next_action FROM agent_findings").all().map((r) => r.next_action);
+  const rt = rows.filter((n) => translateNextAction('en', n) === n);
+  ok(!rt.length, `Agentenbefunde mit unübersetztem next_action: ${rt.join(' | ')}`);
+  console.log(`     ${lits.size} feste next_action-Texte, ${rows.length} davon im Testlauf erzeugt`);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

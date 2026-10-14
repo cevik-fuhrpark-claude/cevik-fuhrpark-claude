@@ -971,3 +971,66 @@ Object.assign(STRINGS.en, { dq_telematics_vehicle_inactive: 'Telematics still re
 Object.assign(STRINGS.de, { inactive_since: 'Außer Betrieb seit', inactive_reason: 'Grund' });
 Object.assign(STRINGS.uk, { inactive_since: 'Виведено з експлуатації з', inactive_reason: 'Причина' });
 Object.assign(STRINGS.en, { inactive_since: 'Out of service since', inactive_reason: 'Reason' });
+// [CLAUDE] 14.10.2026: „Nächster Schritt“ (next_action) der Agentenbefunde im Management-Panel in der Oberflächensprache.
+// Server liefert weiterhin den deutschen Text (Integrations-API, Master-Eingang); der Client übersetzt per exaktem Text.
+// Wächter-Test: jeder feste next_action-Text in src/*.js steht hier, keine verwaisten Einträge.
+const NEXT_ACTIONS = [
+  ['Fuhrparkleitung als Benutzer anlegen und Einladung annehmen lassen.', 'Створіть керівника автопарку як користувача і попросіть прийняти запрошення.', 'Create fleet management as a user and have them accept the invitation.'],
+  ['Vorgang prüfen; neue Wiedervorlage setzen oder entfernen.', 'Перевірте заявку; встановіть нове нагадування або видаліть його.', 'Review the case; set a new follow-up or remove it.'],
+  ['Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.', 'Передайте заявку в майстерню або обґрунтовано відхиліть.', 'Forward the case to a workshop or reject it with a reason.'],
+  ['Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.', 'Дізнайтеся стан у майстерні; внесіть у заявку прогрес, потребу в запчастинах або дату.', 'Ask the workshop for the status; record progress, parts needed or appointment in the case.'],
+  ['Meldung bewerten, Fahrzeug nicht disponieren, Werkstatt festlegen.', 'Оцініть повідомлення, не плануйте транспорт, визначте майстерню.', 'Assess the report, do not dispatch the vehicle, choose a workshop.'],
+  ['Meldung bewerten und Priorität bestätigen.', 'Оцініть повідомлення і підтвердьте пріоритет.', 'Assess the report and confirm the priority.'],
+  ['Meldung bewerten.', 'Оцініть повідомлення.', 'Assess the report.'],
+  ['Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.', 'Створіть користувача майстерні або призначте іншу майстерню.', 'Create a workshop user or assign another workshop.'],
+  ['Werkstatt direkt kontaktieren oder Auftrag umleiten.', 'Зв’яжіться з майстернею напряму або перенаправте замовлення.', 'Contact the workshop directly or redirect the order.'],
+  ['Auftrag übernehmen.', 'Прийміть замовлення.', 'Accept the order.'],
+  ['Teilelieferung klären, Dispo informieren.', 'З’ясуйте постачання запчастин, повідомте диспетчерську.', 'Clarify the parts delivery, inform dispatch.'],
+  ['Kosten prüfen und freigeben oder mit der Werkstatt klären.', 'Перевірте й погодьте витрати або з’ясуйте з майстернею.', 'Check and approve the costs or clarify with the workshop.'],
+  ['Kontrolle durchführen: freigeben oder Nacharbeit anfordern.', 'Проведіть перевірку: допустіть або вимагайте доопрацювання.', 'Carry out the check: release or request rework.'],
+  ['Restarbeiten erledigen oder Teile beschaffen.', 'Виконайте залишкові роботи або придбайте запчастини.', 'Complete the remaining work or obtain parts.'],
+  ['Bis zur technischen Freigabe nicht einplanen.', 'Не планувати до технічного допуску.', 'Do not schedule until technical release.'],
+  ['Werkstatttermin für Restarbeiten planen.', 'Заплануйте візит до майстерні для залишкових робіт.', 'Schedule a workshop appointment for the remaining work.'],
+  ['Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.', 'Повідомте одержувачів телефоном; увімкніть push на їхніх пристроях.', 'Inform recipients by phone; enable push on their devices.'],
+  ['Stundensatz festlegen bzw. Teilepreise nachtragen.', 'Встановіть погодинну ставку або внесіть ціни запчастин.', 'Set the hourly rate or add the parts prices.'],
+  ['Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.', 'Домовтеся про дату; фахово перевірте придатність до експлуатації.', 'Arrange an appointment; have roadworthiness checked by an expert.'],
+  ['Werkstatttermin einplanen.', 'Заплануйте візит до майстерні.', 'Schedule a workshop appointment.'],
+  ['Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.', 'Домовтеся про дату огляду; фахово перевірте придатність до експлуатації. Без автоматичного перенесення.', 'Arrange an inspection date; have roadworthiness checked by an expert. No automatic postponement.'],
+  ['Geplanten Termin wahrnehmen und Durchführung belegen.', 'Дотримайтеся запланованої дати і підтвердьте виконання.', 'Keep the planned appointment and record evidence of completion.'],
+  ['Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.', 'Перевірте протокол огляду/техпаспорт і доповніть відсутні дані в картці транспорту.', 'Check the inspection report/registration document and add missing details to the vehicle file.'],
+  ['Gültiges Dokument beschaffen und in der Fahrzeugakte hinterlegen.', 'Отримайте дійсний документ і збережіть у картці транспорту.', 'Obtain a valid document and store it in the vehicle file.'],
+  ['Verlängerung/Nachfolgedokument veranlassen.', 'Організуйте продовження/новий документ.', 'Arrange renewal or a successor document.'],
+  ['In der Fahrzeugakte „Auftrag Mängelbeseitigung“ anlegen; Nachprüfung belegen.', 'Створіть у картці транспорту «Замовлення на усунення дефектів»; підтвердьте повторний огляд.', 'Create a “Defect repair order” in the vehicle file; record the re-inspection.'],
+  ['Einsatzfähigkeit fachlich prüfen, ggf. sperren; Auftrag Mängelbeseitigung anlegen.', 'Фахово перевірте придатність, за потреби заблокуйте; створіть замовлення на усунення дефектів.', 'Have roadworthiness checked, lock if necessary; create a defect repair order.'],
+  ['Nachprüfung/Wiedervorführung durchführen lassen und mit Nachweis in der Fahrzeugakte eintragen (Frist laut Prüfbericht).', 'Проведіть повторний огляд і внесіть його з підтвердженням у картку транспорту (строк згідно з протоколом).', 'Have the re-inspection carried out and record it with evidence in the vehicle file (deadline per inspection report).'],
+  ['Ergebnis laut Prüfbericht in der Fahrzeugakte nachtragen (Bisherige Durchführungen → Prüfergebnis nachtragen).', 'Внесіть результат згідно з протоколом у картку транспорту (Попередні виконання → Додати результат огляду).', 'Add the result per inspection report to the vehicle file (Previous completions → Add inspection result).'],
+  ['Reifen vor weiterer Fahrt prüfen/tauschen lassen.', 'Перед подальшою поїздкою перевірте/замініть шини.', 'Have the tyres checked/replaced before driving further.'],
+  ['Reifenwechsel einplanen.', 'Заплануйте заміну шин.', 'Schedule a tyre change.'],
+  ['Beim Lieferanten nachfragen; bei Eingang Zugang buchen (beendet den Vermerk).', 'Зверніться до постачальника; після надходження оформіть прихід (це закриває позначку).', 'Ask the supplier; book the receipt on arrival (ends the note).'],
+  ['Nachbestellung prüfen (Bestellung nur nach Freigabe).', 'Перевірте дозамовлення (замовлення лише після погодження).', 'Check reordering (order only after approval).'],
+  ['Beim Versicherer nach dem Stand fragen; Status bzw. Erstattung mit Nachweis im Vorgang eintragen.', 'Дізнайтеся стан у страховика; внесіть статус або відшкодування з підтвердженням у заявку.', 'Ask the insurer for the status; record status or reimbursement with evidence in the case.'],
+  ['Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.', 'З’ясуйте повернення/продовження; завершіть договір у картці транспорту або оновіть з новим підтвердженням.', 'Clarify return/extension; end the contract in the vehicle file or update it with new evidence.'],
+  ['Rückgabe, Verlängerung oder Ersatzfahrzeug klären.', 'З’ясуйте повернення, продовження або заміну транспорту.', 'Clarify return, extension or replacement vehicle.'],
+  ['Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.', 'Вирішіть: розірвати чи продовжити. Перевірте строк і форму згідно з договором.', 'Decide: terminate or extend. Check deadline and form per contract.'],
+  ['Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.', 'Перевірте в договорі умови щодо перевищення пробігу; за потреби змініть договір.', 'Check the excess mileage clause in the contract; adjust the contract if needed.'],
+  ['Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.', 'Перевірте використання транспорту або зміну договору.', 'Review the vehicle’s use or a contract adjustment.'],
+  ['Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.', 'Не залучати, доки немає дійсного підтвердження; внесіть нове підтвердження.', 'Do not deploy until valid evidence is available; record new evidence.'],
+  ['Verlängerung rechtzeitig veranlassen.', 'Своєчасно організуйте продовження.', 'Arrange renewal in good time.'],
+  ['Original-Führerschein vorlegen lassen und Kontrolle erfassen.', 'Попросіть пред’явити оригінал посвідчення водія і внесіть перевірку.', 'Have the original driving licence presented and record the check.'],
+  ['Einsatz klären; Führerschein prüfen.', 'З’ясуйте залучення; перевірте посвідчення водія.', 'Clarify deployment; check the driving licence.'],
+  ['Sofort beantworten bzw. Fristverlängerung klären.', 'Негайно дайте відповідь або з’ясуйте продовження строку.', 'Reply immediately or clarify a deadline extension.'],
+  ['Fahrer ermitteln und Schreiben beantworten.', 'Встановіть водія і дайте відповідь на лист.', 'Identify the driver and reply to the letter.'],
+  ['Kennzeichen prüfen (Fremd-/Mietfahrzeug?).', 'Перевірте номерний знак (чужий/орендований транспорт?).', 'Check the registration (third-party/rental vehicle?).'],
+  ['Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.', 'Підтвердьте водія за закріпленням/планом рейсів/телематикою.', 'Confirm the driver using assignment/tour plan/telematics.'],
+  ['Fahrerkarte auslesen und Auslesung erfassen.', 'Зчитайте картку водія і внесіть зчитування.', 'Download the driver card and record the download.'],
+  ['Auslesung einplanen.', 'Заплануйте зчитування.', 'Schedule the download.'],
+  ['Fahrtenschreiber auslesen und Auslesung erfassen.', 'Зчитайте тахограф і внесіть зчитування.', 'Download the tachograph and record the download.'],
+];
+const NEXT_ACTION_TEXTS = { uk: {}, en: {} };
+for (const [de, uk, en] of NEXT_ACTIONS) { NEXT_ACTION_TEXTS.uk[de] = uk; NEXT_ACTION_TEXTS.en[de] = en; }
+export const NEXT_ACTION_FIXED = NEXT_ACTIONS.map(([de]) => de);
+// Unbekannte Texte (z. B. ältere Einträge im Master-Eingang) bleiben unverändert deutsch.
+export function translateNextAction(lang, s) {
+  const T = NEXT_ACTION_TEXTS[lang];
+  return T && typeof s === 'string' && Object.hasOwn(T, s) ? T[s] : s;
+}
