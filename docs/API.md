@@ -47,6 +47,7 @@ Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte ge
 Jede Übergabe ist ein Ereignis mit `schema_version 1.0`, eindeutiger `event_id` (SHA-256 aus Befund, Fingerprint, Erstauftreten),
 `finding_code`, `case_id`, `vehicle_id`, `severity` (info/hinweis/handeln/kritisch), `next_action`, `requires_human_approval`.
 Wiederholte Läufe erzeugen keine Dubletten. Ein übergeordneter Master-Agent kann `/api/integration/v1/master` abfragen.
+Meldungstexte (`message`) sind immer Deutsch. Intern speichert der Agent zusätzlich `message_args` (Vorlagenschlüssel + Werte, `public/finding-messages.js`), damit das Management-Panel den Text in der Oberflächensprache (DE/UK/EN) zeigt; die Integrations-API liefert `message_args` bewusst **nicht** (Datensparsamkeit, Schwärzung wirkt auf `message`).
 
 Befundcodes: `CRITICAL_UNTRIAGED`, `TRIAGE_OVERDUE`, `TRIAGE_OPEN`, `WORKSHOP_ACK_MISSING`, `WORKSHOP_ACK_PENDING`,
 `NO_FLEET_RECIPIENT`, `NO_WORKSHOP_RECIPIENT`, `WAITING_PARTS`, `COST_APPROVAL_PENDING`, `INSPECTION_DEFECTS_NO_CASE`, `REINSPECTION_PENDING`, `INSPECTION_RESULT_MISSING` (hinweis, ohne Push: Pflichtprüfung ohne Ergebnis wie Datenqualität `inspection_no_result`), `QC_PENDING`, `SAFETY_OPEN_ITEMS`, `VEHICLE_LOCKED`,

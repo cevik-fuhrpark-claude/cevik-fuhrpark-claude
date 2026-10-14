@@ -6078,6 +6078,70 @@ await test('Wächter: „Nächster Schritt“ jedes Agentenbefunds hat UK/EN-Tex
   console.log(`     ${lits.size} feste next_action-Texte, ${rows.length} davon im Testlauf erzeugt`);
 });
 
+await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE/UK/EN, deutscher Text unverändert, Schnittstelle ohne message_args', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const { FINDING_MESSAGES, FINDING_ENUMS, renderFindingMessage, findingMessage } = await import('../public/finding-messages.js');
+  const PH = /\{([a-z_]+)(?::km|\|[A-Z]+)?\}/g;
+  const names = (t) => [...t.matchAll(PH)].map((m) => m[0]).sort().join(',');
+  // 1) Vorlagen vollständig: jede Sprache hat jeden Schlüssel mit denselben Platzhaltern und denselben optionalen Abschnitten
+  const keys = Object.keys(FINDING_MESSAGES.de);
+  const bad = [];
+  for (const l of ['uk', 'en']) {
+    for (const k of keys) {
+      const t = FINDING_MESSAGES[l][k];
+      if (!t) { bad.push(`${l}:${k} fehlt`); continue; }
+      if (names(t) !== names(FINDING_MESSAGES.de[k])) bad.push(`${l}:${k} Platzhalter ${names(t)} ≠ ${names(FINDING_MESSAGES.de[k])}`);
+      if ((t.match(/\[\[/g) || []).length !== (FINDING_MESSAGES.de[k].match(/\[\[/g) || []).length) bad.push(`${l}:${k} optionale Abschnitte`);
+      if (t === FINDING_MESSAGES.de[k]) bad.push(`${l}:${k} unübersetzt`);
+    }
+    for (const k of Object.keys(FINDING_MESSAGES[l])) if (!FINDING_MESSAGES.de[k]) bad.push(`${l}:${k} ohne deutsche Vorlage`);
+    for (const [e, vals] of Object.entries(FINDING_ENUMS.de)) for (const v of Object.keys(vals)) if (!FINDING_ENUMS[l][e]?.[v]) bad.push(`${l}:${e}.${v}`);
+  }
+  // Listen in Vorlagen müssen existieren
+  for (const l of ['de', 'uk', 'en']) for (const t of Object.values(FINDING_MESSAGES[l])) for (const m of t.matchAll(/\|([A-Z]+)\}/g)) if (!FINDING_ENUMS[l][m[1]]) bad.push(`${l}: Liste ${m[1]} fehlt`);
+  ok(!bad.length, `Vorlagen unvollständig (public/finding-messages.js):\n${bad.join('\n')}`);
+  // 2) Jeder im Code verwendete Schlüssel existiert, keine verwaisten Vorlagen
+  const used = new Set();
+  for (const f of readdirSync(new URL('../src/', import.meta.url))) {
+    if (!f.endsWith('.js')) continue;
+    const s = readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
+    for (const m of s.matchAll(/\bfm\(([^,]+),/g)) for (const q of m[1].matchAll(/'([A-Z_]+)'/g)) used.add(q[1]);
+  }
+  const unknown = [...used].filter((k) => !FINDING_MESSAGES.de[k]);
+  ok(!unknown.length, `fm() mit unbekannter Vorlage: ${unknown.join(', ')}`);
+  const orphan = keys.filter((k) => !used.has(k));
+  ok(!orphan.length, `Vorlage wird nirgends verwendet: ${orphan.join(', ')}`);
+  // 3) Formatierung: Zahlen je Sprache, optionale Abschnitte, Listen, Rückfall
+  ok(renderFindingMessage('MAINT_KM_DUE', { plate: 'X', kind: 'Öl', due: 120000, km: 118500, rest: 1500 }, 'de') === 'X: Öl fällig bei 120.000 km – Stand 118.500 km (noch 1.500 km).', 'km deutsch');
+  ok(renderFindingMessage('MAINT_KM_DUE', { plate: 'X', kind: 'Öl', due: 120000, km: 118500, rest: 1500 }, 'en').includes('120,000 km'), 'km englisch');
+  ok(renderFindingMessage('CASE_FOLLOWUP_DUE', { label: 'S-1', date: '01.11.2026', note: null }, 'de') === 'S-1: Wiedervorlage am 01.11.2026.', 'optionaler Abschnitt entfällt');
+  ok(renderFindingMessage('CASE_FOLLOWUP_DUE', { label: 'S-1', date: '01.11.2026', note: 'Rückruf' }, 'en') === 'S-1: follow-up on 01.11.2026 – Rückruf.', 'optionaler Abschnitt mit Vermerk (Vermerk bleibt unübersetzt)');
+  ok(renderFindingMessage('INSPECTION_DEFECTS_NO_CASE', { plate: 'X', kind: 'HU', date: '01.10.2026', res: 'gefaehrliche_maengel' }, 'uk').includes('небезпечні дефекти'), 'Liste ukrainisch');
+  ok(findingMessage(null, 'Deutsch', 'en') === 'Deutsch' && findingMessage('{kaputt', 'Deutsch', 'en') === 'Deutsch' && findingMessage('{"k":"GIBT_ES_NICHT","a":{}}', 'Deutsch', 'en') === 'Deutsch', 'Rückfall auf deutschen Text');
+  // 4) Laufzeit: gespeicherte Befunde dieser Testsuite – Vorlage (DE) ergibt exakt den gespeicherten Text, UK/EN ohne Reste
+  const rows = env.DB.db.prepare('SELECT finding_code, message, message_args FROM agent_findings').all();
+  const withArgs = rows.filter((r) => r.message_args);
+  ok(withArgs.length >= 10, `nur ${withArgs.length} Befunde mit Vorlage gespeichert`);
+  const diff = []; const leftovers = [];
+  for (const r of withArgs) {
+    if (findingMessage(r.message_args, null, 'de') !== r.message) diff.push(`${r.finding_code}: ${r.message}`);
+    for (const l of ['uk', 'en']) { const t = findingMessage(r.message_args, null, l); if (!t || /[{}]|\[\[|undefined|null/.test(t)) leftovers.push(`${l}:${r.finding_code}: ${t}`); }
+  }
+  ok(!diff.length, `Vorlage weicht vom gespeicherten Text ab: ${diff.slice(0, 3).join(' | ')}`);
+  ok(!leftovers.length, `Übersetzung mit Resten: ${leftovers.slice(0, 3).join(' | ')}`);
+  const codesT = new Set(withArgs.map((r) => r.finding_code));
+  // Master-Eingang trägt die Vorlage ebenfalls (Panel „Entscheidungen“), die Integrations-API nicht
+  const inb = env.DB.db.prepare('SELECT payload FROM master_inbox').all().map((r) => JSON.parse(r.payload));
+  ok(inb.some((p) => p.message_args && p.message_args.k), 'Master-Eingang ohne message_args');
+  const HI = { authorization: 'Bearer integration-token-xyz' };
+  for (const path of ['/api/integration/v1/findings?environment=test', '/api/integration/v1/master?environment=test', '/api/integration/v1/findings', '/api/integration/v1/master']) {
+    const r = await anon.req('GET', path, undefined, HI);
+    eq(r.status, 200, path);
+    ok(!JSON.stringify(r.data).includes('message_args'), `${path} liefert message_args`);
+  }
+  console.log(`     ${keys.length} Vorlagen, ${withArgs.length}/${rows.length} gespeicherte Befunde mit Vorlage (${codesT.size} Codes)`);
+});
+
 await test('Wächter Offline-Hülle: jedes von app.js (transitiv) geladene Modul steht im Service-Worker-Cache, jede Cache-Datei existiert', async () => {
   const { readFileSync, existsSync } = await import('node:fs');
   const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

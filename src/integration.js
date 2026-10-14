@@ -54,11 +54,16 @@ function redactText(text, name) {
   if (name) t = t.split(`Fahrer ${name}`).join(REDACTED).split(name).join(REDACTED);
   return t;
 }
-function redactFinding(f, names) {
+// `message_args` (Vorlagenwerte für die Oberflächensprache, public/finding-messages.js) bleibt in der App – die Schnittstelle liefert
+// den deutschen Text `message` wie bisher (Datensparsamkeit: keine zusätzlichen Einzelwerte, Schwärzung greift nur auf `message`).
+function redactFinding(row, names) {
+  const { message_args, ...f } = row;
   if (!PERSON_FINDINGS.includes(f.finding_code)) return f;
   return { ...f, message: redactText(f.message, names.get(f.id)), next_action: redactText(f.next_action, names.get(f.id)), person_redacted: true };
 }
-function redactInbox(m, names) {
+function redactInbox(row, names) {
+  const { message_args, ...payload } = row.payload || {};
+  const m = row.payload ? { ...row, payload } : row;
   const code = m.payload && m.payload.finding_code;
   if (!PERSON_FINDINGS.includes(code)) return m;
   const n = names.get(m.finding_id);

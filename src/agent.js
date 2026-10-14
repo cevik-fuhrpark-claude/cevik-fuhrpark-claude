@@ -14,6 +14,7 @@ import { staleBefore } from './cases.js';
 import { latestKmByVehicle, kmDue, ruleDueKm, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { findingLabel } from '../public/finding-labels.js';
+import { renderFindingMessage, FINDING_ENUMS } from '../public/finding-messages.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -56,14 +57,17 @@ export function reminderBody(codes, lang, environment) {
 // Einzelner neuer kritischer Befund: Kurzbezeichnung in der Sprache der Person statt des rohen Codes (ohne Kennzeichen/Namen –
 // Push-Texte erscheinen auf dem Sperrbildschirm), Code in Klammern für Rückfragen.
 export const criticalBody = (code, lang, environment) => `${findingLabel(code, lang)}${findingLabel(code, lang) !== code ? ` (${code})` : ''}${environment === 'test' ? ' · TEST' : ''}`;
+// Meldungstext aus der gemeinsamen Vorlage (public/finding-messages.js): deutscher Text in `message` (Master, Integrations-API, Protokoll),
+// Vorlagenschlüssel + Werte in `message_args`, damit die Oberfläche denselben Befund in der Sprache der Person zeigt.
+export const fm = (k, a) => ({ message: renderFindingMessage(k, a, 'de'), message_args: JSON.stringify({ k, a }) });
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
 // Meldungstexte enthalten den Zeitpunkt statt einer laufenden Minutenzahl: so bleibt der Text zwischen zwei Läufen gleich
 // und der Agent schreibt nur geänderte Befunde (D1-Schreibkontingent: sonst jede Viertelstunde alle Befunde neu).
-const since = (iso) => `seit ${berlinDateTime(iso)}`;
+// (Vorlagen: „seit {at}“ mit at = berlinDateTime(…))
 // Felder, deren Änderung einen Befund „geändert“ macht (sonst kein Schreibzugriff)
-const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'next_action', 'owner_role', 'requires_decision', 'fingerprint'];
+const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'message_args', 'next_action', 'owner_role', 'requires_decision', 'fingerprint'];
 
 // Ausgangslisten des Agenten (Einstellungen, Empfänger, Sperren, Restarbeiten, nicht zugestellte Push, ruhende Fahrzeuge)
 // als JSON-Arrays in einer Abfrage – gleiche Bedingungen wie zuvor die sieben Einzelabfragen.
@@ -99,14 +103,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const base = await agentBasics(env, environment);
     const settings = new Map(base.settings.map((r) => [r.key, r.value]));
     const findings = [];
-    const add = (f) => findings.push({ requires_decision: 0, case_id: null, vehicle_id: null, ...f });
+    const add = (f) => findings.push({ requires_decision: 0, case_id: null, vehicle_id: null, message_args: null, ...f });
 
     // Leitung (Empfänger) und Werkstattstandorte mit Zugang in einer Abfrage
     const activeUsers = base.users;
     const fleetUsers = activeUsers.filter((u) => u.role !== 'workshop');
     if (fleetUsers.length === 0) {
       add({ code: 'NO_FLEET_RECIPIENT', subject: 'system', severity: 'kritisch', owner_role: 'owner', requires_decision: 1,
-        message: 'Keine aktive Fuhrparkleitung mit Zugang in dieser Umgebung – Meldungen haben keinen Empfänger.',
+        ...fm('NO_FLEET_RECIPIENT', {}),
         next_action: 'Fuhrparkleitung als Benutzer anlegen und Einladung annehmen lassen.' });
     }
 
@@ -122,21 +126,21 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // „Abschlusskontrolle“ haben eigene Befunde, unbewertete Meldungen/nicht übernommene Aufträge ebenfalls.
     const staleDays = Number(settings.get('case_stale_days'));
     const staleLimit = staleBefore(staleDays);
-    const STALE_DE = { gemeldet: 'bewertet, nicht weitergeleitet', werkstatt_freigegeben: 'von der Werkstatt übernommen, Reparatur nicht begonnen', in_reparatur: 'in Reparatur' };
+    const STALE_DE = FINDING_ENUMS.de.STALE; // Zustände mit Nachfassen (Texte in public/finding-messages.js)
     const fuToday = berlinDate();
     for (const c of open) {
       const label = `${c.case_no} (${c.plate})`;
       // Wiedervorlage (von der Leitung selbst gesetztes Datum): ab dem Tag als Hinweis, bis neu gesetzt/entfernt oder Vorgang abgeschlossen
       if (c.followup_on && c.followup_on <= fuToday) {
         add({ code: 'CASE_FOLLOWUP_DUE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-          message: `${label}: Wiedervorlage am ${c.followup_on.split('-').reverse().join('.')}${c.followup_note ? ' – ' + c.followup_note : ''}.`,
+          ...fm('CASE_FOLLOWUP_DUE', { label, date: c.followup_on.split('-').reverse().join('.'), note: c.followup_note || null }),
           next_action: 'Vorgang prüfen; neue Wiedervorlage setzen oder entfernen.' });
       }
       if (staleLimit && STALE_DE[c.status] && (c.status !== 'gemeldet' || c.fleet_received_at) && (c.status !== 'werkstatt_freigegeben' || c.workshop_ack_at)) {
         const last = berlinDate(c.updated_at);
         if (c.updated_at < staleLimit) {
           add({ code: 'CASE_STALE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: c.status === 'gemeldet' ? 'fleet' : 'workshop',
-            message: `${label}: ${STALE_DE[c.status]} – letzte Änderung am ${last.split('-').reverse().join('.')} (Nachfassen nach ${staleDays} Tagen eingestellt).`,
+            ...fm('CASE_STALE', { label, state: c.status, date: last.split('-').reverse().join('.'), days: staleDays }),
             next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });
         }
       }
@@ -146,14 +150,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const age = ageMin(c.created_at);
         if (urgent) {
           add({ code: 'CRITICAL_UNTRIAGED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
-            message: `${label}: sicherheitsrelevante Meldung ${since(c.created_at)} nicht von der Fuhrparkleitung bestätigt.`,
+            ...fm('CRITICAL_UNTRIAGED', { label, at: berlinDateTime(c.created_at) }),
             next_action: 'Meldung bewerten, Fahrzeug nicht disponieren, Werkstatt festlegen.' });
         } else if (sla !== null && age > sla) {
           add({ code: 'TRIAGE_OVERDUE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 0,
-            message: `${label}: Erstbewertung überfällig (gemeldet ${berlinDateTime(c.created_at)}, Frist ${sla} Min.).`, next_action: 'Meldung bewerten und Priorität bestätigen.' });
+            ...fm('TRIAGE_OVERDUE', { label, at: berlinDateTime(c.created_at), sla }), next_action: 'Meldung bewerten und Priorität bestätigen.' });
         } else {
           add({ code: 'TRIAGE_OPEN', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-            message: `${label}: wartet auf Erstbewertung (${since(c.created_at)}${sla === null ? '; Frist nicht konfiguriert' : ''}).`, next_action: 'Meldung bewerten.' });
+            ...fm(sla === null ? 'TRIAGE_OPEN_NOSLA' : 'TRIAGE_OPEN', { label, at: berlinDateTime(c.created_at) }), next_action: 'Meldung bewerten.' });
         }
       }
       if (c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at) {
@@ -162,35 +166,35 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const noUser = c.workshop_site && !sitesWithUsers.has(c.workshop_site);
         if (noUser) {
           add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
-            message: `${label}: Werkstatt ${c.workshop_site} hat keinen aktiven Benutzer – Auftrag kann nicht übernommen werden.`,
+            ...fm('NO_WORKSHOP_RECIPIENT', { label, site: c.workshop_site }),
             next_action: 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
         } else if (c.priority === 'kritisch' || (sla !== null && age > sla)) {
           add({ code: 'WORKSHOP_ACK_MISSING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: c.priority === 'kritisch' ? 1 : 0,
-            message: `${label}: freigegebener Auftrag ${since(c.updated_at)} nicht von Werkstatt ${c.workshop_site} übernommen.`,
+            ...fm('WORKSHOP_ACK_MISSING', { label, at: berlinDateTime(c.updated_at), site: c.workshop_site }),
             next_action: 'Werkstatt direkt kontaktieren oder Auftrag umleiten.' });
         } else {
           add({ code: 'WORKSHOP_ACK_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'workshop',
-            message: `${label}: wartet auf Übernahme durch Werkstatt ${c.workshop_site} (${since(c.updated_at)}${sla === null ? '; Frist nicht konfiguriert' : ''}).`, next_action: 'Auftrag übernehmen.' });
+            ...fm(sla === null ? 'WORKSHOP_ACK_PENDING_NOSLA' : 'WORKSHOP_ACK_PENDING', { label, site: c.workshop_site, at: berlinDateTime(c.updated_at) }), next_action: 'Auftrag übernehmen.' });
         }
       }
       if (c.status === 'wartet_teile') {
         add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',
-          message: `${label}: Reparatur wartet auf Teile (${since(c.updated_at)}).`, next_action: 'Teilelieferung klären, Dispo informieren.' });
+          ...fm('WAITING_PARTS', { label, at: berlinDateTime(c.updated_at) }), next_action: 'Teilelieferung klären, Dispo informieren.' });
       }
       // Kostenfreigabe ausstehend (Grenze überschritten): Zustand, keine Frist – ohne Beträge im Text
       if (c.cost_over_limit_at) {
         add({ code: 'COST_APPROVAL_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 1,
-          message: `${label}: Kosten-Freigabegrenze überschritten – Kostenfreigabe offen (${since(c.cost_over_limit_at)}).`, next_action: 'Kosten prüfen und freigeben oder mit der Werkstatt klären.' });
+          ...fm('COST_APPROVAL_PENDING', { label, at: berlinDateTime(c.cost_over_limit_at) }), next_action: 'Kosten prüfen und freigeben oder mit der Werkstatt klären.' });
       }
       if (c.status === 'abschlusskontrolle') {
         add({ code: 'QC_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-          message: `${label}: Reparatur gemeldet – Abschlusskontrolle und technische Freigabe durch einen Menschen offen.`,
+          ...fm('QC_PENDING', { label }),
           next_action: 'Kontrolle durchführen: freigeben oder Nacharbeit anfordern.' });
       }
       if (c.status === 'in_reparatur') {
         const oi = { n: safetyOpen.get(c.id) || 0 };
         if (oi.n > 0) add({ code: 'SAFETY_OPEN_ITEMS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'workshop',
-          message: `${label}: ${oi.n} sicherheitsrelevante Restarbeit(en) offen.`, next_action: 'Restarbeiten erledigen oder Teile beschaffen.' });
+          ...fm('SAFETY_OPEN_ITEMS', { label, n: oi.n }), next_action: 'Restarbeiten erledigen oder Teile beschaffen.' });
       }
     }
 
@@ -198,21 +202,21 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const locked = base.locked;
     for (const l of locked) {
       add({ code: 'VEHICLE_LOCKED', subject: l.vehicle_id, case_id: l.id, vehicle_id: l.vehicle_id, severity: 'info', owner_role: 'dispatch',
-        message: `${l.plate}: gesperrt (${l.safety_lock_reason || 'Sicherheitsprüfung'}) – nicht disponieren.`, next_action: 'Bis zur technischen Freigabe nicht einplanen.' });
+        ...fm(l.safety_lock_reason ? 'VEHICLE_LOCKED' : 'VEHICLE_LOCKED_DEFAULT', { plate: l.plate, reason: l.safety_lock_reason || null }), next_action: 'Bis zur technischen Freigabe nicht einplanen.' });
     }
 
     // Freigegeben, aber Restarbeiten offen
     const relOpen = base.released_open;
     for (const r of relOpen) {
       add({ code: 'RELEASED_WITH_OPEN_ITEMS', subject: r.id, case_id: r.id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        message: `${r.case_no} (${r.plate}): freigegeben mit ${r.n} offener nicht sicherheitsrelevanter Restarbeit(en).`, next_action: 'Werkstatttermin für Restarbeiten planen.' });
+        ...fm('RELEASED_WITH_OPEN_ITEMS', { label: `${r.case_no} (${r.plate})`, n: r.n }), next_action: 'Werkstatttermin für Restarbeiten planen.' });
     }
 
     // Dringende Benachrichtigungen ohne Push-Zustellung
     const undelivered = base.undelivered;
     for (const u of undelivered) {
       add({ code: 'URGENT_NOT_DELIVERED', subject: u.case_id || 'system', case_id: u.case_id, severity: 'handeln', owner_role: 'fleet',
-        message: `Dringende Benachrichtigung an ${u.n} Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler).`,
+        ...fm('URGENT_NOT_DELIVERED', { n: u.n }),
         next_action: 'Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.' });
     }
 
@@ -229,7 +233,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const hasHours = { n: c.hours_n }; const unvParts = { n: c.unv_n }; const ext = { n: c.ext_n };
       if (!ext.n && ((hasHours.n > 0 && rate === null) || unvParts.n > 0)) {
         add({ code: 'COSTS_UNVALUED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'owner',
-          message: `${c.case_no} (${c.plate}): Kosten unvollständig bewertet (${rate === null && hasHours.n ? 'kein Stundensatz' : ''}${unvParts.n ? ` ${unvParts.n} Teil(e) ohne Preis` : ''}).`,
+          ...fm(rate === null && hasHours.n ? (unvParts.n ? 'COSTS_UNVALUED_BOTH' : 'COSTS_UNVALUED_RATE') : 'COSTS_UNVALUED_PARTS', { label: `${c.case_no} (${c.plate})`, n: unvParts.n || null }),
           next_action: 'Stundensatz festlegen bzw. Teilepreise nachtragen.' });
       }
     }
@@ -240,22 +244,21 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const warnDays = Number(settings.get('maintenance_warn_days')) || 30;
     const warnKm = Number(settings.get('maintenance_warn_km')) > 0 ? Number(settings.get('maintenance_warn_km')) : null;
     const latestKm = rules.some((r) => ruleDueKm(r) !== null) ? await latestKmByVehicle(env) : new Map();
-    const fmtKm = (n) => n.toLocaleString('de-DE');
     for (const r of rules) {
       // km-Fälligkeit (belegt oder aus Intervall + letzter Durchführung in km) – nur mit belegtem km-Stand
       const k = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
       if (k && k.km_status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        message: `${r.plate}: ${r.kind} war bei ${fmtKm(k.next_due_km)} km fällig – Stand ${fmtKm(k.current_km)} km (abgelesen ${berlinDateTime(k.km_measured_at).slice(0, 10)}).`, next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        message: `${r.plate}: ${r.kind} fällig bei ${fmtKm(k.next_due_km)} km – Stand ${fmtKm(k.current_km)} km (noch ${fmtKm(k.km_remaining)} km).`, next_action: 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, rest: k.km_remaining }), next_action: 'Werkstatttermin einplanen.' });
       if (r.kind === 'HU' || r.kind === 'SP') continue; // HU/SP: zentrale Berechnung nach StVZO Anlage VIII (unten)
       const due = r.next_due_date;
       if (!due) continue;
       const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
       if (days < 0) add({ code: 'MAINTENANCE_OVERDUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        message: `${r.plate}: ${r.kind} seit ${-days} Tag(en) überfällig (fällig ${due}).`, next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_DATE_OVERDUE', { plate: r.plate, kind: r.kind, days: -days, due }), next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (days <= warnDays) add({ code: 'MAINTENANCE_DUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        message: `${r.plate}: ${r.kind} fällig am ${due} (in ${days} Tag(en)).`, next_action: 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_DATE_DUE', { plate: r.plate, kind: r.kind, due, days }), next_action: 'Werkstatttermin einplanen.' });
     }
 
     // HU/SP nach StVZO Anlage VIII: gespiegelte Fälligkeiten aktualisieren (nur Betrieb-Lauf, protokolliert) und Befunde bilden
@@ -271,12 +274,12 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const subject = res.rules[kind] || `${vid}|${kind}`;
         const m = (d) => `${d.slice(5, 7)}/${d.slice(0, 4)}`;
         if (h.status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject, vehicle_id: vid, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-          message: `${x.v.plate}: ${H_LABEL[kind]} überfällig (fällig bis Ende ${m(h.due)}${kind === 'SP' && res.hu.last_done ? `, 6 Monate nach HU ${res.hu.last_done}` : ''}).`,
+          ...fm('HUSP_OVERDUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), hu: kind === 'SP' && res.hu.last_done ? res.hu.last_done : null }),
           next_action: 'Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.' });
         else if (h.status === 'bald_faellig') add({ code: 'MAINTENANCE_DUE', subject, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
-          message: `${x.v.plate}: ${H_LABEL[kind]} fällig bis Ende ${m(h.due)}${h.planned_date ? ` (Werkstatttermin geplant ${h.planned_date})` : ''}.`, next_action: h.planned_date ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
+          ...fm('HUSP_DUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), planned: h.planned_date || null }), next_action: h.planned_date ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
         else if (h.status === 'ungeklaert' && x.rules.length) add({ code: 'INSPECTION_UNCLEAR', subject: `${vid}|${kind}|unklar`, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
-          message: `${x.v.plate}: ${H_LABEL[kind]}-Frist ungeklärt – ${h.notes[h.notes.length - 1] || 'Grundlage fehlt'}`, next_action: 'Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.' });
+          ...fm('INSPECTION_UNCLEAR', { plate: x.v.plate, kind: H_LABEL[kind], note: h.notes[h.notes.length - 1] || 'Grundlage fehlt' }), next_action: 'Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.' });
       }
     }
 
@@ -286,24 +289,23 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const days = Math.round((Date.parse(d.valid_until) - Date.parse(today)) / 86400000);
       const label = DOC_LABEL[d.doc_kind] || 'Dokument';
       if (days < 0) add({ code: 'DOCUMENT_EXPIRED', subject: `${d.vehicle_id}|${d.doc_kind}`, vehicle_id: d.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        message: `${d.plate}: ${label} abgelaufen am ${d.valid_until}.`, next_action: 'Gültiges Dokument beschaffen und in der Fahrzeugakte hinterlegen.' });
+        ...fm('DOCUMENT_EXPIRED', { plate: d.plate, doc: DOC_LABEL[d.doc_kind] ? d.doc_kind : 'sonstiges', date: d.valid_until }), next_action: 'Gültiges Dokument beschaffen und in der Fahrzeugakte hinterlegen.' });
       else if (days <= warnDays) add({ code: 'DOCUMENT_EXPIRES_SOON', subject: `${d.vehicle_id}|${d.doc_kind}`, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        message: `${d.plate}: ${label} gültig bis ${d.valid_until} (in ${days} Tag(en)).`, next_action: 'Verlängerung/Nachfolgedokument veranlassen.' });
+        ...fm('DOCUMENT_EXPIRES_SOON', { plate: d.plate, doc: DOC_LABEL[d.doc_kind] ? d.doc_kind : 'sonstiges', date: d.valid_until, days }), next_action: 'Verlängerung/Nachfolgedokument veranlassen.' });
     }
 
     // Prüfung mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher (≤ 365 Tage), seitdem kein Vorgang zum Fahrzeug – keine Frist angenommen
-    const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
     const evLists = await maintenanceEventLists(env, environment); // eine D1-Abfrage für die drei Prüfungs-Listen
     for (const d of evLists.defects_without_case) {
       add({ code: 'INSPECTION_DEFECTS_NO_CASE', subject: d.id, vehicle_id: d.vehicle_id, severity: d.result === 'erhebliche_maengel' ? 'handeln' : 'kritisch', owner_role: 'fleet', requires_decision: 1,
-        message: `${d.plate}: ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} mit Ergebnis „${RES_DE[d.result]}“ – seitdem kein Vorgang/Auftrag.`,
+        ...fm('INSPECTION_DEFECTS_NO_CASE', { plate: d.plate, kind: d.kind, date: d.done_date.split('-').reverse().join('.'), res: d.result }),
         next_action: d.result === 'erhebliche_maengel' ? 'In der Fahrzeugakte „Auftrag Mängelbeseitigung“ anlegen; Nachprüfung belegen.' : 'Einsatzfähigkeit fachlich prüfen, ggf. sperren; Auftrag Mängelbeseitigung anlegen.' });
     }
 
     // Mängelauftrag freigegeben, Nachprüfung noch nicht in der Akte – keine Frist angenommen (steht im Prüfbericht)
     for (const d of evLists.reinspection_pending) {
       add({ code: 'REINSPECTION_PENDING', subject: d.id, vehicle_id: d.vehicle_id, case_id: d.case_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 0,
-        message: `${d.plate}: Mängel aus ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} (${RES_DE[d.result]}) laut Auftrag ${d.case_no} beseitigt – Nachprüfung noch nicht eingetragen.`,
+        ...fm('REINSPECTION_PENDING', { plate: d.plate, kind: d.kind, date: d.done_date.split('-').reverse().join('.'), res: d.result, case_no: d.case_no }),
         next_action: 'Nachprüfung/Wiedervorführung durchführen lassen und mit Nachweis in der Fahrzeugakte eintragen (Frist laut Prüfbericht).' });
     }
 
@@ -311,7 +313,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Ruhiger Hinweis ohne Push: ohne Ergebnis bliebe ein Prüfmangel (Auftrag, Sperre, Nachprüfung) unbemerkt.
     for (const d of evLists.result_missing) {
       add({ code: 'INSPECTION_RESULT_MISSING', subject: d.id, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 0,
-        message: `${d.plate}: ${d.kind} vom ${d.done_date.split('-').reverse().join('.')} ohne eingetragenes Prüfergebnis.`,
+        ...fm('INSPECTION_RESULT_MISSING', { plate: d.plate, kind: d.kind, date: d.done_date.split('-').reverse().join('.') }),
         next_action: 'Ergebnis laut Prüfbericht in der Fahrzeugakte nachtragen (Bisherige Durchführungen → Prüfergebnis nachtragen).' });
     }
 
@@ -324,7 +326,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     for (const t of await tireFindings(env, environment, settings)) {
       add({ code: t.severity === 'kritisch' ? 'TIRE_BELOW_MINIMUM' : 'TIRE_WARN', subject: `${t.vehicle_id}|${t.position}`, vehicle_id: t.vehicle_id,
         severity: t.severity, owner_role: 'fleet', requires_decision: t.severity === 'kritisch' ? 1 : 0,
-        message: `${t.plate} ${t.position}: Profiltiefe ${t.tread_mm} mm (Grenze ${t.limit} mm, gemessen ${berlinDate(t.created_at)}).`,
+        ...fm('TIRE_TREAD', { plate: t.plate, pos: t.position, mm: t.tread_mm, limit: t.limit, date: berlinDate(t.created_at) }),
         next_action: t.severity === 'kritisch' ? 'Reifen vor weiterer Fahrt prüfen/tauschen lassen.' : 'Reifenwechsel einplanen.' });
     }
 
@@ -378,7 +380,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const existing = existingMap.get(`${f.code}|${f.subject}`);
       const findingId = existing ? existing.id : uuid();
       const changed = !existing || existing.status !== 'offen' || existing.fingerprint !== fingerprint;
-      const row = { id: findingId, code: f.code, subject: f.subject, case_id: f.case_id ?? null, vehicle_id: f.vehicle_id ?? null, severity: f.severity, message: f.message,
+      const row = { id: findingId, code: f.code, subject: f.subject, case_id: f.case_id ?? null, vehicle_id: f.vehicle_id ?? null, severity: f.severity, message: f.message, message_args: f.message_args ?? null,
         next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint };
       // Unveränderte offene Befunde nicht erneut schreiben
       if (changed || ROW_FIELDS.some((k) => (existing[k] ?? null) !== row[k])) rows.push(row);
@@ -390,10 +392,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const eventIds = await Promise.all(candidates.map((c) => sha256Hex(c.eventInput)));
     candidates.forEach((c, i) => { c.eventId = eventIds[i]; delete c.eventInput; });
     const J = (k) => `json_extract(value,'$.${k}')`;
-    const upserts = chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
-      SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ?2, ?2
+    const upserts = chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,message_args,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
+      SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('message_args')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ?2, ?2
       FROM json_each(?3) WHERE 1
-      ON CONFLICT(environment, finding_code, subject_key) DO UPDATE SET case_id=excluded.case_id, vehicle_id=excluded.vehicle_id, severity=excluded.severity, message=excluded.message,
+      ON CONFLICT(environment, finding_code, subject_key) DO UPDATE SET case_id=excluded.case_id, vehicle_id=excluded.vehicle_id, severity=excluded.severity, message=excluded.message, message_args=excluded.message_args,
         next_action=excluded.next_action, owner_role=excluded.owner_role, requires_decision=excluded.requires_decision, fingerprint=excluded.fingerprint, last_seen=excluded.last_seen,
         first_seen=CASE WHEN agent_findings.status='erledigt' THEN excluded.first_seen ELSE agent_findings.first_seen END, status='offen', resolved_at=NULL`)
       .bind(environment, now, JSON.stringify(part)));
@@ -412,7 +414,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const payloads = fresh.map(({ eventId, findingId, f }) => ({
         schema_version: '1.0', event_id: eventId, event_type: 'fleet.finding.review_required', environment,
         occurred_at: now, finding_id: findingId, finding_code: f.code, case_id: f.case_id, vehicle_id: f.vehicle_id,
-        severity: f.severity, message: f.message, next_action: f.next_action, owner_role: f.owner_role,
+        severity: f.severity, message: f.message, ...(f.message_args ? { message_args: JSON.parse(f.message_args) } : {}), next_action: f.next_action, owner_role: f.owner_role,
         requires_human_approval: !!f.requires_decision, source_agent: 'claude-fleet-agent', agent_run_id: runId,
       }));
       if (payloads.length) {
