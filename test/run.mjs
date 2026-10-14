@@ -2679,7 +2679,7 @@ await test('Panne & Notfall: Rufnummern je Umgebung (alle/Standort/Fahrzeug), Fa
   const ar = (await users.fleet.get('/api/emergency/contacts?archived=1')).data.contacts.find((c) => c.id === v.data.id); ok(ar && ar.archived_at && ar.archived_by_name === 'Test Dispo', 'Archiv mit Zeitpunkt und Person');
   // Oberfläche: Routen, Einstiege (Start Fahrer, Mehr, QR-Scan), Notruf 112 fest, sonst keine Nummern in den Texten; Hilfe DE/UK/EN nennt die Seite
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const x of ['viewEmergency]', 'viewEmergencyEdit]', 'id="emhome"', 'href="#/emergency?v=${esc(v.id)}"', 'href="tel:112"', "localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), d }))", "k.startsWith('cfp_emerg_')"]) ok(app.includes(x), 'Oberfläche: ' + x);
+  for (const x of ['viewEmergency]', 'viewEmergencyEdit]', 'id="emhome"', 'href="#/emergency?v=${esc(v.id)}"', 'href="tel:112"', '<a class="btn secondary" href="#/emergency?v=${esc(v.id)}">☎ ${esc(t(\'em_title\'))}</a>', "localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), d }))", "k.startsWith('cfp_emerg_')"]) ok(app.includes(x), 'Oberfläche: ' + x);
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   for (const lg of ['de', 'uk', 'en']) {
     for (const k of Object.keys(STRINGS.de).filter((k) => k.startsWith('em_'))) { ok(STRINGS[lg][k], `${lg}.${k}`); ok(!/\d{3,}/.test(STRINGS[lg][k].replace(/112/g, '')), `${lg}.${k}: keine Nummern außer 112`); }
