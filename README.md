@@ -21,9 +21,10 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · Hilfe je Rolle mit Suche · Deu
 | `docs/HISTORIE.md` | Vollständiger Verlauf aller erledigten Punkte und Sitzungen |
 | `docs/API.md` | App- und Integrationsschnittstellen, Befehle, Befundcodes |
 | `docs/BETRIEB.md` | Einrichtung, Benutzer, Push, Exporte je Rolle, Sicherung, Prüfskripte |
+| `docs/RUNDGANG.md` | Ablaufplan Testrundgang (Fahrer → Leitung → Werkstatt → Freigabe) mit erwarteten Ergebnissen |
 
 ```bash
-npm test                                            # 218 Abnahmetests (Node ≥ 22)
+npm test                                            # 219 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

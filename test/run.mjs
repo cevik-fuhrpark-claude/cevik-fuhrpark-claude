@@ -6255,6 +6255,90 @@ await test('Wächter Offline-Hülle: jedes von app.js (transitiv) geladene Modul
   console.log(`     ${seen.size} Module, ${shell.length} Hüllen-Dateien`);
 });
 
+console.log('Testrundgang (docs/RUNDGANG.md)');
+await test('Testrundgang laut docs/RUNDGANG.md: Schalter „nur lesen“ an, Testkonten, Ablauf Fahrer → Leitung → Werkstatt → Freigabe, km nicht in der Akte; Sperrgrund DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const doc = fs.readFileSync(new URL('../docs/RUNDGANG.md', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const de = new Set(Object.values(STRINGS.de).filter((v) => typeof v === 'string'));
+  // Knopf- und Statusnamen im Dokument müssen exakt die deutschen App-Texte sein (sonst sucht der Inhaber vergeblich)
+  const buttons = [...doc.matchAll(/\*\*„([^“]+)“\*\*/g)].map((m) => m[1]);
+  const states = [...doc.matchAll(/Status \*\*([^*]+)\*\*/g)].map((m) => m[1]);
+  ok(buttons.length >= 8 && states.length >= 5, `zu wenige Namen erkannt (${buttons.length}/${states.length})`);
+  const missing = [...buttons, ...states].filter((x) => !de.has(x));
+  ok(!missing.length, `Texte im Rundgang ohne gleichlautenden App-Text: ${missing.join(', ')}`);
+  for (const k of ['test_master_readonly', 'new_user', 'env_switch', 'env_testname', 'nav_inbox', 'push_enable', 'nav_check', 'todo_today', 'nav_master'])
+    ok(doc.includes(STRINGS.de[k]), `Rundgang nennt „${STRINGS.de[k]}“ (${k}) nicht`);
+
+  // Vorbereitung 1: Schalter an
+  eq((await owner.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  try {
+    const plate = 'RG-T 1'; const vin = 'WDB96340310777701';
+    eq((await owner.post('/api/vehicles', { plate, vin, site: 'Dortmund' })).status, 201, 'Fahrzeug (Betrieb, gemeinsame Stammdaten)');
+    const VID = 'VIN:' + vin; const vp = `/api/vehicles/${encodeURIComponent(VID)}`;
+    eq((await owner.post(`${vp}/odometer`, { km: 500000 })).status, 201);
+    // Vorbereitung 2/3: Testkonten, Zuordnung in der Ansicht „Test“
+    const drv = await invite(owner, { username: 'rg.fahrer', display_name: 'Rundgang Fahrer', role: 'driver', environment: 'test' });
+    const fl = await invite(owner, { username: 'rg.leitung', display_name: 'Rundgang Leitung', role: 'fleet', environment: 'test' });
+    const ws = await invite(owner, { username: 'rg.werkstatt', display_name: 'Rundgang Werkstatt', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' });
+    const asg = (env_) => owner.post(`${vp}/drivers`, { user_id: drv.id }, { 'x-cfp-env': env_ });
+    ok((await asg('production')).status >= 400, 'Zuordnung in der Ansicht „Betrieb“ findet das Testkonto nicht');
+    eq((await asg('test')).status, 201, 'Zuordnung in der Ansicht „Test“');
+    ok((await drv.get('/api/me/vehicles')).data.vehicles.some((v) => v.id === VID), 'Fahrer sieht sein Fahrzeug');
+    const cmd = async (u, cid, action, payload = {}, note = null) => {
+      const c = (await u.get(`/api/cases/${cid}`)).data.case;
+      const r = await u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, payload, note });
+      eq(r.status, 200, `${action}:`); return r.data;
+    };
+    // 1 Fahrer meldet
+    const c = await drv.post('/api/cases', { vehicle_id: VID, description: 'TEST Spiegel locker', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() });
+    eq(c.status, 201); const cid = c.data.id;
+    const cs = (await fl.get(`/api/cases/${cid}`)).data.case;
+    ok(/^T-/.test(cs.case_no || ''), `Testnummer T-… (${cs.case_no})`); eq(cs.status, 'gemeldet');
+    eq((await owner.get(`/api/cases/${cid}`, { 'x-cfp-env': 'production' })).status, 404, 'im Betrieb unsichtbar');
+    // 2 Leitung
+    await cmd(fl, cid, 'receive');
+    eq((await cmd(fl, cid, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Spiegelhalter prüfen')).status, 'werkstatt_freigegeben');
+    ok((await ws.get('/api/notifications')).data.notifications.some((n) => n.case_id === cid), 'Werkstatt erhält Hinweis');
+    // 3/4 Werkstatt
+    await cmd(ws, cid, 'acknowledge');
+    eq((await cmd(ws, cid, 'start_repair')).status, 'in_reparatur');
+    await cmd(ws, cid, 'record_work', { hours: 0.5, description: 'Spiegelhalter nachgezogen' });
+    await cmd(ws, cid, 'add_part', { name: 'Schraube', quantity: 1 });
+    eq((await fl.get(`/api/cases/${cid}`)).data.costs.complete, false, 'ohne Preis/Satz unbewertet');
+    // 5 Kontrolle nach Reparatur mit einem Mangel → Folgeauftrag; km nur an der Kontrolle
+    const keys = (await ws.get('/api/meta')).data.checklist.map((i) => i.key);
+    eq(keys.length, 18, '18 Prüfpunkte');
+    const ins = await ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: cid, request_key: rk(), items: keys.map((k, i) => ({ key: k, result: i === 0 ? 'mangel' : 'ok', note: i === 0 ? 'TEST Mangel' : null })), odometer_km: 500100 });
+    eq(ins.status, 201); eq(ins.data.followups.length, 1, 'Folgeauftrag');
+    // 6/7 Abschlusskontrolle, Freigabe
+    eq((await cmd(ws, cid, 'request_quality_check', {}, 'erledigt')).status, 'abschlusskontrolle');
+    eq((await cmd(fl, cid, 'technical_release', { confirm: true }, 'Kontrollnachweis geprüft')).status, 'fahrzeug_freigegeben');
+    // 8 Abfahrtskontrolle ohne Mangel
+    const ck = await drv.post('/api/inspections', { kind: 'abfahrt', vehicle_id: VID, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })), odometer_km: 500200 });
+    eq(ck.status, 201); eq(ck.data.km_test_only, true);
+    eq((await owner.get(vp)).data.odometer[0].km, 500000, 'km aus Testkontrollen nicht in der echten Akte');
+    // 9 Folgeauftrag offen in der Testumgebung
+    const open = (await fl.get('/api/cases')).data.cases.filter((x) => x.vehicle_id === VID && x.status === 'gemeldet');
+    eq(open.length, 1, 'Folgeauftrag offen');
+    // Zusatzprüfung: kritisch + nicht fahrbereit → sofort gesperrt
+    const k = await drv.post('/api/cases', { vehicle_id: VID, description: 'TEST kritisch', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() });
+    eq(k.status, 201); eq(k.data.safety_lock, true);
+    { const lc = (await fl.get(`/api/cases/${k.data.id}`)).data.case; ok(/nicht fahrbereit \(ungeprüft\)/.test(lc.safety_lock_reason || ''), 'Sperrgrund wie im Rundgang: ' + JSON.stringify(lc.safety_lock_reason)); 
+      // Oberfläche: automatischer Sperrgrund in der Sprache der Person (Fahrer meldet ggf. auf Ukrainisch)
+      const { translateLockReason } = await import('../public/i18n.js');
+      eq(translateLockReason('de', lc.safety_lock_reason), lc.safety_lock_reason, 'Deutsch unverändert');
+      eq(translateLockReason('uk', lc.safety_lock_reason), 'Водій повідомляє: не може їхати (не перевірено)');
+      eq(translateLockReason('en', lc.safety_lock_reason), 'Driver reports: not drivable (unverified)');
+      const k2 = await fl.post('/api/cases', { vehicle_id: VID, description: 'TEST kritisch Leitung', priority: 'kritisch', driveability: 'fahrbereit', request_key: rk() });
+      eq(k2.status, 201);
+      const r2 = (await fl.get(`/api/cases/${k2.data.id}`)).data.case.safety_lock_reason;
+      eq(translateLockReason('en', r2), 'Report (Fleet manager): safety-critical (unverified)', `Leitung meldet (${r2})`);
+      ok(!/[äöüß]|ungeprüft|Meldung/.test(translateLockReason('uk', r2)), 'keine deutschen Reste: ' + translateLockReason('uk', r2));
+      eq(translateLockReason('uk', 'Bremse defekt – nicht fahren'), 'Bremse defekt – nicht fahren', 'Handeingabe bleibt'); }
+  } finally { eq((await owner.put('/api/settings', { test_master_readonly: null })).status, 200); }
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

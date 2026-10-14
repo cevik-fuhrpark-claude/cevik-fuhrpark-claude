@@ -1,5 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
-import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason, translateNextAction } from './i18n.js';
+import { STRINGS, CHECK_LABELS, translateValidation, translateImportReason, translateNextAction, translateLockReason } from './i18n.js';
 import { findingMessage } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, readCsvFile } from './csv.js';
@@ -760,7 +760,7 @@ async function viewCase(id) {
     <h1 style="margin-top:12px">${esc(c.case_no)}</h1>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint"><button type="button" class="btn secondary" id="cprt">${esc(t('print'))}</button></div>
-    ${c.safety_lock ? `<div class="panel alert"><b>${esc(t('locked'))}</b> – ${esc(c.safety_lock_reason || '')}</div>` : ''}
+    ${c.safety_lock ? `<div class="panel alert"><b>${esc(t('locked'))}</b> – ${esc(translateLockReason(S.lang, c.safety_lock_reason || ''))}</div>` : ''}
     ${d.access === 'preview' ? `<div class="panel">${esc(t('preview_hint'))}</div>` : ''}
     ${d.maintenance_event ? (() => { const me = d.maintenance_event; const ri = me.reinspection; const good = ri && !DEFECT_RESULTS.includes(ri.result); return `<div class="panel ${good ? 'good' : ''}"><b>${esc(t('md_case'))}: ${esc(mk(me.kind))} ${fmtD(me.done_date)}</b> · ${esc(t('res_' + me.result))} – ${ri ? `${esc(t('reinsp_done'))} ${fmtD(ri.done_date)}${ri.result ? ' · ' + esc(t('res_' + ri.result)) : ''} (${esc(ri.evidence)})` : `${c.status === 'fahrzeug_freigegeben' ? `<span class="chip mittel">${esc(t('todo_reinspection'))}</span> ` : ''}${esc(t('md_case_hint'))}`} <a href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>`; })() : ''}
     ${d.maintenance_rule ? `<div class="panel ${d.maintenance_rule.done_since_order ? 'good' : ''}"><b>${esc(t('mo_case'))}: ${esc(mk(d.maintenance_rule.kind))}</b> – ${d.maintenance_rule.done_since_order ? `${esc(t('mo_done'))} ${fmtD(d.maintenance_rule.last_done_date)}` : esc(t('mo_case_hint'))} <a href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>` : ''}

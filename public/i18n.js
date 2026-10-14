@@ -1048,3 +1048,18 @@ Object.assign(STRINGS.uk, { driver_file: 'Картка водія' });
 Object.assign(STRINGS.en, { driver_file: 'Driver file' });
 // Befund-Kurzbezeichnungen (fc_<CODE>) aus der gemeinsamen Datei finding-labels.js (auch vom Server für Push-Texte genutzt)
 for (const l of ['de', 'uk', 'en']) for (const [c, v] of Object.entries(FINDING_LABELS[l])) STRINGS[l]['fc_' + c] = v;
+
+// [CLAUDE] Automatischer Sperrgrund bei Meldungen (Server speichert Deutsch, z. B. „Fahrer meldet: nicht fahrbereit (ungeprüft)“) –
+// in der Oberfläche in der Sprache der Person. Von Hand eingegebene Sperrgründe bleiben unverändert.
+const LOCK_REASON = {
+  uk: { driver: 'Водій повідомляє', report: 'Повідомлення ({r})', nicht_fahrbereit: 'не може їхати (не перевірено)', sicherheitskritisch: 'загроза безпеці (не перевірено)' },
+  en: { driver: 'Driver reports', report: 'Report ({r})', nicht_fahrbereit: 'not drivable (unverified)', sicherheitskritisch: 'safety-critical (unverified)' },
+};
+const LOCK_ROLE = { Inhaber: 'role_owner', Fuhrparkleitung: 'role_fleet', Werkstatt: 'role_workshop', Disposition: 'role_dispatch' };
+export function translateLockReason(lang, msg) {
+  const T = LOCK_REASON[lang]; if (!T || typeof msg !== 'string') return msg;
+  const m = msg.match(/^(Fahrer meldet|Meldung(?: (Inhaber|Fuhrparkleitung|Werkstatt|Disposition))?): (nicht fahrbereit|sicherheitskritisch) \(ungeprüft\)$/);
+  if (!m) return msg;
+  const who = m[1] === 'Fahrer meldet' ? T.driver : T.report.replace('{r}', m[2] ? STRINGS[lang][LOCK_ROLE[m[2]]] : '').replace(' ()', '');
+  return `${who}: ${T[m[3] === 'nicht fahrbereit' ? 'nicht_fahrbereit' : 'sicherheitskritisch']}`;
+}
