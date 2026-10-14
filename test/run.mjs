@@ -432,6 +432,12 @@ await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () =>
   eq(reminderBody(['MAINTENANCE_DUE', 'FINE_OVERDUE', 'MAINTENANCE_DUE'], 'en', 'test'), '2× Inspection due soon, 1× Authority deadline passed · TEST');
   eq(reminderBody(['MAINTENANCE_DUE'], 'xx', 'production'), '1× Prüftermin bald fällig', 'unbekannte Sprache → Deutsch');
   const { STRINGS: _S } = await import('../public/i18n.js');
+  // Einzelner kritischer Befund: Kurzbezeichnung statt rohem Code, ohne Kennzeichen (Sperrbildschirm)
+  const { criticalBody } = await import('../src/agent.js');
+  eq(criticalBody('CRITICAL_UNTRIAGED', 'de', 'production'), `${_S.de.fc_CRITICAL_UNTRIAGED} (CRITICAL_UNTRIAGED)`);
+  eq(criticalBody('TIRE_BELOW_MINIMUM', 'uk', 'test'), `${_S.uk.fc_TIRE_BELOW_MINIMUM} (TIRE_BELOW_MINIMUM) · TEST`);
+  eq(criticalBody('LICENSE_CHECK_FAILED', 'xx', 'production'), `${_S.de.fc_LICENSE_CHECK_FAILED} (LICENSE_CHECK_FAILED)`, 'unbekannte Sprache → Deutsch');
+  eq(criticalBody('GIBT_ES_NICHT', 'en', 'production'), 'GIBT_ES_NICHT', 'unbekannter Code bleibt Code');
   for (const l of ['de', 'uk', 'en']) ok(AGENT_PUSH_T[l].agent && AGENT_PUSH_T[l].reminder && AGENT_PUSH_T[l].critical_n.includes('{n}'), l);
   const rem = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
   eq(rem.length, 1, 'eine Sammel-Erinnerung'); ok(/1× Техогляд незабаром/.test(rem[0].body) && !rem[0].urgent && !/SZ-/.test(rem[0].body), 'ruhig, ohne Details');

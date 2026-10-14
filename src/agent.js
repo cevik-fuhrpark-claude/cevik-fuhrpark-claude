@@ -13,6 +13,7 @@ import { claimFindings } from './claims.js';
 import { staleBefore } from './cases.js';
 import { latestKmByVehicle, kmDue, ruleDueKm, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
+import { findingLabel } from '../public/finding-labels.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -52,6 +53,9 @@ export function reminderBody(codes, lang, environment) {
   for (const c of codes) counts.set(reminderLabel(c, lang), (counts.get(reminderLabel(c, lang)) || 0) + 1);
   return [...counts].map(([k, n]) => `${n}× ${k}`).join(', ') + (environment === 'test' ? ' · TEST' : '');
 }
+// Einzelner neuer kritischer Befund: Kurzbezeichnung in der Sprache der Person statt des rohen Codes (ohne Kennzeichen/Namen –
+// Push-Texte erscheinen auf dem Sperrbildschirm), Code in Klammern für Rückfragen.
+export const criticalBody = (code, lang, environment) => `${findingLabel(code, lang)}${findingLabel(code, lang) !== code ? ` (${code})` : ''}${environment === 'test' ? ' · TEST' : ''}`;
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -432,7 +436,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (newCritical.length > 1) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: AGENT_PUSH_T.de.agent, body: '', eventKey: `agent:${runId}`, caseId: null, localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: AGENT_PUSH_T[l].critical_n.replace('{n}', newCritical.length) + (environment === 'test' ? ' · TEST' : '') }), langOf, urgent: true });
       } else for (const { eventId, f } of newCritical) {
-        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent }), langOf, title: AGENT_PUSH_T.de.agent, body: `${f.code}${environment === 'test' ? ' · TEST' : ''}`, eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
+        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: criticalBody(f.code, l, environment) }), langOf, title: AGENT_PUSH_T.de.agent, body: criticalBody(f.code, 'de', environment), eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
       }
     }
 
