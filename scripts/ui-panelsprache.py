@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test: Management-Panel zeigt Meldungstexte der Agentenbefunde in der App-Sprache DE/UK/EN (Vorlagen
+# [CLAUDE] UI-Test: Management-Panel und Fahrzeugakte („Offene Agentenbefunde“) zeigen Meldungstexte der Agentenbefunde in der App-Sprache DE/UK/EN (Vorlagen
 # public/finding-messages.js), bei 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
 # Screenshots: CFP_SHOTS=<Ordner>.
 import os
@@ -28,6 +28,7 @@ with sync_playwright() as p:
     r=api('POST','/api/vehicles/VIN:WDB96340310888001/maintenance',{'kind':'HU','last_done_date':'2026-03-15','interval_months':12,'evidence':'UI-Test HU-Bericht'})
     check(r['s'] in (200,201),'HU angelegt '+str(r['s']))
     check(api('POST','/api/agent/run')['s']==200,'Agent gelaufen')
+    vid=api('GET','/api/vehicles/VIN:WDB96340310888001')['d']['vehicle']['id']
     for lang in ['uk','en','de']:
       for w,h in [(390,844),(820,1180),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
@@ -45,6 +46,13 @@ with sync_playwright() as p:
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         if SHOTS:
             q.get_by_text('PS-ANL 1').first.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/panel_{lang}_{w}.png')
+        # Fahrzeugakte: dieselben Befunde des Fahrzeugs im aufklappbaren Abschnitt „Offene Agentenbefunde“
+        q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#vaf summary')
+        q.click('#vaf summary'); vt=q.inner_text('#vaf')
+        for e in EXP[lang]+[UNCL[lang]]: check(e in vt,f'Akte {lang} {w}px: {e}')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'Akte {lang} {w}px: kein Querscrollen')
+        check(not errs,f'Akte {lang} {w}px: keine Skriptfehler {errs}')
+        if SHOTS: q.locator('#vaf').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/akte_{lang}_{w}.png')
         c.close()
     br.close()
 print('Panel-Sprache: alles grün' if not fails else f'FEHLER: {len(fails)}')

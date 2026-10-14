@@ -6147,6 +6147,26 @@ await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE
   console.log(`     ${keys.length} Vorlagen, ${withArgs.length}/${rows.length} gespeicherte Befunde mit Vorlage (${codesT.size} Codes)`);
 });
 
+await test('Fahrzeugakte: offene Agentenbefunde des Fahrzeugs für Inhaber/Fuhrparkleitung (je Umgebung, mit Vorlage), nicht für andere Rollen', async () => {
+  const V = 'VIN:WDB96340310777123';
+  ok((await users.fleet.post('/api/vehicles', { plate: 'AF-BEF 1', vin: 'WDB96340310777123', site: 'Dortmund' })).status < 300, 'Fahrzeug angelegt');
+  ok((await users.fleet.post(`/api/vehicles/${V}/maintenance`, { kind: 'UVV', last_done_date: '2025-01-10', interval_months: 12, evidence: 'Befund-Akte-Test' })).status < 300, 'UVV angelegt');
+  eq((await users.fleet.post('/api/agent/run', {})).status, 200);
+  const q0 = QSTAT.n;
+  const a = (await users.fleet.get(`/api/vehicles/${V}`)).data;
+  ok(QSTAT.n - q0 <= 50, `Fahrzeugakte ≤ 50 Abfragen (${QSTAT.n - q0})`);
+  ok(Array.isArray(a.agent_findings), 'agent_findings fehlt');
+  const f = a.agent_findings.find((x) => x.finding_code === 'MAINTENANCE_OVERDUE');
+  ok(f && JSON.parse(f.message_args).k === 'MAINT_DATE_OVERDUE' && f.message.startsWith('AF-BEF 1: UVV seit'), `Befund mit Vorlage: ${JSON.stringify(f)}`);
+  const sevRank = { kritisch: 0, handeln: 1, hinweis: 2, info: 3 };
+  ok(a.agent_findings.every((x, i, l) => i === 0 || sevRank[l[i - 1].severity] <= sevRank[x.severity]), 'schwerste zuerst');
+  // andere Umgebung sieht diesen Befund nicht; Werkstatt/Disposition bekommen das Feld nicht
+  ok(!(await users.prodFleet.get(`/api/vehicles/${V}`)).data.agent_findings.some((x) => x.id === f.id), 'Befund der Testumgebung im Betrieb sichtbar');
+  for (const c of [users.ws, users.dispatch]) { const r = await c.get(`/api/vehicles/${V}`); ok(r.status === 200 && !('agent_findings' in r.data), `${c.name || 'Rolle'}: agent_findings sichtbar`); }
+  const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT id FROM agent_findings WHERE vehicle_id=? AND environment=? AND status='offen'").all('x', 'test');
+  ok(plan.some((p) => /idx_findings_vehicle/.test(p.detail)), 'Index idx_findings_vehicle nicht genutzt');
+});
+
 await test('Wächter Offline-Hülle: jedes von app.js (transitiv) geladene Modul steht im Service-Worker-Cache, jede Cache-Datei existiert', async () => {
   const { readFileSync, existsSync } = await import('node:fs');
   const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
