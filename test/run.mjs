@@ -6022,7 +6022,7 @@ await test('Wächter: jede Agent-Erinnerung (Push) hat Ukrainisch/Englisch und n
   eq(reminderBody(['MAINTENANCE_DUE', 'MAINTENANCE_DUE', 'TACHO_VU_DUE'], 'en', 'test'), `2× ${reminderLabel('MAINTENANCE_DUE', 'en')}, 1× ${reminderLabel('TACHO_VU_DUE', 'en')} · TEST`);
 });
 
-await test('Doku-Wächter: jeder Befundcode des Fuhrparkagenten und jeder Datenqualitäts-Prüfcode steht in docs/API.md', async () => {
+await test('Doku-Wächter: jeder Befundcode des Fuhrparkagenten und jeder Datenqualitäts-Prüfcode steht in docs/API.md, Befundcodes mit Bezeichnung DE/UK/EN', async () => {
   const fs = await import('node:fs');
   const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
   const src = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'schema.js').map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
@@ -6035,6 +6035,14 @@ await test('Doku-Wächter: jeder Befundcode des Fuhrparkagenten und jeder Datenq
   const { CHECKS } = await import('../src/quality.js');
   const dq = Object.keys(CHECKS).filter((c) => !new RegExp('^\\| `' + c + '` \\| `' + CHECKS[c] + '` \\|', 'm').test(api));
   ok(!dq.length, `Prüfcodes (mit Schweregrad) fehlen in der Tabelle docs/API.md: ${dq.join(', ')}`);
+  // Management-Panel: Kurzbezeichnung je Befundcode und Schweregrad in DE/UK/EN (Leitung arbeitet nicht immer auf Deutsch)
+  const { STRINGS } = await import('../public/i18n.js');
+  const noLabel = [];
+  for (const c of codes) for (const l of ['de', 'uk', 'en']) if (!STRINGS[l]['fc_' + c] || (l !== 'de' && STRINGS[l]['fc_' + c] === STRINGS.de['fc_' + c])) noLabel.push(`${l}:fc_${c}`);
+  for (const sv of ['kritisch', 'handeln', 'hinweis', 'info']) for (const l of ['de', 'uk', 'en']) if (!STRINGS[l]['asev_' + sv]) noLabel.push(`${l}:asev_${sv}`);
+  ok(!noLabel.length, `Bezeichnungen fehlen in public/i18n.js: ${noLabel.join(', ')}`);
+  const stale = Object.keys(STRINGS.de).filter((k) => k.startsWith('fc_') && !codes.has(k.slice(3)));
+  ok(!stale.length, `Bezeichnung ohne Befundcode: ${stale.join(', ')}`);
   console.log(`     ${codes.size} Befundcodes, ${Object.keys(CHECKS).length} Datenqualitäts-Prüfcodes dokumentiert`);
 });
 
