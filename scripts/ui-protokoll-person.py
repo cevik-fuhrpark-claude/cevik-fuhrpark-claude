@@ -1,12 +1,13 @@
 # [CLAUDE] UI-Test: Protokoll je Person. Benutzer → „Protokoll“ öffnet das Protokoll gefiltert auf die Person (handelnd oder betroffen),
 # Adresse wird bereinigt, „Alle Personen“ hebt den Filter auf. DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler.
-# Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# Aktionen erscheinen als Text in der App-Sprache mit Code daneben. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ALL={'de':'Alle Personen','uk':'Усі особи','en':'All persons'}
+LOGIN={'de':'Anmeldung','uk':'Вхід','en':'Sign-in'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -31,6 +32,7 @@ with sync_playwright() as p:
         check('PP Leitung' in q.inner_text('#aupers'),f'{lang} {w}px: Person genannt')
         check(q.evaluate('()=>location.hash')=='#/audit',f'{lang} {w}px: Adresse bereinigt')
         rows=q.locator('.list .row').count(); check(rows>=2,f'{lang} {w}px: Einträge ({rows})')
+        check(LOGIN[lang] in q.inner_text('.list') and 'login' in q.inner_text('.list'),f'{lang} {w}px: Aktion als Text „{LOGIN[lang]}“ mit Code')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/protokoll_person_{lang}_{w}.png',full_page=True)
         q.click('#aupx'); q.wait_for_function("()=>!document.querySelector('#aupers')")

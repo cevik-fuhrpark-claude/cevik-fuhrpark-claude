@@ -6928,6 +6928,30 @@ await test('Benutzerliste: offene Einladung zeigt Gültigkeit des Links bzw. „
   ok(app.includes("(inviteExpired(u) ? `<span class=\"chip mittel\"") && app.includes("t('inv_valid_until')"), 'Ansicht zeigt Ablauf/Gültigkeit');
 });
 
+await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code aus src/ und alle in der Testsuite protokollierten), keine verwaisten', async () => {
+  const fs = await import('node:fs');
+  const { AUDIT_ACTION_CODES, auditActionLabel } = await import('../public/i18n.js');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  const codes = new Set();
+  for (const m of src.matchAll(/\b(?:audit|auditFn)\(\s*env\s*,\s*[^,]+,\s*([^\n]{0,120})/g)) {
+    const head = m[1].includes('?') ? m[1].slice(0, 100) : m[1].split(',')[0];
+    for (const x of head.matchAll(/'([a-z_]+(?:\.[a-z_]+)*)'/g)) if (x[1].includes('.') || x[1] === 'login') codes.add(x[1]); // Detailwerte wie 'neu' nicht
+  }
+  for (const x of src.matchAll(/'(maintenance\.husp_[a-z_]+)'/g)) codes.add(x[1]);
+  const mig = fs.readdirSync(new URL('../migrations/', import.meta.url)).map((f) => fs.readFileSync(new URL('../migrations/' + f, import.meta.url), 'utf8')).join('\n');
+  for (const x of mig.matchAll(/INSERT INTO audit_log[^;]*?'([a-z_]+\.[a-z_.]+)'/g)) codes.add(x[1]);
+  ok(codes.size >= 70, 'Codes gefunden: ' + codes.size);
+  const runtime = env.DB.db.prepare("SELECT DISTINCT action FROM audit_log WHERE action NOT LIKE 'probe.%' AND action NOT LIKE 'anderes.%'").all().map((r) => r.action);
+  for (const c of runtime) codes.add(c);
+  eq([...codes].filter((c) => !AUDIT_ACTION_CODES.includes(c)).sort().join(), '', 'ohne Bezeichnung');
+  eq(AUDIT_ACTION_CODES.filter((c) => !codes.has(c)).join(), '', 'verwaiste Bezeichnungen');
+  for (const c of AUDIT_ACTION_CODES) for (const l of ['de', 'uk', 'en']) ok(auditActionLabel(l, c) && auditActionLabel(l, c).trim(), `${c} ${l}`);
+  ok(/[а-яіїє]/i.test(auditActionLabel('uk', 'login')) && auditActionLabel('en', 'user.create') === 'User created', 'Sprachen');
+  eq(auditActionLabel('de', 'gibt.es.nicht'), null, 'unbekannt → Code bleibt');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('auditActionLabel(S.lang, e.action)'), 'Ansicht nutzt Bezeichnung');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
