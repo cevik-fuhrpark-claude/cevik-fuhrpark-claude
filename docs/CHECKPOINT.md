@@ -100,7 +100,7 @@ Der vollständige Verlauf aller erledigten Punkte und Sitzungsprotokolle steht i
 - 14.10.2026 (04:15-Sitzung): **Browser-Lasttest Management-Panel** (Vorschlag b): neues Skript `scripts/ui-lastpanel.py [N] [--check]` (Dev-Server-Endpunkt `/__dev/seed-findings` nur lokal in `scripts/dev-server.mjs`, nicht im Worker). Ergebnis 3000 Befunde: Antwort 1,25 MB, Rendern ≈ 0,4 s (390/1366 px), CSV ≈ 0,1 s – keine Änderung nötig; in `docs/BETRIEB.md` (Belastbarkeit) dokumentiert.
 - 14.10.2026 (04:15-Sitzung): **Fahrzeug-CSV mit Agentenbefunden** (Inhaber/Fuhrparkleitung): Spalten „Offene Agentenbefunde;davon kritisch“ am Ende angehängt (bestehende Spaltenpositionen bleiben); andere Rollen unverändert. Tests angepasst/erweitert.
 - 14.10.2026 (04:15-Sitzung): **Fahrzeugliste sortierbar nach Agentenbefunden** („meiste kritische zuerst“, nur Inhaber/Fuhrparkleitung, DE/UK/EN); UI-Skript prüft die Sortierung. `pruefen.sh --schnell` grün.
-- 14.10.2026 (04:15-Sitzung): **Management-Panel: Befund ohne Vorgang verlinkt die Fahrzeugakte** (vorher kein Sprung bei Prüfterminen/Reifen/Verträgen); UI-Skript prüft den Link.
+- 14.10.2026 (04:15-Sitzung): **Management-Panel: Befund bzw. Entscheidung ohne Vorgang verlinkt die Fahrzeugakte** (vorher kein Sprung bei Prüfterminen/Reifen/Verträgen); UI-Skript prüft den Link.
 
 ## Offene Fragen an den Auftraggeber
 - **Reifen-Sammelimport (neu 13.10.2026, optional):** Soll ein Import vom Reifendienst (CSV: FIN/Kennzeichen, Position, Profiltiefe, DOT, Winterkennzeichnung) das **Messdatum aus der Datei** übernehmen dürfen? Ohne Freigabe würde jede Zeile mit dem Importzeitpunkt erfasst – alte Messungen sähen dann frisch aus, deshalb noch nicht gebaut.
