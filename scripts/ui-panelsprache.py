@@ -10,6 +10,7 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 EXP={'de':['PS-ANL 1: UVV seit','Tag(en) überfällig (fällig 2026-01-10)'],
      'uk':['PS-ANL 1: UVV прострочено на','дн. (строк 2026-01-10)'],
      'en':['PS-ANL 1: UVV overdue for','day(s) (due 2026-01-10)']}
+UNCL={'de':'PS-ANL 1: HU-Frist ungeklärt – ','uk':'PS-ANL 1: строк HU не з’ясовано – ','en':'PS-ANL 1: HU deadline unclear – '}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -23,6 +24,9 @@ with sync_playwright() as p:
     api('POST','/api/vehicles',{'vin':'WDB96340310888001','plate':'PS-ANL 1','site':'Dortmund'})
     r=api('POST','/api/vehicles/VIN:WDB96340310888001/maintenance',{'kind':'UVV','last_done_date':'2025-01-10','interval_months':12,'evidence':'UI-Test Panel'})
     check(r['s'] in (200,201),'Prüftermin angelegt '+str(r['s']))
+    # HU belegt, aber ohne zulässige Gesamtmasse → HU-Frist ungeklärt (Hinweis „Fahrzeugklasse fehlt“)
+    r=api('POST','/api/vehicles/VIN:WDB96340310888001/maintenance',{'kind':'HU','last_done_date':'2026-03-15','interval_months':12,'evidence':'UI-Test HU-Bericht'})
+    check(r['s'] in (200,201),'HU angelegt '+str(r['s']))
     check(api('POST','/api/agent/run')['s']==200,'Agent gelaufen')
     for lang in ['uk','en','de']:
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -34,6 +38,9 @@ with sync_playwright() as p:
         txt=q.inner_text('body')
         for e in EXP[lang]: check(e in txt,f'{lang} {w}px: {e}')
         if lang!='de': check('überfällig (fällig' not in txt,f'{lang} {w}px: kein deutscher Meldungstext')
+        # HU/SP „Frist ungeklärt“: Hinweistext aus der Fahrzeugakten-Übersetzung (hn_<code>), nicht der deutsche Servertext
+        check(UNCL[lang] in txt,f'{lang} {w}px: {UNCL[lang]}')
+        if lang!='de': check('ungeklärt –' not in txt and 'Gesamtmasse' not in txt,f'{lang} {w}px: HU/SP-Hinweis übersetzt')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         if SHOTS:
