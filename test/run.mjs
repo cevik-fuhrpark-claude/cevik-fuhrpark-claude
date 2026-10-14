@@ -6725,7 +6725,7 @@ await test('Anmelde-Hinweis bei neuem Gerät: erste Anmeldung still, bekanntes G
   ok(!/clearOfflineData[\s\S]{0,400}cfp_device/.test(app.slice(app.indexOf('function clearOfflineData'), app.indexOf('function clearOfflineData') + 400)), 'Kennung bleibt beim Abmelden');
 });
 
-await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne vergessen (nicht das aktuelle), danach wieder Hinweis, Protokoll, nur eigene, Anzahl in der Benutzerliste, Uhrzeit je Sprache', async () => {
+await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne vergessen (nicht das aktuelle), danach wieder Hinweis, Protokoll, nur eigene, Anzahl und letzte Anmeldung in der Benutzerliste, Uhrzeit je Sprache', async () => {
   const devA = '1a'.repeat(16), devB = '2b'.repeat(16), devC = '3c'.repeat(32);
   const UA = { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1' };
   const uu = await invite(owner, { username: 'test.kdliste', display_name: 'Test Geräteliste', role: 'driver', environment: 'test' });
@@ -6767,6 +6767,17 @@ await test('Bekannte Geräte: eigene Liste mit „dieses Gerät“, einzelne ver
   for (const k of ['kd_title', 'kd_hint', 'kd_forget', 'kd_forget_confirm', 'kd_none', 'kd_n', 'unknown_device_l', 'err_current_device', 'err_invalid_device']) for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k], `${k} ${l}`);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("api('GET', '/api/me/known-devices', undefined, { headers: { 'x-cfp-device': deviceId() } })"), 'Liste mit Gerätekennung');
+  // Benutzerliste: letzte Anmeldung (Passwort-/Zwei-Faktor-Anmeldung oder Einladung angenommen), offene Einladung ohne
+  const lastOf = async (name) => (await owner.get('/api/users')).data.users.find((x) => x.username === name).last_login;
+  const before = await lastOf('test.kdliste'); ok(before && before > row.created_at, 'Anmeldung zählt');
+  const r0 = await owner.post('/api/users', { username: 'test.kdoffen', display_name: 'Offen', role: 'driver', environment: 'test' });
+  eq(await lastOf('test.kdoffen'), null, 'Einladung offen: keine Anmeldung');
+  await new Promise((res) => setTimeout(res, 5));
+  eq((await new Client(worker, env, 'kd-offen').post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  ok(await lastOf('test.kdoffen'), 'Einladung angenommen zählt als Anmeldung');
+  eq((await owner.get('/api/admin/audit?action=invite.accept')).data.entries.filter((e) => e.detail === null || typeof e.detail === 'object').length >= 1, true);
+  const fl = (await users.fleet.get('/api/users')).data.users; ok(fl.every((x) => 'last_login' in x), 'auch für die Fuhrparkleitung');
+  for (const k of ['last_login', 'last_login_none']) for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k], `${k} ${l}`);
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
