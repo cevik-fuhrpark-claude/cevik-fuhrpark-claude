@@ -3926,8 +3926,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   vk = await vrow(users.fleet);
   eq(vk.next_due_km, 380000, 'belegte km-Fälligkeit, kleinste zuerst'); eq(vk.next_due_km_kind, 'Inspektion'); eq(vk.km_remaining, -20000);
   const vcs = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe'), 'CSV-Kopf: km-Spalten am Ende');
-  ok(vcs.find((l) => l.startsWith('WP-LN 1;')).endsWith(';380000;Inspektion;-20000;0'), 'CSV-Zeile: km-Fälligkeit');
+  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
+  ok(/;380000;Inspektion;-20000;0;\d+;\d+$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
   const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
   eq(JSON.stringify([av.next_due_km, av.next_due_km_kind, av.km_remaining]), JSON.stringify([380000, 'Inspektion', -20000]), 'Integrations-API: km-Fälligkeit');
@@ -4361,8 +4361,8 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   eq(vl.find((x) => x.vin === 'WDB96340310555651').open_recalls, 1, 'Liste: ein offener Rückruf');
   ok(vl.filter((x) => x.vin !== 'WDB96340310555651').every((x) => x.open_recalls === 0), 'andere Fahrzeuge: 0');
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe'), 'CSV-Kopf: Rückrufe am Ende');
-  ok(vcsv.find((l) => l.startsWith('VT-FL 1;')).endsWith(';1'), 'CSV-Zeile: 1 offener Rückruf');
+  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
+  ok(/;1;\d+;\d+$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
   // Rückrufschreiben als eigene Dokumentart in der Fahrzeugakte (Meta, Upload, Anzeige; Übersetzung je Sprache)
   ok((await users.fleet.get('/api/meta')).data.doc_kinds.includes('rueckruf'), 'Dokumentart Rückrufschreiben');
@@ -6186,6 +6186,11 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
   for (const c of [users.ws, users.dispatch, users.driver]) {
     const r = await c.get('/api/vehicles'); ok(r.status === 200 && r.data.vehicles.every((x) => !('agent_findings_open' in x) && !('agent_findings_critical' in x) && !('af' in x)), 'Rolle ohne Leitung: Feld sichtbar');
   }
+  const csvL = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
+  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch'), 'CSV Leitung: Spalten am Ende');
+  ok(csvL.find((l) => l.startsWith('AF-BEF 1;')).endsWith(`;${db.n};${db.c || 0}`), 'CSV-Zeile = Datenbank');
+  const csvD = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/vehicles?format=csv')).data).split('\r\n');
+  ok(csvD[0].endsWith(';Offene Rückrufe'), 'CSV Disposition: ohne Agentenbefunde');
   const iv = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles; ok(iv.every((x) => !('agent_findings_open' in x)), 'Integrations-API unverändert');
   const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
   ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);

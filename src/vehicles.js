@@ -252,6 +252,9 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
 const AV_DE = { gesperrt: 'gesperrt', werkstatt: 'in Werkstatt', meldung_offen: 'Meldung offen', einsatzbereit_lt_system: 'keine offenen Meldungen' };
 export function vehiclesCsv(list, csvCell) {
   const head = ['Kennzeichen', 'FIN', 'Fahrzeugart', 'Standort', 'Hersteller', 'Modell', 'Baujahr', 'Anhänger', 'Status Stammliste', 'Verfügbarkeit laut System', 'Offene Vorgänge', 'Letzter km-Stand', 'Nächste Prüfung', 'Letzte Abfahrtskontrolle', 'Ergebnis Abfahrtskontrolle', 'Gekoppeltes Fahrzeug', 'Zustand gekoppeltes Fahrzeug', 'Nächste km-Fälligkeit', 'Art km-Fälligkeit', 'Rest-km', 'Offene Rückrufe'];
+  // Inhaber/Fuhrparkleitung: offene Agentenbefunde (Anzahl, davon kritisch) – nur wenn die Liste die Felder trägt (gleiche Sichtbarkeit wie die Liste)
+  const withAF = list.some((v) => 'agent_findings_open' in v);
+  if (withAF) head.push('Offene Agentenbefunde', 'davon kritisch');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -261,7 +264,7 @@ export function vehiclesCsv(list, csvCell) {
     // km-Fälligkeit am Ende angehängt (bestehende Spaltenpositionen bleiben); Rest-km negativ = überschritten
     v.next_due_km ?? '', csvCell(v.next_due_km_kind), v.km_remaining ?? '',
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
-    v.open_recalls ?? 0].join(';'));
+    v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
