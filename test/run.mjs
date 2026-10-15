@@ -2120,6 +2120,25 @@ await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte
   { // Protokoll: Ziel = Fahrzeug (Protokoll je Fahrzeug), Person und Zuordnung im Detail
     const ea = (await owner.get(`/api/admin/audit?vehicle=${encodeURIComponent(V2)}&action=vehicle.end_assignment`)).data.entries[0];
     ok(ea && ea.target === V2 && ea.detail.driver === users.driver.id && ea.detail.assignment === v2.id, 'Beenden im Protokoll je Fahrzeug');
+    // Fahrer im Detail als Name aufgelöst (nur Anzeige; Detail bleibt Kennung, CSV = Rohtext)
+    const dn = env.DB.db.prepare('SELECT COALESCE(NULLIF(display_name, \'\'), username) AS l FROM users WHERE id=?').get(users.driver.id).l;
+    eq(ea.refs && ea.refs.driver, dn, 'Fahrername aufgelöst');
+    const asg = (await owner.get(`/api/admin/audit?vehicle=${encodeURIComponent(V2)}&action=vehicle.assign_driver`)).data.entries[0];
+    eq(asg.refs && asg.refs.driver, dn, 'auch bei Zuordnung');
+    // Protokoll der Person enthält ihre Fahrerzuordnungen (Ziel = Fahrzeug), Export ebenso
+    const pe = (await owner.get(`/api/admin/audit?user=${encodeURIComponent(users.driver.id)}&action=vehicle.`)).data.entries.map((e) => e.action);
+    ok(pe.includes('vehicle.assign_driver') && pe.includes('vehicle.end_assignment'), 'Zuordnungen im Protokoll der Person');
+    const pcsv = new TextDecoder().decode((await owner.get(`/api/admin/audit?format=csv&user=${encodeURIComponent(users.driver.id)}&action=vehicle.end_assignment`)).data);
+    ok(pcsv.includes('vehicle.end_assignment'), 'auch im CSV der Person');
+    const other2 = (await owner.get(`/api/admin/audit?user=${encodeURIComponent(users.fleet.id)}&action=vehicle.end_assignment`)).data.entries;
+    ok(other2.every((e) => e.actor_id === users.fleet.id || e.detail.driver === users.fleet.id), 'keine fremden Zuordnungen');
+    // Protokoll-Export mit Person/Fahrzeug: beide Kennungen aufgelöst; Kennzeichen-Text (Verträge) bleibt ohne refs
+    eq((await owner.get(`/api/admin/audit?format=csv&user=${encodeURIComponent(users.driver.id)}&vehicle=${encodeURIComponent(V2)}`)).status, 200);
+    const ex = (await owner.get('/api/admin/audit?action=admin.audit_export&limit=1')).data.entries[0];
+    eq(ex.refs && ex.refs.user, dn, 'Person im Export-Eintrag');
+    eq(ex.refs && ex.refs.vehicle, env.DB.db.prepare('SELECT plate FROM vehicles WHERE id=?').get(V2).plate, 'Fahrzeug im Export-Eintrag');
+    const csv = new TextDecoder().decode((await owner.get(`/api/admin/audit?format=csv&action=vehicle.end_assignment&vehicle=${encodeURIComponent(V2)}`)).data);
+    ok(csv && csv.includes(users.driver.id), 'CSV behält die Kennung');
     const fs = await import('node:fs');
     ok(/if \(!confirm\(t\('end_assign_confirm'\)/.test(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Oberfläche fragt vor dem Beenden nach');
     const { STRINGS } = await import('../public/i18n.js');
@@ -6997,7 +7016,7 @@ await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code 
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('auditActionLabel(S.lang, e.action)'), 'Ansicht nutzt Bezeichnung');
   // Jeder Aktionscode ist über die Auswahl „Bereich“ erreichbar (Präfixe, auch mehrere mit Komma)
-  const gsrc = app.slice(app.indexOf('const groups = [['), app.indexOf('const det = (d) => auditDetailText'));
+  const gsrc = app.slice(app.indexOf('const groups = [['), app.indexOf('const det = (d, refs) => auditDetailText'));
   const prefixes = [...gsrc.matchAll(/\['([^']*)', t\(/g)].map((m) => m[1]).filter(Boolean).flatMap((x) => x.split(','));
   ok(prefixes.length >= 15, 'Bereiche gefunden: ' + prefixes.length);
   eq(AUDIT_ACTION_CODES.filter((c) => !prefixes.some((p) => c.startsWith(p))).join(), '', 'Aktionscodes ohne Bereich');
@@ -7022,7 +7041,11 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   eq(auditDetailText('de', null), '', 'leer');
   for (const k of AUDIT_DETAIL_KEY_CODES) ok(/^[а-яіїєґ’ ()]+: 1$/i.test(auditDetailText('uk', { [k]: 1 })), `${k} uk übersetzt`);
   const fs = await import('node:fs');
-  ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('auditDetailText(S.lang, d)'), 'Ansicht nutzt Detailtext');
+  ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('auditDetailText(S.lang, d, refs)') && fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('det(e.detail, e.refs)'), 'Ansicht nutzt Detailtext mit aufgelösten Kennungen');
+  // aufgelöste Kennungen ersetzen nur die Anzeige des jeweiligen Schlüssels
+  eq(auditDetailText('de', { driver: 'id-1', assignment: 'a-1' }, { driver: 'Max Test' }), 'Fahrer: Max Test · Zuordnung: a-1', 'Fahrername statt Kennung');
+  eq(auditDetailText('en', { vehicle: 'VIN:X', rows: 2 }, { vehicle: 'SZ-YC 5513' }), 'Vehicle: SZ-YC 5513 · Rows: 2', 'Kennzeichen statt Fahrzeug-ID');
+  eq(auditDetailText('de', { driver: 'id-1' }, null), 'Fahrer: id-1', 'ohne Auflösung roh');
 });
 
 await test('Hilfe „Benutzer, Zugänge & Protokoll“: nur Inhaber/Fuhrparkleitung, nennt Knöpfe wie in der App und Grenzwerte wie im Server', async () => {

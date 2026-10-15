@@ -497,7 +497,9 @@ function auditUser(query, where, args) {
   if (query.user === undefined || query.user === '') return null;
   const id = String(query.user);
   if (!/^[\w-]{1,64}$/.test(id)) throw bad('validation', 'Unbekannte Person.');
-  where.push('(a.actor_id = ? OR a.target = ?)'); args.push(id, id);
+  // zusätzlich Fahrerzuordnungen der Person (Ziel = Fahrzeug, Person im Detail „driver“) – über idx_dv_user und idx_audit_target_action
+  where.push(`(a.actor_id = ? OR a.target = ? OR (a.target IN (SELECT vehicle_id FROM driver_vehicles WHERE user_id = ?) AND a.action IN ('vehicle.assign_driver', 'vehicle.end_assignment') AND CASE WHEN json_valid(a.detail) THEN json_extract(a.detail, '$.driver') END = ?))`);
+  args.push(id, id, id, id);
   return id;
 }
 // Protokoll je Fahrzeug: Einträge mit dem Fahrzeug als Ziel (Stammdaten, Status, Bewertung, Prüftermine, Fahrerzuordnung, Hinweise, Telematik)
@@ -562,7 +564,35 @@ export async function listAudit(env, user, query = {}) {
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
     .bind(...args, limit).all()).results;
   const entries = rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
+  await auditDetailRefs(env, entries);
   return { entries, person, vehicle };
+}
+
+// Kennungen in Details (Fahrer/Person = Konto-ID, Fahrzeug = Fahrzeug-ID) zur Anzeige auflösen: je Eintrag `refs` {Schlüssel: Name bzw. Kennzeichen}.
+// Nur oberste Ebene, nur wenn die Kennung existiert (z. B. „vehicle“ mit Kennzeichen statt ID bleibt unverändert). Gesammelt in höchstens
+// wenigen Abfragen (je 90 Kennungen eine, als Stapel); Detail selbst bleibt unverändert (CSV/Suche = Rohtext).
+export const AUDIT_REF_KEYS = { driver: 'u', user: 'u', vehicle: 'v', vehicle_id: 'v' };
+async function auditDetailRefs(env, entries) {
+  const ids = { u: new Set(), v: new Set() };
+  for (const e of entries) {
+    if (!e.detail || typeof e.detail !== 'object' || Array.isArray(e.detail)) continue;
+    for (const [k, kind] of Object.entries(AUDIT_REF_KEYS)) { const v = e.detail[k]; if (typeof v === 'string' && v && v.length <= 80) ids[kind].add(v); }
+  }
+  const stmts = [];
+  for (const [kind, sql] of [['u', 'SELECT id, COALESCE(NULLIF(display_name, \'\'), username) AS l FROM users WHERE id IN'], ['v', 'SELECT id, plate AS l FROM vehicles WHERE id IN']]) {
+    const list = [...ids[kind]];
+    for (let i = 0; i < list.length; i += 90) { const part = list.slice(i, i + 90); stmts.push([kind, env.DB.prepare(`${sql} (${part.map(() => '?').join(',')})`).bind(...part)]); }
+  }
+  if (!stmts.length) return;
+  const res = await env.DB.batch(stmts.map((s) => s[1]));
+  const map = { u: new Map(), v: new Map() };
+  res.forEach((r, i) => { for (const row of r.results || []) if (row.l) map[stmts[i][0]].set(row.id, row.l); });
+  for (const e of entries) {
+    if (!e.detail || typeof e.detail !== 'object' || Array.isArray(e.detail)) continue;
+    const refs = {};
+    for (const [k, kind] of Object.entries(AUDIT_REF_KEYS)) { const v = e.detail[k]; if (typeof v === 'string' && map[kind].has(v)) refs[k] = map[kind].get(v); }
+    if (Object.keys(refs).length) e.refs = refs;
+  }
 }
 
 // Protokoll als CSV (nur Inhaber): Zeitraum nach Berliner Kalendertagen (max. 366 Tage), optional Bereich (Präfix wie in der Ansicht),

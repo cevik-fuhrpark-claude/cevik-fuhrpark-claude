@@ -630,9 +630,9 @@ Object.assign(STRINGS.en, { csort_priority: 'urgency', csort_oldest: 'oldest fir
 Object.assign(STRINGS.de, { audit_search: 'Suche (Person, Kennzeichen, Kennung, Details)', audit_search_ph: 'z. B. SZ-YC 5539 oder FIN', audit_until: 'bis Datum' });
 Object.assign(STRINGS.uk, { audit_search: 'Пошук (особа, номер, ідентифікатор, деталі)', audit_search_ph: 'напр. SZ-YC 5539 або VIN', audit_until: 'до дати' });
 Object.assign(STRINGS.en, { audit_search: 'Search (person, plate, ID, details)', audit_search_ph: 'e.g. SZ-YC 5539 or VIN', audit_until: 'up to date' });
-Object.assign(STRINGS.de, { audit_person: 'Person', audit_person_hint: 'Einträge, die diese Person ausgelöst hat oder die ihr Konto betreffen (z. B. Anmeldung, Rollenänderung, Sperre).', audit_person_all: 'Alle Personen' });
-Object.assign(STRINGS.uk, { audit_person: 'Особа', audit_person_hint: 'Записи, які ця особа ініціювала або які стосуються її облікового запису (напр. вхід, зміна ролі, блокування).', audit_person_all: 'Усі особи' });
-Object.assign(STRINGS.en, { audit_person: 'Person', audit_person_hint: 'Entries this person triggered or that concern their account (e.g. sign-in, role change, lock).', audit_person_all: 'All persons' });
+Object.assign(STRINGS.de, { audit_person: 'Person', audit_person_hint: 'Einträge, die diese Person ausgelöst hat oder die ihr Konto betreffen (z. B. Anmeldung, Rollenänderung, Sperre), dazu ihre Fahrzeugzuordnungen als Fahrer.', audit_person_all: 'Alle Personen' });
+Object.assign(STRINGS.uk, { audit_person: 'Особа', audit_person_hint: 'Записи, які ця особа ініціювала або які стосуються її облікового запису (напр. вхід, зміна ролі, блокування), а також її призначення водієм на транспорт.', audit_person_all: 'Усі особи' });
+Object.assign(STRINGS.en, { audit_person: 'Person', audit_person_hint: 'Entries this person triggered or that concern their account (e.g. sign-in, role change, lock), plus their vehicle assignments as a driver.', audit_person_all: 'All persons' });
 Object.assign(STRINGS.de, { audit_veh_hint: 'Einträge zu diesem Fahrzeug: Stammdaten, Betriebsstatus, Bewertung, Prüftermine, Fahrerzuordnung, Hinweise, Telematik-Zuordnung.', audit_veh_all: 'Alle Fahrzeuge' });
 Object.assign(STRINGS.uk, { audit_veh_hint: 'Записи щодо цього транспорту: основні дані, статус експлуатації, оцінка, огляди, призначення водія, примітки, телематика.', audit_veh_all: 'Увесь транспорт' });
 Object.assign(STRINGS.en, { audit_veh_hint: 'Entries for this vehicle: master data, service status, evaluation, inspections, driver assignment, notes, telematics mapping.', audit_veh_all: 'All vehicles' });
@@ -1264,7 +1264,8 @@ const AUDIT_DETAIL_KEYS = {
 };
 export const AUDIT_DETAIL_KEY_CODES = Object.keys(AUDIT_DETAIL_KEYS);
 const AUDIT_DETAIL_VALUES = { true: ['ja', 'так', 'yes'], false: ['nein', 'ні', 'no'], test: ['Test', 'Тест', 'Test'], production: ['Betrieb', 'Робочий', 'Production'] };
-export function auditDetailText(lang, detail) {
+// refs: vom Server aufgelöste Kennungen (Fahrer/Person → Name, Fahrzeug → Kennzeichen) je oberstem Schlüssel; ersetzt nur die Anzeige
+export function auditDetailText(lang, detail, refs) {
   if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail === null || detail === undefined ? '' : (typeof detail === 'object' ? JSON.stringify(detail) : String(detail));
   const li = { de: 0, uk: 1, en: 2 }[lang] ?? 0;
   const key = (k) => (AUDIT_DETAIL_KEYS[k] ? AUDIT_DETAIL_KEYS[k][li] : k);
@@ -1280,7 +1281,8 @@ export function auditDetailText(lang, detail) {
     if (typeof v === 'object') return Object.values(v).every(isFT) ? Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x.from)} → ${val(f, x.to)}`).join(', ') : JSON.stringify(v);
     return String(v);
   };
-  return Object.entries(detail).map(([k, v]) => `${key(k)}: ${val(k, v)}`).join(' · ');
+  const rf = refs && typeof refs === 'object' ? refs : {};
+  return Object.entries(detail).map(([k, v]) => `${key(k)}: ${typeof rf[k] === 'string' && rf[k] ? rf[k] : val(k, v)}`).join(' · ');
 }
 
 Object.assign(STRINGS.de, { au_target: 'Betrifft', au_access: 'Zugang & Sicherheit' });

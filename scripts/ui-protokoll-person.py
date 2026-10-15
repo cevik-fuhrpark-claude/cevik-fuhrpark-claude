@@ -24,6 +24,11 @@ with sync_playwright() as p:
     api('POST','/api/invite/accept',{'token':r['d']['invite_token'],'password':PW})
     api('POST','/api/login',{'username':'pp.leitung','password':PW}); api('POST','/api/login',{'username':'pp.inhaber','password':PW})
     api('POST','/api/vehicles',{'vin':'WDB96340310777001','plate':'PP-PR 1','site':'Dortmund'}); VID='VIN:WDB96340310777001'
+    # Fahrer zuordnen → Protokoll je Fahrzeug zeigt „Fahrer: PP Fahrer“ (Name statt Kennung)
+    rd=api('POST','/api/users',{'username':'pp.fahrer','display_name':'PP Fahrer','role':'driver','environment':'production'})
+    did=rd['d']['user']['id'] if 'user' in rd['d'] else rd['d']['id']
+    check(api('POST',f'/api/vehicles/{VID}/drivers',{'user_id':did})['s']==201,'Fahrer zugeordnet')
+    FA={'de':'Fahrer: PP Fahrer','uk':'Водій: PP Fahrer','en':'Driver: PP Fahrer'}
     KZ={'de':'Kennzeichen: PP-PR 1','uk':'Номерний знак: PP-PR 1','en':'Plate: PP-PR 1'}
     VALL={'de':'Alle Fahrzeuge','uk':'Увесь транспорт','en':'All vehicles'}; VSAVE={'de':'Fahrzeug gespeichert','uk':'Транспорт збережено','en':'Vehicle saved'}
     for lang in ['de','uk','en']:
@@ -46,8 +51,9 @@ with sync_playwright() as p:
         # Fahrzeugakte → „Protokoll“ (nur Inhaber)
         q.goto(B+'/#/vehicles/'+VID); q.wait_for_selector(f'a[href="#/audit?v={VID}"]'); q.click(f'a[href="#/audit?v={VID}"]'); q.wait_for_selector('#auveh')
         check('PP-PR 1' in q.inner_text('#auveh') and q.evaluate('()=>location.hash')=='#/audit',f'{lang} {w}px: Fahrzeug genannt, Adresse bereinigt')
-        check(VSAVE[lang] in q.inner_text('.list') and q.locator('.list .row').count()==1,f'{lang} {w}px: nur Einträge des Fahrzeugs („{VSAVE[lang]}“)')
-        check(q.locator('.list a.autgt[href="#/vehicles/'+VID+'"]').count()==1,f'{lang} {w}px: „{AT[lang]}: PP-PR 1“ verlinkt die Fahrzeugakte')
+        check(VSAVE[lang] in q.inner_text('.list') and q.locator('.list .row').count()==2,f'{lang} {w}px: nur Einträge des Fahrzeugs („{VSAVE[lang]}“ + Zuordnung)')
+        check(FA[lang] in q.inner_text('.list') and did not in q.inner_text('.list'),f'{lang} {w}px: Fahrer als Name („{FA[lang]}“)')
+        check(q.locator('.list a.autgt[href="#/vehicles/'+VID+'"]').count()==2,f'{lang} {w}px: „{AT[lang]}: PP-PR 1“ verlinkt die Fahrzeugakte')
         check(KZ[lang] in q.inner_text('.list'),f'{lang} {w}px: Detail in der App-Sprache („{KZ[lang]}“)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen (Fahrzeug)')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/protokoll_fahrzeug_{lang}_{w}.png',full_page=True)
