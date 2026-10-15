@@ -7873,6 +7873,23 @@ await test('Netz wieder da nach Offline-Start: Seite nur ohne Eingaben neu aufba
   eq(vd([{ type: 'select-one', tagName: 'SELECT', selectedIndex: 1, options: [opt(false, false), opt(true, true)] }]), false, 'vorbelegte Option');
 });
 
+await test('Fahrzeugliste: Suche findet Hersteller/Modell, Liste zeigt beides; Platzhalter je Sprache (Fahrer ohne Modell)', async () => {
+  const vin = 'WDB96340310999123';
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'SZ-HM 1', site: 'Dortmund', manufacturer: 'Volvo', model: 'FH 500' })).status, 201);
+  const v = (await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.vin === vin);
+  ok(v && v.manufacturer === 'Volvo' && v.model === 'FH 500', 'Liste liefert Hersteller und Modell');
+  const dv = (await users.driver.get('/api/vehicles')).data.vehicles.find((x) => x.id === 'VIN:' + vin);
+  ok(!dv || dv.model === undefined, 'Fahrer: weiterhin ohne Modell (Datensparsamkeit unverändert)');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell');
+  ok(app.includes("esc([v.manufacturer, v.model, v.build_year].filter(Boolean).join(' '))"), 'Liste zeigt Hersteller, Modell, Baujahr');
+  eq((i18n.match(/veh_search_ph: '/g) || []).length, 3, 'Platzhalter DE/UK/EN');
+  ok(app.includes("t('veh_search_ph')"), 'Platzhalter genutzt');
+  env.DB.db.prepare('DELETE FROM vehicles WHERE vin=?').run(vin);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
