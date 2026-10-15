@@ -317,4 +317,4 @@ table.paper td:last-child { min-width: 30%; }
 #nnew { position: sticky; top: calc(68px + env(safe-area-inset-top)); z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; border-left: 4px solid var(--accent, #f2a900); }
 
 /* [CLAUDE] Formular wird gesendet (doppeltes Absenden gesperrt, siehe app.js) */
-form[aria-busy="true"] button:not([type="button"]) { opacity: .6; cursor: progress; }
+form[aria-busy="true"] button:not([type="button"]), button[aria-busy="true"], a[aria-busy="true"] { opacity: .6; cursor: progress; }

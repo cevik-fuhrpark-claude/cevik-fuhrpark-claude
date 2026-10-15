@@ -7711,7 +7711,7 @@ await test('Oberfläche: jede Aktion mit API-Aufruf hat eine Fehlerbehandlung; n
   ok(app.includes("try { const r = await api('POST', '/api/push/test');"), 'Push-Test mit Fehlerbehandlung');
 });
 
-await test('Oberfläche: Formulare werden nicht doppelt abgesendet (Doppelklick/zweimal Enter), Sperre endet auch bei Fehlern', async () => {
+await test('Oberfläche: Formulare und Aktionsknöpfe werden nicht doppelt ausgelöst (Doppelklick/zweimal Enter), Sperre endet auch bei Fehlern', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   // Voraussetzung des Wächters: alle Formulare nutzen `.onsubmit = …` mit preventDefault, keine eigenen submit-Zuhörer
@@ -7726,7 +7726,7 @@ await test('Oberfläche: Formulare werden nicht doppelt abgesendet (Doppelklick/
   const code = app.slice(app.indexOf("document.addEventListener('submit', (e) => {"), app.indexOf('}, true);', app.indexOf("document.addEventListener('submit', (e) => {")) + 9);
   let listener, capture; const doc = { addEventListener: (type, fn, cap) => { eq(type, 'submit'); listener = fn; capture = cap; } };
   const errs = []; const apiErr = (e) => { if (e && e.status) { errs.push(e.message); return true; } return false; };
-  new Function('document', 'onUnhandledApiError', 'console', code)(doc, apiErr, { error: (e) => errs.push('console:' + e.message) });
+  new Function('document', 'onUnhandledApiError', code)(doc, apiErr);
   eq(capture, true, 'Einfangphase');
   const attrs = {}; let calls = 0, resolve, reject;
   const form = { setAttribute: (k, v) => (attrs[k] = v), removeAttribute: (k) => delete attrs[k],
@@ -7737,15 +7737,29 @@ await test('Oberfläche: Formulare werden nicht doppelt abgesendet (Doppelklick/
   resolve(); await new Promise((r) => setTimeout(r, 0));
   ok(!('aria-busy' in attrs) && !form.cfpBusy, 'nach Abschluss wieder frei');
   listener(ev()); eq(calls, 2, 'erneutes Absenden nach Abschluss möglich');
-  reject(Object.assign(new Error('Keine Verbindung'), { offline: true, status: 0 })); await new Promise((r) => setTimeout(r, 0));
+  reject(Object.assign(new Error('Keine Verbindung'), { offline: true, status: 503 })); await new Promise((r) => setTimeout(r, 0));
   ok(!form.cfpBusy, 'Sperre endet auch bei Fehler');
   // Handler wirft API-Fehler ohne eigene Behandlung → Meldung über das Sicherheitsnetz
   form.onsubmit = async () => { throw Object.assign(new Error('Konflikt'), { status: 409 }); };
   listener(ev()); await new Promise((r) => setTimeout(r, 0)); ok(errs.includes('Konflikt'), 'API-Fehler gemeldet: ' + errs);
   // Elemente ohne onsubmit (z. B. fremde Formulare) bleiben unberührt
   const e3 = ev(); listener({ ...e3, target: {} }); eq(e3.pd, 0);
+  // Knöpfe mit asynchronem Klick-Handler: weitere Klicks bis zum Ende wirkungslos; synchrone Handler unverändert
+  { const cs = app.indexOf("document.addEventListener('click', (e) => {"); ok(cs > 0, 'Klick-Sperre vorhanden');
+    const ccode = app.slice(cs, app.indexOf('}, true);', cs) + 9);
+    let cl; new Function('document', 'onUnhandledApiError', ccode)({ addEventListener: (t, fn, cap) => { eq(t, 'click'); eq(cap, true); cl = fn; } }, apiErr);
+    const at = {}; let n = 0, res; const btn = { setAttribute: (k, v) => (at[k] = v), removeAttribute: (k) => delete at[k] };
+    btn.closest = () => btn; btn.onclick = async () => { n++; await new Promise((r) => { res = r; }); };
+    const click = () => { const ev = { target: btn, pd: 0, preventDefault() { this.pd++; } }; cl(ev); const r = btn.onclick(ev); return [ev, r]; };
+    click(); eq(n, 1); eq(at['aria-busy'], 'true'); ok(btn.onclick.cfpGuard, 'Handler umhüllt');
+    const [ev2, r2] = click(); eq(n, 1, 'zweiter Klick während der Ausführung wirkungslos'); eq(r2, false); eq(ev2.pd, 1);
+    res(); await new Promise((r) => setTimeout(r, 0)); ok(!btn.cfpBusy && !('aria-busy' in at), 'danach frei');
+    click(); eq(n, 2, 'erneuter Klick nach Abschluss wirkt'); const g = btn.onclick; click(); eq(btn.onclick, g, 'nicht doppelt umhüllt'); res(); await new Promise((r) => setTimeout(r, 0));
+    let m = 0; const nav = { setAttribute() {}, removeAttribute() {}, onclick: () => { m++; } }; nav.closest = () => nav;
+    for (let i = 0; i < 3; i++) { cl({ target: nav }); nav.onclick({ preventDefault() {} }); } eq(m, 3, 'synchrone Handler (Navigation) unverändert');
+    btn.onclick = async () => { throw Object.assign(new Error('Nicht gefunden'), { status: 404 }); }; click(); await new Promise((r) => setTimeout(r, 0)); ok(errs.includes('Nicht gefunden'), 'API-Fehler aus Klick gemeldet'); }
   const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
-  ok(css.includes('form[aria-busy="true"] button'), 'Darstellung „wird gesendet“');
+  ok(css.includes('form[aria-busy="true"] button') && css.includes('button[aria-busy="true"]'), 'Darstellung „wird gesendet“');
 });
 
 await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {

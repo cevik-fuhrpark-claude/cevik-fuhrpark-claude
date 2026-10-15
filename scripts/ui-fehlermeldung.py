@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test: Aktionen ohne Netz melden einen Fehler statt still abzubrechen.
 # 1) Management-Panel → Master-Eingang „Gesehen“ ohne Netz: Meldung, Eintrag bleibt offen; danach mit Netz entschieden.
-# 3) Doppelklick auf „Anlegen“ legt nur einen Datensatz an (zentrale Formularsperre).
+# 3) Doppelklick auf „Anlegen“ legt nur einen Datensatz an, Doppelklick auf einen Aktionsknopf löst nur einmal aus (zentrale Sperren).
 # 2) Sicherheitsnetz: Aktion gelingt, das Neuladen der Ansicht danach scheitert (Netz weg) → Meldung statt veralteter Seite ohne Hinweis.
 # 390/820/1366 px, keine Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
@@ -45,6 +45,11 @@ with sync_playwright() as p:
         q.click('#ra'); q.wait_for_selector('.toast.err', timeout=10000)
         check(len(q.inner_text('.toast.err'))>3,f'{w}px: Neuladen nach Aktion ohne Netz meldet Fehler: '+q.inner_text('.toast.err'))
         if SHOTS: q.screenshot(path=f'{SHOTS}/fehlermeldung_neuladen_{w}.png')
+        # Doppelklick auf „Agent jetzt ausführen“ (Klick-Knopf ohne Formular) startet nur einen Lauf
+        q.goto(B+'/#/master'); q.wait_for_selector('#ra'); runs=[]
+        q.on('request', lambda r: runs.append(1) if r.method=='POST' and r.url.endswith('/api/agent/run') else None)
+        q.locator('#ra').dblclick(); q.wait_for_timeout(1500)
+        check(len(runs)==1,f'{w}px: Doppelklick startet genau einen Agentenlauf ({len(runs)})')
         # Doppelklick auf „Anlegen“ (neuer Fahrer) legt nur einen Datensatz an
         q.goto(B+'/#/drivers'); q.wait_for_selector('#ndf', state='attached')
         q.locator('#ndf').locator('xpath=ancestor::details').locator('summary').click()

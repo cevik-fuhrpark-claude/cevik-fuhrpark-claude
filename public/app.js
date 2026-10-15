@@ -239,7 +239,25 @@ document.addEventListener('submit', (e) => {
   if (form.cfpBusy) return;
   form.cfpBusy = true; form.setAttribute('aria-busy', 'true');
   let p; try { p = h.call(form, e); } catch (err) { p = Promise.reject(err); }
-  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) console.error(err); }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); });
+  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); });
+}, true);
+// Dasselbe für Knöpfe/Links mit asynchronem Klick-Handler (`el.onclick = async …`, z. B. Quittieren, Ausbuchen, Entscheidung,
+// Bestandsbuchung): Vor dem ersten Klick wird der Handler umhüllt; liefert er ein Promise, sind weitere Klicks bis zum Ende wirkungslos.
+// Synchrone Handler (Navigation, Aufklappen) bleiben unverändert.
+document.addEventListener('click', (e) => {
+  const el = e.target && e.target.closest ? e.target.closest('button, a, [role="button"]') : null;
+  const h = el && el.onclick;
+  if (typeof h !== 'function' || h.cfpGuard) return;
+  const g = function (ev) {
+    if (el.cfpBusy) { ev.preventDefault(); return false; }
+    const r = h.call(this, ev);
+    if (r && typeof r.then === 'function') {
+      el.cfpBusy = true; el.setAttribute('aria-busy', 'true');
+      Promise.resolve(r).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { el.cfpBusy = false; el.removeAttribute('aria-busy'); });
+    }
+    return r;
+  };
+  g.cfpGuard = true; el.onclick = g;
 }, true);
 // Sicherheitsnetz: Lädt eine Ansicht nach einer Aktion neu (z. B. `viewVehicle(id)` außerhalb von route()) und bricht dabei das Netz
 // ab, ging der Fehler bisher still verloren – die Seite blieb veraltet stehen. Jetzt: Meldung (nur Fehler der eigenen API, nicht 401 –
