@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test: Zeitleiste und Fahrerakte (Verläufe Auslesungen/Führerscheinkontrollen) zeigen einen Hinweis, wenn ältere Einträge nicht angezeigt werden (`truncated`), auch im Ausdruck-Vermerk;
+# [CLAUDE] UI-Test: Zeitleiste, Fahrzeugakte (Kontrollen, Prüf-/Wartungsverlauf) und Fahrerakte (Verläufe Auslesungen/Führerscheinkontrollen) zeigen einen Hinweis, wenn ältere Einträge nicht angezeigt werden (`truncated`), auch im Ausdruck-Vermerk;
 # ohne `truncated` kein Hinweis. Die Antwort wird im Browser abgefangen (500+ Ereignisse im Dev-Server anzulegen wäre langsam) –
 # die Serverseite prüft test/run.mjs. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os, json
@@ -51,7 +51,8 @@ with sync_playwright() as p:
         if SHOTS: q.screenshot(path=f'{SHOTS}/zeitleiste_hinweis_{lang}_{w}.png',full_page=True)
         q.unroute('**/timeline?*')
         def vtrunc(route):
-            r=route.fetch(); d=r.json(); d['inspections_truncated']=True
+            r=route.fetch(); d=r.json(); d['inspections_truncated']=True; d['maintenance_history_truncated']=True
+            if not d['maintenance_history']: d['maintenance_history']=[{'id':'m','rule_id':None,'kind':'HU','done_date':'2026-09-01','done_km':None,'evidence':'Prüfbericht','source':'erfasst','result':'ohne_maengel','created_at':'2026-09-01T08:00:00.000Z','recorded_by_name':'ZL Inhaber'}]
             if not d['inspections']: d['inspections']=[{'id':'x','kind':'abfahrt','result':'ok','odometer_km':None,'created_at':'2026-10-01T08:00:00.000Z','case_id':None,'performed_by_name':'ZL Inhaber','performed_by_role':'owner'}]
             route.fulfill(response=r, body=json.dumps(d))
         q.route('**/api/vehicles/'+VID.replace(':','%3A'), vtrunc); q.route('**/api/vehicles/'+VID, vtrunc)
@@ -61,6 +62,14 @@ with sync_playwright() as p:
             check(href.endswith('/timeline?f=inspection'),f'{lang} {w}px: Akte-Hinweis verlinkt Zeitleiste/Kontrollen ({href})')
         else:
             check(False,f'{lang} {w}px: Akte-Hinweis fehlt (keine Kontrollen im Testfahrzeug?)')
+        if q.locator('#mhisttrunc').count():
+            q.locator('#mhist summary').click()
+            href=q.locator('#mhisttrunc a').get_attribute('href')
+            check(href.endswith('/timeline?f=maintenance') and '+)' in q.locator('#mhist summary').inner_text() and q.locator('#mhisttrunc').is_visible(),f'{lang} {w}px: Prüf-/Wartungsverlauf mit „+“ und Link Zeitleiste/Prüfungen ({href})')
+            check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Akte ohne Querscrollen')
+            if SHOTS: q.screenshot(path=f'{SHOTS}/akte_mhist_hinweis_{lang}_{w}.png',full_page=True)
+        else:
+            check(False,f'{lang} {w}px: Prüf-/Wartungsverlauf-Hinweis fehlt')
         q.unroute('**/api/vehicles/'+VID.replace(':','%3A')); q.unroute('**/api/vehicles/'+VID)
         q.goto(B+'/#/drivers/'+drv); q.wait_for_selector('#dthist'); q.wait_for_selector('#dlchist')
         check(q.locator('.dtrunc').count()==0 and '+)' not in q.locator('#dthist summary').inner_text(),f'{lang} {w}px: Fahrerakte ohne Kürzung kein Hinweis')

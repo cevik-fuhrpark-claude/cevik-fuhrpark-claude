@@ -91,6 +91,7 @@ export function failedInspectionOf(v, events, cases, since) {
   return hits[0] ? { kind: hits[0].kind, done_date: hits[0].done_date, result: hits[0].result, event_id: hits[0].id } : null;
 }
 
+export const MAINT_HIST_MAX = 200; // Prüf-/Wartungsverlauf in der Fahrzeugakte (ältere: Zeitleiste)
 // opts.timeline: nur die Teile laden, die die Zeitleiste braucht (gleiche Rechte, weniger D1-Abfragen)
 export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const tl = !!opts.timeline;
@@ -127,7 +128,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     GROUP BY item HAVING COUNT(*) >= 2 ORDER BY n DESC, last_at DESC`).bind(vehicleId, envName, new Date(Date.now() - 90 * 86400000).toISOString()).all()).results;
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
   const maintenanceHistory = (await env.DB.prepare(`SELECT e.id, e.rule_id, e.kind, e.done_date, e.done_km, e.evidence, e.source, e.result, e.created_at, u.display_name AS recorded_by_name
-    FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC LIMIT ?`).bind(vehicleId, Math.max(cap, 200)).all()).results;
+    FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC, e.created_at DESC LIMIT ?`).bind(vehicleId, Math.max(cap, MAINT_HIST_MAX + 1)).all()).results;
   const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results;
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
@@ -169,7 +170,10 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     const today = berlinDate();
     for (const m of maintenance) if (ruleDueKm(m) !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
   }
-  const out = { inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
+  // Akte: Verlauf höchstens MAINT_HIST_MAX (eine Zeile mehr gelesen → maintenance_history_truncated, App verlinkt die Zeitleiste „Prüfungen“).
+  // Erst nach failedInspection/resultMissing kürzen – die Hinweise nutzen alle gelesenen Ereignisse.
+  const maintTruncated = !tl && maintenanceHistory.length > MAINT_HIST_MAX; if (maintTruncated) maintenanceHistory.length = MAINT_HIST_MAX;
+  const out = { inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);

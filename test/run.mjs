@@ -3902,6 +3902,7 @@ await test('Fahrerakte: Verläufe Auslesungen/Führerscheinkontrollen bis 100 Ei
   ok(app.includes('/timeline?limit=500'), 'App lädt 500');
   ok(STRINGS.de.help_exports_s.includes('Zeitleiste bis 500, Fahrerakte je ' + DRIVER_HIST_MAX + ', Kontrollen in der Fahrzeugakte 50'), 'Hilfe DE');
   { const { TIRE_HIST_MAX } = await import('../src/tires.js'); const { DQ_MAX } = await import('../src/quality.js');
+    { const { MAINT_HIST_MAX } = await import('../src/vehicles.js'); ok(STRINGS.de.help_exports_s.includes(`Prüfungen und Wartungen ${MAINT_HIST_MAX}`) && STRINGS.uk.help_exports_s.includes(`перевірки й обслуговування ${MAINT_HIST_MAX}`) && STRINGS.en.help_exports_s.includes(`inspections and services ${MAINT_HIST_MAX}`), 'Hilfe nennt Prüf-/Wartungsverlauf-Grenze'); }
     ok(STRINGS.de.help_exports_s.includes(`Reifenverlauf ${TIRE_HIST_MAX}, Datenqualität je Prüfung ${DQ_MAX}`) && STRINGS.en.help_exports_s.includes(`tyre history ${TIRE_HIST_MAX}, data quality ${DQ_MAX} per check`) && STRINGS.uk.help_exports_s.includes(`історія шин ${TIRE_HIST_MAX}`), 'Hilfe nennt Reifen-/Datenqualitäts-Grenzen'); }
   ok(STRINGS.uk.help_exports_s.includes('до 500') && STRINGS.en.help_exports_s.includes('timeline up to 500, driver file ' + DRIVER_HIST_MAX + ' each'), 'Hilfe UK/EN');
 });
@@ -7538,6 +7539,33 @@ await test('Management-Panel: offene Vorgänge vor kürzlich abgeschlossenen, h�
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].master_cases_truncated && STRINGS[l].master_cases_truncated.includes('{n}'), 'Text ' + l);
   db.prepare(`DELETE FROM cases WHERE id LIKE 'tzmp-%'`).run();
   eq((await users.fleet.get('/api/master')).data.cases_truncated, false);
+});
+
+await test('Fahrzeugakte: Prüf-/Wartungsverlauf höchstens 200 mit Hinweis, Zeitleiste vollständig', async () => {
+  const db = env.DB.db; const { MAINT_HIST_MAX } = await import('../src/vehicles.js'); eq(MAINT_HIST_MAX, 200);
+  const vin = 'WDB96340310777714'; const VID = 'VIN:' + vin;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-MH 1', site: 'Verlauf-Test' })).status, 201);
+  let a = (await users.fleet.get(`/api/vehicles/${VID}`)).data;
+  eq(a.maintenance_history_truncated, false, 'ohne Ereignisse kein Hinweis'); eq(a.maintenance_history_max, 200);
+  const ins = db.prepare(`INSERT INTO maintenance_events(id, rule_id, vehicle_id, kind, done_date, evidence, source, created_at) VALUES (?,?,?,?,?,?,?,?)`);
+  const day = (i) => new Date(Date.UTC(2001, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+  const rid = db.prepare('SELECT id FROM maintenance_rules LIMIT 1').get().id;
+  try {
+    db.exec('BEGIN'); for (let i = 0; i < 200; i++) ins.run('mhakte-' + i, rid, VID, 'Ölwechsel', day(i), 'Probe', 'erfasst', '2020-01-01T00:00:00.000Z'); db.exec('COMMIT');
+    a = (await users.fleet.get(`/api/vehicles/${VID}`)).data;
+    eq(a.maintenance_history.length, 200); eq(a.maintenance_history_truncated, false, 'genau 200 → kein Hinweis');
+    ins.run('mhakte-200', rid, VID, 'Ölwechsel', day(200), 'Probe', 'erfasst', '2020-01-01T00:00:00.000Z');
+    a = (await users.fleet.get(`/api/vehicles/${VID}`)).data;
+    eq(a.maintenance_history.length, 200); eq(a.maintenance_history_truncated, true, '201 → Hinweis');
+    eq(a.maintenance_history[0].done_date, day(200), 'neueste zuerst'); ok(!a.maintenance_history.some((e) => e.id === 'mhakte-0'), 'älteste fehlt in der Akte');
+    // Zeitleiste zeigt alle (Bereich „Prüfungen“)
+    const tl = (await users.fleet.get(`/api/vehicles/${VID}/timeline?types=maintenance&limit=500`)).data;
+    eq(tl.items.length, 201, 'Zeitleiste: alle 201'); eq(tl.truncated, false);
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM maintenance_events WHERE id LIKE 'mhakte-%'`).run(); }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].maint_hist_truncated && STRINGS[l].maint_hist_truncated.includes('{n}'), 'Text ' + l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("d.maintenance_history_truncated ? '+'") && app.includes("tlHash(v.id, 'maintenance')"), 'Oberfläche: „+“ und Link zur Zeitleiste');
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
