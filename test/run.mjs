@@ -7515,6 +7515,31 @@ await test('Reifenakte: aktueller Stand (Profil, DOT, Winter) aus allen Ereignis
   db.prepare(`DELETE FROM tire_events WHERE id LIKE 'tzrf-%'`).run();
 });
 
+await test('Management-Panel: offene Vorgänge vor kürzlich abgeschlossenen, höchstens 300 mit Hinweis, Statuszähler über alle', async () => {
+  const db = env.DB.db;
+  const src = db.prepare(`SELECT * FROM cases WHERE environment='test' LIMIT 1`).get(); ok(src, 'Vorlage-Vorgang'); const cols = Object.keys(src);
+  let p = (await users.fleet.get('/api/master')).data;
+  eq(p.cases_truncated, false); eq(p.cases_max, 300);
+  const openIds = db.prepare(`SELECT id FROM cases WHERE environment='test' AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).all().map((r) => r.id);
+  ok(openIds.length > 0, 'offene Vorgänge vorhanden');
+  // 320 heute freigegebene, dringliche Vorgänge – sie dürfen offene (auch niedrige) nicht verdrängen
+  const now = new Date().toISOString();
+  for (let i = 0; i < 320; i++) db.prepare(`INSERT INTO cases(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map((c) => (c === 'id' ? 'tzmp-' + i : c === 'case_no' ? 'TZ-MP-' + i : c === 'status' ? 'fahrzeug_freigegeben' : c === 'priority' ? 'kritisch' : c === 'updated_at' || c === 'closed_at' ? now : c === 'request_key' ? 'tzmp-' + i : c === 'parent_case_id' || c === 'duplicate_of' ? null : src[c])));
+  p = (await users.fleet.get('/api/master')).data;
+  eq(p.cases.length, 300); eq(p.cases_truncated, true, 'Hinweis bei mehr als 300');
+  for (const id of openIds) ok(p.cases.some((c) => c.id === id), 'offener Vorgang fehlt: ' + id);
+  const firstClosed = p.cases.findIndex((c) => ['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
+  ok(firstClosed === openIds.length && p.cases.slice(firstClosed).every((c) => ['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)), 'offene zuerst');
+  const since = new Date(Date.now() - 14 * 86400000).toISOString();
+  const expect = Object.fromEntries(db.prepare(`SELECT status, COUNT(*) n FROM cases WHERE environment='test' AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR updated_at > ?) GROUP BY status`).all(since).map((r) => [r.status, r.n]));
+  eq(JSON.stringify(Object.entries(p.status_counts).sort()), JSON.stringify(Object.entries(expect).sort()), 'Statuszähler über alle Vorgänge');
+  ok(p.status_counts.fahrzeug_freigegeben >= 320, 'Zähler nicht auf 300 gekappt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].master_cases_truncated && STRINGS[l].master_cases_truncated.includes('{n}'), 'Text ' + l);
+  db.prepare(`DELETE FROM cases WHERE id LIKE 'tzmp-%'`).run();
+  eq((await users.fleet.get('/api/master')).data.cases_truncated, false);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

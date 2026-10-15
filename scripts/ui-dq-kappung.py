@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test (1) Reifenakte: Verlauf mit „+“ und Hinweis samt Link zur Zeitleiste (Reifen), wenn ältere Ereignisse nicht angezeigt werden (`history_truncated`).
-# (2) Datenqualität zeigt einen Hinweis, wenn bei Listen-Prüfungen mehr als 200 Befunde vorliegen (`truncated_checks`),
+# (2) Management-Panel: Hinweis unter der Vorgangstabelle bei `cases_truncated` mit Link zur Vorgangsliste.
+# (3) Datenqualität zeigt einen Hinweis, wenn bei Listen-Prüfungen mehr als 200 Befunde vorliegen (`truncated_checks`),
 # die Prüfknöpfe zeigen „200+“, der Hinweis erscheint auch im Ausdruck; ohne Kappung kein Hinweis. Die Antwort wird im Browser
 # abgefangen (Serverseite prüft test/run.mjs). DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os, json
@@ -40,6 +41,18 @@ with sync_playwright() as p:
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Fahrzeugakte ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/reifen_kappung_{lang}_{w}.png',full_page=True)
         q.unroute('**/tires')
+        MT={'de':'offene zuerst','uk':'спершу відкриті','en':'open first'}
+        q.goto(B+'/#/master'); q.wait_for_selector('.mtab', state='attached')
+        check(q.locator('#mctrunc').count()==0,f'{lang} {w}px: Panel ohne Kappung kein Hinweis')
+        def mtrunc(route):
+            r=route.fetch(); d=r.json(); d['cases_truncated']=True; d['cases_max']=300
+            route.fulfill(response=r, body=json.dumps(d))
+        q.route('**/api/master', mtrunc)
+        q.reload(); q.wait_for_load_state('networkidle'); q.wait_for_selector('#mctrunc')
+        mh=q.locator('#mctrunc').inner_text()
+        check(MT[lang] in mh and q.locator('#mctrunc a').get_attribute('href')=='#/cases',f'{lang} {w}px: Panel-Hinweis mit Link ({mh[:60]!r})')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Panel ohne Querscrollen')
+        q.unroute('**/api/master')
         q.goto(B+'/#/quality'); q.wait_for_selector('[data-dq]')
         check(q.locator('#dqtrunc').count()==0 and '+)' not in q.inner_text('body'),f'{lang} {w}px: ohne Kappung kein Hinweis')
         cap={}

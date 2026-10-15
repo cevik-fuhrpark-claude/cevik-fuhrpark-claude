@@ -1341,3 +1341,6 @@ Object.assign(STRINGS.en, { insp_truncated: 'The last {n} checks are listed here
 Object.assign(STRINGS.de, { tire_hist_truncated: 'Hier stehen die letzten {n} Reifenereignisse (der aktuelle Stand oben berücksichtigt alle) – alle weiteren in der' });
 Object.assign(STRINGS.uk, { tire_hist_truncated: 'Тут показано останні {n} подій шин (поточний стан вище враховує всі) – усі інші в розділі' });
 Object.assign(STRINGS.en, { tire_hist_truncated: 'The last {n} tyre events are listed here (the current status above includes all) – all others in the' });
+Object.assign(STRINGS.de, { master_cases_truncated: 'Hier stehen {n} Vorgänge (offene zuerst, nach Dringlichkeit) – alle weiteren in der Liste' });
+Object.assign(STRINGS.uk, { master_cases_truncated: 'Тут показано {n} заявок (спершу відкриті, за терміновістю) – усі інші у списку' });
+Object.assign(STRINGS.en, { master_cases_truncated: '{n} cases are listed here (open first, by urgency) – all others in the list' });

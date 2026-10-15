@@ -461,19 +461,30 @@ export async function processMasterInbox(env, environment) {
 }
 
 // Management-Kontrollpanel: Fuhrpark & Werkstatt / Vorgänge und Agentenmeldungen
+// Vorgangstabelle im Management-Panel: offene Vorgänge zuerst (nach Priorität), danach die der letzten 14 Tage abgeschlossenen/abgelehnten;
+// höchstens MASTER_CASES_MAX Zeilen (eine mehr gelesen → cases_truncated). Vorher standen abgeschlossene zwischen den offenen gleicher
+// Priorität und konnten bei vielen Vorgängen offene verdrängen; status_counts zählte nur die angezeigten – jetzt eigene Zählung über alle.
+export const MASTER_CASES_MAX = 300;
 export async function masterPanel(env, environment) {
-  const cases = (await env.DB.prepare(`SELECT c.id, c.case_no, c.status, c.priority, c.safety_lock, c.description, c.workshop_site, c.fleet_received_at, c.workshop_ack_at, c.updated_at, c.created_at,
+  const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
+  const [caseRows, countRows] = await Promise.all([
+    env.DB.prepare(`SELECT c.id, c.case_no, c.status, c.priority, c.safety_lock, c.description, c.workshop_site, c.fleet_received_at, c.workshop_ack_at, c.updated_at, c.created_at,
       v.plate, v.vin, (SELECT COUNT(*) FROM open_items o WHERE o.case_id=c.id AND o.status='offen') AS open_items
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND (c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR c.updated_at > ?)
-    ORDER BY CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END, c.updated_at DESC LIMIT 300`)
-    .bind(environment, new Date(Date.now() - 14 * 86400000).toISOString()).all()).results;
+    ORDER BY CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END, c.updated_at DESC LIMIT ?`)
+      .bind(environment, since14, MASTER_CASES_MAX + 1).all(),
+    env.DB.prepare(`SELECT status, COUNT(*) AS n FROM cases WHERE environment=? AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR updated_at > ?) GROUP BY status`)
+      .bind(environment, since14).all(),
+  ]);
+  const casesTruncated = caseRows.results.length > MASTER_CASES_MAX;
+  const cases = caseRows.results.slice(0, MASTER_CASES_MAX);
   const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results;
   const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id
     WHERE m.environment=? ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC LIMIT 100`).bind(environment).all()).results
     .map((m) => ({ ...m, payload: JSON.parse(m.payload) }));
   const lastRun = await env.DB.prepare('SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1').bind(environment).first();
   const counts = {};
-  for (const c of cases) counts[c.status] = (counts[c.status] || 0) + 1;
+  for (const r of countRows.results) counts[r.status] = r.n;
   const vehicles = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND eval_excluded=0').first()).n;
   const lockedVehicles = (await env.DB.prepare(`SELECT COUNT(DISTINCT vehicle_id) AS n FROM cases WHERE environment=? AND safety_lock=1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).first()).n;
   const inWorkshop = (await env.DB.prepare(`SELECT COUNT(DISTINCT vehicle_id) AS n FROM cases WHERE environment=? AND status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).first()).n;
@@ -482,7 +493,7 @@ export async function masterPanel(env, environment) {
     environment, generated_at: nowIso(), vehicles_total: vehicles, vehicles_locked: lockedVehicles, vehicles_in_workshop: inWorkshop,
     status_counts: counts, decisions_open: decisionsOpen,
     all_clear: findings.filter((f) => SEV_RANK[f.severity] >= SEV_RANK.handeln).length === 0,
-    cases, findings, inbox, last_agent_run: lastRun,
+    cases, cases_truncated: casesTruncated, cases_max: MASTER_CASES_MAX, findings, inbox, last_agent_run: lastRun,
   };
 }
 
