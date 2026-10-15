@@ -1,7 +1,7 @@
 // [CLAUDE] Robustheits-Lauf (lokal, In-Memory-DB, synthetische Daten): schickt Störwerte an die API und meldet jede Antwort ≥ 500.
 // Aufruf: node --experimental-sqlite --no-warnings scripts/fuzz-api.mjs   (Fehlercode 1 bei mindestens einem Serverfehler)
 // Abgedeckt: alle festen GET-Pfade × Abfrageparameter × Störwerte, Felder schreibender Endpunkte und Vorgangsbefehle, Körper ohne
-// JSON-Objekt, CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
+// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
 // Anlass: Fuzz-Lauf 15.10.2026 fand „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ → jeweils „Interner Fehler“.
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.js';
@@ -86,6 +86,58 @@ for (const g of G) for (const body of [{ provider: 'webfleet', items: g }, { pro
   { provider: 'yellowfox', items: [{ vin: g, km: g, gps_time: g, lat: g, lon: g, external_id: g, plate: g, ignition: g }] }]) {
   await hit(`Telematik ${JSON.stringify(body).slice(0, 40)}`, anon.req('POST', '/api/integration/v1/telematics?environment=test', body, IH));
 }
+
+// 6) Ändernde Endpunkte mit Kennung (PATCH/PUT/POST auf bestehende Datensätze) – Erweiterung 15.10.2026 (21:15-Sitzung)
+const id = (r) => r.data && (r.data.id || (r.data.item && r.data.item.id) || (r.data.contract && r.data.contract.id) || (r.data.driver && r.data.driver.id));
+const ids = {
+  contract: id(await owner.post(`/api/vehicles/${VE}/contracts`, { kind: 'leasing', partner: 'P', evidence: 'E', start_date: '2025-01-01' })),
+  rule: id(await owner.post(`/api/vehicles/${VE}/maintenance`, { kind: 'UVV', last_done_date: '2025-11-10', interval_months: 12, evidence: 'Fuzz' })),
+  item: id(await owner.post('/api/stock', { name: 'Fuzz-Filter', quantity: 5, site: ws, unit_price_net: 2 })),
+  driver: id(await owner.post('/api/drivers', { display_name: 'Fuzz Fahrer' })),
+  fine: id(await owner.post('/api/fines', { kind: 'anhoerung', authority: 'Bußgeldstelle', reference: 'AZ-FZ1', offense_type: 'geschwindigkeit', offense_at: '2026-10-01T08:00:00Z', plate_in_letter: 'FZ-1', amount_eur: 70 })),
+  contact: id(await owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo', phone: '0123 456' })),
+};
+const done = await owner.post(`/api/maintenance/${ids.rule}/complete`, { done_date: '2026-10-01', evidence: 'Fuzz-Bericht', done_km: 2000 });
+if (done.status !== 200) { console.log('  ✘ Vorbereitung: Durchführung ' + JSON.stringify(done.data)); process.exit(1); }
+ids.event = ((await owner.get(`/api/vehicles/${VE}`)).data.maintenance_history || [])[0]?.id;
+for (const [k2, v2] of Object.entries(ids)) if (!v2) { console.log(`  ✘ Vorbereitung: keine Kennung für ${k2}`); process.exit(1); }
+const CF = ['kind', 'partner', 'contract_no', 'start_date', 'end_date', 'notice_months', 'km_allowance', 'start_km', 'monthly_rate_net', 'evidence', 'note', 'file_id'];
+const muts = [
+  ['PATCH', `/api/contracts/${ids.contract}`, {}, CF],
+  ['PATCH', `/api/stock/${ids.item}`, {}, ['name', 'part_number', 'min_qty', 'unit_price_net', 'location', 'unit', 'last_supplier', 'active', 'note']],
+  ['PUT', `/api/stock/${ids.item}/order`, { qty: 2 }, ['qty', 'ordered_on', 'eta', 'supplier', 'document_ref', 'note']],
+  ['POST', `/api/stock/${ids.item}/movements`, { type: 'zugang', qty: 1 }, ['type', 'qty', 'unit_price_net', 'note', 'case_id', 'document_ref', 'supplier']],
+  ['POST', `/api/stock/${ids.item}/transfer`, { to_site: 'GIBTSNICHT', qty: 1 }, ['to_site', 'qty', 'note']],
+  ['POST', '/api/stock/inventory?dry_run=1', { site: ws, counts: [{ item_id: ids.item, counted: 5 }] }, ['site', 'counts', 'note']],
+  ['POST', '/api/stock/inventory', { site: ws, counts: [{ item_id: ids.item, counted: 5 }] }, ['site', 'counts', 'note']],
+  ['PATCH', `/api/drivers/${ids.driver}`, {}, ['display_name', 'personnel_no', 'site', 'user_id', 'active', 'note']],
+  ['POST', `/api/drivers/${ids.driver}/documents`, { kind: 'fuehrerschein', number: 'X1', valid_until: '2030-01-01', evidence: 'Sichtprüfung' }, ['kind', 'number', 'issued_on', 'valid_until', 'license_classes', 'title', 'evidence', 'note']],
+  ['POST', `/api/drivers/${ids.driver}/license-checks`, { checked_on: '2026-01-10', result: 'in_ordnung' }, ['checked_on', 'result', 'note', 'evidence']],
+  ['POST', '/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V, downloaded_on: '2026-10-01', evidence: 'x' }, ['kind', 'vehicle_id', 'driver_id', 'downloaded_on', 'evidence', 'note']],
+  ['PUT', `/api/cases/${cid}/claim`, { insurer: 'A AG', reported_on: '2026-10-01', evidence: 'Meldung' }, ['insurer', 'reported_on', 'claim_no', 'status', 'evidence', 'note', 'amount_net', 'valuation', 'file_id']],
+  ['PATCH', `/api/emergency/contacts/${ids.contact}`, {}, ['label', 'phone', 'kind', 'scope', 'site', 'vehicle_id', 'note']],
+  ['POST', `/api/maintenance/${ids.rule}/plan`, { planned_date: '2026-12-01' }, ['planned_date', 'workshop_site', 'note']],
+  ['POST', `/api/maintenance/${ids.rule}/order`, { workshop_site: ws }, ['workshop_site', 'planned_date', 'note', 'request_key']],
+  ['POST', `/api/maintenance/${ids.rule}/complete`, { done_date: '2026-10-02', evidence: 'x', done_km: 2100 }, ['done_date', 'done_km', 'evidence', 'note', 'result', 'next_due_date']],
+  ['POST', `/api/maintenance/events/${ids.event}/result`, { result: 'ohne_maengel', evidence: 'x' }, ['result', 'evidence', 'note', 'defects']],
+  ['POST', `/api/maintenance/events/${ids.event}/order`, { workshop_site: ws }, ['workshop_site', 'note', 'request_key']],
+  ['POST', `/api/vehicles/${VE}/maintenance`, { kind: 'UVV', last_done_date: '2025-01-10', interval_months: 12, evidence: 'E' }, ['kind', 'last_done_date', 'last_done_km', 'interval_months', 'interval_km', 'next_due_date', 'next_due_km', 'evidence', 'note']],
+  ['POST', `/api/vehicles/${VE}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 5 }, ['event_type', 'position', 'positions', 'tread_mm', 'pressure_bar', 'dot', 'brand', 'size', 'winter_mark', 'odometer_km', 'at', 'note', 'case_id']],
+  ['POST', `/api/vehicles/${VE}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true }, ['axle', 'size', 'verified', 'min_tread_mm', 'source', 'note']],
+  ['POST', `/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-02', request_key: 'fz-wo' }, ['workshop_site', 'planned_date', 'request_key', 'note']],
+  ['POST', `/api/vehicles/${VE}/spec`, {}, ['zgm_kg', 'zgm_class', 'first_registration', 'spec_source', 'evidence', 'build_year']],
+  ['POST', `/api/vehicles/${VE}/evaluation`, { excluded: false }, ['excluded', 'reason']],
+  ['POST', `/api/vehicles/${VE}/drivers`, { user_id: uid, evidence: 'x' }, ['user_id', 'evidence', 'end_previous', 'note']],
+  ['POST', '/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-9', vehicle_id: V, evidence: 'Liste' }, ['provider', 'external_id', 'vehicle_id', 'evidence']],
+  ['POST', `/api/fines/${ids.fine}/commands`, { action: 'update', payload: {} }, ['action', 'payload', 'expected_version']],
+];
+for (const [m, p, base, fields] of muts) for (const f of fields) for (const g of G) await hit(`${m} ${p.replace(/[\w-]{20,}/g, ':id')} ${f}=${JSON.stringify(g).slice(0, 12)}`, owner.req(m, p, { ...base, [f]: g }));
+// Befehls-Nutzdaten (Bußgeld) und Zeilen der Inventur einzeln stören
+for (const a of ['update', 'confirm_driver', 'inform_driver', 'set_status']) for (const key of ['driver_id', 'basis', 'evidence', 'status', 'amount_eur', 'offense_at', 'response_due', 'reference', 'authority', 'location', 'offense_type', 'note']) for (const g of G) {
+  await hit(`Bußgeld ${a} ${key}=${JSON.stringify(g).slice(0, 12)}`, owner.post(`/api/fines/${ids.fine}/commands`, { action: a, payload: { [key]: g } }));
+}
+for (const key of ['item_id', 'counted', 'note']) for (const g of G) for (const q of ['?dry_run=1', '']) await hit(`Inventur ${q} ${key}=${JSON.stringify(g).slice(0, 12)}`, owner.post('/api/stock/inventory' + q, { site: ws, counts: [{ item_id: ids.item, counted: 5, [key]: g }] }));
+for (const raw of ['', 'null', '[]', '1', '"x"', '{']) for (const [m, p] of muts.map((x) => [x[0], x[1]])) await hit(`${m} ${p} Körper ${raw}`, owner.req(m, p, raw, J));
 
 console.log(`${n} Anfragen (${gets.length} GET-Pfade, ${ipaths.length} API-Pfade), ${bad.length} Serverfehler; Status: ${JSON.stringify(st)}`);
 // Plausibilität: der Lauf muss angemeldet gewesen sein (sonst prüft er nur die Anmeldepflicht)

@@ -497,8 +497,9 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   let nextDue = str(body.next_due_date, { max: 10 });
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
-  if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
+  // erst prüfen, dann rechnen (ungültiges Datum wie „0000-00-00“ ließ addMonths mit „Invalid time value“ abbrechen – Fuzz 15.10.2026)
   for (const d of [lastDate, nextDue]) if (d && !isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
   if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const id = uuid();
   const now = nowIso();

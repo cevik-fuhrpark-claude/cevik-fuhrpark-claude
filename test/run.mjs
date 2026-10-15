@@ -4586,6 +4586,31 @@ await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 4
   ok(translateValidation('en', rv.data.message) && !/ungültig/.test(translateValidation('en', rv.data.message)), 'EN übersetzt: ' + translateValidation('en', rv.data.message));
 });
 
+await test('Fuzz-Funde ändernde Endpunkte: Artikel auf vorhandenen Namen umbenennen → 409 statt „Interner Fehler“; Lager als Liste → 400; ungültiges Prüfdatum mit Intervall → 400', async () => {
+  const ws = (await owner.get('/api/meta')).data.workshops[0].code;
+  const a = await owner.post('/api/stock', { name: 'Fuzz-Umbenennen A', part_number: 'FZ-U1', site: ws });
+  const b = await owner.post('/api/stock', { name: 'Fuzz-Umbenennen B', part_number: 'FZ-U1', site: ws });
+  eq(a.status, 201); eq(b.status, 201);
+  const r = await owner.req('PATCH', `/api/stock/${b.data.id}`, { name: 'Fuzz-Umbenennen A' });
+  eq(r.status, 409, 'Umbenennen auf vorhandenen Artikel → ' + r.status); eq(r.data.error, 'duplicate_item');
+  eq((await owner.get(`/api/stock/${b.data.id}`)).data.item.name, 'Fuzz-Umbenennen B', 'Name unverändert');
+  eq((await owner.req('PATCH', `/api/stock/${b.data.id}`, { name: 'Fuzz-Umbenennen C' })).status, 200, 'anderer Name geht');
+  for (const site of [[], {}, ['x'], { a: 1 }]) {
+    for (const q of ['?dry_run=1', '']) {
+      const iv = await owner.post('/api/stock/inventory' + q, { site, counts: [{ item_id: a.data.id, counted: 1 }] });
+      eq(iv.status, 400, 'Inventur Lager ' + JSON.stringify(site) + ' → ' + iv.status); eq(iv.data.error, 'validation');
+    }
+    eq((await owner.post('/api/stock', { name: 'Fuzz-Lager', site })).status, 400, 'Artikel anlegen mit Lager ' + JSON.stringify(site));
+  }
+  const { translateValidation } = await import('../public/i18n.js');
+  eq(translateValidation('en', 'Lager: ungültiger Wert.'), 'Store: invalid value.');
+  const V = encodeURIComponent((await owner.get('/api/vehicles')).data.vehicles[0].id);
+  for (const d of ['0000-00-00', 'NaN', true, 123, -1, 2.5, '2026-02-30']) {
+    const m = await owner.post(`/api/vehicles/${V}/maintenance`, { kind: 'UVV', last_done_date: d, interval_months: 12, evidence: 'Fuzz-Probe' });
+    eq(m.status, 400, 'Prüfdatum ' + JSON.stringify(d) + ' → ' + m.status); eq(m.data.error, 'validation');
+  }
+});
+
 await test('Stör-Parameter an allen festen GET-Pfaden: nie „Interner Fehler“ (Regressionsschutz aus dem Fuzz-Lauf 15.10.2026)', async () => {
   const { readFileSync } = await import('node:fs');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');

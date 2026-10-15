@@ -5,6 +5,7 @@ import { audit } from './auth.js';
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 
 function siteScope(user, site) {
+  site = str(site, { max: 40, field: 'Lager' }); // Liste/Objekt statt Text → 400 statt „Interner Fehler“ (Fuzz 15.10.2026)
   if (isMgr(user)) return site || null;
   if (user.role === 'workshop') {
     if (site && site !== user.workshop_site) throw forbidden('Nur das Lager der eigenen Werkstatt.');
@@ -100,8 +101,14 @@ export async function updateItem(env, user, envName, id, body) {
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (body.active ? 1 : 0),
   };
-  await env.DB.prepare('UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=? WHERE id=?')
-    .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), id).run();
+  try {
+    await env.DB.prepare('UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=? WHERE id=?')
+      .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), id).run();
+  } catch (e) {
+    // Umbenennen auf Bezeichnung/Teilenummer eines anderen Artikels im selben Lager (eindeutiger Index) – vorher „Interner Fehler“
+    if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
+    throw e;
+  }
   return { ok: true };
 }
 
