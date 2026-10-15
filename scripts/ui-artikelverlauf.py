@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test: Lagerliste mit Lagerwert (Bestand × Preis, unbewertet statt 0 €); Artikelakte mit mehr als 200 Buchungen → Hinweis + „Im Lagerjournal anzeigen“ → Journal nur dieses Artikels
 # (Artikel-Chip, alle 201 Buchungen), „Alle Artikel“ hebt die Eingrenzung auf, Lagerliste setzt sie zurück. DE/UK/EN bei 390/820/1366 px,
-# kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
+# Artikelakte druckbar (Vermerk, ohne Formulare). Kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -51,6 +51,14 @@ with sync_playwright() as p:
         check(q.locator('table.stack tbody tr').count()==200,f'{lang} {w}px: 200 Zeilen im Verlauf')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Artikelakte ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/artikelverlauf_{lang}_{w}.png')
+        # Artikelakte drucken: Knopf vorhanden; im Druckmodus Vermerk (Person, Werkstatt, Teilenummer), Verlauf sichtbar, Buchungsformular/Knöpfe nicht
+        check(q.locator('#itemprt').count()==1,f'{lang} {w}px: Knopf „Drucken / PDF“ in der Artikelakte')
+        q.emulate_media(media='print')
+        ph=q.locator('.print-only').first
+        check(ph.is_visible() and 'AV Werkstatt' in ph.inner_text() and 'VA-UI' in ph.inner_text(),f'{lang} {w}px: Druckvermerk mit Person und Teilenummer ({ph.inner_text()!r})')
+        check(not q.locator('#mf').is_visible() and not q.locator('#itemprt').is_visible() and q.locator('table.stack').is_visible(),f'{lang} {w}px: Ausdruck ohne Buchungsformular, mit Verlauf')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/artikel_druck_{lang}_{w}.png')
+        q.emulate_media(media='screen')
         q.click('#histjournal'); q.wait_for_selector('#jitem')
         check(JOURNAL[lang] in q.inner_text('h1') and 'Verlaufsartikel UI' in q.inner_text('#jitem'),f'{lang} {w}px: Journal mit Artikel-Chip')
         zl=[x for x in q.locator('ul.small li').all_inner_texts() if '201' in x]

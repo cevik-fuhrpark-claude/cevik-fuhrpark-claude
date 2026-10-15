@@ -76,8 +76,8 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
-    'workshop': ['cases/', 'stock/reorder', 'stock/count', 'stock/asof', 'plan'],
+    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
+    'workshop': ['cases/', 'stock/', 'stock/reorder', 'stock/count', 'stock/asof', 'plan'],
     'driver': ['check/paper'],
 }
 # Ausdruckvermerk: Druckzeitpunkt (Datum + Uhrzeit), angemeldete Person und „CEVIK“ – außer Papier-Formular/QR-Bogen/Aushang (ohne Personennamen)
