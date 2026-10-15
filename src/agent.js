@@ -465,6 +465,8 @@ export async function processMasterInbox(env, environment) {
 // höchstens MASTER_CASES_MAX Zeilen (eine mehr gelesen → cases_truncated). Vorher standen abgeschlossene zwischen den offenen gleicher
 // Priorität und konnten bei vielen Vorgängen offene verdrängen; status_counts zählte nur die angezeigten – jetzt eigene Zählung über alle.
 export const MASTER_CASES_MAX = 300;
+// Master-Eingang: ALLE offenen/gesehenen Entscheidungen (sonst fehlten bei mehr als 100 offene in Liste und Zähler) + die neuesten 100 entschiedenen
+export const MASTER_INBOX_DONE_MAX = 100;
 export async function masterPanel(env, environment) {
   const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
   const [caseRows, countRows] = await Promise.all([
@@ -480,7 +482,8 @@ export async function masterPanel(env, environment) {
   const cases = caseRows.results.slice(0, MASTER_CASES_MAX);
   const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results;
   const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id
-    WHERE m.environment=? ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC LIMIT 100`).bind(environment).all()).results
+    WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC, m.rowid DESC
+    LIMIT (SELECT COUNT(*) FROM master_inbox WHERE environment=?1 AND decision_status IN ('offen','gesehen')) + ${MASTER_INBOX_DONE_MAX}`).bind(environment).all()).results
     .map((m) => ({ ...m, payload: JSON.parse(m.payload) }));
   const lastRun = await env.DB.prepare('SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1').bind(environment).first();
   const counts = {};

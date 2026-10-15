@@ -7654,6 +7654,28 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
   ok(app.includes("'/api/notifications?count=1'") && app.includes('n.counts[k]') && app.includes("t('nf_truncated')"), 'Oberfläche: Zähler vom Server, Hinweis');
 });
 
+await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {
+  const db = env.DB.db; const { MASTER_INBOX_DONE_MAX } = await import('../src/agent.js'); eq(MASTER_INBOX_DONE_MAX, 100);
+  const src = db.prepare(`SELECT m.* FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE m.environment='test' AND f.status='offen' LIMIT 1`).get();
+  ok(src, 'Vorlage: Eingang mit offenem Befund');
+  const before = (await users.fleet.get('/api/master')).data;
+  const cols = Object.keys(src); const ins = db.prepare(`INSERT INTO master_inbox(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+  const iso = (i) => new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString();
+  try {
+    db.exec('BEGIN');
+    // 120 alte offene + 150 neuere entschiedene → früher LIMIT 100 über beide: Zähler höchstens 100, Rest der offenen fehlte
+    for (let i = 0; i < 120; i++) ins.run(...cols.map((c) => (c === 'event_id' ? 'mix-o' + i : c === 'received_at' ? iso(i) : c === 'decision_status' ? 'offen' : c === 'decided_at' || c === 'decided_by' ? null : src[c])));
+    for (let i = 0; i < 150; i++) ins.run(...cols.map((c) => (c === 'event_id' ? 'mix-d' + i : c === 'received_at' ? iso(1000 + i) : c === 'decision_status' ? 'erledigt' : src[c])));
+    db.exec('COMMIT');
+    const p = (await users.fleet.get('/api/master')).data;
+    eq(p.decisions_open, before.decisions_open + 120, 'Zähler über alle offenen');
+    eq(p.inbox.filter((m) => m.event_id.startsWith('mix-o')).length, 120, 'alle offenen in der Liste');
+    const done = p.inbox.filter((m) => !['offen', 'gesehen'].includes(m.decision_status));
+    ok(done.length <= 100, `entschiedene höchstens 100 (${done.length})`);
+    ok(p.inbox.findIndex((m) => !['offen', 'gesehen'].includes(m.decision_status)) >= p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status)).length, 'offene zuerst');
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM master_inbox WHERE event_id LIKE 'mix-%'`).run(); }
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
