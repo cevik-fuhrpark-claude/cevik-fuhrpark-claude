@@ -89,6 +89,11 @@ with sync_playwright() as p:
         check(BOOK[lang] not in hdr and name in q.inner_text('#ctab'),f'{lang} {w}px: Zählliste ohne Buchbestand, Artikel enthalten')
         check(q.locator('#ctab tbody tr').count()>=1,f'{lang} {w}px: Zeilen vorhanden')
         check(LC[lang] in hdr and LAST[lang] in q.inner_text('.print-only'),f'{lang} {w}px: Zählliste mit Spalte „zuletzt gezählt“ und letzter Inventur im Druckkopf')
+        # Rollierende Inventur: „nicht gezählt seit 90 Tagen“ blendet den heute gezählten Artikel aus, „alle Artikel“ wieder ein
+        q.select_option('#cage','90'); q.wait_for_function(f"()=>!(document.querySelector('#ctab')||document.body).innerText.includes({name!r}) || !document.querySelector('#ctab')")
+        check(name not in q.inner_text('main') if q.locator('main').count() else name not in q.inner_text('body'),f'{lang} {w}px: Zählliste „nicht gezählt seit 90 Tagen“ ohne heute gezählten Artikel')
+        q.select_option('#cage',''); q.wait_for_selector('#ctab')
+        check(name in q.inner_text('#ctab'),f'{lang} {w}px: „alle Artikel“ wieder mit Artikel')
         q.check('#cbook'); q.wait_for_function(f"()=>document.querySelector('#ctab thead').innerText.includes({BOOK[lang]!r})")
         check(BOOK[lang] in q.inner_text('#ctab thead'),f'{lang} {w}px: Buchbestand eingeblendet')
         q.uncheck('#cbook'); q.wait_for_function(f"()=>!document.querySelector('#ctab thead').innerText.includes({BOOK[lang]!r})")

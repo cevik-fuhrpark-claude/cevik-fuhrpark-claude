@@ -2690,6 +2690,8 @@ await test('Lager „Zuletzt gezählt“ je Artikel: Datum + Zählmenge bei Buch
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].last_counted && STRINGS[l].never_counted && STRINGS[l].help_stock_s.includes(STRINGS[l].last_counted), 'Texte/Hilfe ' + l);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('id="lcnt"') && app.includes('data-lc') && app.includes("<th>${esc(t('last_counted'))}</th>"), 'Artikelakte, Inventurliste und Zählliste zeigen „zuletzt gezählt“');
+  ok(app.includes("i.last_counted_date <= bDate(-age)") && app.includes("id=\"cage\""), 'Zählliste filtert „nicht gezählt seit N Tagen“ (inkl. nie gezählt)');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].count_age && STRINGS[l].count_age_all && STRINGS[l].count_age_n.includes('{n}') && STRINGS[l].count_age_none, 'Texte rollierende Inventur ' + l);
   ok(app.includes("m.document_ref && !(m.note || '').startsWith(m.document_ref)"), 'Verlauf zeigt Beleg nicht doppelt, wenn der Vermerk damit beginnt (Inventur)');
   // Artikel wieder deaktivieren, damit spätere Lagerprüfungen unverändert bleiben
   env.DB.db.prepare('UPDATE stock_items SET active=0 WHERE id IN (?,?)').run(a, b);
