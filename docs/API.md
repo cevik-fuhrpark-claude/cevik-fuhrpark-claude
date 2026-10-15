@@ -32,7 +32,7 @@ Parameter `environment=production|test` (Standard: production).
   { "external_id": "objectuid", "vin": "WMA15SZZ2HM722774", "plate": "SZ-YC 5513",
     "gps_time": "2026-10-10T08:20:00Z", "lat": 51.52, "lon": 7.42, "km": 456789, "speed": 0, "ignition": false } ] }
 ```
-Regeln: Zuordnung nur über FIN oder bestätigtes Mapping (`telematics_mappings`). Nur Kennzeichen → Prüffall in
+Regeln: Der Anfragekörper muss ein JSON-Objekt sein (sonst 400 `invalid_json`); Einträge in `items`, die kein Objekt sind, zählen als `rejected`. Zuordnung nur über FIN oder bestätigtes Mapping (`telematics_mappings`). Nur Kennzeichen → Prüffall in
 `telematics_unmatched`, keine Zuordnung; der Prüffall nennt einen Kennzeichen-**Vorschlag** (`candidate_vehicle_id`) nur, wenn das Kennzeichen eindeutig ist (Vergleich ohne Leerzeichen/Bindestriche, Groß-/Kleinschreibung auch bei Umlauten egal; zuerst aktive, dann ruhende, dann außer Betrieb genommene Fahrzeuge – zwei gleiche in derselben Stufe = kein Vorschlag). Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen.
 Das vom Gerät gemeldete `plate` wird beim letzten Stand mitgespeichert (`telematics_latest.source_plate`, Migration 0043); weicht es vom Kennzeichen des zugeordneten Fahrzeugs ab (Schreibweise egal), meldet die Datenqualität `telematics_plate_mismatch` (fehler, Detail „Anbieter Geräte-ID → gemeldetes Kennzeichen“) – keine automatische Korrektur.
 Beispiel-Eintrag in `GET /api/integration/v1/data-quality` → `items[]`:

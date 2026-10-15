@@ -193,7 +193,8 @@ export async function integrationRouter(request, env, ctx, url) {
     const res = { matched: 0, unmatched: 0, rejected: 0, odometer_written: 0, odometer_rejected: 0 };
     // Abfragebudget: Zuordnungen, Fahrzeuge und letzte Stände gesammelt laden, Schreibzugriffe gesammelt ausführen
     // (vorher bis zu 4 Abfragen je Eintrag – bei 500 Einträgen weit über der Grenze je Aufruf).
-    const rows = items.map((it) => {
+    // Einträge, die kein Objekt sind (null, Zahl, Text, Liste), werden wie leere Einträge abgewiesen statt die ganze Lieferung mit „Interner Fehler“ zu beenden
+    const rows = items.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})).map((it) => {
       const ext = String(it.external_id || '').slice(0, 80);
       return { it, ext, vin: it.vin ? normalizeVin(it.vin) : null, plate: it.plate ? String(it.plate).trim().toUpperCase().slice(0, 20) : null };
     });

@@ -4554,7 +4554,7 @@ await test('Zahlen-Parameter (limit, days, weeks, stale_days): Kommazahl, negati
   }
 });
 
-await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 400 invalid_json statt „Interner Fehler“', async () => {
+await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 400 invalid_json statt „Interner Fehler“; Textfelder ohne Objekte; Telematik-Einträge ohne Objekt abgewiesen', async () => {
   const H = { 'content-type': 'application/json' };
   const V = (await owner.get('/api/vehicles')).data.vehicles[0].id;
   const paths = [['POST', '/api/vehicles'], ['POST', `/api/vehicles/${encodeURIComponent(V)}/odometer`], ['POST', `/api/vehicles/${encodeURIComponent(V)}/notes`], ['POST', '/api/cases'],
@@ -4577,6 +4577,10 @@ await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 4
   eq((await owner.get('/api/users')).data.users.find((x) => x.id === uid).display_name, 'JSON Probe', 'Name unverändert');
   const rv = await owner.post('/api/vehicles', { vin: 'WDB96340310555699', plate: { x: 1 }, site: 'Dortmund' });
   eq(rv.status, 400, 'Kennzeichen als Objekt'); ok(/ungültiger Wert/.test(rv.data.message), rv.data.message);
+  // Integrations-API Telematik: Einträge, die kein Objekt sind, zählen als abgewiesen (vorher „Interner Fehler“ für die ganze Lieferung)
+  const tr = await anon.req('POST', '/api/integration/v1/telematics?environment=test', { provider: 'webfleet', items: [null, 5, 'x', ['a'], {}] }, { authorization: 'Bearer integration-token-xyz' });
+  eq(tr.status, 200, JSON.stringify(tr.data)); eq(tr.data.rejected, 5); eq(tr.data.matched, 0);
+  eq((await anon.req('POST', '/api/integration/v1/telematics?environment=test', 'null', { authorization: 'Bearer integration-token-xyz', 'content-type': 'application/json' })).status, 400);
   const { translateValidation } = await import('../public/i18n.js');
   ok(translateValidation('en', rv.data.message) && !/ungültig/.test(translateValidation('en', rv.data.message)), 'EN übersetzt: ' + translateValidation('en', rv.data.message));
 });
