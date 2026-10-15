@@ -2396,7 +2396,10 @@ await test('Ruhezeit je Person: nicht dringende Pushs warten bis zum Ende (Berli
   eq((await users.driver.put('/api/me/notify-prefs', { muted: [], quiet: null })).data.quiet, null, 'ausschalten');
   // Zustellung: Fenster um „jetzt“ (Berliner Uhrzeit ± 1 Std.)
   const hm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
-  const now = Date.now();
+  // Liegt eine Zeitumstellung im Fenster (z. B. 02:30 in der doppelten Stunde im Oktober), ist „±1 Std.“ als Wanduhrzeit mehrdeutig →
+  // simulierter Zeitpunkt (env.__nowMs) 3 Std. später; die Zustelllogik selbst nutzt dieselbe Uhr.
+  const offs = (ms) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return (Number(p.hour) - new Date(ms).getUTCHours() + 24) % 24; };
+  const now = Date.now() + (offs(Date.now() - 3600000) !== offs(Date.now() + 3600000) ? 3 * 3600000 : 0);
   eq((await users.driver.put('/api/me/notify-prefs', { quiet: { from: hm(now - 3600000), to: hm(now + 3600000) } })).status, 200);
   const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
   eq((await users.driver.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/quiet-1', keys: { p256dh: await key(), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
@@ -2737,7 +2740,7 @@ await test('Bestand zum Stichtag: Buchungen bis Ende des Berliner Tages, letzter
   eq((await users.ws.patch(`/api/stock/${id}`, { unit_price_net: 2.5, active: false })).status, 200);
   it = (await get('?date=2025-12-31')).data.items.find((i) => i.id === id);
   ok(it && it.active === false && it.value_today_net === 20, 'inzwischen ausgebuchter Artikel enthalten, Wert zum heutigen Preis');
-  const def = (await get('')).data; eq(def.date, `${Number(def.date.slice(0, 4))}-12-31`); ok(def.date < new Date().toISOString().slice(0, 10), 'Standard: 31.12. des Vorjahres');
+  const def = (await get('')).data; const bToday = (await users.ws.get('/api/stock/journal')).data.to; eq(def.date, `${Number(bToday.slice(0, 4)) - 1}-12-31`, 'Standard: 31.12. des Vorjahres (Berliner Datum)');
   eq((await get('?date=2099-12-31')).status, 400, 'Zukunft'); eq((await get('?date=2025-02-30')).status, 400, 'kein Kalenderdatum');
   eq((await users.wsMuc.get('/api/stock/asof?date=2025-12-31&site=DORTMUND')).status, 403, 'fremdes Lager');
   ok(!(await users.wsMuc.get('/api/stock/asof?date=2025-12-31')).data.items.some((i) => i.id === id), 'München sieht Dortmund nicht');
