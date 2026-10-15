@@ -153,6 +153,9 @@ wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 
 `--nur hoechstzahl` führt nur passende UI-Skripte aus (z. B. nach einer gezielten Änderung). Der Gesamtlauf dauert über 15 Minuten – im Hintergrund starten und die Logdatei prüfen.
 Neues UI-Skript: eine Zeile „Bezeichnung|Skript|Logdatei“ in `UI_SKRIPTE` ergänzen; ein Wächter-Test meldet Skripte, die dort fehlen (Ausnahme: Lasttest `ui-lastpanel.py`).
 
+## Robustheits-Lauf `npm run fuzz`
+`scripts/fuzz-api.mjs` (≈ 20 s, In-Memory-DB, synthetische Daten) schickt rund 18 000 Störanfragen an die API: alle festen GET-Pfade (aus `src/worker.js` gelesen) × Abfrageparameter × Störwerte (Kommazahl, negativ, Text, Liste, ungültiges Datum, sehr lang), jedes Feld der wichtigsten schreibenden Endpunkte und Vorgangsbefehle mit falschen Typen (null, Zahl, Liste, Objekt, nur Leerzeichen …), Körper ohne JSON-Objekt, CSV-Importe (leer, binär, UTF-16, offene Anführungszeichen, 50 000 Spalten, Formeln) als Vorschau und Übernahme, Datei-Uploads sowie die Integrations-API (Abfragen und Telematik-Lieferungen). Jede Antwort ≥ 500 ist ein Fehler (Fehlercode 1); der Lauf muss überwiegend erfolgreiche Antworten haben (sonst war er nicht angemeldet). Teil von `scripts/pruefen.sh` (außer mit `--ohne-tests`). Anlass 15.10.2026: „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ lieferten „Interner Fehler“.
+
 ## UI-Rauchtest (vor größeren Änderungen)
 `sh scripts/restart-dev.sh && python3 scripts/ui-rauchtest.py [Screenshot-Ordner]` – ruft jede Ansicht für Inhaber, Fuhrparkleitung,
 Werkstatt und Fahrer in Handy-, Tablet- und PC-Breite auf (267 Ansichten, inkl. Bußgeld-/Lager-/Vorgangsdetails je Rolle, Disposition, Fahrerakte, Auslesungen, QR-Aufkleber, Vorgang und Kontrollformular) und meldet JavaScript-Fehler, abgebrochene Ansichten, rote Fehlermeldungen,

@@ -8220,6 +8220,7 @@ await test('Hilfe „Höchstzahlen auf einen Blick“ (DE/UK/EN, auch Werkstatt)
 await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest), Optionen dokumentiert', async () => {
   const fs = await import('node:fs');
   const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  ok(sh.includes('npm run -s fuzz') && JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts.fuzz.includes('scripts/fuzz-api.mjs'), 'Robustheits-Lauf in der Gesamtprüfung');
   const all = fs.readdirSync(new URL('../scripts/', import.meta.url)).filter((f) => /^ui-.*\.py$/.test(f) && !['ui-rauchtest.py', 'ui-lastpanel.py'].includes(f));
   const listed = [...sh.matchAll(/^[^|\n]+\|(ui-[a-z0-9-]+\.py)\|\/tmp\/cfp-[a-z0-9-]+\.log$/gm)].map((m) => m[1]);
   eq(all.filter((f) => !listed.includes(f)).join(', '), '', 'nicht in UI_SKRIPTE eingetragen');
