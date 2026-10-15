@@ -7762,6 +7762,71 @@ await test('Oberfläche: Formulare und Aktionsknöpfe werden nicht doppelt ausge
   ok(css.includes('form[aria-busy="true"] button') && css.includes('button[aria-busy="true"]'), 'Darstellung „wird gesendet“');
 });
 
+await test('Oberfläche: Neuaufbau derselben Seite nach einer Aktion behält fremde Eingaben, aufgeklappte Bereiche und Scrollposition (gesendetes Formular nicht)', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('// ---------- Neuaufbau derselben Seite ohne Verlust'), b = app.indexOf('async function refreshUnread');
+  ok(a > 0 && b > a, 'Bausteine vorhanden');
+  // Mini-DOM: Felder (input/textarea/select), Formulare, details
+  const mkForm = (id, attrs = {}) => { const f = { id, attributes: Object.entries(attrs).map(([name, value]) => ({ name, value })), kids: [], contains: (el) => f.kids.includes(el) }; return f; };
+  const mkField = (form, o) => { const el = { tagName: 'INPUT', type: 'text', name: '', id: '', value: '', defaultValue: '', checked: false, defaultChecked: false, isConnected: true, ev: [],
+    dispatchEvent(e) { this.ev.push(e.type); }, closest(sel) { if (sel === 'form') return form || null; if (sel === 'details') return o.details || null; return null; }, ...o };
+    if (o.value === undefined) el.value = el.defaultValue; if (form) form.kids.push(el); return el; };
+  const mkMain = (fields, details = []) => ({ querySelectorAll: (sel) => (sel === 'details' ? details : fields) });
+  let main; let scrolled = []; const timers = [];
+  const win = { scrollY: 0, scrollTo: (x, y) => { scrolled.push(y); win.scrollY = y; } };
+  const S = {};
+  const fn = new Function('S', 'window', 'document', 'Event', 'setTimeout', app.slice(a, b) + '; return { keepScan, keepCapture, keepRestore };');
+  const K = fn(S, win, { getElementById: () => main }, class { constructor(type) { this.type = type; } }, (f) => timers.push(f));
+  // Seite vorher: km-Formular (getippt), Wartungsformular (gesendet), Bearbeiten-Formular (Daten ändern sich), Feld außerhalb, Datei
+  const km = mkForm('kmf'), mt = mkForm('mf'), ev = mkForm('evf'), done = mkForm('', { 'data-mdone': 'm1' });
+  const det = { open: true, querySelector: () => ({ textContent: 'km-Stand erfassen' }) }, det2 = { open: false, querySelector: () => ({ textContent: 'Dokumente' }) };
+  const f1 = [
+    mkField(km, { name: 'km', defaultValue: '', value: '123456', details: det }), mkField(km, { name: 'note', defaultValue: '', value: '' }),
+    mkField(mt, { name: 'kind', defaultValue: '', value: 'Ölwechsel' }),
+    mkField(ev, { name: 'plate', defaultValue: 'SZ-AB 1', value: 'SZ-AB 12' }),
+    mkField(done, { name: 'done_on', defaultValue: '', value: '2026-10-01' }),
+    mkField(null, { id: 'srch', defaultValue: '', value: 'Reifen' }),
+    mkField(km, { name: 'pw', type: 'password', defaultValue: '', value: 'geheim' }),
+    mkField(null, { id: 'up', type: 'file', defaultValue: '', value: 'C:\\fakepath\\a.pdf' }),
+  ];
+  main = mkMain(f1, [det, det2]); win.scrollY = 1800;
+  S.viewEnv = 'test'; S.actSince = [mt]; // Wartungsformular wurde gesendet
+  K.keepCapture();
+  ok(S.keep && S.keep.y === 1800, 'Scrollposition gemerkt');
+  ok(!JSON.stringify(S.keep.groups).includes('Ölwechsel'), 'gesendetes Formular wird nicht gemerkt');
+  ok(!JSON.stringify(S.keep.groups).includes('geheim') && !JSON.stringify(S.keep.groups).includes('fakepath'), 'Passwort/Datei nie gemerkt');
+  const keep1 = S.keep; K.keepCapture(); eq(S.keep, keep1, 'Ladehinweis dazwischen: erster Stand bleibt');
+  // Seite nachher: gleiche Formulare neu aufgebaut, Bearbeiten-Formular mit neuen Vorgaben (Aktion änderte die Daten)
+  const km2 = mkForm('kmf'), mt2 = mkForm('mf'), ev2 = mkForm('evf'), done2 = mkForm('', { 'data-mdone': 'm1' });
+  const d1 = { open: false, querySelector: () => ({ textContent: 'km-Stand erfassen' }) }, d2 = { open: false, querySelector: () => ({ textContent: 'Dokumente' }) };
+  const f2 = [mkField(km2, { name: 'km', details: d1 }), mkField(km2, { name: 'note' }), mkField(mt2, { name: 'kind' }), mkField(ev2, { name: 'plate', defaultValue: 'SZ-AB 99' }),
+    mkField(done2, { name: 'done_on' }), mkField(null, { id: 'srch' }), mkField(km2, { name: 'pw', type: 'password' }), mkField(null, { id: 'up', type: 'file' })];
+  main = mkMain(f2, [d1, d2]); scrolled = [];
+  K.keepRestore();
+  eq(f2[0].value, '123456', 'getippter km-Stand bleibt'); eq(f2[2].value, '', 'gesendetes Wartungsformular leer');
+  eq(f2[3].value, 'SZ-AB 99', 'Formular mit geänderten Vorgaben: neuer Stand gilt'); eq(f2[4].value, '2026-10-01', 'Formular mit data-Schlüssel wiederhergestellt');
+  eq(f2[5].value, 'Reifen', 'Feld außerhalb eines Formulars'); eq(f2[6].value, '', 'Passwort nicht'); 
+  ok(d1.open, 'aufgeklappter Bereich bleibt offen'); ok(!d2.open, 'zugeklappter bleibt zu'); eq(scrolled.at(-1), 1800, 'Scrollposition wiederhergestellt');
+  eq(S.keep, null); eq(S.actSince.length, 0);
+  eq(f2[0].ev.length, 0, 'Ereignisse erst nach dem Binden der Handler'); timers.forEach((f) => f()); eq(f2[0].ev.join(','), 'input,change', 'danach input/change');
+  // Umgebungswechsel Test/Betrieb verwirft alles
+  main = mkMain(f2); S.actSince = []; S.keep = null; K.keepCapture(); S.viewEnv = 'production';
+  const f3 = [mkField(mkForm('kmf'), { name: 'km' })]; main = mkMain(f3); K.keepRestore(); eq(f3[0].value, '', 'anderer Umgebung: nichts übernommen');
+  // Auswahlfeld: nur vorhandene Optionen
+  const opt = (v, sel, def) => ({ value: v, selected: sel, defaultSelected: def });
+  const sf = mkForm('sf'); const sel = mkField(sf, { tagName: 'SELECT', type: 'select-one', name: 'site', options: [opt('a', false, true), opt('b', true, false)] });
+  Object.defineProperty(sel, 'selectedIndex', { get() { return this.options.findIndex((o) => o.selected); } });
+  main = mkMain([sel]); S.viewEnv = 'test'; K.keepCapture();
+  const sf2 = mkForm('sf'); const sel2 = mkField(sf2, { tagName: 'SELECT', type: 'select-one', name: 'site', options: [opt('a', true, true), opt('b', false, false)] });
+  main = mkMain([sel2]); K.keepRestore(); eq(sel2.options.map((o) => o.selected).join(), 'false,true', 'Auswahl wiederhergestellt');
+  // Einbindung: render() nutzt die Bausteine nur beim Neuaufbau derselben Seite; Sperren melden die auslösende Aktion
+  ok(/if \(same\) keepCapture\(\); else \{ S\.keep = null; S\.actSince = \[\]; \}/.test(app), 'render: Erfassen nur bei derselben Seite');
+  ok(app.includes('if (same && interim) return;') && app.includes('if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);'), 'render: Ladehinweis überspringen, sonst wiederherstellen');
+  eq((app.match(/typeof noteAction === 'function'\) noteAction\(/g) || []).length, 2, 'Formular- und Klick-Sperre melden die Aktion');
+  ok(app.includes('await viewEmergencyEdit(); window.scrollTo(0, 0);'), 'Rufnummer bearbeiten springt weiter nach oben zum Formular');
+});
+
 await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {
   const db = env.DB.db; const { MASTER_INBOX_DONE_MAX } = await import('../src/agent.js'); eq(MASTER_INBOX_DONE_MAX, 100);
   const src = db.prepare(`SELECT m.* FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE m.environment='test' AND f.status='offen' LIMIT 1`).get();

@@ -128,13 +128,19 @@ function frame(content, active) {
 }
 
 function render(html, active) {
+  // Dieselbe Seite wird neu aufgebaut (z. B. km-Stand in der Fahrzeugakte gespeichert): Eingaben in anderen Formularen, aufgeklappte
+  // Bereiche und die Scrollposition bleiben erhalten. Ladehinweis zwischendurch („Lädt …“) zählt nicht als fertiger Aufbau.
+  const same = !!(S.me && S.lastHash && (location.hash || '#/').replace(/%3A/gi, ':') === S.lastHash);
+  const interim = html === `<p class="muted">${esc(t('loading'))}</p>`;
+  if (same) keepCapture(); else { S.keep = null; S.actSince = []; }
   document.getElementById('app').innerHTML = S.me ? frame(html, active) : `<main>${html}</main>`;
   const sk = $('.skip'); if (sk) sk.onclick = (e) => { e.preventDefault(); $('#main').focus(); };
   const es = $('#envsel');
   if (es) es.onchange = () => { S.viewEnv = es.value; localStorage.setItem('cfp_env', es.value); route(); };
   stackTables(document.getElementById('app'));
   markToggles(document.getElementById('app'));
-  window.scrollTo(0, 0);
+  if (same && interim) return;
+  if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);
 }
 
 // Filterknöpfe (gelb = aktiv, „secondary“ = inaktiv): Zustand auch für Screenreader (aria-pressed), sofern nicht schon als Tab/Schalter ausgezeichnet
@@ -228,12 +234,19 @@ async function route() {
   }
 }
 window.addEventListener('hashchange', route);
+// Neuaufbau derselben Seite nach einer Aktion: merken, welcher Bereich die Aktion ausgelöst hat (Formular bzw. Abschnitt des Knopfs) –
+// dessen Felder wurden gerade gesendet und werden danach nicht wiederhergestellt (siehe keepCapture). Aufruf aus den Sperren unten.
+function noteAction(el) {
+  const scope = el && el.closest && (el.closest('form') || el.closest('details, section, .panel, .row, .actions, li, tr') || el);
+  if (scope) S.actSince = [...(S.actSince || []).slice(-19), scope];
+}
 // Doppeltes Absenden verhindern (Doppelklick, zweimal Enter, langsames Netz): Alle Formulare der App setzen den Handler als Eigenschaft (onsubmit).
 // Ein Zuhörer in der Einfangphase führt diesen Handler selbst aus und sperrt das Formular, bis er fertig ist – ein zweites Absenden in
 // der Zwischenzeit wird verworfen (sonst z. B. Fahrer, Artikel, Bußgeld, Vertrag oder Lagerbewegung doppelt angelegt). Knöpfe werden
 // nicht deaktiviert (das steuern einzelne Handler selbst), nur per aria-busy als „wird gesendet“ dargestellt.
 document.addEventListener('submit', (e) => {
   const form = e.target, h = form && form.onsubmit;
+  if (typeof noteAction === 'function') noteAction(form);
   if (typeof h !== 'function') return;
   e.preventDefault(); e.stopImmediatePropagation();
   if (form.cfpBusy) return;
@@ -246,6 +259,7 @@ document.addEventListener('submit', (e) => {
 // Synchrone Handler (Navigation, Aufklappen) bleiben unverändert.
 document.addEventListener('click', (e) => {
   const el = e.target && e.target.closest ? e.target.closest('button, a, [role="button"]') : null;
+  if (el && typeof noteAction === 'function') noteAction(el);
   const h = el && el.onclick;
   if (typeof h !== 'function' || h.cfpGuard) return;
   const g = function (ev) {
@@ -349,6 +363,82 @@ function viewDirty() {
     if (el.tagName === 'SELECT') { const d = [...el.options].findIndex((o) => o.defaultSelected); return el.selectedIndex !== (d < 0 ? (el.multiple ? -1 : 0) : d); }
     return el.value !== el.defaultValue;
   });
+}
+
+// ---------- Neuaufbau derselben Seite ohne Verlust fremder Eingaben ----------
+// Bisher baute jede Aktion die Seite komplett neu auf: Wer in der Fahrzeugakte einen km-Stand tippte und zwischendurch eine Wartung
+// speicherte, verlor die km-Eingabe, aufgeklappte Bereiche klappten zu, die Seite sprang nach oben.
+// Regeln: Felder des Bereichs, der die Aktion ausgelöst hat (gesendetes Formular, Abschnitt des Knopfs), werden nie zurückgeschrieben
+// (sonst stünde z. B. ein gesendeter Kommentar erneut da). Ein Formular wird nur wiederhergestellt, wenn sich seine Vorgabewerte nicht
+// geändert haben (sonst hat die Aktion die Daten dahinter geändert, z. B. anderer Eintrag zum Bearbeiten geladen) – dann gilt der neue Stand.
+// Dateiauswahl und Passwörter werden nie übernommen. Umgebungswechsel Test/Betrieb verwirft alles.
+const KEEP_SKIP_TYPES = ['hidden', 'submit', 'button', 'reset', 'image', 'file', 'password'];
+const fieldDefault = (el) => (el.type === 'checkbox' || el.type === 'radio') ? String(el.defaultChecked) : el.tagName === 'SELECT' ? [...el.options].map((o) => (o.defaultSelected ? 1 : 0)).join('') + ':' + [...el.options].map((o) => o.value).join('\u0001') : el.defaultValue;
+const fieldValue = (el) => (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.tagName === 'SELECT' ? [...el.options].filter((o) => o.selected).map((o) => o.value) : el.value;
+function fieldDirty(el) {
+  if (el.type === 'checkbox' || el.type === 'radio') return el.checked !== el.defaultChecked;
+  if (el.tagName === 'SELECT') { const d = [...el.options].findIndex((o) => o.defaultSelected); return el.selectedIndex !== (d < 0 ? (el.multiple ? -1 : 0) : d); }
+  return el.value !== el.defaultValue;
+}
+function keepScan(root) {
+  const groups = {}, details = new Map(), formKey = new Map(), occ = {};
+  let fi = 0;
+  const once = (k) => { occ[k] = (occ[k] || 0) + 1; return occ[k] > 1 ? `${k}~${occ[k]}` : k; };
+  for (const el of root.querySelectorAll('input, textarea, select')) {
+    if (KEEP_SKIP_TYPES.includes(el.type)) continue;
+    const f = el.closest('form');
+    if (f && !formKey.has(f)) formKey.set(f, once('F:' + (f.id || [...f.attributes].filter((a) => a.name.startsWith('data-')).map((a) => `${a.name}=${a.value}`).join('&') || `#${fi++}`)));
+    const fk = once(`${f ? formKey.get(f) : ''}|${el.name || el.id || ''}|${el.tagName}:${el.type}`);
+    const gk = f ? formKey.get(f) : 'E:' + fk;
+    const g = groups[gk] || (groups[gk] = { sig: [], els: {} });
+    g.sig.push(fieldDefault(el)); g.els[fk] = el;
+  }
+  for (const g of Object.values(groups)) g.sig = g.sig.join('\u0002');
+  for (const d of root.querySelectorAll('details')) { const s = d.querySelector('summary'); details.set(once('D:' + (d.id || (s ? s.textContent.trim().slice(0, 80) : ''))), d); }
+  return { groups, details };
+}
+function keepCapture() {
+  if (S.keep) return; // Ladehinweis dazwischen: es gilt der Stand vor dem Ladehinweis
+  const m = document.getElementById('main');
+  if (!m) return;
+  const skip = (S.actSince || []).filter(Boolean);
+  const { groups, details } = keepScan(m);
+  const keep = { env: S.viewEnv || null, y: window.scrollY || 0, groups: {}, open: [] };
+  for (const [gk, g] of Object.entries(groups)) {
+    const fields = {};
+    for (const [fk, el] of Object.entries(g.els)) if (fieldDirty(el) && !skip.some((c) => c === el || (c.contains && c.contains(el)))) fields[fk] = fieldValue(el);
+    if (Object.keys(fields).length) keep.groups[gk] = { sig: g.sig, fields };
+  }
+  for (const [k, d] of details) if (d.open) keep.open.push(k);
+  S.keep = keep;
+}
+function keepRestore() {
+  const k = S.keep; S.keep = null; S.actSince = [];
+  if (k.env !== (S.viewEnv || null)) { window.scrollTo(0, 0); return; }
+  const m = document.getElementById('main');
+  if (!m) return;
+  const { groups, details } = keepScan(m);
+  const changed = [];
+  for (const [gk, g] of Object.entries(k.groups)) {
+    const ng = groups[gk];
+    if (!ng || ng.sig !== g.sig) continue;
+    for (const [fk, v] of Object.entries(g.fields)) {
+      const el = ng.els[fk];
+      if (!el) continue;
+      if (el.type === 'checkbox' || el.type === 'radio') { if (el.checked === v) continue; el.checked = v; }
+      else if (el.tagName === 'SELECT') { if (!v.every((x) => [...el.options].some((o) => o.value === x))) continue; [...el.options].forEach((o) => { o.selected = v.includes(o.value); }); }
+      else { if (el.value === v) continue; el.value = v; }
+      changed.push(el);
+      for (let d = el.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+    }
+  }
+  for (const key of k.open) { const d = details.get(key); if (d) d.open = true; }
+  window.scrollTo(0, k.y);
+  // Abhängige Anzeigen (z. B. ein-/ausgeblendete Felder) erst nach dem Binden der Handler durch die Ansicht aktualisieren
+  setTimeout(() => {
+    for (const el of changed) { if (!el.isConnected) continue; el.dispatchEvent(new Event('input', { bubbles: true })); if (el.closest('form')) el.dispatchEvent(new Event('change', { bubbles: true })); }
+    if (Math.abs((window.scrollY || 0) - k.y) > 2) window.scrollTo(0, k.y);
+  }, 0);
 }
 
 async function refreshUnread(bg = false) {
@@ -2151,7 +2241,7 @@ async function viewEmergencyEdit() {
       try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b); else await api('POST', '/api/emergency/contacts', b); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { toast(err.message, true); }
     };
   }
-  $$('[data-emedit]').forEach((b) => (b.onclick = () => { S.emEdit = b.dataset.emedit; viewEmergencyEdit(); window.scrollTo(0, 0); }));
+  $$('[data-emedit]').forEach((b) => (b.onclick = async () => { S.emEdit = b.dataset.emedit; await viewEmergencyEdit(); window.scrollTo(0, 0); }));
   $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`); if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
 }
 

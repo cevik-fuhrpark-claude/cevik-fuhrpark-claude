@@ -62,7 +62,9 @@ with sync_playwright() as p:
         mode['accept']=True; q.click('#invbook'); q.wait_for_timeout(600)
         st=api('GET',f'/api/stock/{iid}')['d']['item']['on_hand']
         check(st==6,f'{lang} {w}px: Bestätigen bucht ({st})')
-        q.wait_for_selector('#inv'); q.click('#inv summary')
+        q.wait_for_selector('#inv')
+        if not q.evaluate("()=>document.querySelector('#inv').open"): q.click('#inv summary')  # bleibt seit 15.10. nach Aktionen aufgeklappt
+        q.wait_for_selector(f'[data-inv="{iid}"]')
         check(q.locator('#invdx').count()==0 and q.locator(f'[data-inv="{iid}"]').input_value()=='',f'{lang} {w}px: Entwurf nach Buchung gelöscht')
         check(LAST[lang] in q.inner_text('#invlast'),f'{lang} {w}px: „Letzte Inventur“ angezeigt')
         check(LC[lang] in lc(),f'{lang} {w}px: Inventurliste „zuletzt gezählt“ nach Buchung ({lc()!r})')
@@ -71,7 +73,9 @@ with sync_playwright() as p:
         check(CLOSE[lang] in q.inner_text('#invbook'),f'{lang} {w}px: Knopf „Inventur abschließen“')
         n0=len(dlg); q.click('#invbook'); q.wait_for_timeout(600)
         check(len(dlg)==n0+1 and api('GET',f'/api/stock/{iid}')['d']['item']['on_hand']==6,f'{lang} {w}px: Abschluss mit Rückfrage, nichts gebucht')
-        q.wait_for_selector('#inv'); q.click('#inv summary')
+        q.wait_for_selector('#inv')
+        if not q.evaluate("()=>document.querySelector('#inv').open"): q.click('#inv summary')  # bleibt seit 15.10. nach Aktionen aufgeklappt
+        q.wait_for_selector(f'[data-inv="{iid}"]')
         check(q.inner_text('#invlast').rstrip().endswith(ZERO[lang]),f'{lang} {w}px: letzte Inventur mit 0 Abweichungen ({q.inner_text("#invlast")!r})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         # Inventurdifferenzen: Link im Inventur-Bereich → Lagerjournal mit Auswahl Inventur, Zeile Buchbestand 10 → gezählt 6, Differenz −4
