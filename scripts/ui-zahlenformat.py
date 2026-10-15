@@ -4,6 +4,7 @@
 # Eingabefeld „Rate“ bleibt mit Komma vorbelegt (Server liest Komma und Punkt). 390/820/1366 px, keine Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, re, datetime
+from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
@@ -36,7 +37,8 @@ with sync_playwright() as p:
         check(re.search(eu,txt) is not None,f'{w}px/{lang}: Rate im Sprachformat ({eu})')
         if SHOTS: q.screenshot(path=f'{SHOTS}/zahlenformat_{lang}_{w}.png',full_page=True)
         # Fahrer-Aushang: Druckdatum in der Sprache des Aushangs (unabhängig von der App-Sprache), nie handgebautes TT.MM.JJJJ auf Englisch
-        dd=td.strftime('%d'); mm=td.strftime('%m'); yy=td.strftime('%Y')
+        bd=datetime.datetime.now(ZoneInfo('Europe/Berlin')).date()  # die App rechnet mit Berliner Kalendertag (nach Mitternacht MEZ ≠ UTC-Datum)
+        dd=bd.strftime('%d'); mm=bd.strftime('%m'); yy=bd.strftime('%Y')
         for gl,pat in (('de',rf'{dd}\.{mm}\.{yy}'),('uk',rf'{dd}\.{mm}\.{yy}'),('en',rf'{dd}/{mm}/{yy}')):
             q.goto(B+f'/#/guide?l={gl}'); q.wait_for_selector('article.guide',timeout=15000); q.wait_for_timeout(300)
             last=q.locator('article.guide > p.small.muted').last.inner_text()
