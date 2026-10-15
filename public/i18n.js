@@ -1359,6 +1359,9 @@ Object.assign(STRINGS.en, { files_free: '{n} of {max} files still possible.', fi
 Object.assign(STRINGS.de, { docs_full: 'Dieses Fahrzeug hat die Höchstzahl von {max} Dokumenten erreicht.' });
 Object.assign(STRINGS.uk, { docs_full: 'Для цього транспорту досягнуто максимальної кількості документів ({max}).' });
 Object.assign(STRINGS.en, { docs_full: 'This vehicle has reached the maximum of {max} documents.' });
+Object.assign(STRINGS.de, { vi_due_all: 'alle in der Fahrzeugakte' });
+Object.assign(STRINGS.uk, { vi_due_all: 'усі в картці транспорту' });
+Object.assign(STRINGS.en, { vi_due_all: 'all in the vehicle file' });
 Object.assign(STRINGS.de, { vnotes_full: 'Höchstzahl von {max} aktiven Hinweisen erreicht – für einen neuen Hinweis bitte einen erledigten archivieren.', vnotes_free: 'noch {n} von {max} möglich', em_full: 'Höchstzahl von {m} aktiven Rufnummern erreicht – für eine neue Nummer bitte eine nicht mehr gültige archivieren oder eine vorhandene bearbeiten.' });
 Object.assign(STRINGS.uk, { vnotes_full: 'Досягнуто максимуму {max} активних приміток – щоб додати нову, архівуйте виконану.', vnotes_free: 'ще {n} з {max}', em_full: 'Досягнуто максимуму {m} активних номерів – щоб додати новий, архівуйте недійсний або змініть наявний.' });
 Object.assign(STRINGS.en, { vnotes_full: 'Maximum of {max} active notes reached – archive a resolved note to add a new one.', vnotes_free: '{n} of {max} still possible', em_full: 'Maximum of {m} active phone numbers reached – archive one that is no longer valid or edit an existing one to add a new number.' });

@@ -255,14 +255,21 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (user.role !== 'driver') {
     // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
-    let others = (await env.DB.prepare(`SELECT id, case_no, status, priority, workshop_site, safety_lock FROM cases WHERE vehicle_id=? AND environment=? AND id<>?
-      AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ORDER BY created_at DESC LIMIT 20`).bind(c.vehicle_id, envName, c.id).all()).results;
-    if (user.role === 'workshop') others = others.filter((o) => o.workshop_site === user.workshop_site && o.status !== 'gemeldet');
+    // Werkstatt-Einschränkung im SQL (vorher nach dem LIMIT gefiltert → Zähler zu klein); Gesamtzahl per Fensterfunktion, angezeigt werden die neuesten 5
+    const wsOnly = user.role === 'workshop' ? user.workshop_site : null;
+    const othersRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, workshop_site, safety_lock, COUNT(*) OVER () AS total FROM cases WHERE vehicle_id=? AND environment=? AND id<>?
+      AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ${wsOnly ? "AND workshop_site=? AND status<>'gemeldet'" : ''} ORDER BY created_at DESC LIMIT 5`)
+      .bind(...[c.vehicle_id, envName, c.id, ...(wsOnly ? [wsOnly] : [])]).all()).results;
+    const othersTotal = othersRows.length ? othersRows[0].total : 0;
+    const others = othersRows.map(({ total, ...o }) => o);
     const soon = berlinDate(new Date(Date.now() + 30 * 86400000).toISOString());
     // + offene Herstellerrückrufe auch ohne Frist (mit Referenz laut Nachweis) – typischer Fall „beim selben Werkstattaufenthalt mit erledigen“
     const due = (await env.DB.prepare(`SELECT kind, next_due_date, CASE WHEN kind='Rückruf' THEN evidence END AS recall_ref FROM maintenance_rules WHERE vehicle_id=?
       AND ((next_due_date IS NOT NULL AND next_due_date <= ?) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results
       .map(({ recall_ref, ...m }) => (recall_ref ? { ...m, recall_ref } : m));
+    // mehr als 10 fällige Prüfungen/Rückrufe: Gesamtzahl nur dann nachzählen (seltener Fall, keine Zusatzabfrage im Normalfall)
+    const dueTotal = due.length < 10 ? due.length : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=?
+      AND ((next_due_date IS NOT NULL AND next_due_date <= ?) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
         (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until)) FROM
@@ -271,22 +278,20 @@ export async function getCaseDetail(env, user, envName, caseId) {
           (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at FROM cases x JOIN
             (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
              UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
-           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 ORDER BY g.warranty_until, g.created_at LIMIT 20) w) AS warranties
-      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at).first();
+           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT 20) w) AS warranties
+      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
     const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver })) : [];
     // Laufende Gewährleistung aus früheren Vorgängen dieses Fahrzeugs (am Meldedatum noch gültig) – Hinweis: Rückgriff beim Lieferanten prüfen
-    let warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : [];
-    if (user.role === 'workshop') warranties = warranties.filter((w) => w.workshop_site === user.workshop_site);
+    const warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : []; // Werkstatt: nur eigene (im SQL, vor dem LIMIT)
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)
     let prevSame = [];
     if (c.check_item) {
       prevSame = (await env.DB.prepare(`SELECT id, case_no, closed_at, workshop_site FROM cases WHERE vehicle_id=? AND environment=? AND id<>? AND check_item=?
-        AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ORDER BY closed_at DESC LIMIT 5`)
-        .bind(c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString()).all()).results;
-      if (user.role === 'workshop') prevSame = prevSame.filter((o) => o.workshop_site === user.workshop_site);
+        AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ${wsOnly ? 'AND workshop_site=?' : ''} ORDER BY closed_at DESC LIMIT 5`)
+        .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results;
     }
-    detail.vehicle_info = { other_open_cases: others.slice(0, 5), other_open_total: others.length, inspections_due: due, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties };
+    detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties };
   }
   if (user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch') {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;

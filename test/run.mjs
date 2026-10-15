@@ -7996,6 +7996,29 @@ await test('Hinweise zum Fahrzeug / Panne-Rufnummern: Höchstzahl sichtbar (max_
   for (const k of ['vnotes_full', 'vnotes_free', 'em_full']) eq((i18n.match(new RegExp(k + ": '", 'g')) || []).length, 3, `${k} DE/UK/EN`);
 });
 
+await test('Vorgang – Kurzinfo zum Fahrzeug: Zähler weiterer offener Vorgänge exakt (nicht bei 20 gekappt), Werkstatt-Filter vor dem LIMIT, fällige Prüfungen mit Gesamtzahl', async () => {
+  eq((await users.fleet.post('/api/vehicles', { vin: 'WDB96340310888001', plate: 'TT-KI 1', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310888001';
+  const mk = async (d) => (await users.fleet.post('/api/cases', { vehicle_id: VK, description: d, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const ids = []; for (let i = 0; i < 24; i++) ids.push(await mk(`Kurzinfo-Zähler ${i}`));
+  const cmd = async (cid, action, payload) => { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; return users.fleet.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, payload, note: 'Zählertest' }); };
+  // 3 ältere an Dortmund, 2 an München freigegeben – die neuesten 19 bleiben „gemeldet“ (vorher: Werkstatt-Filter erst nach LIMIT 20 → DO sah 0)
+  for (const cid of ids.slice(0, 3)) eq((await cmd(cid, 'approve_repair', { workshop_site: 'DORTMUND' })).status, 200);
+  for (const cid of ids.slice(3, 5)) eq((await cmd(cid, 'approve_repair', { workshop_site: 'MUENCHEN' })).status, 200);
+  const fl = (await users.fleet.get(`/api/cases/${ids[23]}`)).data.vehicle_info;
+  eq(fl.other_open_total, 23, 'Leitung: alle 23 anderen gezählt'); eq(fl.other_open_cases.length, 5, 'angezeigt die neuesten 5');
+  ok(fl.other_open_cases.every((o) => !('total' in o)), 'keine Hilfsspalte in der Antwort');
+  const wsv = (await users.ws.get(`/api/cases/${ids[0]}`)).data.vehicle_info;
+  eq(wsv.other_open_total, 2, 'Werkstatt DO: die 2 anderen eigenen'); ok(wsv.other_open_cases.every((o) => o.workshop_site === 'DORTMUND' && o.status !== 'gemeldet'), 'nur eigene, keine unbewerteten');
+  eq(typeof fl.inspections_due_total, 'number', 'Gesamtzahl fälliger Prüfungen'); eq(fl.inspections_due_total, fl.inspections_due.length);
+  // 12 fällige Termine → 10 angezeigt, Gesamtzahl 12
+  for (let i = 0; i < 12; i++) await env.DB.prepare("INSERT INTO maintenance_rules(id, vehicle_id, kind, next_due_date, evidence, created_by, created_at, updated_at) VALUES (?,?,?,?,'Testbeleg',?,datetime('now'),datetime('now'))").bind(`kz-${i}`, VK, `Zählerprüfung ${i}`, '2020-01-0' + (1 + (i % 9)), users.fleet.id).run();
+  const d2 = (await users.fleet.get(`/api/cases/${ids[23]}`)).data.vehicle_info; eq(d2.inspections_due.length, 10); eq(d2.inspections_due_total, 12);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="vidmore"') && app.includes("t('vi_due_all')"), 'UI: „+N · alle in der Fahrzeugakte“');
+  await env.DB.prepare("DELETE FROM maintenance_rules WHERE id LIKE 'kz-%'").run();
+  for (const cid of ids) { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; if (c.status === 'gemeldet') await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, payload: {}, note: 'Testaufräumen' }); }
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
