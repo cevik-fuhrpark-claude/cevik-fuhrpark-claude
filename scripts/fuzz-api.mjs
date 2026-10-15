@@ -1,7 +1,7 @@
 // [CLAUDE] Robustheits-Lauf (lokal, In-Memory-DB, synthetische Daten): schickt Störwerte an die API und meldet jede Antwort ≥ 500.
 // Aufruf: node --experimental-sqlite --no-warnings scripts/fuzz-api.mjs   (Fehlercode 1 bei mindestens einem Serverfehler)
 // Abgedeckt: alle festen GET-Pfade × Abfrageparameter × Störwerte, Felder schreibender Endpunkte und Vorgangsbefehle, Körper ohne
-// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), unerwartete HTTP-Methoden (Abschnitt 9), Testkonten mit „Stammdaten nur lesen“ (Abschnitt 10), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
+// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), unerwartete HTTP-Methoden (Abschnitt 9), Testkonten mit „Stammdaten nur lesen“ (Abschnitt 10), gleichzeitige gleiche Anfragen (Abschnitt 11), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
 // Anlass: Fuzz-Lauf 15.10.2026 fand „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ → jeweils „Interner Fehler“.
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.js';
@@ -197,6 +197,38 @@ for (const [role, extra] of [['fleet', {}], ['workshop', { workshop_site: ws }]]
   for (const [p, [base]] of Object.entries(posts)) await hit(`Test-${role} POST ${p} gültig`, c.post(p, { ...base, ...(p === '/api/cases' ? { request_key: 'fzt-' + (k++) } : {}) }));
 }
 await owner.req('PUT', '/api/settings', { test_master_readonly: '0' });
+
+// 11) Gleichzeitige gleiche Anfragen (Doppelklick auf zwei Geräten, Wiederholung nach Funkloch): eindeutige Schlüssel dürfen nie zu
+//     „Interner Fehler“ führen – erwartet 200/201 bzw. 409
+const par = async (what, mk, nPar = 6) => { noLimit(); const rs = await Promise.all(Array.from({ length: nPar }, mk)); for (const r of rs) { n++; st[r.status] = (st[r.status] || 0) + 1; if (r.status >= 500) bad.push(`${what} parallel → ${r.status} ${JSON.stringify(r.data).slice(0, 100)}`); } return rs; };
+// höchstens ein Datensatz; „genau einer“, wenn nicht schon vorher einer bestand (Auftrag zum Prüftermin/Winterauftrag gibt es aus Abschnitt 6 bereits → alle 409)
+const one = (what, rs, max = false) => { const okIds = new Set(rs.filter((r) => r.status < 300).map((r) => r.data && r.data.id)); if (max ? okIds.size > 1 : okIds.size !== 1) bad.push(`${what} parallel: ${okIds.size} verschiedene Datensätze statt 1 (${rs.map((r) => r.status).join(',')})`); };
+one('Vorgang gleicher request_key', await par('Vorgang gleicher request_key', () => owner.post('/api/cases', { vehicle_id: V, description: 'Parallel: gleiche Meldung', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fz-par-1' })));
+await par('Fahrzeug gleiche FIN', () => owner.post('/api/vehicles', { vin: 'WDB96340310777077', plate: 'FZ-PAR', site: 'Dortmund' }));
+one('Artikel gleicher Name', await par('Artikel gleicher Name', () => owner.post('/api/stock', { name: 'Parallel-Artikel', site: ws })));
+await par('Benutzer gleicher Name', () => owner.post('/api/users', { username: 'fz.par', display_name: 'Par', role: 'viewer', environment: 'test' }));
+await par('Bußgeld gleiches Aktenzeichen', () => owner.post('/api/fines', { kind: 'anhoerung', authority: 'B', reference: 'AZ-PAR', offense_type: 'geschwindigkeit', offense_at: '2026-10-01T08:00:00Z', plate_in_letter: 'FZ-1' }));
+await par('Telematik-Zuordnung gleich', () => owner.post('/api/telematics/mappings', { provider: 'yellowfox', external_id: 'YF-PAR', vehicle_id: V, evidence: 'Liste' }));
+await par('Auslesung gleicher Tag', () => owner.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V, downloaded_on: '2026-09-15', evidence: 'x' }));
+await par('Fahrerakte gleiches Konto', () => owner.post('/api/drivers', { display_name: 'Par Fahrer', user_id: uid }));
+await par('km-Stand gleich', () => owner.post(`/api/vehicles/${VE}/odometer`, { km: 5000 }));
+one('Prüftermin-Auftrag', await par('Prüftermin-Auftrag gleicher Schlüssel', () => owner.post(`/api/maintenance/${ids.rule}/order`, { workshop_site: ws, request_key: 'fz-par-mo' })), true);
+one('Winterauftrag', await par('Winterauftrag gleicher Schlüssel', () => owner.post(`/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-03', request_key: 'fz-par-wo' })), true);
+await par('Lagerbuchung', () => owner.post(`/api/stock/${ids.item}/movements`, { type: 'entnahme', qty: 1 }));
+await par('Inventur', () => owner.post('/api/stock/inventory', { site: ws, counts: [{ item_id: ids.item, counted: 3 }] }));
+await par('Push-Anmeldung gleich', () => owner.post('/api/push/subscribe', { endpoint: 'https://push.example/par/1', keys: { p256dh: 'BPar', auth: 'par' } }));
+const rule2 = id(await owner.post(`/api/vehicles/${VE}/maintenance`, { kind: 'Feuerlöscher', last_done_date: '2025-10-20', interval_months: 12, evidence: 'Fuzz parallel' }));
+one('Prüftermin-Auftrag (neu)', await par('Prüftermin-Auftrag neu', () => owner.post(`/api/maintenance/${rule2}/order`, { workshop_site: ws, request_key: 'fz-par-mo2' })));
+const VIN2 = 'WDB96340310777088'; await owner.post('/api/vehicles', { vin: VIN2, plate: 'FZ-WIN', site: 'Dortmund' });
+one('Winterauftrag (neu)', await par('Winterauftrag neu', () => owner.post(`/api/vehicles/${encodeURIComponent('VIN:' + VIN2)}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-04', request_key: 'fz-par-wo2' })));
+const pc = (await owner.post('/api/cases', { vehicle_id: V, description: 'Parallel: Befehle', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fz-par-2' })).data.id;
+const pv = (await owner.get(`/api/cases/${pc}`)).data.case.version;
+await par('Befehl gleiche command_id', () => owner.post(`/api/cases/${pc}/commands`, { action: 'comment', command_id: 'fz-par-cmd', expected_version: pv, note: 'parallel' }));
+const cmts = (await owner.get(`/api/cases/${pc}`)).data; const nCm = JSON.stringify(cmts).split('"parallel"').length - 1;
+if (nCm !== 1) bad.push(`Befehl gleiche command_id parallel: Kommentar ${nCm}× statt 1×`);
+if ((await owner.get(`/api/stock/${ids.item}`)).data.item.on_hand < 0) bad.push('Lagerbuchungen parallel: negativer Bestand');
+let pi = 0; const pv2 = (await owner.get(`/api/cases/${pc}`)).data.case.version;
+await par('Befehle gleiche Version', () => owner.post(`/api/cases/${pc}/commands`, { action: 'comment', command_id: 'fz-par-v' + (pi++), expected_version: pv2, note: 'parallel' }));
 
 console.log(`${n} Anfragen (${gets.length} GET-Pfade, ${ipaths.length} API-Pfade), ${bad.length} Serverfehler; Status: ${JSON.stringify(st)}`);
 // Plausibilität: der Lauf muss angemeldet gewesen sein (sonst prüft er nur die Anmeldepflicht)
