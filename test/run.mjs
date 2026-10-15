@@ -4554,6 +4554,21 @@ await test('Zahlen-Parameter (limit, days, weeks, stale_days): Kommazahl, negati
   }
 });
 
+await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 400 invalid_json statt „Interner Fehler“', async () => {
+  const H = { 'content-type': 'application/json' };
+  const V = (await owner.get('/api/vehicles')).data.vehicles[0].id;
+  const paths = [['POST', '/api/vehicles'], ['POST', `/api/vehicles/${encodeURIComponent(V)}/odometer`], ['POST', `/api/vehicles/${encodeURIComponent(V)}/notes`], ['POST', '/api/cases'],
+    ['POST', '/api/fines'], ['POST', '/api/stock'], ['POST', '/api/inspections'], ['POST', '/api/users'], ['PUT', '/api/me/notify-prefs'], ['PATCH', '/api/me'], ['PUT', '/api/settings']];
+  for (const [m, p] of paths) for (const raw of ['null', '123', '"x"', '[]', '[{"a":1}]', 'true']) {
+    const r = await owner.req(m, p, raw, H);
+    eq(r.status, 400, `${m} ${p} ${raw} → ${r.status}`); eq(r.data.error, 'invalid_json', `${m} ${p} ${raw}`);
+  }
+  // Anmeldung ohne Sitzung ebenso; leerer Körper bleibt {} (Validierung des Endpunkts greift)
+  eq((await anon.req('POST', '/api/login', 'null', H)).status, 400);
+  eq((await owner.req('POST', '/api/cases', '', H)).data.error, 'validation', 'leer = {} → Feldprüfung');
+  eq((await owner.req('POST', '/api/cases', '{', H)).data.error, 'invalid_json');
+});
+
 await test('Laufende Gewährleistungen: Akte (50) und Kurzinfo im Vorgang (20) melden weitere statt still zu kappen', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'VT-GW 9', vin: 'WDB96340310555649', site: 'Dortmund' })).status, 201);
   const V = 'VIN:WDB96340310555649';

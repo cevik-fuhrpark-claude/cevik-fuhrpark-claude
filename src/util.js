@@ -145,7 +145,10 @@ export async function readJson(request, maxBytes = 64 * 1024) {
   const text = await request.text();
   if (text.length > maxBytes) throw bad('too_large', 'Anfrage zu groß.');
   if (!text) return {};
-  try { return JSON.parse(text); } catch { throw bad('invalid_json', 'Ungültiges JSON.'); }
+  let v; try { v = JSON.parse(text); } catch { throw bad('invalid_json', 'Ungültiges JSON.'); }
+  // Alle Endpunkte erwarten ein Objekt – „null“, Zahl, Text oder Liste führten sonst zu „Interner Fehler“ (Zugriff auf Felder von null)
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) throw bad('invalid_json', 'Ungültiges JSON.');
+  return v;
 }
 
 // Ganzzahliger Abfrageparameter (limit, days, weeks …): fehlend/ungültig → Vorgabe, Kommazahl abgerundet, in [min, max] begrenzt.
