@@ -1,7 +1,7 @@
 // [CLAUDE] Robustheits-Lauf (lokal, In-Memory-DB, synthetische Daten): schickt Störwerte an die API und meldet jede Antwort ≥ 500.
 // Aufruf: node --experimental-sqlite --no-warnings scripts/fuzz-api.mjs   (Fehlercode 1 bei mindestens einem Serverfehler)
 // Abgedeckt: alle festen GET-Pfade × Abfrageparameter × Störwerte, Felder schreibender Endpunkte und Vorgangsbefehle, Körper ohne
-// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
+// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), unerwartete HTTP-Methoden (Abschnitt 9), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
 // Anlass: Fuzz-Lauf 15.10.2026 fand „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ → jeweils „Interner Fehler“.
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.js';
@@ -178,6 +178,12 @@ const idPaths = [...new Set([...gets.filter((p) => known.some((kn) => p.includes
 for (const [m, p, base] of idPaths) for (const o of oddIds) {
   const q = swap(p, o); if (q === p && o !== ids.item && o !== cid) continue;
   await hit(`Kennung ${m} ${q.slice(0, 70)}`, owner.req(m, q, m === 'GET' || m === 'DELETE' ? undefined : (base || {})));
+}
+
+// 9) Unerwartete HTTP-Methoden an allen festen Pfaden (auch ohne Anmeldung)
+const allFixed = [...new Set([...w.matchAll(/path === '(\/api\/[a-z0-9/_-]+)'/g)].map((x) => x[1]))].filter((p) => !/setup|logout|backup/.test(p));
+for (const p of allFixed) for (const m of ['PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'POST', 'GET']) for (const c of [owner, anon]) {
+  await hit(`Methode ${m} ${p} ${c === anon ? 'ohne Anmeldung' : ''}`, c.req(m, p, m === 'GET' || m === 'HEAD' ? undefined : {}));
 }
 
 console.log(`${n} Anfragen (${gets.length} GET-Pfade, ${ipaths.length} API-Pfade), ${bad.length} Serverfehler; Status: ${JSON.stringify(st)}`);
