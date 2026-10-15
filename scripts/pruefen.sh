@@ -50,6 +50,7 @@ UI-Fotogrenze (Hinweis > 10 Bilder)|ui-fotogrenze.py|/tmp/cfp-fotogrenze.log
 UI-Kennzahlen Fahrzeugliste (alle anzeigen)|ui-kpi-fahrzeuge.py|/tmp/cfp-kpiveh.log
 UI-Vorgangsdateien (Höchstzahl)|ui-vorgangsdateien.py|/tmp/cfp-vdateien.log
 UI-Höchstzahl Hinweise/Rufnummern|ui-hoechstzahl-hinweise.py|/tmp/cfp-hoechstzahl.log
+UI-Dublette wählen (alle offenen)|ui-dublette-auswahl.py|/tmp/cfp-dublette.log
 '
 N=0
 NL='

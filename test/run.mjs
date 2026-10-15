@@ -4482,6 +4482,34 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   ok(QSTAT.perRequest.filter((w) => w.method === 'GET' && w.path === '/api/cases/:id').every((w) => w.n <= 21), 'Vorgangsdetail ≤ 21 Abfragen');
 });
 
+await test('Dublette wählen: mehr als 5 andere offene Vorgänge – vollständige Auswahl über die Vorgangsliste (Oberfläche lädt nach, Hinweis DE/UK/EN)', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'DU-PL 9', vin: 'WDB96340310555709', site: 'Dortmund' })).status, 201);
+  const ids = [];
+  for (let i = 0; i < 8; i++) ids.push((await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310555709', description: `Dublettenauswahl ${i}`, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id);
+  const last = ids.at(-1);
+  const d = (await users.fleet.get(`/api/cases/${last}`)).data;
+  eq(d.vehicle_info.other_open_cases.length, 5, 'Kurzinfo: nur die 5 neuesten');
+  eq(d.vehicle_info.other_open_total, 7, 'Kurzinfo: Gesamtzahl 7');
+  const r = (await users.fleet.get(`/api/cases?vehicle_id=${encodeURIComponent(d.case.vehicle_id)}&status=open&sort=oldest&limit=500`)).data;
+  eq(r.truncated, false);
+  const others = r.cases.filter((o) => o.id !== last && !o.duplicate_of).reverse();
+  eq(others.length, 7, 'Liste: alle 7 anderen offenen Vorgänge');
+  eq(others.map((o) => o.id).join(), ids.slice(0, 7).reverse().join(), 'neueste Meldung zuerst');
+  ok(!d.vehicle_info.other_open_cases.some((o) => o.id === ids[0]), 'ältester fehlt in der Kurzinfo');
+  // ältester (nicht in der Kurzinfo) ist als Original wählbar
+  const c = d.case;
+  eq((await users.fleet.post(`/api/cases/${last}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, payload: { duplicate_of: ids[0] } })).status, 200, 'Dublette zum 7. Vorgang');
+  eq((await users.fleet.get(`/api/cases/${last}`)).data.case.duplicate_of, ids[0]);
+  // Oberfläche: lädt nach, wenn Gesamtzahl > angezeigte; Texte in allen Sprachen mit Platzhalter
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/other_open_total \|\| 0\) - oc\.length/.test(app) && app.includes("loadDupOptions(c)"), 'Ablehnen-Formular lädt bei mehr als 5 nach');
+  ok(app.includes('/api/cases?vehicle_id=${encodeURIComponent(c.vehicle_id)}&status=open&sort=oldest&limit=500'), 'gleiche Abfrage wie im Test');
+  const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const k of ['dup_loading', 'dup_all', 'dup_more_fail']) eq((i18n.match(new RegExp(`\\b${k}: '`, 'g')) || []).length, 3, `${k} in DE/UK/EN`);
+  eq((i18n.match(/dup_(loading|all): '[^']*\{n\}/g) || []).length, 6, 'Platzhalter {n} in jeder Sprache');
+});
+
 await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Termin setzen/verschieben nur gültig; Werkstatt nur eigener Standort', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'WP-LN 1', vin: 'WDB96340310555504', site: 'Dortmund' })).status, 201);
   const VP = 'VIN:WDB96340310555504';

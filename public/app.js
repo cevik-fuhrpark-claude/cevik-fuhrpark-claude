@@ -1136,6 +1136,21 @@ async function prepareUpload(file) {
   } catch { return file; }
 }
 
+// Ablehnen als Dublette: alle offenen Vorgänge desselben Fahrzeugs (neueste Meldung zuerst, ohne diesen und ohne Dubletten) –
+// Auswahl bleibt erhalten; schlägt das Nachladen fehl, bleiben die 5 neuesten mit Hinweis auf die Vorgangsliste
+async function loadDupOptions(c) {
+  const hint = () => $('#dupmore');
+  try {
+    const r = await api('GET', `/api/cases?vehicle_id=${encodeURIComponent(c.vehicle_id)}&status=open&sort=oldest&limit=500`);
+    const sel = $('#dupsel'); if (!sel || !hint()) return;
+    const list = (r.cases || []).filter((o) => o.id !== c.id && !o.duplicate_of).reverse();
+    const keep = sel.value;
+    sel.innerHTML = `<option value="">${esc(t('dup_none'))}</option>${list.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}`;
+    if (list.some((o) => o.id === keep)) sel.value = keep;
+    hint().textContent = r.truncated ? t('dup_more_fail') : t('dup_all').replace('{n}', list.length);
+  } catch { if (hint()) hint().textContent = t('dup_more_fail'); }
+}
+
 function actionForm(action, c, cmd, preset = {}, d = null) {
   const box = $('#actform');
   const f = [];
@@ -1146,7 +1161,12 @@ function actionForm(action, c, cmd, preset = {}, d = null) {
     case 'change_priority': f.push(`<label>${esc(t('new_priority'))}</label><select name="priority">${prioOpts(c.priority)}</select>`); break;
     case 'approve_repair': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site">${wsOpts}</select><label>${esc(t('urgency'))}</label><select name="priority">${prioOpts(c.priority)}</select><label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     case 'reassign_workshop': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site">${wsOpts}</select>`); break;
-    case 'reject': { const oc = ((d && d.vehicle_info && d.vehicle_info.other_open_cases) || []); if (oc.length) f.push(`<label for="dupsel">${esc(t('dup_select'))}<span class="hint">${esc(t('dup_hint'))}</span></label><select id="dupsel" name="duplicate_of"><option value="">${esc(t('dup_none'))}</option>${oc.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}</select>`); break; }
+    case 'reject': {
+      // Kurzinfo liefert nur die 5 neuesten anderen offenen Vorgänge; gibt es mehr, wird die vollständige Liste nachgeladen (unten)
+      const vi = (d && d.vehicle_info) || {}; const oc = vi.other_open_cases || []; const more = Math.max(0, (vi.other_open_total || 0) - oc.length);
+      if (oc.length) f.push(`<label for="dupsel">${esc(t('dup_select'))}<span class="hint">${esc(t('dup_hint'))}</span></label><select id="dupsel" name="duplicate_of"><option value="">${esc(t('dup_none'))}</option>${oc.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}</select>${more ? `<p class="small muted" id="dupmore">${esc(t('dup_loading').replace('{n}', more))}</p>` : ''}`);
+      break;
+    }
     case 'approve_costs': f.push(`<p class="small muted">${esc(t('cost_approve_hint'))}</p>`); break;
     case 'acknowledge': f.push(`<label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     case 'wait_parts': f.push(`<label>${esc(t('parts_eta'))}<span class="hint">${esc(t('parts_eta_hint'))}</span></label><input type="date" name="parts_expected_date" min="${bDate()}">`); break;
@@ -1173,6 +1193,7 @@ function actionForm(action, c, cmd, preset = {}, d = null) {
   box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('#ac').onclick = () => (box.innerHTML = '');
+  if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   if (action === 'add_part') loadStockSelect(c);
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
   $('#af').onsubmit = (e) => {
