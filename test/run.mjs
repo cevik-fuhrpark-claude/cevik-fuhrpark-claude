@@ -7711,6 +7711,43 @@ await test('Oberfläche: jede Aktion mit API-Aufruf hat eine Fehlerbehandlung; n
   ok(app.includes("try { const r = await api('POST', '/api/push/test');"), 'Push-Test mit Fehlerbehandlung');
 });
 
+await test('Oberfläche: Formulare werden nicht doppelt abgesendet (Doppelklick/zweimal Enter), Sperre endet auch bei Fehlern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // Voraussetzung des Wächters: alle Formulare nutzen `.onsubmit = …` mit preventDefault, keine eigenen submit-Zuhörer
+  const re = /\.onsubmit *= *(async *)?\(?[a-z]*\)? *=> *\{/g; let m, n = 0; const noPd = [];
+  while ((m = re.exec(app))) { n++; let i = m.index + m[0].length, d = 1;
+    while (i < app.length && d) { const ch = app[i]; if (ch === '{') d++; else if (ch === '}') d--; i++; }
+    if (!app.slice(m.index + m[0].length, i - 1).includes('preventDefault')) noPd.push(app.slice(0, m.index).split('\n').length); }
+  ok(n >= 60, 'Formular-Handler gefunden: ' + n); eq(n, (app.match(/\.onsubmit *=/g) || []).length, 'alle onsubmit-Zuweisungen erfasst');
+  eq(noPd.join(','), '', 'jeder Formular-Handler ruft preventDefault (Zeilen)');
+  eq((app.match(/addEventListener\('submit'/g) || []).length, 1, 'nur der zentrale submit-Zuhörer');
+  // Verhalten mit nachgebautem document/Formular
+  const code = app.slice(app.indexOf("document.addEventListener('submit', (e) => {"), app.indexOf('}, true);', app.indexOf("document.addEventListener('submit', (e) => {")) + 9);
+  let listener, capture; const doc = { addEventListener: (type, fn, cap) => { eq(type, 'submit'); listener = fn; capture = cap; } };
+  const errs = []; const apiErr = (e) => { if (e && e.status) { errs.push(e.message); return true; } return false; };
+  new Function('document', 'onUnhandledApiError', 'console', code)(doc, apiErr, { error: (e) => errs.push('console:' + e.message) });
+  eq(capture, true, 'Einfangphase');
+  const attrs = {}; let calls = 0, resolve, reject;
+  const form = { setAttribute: (k, v) => (attrs[k] = v), removeAttribute: (k) => delete attrs[k],
+    onsubmit: async (e) => { e.preventDefault(); calls++; await new Promise((res, rej) => { resolve = res; reject = rej; }); } };
+  const ev = () => ({ target: form, pd: 0, st: 0, preventDefault() { this.pd++; }, stopImmediatePropagation() { this.st++; } });
+  const e1 = ev(); listener(e1); eq(calls, 1); eq(attrs['aria-busy'], 'true', 'aria-busy während des Sendens'); ok(e1.pd >= 1 && e1.st === 1, 'Standardverhalten verhindert, Handler nicht doppelt');
+  const e2 = ev(); listener(e2); listener(ev()); eq(calls, 1, 'zweites/drittes Absenden während des Sendens verworfen'); ok(e2.pd === 1 && e2.st === 1, 'auch verworfenes Absenden lädt die Seite nicht neu');
+  resolve(); await new Promise((r) => setTimeout(r, 0));
+  ok(!('aria-busy' in attrs) && !form.cfpBusy, 'nach Abschluss wieder frei');
+  listener(ev()); eq(calls, 2, 'erneutes Absenden nach Abschluss möglich');
+  reject(Object.assign(new Error('Keine Verbindung'), { offline: true, status: 0 })); await new Promise((r) => setTimeout(r, 0));
+  ok(!form.cfpBusy, 'Sperre endet auch bei Fehler');
+  // Handler wirft API-Fehler ohne eigene Behandlung → Meldung über das Sicherheitsnetz
+  form.onsubmit = async () => { throw Object.assign(new Error('Konflikt'), { status: 409 }); };
+  listener(ev()); await new Promise((r) => setTimeout(r, 0)); ok(errs.includes('Konflikt'), 'API-Fehler gemeldet: ' + errs);
+  // Elemente ohne onsubmit (z. B. fremde Formulare) bleiben unberührt
+  const e3 = ev(); listener({ ...e3, target: {} }); eq(e3.pd, 0);
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(css.includes('form[aria-busy="true"] button'), 'Darstellung „wird gesendet“');
+});
+
 await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {
   const db = env.DB.db; const { MASTER_INBOX_DONE_MAX } = await import('../src/agent.js'); eq(MASTER_INBOX_DONE_MAX, 100);
   const src = db.prepare(`SELECT m.* FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE m.environment='test' AND f.status='offen' LIMIT 1`).get();

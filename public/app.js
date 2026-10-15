@@ -228,6 +228,19 @@ async function route() {
   }
 }
 window.addEventListener('hashchange', route);
+// Doppeltes Absenden verhindern (Doppelklick, zweimal Enter, langsames Netz): Alle Formulare der App setzen den Handler als Eigenschaft (onsubmit).
+// Ein Zuhörer in der Einfangphase führt diesen Handler selbst aus und sperrt das Formular, bis er fertig ist – ein zweites Absenden in
+// der Zwischenzeit wird verworfen (sonst z. B. Fahrer, Artikel, Bußgeld, Vertrag oder Lagerbewegung doppelt angelegt). Knöpfe werden
+// nicht deaktiviert (das steuern einzelne Handler selbst), nur per aria-busy als „wird gesendet“ dargestellt.
+document.addEventListener('submit', (e) => {
+  const form = e.target, h = form && form.onsubmit;
+  if (typeof h !== 'function') return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (form.cfpBusy) return;
+  form.cfpBusy = true; form.setAttribute('aria-busy', 'true');
+  let p; try { p = h.call(form, e); } catch (err) { p = Promise.reject(err); }
+  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) console.error(err); }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); });
+}, true);
 // Sicherheitsnetz: Lädt eine Ansicht nach einer Aktion neu (z. B. `viewVehicle(id)` außerhalb von route()) und bricht dabei das Netz
 // ab, ging der Fehler bisher still verloren – die Seite blieb veraltet stehen. Jetzt: Meldung (nur Fehler der eigenen API, nicht 401 –
 // dort leitet api() schon zur Anmeldung um; gleiche Meldung höchstens einmal je 3 s).

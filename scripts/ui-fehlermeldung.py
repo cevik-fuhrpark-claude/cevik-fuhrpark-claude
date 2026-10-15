@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test: Aktionen ohne Netz melden einen Fehler statt still abzubrechen.
 # 1) Management-Panel → Master-Eingang „Gesehen“ ohne Netz: Meldung, Eintrag bleibt offen; danach mit Netz entschieden.
+# 3) Doppelklick auf „Anlegen“ legt nur einen Datensatz an (zentrale Formularsperre).
 # 2) Sicherheitsnetz: Aktion gelingt, das Neuladen der Ansicht danach scheitert (Netz weg) → Meldung statt veralteter Seite ohne Hinweis.
 # 390/820/1366 px, keine Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
@@ -44,6 +45,15 @@ with sync_playwright() as p:
         q.click('#ra'); q.wait_for_selector('.toast.err', timeout=10000)
         check(len(q.inner_text('.toast.err'))>3,f'{w}px: Neuladen nach Aktion ohne Netz meldet Fehler: '+q.inner_text('.toast.err'))
         if SHOTS: q.screenshot(path=f'{SHOTS}/fehlermeldung_neuladen_{w}.png')
+        # Doppelklick auf „Anlegen“ (neuer Fahrer) legt nur einen Datensatz an
+        q.goto(B+'/#/drivers'); q.wait_for_selector('#ndf', state='attached')
+        q.locator('#ndf').locator('xpath=ancestor::details').locator('summary').click()
+        name=f'FM Doppelklick {w}'; q.fill('#ndf [name=display_name]', name)
+        q.locator('#ndf button:not([type=button])').last.dblclick()
+        q.wait_for_function("()=>/#\\/drivers\\/[\\w-]+$/.test(location.hash)")
+        q.wait_for_timeout(500)
+        n=sum(1 for d in q.evaluate(JS,['GET','/api/drivers'])['d']['drivers'] if d['display_name']==name)
+        check(n==1,f'{w}px: Doppelklick legt genau einen Fahrer an ({n})')
         check(not errs,f'{w}px: keine Skriptfehler {errs}')
         sw=q.evaluate("()=>document.documentElement.scrollWidth<=window.innerWidth+1"); check(sw,f'{w}px: kein Querscrollen')
         c.close()
