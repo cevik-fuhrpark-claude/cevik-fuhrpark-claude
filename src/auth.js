@@ -31,7 +31,8 @@ export async function getSessionUser(env, request) {
     return null;
   }
   // last_seen höchstens alle 10 Minuten schreiben (bei Leerlauf-Abmeldung häufiger, damit aktive Nutzung zählt)
-  if (idle > Math.min(10 * 60 * 1000, idleMs ? idleMs / 3 : Infinity)) {
+  // Hintergrund-Abfragen der App (x-cfp-bg: Zahl am Glockensymbol) verlängern die Sitzung nicht – sonst bliebe ein offenes, unbedientes Tablet angemeldet
+  if (idle > Math.min(10 * 60 * 1000, idleMs ? idleMs / 3 : Infinity) && request.headers.get('x-cfp-bg') !== '1') {
     await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(nowIso(), h).run();
   }
   // Für die App: gleiche Leerlauf-Grenze, damit sie geteilte Bildschirme selbst leert (ohne auf den nächsten Aufruf zu warten)

@@ -7652,6 +7652,18 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_truncated.includes('{max}') && STRINGS[l].nf_truncated.includes('{n}') && STRINGS[l].nf_truncated.includes(STRINGS[l].nf_unread) && STRINGS[l].nf_truncated.includes(STRINGS[l].mark_read), 'Text ' + l + ' nennt die echten Knopfnamen');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("'/api/notifications?count=1'") && app.includes('n.counts[k]') && app.includes("t('nf_truncated')"), 'Oberfläche: Zähler vom Server, Hinweis');
+  // Hintergrund-Abfrage (x-cfp-bg) verlängert die Sitzung nicht, normale Abfrage schon
+  { const old = new Date(Date.now() - 20 * 60000).toISOString();
+    db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(old, uid);
+    eq((await users.wsMuc.get('/api/notifications?count=1', { 'x-cfp-bg': '1' })).status, 200);
+    ok(db.prepare('SELECT last_seen FROM sessions WHERE user_id=?').all(uid).every((r) => r.last_seen === old), 'x-cfp-bg: last_seen unverändert');
+    await users.wsMuc.get('/api/notifications?count=1');
+    ok(db.prepare('SELECT last_seen FROM sessions WHERE user_id=?').all(uid).some((r) => r.last_seen > old), 'ohne x-cfp-bg: last_seen aktualisiert'); }
+  // Push-Nachricht des Service Workers: nur Zahl am Glockensymbol aktualisieren, Seite nicht neu aufbauen (außer Hinweise) – sonst gehen Formulareingaben verloren
+  const sw = app.slice(app.indexOf("e.data.type === 'push')"), app.indexOf("e.data.type === 'push')") + 160);
+  ok(sw.includes('refreshUnread(true)') && app.includes("refreshUnread(true);\n}"), 'Push und Nachfragen laufen als Hintergrund-Abfrage');
+  ok(sw.includes("/^#\\/inbox/.test(location.hash)) route()"), 'Push baut nur die Hinweise neu auf: ' + sw);
+  ok(app.includes('function paintBadge()') && app.slice(app.indexOf('async function refreshUnread('), app.indexOf('async function refreshUnread(') + 300).includes('paintBadge()'), 'Zahl wird an Ort und Stelle aktualisiert');
   for (const l of ['de', 'uk', 'en']) { const h = STRINGS[l].help_push_s; ok(h.includes(String(NOTIF_MAX)) && h.includes(STRINGS[l].nf_unread) && h.includes(STRINGS[l].mark_read) && h.includes(STRINGS[l].notifications), 'Hilfe „Push“ ' + l + ' nennt Grenze und echte Namen'); }
 });
 

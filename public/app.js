@@ -49,12 +49,12 @@ function plate(p, opts = {}) {
 
 // ---------- API ----------
 async function api(method, path, body, extra = {}) {
-  const headers = { 'x-cfp': '1', ...(extra.headers || {}) };
+  const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
   if (S.viewEnv && S.me && S.me.role === 'owner') headers['x-cfp-env'] = S.viewEnv;
   let b = body;
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
   let res;
-  lastApiAt = Date.now();
+  if (!extra.bg) lastApiAt = Date.now(); // Hintergrund-Abfragen (Zahl am Glockensymbol) zählen nicht als Bedienung – auch serverseitig nicht (x-cfp-bg)
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
@@ -287,9 +287,25 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 setInterval(checkIdle, 5000); // nur Zeitvergleich, ohne Serveraufruf
 window.addEventListener('online', () => { if (S.offlineStart) { S.offlineStart = false; S.me = null; route(); } });
 
-async function refreshUnread() {
-  try { const n = await api('GET', '/api/notifications?count=1'); S.unread = n.unread; } catch {}
+async function refreshUnread(bg = false) {
+  try { const n = await api('GET', '/api/notifications?count=1', undefined, { bg }); S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge(); } catch {}
 }
+// Zahl am Glockensymbol an Ort und Stelle aktualisieren – ohne die Seite neu aufzubauen (halb ausgefüllte Formulare bleiben erhalten)
+function paintBadge() {
+  const a = document.querySelector('.topbar a[href="#/inbox"]'); if (!a) return;
+  let b = a.querySelector('.badge');
+  if (!S.unread) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('span'); b.className = 'badge'; b.style.cssText = 'position:absolute;top:-6px;right:-10px'; a.appendChild(b); }
+  b.textContent = S.unread;
+}
+// Ohne Push (z. B. nicht erlaubt) bliebe die Zahl stehen: beim Zurückkehren in die App und alle 2 Min. (nur sichtbar, angemeldet, online) nachfragen
+let lastUnreadAt = 0;
+function pollUnread() {
+  if (!S.me || S.offlineStart || navigator.onLine === false || document.visibilityState !== 'visible' || Date.now() - lastUnreadAt < 30000) return;
+  lastUnreadAt = Date.now(); refreshUnread(true);
+}
+document.addEventListener('visibilitychange', pollUnread);
+setInterval(pollUnread, 120000);
 
 // ---------- Öffentliche Ansichten ----------
 function viewLogin() {
@@ -3214,7 +3230,7 @@ setInterval(checkVersion, 30 * 60 * 1000);
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') location.hash = e.data.hash; if (e.data && e.data.type === 'push') refreshUnread().then(() => { if (S.me) { const b = document.querySelector('.topbar .badge'); if (!b) route(); } }); });
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') location.hash = e.data.hash; if (e.data && e.data.type === 'push') refreshUnread(true).then(() => { if (S.me && /^#\/inbox/.test(location.hash)) route(); }); });
 }
 document.documentElement.lang = S.lang;
 route();
