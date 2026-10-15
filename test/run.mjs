@@ -7652,6 +7652,7 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_truncated.includes('{max}') && STRINGS[l].nf_truncated.includes('{n}') && STRINGS[l].nf_truncated.includes(STRINGS[l].nf_unread) && STRINGS[l].nf_truncated.includes(STRINGS[l].mark_read), 'Text ' + l + ' nennt die echten Knopfnamen');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("'/api/notifications?count=1'") && app.includes('n.counts[k]') && app.includes("t('nf_truncated')"), 'Oberfläche: Zähler vom Server, Hinweis');
+  for (const l of ['de', 'uk', 'en']) { const h = STRINGS[l].help_push_s; ok(h.includes(String(NOTIF_MAX)) && h.includes(STRINGS[l].nf_unread) && h.includes(STRINGS[l].mark_read) && h.includes(STRINGS[l].notifications), 'Hilfe „Push“ ' + l + ' nennt Grenze und echte Namen'); }
 });
 
 await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {
