@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate, berlinDateTime, isCalendarDate } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate, berlinDateTime, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -235,7 +235,14 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
     if (delta !== 0) diffs.push({ item_id: it.id, name: it.name, part_number: it.part_number, unit: it.unit, book: it.on_hand, counted, delta });
   }
   const result = { site, counted_items: seen.size, differences: diffs, booked: 0 };
-  if (dryRun || !diffs.length) return result;
+  if (dryRun) return result;
+  // Optional (Oberfläche sendet sie immer): die geprüften Abweichungen. Weicht das heutige Ergebnis ab (Buchbestand hat sich seit der
+  // Prüfung geändert, z. B. Entnahme in einem Auftrag, oder Zählmengen wurden danach geändert), wird nichts gebucht → erneut prüfen.
+  if (Array.isArray(body.preview)) {
+    const sig = (list) => list.map((d) => (d && typeof d === 'object' ? `${d.item_id}|${Number(d.book)}|${Number(d.counted)}` : '?')).sort().join('\n');
+    if (body.preview.length > 2000 || sig(body.preview) !== sig(diffs)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
+  }
+  if (!diffs.length) return result;
   const now = nowIso();
   await env.DB.batch(diffs.map((d) => env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
     VALUES (?,?,?,'korrektur',?,NULL,NULL,NULL,?,?,?,?)`).bind(uuid(), envName, d.item_id, d.delta, `Inventur ${date}`,

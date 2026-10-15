@@ -2514,6 +2514,27 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   eq((await users.wsMuc.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 1 }] })).status, 403, 'fremdes Lager');
   eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: -1 }] })).status, 400, 'negativ');
   eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 7 }, { item_id: it.id, counted: 7 }] })).status, 400, 'doppelt');
+  // Geprüfte Abweichungen (preview): Buchbestand seit der Prüfung geändert → 409, nichts gebucht; passend → gebucht
+  const pv = (await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }] })).data.differences;
+  eq(pv.length, 1); eq(pv[0].book, 7);
+  const prev = pv.map((x) => ({ item_id: x.item_id, book: x.book, counted: x.counted }));
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 4 }], preview: prev })).status, 409, 'Zählmenge nach Prüfung geändert');
+  env.DB.db.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,note,user_id,created_at) VALUES (?,'test',?,'korrektur',-1,'Testentnahme',?,?)`).run(crypto.randomUUID(), it.id, users.ws.id, new Date().toISOString()); // simuliert Entnahme zwischen Prüfung und Buchung
+  const ch = await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }], preview: prev });
+  eq(ch.status, 409, 'Buchbestand geändert'); eq(ch.data.error, 'inventory_changed');
+  eq((await users.ws.get(`/api/stock/${it.id}`)).data.item.on_hand, 6, 'nichts gebucht');
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }], preview: [null, 3] })).status, 409, 'unsinnige Vorschau → 409, kein 500');
+  const pv2 = (await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }] })).data.differences;
+  const ok2 = await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }], preview: pv2 });
+  eq(ok2.status, 200); eq(ok2.data.booked, 1); eq((await users.ws.get(`/api/stock/${it.id}`)).data.item.on_hand, 5);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/confirm\(t\('inventory_book_confirm'\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_book_confirm.includes('{n}') && STRINGS[l].inventory_recheck && STRINGS[l].err_inventory_changed, 'Texte ' + l);
+  // Zählliste (#/stock/count): Route vor der Artikel-Route, Link im Inventur-Bereich, Standard ohne Buchbestand, Texte in allen Sprachen
+  ok(app.indexOf('[/^#\\/stock\\/count$/, viewStockCount]') > 0 && app.indexOf('[/^#\\/stock\\/count$/') < app.indexOf('[/^#\\/stock\\/([\\w-]+)$/, viewStockItem]'), 'Route Zählliste vor Artikel-Route');
+  ok(app.includes('href="#/stock/count" id="invsheet"') && /const withBook = !!S\.countBook;/.test(app), 'Link + Blindzählung als Standard');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['count_sheet', 'count_sheet_title', 'count_sheet_hint', 'count_with_book', 'count_blind', 'count_sign', 'count_none']) ok(STRINGS[l][k], `${k} ${l}`);
 });
 
 await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit Preis, Summen, nur eigenes Lager, CSV ohne Personen', async () => {

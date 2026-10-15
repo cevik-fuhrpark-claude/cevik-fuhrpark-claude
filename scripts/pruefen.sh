@@ -21,6 +21,7 @@ step "UI-Anmelde-Hinweis neues Gerät"; sh scripts/restart-dev.sh > /dev/null; p
 step "UI-Protokoll je Person"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-protokoll-person.py > /tmp/cfp-protperson.log 2>&1 || { tail -20 /tmp/cfp-protperson.log; fail "Protokoll je Person"; }; tail -1 /tmp/cfp-protperson.log
 step "UI-Hilfe Zugänge & Protokoll"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-hilfe-zugang.py > /tmp/cfp-hilfezugang.log 2>&1 || { tail -20 /tmp/cfp-hilfezugang.log; fail "Hilfe Zugänge"; }; tail -1 /tmp/cfp-hilfezugang.log
 step "UI-Benutzer bearbeiten"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-benutzer-bearbeiten.py > /tmp/cfp-ubearb.log 2>&1 || { tail -20 /tmp/cfp-ubearb.log; fail "Benutzer bearbeiten"; }; tail -1 /tmp/cfp-ubearb.log
+step "UI-Inventur (Rückfrage, erneut prüfen)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-inventur.py > /tmp/cfp-inventur.log 2>&1 || { tail -20 /tmp/cfp-inventur.log; fail "Inventur"; }; tail -1 /tmp/cfp-inventur.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
