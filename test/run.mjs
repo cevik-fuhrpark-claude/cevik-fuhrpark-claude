@@ -7977,6 +7977,25 @@ await test('Fahrzeugdokumente: Höchstzahl sichtbar (freie Plätze ab Hälfte, v
   eq((i18n.match(/docs_full: '/g) || []).length, 3, 'docs_full DE/UK/EN');
 });
 
+await test('Hinweise zum Fahrzeug / Panne-Rufnummern: Höchstzahl sichtbar (max_active, freie Plätze ab Hälfte, voll → Hinweis statt Formular)', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const srv = fs.readFileSync(new URL('../src/vnotes.js', import.meta.url), 'utf8');
+  eq(Number((app.match(/const VNOTES_MAX = (\d+);/) || [])[1]), Number((srv.match(/const NOTES_MAX_ACTIVE = (\d+);/) || [])[1]), 'Grenze App = Server');
+  const VID = (await users.prodFleet.get('/api/vehicles')).data.vehicles.find((v) => v.active !== 0).id;
+  const base = `/api/vehicles/${encodeURIComponent(VID)}/notes`;
+  const before = (await users.prodFleet.get(base)).data; eq(before.max_active, 20, 'max_active in der Liste'); ok(!('max_active' in (await users.prodFleet.get(base + '?archived=1')).data), 'Archiv ohne max_active');
+  const ids = [];
+  for (let i = before.notes.length; i < 20; i++) { const r = await users.prodFleet.post(base, { text: `Grenztest Hinweis ${i}` }); eq(r.status, 201); ids.push(r.data.id); }
+  const full = (await users.prodFleet.get(base)).data; eq(full.notes.length, full.max_active, 'voll');
+  const over = await users.prodFleet.post(base, { text: 'einer zu viel' }); eq(over.status, 400, 'Server lehnt 21. ab');
+  for (const id of ids) eq((await users.prodFleet.post(`${base}/${id}/archive`)).status, 200);
+  ok(app.includes('id="vnfull"') && app.includes('id="vnfree"') && app.includes('r.can_write && r.notes.length < nMax'), 'Hinweise: Formular nur bei freiem Platz');
+  ok(app.includes('id="emfull"') && app.includes('!edit && d.contacts.length >= d.max_active'), 'Rufnummern: voll → Hinweis statt Formular, Bearbeiten bleibt');
+  for (const k of ['vnotes_full', 'vnotes_free', 'em_full']) eq((i18n.match(new RegExp(k + ": '", 'g')) || []).length, 3, `${k} DE/UK/EN`);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

@@ -27,7 +27,7 @@ export async function listNotes(env, user, envName, vehicleId, query = {}) {
     ORDER BY ${archived ? 'COALESCE(n.archived_at, n.valid_until)' : 'n.created_at'} DESC, n.rowid DESC LIMIT ?`).bind(vehicleId, envName, today, NOTES_ARCHIVE_MAX + 1).all()).results;
   // aktive Hinweise sind auf NOTES_MAX_ACTIVE begrenzt; nur das Archiv wächst – dort Hinweis statt stillem Abschneiden
   const truncated = rows.length > NOTES_ARCHIVE_MAX; if (truncated) rows.length = NOTES_ARCHIVE_MAX;
-  return { ...(archived ? { truncated, max: NOTES_ARCHIVE_MAX } : {}), notes: rows.map((r) => ({ ...hideDriverName(user, r, 'created_by_name', 'created_by_role'), for_driver: !!r.for_driver, expired: !r.archived_at && !!r.valid_until && r.valid_until < today })), can_write: WRITE.includes(user.role) };
+  return { ...(archived ? { truncated, max: NOTES_ARCHIVE_MAX } : { max_active: NOTES_MAX_ACTIVE }), notes: rows.map((r) => ({ ...hideDriverName(user, r, 'created_by_name', 'created_by_role'), for_driver: !!r.for_driver, expired: !r.archived_at && !!r.valid_until && r.valid_until < today })), can_write: WRITE.includes(user.role) };
 }
 
 export async function addNote(env, user, envName, vehicleId, body) {
