@@ -8047,7 +8047,7 @@ await test('Vorgang – Kurzinfo zum Fahrzeug: Zähler weiterer offener Vorgäng
   for (const cid of ids) { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; if (c.status === 'gemeldet') await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, payload: {}, note: 'Testaufräumen' }); }
 });
 
-await test('Hilfe „Höchstzahlen auf einen Blick“ (DE/UK/EN) nennt dieselben Grenzen wie Server und App', async () => {
+await test('Hilfe „Höchstzahlen auf einen Blick“ (DE/UK/EN, auch Werkstatt) nennt dieselben Grenzen wie Server und App', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
   const num = (src, re) => Number((src.match(re) || [])[1]);
   const lim = [num(rd('../public/app.js'), /const PHOTO_MAX = (\d+)/), num(rd('../src/cases.js'), /const MAX_FILES = (\d+)/), num(rd('../src/fines.js'), /const MAX_FINE_FILES = (\d+)/),
@@ -8056,6 +8056,9 @@ await test('Hilfe „Höchstzahlen auf einen Blick“ (DE/UK/EN) nennt dieselben
   const i18n = rd('../public/i18n.js');
   const paras = [...i18n.matchAll(/help_fleet_s: '([^']*)'/g)].map((m) => m[1].split('|').pop()); eq(paras.length, 3, 'DE/UK/EN');
   for (const p of paras) eq((p.match(/\d+/g) || []).map(Number).join(','), [...lim, 5].join(','), 'Zahlen in der Reihenfolge Fotos, Vorgang, Bußgeld, Dokumente, Hinweise, Rufnummern, MB');
+  // Werkstatt (lädt Vorgangsbelege hoch): eigener Absatz mit Dateien je Vorgang und MB je Datei
+  const ws = [...i18n.matchAll(/help_ws_s: '([^']*)'/g)].map((m) => m[1].split('|').pop()); eq(ws.length, 3, 'Werkstatt DE/UK/EN');
+  for (const p of ws) eq((p.match(/\d+/g) || []).map(Number).join(','), [lim[1], 5].join(','), 'Werkstatt: Dateien je Vorgang, MB');
 });
 
 await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest), Optionen dokumentiert', async () => {
