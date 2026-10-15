@@ -382,9 +382,11 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
 export async function endAssignment(env, user, envName, assignmentId) {
   if (!isManager(user)) throw forbidden();
   // nur Zuordnungen von Fahrern der eigenen Umgebung (Test/Betrieb getrennt)
+  const row = await env.DB.prepare(`SELECT vehicle_id, user_id FROM driver_vehicles WHERE id=?`).bind(assignmentId).first();
   const r = await env.DB.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE id=? AND valid_to IS NULL AND user_id IN (SELECT id FROM users WHERE environment=?)`).bind(nowIso(), assignmentId, envName).run();
   if (!r.meta.changes) throw notFound('Zuordnung nicht gefunden oder bereits beendet.');
-  await audit(env, user.id, 'vehicle.end_assignment', assignmentId, null);
+  // Ziel = Fahrzeug (wie vehicle.assign_driver) → erscheint im Protokoll je Fahrzeug; Person und Zuordnung im Detail
+  await audit(env, user.id, 'vehicle.end_assignment', row.vehicle_id, { driver: row.user_id, assignment: assignmentId });
   return { ok: true };
 }
 

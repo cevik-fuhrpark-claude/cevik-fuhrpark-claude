@@ -56,13 +56,28 @@ with sync_playwright() as p:
     q.click(f'[data-act="{fid}"]'); q.wait_for_selector(f'[data-act="{fid}"][data-on="0"]')
     check(len(msgs)==2,'Aktivieren ohne Rückfrage')
     c.close()
+    # Fahrzeugakte: Fahrerzuordnung „Beenden“ fragt nach (Name + Kennzeichen); Abbrechen lässt sie bestehen
+    api('POST','/api/vehicles',{'vin':'WDB96340310777123','plate':'UB-ZU 1','site':'Dortmund'}); VID='VIN:WDB96340310777123'
+    dr=api('POST','/api/users',{'username':'ub.zfahrer','display_name':'UB Zuordnung','role':'driver','environment':'production'})['d']['id']
+    check(api('POST',f'/api/vehicles/{VID}/drivers',{'user_id':dr})['s']==201,'Zuordnung angelegt')
+    for lang in ['de','uk','en']:
+      api('PATCH','/api/me',{'language':lang})
+      c=br.new_context(viewport={'width':390,'height':844}); q=c.new_page(); msgs=[]; mode={'ok':lang=='en'}; errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+      q.on('dialog',lambda d: (msgs.append(d.message), d.accept() if mode['ok'] else d.dismiss()))
+      q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ub.inhaber','password':PW}])
+      q.goto(B+'/#/vehicles/'+VID); q.wait_for_selector('[data-end]'); q.click('[data-end]'); q.wait_for_timeout(600)
+      check(len(msgs)==1 and 'UB Zuordnung' in msgs[0] and 'UB-ZU 1' in msgs[0],f'{lang}: Rückfrage nennt Person und Kennzeichen')
+      check((q.locator('[data-end]').count()==1)!=mode['ok'],f'{lang}: {"beendet" if mode["ok"] else "Abbrechen lässt Zuordnung bestehen"}')
+      check(not errs,f'{lang}: keine Skriptfehler {errs}')
+      c.close()
+    api('PATCH','/api/me',{'language':'de'})
     # Fuhrparkleitung: kein „Bearbeiten“ beim Inhaber/bei sich, aber bei Werkstatt im Betrieb
     c=br.new_context(viewport={'width':390,'height':844}); q=c.new_page()
     q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ub.leitung','password':PW}])
     q.goto(B+'/#/users'); q.wait_for_selector('[data-ue]')
     me=api('GET','/api/me')['d']; oid=(me.get('user') or me)['id']
     check(q.locator(f'[data-ue="{oid}"]').count()==0 and q.locator(f'[data-ue="{fid}"]').count()==0,'Leitung: kein Bearbeiten bei Inhaber/eigenem Konto')
-    check(q.locator('[data-ue]').count()==9,'Leitung: Bearbeiten bei den 9 Werkstattkonten')
+    check(q.locator('[data-ue]').count()==10,'Leitung: Bearbeiten bei den 9 Werkstattkonten und dem Fahrer')
     c.close(); br.close()
 if fails: print(f'{len(fails)} Fehler'); raise SystemExit(1)
 print('Benutzer bearbeiten: alles grün')

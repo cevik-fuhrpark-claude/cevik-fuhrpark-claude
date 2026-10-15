@@ -2117,6 +2117,14 @@ await test('Fahrerzuordnung: keine Doppelzuordnung, Fahrzeugwechsel beendet alte
   eq((await users.prodFleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 404, 'Betrieb kann Test-Zuordnung nicht beenden');
   eq((await users.fleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 200);
   eq((await users.fleet.req('DELETE', `/api/assignments/${v2.id}`)).status, 404, 'bereits beendet');
+  { // Protokoll: Ziel = Fahrzeug (Protokoll je Fahrzeug), Person und Zuordnung im Detail
+    const ea = (await owner.get(`/api/admin/audit?vehicle=${encodeURIComponent(V2)}&action=vehicle.end_assignment`)).data.entries[0];
+    ok(ea && ea.target === V2 && ea.detail.driver === users.driver.id && ea.detail.assignment === v2.id, 'Beenden im Protokoll je Fahrzeug');
+    const fs = await import('node:fs');
+    ok(/if \(!confirm\(t\('end_assign_confirm'\)/.test(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Oberfläche fragt vor dem Beenden nach');
+    const { STRINGS } = await import('../public/i18n.js');
+    for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].end_assign_confirm.includes('{name}') && STRINGS[l].end_assign_confirm.includes('{plate}'), 'Rückfrage ' + l);
+  }
   eq((await users.driver.get('/api/me/vehicles')).data.vehicles.length, 0);
   // Ausgangszustand für spätere Tests wiederherstellen
   eq((await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id })).status, 201);
