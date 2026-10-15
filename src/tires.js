@@ -185,6 +185,8 @@ export async function setTireSpec(env, user, vehicleId, body) {
   const axle = oneOf(body.axle, AXLES, 'Achse');
   const size = str(body.size, { required: true, max: 40, field: 'Reifengröße' });
   const verified = body.verified ? 1 : 0;
+  // unbekanntes Fahrzeug → 404 (vorher Fremdschlüssel-Fehler = „Interner Fehler“, Fuzz 15.10.2026)
+  if (!(await env.DB.prepare('SELECT 1 FROM vehicles WHERE id=?').bind(vehicleId).first())) throw notFound();
   const now = nowIso();
   await env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,verified_by,verified_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
     ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, verified=excluded.verified, verified_by=excluded.verified_by, verified_at=excluded.verified_at, updated_at=excluded.updated_at`)

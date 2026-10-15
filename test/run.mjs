@@ -4601,7 +4601,7 @@ await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 4
   ok(translateValidation('en', rv.data.message) && !/ungültig/.test(translateValidation('en', rv.data.message)), 'EN übersetzt: ' + translateValidation('en', rv.data.message));
 });
 
-await test('Fuzz-Funde ändernde Endpunkte: Artikel auf vorhandenen Namen umbenennen → 409 statt „Interner Fehler“; Lager als Liste → 400; ungültiges Prüfdatum mit Intervall → 400', async () => {
+await test('Fuzz-Funde ändernde Endpunkte: Artikel auf vorhandenen Namen umbenennen → 409 statt „Interner Fehler“; Lager als Liste → 400; ungültiges Prüfdatum mit Intervall → 400; Reifengröße für unbekanntes Fahrzeug → 404', async () => {
   const ws = (await owner.get('/api/meta')).data.workshops[0].code;
   const a = await owner.post('/api/stock', { name: 'Fuzz-Umbenennen A', part_number: 'FZ-U1', site: ws });
   const b = await owner.post('/api/stock', { name: 'Fuzz-Umbenennen B', part_number: 'FZ-U1', site: ws });
@@ -4624,6 +4624,9 @@ await test('Fuzz-Funde ändernde Endpunkte: Artikel auf vorhandenen Namen umbene
     const m = await owner.post(`/api/vehicles/${V}/maintenance`, { kind: 'UVV', last_done_date: d, interval_months: 12, evidence: 'Fuzz-Probe' });
     eq(m.status, 400, 'Prüfdatum ' + JSON.stringify(d) + ' → ' + m.status); eq(m.data.error, 'validation');
   }
+  // Reifengröße für ein unbekanntes Fahrzeug: 404 statt Fremdschlüssel-Fehler
+  const ts = await owner.post('/api/vehicles/VIN:' + 'A'.repeat(40) + '/tires/specs', { axle: 'lenkachse', size: '315/70 R22.5' });
+  eq(ts.status, 404, 'Reifengröße unbekanntes Fahrzeug → ' + ts.status);
 });
 
 await test('Stör-Parameter an allen festen GET-Pfaden: nie „Interner Fehler“ (Regressionsschutz aus dem Fuzz-Lauf 15.10.2026)', async () => {

@@ -1,7 +1,7 @@
 // [CLAUDE] Robustheits-Lauf (lokal, In-Memory-DB, synthetische Daten): schickt Störwerte an die API und meldet jede Antwort ≥ 500.
 // Aufruf: node --experimental-sqlite --no-warnings scripts/fuzz-api.mjs   (Fehlercode 1 bei mindestens einem Serverfehler)
 // Abgedeckt: alle festen GET-Pfade × Abfrageparameter × Störwerte, Felder schreibender Endpunkte und Vorgangsbefehle, Körper ohne
-// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
+// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
 // Anlass: Fuzz-Lauf 15.10.2026 fand „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ → jeweils „Interner Fehler“.
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.js';
@@ -163,6 +163,21 @@ for (const [role, c] of Object.entries(roles)) {
     const cs = await c.get(`/api/cases/${cid}`); const ver = cs.data && cs.data.case ? cs.data.case.version : 1;
     await hit(`${role} Befehl ${a} ${key}=${JSON.stringify(g).slice(0, 12)}`, c.post(`/api/cases/${cid}/commands`, { action: a, command_id: `fz-${k++}`, expected_version: ver, note: 'n', payload: { [key]: g } }));
   }
+}
+
+// 8) Ungültige Kennungen im Pfad (unbekannt, sehr lang, Sonderzeichen, Prozent-Kodierung, andere Datensatzart)
+const known = [cid, VE, ...Object.values(ids)].filter(Boolean);
+const oddIds = ['gibt-es-nicht', 'x'.repeat(600), '%FF', '%00', '..', 'VIN%3A', 'VIN%3A' + 'A'.repeat(300), '0', '-1', ids.item, cid];
+const swap = (p, o) => known.reduce((acc, kn) => acc.split(kn).join(o), p);
+const idPaths = [...new Set([...gets.filter((p) => known.some((kn) => p.includes(kn))).map((p) => ['GET', p, undefined]),
+  ...muts.filter(([, p]) => known.some((kn) => p.includes(kn))).map(([m, p, base]) => [m, p, base]),
+  ...Object.entries(posts).filter(([p]) => p.includes(VE)).map(([p, [base]]) => ['POST', p, base]),
+  ...['spec', 'evaluation', 'active', 'ai', 'drivers', 'documents', 'tires/winter-order'].map((x) => ['POST', `/api/vehicles/${VE}/${x}`, {}]),
+  ['GET', `/api/stock/${ids.item}`], ['GET', `/api/drivers/${ids.driver}`], ['GET', `/api/fines/${ids.fine}`], ['GET', `/api/cases/${cid}/files`],
+  ['POST', `/api/contracts/${ids.contract}/end`, { end_note: 'x' }], ['POST', `/api/emergency/contacts/${ids.contact}/archive`], ['DELETE', `/api/stock/${ids.item}/order`]].map((x) => JSON.stringify(x)))].map((x) => JSON.parse(x));
+for (const [m, p, base] of idPaths) for (const o of oddIds) {
+  const q = swap(p, o); if (q === p && o !== ids.item && o !== cid) continue;
+  await hit(`Kennung ${m} ${q.slice(0, 70)}`, owner.req(m, q, m === 'GET' || m === 'DELETE' ? undefined : (base || {})));
 }
 
 console.log(`${n} Anfragen (${gets.length} GET-Pfade, ${ipaths.length} API-Pfade), ${bad.length} Serverfehler; Status: ${JSON.stringify(st)}`);
