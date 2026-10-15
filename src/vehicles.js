@@ -3,7 +3,7 @@ import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, isCalendarDate, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
-import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate } from './cases.js';
+import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
 import { sha256Hex, berlinDateTime, hideDriverName } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
@@ -177,7 +177,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   if (isManager(user)) {
     if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
-    out.warranties = out.costs.warranties; delete out.costs.warranties; // laufende Gewährleistungen (nur Leitung, wie die Kosten)
+    out.warranties = out.costs.warranties; out.warranties_truncated = out.costs.warranties_truncated; out.warranties_max = WARR_VEH_MAX; delete out.costs.warranties; delete out.costs.warranties_truncated; // laufende Gewährleistungen (nur Leitung, wie die Kosten)
     // Versicherungsfälle des Fahrzeugs (Umgebung wie die Vorgänge): Anzahl, offen, Summe eingetragener Erstattungen – nicht mit den Kosten verrechnet
     out.claims_summary = await env.DB.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('gemeldet','in_pruefung') THEN 1 ELSE 0 END) AS open,
       SUM(reimbursed_net) AS reimbursed_net FROM insurance_claims WHERE vehicle_id=? AND environment=?`).bind(vehicleId, envName).first();

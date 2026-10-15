@@ -4530,6 +4530,36 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(app.includes("currencyDisplay: 'narrowSymbol'"), 'App nutzt das Euro-Zeichen');
 });
 
+await test('Laufende Gewährleistungen: Akte (50) und Kurzinfo im Vorgang (20) melden weitere statt still zu kappen', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'VT-GW 9', vin: 'WDB96340310555649', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555649';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const mk = async (text) => (await users.fleet.post('/api/cases', { vehicle_id: V, description: text, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const c1 = await mk('Viele Fremdleistungen');
+  const uid = (await users.fleet.get('/api/me')).data.user.id;
+  const old = new Date(Date.now() - 3 * 86400000).toISOString();
+  env.DB.db.prepare('UPDATE cases SET created_at=? WHERE id=?').run(old, c1);
+  const add = (n) => { for (let i = 0; i < n; i++) env.DB.db.prepare("INSERT INTO external_costs (id, case_id, user_id, supplier, amount_net, valuation, created_at, warranty_until) VALUES (?, ?, ?, ?, NULL, 'unvalued', ?, ?)").run('gwx' + i, c1, uid, 'Dienst ' + String(i).padStart(2, '0'), old, day(30 + i)); };
+  add(50);
+  let ak = (await users.fleet.get(`/api/vehicles/${V}`)).data;
+  eq(ak.warranties.length, 50); eq(ak.warranties_truncated, false, 'genau 50: kein Hinweis'); eq(ak.warranties_max, 50);
+  env.DB.db.prepare("INSERT INTO external_costs (id, case_id, user_id, supplier, amount_net, valuation, created_at, warranty_until) VALUES ('gwx50', ?, ?, 'Dienst 50', NULL, 'unvalued', ?, ?)").run(c1, uid, old, day(400));
+  ak = (await users.fleet.get(`/api/vehicles/${V}`)).data;
+  eq(ak.warranties.length, 50); eq(ak.warranties_truncated, true, '51: Hinweis'); eq(ak.warranties[0].item, 'Dienst 00', 'früheste Abläufe zuerst');
+  ok(!ak.warranties.some((w) => w.item === 'Dienst 50'), 'späteste fehlt'); eq(ak.costs.warranties_truncated, undefined, 'nicht in costs');
+  eq((await users.ws.get(`/api/vehicles/${V}`)).data.warranties_truncated, undefined, 'Werkstatt ohne (wie Kosten)');
+  const c2 = await mk('Neue Meldung am selben Fahrzeug');
+  const vi = (await users.fleet.get(`/api/cases/${c2}`)).data.vehicle_info;
+  eq(vi.warranties.length, 20); eq(vi.warranties_truncated, true); eq(vi.warranties_max, 20); eq(vi.warranties[19].item, 'Dienst 19');
+  // Oberfläche: Hinweis an beiden Stellen, Texte DE/UK/EN mit {n}; Grenzen = Server-Konstanten
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("d.warranties_truncated ? `<p class=\"small\" role=\"note\" data-warrmore>") && app.includes("vi.warranties_truncated ? `<div class=\"small\" role=\"note\" data-warrmore>"), 'Hinweis in Akte und Vorgang');
+  const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  eq((i18n.match(/warr_more: '[^']*\{n\}/g) || []).length, 3, 'warr_more DE/UK/EN');
+  const { WARR_CASE_MAX, WARR_VEH_MAX } = await import('../src/cases.js'); eq(WARR_CASE_MAX, 20); eq(WARR_VEH_MAX, 50);
+});
+
 await test('Listen mit Anzeigegrenze schneiden nie still ab (Import-Vorschauen nennen „die ersten N von M“)', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

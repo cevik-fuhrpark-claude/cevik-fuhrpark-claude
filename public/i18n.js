@@ -1368,3 +1368,6 @@ Object.assign(STRINGS.en, { vnotes_full: 'Maximum of {max} active notes reached 
 Object.assign(STRINGS.de, { imp_first_n: 'Die ersten {n} von {m} Zeilen werden angezeigt – die Zahlen oben gelten für die ganze Datei.' });
 Object.assign(STRINGS.uk, { imp_first_n: 'Показано перші {n} з {m} рядків – числа вгорі стосуються всього файлу.' });
 Object.assign(STRINGS.en, { imp_first_n: 'Showing the first {n} of {m} rows – the counts above cover the whole file.' });
+Object.assign(STRINGS.de, { warr_more: 'Es werden die {n} mit dem frühesten Ablauf angezeigt – es laufen weitere Gewährleistungen (Teile/Fremdleistungen in den Vorgängen des Fahrzeugs).' });
+Object.assign(STRINGS.uk, { warr_more: 'Показано {n} із найближчим закінченням – є ще інші чинні гарантії (запчастини/сторонні послуги в заявках цього транспорту).' });
+Object.assign(STRINGS.en, { warr_more: 'Showing the {n} expiring first – further warranties are running (parts/external services in this vehicle’s cases).' });

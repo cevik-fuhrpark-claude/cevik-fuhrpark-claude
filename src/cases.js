@@ -6,6 +6,9 @@ import { prepareCaseWithdrawal } from './stock.js';
 import { canReadFineFile } from './fines.js';
 import { siteSelection } from './reports.js';
 import { winterMarks, winterStatus } from './tires.js';
+// Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
+export const WARR_CASE_MAX = 20;
+export const WARR_VEH_MAX = 50;
 
 export const PRIORITIES = ['niedrig', 'mittel', 'kritisch'];
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
@@ -278,12 +281,14 @@ export async function getCaseDetail(env, user, envName, caseId) {
           (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at FROM cases x JOIN
             (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
              UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
-           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT 20) w) AS warranties
+           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT ${WARR_CASE_MAX + 1}) w) AS warranties
       FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
     const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver })) : [];
     // Laufende Gewährleistung aus früheren Vorgängen dieses Fahrzeugs (am Meldedatum noch gültig) – Hinweis: Rückgriff beim Lieferanten prüfen
-    const warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : []; // Werkstatt: nur eigene (im SQL, vor dem LIMIT)
+    const warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : [];
+    // eine Zeile mehr gelesen: mehr als WARR_CASE_MAX laufende Gewährleistungen → nur die mit dem frühesten Ablauf, Hinweis in der App (nie still kappen)
+    const warrantiesTruncated = warranties.length > WARR_CASE_MAX; if (warrantiesTruncated) warranties.length = WARR_CASE_MAX; // Werkstatt: nur eigene (im SQL, vor dem LIMIT)
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)
     let prevSame = [];
     if (c.check_item) {
@@ -291,7 +296,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
         AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ${wsOnly ? 'AND workshop_site=?' : ''} ORDER BY closed_at DESC LIMIT 5`)
         .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results;
     }
-    detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties };
+    detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
   }
   if (user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch') {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;
@@ -401,7 +406,7 @@ export async function vehicleCosts(env, envName, vehicleId) {
     (SELECT json_group_array(json_object('case_id', g.case_id, 'case_no', g.case_no, 'item', g.item, 'item_kind', g.item_kind, 'supplier', g.supplier, 'warranty_until', g.warranty_until)) FROM
       (SELECT x.case_id, c.case_no, x.name AS item, 'part' AS item_kind, x.supplier, x.warranty_until FROM parts x ${J} AND x.warranty_until >= ?3
        UNION ALL SELECT x.case_id, c.case_no, x.supplier AS item, 'external' AS item_kind, x.supplier, x.warranty_until FROM external_costs x ${J} AND x.warranty_until >= ?3
-       ORDER BY 6, 2 LIMIT 50) g) AS g`)
+       ORDER BY 6, 2 LIMIT ${WARR_VEH_MAX + 1}) g) AS g`)
     .bind(envName, vehicleId, berlinDate()).first();
   const rate = r.rate === null || r.rate === '' ? null : Number(r.rate);
   const by = (txt) => {
@@ -417,7 +422,8 @@ export async function vehicleCosts(env, envName, vehicleId) {
   }
   // laufende Gewährleistungen (heute noch gültig) aus Teilen/Fremdleistungen der Vorgänge – getrennt von der Kostensumme
   const warranties = JSON.parse(r.g || '[]');
-  return { actual_net: round2(actual), valued_items: valuedItems, estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0, warranties };
+  const warrantiesTruncated = warranties.length > WARR_VEH_MAX; if (warrantiesTruncated) warranties.length = WARR_VEH_MAX;
+  return { warranties_truncated: warrantiesTruncated, actual_net: round2(actual), valued_items: valuedItems, estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0, warranties };
 }
 const round2 = (n) => Math.round(n * 100) / 100;
 

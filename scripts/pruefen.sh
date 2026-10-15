@@ -52,6 +52,7 @@ UI-Vorgangsdateien (Höchstzahl)|ui-vorgangsdateien.py|/tmp/cfp-vdateien.log
 UI-Höchstzahl Hinweise/Rufnummern|ui-hoechstzahl-hinweise.py|/tmp/cfp-hoechstzahl.log
 UI-Dublette wählen (alle offenen)|ui-dublette-auswahl.py|/tmp/cfp-dublette.log
 UI-Zahlenformat je Sprache|ui-zahlenformat.py|/tmp/cfp-zahlenformat.log
+UI-Gewährleistungen (Hinweis bei Kappung)|ui-gewaehrleistung.py|/tmp/cfp-gewaehrleistung.log
 '
 N=0
 NL='
