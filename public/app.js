@@ -915,15 +915,17 @@ async function viewClaims() {
   const cs = vsDef('claimSite') || ''; const csq = cs ? '&site=' + encodeURIComponent(cs) : '';
   const r = await api('GET', `/api/claims?filter=${f}${csq}`);
   const tabs = ['offen', 'alle', 'reguliert', 'abgelehnt'];
-  let html = `<h1>${esc(t('claims'))}</h1>${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
+  const fLabel = f === 'offen' ? t('claim_f_open') : f === 'alle' ? t('filter_all') : t('cls_' + f);
+  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(x === 'offen' ? t('claim_f_open') : x === 'alle' ? t('filter_all') : t('cls_' + x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     ${r.reimbursed_sum_net !== null ? `<section class="panel"><dl class="kv"><dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd></dl></section>` : ''}
     <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(t('claim_days_open').replace('{n}', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
-    <div class="actions noprint"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button></div>`;
+    <div class="actions noprint"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="clprt">${esc(t('print'))}</button></div>`;
   render(html, 'more');
   $$('[data-clf]').forEach((b) => (b.onclick = () => { S.clFilter = b.dataset.clf; viewClaims(); }));
   const cls = $('#clsite'); if (cls) cls.onchange = () => { S.claimSite = cls.value; viewClaims(); };
+  $('#clprt').onclick = () => window.print();
   $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}`), `fuhrpark-versicherungsfaelle_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
@@ -1571,20 +1573,21 @@ async function viewStock() {
   try { sessionStorage.removeItem('cfp_sj_item'); } catch { /* egal */ } // Artikelfilter des Journals gilt nur für den Weg aus der Artikelakte
   const stockResp = await api('GET', '/api/stock'); const items = stockResp.items; const lastInv = stockResp.last_inventory || {};
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
-  render(`<h1>${esc(t('stock'))}</h1>${helpLink('stock')}
-    <details class="panel"><summary>${esc(t('new_item'))}</summary><form id="nf">
+  // Ausdruck der Lagerliste: genau die angezeigten Artikel (Suche/Filter) samt Lagerwert-Zeile; Auswahl im Vermerk (#sprsel)
+  render(`<h1>${esc(t('stock'))}</h1>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
+    <details class="panel noprint"><summary>${esc(t('new_item'))}</summary><form id="nf">
       ${sites.length > 1 ? `<label>${esc(t('workshop'))}</label><select name="site">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
       <label>${esc(t('part_name'))}</label><input name="name" required><label>${esc(t('part_number'))}</label><input name="part_number">
       <label>${esc(t('unit'))}</label><input name="unit" value="Stk"><label>${esc(t('initial_qty'))}</label><input name="initial_qty" inputmode="decimal">
       <label>${esc(t('min_qty'))}</label><input name="min_qty" inputmode="decimal"><label>${esc(t('storage'))}</label><input name="location">
       <label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
-    <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${items.some((i) => i.below_min) ? ` <span class="chip mittel">${items.filter((i) => i.below_min).length}</span>` : ''}</a></div>
-    ${items.length ? `<details class="panel" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
+    <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${items.some((i) => i.below_min) ? ` <span class="chip mittel">${items.filter((i) => i.below_min).length}</span>` : ''}</a></div>
+    ${items.length ? `<details class="panel noprint" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
       <p class="small" id="invlast"></p><p class="noprint actions"><a class="btn secondary" href="#/stock/count" id="invsheet">${esc(t('count_sheet'))}</a><a class="btn secondary" href="#/stock/journal" id="invdiffs">${esc(t('inventory_diffs'))}</a></p><div id="invdraft"></div><div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
       <div class="actions"><button type="button" class="btn secondary" id="invchk">${esc(t('inventory_check'))}</button><button type="button" class="btn" id="invbook" disabled>${esc(t('inventory_book'))}</button></div><div id="invres"></div></details>` : ''}
-    <input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
-    <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select>
+    <div class="noprint"><input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
+    <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select></div>
     <p class="small muted" id="sfsum" hidden></p>
     <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-id="${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + i.min_qty + ')', i.unit_price_net !== null && eur(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
@@ -1600,9 +1603,12 @@ async function viewStock() {
     const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
     const v = priced.length ? eur(Math.round(priced.reduce((a, i) => a + i.on_hand * i.unit_price_net, 0) * 100) / 100) : '–';
     const unv = stocked.length - priced.length ? ` (${stocked.length - priced.length} ${t('unvalued_short')})` : '';
+    const qv = $('#q').value.trim(); const sfo = $('#sf').selectedOptions[0];
+    $('#sprsel').textContent = [`${t('print_filter')}: ${f && sfo ? sfo.textContent : t('all')}`, qv ? `${t('print_search')}: „${qv}“` : ''].filter(Boolean).join(' · ');
     sum.textContent = cut ? t('stock_idle_sum').replace('{n}', shown.length).replace('{v}', v) + unv : t('stock_value_sum').replace('{n}', shown.length).replace('{v}', v) + unv;
   };
   $('#q').oninput = applyStock; $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
+  $('#sprt').onclick = () => window.print();
   $('#scsv').onclick = async () => { try { download(await api('GET', '/api/stock?format=csv'), `fuhrpark-lager_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
   if ($('#inv')) {
     // „Inventurdifferenzen“: Lagerjournal mit Auswahl Inventur, letzte 12 Monate, aktuelles Inventurlager
@@ -2122,7 +2128,9 @@ async function viewTacho() {
   const rows = list.filter(sel); const tot = r.totals[tab];
   const filters = [['attention', `${t('tst_ueberfaellig')} / ${t('tst_bald')}`, tot.ueberfaellig + tot.bald], ['keine', t('tst_keine'), tot.keine], ['all', t('filter_all'), list.length]];
   const opts = list.map((x) => `<option value="${esc(x.id)}">${esc(tab === 'drivers' ? x.display_name : x.plate)}</option>`).join('');
-  render(`<h1>${esc(t('tacho'))}</h1><p class="small muted">${esc(t('tacho_rule'))}</p>
+  // Ausdruck (Nachweis/Ablage): Reiter, Auswahl, Standort und Anzahl im Vermerk – Erfassen/Import erscheinen nicht
+  const fl = (filters.find(([k]) => k === f) || [])[1] || '';
+  render(`<h1>${esc(t('tacho'))}</h1>${printHead([tab === 'drivers' ? t('tacho_cards') : t('tacho_vus'), `${t('print_filter')}: ${fl}`, r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', rows.length)])}<p class="small muted">${esc(t('tacho_rule'))}</p>
     <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${tab === 'drivers' ? '' : 'secondary'}" data-tt="drivers">${esc(t('tacho_cards'))} (${r.drivers.length})</button><button type="button" class="btn ${tab === 'vehicles' ? '' : 'secondary'}" data-tt="vehicles">${esc(t('tacho_vus'))} (${r.vehicles.length})</button></div>
     <div class="actions" style="flex-wrap:wrap;margin-top:0">${filters.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('tsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div></div>` : ''}
@@ -2131,12 +2139,13 @@ async function viewTacho() {
     ${list.length ? `<details class="panel"><summary>${esc(t('tacho_record'))}</summary><form id="tnf"><label>${esc(tab === 'drivers' ? t('role_driver') : t('vehicle'))}</label><select name="target" required>${opts}</select>
       <label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${bDate()}"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"><label>${esc(t('note'))}</label><input name="note">
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
-    <div class="actions"><button type="button" class="btn secondary" id="tcsv">${esc(t('export_csv'))}</button></div>
-    <section class="panel"><h2 style="margin-top:0">${esc(t('tacho_import'))}</h2><p class="small muted">${esc(t('tacho_import_hint'))}</p>
+    <div class="actions"><button type="button" class="btn secondary" id="tcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="tprt">${esc(t('print'))}</button></div>
+    <section class="panel noprint"><h2 style="margin-top:0">${esc(t('tacho_import'))}</h2><p class="small muted">${esc(t('tacho_import_hint'))}</p>
       <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" placeholder="${esc(t('tacho_ev_ph'))}"><input type="file" id="timp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
   $$('[data-tt]').forEach((b) => (b.onclick = () => { S.tachoTab = b.dataset.tt; viewTacho(); }));
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tachoFilter = b.dataset.tf; viewTacho(); }));
   const tse = $('#tsite'); if (tse) tse.onchange = () => { S.tachoSite = tse.value; viewTacho(); };
+  $('#tprt').onclick = () => window.print();
   $('#tcsv').onclick = async () => { try { download(await api('GET', '/api/tacho?format=csv' + (tsq ? '&' + tsq : '')), `fuhrpark-auslesungen_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const inp = $('#timp');
   inp.onchange = async () => {
@@ -2689,16 +2698,18 @@ async function viewQuality(pre) {
   const f = S.dqFilter || '';
   const items = r.items.filter((i) => (!sev || i.severity === sev) && (!f || i.check === f));
   const checks = Object.keys(r.counts).filter((c) => !sev || sevOf[c] === sev);
-  render(`<h1>${esc(t('dq'))}</h1>${helpLink('dates')}<p class="small muted">${esc(t('dq_hint'))}</p>
+  // Ausdruck (Arbeitsliste zum Abarbeiten): Schweregrad, Prüfung, Standort und Anzahl im Vermerk
+  render(`<h1>${esc(t('dq'))}</h1>${printHead([sev ? `${t('dq_col_severity')}: ${t('dq_sev_' + sev)}` : '', f ? `${t('dq_col_check')}: ${t('dq_' + f)}` : '', r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', items.length)])}${helpLink('dates')}<p class="small muted">${esc(t('dq_hint'))}</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="panel noprint">${siteSelect('dqsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}${r.other_hidden ? `<p class="small muted" style="margin-bottom:0">${esc(t('dq_other_hidden').replace('{n}', r.other_hidden))}</p>` : ''}</div>` : ''}
     <div class="stats"><div><b>${r.vehicles_checked}</b>${esc(t('vehicles'))}</div><div><b style="${r.items.some((i) => i.severity === 'fehler') ? 'color:var(--stop)' : ''}">${r.items.filter((i) => i.severity === 'fehler').length}</b>${esc(t('dq_sev_fehler'))}</div><div><b>${r.items.filter((i) => i.severity !== 'fehler').length}</b>${esc(t('dq_sev_luecke'))} / ${esc(t('dq_sev_hinweis'))}</div></div>
-    ${r.items.length ? `<div class="actions noprint"><button type="button" class="btn secondary" id="dqcsv">${esc(t('export_csv'))}${f ? ' (' + esc(t('dq_' + f)) + ')' : sev ? ' (' + esc(t('dq_sev_' + sev)) + ')' : ''}</button></div>` : ''}
+    ${r.items.length ? `<div class="actions noprint"><button type="button" class="btn secondary" id="dqcsv">${esc(t('export_csv'))}${f ? ' (' + esc(t('dq_' + f)) + ')' : sev ? ' (' + esc(t('dq_sev_' + sev)) + ')' : ''}</button><button type="button" class="btn secondary" id="dqprt">${esc(t('print'))}</button></div>` : ''}
     ${r.items.length ? `<div class="actions" style="flex-wrap:wrap" role="group" aria-label="${esc(t('dq_col_severity'))}"><span class="small muted" style="align-self:center">${esc(t('dq_col_severity'))}:</span><button type="button" class="btn ${sev ? 'secondary' : ''}" data-dqsev="" aria-pressed="${!sev}">${esc(t('filter_all'))} (${r.items.length})</button>${['fehler', 'luecke', 'hinweis'].filter((x) => sevCount(x)).map((x) => `<button type="button" class="btn ${sev === x ? '' : 'secondary'}" data-dqsev="${x}" aria-pressed="${sev === x}">${esc(t('dq_sev_' + x))} (${sevCount(x)})</button>`).join('')}</div>` : ''}
     ${r.items.length ? `<div class="actions" style="flex-wrap:wrap" role="group" aria-label="${esc(t('dq_col_check'))}"><span class="small muted" style="align-self:center">${esc(t('dq_col_check'))}:</span><button type="button" class="btn ${f ? 'secondary' : ''}" data-dq="">${esc(t('filter_all'))} (${sev ? sevCount(sev) : r.items.length})</button>${checks.map((c) => `<button type="button" class="btn ${f === c ? '' : 'secondary'}" data-dq="${esc(c)}">${esc(t('dq_' + c))} (${r.counts[c]})</button>`).join('')}</div>` : `<div class="panel good"><b>${esc(t('dq_ok'))}</b></div>`}
     <div class="list">${items.map((i) => { const href = i.case_id ? `#/cases/${esc(i.case_id)}` : i.vehicle_id && i.check === 'inspection_no_result' && i.event_id ? `#/vehicles/${esc(i.vehicle_id)}?ev=${esc(i.event_id)}` : i.vehicle_id ? `#/vehicles/${esc(i.vehicle_id)}` : i.driver_id ? `#/drivers/${esc(i.driver_id)}` : null; return `${href ? `<a class="row ${i.severity === 'fehler' ? 'p-kritisch' : i.severity === 'luecke' ? 'p-mittel' : ''}" href="${href}">` : `<div class="row">`}${i.plate ? plate(i.plate) : i.driver_id ? `<span class="chip">${esc(i.driver_name)}</span>` : `<span class="chip">${esc(t('users'))}</span>`}<span class="title" style="white-space:normal">${esc(t('dq_' + i.check))}</span><span class="chip ${sevCls[i.severity]}">${esc(t('dq_sev_' + i.severity))}</span>${i.detail ? `<span class="sub" style="white-space:normal">${esc(dqDetail(i))}</span>` : ''}${href ? '</a>' : '</div>'}`; }).join('')}</div>`, 'more');
   $$('[data-dq]').forEach((b) => (b.onclick = () => { S.dqFilter = b.dataset.dq; viewQuality(); }));
   $$('[data-dqsev]').forEach((b) => (b.onclick = () => { S.dqSev = b.dataset.dqsev; viewQuality(); }));
   const dqs = $('#dqsite'); if (dqs) dqs.onchange = () => { S.dqSite = dqs.value; viewQuality(); };
+  const dp = $('#dqprt'); if (dp) dp.onclick = () => window.print();
   const dc = $('#dqcsv'); if (dc) dc.onclick = () => download(new Blob([dataQualityCsv(items, t, fmtD)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-datenqualitaet_${r.environment}_${bDate()}.csv`);
 }
 

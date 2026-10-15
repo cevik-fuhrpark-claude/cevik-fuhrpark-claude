@@ -42,6 +42,12 @@ with sync_playwright() as p:
         q.fill('#q','Preisartikel'); q.wait_for_timeout(100)
         check('10,00' in q.inner_text('#sfsum') and UNV[lang] not in q.inner_text('#sfsum'),f'{lang} {w}px: Suche grenzt Lagerwert ein')
         if SHOTS: q.screenshot(path=f'{SHOTS}/lagerwert_{lang}_{w}.png')
+        # Lagerliste drucken: nur die angezeigten Artikel, Suche im Vermerk, Lagerwert-Zeile sichtbar, Eingabe/Inventur nicht
+        q.emulate_media(media='print')
+        check('Preisartikel' in q.inner_text('#sprsel') and q.locator('#sfsum').is_visible() and not q.locator('#q').is_visible() and not q.locator('#inv').is_visible(),f'{lang} {w}px: Lagerliste-Ausdruck mit Suche im Vermerk ({q.inner_text("#sprsel")!r})')
+        vis=[x for x in q.locator('#sl a').all() if x.is_visible()]
+        check(len(vis)==1,f'{lang} {w}px: Ausdruck nur angezeigte Artikel ({len(vis)})')
+        q.emulate_media(media='screen')
         q.goto(B+'/#/stock/reorder'); q.wait_for_selector('#rosum')
         check(q.inner_text('#rosum').split(':',1)[1].strip().startswith('–') and '0,00' not in q.inner_text('#rosum'),f'{lang} {w}px: Bestellvorschlag ohne Preis „–“ statt 0 € ({q.inner_text("#rosum")!r})')
         q.goto(B+'/#/stock/'+small); q.wait_for_selector('#histjournal')
