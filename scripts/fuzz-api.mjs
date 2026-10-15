@@ -1,7 +1,7 @@
 // [CLAUDE] Robustheits-Lauf (lokal, In-Memory-DB, synthetische Daten): schickt Störwerte an die API und meldet jede Antwort ≥ 500.
 // Aufruf: node --experimental-sqlite --no-warnings scripts/fuzz-api.mjs   (Fehlercode 1 bei mindestens einem Serverfehler)
 // Abgedeckt: alle festen GET-Pfade × Abfrageparameter × Störwerte, Felder schreibender Endpunkte und Vorgangsbefehle, Körper ohne
-// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), unerwartete HTTP-Methoden (Abschnitt 9), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
+// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), ungültige Kennungen im Pfad (Abschnitt 8), unerwartete HTTP-Methoden (Abschnitt 9), Testkonten mit „Stammdaten nur lesen“ (Abschnitt 10), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
 // Anlass: Fuzz-Lauf 15.10.2026 fand „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ → jeweils „Interner Fehler“.
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.js';
@@ -185,6 +185,18 @@ const allFixed = [...new Set([...w.matchAll(/path === '(\/api\/[a-z0-9/_-]+)'/g)
 for (const p of allFixed) for (const m of ['PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'POST', 'GET']) for (const c of [owner, anon]) {
   await hit(`Methode ${m} ${p} ${c === anon ? 'ohne Anmeldung' : ''}`, c.req(m, p, m === 'GET' || m === 'HEAD' ? undefined : {}));
 }
+
+// 10) Testkonten mit „gemeinsame Stammdaten nur lesen“ (Einstellung an): Fuhrparkleitung und Werkstatt der Test-Umgebung
+await owner.req('PUT', '/api/settings', { test_master_readonly: '1' });
+for (const [role, extra] of [['fleet', {}], ['workshop', { workshop_site: ws }]]) {
+  const r = await owner.post('/api/users', { username: 'fzt.' + role, display_name: 'Fuzz Test ' + role, role, environment: 'test', ...extra });
+  const c = new Client(worker, env, 'fzt.' + role);
+  if ((await c.post('/api/invite/accept', { token: r.data && r.data.invite_token, password: 'Sicheres-Passwort-2026' })).status !== 200) { console.log('  ✘ Vorbereitung: Testkonto ' + role); process.exit(1); }
+  for (const [m, p, base, fields] of muts) for (const f of fields) for (const g of [null, [], '0000-00-00']) await hit(`Test-${role} ${m} ${p.replace(/[\w-]{20,}/g, ':id')} ${f}`, c.req(m, p, { ...base, [f]: g }));
+  for (const [m, p, base] of muts) await hit(`Test-${role} ${m} ${p.replace(/[\w-]{20,}/g, ':id')} gültig`, c.req(m, p, base));
+  for (const [p, [base]] of Object.entries(posts)) await hit(`Test-${role} POST ${p} gültig`, c.post(p, { ...base, ...(p === '/api/cases' ? { request_key: 'fzt-' + (k++) } : {}) }));
+}
+await owner.req('PUT', '/api/settings', { test_master_readonly: '0' });
 
 console.log(`${n} Anfragen (${gets.length} GET-Pfade, ${ipaths.length} API-Pfade), ${bad.length} Serverfehler; Status: ${JSON.stringify(st)}`);
 // Plausibilität: der Lauf muss angemeldet gewesen sein (sonst prüft er nur die Anmeldepflicht)
