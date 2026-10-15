@@ -109,6 +109,8 @@ export function str(v, { max = 2000, required = false, field = 'Feld' } = {}) {
     if (required) throw bad('validation', `${field} ist erforderlich.`);
     return null;
   }
+  // Objekt/Liste statt Text (z. B. {"name": []}) nie als „[object Object]“ speichern
+  if (typeof v === 'object') throw bad('validation', `${field}: ungültiger Wert.`);
   const s = String(v).trim();
   if (!s) {
     if (required) throw bad('validation', `${field} ist erforderlich.`);

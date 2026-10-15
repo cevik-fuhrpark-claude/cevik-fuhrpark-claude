@@ -384,7 +384,7 @@ export async function updateUser(env, actor, userId, body) {
   const role = body.role ? oneOf(body.role, ROLES, 'Rolle') : target.role;
   const environment = body.environment ? oneOf(body.environment, ENVS, 'Umgebung') : target.environment;
   const active = body.active === undefined ? target.active : (body.active ? 1 : 0);
-  const display = body.display_name ? str(body.display_name, { max: 120 }) : target.display_name;
+  const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
   const site = role === 'workshop' ? (body.workshop_site ?? target.workshop_site) : null;
   if (role === 'workshop' && !site) throw bad('validation', 'Werkstatt ist für Rolle Werkstatt erforderlich.');
   const now = nowIso();

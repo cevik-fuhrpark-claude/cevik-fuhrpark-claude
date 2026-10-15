@@ -4567,6 +4567,18 @@ await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 4
   eq((await anon.req('POST', '/api/login', 'null', H)).status, 400);
   eq((await owner.req('POST', '/api/cases', '', H)).data.error, 'validation', 'leer = {} → Feldprüfung');
   eq((await owner.req('POST', '/api/cases', '{', H)).data.error, 'invalid_json');
+  // Textfelder: Objekt/Liste → 400 (nie „[object Object]“ gespeichert); Benutzername nur aus Leerzeichen/[] → 400 statt NOT-NULL-Fehler
+  const u = (await owner.post('/api/users', { username: 'json.probe', display_name: 'JSON Probe', role: 'viewer', environment: 'test' })).data;
+  const uid = (u.user && u.user.id) || u.id;
+  for (const v of ['   ', [], {}, ['a'], { a: 1 }]) {
+    const r = await owner.req('PATCH', `/api/users/${uid}`, { display_name: v });
+    eq(r.status, 400, 'Name ' + JSON.stringify(v) + ' → ' + r.status); eq(r.data.error, 'validation');
+  }
+  eq((await owner.get('/api/users')).data.users.find((x) => x.id === uid).display_name, 'JSON Probe', 'Name unverändert');
+  const rv = await owner.post('/api/vehicles', { vin: 'WDB96340310555699', plate: { x: 1 }, site: 'Dortmund' });
+  eq(rv.status, 400, 'Kennzeichen als Objekt'); ok(/ungültiger Wert/.test(rv.data.message), rv.data.message);
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation('en', rv.data.message) && !/ungültig/.test(translateValidation('en', rv.data.message)), 'EN übersetzt: ' + translateValidation('en', rv.data.message));
 });
 
 await test('Laufende Gewährleistungen: Akte (50) und Kurzinfo im Vorgang (20) melden weitere statt still zu kappen', async () => {
