@@ -7825,6 +7825,11 @@ await test('Oberfläche: Neuaufbau derselben Seite nach einer Aktion behält fre
   ok(app.includes('if (same && interim) return;') && app.includes('if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);'), 'render: Ladehinweis überspringen, sonst wiederherstellen');
   eq((app.match(/typeof noteAction === 'function'\) noteAction\(/g) || []).length, 2, 'Formular- und Klick-Sperre melden die Aktion');
   ok(app.includes('await viewEmergencyEdit(); window.scrollTo(0, 0);'), 'Rufnummer bearbeiten springt weiter nach oben zum Formular');
+  // Hilfe „Kein Netz?“ (alle Rollen) erklärt gedimmten Knopf und erhaltene Eingaben – in allen drei Sprachen gleich viele Absätze
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const offl = [...i18n.matchAll(/help_offline_s: "([^"]*)"/g)].map((x) => x[1]);
+  eq(offl.length, 3); eq(new Set(offl.map((x) => x.split('|').length)).size, 1, 'gleiche Absatzzahl DE/UK/EN');
+  ok(offl[0].includes('gedimmt') && offl[0].includes('bleiben beim Speichern erhalten') && offl[1].includes('затемнена') && offl[2].includes('dimmed'), 'Hilfetext ergänzt');
 });
 
 await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {
