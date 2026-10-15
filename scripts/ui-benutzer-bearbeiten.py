@@ -70,6 +70,19 @@ with sync_playwright() as p:
       check((q.locator('[data-end]').count()==1)!=mode['ok'],f'{lang}: {"beendet" if mode["ok"] else "Abbrechen lässt Zuordnung bestehen"}')
       check(not errs,f'{lang}: keine Skriptfehler {errs}')
       c.close()
+    # Neuer Einladungslink: Konto mit Passwort → Rückfrage mit Name (Abbrechen erzeugt keinen Link); offene Einladung → ohne Rückfrage
+    ul=api('GET','/api/users')['d']['users']; lid=[u for u in ul if u['username']=='ub.leitung'][0]['id']; lname=[u for u in ul if u['username']=='ub.leitung'][0]['display_name']
+    for lang in ['de','uk','en']:
+      api('PATCH','/api/me',{'language':lang})
+      c=br.new_context(viewport={'width':390,'height':844}); q=c.new_page(); msgs=[]; errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+      q.on('dialog',lambda d: (msgs.append(d.message), d.dismiss()))
+      q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ub.inhaber','password':PW}])
+      q.goto(B+'/#/users'); q.wait_for_selector(f'[data-inv="{lid}"]'); q.click(f'[data-inv="{lid}"]'); q.wait_for_timeout(500)
+      check(len(msgs)==1 and lname in msgs[0] and q.locator('#il').count()==0,f'{lang}: neuer Link bei Konto mit Passwort fragt nach (Abbrechen: kein Link)')
+      q.click(f'[data-inv="{dr}"]'); q.wait_for_selector('#il')
+      check(len(msgs)==1,f'{lang}: offene Einladung ohne Rückfrage, Link angezeigt')
+      check(not errs,f'{lang}: keine Skriptfehler {errs}')
+      c.close()
     api('PATCH','/api/me',{'language':'de'})
     # Fuhrparkleitung: kein „Bearbeiten“ beim Inhaber/bei sich, aber bei Werkstatt im Betrieb
     c=br.new_context(viewport={'width':390,'height':844}); q=c.new_page()

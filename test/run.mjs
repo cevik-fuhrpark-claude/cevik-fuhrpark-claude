@@ -7015,6 +7015,18 @@ await test('Benutzerliste: offene Einladung zeigt Gültigkeit des Links bzw. „
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].inv_expired_hint.includes(STRINGS[lang].new_invite), `Hinweis nennt Knopf ${lang}`);
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("(inviteExpired(u) ? `<span class=\"chip mittel\"") && app.includes("t('inv_valid_until')"), 'Ansicht zeigt Ablauf/Gültigkeit');
+  { // Neuer Link für ein Konto mit Passwort: Passwort und Anmeldung gelten weiter, frühere Links ungültig, Einlösen beendet Anmeldungen; Oberfläche fragt nach
+    const c = await invite(owner, { username: 'test.relink', display_name: 'Test Relink', role: 'driver', environment: 'test' });
+    const t2 = (await owner.post(`/api/users/${c.id}/invite`, {})).data.invite_token;
+    eq((await c.get('/api/me')).status, 200, 'Anmeldung bleibt nach neuem Link');
+    eq((await new Client(worker, env, 'relink2').post('/api/login', { username: 'test.relink', password: 'Sicheres-Passwort-2026' })).status, 200, 'altes Passwort gilt weiter');
+    const t3 = (await owner.post(`/api/users/${c.id}/invite`, {})).data.invite_token;
+    ok((await owner.post('/api/invite/accept', { token: t2, password: 'Anderes-Passwort-2026!' })).status >= 400, 'früherer Link ungültig');
+    eq((await new Client(worker, env, 'relink3').post('/api/invite/accept', { token: t3, password: 'Anderes-Passwort-2026!' })).status, 200, 'neuer Link einlösbar');
+    eq((await c.get('/api/me')).status, 401, 'Einlösen beendet bisherige Anmeldungen');
+    ok(app.includes("if (b.dataset.haspw && !confirm(t('reinvite_confirm')") && app.includes(`\${u.has_password ? ' data-haspw="1"' : ''}`), 'Rückfrage nur bei Konten mit Passwort');
+    for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].reinvite_confirm.includes('{name}'), `reinvite_confirm ${lang}`);
+  }
 });
 
 await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code aus src/ und alle in der Testsuite protokollierten), keine verwaisten', async () => {
