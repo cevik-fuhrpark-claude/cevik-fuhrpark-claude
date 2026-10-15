@@ -22,6 +22,7 @@ step "UI-Protokoll je Person"; sh scripts/restart-dev.sh > /dev/null; python3 sc
 step "UI-Hilfe Zugänge & Protokoll"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-hilfe-zugang.py > /tmp/cfp-hilfezugang.log 2>&1 || { tail -20 /tmp/cfp-hilfezugang.log; fail "Hilfe Zugänge"; }; tail -1 /tmp/cfp-hilfezugang.log
 step "UI-Benutzer bearbeiten"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-benutzer-bearbeiten.py > /tmp/cfp-ubearb.log 2>&1 || { tail -20 /tmp/cfp-ubearb.log; fail "Benutzer bearbeiten"; }; tail -1 /tmp/cfp-ubearb.log
 step "UI-Inventur (Rückfrage, erneut prüfen)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-inventur.py > /tmp/cfp-inventur.log 2>&1 || { tail -20 /tmp/cfp-inventur.log; fail "Inventur"; }; tail -1 /tmp/cfp-inventur.log
+step "UI-Artikelverlauf (Hinweis, Journal je Artikel)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-artikelverlauf.py > /tmp/cfp-artverlauf.log 2>&1 || { tail -20 /tmp/cfp-artverlauf.log; fail "Artikelverlauf"; }; tail -1 /tmp/cfp-artverlauf.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark

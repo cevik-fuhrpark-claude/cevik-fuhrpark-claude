@@ -9,7 +9,7 @@ nach Reparatur (Mängel werden automatisch Folgeaufträge) · Abfahrtskontrolle 
 Wartung/HU/SP/UVV, Ausrüstung und Herstellerrückrufe mit Nachweis, Prüftermin-Übersicht mit Lückenliste und belegtem CSV-Import · Kilometerstände · Fahrzeugverträge (Leasing/Miete/Versicherung: Kündigungstag, km-Kontingent) · Kosten je Vorgang und Fahrzeug (unbewertet statt 0 €) ·
 Push-Benachrichtigungen mit Zustell-/Lesequittung und persönlicher Ruhezeit · Fuhrparkagent + Management-Panel · KI-Analyse der Schadenshistorie ·
 Fahrerakte (Führerschein, Fahrerkarte, Code 95, Unterweisungen) und Auslesungen Fahrerkarte/Fahrtenschreiber · Bußgelder & Anhörungen ·
-Versicherungsfälle · Reifen je Fahrzeug (inkl. Winterreifen-Nachweis und Reifenalter laut DOT) · Ersatzteillager mit Bestellvorschlag, Inventur (Zählliste, Differenzen, „zuletzt gezählt“ je Artikel) und Bestand zum Stichtag · Werkstattplan und Disposition (Verfügbarkeit, Sperren) ·
+Versicherungsfälle · Reifen je Fahrzeug (inkl. Winterreifen-Nachweis und Reifenalter laut DOT) · Ersatzteillager mit Bestellvorschlag, Inventur (Zählliste, Differenzen, „zuletzt gezählt“ je Artikel), Lagerjournal (auch je Artikel) und Bestand zum Stichtag · Werkstattplan und Disposition (Verfügbarkeit, Sperren) ·
 Kennzahlen Instandhaltung, Mängelstatistik, Kosten je Fahrzeug · Datenqualität (Lücken/Widersprüche, CSV) · Protokoll und Datensicherung ·
 Druck/PDF, CSV- und Kalender-Exporte je Rolle · freiwillige Zwei-Faktor-Anmeldung (TOTP, Ersatzcodes) · Hinweis bei Anmeldung auf neuem Gerät · Hilfe je Rolle mit Suche · Deutsch/Українська/English · getrennte Test- und Betriebsumgebung · Integrations-API.
 
@@ -24,7 +24,7 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · freiwillige Zwei-Faktor-Anmeldu
 | `docs/RUNDGANG.md` | Ablaufplan Testrundgang (Fahrer → Leitung → Werkstatt → Freigabe) mit erwarteten Ergebnissen |
 
 ```bash
-npm test                                            # 239 Abnahmetests (Node ≥ 22)
+npm test                                            # 240 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell]                  # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```

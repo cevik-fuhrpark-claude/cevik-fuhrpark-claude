@@ -416,8 +416,8 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/stock/journal' && m === 'GET') {
     const rep = await stock.journal(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'stock.journal.export', null, { from: rep.from, to: rep.to, site: rep.site, type: rep.type, rows: rep.movements.length, environment: envName });
-      return new Response(rep.type === 'inventur' ? stock.inventoryDiffCsv(rep, maint.csvCell) : stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-${rep.type === 'inventur' ? 'inventurdifferenzen' : 'lagerjournal'}_${envName}_${rep.from}_${rep.to}${rep.site ? '_' + rep.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+      await auth.audit(env, user.id, 'stock.journal.export', null, { from: rep.from, to: rep.to, site: rep.site, type: rep.type, ...(rep.item ? { item: rep.item.id } : {}), rows: rep.movements.length, environment: envName });
+      return new Response(rep.type === 'inventur' ? stock.inventoryDiffCsv(rep, maint.csvCell) : stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-${rep.type === 'inventur' ? 'inventurdifferenzen' : 'lagerjournal'}_${envName}_${rep.from}_${rep.to}${rep.site ? '_' + rep.site.replace(/[^\w-]/g, '') : ''}${rep.item ? '_' + String(rep.item.part_number || 'artikel').replace(/[^\w-]/g, '').slice(0, 40) : ''}.csv"` } });
     }
     return json(rep);
   }

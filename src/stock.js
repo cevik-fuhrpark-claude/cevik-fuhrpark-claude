@@ -59,11 +59,14 @@ async function loadItem(env, user, envName, id) {
   return it;
 }
 
+export const ITEM_HISTORY_MAX = 200;
 export async function itemDetail(env, user, envName, id) {
   const it = await loadItem(env, user, envName, id);
   const movements = (await env.DB.prepare(`SELECT m.*, u.display_name AS user_name, c.case_no FROM stock_movements m JOIN users u ON u.id=m.user_id
-    LEFT JOIN cases c ON c.id=m.case_id WHERE m.item_id=? ORDER BY m.created_at DESC LIMIT 200`).bind(id).all()).results;
-  return { item: { ...it, on_hand: await onHand(env, id) }, movements };
+    LEFT JOIN cases c ON c.id=m.case_id WHERE m.item_id=? ORDER BY m.created_at DESC LIMIT ?`).bind(id, ITEM_HISTORY_MAX + 1).all()).results;
+  // eine Zeile mehr gelesen → es gibt ältere Buchungen (Hinweis + Verweis aufs Lagerjournal, gefiltert auf diesen Artikel)
+  const movements_truncated = movements.length > ITEM_HISTORY_MAX; if (movements_truncated) movements.length = ITEM_HISTORY_MAX;
+  return { item: { ...it, on_hand: await onHand(env, id) }, movements, movements_truncated, movements_max: ITEM_HISTORY_MAX };
 }
 
 export async function createItem(env, user, envName, body) {
@@ -291,6 +294,8 @@ export async function journal(env, user, envName, query = {}) {
   if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
   if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.');
   const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur', 'umlagerung', 'inventur'], 'Buchungsart') : null;
+  // optional: nur ein Artikel (Verweis aus der Artikelakte); gleiche Sichtprüfung wie die Artikelakte (Umgebung, Werkstatt nur eigenes Lager)
+  const item = query.item ? await loadItem(env, user, envName, String(query.item).slice(0, 64)) : null;
   const inv = type === 'inventur'; // Inventurdifferenzen = Korrekturen aus „Inventur buchen“ (Beleg „Inventur JJJJ-MM-TT“)
   // UTC-Spanne mit einem Tag Rand, danach exakt nach Berliner Datum filtern
   const lo = new Date(Date.parse(from) - 86400000).toISOString();
@@ -301,8 +306,8 @@ export async function journal(env, user, envName, query = {}) {
   const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id, m.transfer_id, m.transfer_site,
       i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate${invSql}
     FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
-    WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${typeSql}
-    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 400]).all()).results;
+    WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${item ? 'AND m.item_id=?' : ''} ${typeSql}
+    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 400]).all()).results;
   const r2 = (x) => Math.round(x * 100) / 100;
   let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
     .filter((r) => r.date >= from && r.date <= to);
@@ -323,7 +328,7 @@ export async function journal(env, user, envName, query = {}) {
     });
     sum.inventur = s;
   }
-  return { from, to, site, type, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
+  return { from, to, site, type, item: item ? { id: item.id, name: item.name, part_number: item.part_number, site: item.site } : null, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
 }
 
 // Bestand zum Stichtag (z. B. 31.12. für den Jahresabschluss): Summe aller Buchungen bis Ende des Berliner Kalendertags,

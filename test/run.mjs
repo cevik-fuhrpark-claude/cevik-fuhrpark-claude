@@ -2697,6 +2697,46 @@ await test('Lager „Zuletzt gezählt“ je Artikel: Datum + Zählmenge bei Buch
   env.DB.db.prepare('UPDATE stock_items SET active=0 WHERE id IN (?,?)').run(a, b);
 });
 
+await test('Artikel-Verlauf: höchstens 200 Buchungen mit Hinweis, Lagerjournal auf einen Artikel eingrenzbar (Rechte wie Artikelakte, CSV, Protokoll)', async () => {
+  const { berlinDate } = await import('../src/util.js');
+  const id = (await users.ws.post('/api/stock', { name: 'Verlaufsartikel', part_number: 'VA-200', unit: 'Stk', initial_qty: 1 })).data.id;
+  const other = (await users.ws.post('/api/stock', { name: 'Anderer Artikel', unit: 'Stk', initial_qty: 1 })).data.id;
+  const d0 = (await users.ws.get(`/api/stock/${id}`)).data;
+  eq(d0.movements.length, 1); eq(d0.movements_truncated, false, 'wenige Buchungen: kein Hinweis'); eq(d0.movements_max, 200);
+  // 200 weitere Buchungen (Kopien der Anfangsbuchung, je eine Minute älter) → 201 insgesamt
+  const ins = env.DB.db.prepare(`INSERT INTO stock_movements (id, environment, item_id, type, qty, unit_price_net, user_id, created_at, note)
+    SELECT ?, environment, item_id, 'zugang', 1, NULL, user_id, ?, 'Verlaufstest' FROM stock_movements WHERE item_id=? LIMIT 1`);
+  for (let k = 1; k <= 200; k++) ins.run(crypto.randomUUID(), new Date(Date.now() - k * 60000).toISOString(), id);
+  const d = (await users.ws.get(`/api/stock/${id}`)).data;
+  eq(d.movements.length, 200, 'höchstens 200'); eq(d.movements_truncated, true, 'Hinweis auf ältere Buchungen');
+  ok(d.movements.every((m, i, a) => !i || a[i - 1].created_at >= m.created_at), 'neueste zuerst');
+  eq(d.item.on_hand, 201, 'Bestand zählt alle Buchungen');
+  // Journal nur dieses Artikels: alle 201 Buchungen, kein anderer Artikel
+  const today = berlinDate(); const from = new Date(Date.parse(today) - 365 * 86400000).toISOString().slice(0, 10);
+  const q = `/api/stock/journal?from=${from}&to=${today}&item=${id}`;
+  const j = (await users.ws.get(q)).data;
+  eq(j.movements.length, 201, 'Journal: alle Buchungen des Artikels'); ok(j.movements.every((m) => m.item_id === id), 'nur dieser Artikel');
+  eq(j.item.name, 'Verlaufsartikel'); eq(j.item.part_number, 'VA-200');
+  ok((await users.ws.get(`/api/stock/journal?from=${from}&to=${today}`)).data.movements.some((m) => m.item_id === other), 'ohne Filter alle Artikel');
+  eq((await users.ws.get(q + '&type=entnahme')).data.movements.length, 0, 'mit Buchungsart kombinierbar');
+  eq((await users.fleet.get(q)).data.movements.length, 201, 'Fuhrparkleitung');
+  eq((await users.wsMuc.get(q)).status, 404, 'Werkstatt München: fremder Artikel nicht sichtbar');
+  eq((await users.prodFleet.get(q)).status, 404, 'Betrieb: Testartikel nicht sichtbar');
+  eq((await users.driver.get(q)).status, 403, 'Fahrer');
+  eq((await users.ws.get(`/api/stock/journal?item=gibtsnicht`)).status, 404, 'unbekannter Artikel');
+  const csv = await users.ws.get(q + '&format=csv');
+  eq(csv.status, 200); ok(/lagerjournal_test_.*_VA-200\.csv/.test(csv.headers.get('content-disposition')), 'Dateiname mit Artikelnummer');
+  eq(new TextDecoder().decode(csv.data).replace(/\r\n$/, '').split('\r\n').length - 1, 201, 'CSV-Zeilen');
+  const ae = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='stock.journal.export' ORDER BY created_at DESC LIMIT 1`).get();
+  eq(JSON.parse(ae.detail).item, id, 'Protokoll nennt den Artikel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].item_in_journal && STRINGS[l].item_history_truncated.includes('{n}') && STRINGS[l].item_history_truncated.includes(STRINGS[l].item_in_journal.split(' (')[0]) && STRINGS[l].journal_item_all, 'Texte ' + l);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="histtrunc"') && app.includes('id="histjournal"') && app.includes("sessionStorage.setItem('cfp_sj_item', id)") && app.includes("'&item=' + encodeURIComponent(itemId)") && app.includes('id="jitemclr"'), 'Oberfläche: Hinweis, Knopf, Filter und „Alle Artikel“');
+  ok(/async function viewStock\(\) \{\n  try \{ sessionStorage\.removeItem\('cfp_sj_item'\)/.test(app), 'Lagerliste setzt den Artikelfilter zurück');
+  env.DB.db.prepare('UPDATE stock_items SET active=0 WHERE id IN (?,?)').run(id, other);
+});
+
 await test('Lager-Umlagerung: Entnahme hier, Zugang im Ziellager (gleiche Kennung), kein Verbrauch, Zielartikel gefunden/angelegt, Rechte, Journal', async () => {
   const src = (await users.ws.post('/api/stock', { name: 'Umlagerteil', part_number: 'UML-1', unit: 'Stk', min_qty: 1, unit_price_net: 10, initial_qty: 6 })).data.id;
   eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'DORTMUND', qty: 1 })).status, 400, 'eigenes Lager');
