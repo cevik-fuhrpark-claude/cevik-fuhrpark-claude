@@ -2603,7 +2603,7 @@ await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit P
   // letzte Entnahme je Artikel (für „ohne Entnahme seit …“): aus dem Journal nachgerechnet
   for (const it of items) { const outs = j.movements.filter((m) => m.item_id === it.id && m.type === 'entnahme'); eq(it.last_out_date, outs.length ? outs.at(-1).date : null, `letzte Entnahme ${it.name}`); }
   ok(items.some((i) => i.last_out_date) && items.some((i) => !i.last_out_date), 'Beispiele mit und ohne Entnahme');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?format=csv')).data).split('\r\n')[0].endsWith(';Letzte Entnahme'), 'Bestandsliste-CSV mit letzter Entnahme');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?format=csv')).data).split('\r\n')[0].endsWith(';Letzte Entnahme;Zuletzt gezählt (Inventur);Zählmenge'), 'Bestandsliste-CSV mit letzter Entnahme und zuletzt gezählt');
   // Bestellvorschlag: letzter Lieferant aus dem jüngsten Zugang mit Lieferant, sortiert nach Lieferant (ohne zuletzt)
   const a = (await users.ws.post('/api/stock', { name: 'Zz Lieferantentest A', min_qty: 10, initial_qty: 1 })).data.id;
   const b = (await users.ws.post('/api/stock', { name: 'Aa Lieferantentest B', min_qty: 10, initial_qty: 1 })).data.id;
@@ -2658,6 +2658,40 @@ await test('Inventurdifferenzen: nur Inventur-Korrekturen, Buchbestand → gezä
     for (const k of ['mv_inventur', 'inventory_diffs', 'inv_book_before', 'inv_diff', 'inv_item_price', 'inv_diff_value', 'inv_hint', 'inv_none']) ok(STRINGS[l][k], `${k} ${l}`);
     ok(['{n}', '{p}', '{pv}', '{m}', '{mv}'].every((x) => STRINGS[l].inv_sum.includes(x)), 'inv_sum ' + l);
   }
+});
+
+await test('Lager „Zuletzt gezählt“ je Artikel: Datum + Zählmenge bei Buchung und Abschluss ohne Abweichung, Vorschau/409 ändern nichts, CSV, Umgebung', async () => {
+  const { berlinDate } = await import('../src/util.js');
+  const a = (await users.ws.post('/api/stock', { name: 'Zählartikel A', unit: 'Stk', initial_qty: 4 })).data.id;
+  const b = (await users.ws.post('/api/stock', { name: 'Zählartikel B', unit: 'Stk', initial_qty: 2 })).data.id;
+  const get = async (id) => (await users.ws.get('/api/stock')).data.items.find((i) => i.id === id);
+  eq((await get(a)).last_counted_date, null, 'neu: nie gezählt'); eq((await users.ws.get(`/api/stock/${a}`)).data.item.last_counted_at, null);
+  // Vorschau ändert nichts; 409 (Ergebnis seit Prüfung geändert) ändert nichts
+  await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: a, counted: 3 }] });
+  eq((await get(a)).last_counted_at, null, 'Vorschau vermerkt nichts');
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: a, counted: 3 }], preview: [] })).status, 409);
+  eq((await get(a)).last_counted_at, null, '409 vermerkt nichts');
+  // Buchung: A mit Abweichung, B ohne Abweichung – beide „zuletzt gezählt“; Korrektur nur für A
+  const counts = [{ item_id: a, counted: 3 }, { item_id: b, counted: 2 }];
+  const pv = (await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts })).data.differences;
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts, preview: pv.map((d) => ({ item_id: d.item_id, book: d.book, counted: d.counted })) })).data.booked, 1);
+  const ia = await get(a), ib = await get(b);
+  eq(ia.last_counted_qty, 3); eq(ib.last_counted_qty, 2, 'ohne Abweichung trotzdem vermerkt');
+  eq(ia.last_counted_date, berlinDate(), 'Berliner Datum'); ok(Date.now() - Date.parse(ib.last_counted_at) < 60000, 'Zeitpunkt');
+  // Abschluss ohne jede Abweichung, nur B gezählt: B neu, A bleibt
+  env.DB.db.prepare(`UPDATE stock_items SET last_counted_at='2025-01-02T10:00:00.000Z' WHERE id IN (?,?)`).run(a, b);
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: a, counted: '' }, { item_id: b, counted: 2 }], preview: [] })).data.booked, 0);
+  eq((await get(a)).last_counted_date, '2025-01-02', 'nicht gezählter Artikel unverändert'); eq((await get(b)).last_counted_date, berlinDate(), 'Abschluss vermerkt');
+  eq((await users.ws.get(`/api/stock/${a}`)).data.item.last_counted_qty, 3, 'Artikelakte');
+  eq((await users.prodFleet.get('/api/stock')).data.items.filter((i) => i.last_counted_at).length, 0, 'Betrieb unberührt');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?format=csv')).data).split('\r\n');
+  ok(csv.find((l) => l.includes('Zählartikel B')).endsWith(`;${berlinDate()};2`) && csv.find((l) => l.includes('Zählartikel A')).endsWith(';2025-01-02;3'), 'CSV mit Datum und Zählmenge');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].last_counted && STRINGS[l].never_counted && STRINGS[l].help_stock_s.includes(STRINGS[l].last_counted), 'Texte/Hilfe ' + l);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="lcnt"') && app.includes('data-lc') && app.includes("<th>${esc(t('last_counted'))}</th>"), 'Artikelakte, Inventurliste und Zählliste zeigen „zuletzt gezählt“');
+  // Artikel wieder deaktivieren, damit spätere Lagerprüfungen unverändert bleiben
+  env.DB.db.prepare('UPDATE stock_items SET active=0 WHERE id IN (?,?)').run(a, b);
 });
 
 await test('Lager-Umlagerung: Entnahme hier, Zugang im Ziellager (gleiche Kennung), kein Verbrauch, Zielartikel gefunden/angelegt, Rechte, Journal', async () => {

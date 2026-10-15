@@ -1604,7 +1604,7 @@ async function viewStock() {
     const invSite = () => ($('#invsite') ? $('#invsite').value : sites[0] && sites[0].code);
     const fill = () => { const li = lastInv[invSite()]; $('#invlast').textContent = li ? t('inventory_last').replace('{d}', fmtDT(li.at)).replace('{c}', li.counted ?? '–').replace('{x}', li.differences ?? '–') : t('inventory_last_none');
       $('#invbook').textContent = t('inventory_book');
-      $('#invlist').innerHTML = `<div class="scroll"><table><thead><tr><th>${esc(t('part_name'))}</th><th>${esc(t('inventory_book_qty'))}</th><th>${esc(t('inventory_counted'))}</th></tr></thead><tbody>${items.filter((i) => i.site === invSite()).map((i) => `<tr><td>${esc(i.name)}${i.location ? `<div class="small muted">${esc(i.location)}</div>` : ''}</td><td>${i.on_hand} ${esc(i.unit)}</td><td><input data-inv="${esc(i.id)}" inputmode="decimal" style="max-width:110px" aria-label="${esc(t('inventory_counted'))} ${esc(i.name)}"></td></tr>`).join('')}</tbody></table></div>`; $('#invbook').disabled = true; $('#invres').innerHTML = ''; invPrev = null;
+      $('#invlist').innerHTML = `<div class="scroll"><table><thead><tr><th>${esc(t('part_name'))}</th><th>${esc(t('inventory_book_qty'))}</th><th>${esc(t('inventory_counted'))}</th></tr></thead><tbody>${items.filter((i) => i.site === invSite()).map((i) => `<tr><td>${esc(i.name)}${i.location ? `<div class="small muted">${esc(i.location)}</div>` : ''}<div class="small muted" data-lc>${esc(i.last_counted_date ? t('last_counted') + ': ' + fmtD(i.last_counted_date) : t('never_counted'))}</div></td><td>${i.on_hand} ${esc(i.unit)}</td><td><input data-inv="${esc(i.id)}" inputmode="decimal" style="max-width:110px" aria-label="${esc(t('inventory_counted'))} ${esc(i.name)}"></td></tr>`).join('')}</tbody></table></div>`; $('#invbook').disabled = true; $('#invres').innerHTML = ''; invPrev = null;
       // Zählmengen nach der Prüfung geändert → erst erneut prüfen (gebucht wird nur, was geprüft wurde)
       // Entwurf der Zählmengen auf diesem Gerät (je Person/Umgebung/Lager, 14 Tage): Wegklicken oder Neuladen verliert keine Zählung
       const dr = invDraft.load(); let restored = 0;
@@ -1640,19 +1640,20 @@ async function viewStockCount() {
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
   const site = S.countSite && sites.some((w) => w.code === S.countSite) ? S.countSite : (sites[0] && sites[0].code) || '';
   const withBook = !!S.countBook;
-  const items = site ? (await api('GET', '/api/stock?site=' + encodeURIComponent(site))).items : [];
+  const sr = site ? await api('GET', '/api/stock?site=' + encodeURIComponent(site)) : { items: [], last_inventory: {} };
+  const items = sr.items; const li = (sr.last_inventory || {})[site];
   const coll = new Intl.Collator(S.lang === 'uk' ? 'uk' : S.lang === 'en' ? 'en' : 'de', { numeric: true, sensitivity: 'base' });
   items.sort((a, b) => (a.location ? 0 : 1) - (b.location ? 0 : 1) || coll.compare(a.location || '', b.location || '') || coll.compare(a.name, b.name));
   const n = (x) => String(x).replace('.', ',');
   render(`<p class="noprint"><a href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('count_sheet_title'))}</h1>${helpLink('stock')}
     <p class="small muted noprint">${esc(t('count_sheet_hint'))}</p>
-    ${printHead([t('count_sheet_title'), site ? `${t('workshop')}: ${wsName(site)}` : '', withBook ? t('count_with_book') : t('count_blind'), t('print_count').replace('{n}', items.length)])}
+    ${printHead([t('count_sheet_title'), site ? `${t('workshop')}: ${wsName(site)}` : '', withBook ? t('count_with_book') : t('count_blind'), t('print_count').replace('{n}', items.length), li ? t('inventory_last').replace('{d}', fmtDT(li.at)).replace('{c}', li.counted ?? '–').replace('{x}', li.differences ?? '–') : t('inventory_last_none')])}
     <div class="actions noprint" style="flex-wrap:wrap;align-items:flex-end;margin-top:0">
       ${sites.length > 1 ? `<div style="flex:1 1 200px"><label for="csite">${esc(t('workshop'))}</label><select id="csite">${sites.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       <label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="cbook"${withBook ? ' checked' : ''} style="width:auto">${esc(t('count_with_book'))}</label>
       <button type="button" class="btn secondary" id="cprt"${items.length ? '' : ' disabled'}>${esc(t('print'))}</button></div>
-    ${items.length ? `<div class="scroll"><table class="printsm" id="ctab"><thead><tr><th>${esc(t('storage'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('unit'))}</th>${withBook ? `<th>${esc(t('inventory_book_qty'))}</th>` : ''}<th style="min-width:90px">${esc(t('inventory_counted'))}</th></tr></thead><tbody>
-      ${items.map((i) => `<tr><td>${esc(i.location || '–')}</td><td>${esc(i.name)}${i.part_number ? `<div class="small muted">${esc(i.part_number)}</div>` : ''}</td><td>${esc(i.unit)}</td>${withBook ? `<td>${n(i.on_hand)}</td>` : ''}<td style="border-bottom:1px solid currentColor">&nbsp;</td></tr>`).join('')}
+    ${items.length ? `<div class="scroll"><table class="printsm" id="ctab"><thead><tr><th>${esc(t('storage'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('unit'))}</th><th>${esc(t('last_counted'))}</th>${withBook ? `<th>${esc(t('inventory_book_qty'))}</th>` : ''}<th style="min-width:90px">${esc(t('inventory_counted'))}</th></tr></thead><tbody>
+      ${items.map((i) => `<tr><td>${esc(i.location || '–')}</td><td>${esc(i.name)}${i.part_number ? `<div class="small muted">${esc(i.part_number)}</div>` : ''}</td><td>${esc(i.unit)}</td><td>${i.last_counted_date ? esc(fmtD(i.last_counted_date)) : '–'}</td>${withBook ? `<td>${n(i.on_hand)}</td>` : ''}<td style="border-bottom:1px solid currentColor">&nbsp;</td></tr>`).join('')}
       </tbody></table></div><p style="margin-top:24px">${esc(t('count_sign'))}: ______________________________</p>` : `<p class="muted">${esc(t('count_none'))}</p>`}`, 'more');
   const cs = $('#csite'); if (cs) cs.onchange = () => { S.countSite = cs.value; viewStockCount(); };
   $('#cbook').onchange = () => { S.countBook = $('#cbook').checked; viewStockCount(); };
@@ -1748,7 +1749,7 @@ async function viewStockItem(id) {
   const it = d.item;
   const others = (S.meta.workshops || []).filter((w) => w.code !== it.site);
   render(`<p><a href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(it.name)}</h1>
-    <section class="panel"><dl class="kv"><dt>${esc(t('on_hand'))}</dt><dd><b style="font-size:1.4rem">${it.on_hand} ${esc(it.unit)}</b></dd><dt>${esc(t('part_number'))}</dt><dd>${esc(it.part_number || '–')}</dd><dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(it.site))}</dd><dt>${esc(t('storage'))}</dt><dd>${esc(it.location || '–')}</dd><dt>${esc(t('min_qty'))}</dt><dd>${it.min_qty ?? '–'}</dd><dt>€</dt><dd>${eur(it.unit_price_net)}</dd></dl></section>
+    <section class="panel"><dl class="kv"><dt>${esc(t('on_hand'))}</dt><dd><b style="font-size:1.4rem">${it.on_hand} ${esc(it.unit)}</b></dd><dt>${esc(t('part_number'))}</dt><dd>${esc(it.part_number || '–')}</dd><dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(it.site))}</dd><dt>${esc(t('storage'))}</dt><dd>${esc(it.location || '–')}</dd><dt>${esc(t('min_qty'))}</dt><dd>${it.min_qty ?? '–'}</dd><dt>€</dt><dd>${eur(it.unit_price_net)}</dd><dt>${esc(t('last_counted'))}</dt><dd id="lcnt">${it.last_counted_at ? `${esc(fmtD(it.last_counted_at))} · ${String(it.last_counted_qty).replace('.', ',')} ${esc(it.unit)}` : esc(t('never_counted'))}</dd></dl></section>
     <form id="mf" class="panel"><h3>${esc(t('book'))}</h3><label>${esc(t('kind'))}</label><select name="type"><option value="zugang">${esc(t('mv_zugang'))}</option><option value="entnahme">${esc(t('mv_entnahme'))}</option><option value="korrektur">${esc(t('mv_korrektur'))}</option></select>
       <label>${esc(t('qty'))}</label><input name="qty" inputmode="decimal" required><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label>${esc(t('supplier'))}</label><input name="supplier"><label>${esc(t('doc_ref'))}</label><input name="document_ref"><label>${esc(t('note'))}</label><input name="note">
       <div class="actions"><button class="btn">${esc(t('book'))}</button></div></form>

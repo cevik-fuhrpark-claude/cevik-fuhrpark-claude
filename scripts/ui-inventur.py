@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test: Lager → Inventur (Werkstatt), DE/UK/EN bei 390/820/1366 px.
 # „Abweichungen buchen“ erst nach „Abweichungen prüfen“; Zählmenge danach geändert → Buchen wieder gesperrt + Hinweis „erneut prüfen“;
-# Buchen fragt mit Anzahl nach (Abbrechen bucht nichts), Bestätigen bucht. Kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
+# Buchen fragt mit Anzahl nach (Abbrechen bucht nichts), Bestätigen bucht; „Zuletzt gezählt“ in Inventurliste, Zählliste und Artikelakte. Kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -12,6 +12,8 @@ LAST={'de':'Letzte Inventur','uk':'Остання інвентаризація',
 CLOSE={'de':'Inventur abschließen','uk':'Завершити інвентаризацію','en':'Complete stocktake'}
 ZERO={'de':'0 Abweichung(en)','uk':'відхилень: 0','en':'0 difference(s)'}
 BOOK={'de':'Buchbestand','uk':'Обліковий залишок','en':'Book stock'}
+LC={'de':'Zuletzt gezählt','uk':'Востаннє підраховано','en':'Last counted'}
+NEVER={'de':'noch nie','uk':'ще не','en':'never counted'}
 RE={'de':'erneut ausführen','uk':'знову виконайте','en':'run “Check differences” again'}
 fails=[]
 def check(c,m):
@@ -39,6 +41,8 @@ with sync_playwright() as p:
         q.on('dialog',on_dialog)
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'iv.werkstatt','password':PW}])
         q.goto(B+'/#/stock'); q.wait_for_selector('#inv'); q.click('#inv summary')
+        lc=lambda: q.locator('#invlist tr',has=q.locator(f'[data-inv="{iid}"]')).locator('[data-lc]').inner_text()
+        check(NEVER[lang] in lc(),f'{lang} {w}px: neuer Artikel „noch nie gezählt“ ({lc()!r})')
         inp=q.locator(f'[data-inv="{iid}"]'); inp.fill('7')
         check(q.is_disabled('#invbook'),f'{lang} {w}px: Buchen vor Prüfung gesperrt')
         q.click('#invchk'); q.wait_for_function("()=>!document.querySelector('#invbook').disabled")
@@ -61,6 +65,7 @@ with sync_playwright() as p:
         q.wait_for_selector('#inv'); q.click('#inv summary')
         check(q.locator('#invdx').count()==0 and q.locator(f'[data-inv="{iid}"]').input_value()=='',f'{lang} {w}px: Entwurf nach Buchung gelöscht')
         check(LAST[lang] in q.inner_text('#invlast'),f'{lang} {w}px: „Letzte Inventur“ angezeigt')
+        check(LC[lang] in lc(),f'{lang} {w}px: Inventurliste „zuletzt gezählt“ nach Buchung ({lc()!r})')
         # Inventur ohne Abweichung abschließen: Zählmenge = Buchbestand → Knopf „Inventur abschließen“, Rückfrage, nichts gebucht, vermerkt
         q.locator(f'[data-inv="{iid}"]').fill('6'); q.click('#invchk'); q.wait_for_function("()=>!document.querySelector('#invbook').disabled")
         check(CLOSE[lang] in q.inner_text('#invbook'),f'{lang} {w}px: Knopf „Inventur abschließen“')
@@ -83,6 +88,7 @@ with sync_playwright() as p:
         hdr=q.inner_text('#ctab thead')
         check(BOOK[lang] not in hdr and name in q.inner_text('#ctab'),f'{lang} {w}px: Zählliste ohne Buchbestand, Artikel enthalten')
         check(q.locator('#ctab tbody tr').count()>=1,f'{lang} {w}px: Zeilen vorhanden')
+        check(LC[lang] in hdr and LAST[lang] in q.inner_text('.print-only'),f'{lang} {w}px: Zählliste mit Spalte „zuletzt gezählt“ und letzter Inventur im Druckkopf')
         q.check('#cbook'); q.wait_for_function(f"()=>document.querySelector('#ctab thead').innerText.includes({BOOK[lang]!r})")
         check(BOOK[lang] in q.inner_text('#ctab thead'),f'{lang} {w}px: Buchbestand eingeblendet')
         q.uncheck('#cbook'); q.wait_for_function(f"()=>!document.querySelector('#ctab thead').innerText.includes({BOOK[lang]!r})")
@@ -91,6 +97,10 @@ with sync_playwright() as p:
         if SHOTS and w==1366: q.screenshot(path=f'{SHOTS}/zaehlliste_{lang}.png',full_page=True)
         q.emulate_media(media='screen')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Zählliste ohne Querscrollen')
+        # Artikelakte: „Zuletzt gezählt“ mit Datum und Zählmenge
+        q.goto(B+f'/#/stock/{iid}'); q.wait_for_selector('#lcnt')
+        check('6' in q.inner_text('#lcnt') and NEVER[lang] not in q.inner_text('#lcnt'),f'{lang} {w}px: Artikelakte zuletzt gezählt ({q.inner_text("#lcnt")!r})')
+        if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/artikel_gezaehlt_{lang}.png',full_page=True)
         # Bestand zum Stichtag: Knopf im Lager, Stichtag heute → Artikel mit 6 Stk, Summen, kein Querscrollen
         q.goto(B+'/#/stock'); q.wait_for_selector('#sasof'); q.click('#sasof'); q.wait_for_selector('#saf')
         check(ASOF[lang] in q.inner_text('h1'),f'{lang} {w}px: Bestand zum Stichtag geöffnet')

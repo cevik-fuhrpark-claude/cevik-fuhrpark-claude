@@ -28,7 +28,7 @@ export async function listStock(env, user, envName, query) {
       (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.transfer_id IS NULL) AS last_out_at
     FROM stock_items i WHERE i.environment=? AND i.active=1 ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`)
     .bind(...(site ? [since, envName, site] : [since, envName])).all()).results;
-  let list = rows.map(({ last_out_at, ...r }) => ({ ...r, on_hand: r3(r.on_hand), used_90d: r3(r.used_90d), below_min: r.min_qty !== null && r.on_hand < r.min_qty, last_out_date: last_out_at ? berlinDate(last_out_at) : null }));
+  let list = rows.map(({ last_out_at, ...r }) => ({ ...r, on_hand: r3(r.on_hand), used_90d: r3(r.used_90d), below_min: r.min_qty !== null && r.on_hand < r.min_qty, last_out_date: last_out_at ? berlinDate(last_out_at) : null, last_counted_date: r.last_counted_at ? berlinDate(r.last_counted_at) : null }));
   // Bestellvorschlag: nur Artikel unter Mindestbestand; Fehlmenge bis Mindestbestand – es wird nichts bestellt
   if (query.reorder === '1') {
     list = list.filter((r) => r.below_min).map((r) => {
@@ -195,11 +195,11 @@ export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, 
 
 // Bestandsliste als CSV (Excel): Bestand und Bestandswert nur, wenn ein Preis hinterlegt ist (sonst leer, nie 0 €)
 export function stockCsv(items, csvCell) {
-  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Unter Mindestbestand', 'Preis netto', 'Bestandswert netto', 'Letzte Entnahme'];
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Unter Mindestbestand', 'Preis netto', 'Bestandswert netto', 'Letzte Entnahme', 'Zuletzt gezählt (Inventur)', 'Zählmenge'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
-    n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100), i.last_out_date || ''].join(';'));
+    n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100), i.last_out_date || '', i.last_counted_date || '', n(i.last_counted_qty)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
@@ -224,6 +224,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   const date = berlinDate();
   const diffs = [];
   const seen = new Set();
+  const countedList = [];
   for (const c of body.counts) {
     const it = items.get(String(c.item_id || ''));
     if (!it) throw bad('validation', 'Artikel gehört nicht zu diesem Lager.');
@@ -231,6 +232,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
     seen.add(it.id);
     if (c.counted === '' || c.counted === null || c.counted === undefined) continue; // nicht gezählt = keine Buchung
     const counted = Math.round(num(c.counted, { min: 0, max: 1e6, field: `Zählmenge ${it.name}` }) * 1000) / 1000;
+    countedList.push({ id: it.id, counted });
     const delta = Math.round((counted - it.on_hand) * 1000) / 1000;
     if (delta !== 0) diffs.push({ item_id: it.id, name: it.name, part_number: it.part_number, unit: it.unit, book: it.on_hand, counted, delta });
   }
@@ -244,12 +246,17 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
     const sig = (list) => list.map((d) => (d && typeof d === 'object' ? `${d.item_id}|${Number(d.book)}|${Number(d.counted)}` : '?')).sort().join('\n');
     if (body.preview.length > 2000 || sig(body.preview) !== sig(diffs)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
   }
-  // Inventur ohne Abweichungen: nichts zu buchen, aber mit Datum im Protokoll vermerkt (Nachweis „Lager gezählt“)
-  if (!diffs.length) { await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
   const now = nowIso();
-  await env.DB.batch(diffs.map((d) => env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
+  // „Zuletzt gezählt“ je Artikel (auch ohne Abweichung) – im selben Stapel wie die Korrekturen, also ganz oder gar nicht
+  const cj = JSON.stringify(countedList.map((x) => ({ id: x.id, q: x.counted })));
+  const markCounted = env.DB.prepare(`UPDATE stock_items SET last_counted_at=?,
+      last_counted_qty=(SELECT json_extract(j.value,'$.q') FROM json_each(?) j WHERE json_extract(j.value,'$.id')=stock_items.id)
+    WHERE environment=? AND id IN (SELECT json_extract(value,'$.id') FROM json_each(?))`).bind(now, cj, envName, cj);
+  // Inventur ohne Abweichungen: nichts zu buchen, aber mit Datum im Protokoll vermerkt (Nachweis „Lager gezählt“)
+  if (!diffs.length) { await env.DB.batch([markCounted]); await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
+  await env.DB.batch([markCounted, ...diffs.map((d) => env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
     VALUES (?,?,?,'korrektur',?,NULL,NULL,NULL,?,?,?,?)`).bind(uuid(), envName, d.item_id, d.delta, `Inventur ${date}`,
-    `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now)));
+    `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now))]);
   await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: diffs.length });
   result.booked = diffs.length;
   return result;
