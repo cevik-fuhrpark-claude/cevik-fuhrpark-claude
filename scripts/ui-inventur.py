@@ -40,6 +40,10 @@ with sync_playwright() as p:
         check(name in q.inner_text('#invres') and '-3' in q.inner_text('#invres'),f'{lang} {w}px: Abweichung −3 angezeigt')
         inp.fill('6')
         check(q.is_disabled('#invbook') and RE[lang] in q.inner_text('#invres'),f'{lang} {w}px: nach Änderung gesperrt + „erneut prüfen“')
+        # Entwurf: Neuladen behält die Zählmenge (nur dieses Gerät), Hinweis mit „Entwurf verwerfen“
+        q.reload(); q.wait_for_selector('#inv'); q.click('#inv summary')
+        check(q.locator(f'[data-inv="{iid}"]').input_value()=='6' and q.locator('#invdx').count()==1,f'{lang} {w}px: Entwurf nach Neuladen wiederhergestellt')
+        inp=q.locator(f'[data-inv="{iid}"]')
         q.click('#invchk'); q.wait_for_function("()=>!document.querySelector('#invbook').disabled")
         if SHOTS: q.locator('#inv').screenshot(path=f'{SHOTS}/inventur_{lang}_{w}.png')
         q.click('#invbook'); q.wait_for_timeout(300)
@@ -49,9 +53,12 @@ with sync_playwright() as p:
         mode['accept']=True; q.click('#invbook'); q.wait_for_timeout(600)
         st=api('GET',f'/api/stock/{iid}')['d']['item']['on_hand']
         check(st==6,f'{lang} {w}px: Bestätigen bucht ({st})')
+        q.wait_for_selector('#inv'); q.click('#inv summary')
+        check(q.locator('#invdx').count()==0 and q.locator(f'[data-inv="{iid}"]').input_value()=='',f'{lang} {w}px: Entwurf nach Buchung gelöscht')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         # Zählliste: Link im Inventur-Bereich, Standard ohne Buchbestand (Blindzählung), Schalter blendet ihn ein; Druckansicht ohne Bedienelemente
-        q.goto(B+'/#/stock'); q.wait_for_selector('#inv'); q.click('#inv summary'); q.click('#invsheet'); q.wait_for_selector('#ctab')
+        if not q.evaluate("()=>document.querySelector('#inv').open"): q.click('#inv summary')
+        q.click('#invsheet'); q.wait_for_selector('#ctab')
         hdr=q.inner_text('#ctab thead')
         check(BOOK[lang] not in hdr and name in q.inner_text('#ctab'),f'{lang} {w}px: Zählliste ohne Buchbestand, Artikel enthalten')
         check(q.locator('#ctab tbody tr').count()>=1,f'{lang} {w}px: Zeilen vorhanden')

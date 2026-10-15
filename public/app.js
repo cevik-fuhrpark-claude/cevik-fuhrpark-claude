@@ -246,7 +246,7 @@ function resetUserState() {
   try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}
 }
 function clearOfflineData() {
-  try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_') || k.startsWith('cfp_emerg_')) localStorage.removeItem(k); } catch {}
+  try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_') || k.startsWith('cfp_emerg_') || k.startsWith('cfp_inv_')) localStorage.removeItem(k); } catch {}
 }
 // Leerlauf-Abmeldung auch in der App (Einstellung des Inhabers, Wert kommt vom Server mit /api/me): Der Server meldet erst beim
 // nächsten Aufruf ab – bis dahin stünde auf einem geteilten Tablet die Ansicht der vorherigen Person. Die App leert den Bildschirm
@@ -1578,7 +1578,7 @@ async function viewStock() {
     <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${items.some((i) => i.below_min) ? ` <span class="chip mittel">${items.filter((i) => i.below_min).length}</span>` : ''}</a></div>
     ${items.length ? `<details class="panel" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
-      <p class="noprint"><a class="btn secondary" href="#/stock/count" id="invsheet">${esc(t('count_sheet'))}</a></p><div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
+      <p class="noprint"><a class="btn secondary" href="#/stock/count" id="invsheet">${esc(t('count_sheet'))}</a></p><div id="invdraft"></div><div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
       <div class="actions"><button type="button" class="btn secondary" id="invchk">${esc(t('inventory_check'))}</button><button type="button" class="btn" id="invbook" disabled>${esc(t('inventory_book'))}</button></div><div id="invres"></div></details>` : ''}
     <input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
     <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option></select>
@@ -1602,8 +1602,21 @@ async function viewStock() {
     const invSite = () => ($('#invsite') ? $('#invsite').value : sites[0] && sites[0].code);
     const fill = () => { $('#invlist').innerHTML = `<div class="scroll"><table><thead><tr><th>${esc(t('part_name'))}</th><th>${esc(t('inventory_book_qty'))}</th><th>${esc(t('inventory_counted'))}</th></tr></thead><tbody>${items.filter((i) => i.site === invSite()).map((i) => `<tr><td>${esc(i.name)}${i.location ? `<div class="small muted">${esc(i.location)}</div>` : ''}</td><td>${i.on_hand} ${esc(i.unit)}</td><td><input data-inv="${esc(i.id)}" inputmode="decimal" style="max-width:110px" aria-label="${esc(t('inventory_counted'))} ${esc(i.name)}"></td></tr>`).join('')}</tbody></table></div>`; $('#invbook').disabled = true; $('#invres').innerHTML = ''; invPrev = null;
       // Zählmengen nach der Prüfung geändert → erst erneut prüfen (gebucht wird nur, was geprüft wurde)
-      $$('[data-inv]').forEach((x) => (x.oninput = () => { if (invPrev) { invPrev = null; $('#invbook').disabled = true; $('#invres').innerHTML = `<p class="small muted">${esc(t('inventory_recheck'))}</p>`; } })); };
+      // Entwurf der Zählmengen auf diesem Gerät (je Person/Umgebung/Lager, 14 Tage): Wegklicken oder Neuladen verliert keine Zählung
+      const dr = invDraft.load(); let restored = 0;
+      if (dr) for (const x of $$('[data-inv]')) if (typeof dr.counts[x.dataset.inv] === 'string' && dr.counts[x.dataset.inv] !== '') { x.value = dr.counts[x.dataset.inv]; restored++; }
+      if (dr && dr.note && !$('#invnote').value) $('#invnote').value = dr.note;
+      $('#invdraft').innerHTML = restored ? `<div class="panel" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span class="small" style="flex:1 1 200px">${esc(t('inventory_draft').replace('{n}', restored).replace('{d}', fmtDT(dr.at)))}</span><button type="button" class="btn secondary" id="invdx">${esc(t('inventory_draft_discard'))}</button></div>` : '';
+      const dx = $('#invdx'); if (dx) dx.onclick = () => { if (!confirm(t('inventory_draft_discard_confirm'))) return; invDraft.clear(); $('#invnote').value = ''; fill(); };
+      $$('[data-inv]').forEach((x) => (x.oninput = () => { invDraft.save(); if (invPrev) { invPrev = null; $('#invbook').disabled = true; $('#invres').innerHTML = `<p class="small muted">${esc(t('inventory_recheck'))}</p>`; } })); };
     let invPrev = null;
+    const invDraft = {
+      key: () => `cfp_inv_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}_${invSite()}`,
+      load() { try { const d = JSON.parse(localStorage.getItem(this.key()) || 'null'); return d && d.counts && Date.now() - Date.parse(d.at) < 14 * 86400000 ? d : null; } catch { return null; } },
+      save() { try { const counts = {}; for (const x of $$('[data-inv]')) if (x.value.trim() !== '') counts[x.dataset.inv] = x.value.trim(); if (Object.keys(counts).length) localStorage.setItem(this.key(), JSON.stringify({ at: new Date().toISOString(), note: $('#invnote').value, counts })); else localStorage.removeItem(this.key()); } catch {} },
+      clear() { try { localStorage.removeItem(this.key()); } catch {} },
+    };
+    $('#invnote').oninput = () => invDraft.save();
     fill(); if ($('#invsite')) $('#invsite').onchange = fill;
     const body = () => ({ site: invSite(), note: $('#invnote').value || null, counts: $$('[data-inv]').map((x) => ({ item_id: x.dataset.inv, counted: x.value.trim() === '' ? '' : x.value.replace(',', '.') })) });
     const show = (r, booked) => { $('#invres').innerHTML = r.differences.length ? `<div class="list">${r.differences.map((d) => `<div class="row ${booked ? '' : 'p-mittel'}"><span class="title">${esc(d.name)}</span><b>${d.delta > 0 ? '+' : ''}${d.delta} ${esc(d.unit)}</b><span class="sub" style="white-space:normal">${esc(t('inventory_book_qty'))} ${d.book} → ${esc(t('inventory_counted'))} ${d.counted}</span></div>`).join('')}</div>` : `<p>${esc(t('inventory_no_diff'))}</p>`; };
@@ -1611,18 +1624,17 @@ async function viewStock() {
     $('#invbook').onclick = async () => {
       if (!invPrev || !invPrev.length) return;
       if (!confirm(t('inventory_book_confirm').replace('{n}', invPrev.length))) return;
-      try { const r = await api('POST', '/api/stock/inventory', { ...body(), preview: invPrev.map((d) => ({ item_id: d.item_id, book: d.book, counted: d.counted })) }); toast(`✓ ${r.booked}`); viewStock(); }
+      try { const r = await api('POST', '/api/stock/inventory', { ...body(), preview: invPrev.map((d) => ({ item_id: d.item_id, book: d.book, counted: d.counted })) }); invDraft.clear(); toast(`✓ ${r.booked}`); viewStock(); }
       catch (err) { toast(err.message, true); if (err.code === 'inventory_changed') { invPrev = null; $('#invbook').disabled = true; $('#invres').innerHTML = `<p class="small muted">${esc(t('inventory_recheck'))}</p>`; } }
     };
   }
   $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].replace(',', '.'); } try { await api('POST', '/api/stock', b); viewStock(); } catch (err) { toast(err.message, true); } };
 }
 
-// Bestellvorschlag: Artikel unter Mindestbestand mit Fehlmenge – es wird nichts bestellt (Liste für den Einkauf)
 // Zählliste für die Inventur (Ausdruck zum Ausfüllen): je Lager nach Lagerort/Artikel, standardmäßig ohne Buchbestand (Blindzählung)
 async function viewStockCount() {
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
-  let site = S.countSite && sites.some((w) => w.code === S.countSite) ? S.countSite : (sites[0] && sites[0].code) || '';
+  const site = S.countSite && sites.some((w) => w.code === S.countSite) ? S.countSite : (sites[0] && sites[0].code) || '';
   const withBook = !!S.countBook;
   const items = site ? (await api('GET', '/api/stock?site=' + encodeURIComponent(site))).items : [];
   const coll = new Intl.Collator(S.lang === 'uk' ? 'uk' : S.lang === 'en' ? 'en' : 'de', { numeric: true, sensitivity: 'base' });
@@ -1643,6 +1655,7 @@ async function viewStockCount() {
   $('#cprt').onclick = () => window.print();
 }
 
+// Bestellvorschlag: Artikel unter Mindestbestand mit Fehlmenge – es wird nichts bestellt (Liste für den Einkauf)
 async function viewReorder() {
   const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
   const site = sessionStorage.getItem('cfp_reorder_site') || '';

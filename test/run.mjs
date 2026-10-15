@@ -2533,6 +2533,9 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_book_confirm.includes('{n}') && STRINGS[l].inventory_recheck && STRINGS[l].err_inventory_changed, 'Texte ' + l);
   // Zählliste (#/stock/count): Route vor der Artikel-Route, Link im Inventur-Bereich, Standard ohne Buchbestand, Texte in allen Sprachen
   ok(app.indexOf('[/^#\\/stock\\/count$/, viewStockCount]') > 0 && app.indexOf('[/^#\\/stock\\/count$/') < app.indexOf('[/^#\\/stock\\/([\\w-]+)$/, viewStockItem]'), 'Route Zählliste vor Artikel-Route');
+  // Entwurf der Zählmengen: je Person/Umgebung/Lager auf dem Gerät, nach Buchung gelöscht, beim Abmelden gelöscht, Texte in allen Sprachen
+  ok(app.includes('cfp_inv_${S.me.id}_') && app.includes("invDraft.clear(); toast(`✓ ${r.booked}`)") && app.includes("k.startsWith('cfp_inv_')"), 'Inventur-Entwurf: Schlüssel je Person, nach Buchung und Abmeldung gelöscht');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_draft.includes('{n}') && STRINGS[l].inventory_draft.includes('{d}') && STRINGS[l].inventory_draft_discard && STRINGS[l].inventory_draft_discard_confirm, 'Entwurf-Texte ' + l);
   ok(app.includes('href="#/stock/count" id="invsheet"') && /const withBook = !!S\.countBook;/.test(app), 'Link + Blindzählung als Standard');
   for (const l of ['de', 'uk', 'en']) for (const k of ['count_sheet', 'count_sheet_title', 'count_sheet_hint', 'count_with_book', 'count_blind', 'count_sign', 'count_none']) ok(STRINGS[l][k], `${k} ${l}`);
 });
