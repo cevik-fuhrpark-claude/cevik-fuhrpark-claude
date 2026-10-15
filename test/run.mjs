@@ -4510,6 +4510,23 @@ await test('Dublette wählen: mehr als 5 andere offene Vorgänge – vollständi
   eq((i18n.match(/dup_(loading|all): '[^']*\{n\}/g) || []).length, 6, 'Platzhalter {n} in jeder Sprache');
 });
 
+await test('Zahlen und Beträge im Format der Oberflächensprache (DE/UK/EN), Eingabefelder unverändert mit Komma vorbelegt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/'de-DE'/g) || []).length, 1, 'Gebietsschema nur an einer Stelle (uiLoc)');
+  ok(/const uiLoc = \(\) => \(S\.lang === 'uk' \? 'uk-UA' : S\.lang === 'en' \? 'en-GB' : 'de-DE'\);/.test(app), 'uiLoc je Sprache');
+  ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
+  // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
+  const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
+  ok(rest.length === 2 && rest.every((l) => /value="|const money/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length);
+  // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
+  const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
+  eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');
+  const cur = (l) => new Intl.NumberFormat(l, { style: 'currency', currency: 'EUR', currencyDisplay: 'narrowSymbol' }).format(1234.5);
+  eq(cur('en-GB'), '€1,234.50'); ok(/^1\s234,50\s€$/.test(cur('uk-UA')) && /^1\.234,50\s€$/.test(cur('de-DE')), 'Euro-Zeichen statt „EUR“ auch auf Ukrainisch: ' + cur('uk-UA'));
+  ok(app.includes("currencyDisplay: 'narrowSymbol'"), 'App nutzt das Euro-Zeichen');
+});
+
 await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Termin setzen/verschieben nur gültig; Werkstatt nur eigener Standort', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'WP-LN 1', vin: 'WDB96340310555504', site: 'Dortmund' })).status, 201);
   const VP = 'VIN:WDB96340310555504';

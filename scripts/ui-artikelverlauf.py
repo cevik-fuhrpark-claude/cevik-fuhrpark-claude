@@ -11,6 +11,7 @@ JOURNAL={'de':'Lagerjournal','uk':'Журнал складу','en':'Stock journa
 VAL={'de':'Lagerwert','uk':'вартість складу','en':'stock value'}
 UNV={'de':'unbewertet','uk':'неоцінено','en':'unvalued'}
 ALL={'de':'Alle Artikel','uk':'Усі артикули','en':'All items'}
+TEN={'de':'10,00','uk':'10,00','en':'10.00'}; ZERO={'de':'0,00','uk':'0,00','en':'0.00'}  # Beträge im Format der Oberflächensprache
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -36,11 +37,11 @@ with sync_playwright() as p:
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'av.werkstatt','password':PW}])
         # Lagerwert der angezeigten Artikel: nur mit Preis, sonst „unbewertet“/„–“ (nie 0 €)
         q.goto(B+'/#/stock'); q.wait_for_selector('#sfsum:not([hidden])')
-        check('10,00' in q.inner_text('#sfsum') and VAL[lang] in q.inner_text('#sfsum') and '3 '+UNV[lang] in q.inner_text('#sfsum'),f'{lang} {w}px: Lagerwert mit unbewerteten Artikeln ({q.inner_text("#sfsum")!r})')
+        check(TEN[lang] in q.inner_text('#sfsum') and VAL[lang] in q.inner_text('#sfsum') and '3 '+UNV[lang] in q.inner_text('#sfsum'),f'{lang} {w}px: Lagerwert mit unbewerteten Artikeln ({q.inner_text("#sfsum")!r})')
         q.fill('#q','Kleiner'); q.wait_for_timeout(100)
-        check(VAL[lang]+' –' in q.inner_text('#sfsum') and '0,00' not in q.inner_text('#sfsum'),f'{lang} {w}px: nur unbewertete Artikel → „–“ statt 0 € ({q.inner_text("#sfsum")!r})')
+        check(VAL[lang]+' –' in q.inner_text('#sfsum') and ZERO[lang] not in q.inner_text('#sfsum'),f'{lang} {w}px: nur unbewertete Artikel → „–“ statt 0 € ({q.inner_text("#sfsum")!r})')
         q.fill('#q','Preisartikel'); q.wait_for_timeout(100)
-        check('10,00' in q.inner_text('#sfsum') and UNV[lang] not in q.inner_text('#sfsum'),f'{lang} {w}px: Suche grenzt Lagerwert ein')
+        check(TEN[lang] in q.inner_text('#sfsum') and UNV[lang] not in q.inner_text('#sfsum'),f'{lang} {w}px: Suche grenzt Lagerwert ein')
         if SHOTS: q.screenshot(path=f'{SHOTS}/lagerwert_{lang}_{w}.png')
         # Lagerliste drucken: nur die angezeigten Artikel, Suche im Vermerk, Lagerwert-Zeile sichtbar, Eingabe/Inventur nicht
         q.emulate_media(media='print')
@@ -49,7 +50,7 @@ with sync_playwright() as p:
         check(len(vis)==1,f'{lang} {w}px: Ausdruck nur angezeigte Artikel ({len(vis)})')
         q.emulate_media(media='screen')
         q.goto(B+'/#/stock/reorder'); q.wait_for_selector('#rosum')
-        check(q.inner_text('#rosum').split(':',1)[1].strip().startswith('–') and '0,00' not in q.inner_text('#rosum'),f'{lang} {w}px: Bestellvorschlag ohne Preis „–“ statt 0 € ({q.inner_text("#rosum")!r})')
+        check(q.inner_text('#rosum').split(':',1)[1].strip().startswith('–') and ZERO[lang] not in q.inner_text('#rosum'),f'{lang} {w}px: Bestellvorschlag ohne Preis „–“ statt 0 € ({q.inner_text("#rosum")!r})')
         q.goto(B+'/#/stock/'+small); q.wait_for_selector('#histjournal')
         check(q.locator('#histtrunc').count()==0,f'{lang} {w}px: wenige Buchungen ohne Hinweis')
         q.goto(B+'/#/stock/'+big); q.wait_for_selector('#histtrunc')
@@ -68,7 +69,7 @@ with sync_playwright() as p:
         q.click('#histjournal'); q.wait_for_selector('#jitem')
         check(JOURNAL[lang] in q.inner_text('h1') and 'Verlaufsartikel UI' in q.inner_text('#jitem'),f'{lang} {w}px: Journal mit Artikel-Chip')
         zl=[x for x in q.locator('ul.small li').all_inner_texts() if '201' in x]
-        check(len(zl)==1 and '–' in zl[0] and '0,00' not in zl[0],f'{lang} {w}px: Journal-Summe nur unbewerteter Zugänge „–“ statt 0 € ({zl!r})')
+        check(len(zl)==1 and '–' in zl[0] and ZERO[lang] not in zl[0],f'{lang} {w}px: Journal-Summe nur unbewerteter Zugänge „–“ statt 0 € ({zl!r})')
         rows=q.locator('table.printsm tbody tr')
         check(rows.count()==201 and all('Verlaufsartikel UI' in x for x in rows.all_inner_texts()[:5]),f'{lang} {w}px: alle 201 Buchungen nur dieses Artikels ({rows.count()})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Journal ohne Querscrollen')

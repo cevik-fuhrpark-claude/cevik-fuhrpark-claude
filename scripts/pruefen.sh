@@ -51,6 +51,7 @@ UI-Kennzahlen Fahrzeugliste (alle anzeigen)|ui-kpi-fahrzeuge.py|/tmp/cfp-kpiveh.
 UI-Vorgangsdateien (Höchstzahl)|ui-vorgangsdateien.py|/tmp/cfp-vdateien.log
 UI-Höchstzahl Hinweise/Rufnummern|ui-hoechstzahl-hinweise.py|/tmp/cfp-hoechstzahl.log
 UI-Dublette wählen (alle offenen)|ui-dublette-auswahl.py|/tmp/cfp-dublette.log
+UI-Zahlenformat je Sprache|ui-zahlenformat.py|/tmp/cfp-zahlenformat.log
 '
 N=0
 NL='
