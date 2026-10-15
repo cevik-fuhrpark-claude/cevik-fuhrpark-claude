@@ -264,16 +264,19 @@ export async function journal(env, user, envName, query = {}) {
   if (!isCalendarDate(from) || !isCalendarDate(to)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.');
   if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
   if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.');
-  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur', 'umlagerung'], 'Buchungsart') : null;
+  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur', 'umlagerung', 'inventur'], 'Buchungsart') : null;
+  const inv = type === 'inventur'; // Inventurdifferenzen = Korrekturen aus „Inventur buchen“ (Beleg „Inventur JJJJ-MM-TT“)
   // UTC-Spanne mit einem Tag Rand, danach exakt nach Berliner Datum filtern
   const lo = new Date(Date.parse(from) - 86400000).toISOString();
   const hi = new Date(Date.parse(to) + 2 * 86400000).toISOString();
-  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
+  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : inv ? "AND m.type='korrektur' AND m.transfer_id IS NULL AND substr(m.document_ref,1,9)='Inventur '" : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
+  // Inventur: Buchbestand unmittelbar vor der Korrektur (Summe aller früheren Buchungen des Artikels) und heutiger Artikelpreis
+  const invSql = inv ? ', (SELECT COALESCE(SUM(p.qty),0) FROM stock_movements p WHERE p.item_id=m.item_id AND p.created_at < m.created_at) AS book_before, i.unit_price_net AS item_price_net' : '';
   const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id, m.transfer_id, m.transfer_site,
-      i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate
+      i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate${invSql}
     FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
     WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${typeSql}
-    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(type && type !== 'umlagerung' ? [type] : []), JOURNAL_MAX + 400]).all()).results;
+    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 400]).all()).results;
   const r2 = (x) => Math.round(x * 100) / 100;
   let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
     .filter((r) => r.date >= from && r.date <= to);
@@ -283,10 +286,29 @@ export async function journal(env, user, envName, query = {}) {
   // Umlagerungen getrennt: Entnahme im Quell- und Zugang im Ziellager heben sich im Gesamtbestand auf
   for (const t of ['zugang', 'entnahme', 'korrektur', 'umlagerung']) sum[t] = { count: 0, value_net: 0, unvalued: 0 };
   for (const r of list) { const x = sum[r.transfer_id ? 'umlagerung' : r.type]; x.count++; if (r.value_net === null) x.unvalued++; else x.value_net = r2(x.value_net + r.value_net); }
+  if (inv) {
+    // Wert der Differenz zum heute hinterlegten Artikelpreis (Korrekturen tragen keinen eigenen Preis); ohne Preis leer, nie 0 €
+    const s = { count: 0, plus: 0, minus: 0, plus_value_net: 0, minus_value_net: 0, unvalued: 0 };
+    list = list.map(({ book_before, item_price_net, ...r }) => {
+      const book = r3(book_before), diff_value_net = item_price_net === null ? null : r2(r.qty * item_price_net);
+      s.count++; if (r.qty > 0) s.plus++; else s.minus++;
+      if (diff_value_net === null) s.unvalued++; else if (diff_value_net > 0) s.plus_value_net = r2(s.plus_value_net + diff_value_net); else s.minus_value_net = r2(s.minus_value_net + diff_value_net);
+      return { ...r, book, counted: r3(book + r.qty), item_price_net, diff_value_net };
+    });
+    sum.inventur = s;
+  }
   return { from, to, site, type, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
 }
 
 const TYPE_DE = { zugang: 'Zugang', entnahme: 'Entnahme', korrektur: 'Korrektur' };
+// Inventurdifferenzen als CSV: Buchbestand vor der Korrektur, gezählt, Differenz, Wert zum heutigen Artikelpreis (leer ohne Preis)
+export function inventoryDiffCsv(rep, csvCell) {
+  const head = ['Datum', 'Uhrzeit', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Buchbestand', 'Gezählt', 'Differenz', 'Artikelpreis netto (heute)', 'Wert Differenz netto', 'Beleg', 'Bemerkung'];
+  const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const lines = [head.join(';')];
+  for (const r of rep.movements) lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), csvCell(r.part_number), csvCell(r.name), csvCell(r.unit), n(r.book), n(r.counted), n(r.qty), n(r.item_price_net), n(r.diff_value_net), csvCell(r.document_ref), csvCell(r.note)].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
 export function journalCsv(rep, csvCell) {
   const head = ['Datum', 'Uhrzeit', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Buchungsart', 'Menge', 'Einheit', 'Preis netto', 'Wert netto', 'Vorgang', 'Kennzeichen', 'Lieferant', 'Beleg', 'Bemerkung'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));

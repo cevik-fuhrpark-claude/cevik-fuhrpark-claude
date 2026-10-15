@@ -2598,6 +2598,49 @@ await test('Lagerjournal: Buchungen je Zeitraum (Berliner Datum), Wert nur mit P
   for (const id of [a, b]) eq((await users.ws.patch(`/api/stock/${id}`, { active: false })).status, 200);
 });
 
+await test('Inventurdifferenzen: nur Inventur-Korrekturen, Buchbestand → gezählt, Wert zum heutigen Artikelpreis (ohne Preis unbewertet), CSV, nur eigenes Lager', async () => {
+  const today = (await users.ws.get('/api/stock/journal')).data.to;
+  const from = new Date(Date.parse(today) - 364 * 86400000).toISOString().slice(0, 10);
+  const q = `/api/stock/journal?from=${from}&to=${today}&type=inventur`;
+  const it = (await users.ws.get('/api/stock')).data.items.find((i) => i.name === 'Inventurartikel');
+  ok(it && it.unit_price_net === null, 'Inventurartikel ohne Preis');
+  let r = (await users.ws.get(q)).data;
+  let mine = r.movements.filter((m) => m.item_id === it.id);
+  eq(mine.length, 2, 'zwei Inventurbuchungen, „Testentnahme“-Korrektur nicht enthalten');
+  ok(r.movements.every((m) => m.type === 'korrektur' && !m.transfer_id && m.document_ref.startsWith('Inventur ')), 'nur Inventur-Korrekturen');
+  eq(JSON.stringify(mine.map((m) => [m.book, m.counted, m.qty])), '[[10,7,-3],[6,5,-1]]', 'Buchbestand vor der Buchung, gezählt, Differenz');
+  ok(mine.every((m) => m.item_price_net === null && m.diff_value_net === null), 'ohne Preis unbewertet (nie 0 €)');
+  eq(r.summary.inventur.count, r.movements.length); ok(r.summary.inventur.unvalued >= 2, 'unbewertet gezählt');
+  eq((await users.ws.patch(`/api/stock/${it.id}`, { unit_price_net: 2.5 })).status, 200);
+  eq((await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 8 }] })).data.booked, 1, 'Mehrbestand +3');
+  r = (await users.ws.get(q)).data; mine = r.movements.filter((m) => m.item_id === it.id);
+  eq(mine.map((m) => m.diff_value_net).join('/'), '-7.5/-2.5/7.5', 'Wert = Differenz × heutiger Artikelpreis');
+  eq(mine[2].book, 5); eq(mine[2].counted, 8);
+  const s = r.summary.inventur, vals = r.movements.filter((m) => m.diff_value_net !== null);
+  eq(s.plus, r.movements.filter((m) => m.qty > 0).length); eq(s.minus, r.movements.filter((m) => m.qty < 0).length);
+  eq(s.plus_value_net, Math.round(vals.filter((m) => m.diff_value_net > 0).reduce((a, m) => a + m.diff_value_net, 0) * 100) / 100, 'Summe Mehrbestand');
+  eq(s.minus_value_net, Math.round(vals.filter((m) => m.diff_value_net < 0).reduce((a, m) => a + m.diff_value_net, 0) * 100) / 100, 'Summe Fehlbestand');
+  const all = (await users.ws.get(`/api/stock/journal?from=${from}&to=${today}&type=korrektur`)).data.movements;
+  ok(all.length > r.movements.length && all.every((m) => m.book === undefined), 'Auswahl „Korrektur“ unverändert (alle Korrekturen, ohne Inventurspalten)');
+  eq((await users.wsMuc.get(q)).data.movements.filter((m) => m.site === 'DORTMUND').length, 0, 'fremdes Lager nicht sichtbar');
+  eq((await users.driver.get(q)).status, 403, 'Fahrer');
+  const csv = await users.ws.get(q + '&format=csv');
+  eq(csv.status, 200); ok(/inventurdifferenzen_test_/.test(csv.headers.get('content-disposition')), 'Dateiname');
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/\r\n$/, '').split('\r\n');
+  ok(lines[0].startsWith('﻿Datum;Uhrzeit;Lager;Artikelnummer;Bezeichnung;Einheit;Buchbestand;Gezählt;Differenz;'), 'Kopfzeile');
+  eq(lines.length - 1, r.movements.length, 'Zeilen = Differenzen');
+  ok(lines.some((l) => l.includes(';Inventurartikel;Stk;5;8;3;2,5;7,5;Inventur ')), 'Zeile mit Komma-Dezimalen');
+  ok(lines.some((l) => /;Inventurartikel;Stk;10;7;-3;2,5;-7,5;/.test(l)), 'Wert zum heutigen Preis auch für ältere Buchung');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("m.qty < 0 && m.diff_value_net !== null) ? eur(is.minus_value_net) : '–'"), 'Summe ohne bewertete Zeilen: – statt 0 €');
+  ok(app.includes('id="invdiffs"') && app.includes("sessionStorage.setItem('cfp_sj_type', 'inventur')"), 'Link im Inventur-Bereich öffnet die Auswahl Inventurdifferenzen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['mv_inventur', 'inventory_diffs', 'inv_book_before', 'inv_diff', 'inv_item_price', 'inv_diff_value', 'inv_hint', 'inv_none']) ok(STRINGS[l][k], `${k} ${l}`);
+    ok(['{n}', '{p}', '{pv}', '{m}', '{mv}'].every((x) => STRINGS[l].inv_sum.includes(x)), 'inv_sum ' + l);
+  }
+});
+
 await test('Lager-Umlagerung: Entnahme hier, Zugang im Ziellager (gleiche Kennung), kein Verbrauch, Zielartikel gefunden/angelegt, Rechte, Journal', async () => {
   const src = (await users.ws.post('/api/stock', { name: 'Umlagerteil', part_number: 'UML-1', unit: 'Stk', min_qty: 1, unit_price_net: 10, initial_qty: 6 })).data.id;
   eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'DORTMUND', qty: 1 })).status, 400, 'eigenes Lager');

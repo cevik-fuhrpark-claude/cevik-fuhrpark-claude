@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIFFS={'de':'Inventurdifferenzen','uk':'Розбіжності інвентаризації','en':'Stocktake differences'}
 BOOK={'de':'Buchbestand','uk':'Обліковий залишок','en':'Book stock'}
 RE={'de':'erneut ausführen','uk':'знову виконайте','en':'run “Check differences” again'}
 fails=[]
@@ -56,6 +57,14 @@ with sync_playwright() as p:
         q.wait_for_selector('#inv'); q.click('#inv summary')
         check(q.locator('#invdx').count()==0 and q.locator(f'[data-inv="{iid}"]').input_value()=='',f'{lang} {w}px: Entwurf nach Buchung gelöscht')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
+        # Inventurdifferenzen: Link im Inventur-Bereich → Lagerjournal mit Auswahl Inventur, Zeile Buchbestand 10 → gezählt 6, Differenz −4
+        q.click('#invdiffs'); q.wait_for_selector('#invtab')
+        row=q.locator('#invtab tbody tr',has_text=name).inner_text()
+        check(DIFFS[lang] in q.inner_text('h1') and q.locator('#jtype').input_value()=='inventur',f'{lang} {w}px: Inventurdifferenzen geöffnet')
+        check('10' in row and '6' in row and '-4' in row,f'{lang} {w}px: Zeile Buchbestand/gezählt/Differenz ({row!r})')
+        check(q.locator('#invsum').count()==1 and q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Summe, kein Querscrollen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/inventurdiff_{lang}_{w}.png',full_page=True)
+        q.goto(B+'/#/stock'); q.wait_for_selector('#inv')
         # Zählliste: Link im Inventur-Bereich, Standard ohne Buchbestand (Blindzählung), Schalter blendet ihn ein; Druckansicht ohne Bedienelemente
         if not q.evaluate("()=>document.querySelector('#inv').open"): q.click('#inv summary')
         q.click('#invsheet'); q.wait_for_selector('#ctab')
