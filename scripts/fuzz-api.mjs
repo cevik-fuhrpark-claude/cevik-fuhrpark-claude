@@ -1,7 +1,7 @@
 // [CLAUDE] Robustheits-Lauf (lokal, In-Memory-DB, synthetische Daten): schickt Störwerte an die API und meldet jede Antwort ≥ 500.
 // Aufruf: node --experimental-sqlite --no-warnings scripts/fuzz-api.mjs   (Fehlercode 1 bei mindestens einem Serverfehler)
 // Abgedeckt: alle festen GET-Pfade × Abfrageparameter × Störwerte, Felder schreibender Endpunkte und Vorgangsbefehle, Körper ohne
-// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
+// JSON-Objekt, ändernde Endpunkte auf bestehende Datensätze (Abschnitt 6), dasselbe gekürzt für alle anderen Rollen (Abschnitt 7), CSV-Importe (Vorschau + Übernahme), Datei-Uploads, Integrations-API (Abfragen + Telematik-Lieferungen).
 // Anlass: Fuzz-Lauf 15.10.2026 fand „limit=2.5“, Körper „null“, Name „[]“ und Telematik „items: [null]“ → jeweils „Interner Fehler“.
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.js';
@@ -138,6 +138,32 @@ for (const a of ['update', 'confirm_driver', 'inform_driver', 'set_status']) for
 }
 for (const key of ['item_id', 'counted', 'note']) for (const g of G) for (const q of ['?dry_run=1', '']) await hit(`Inventur ${q} ${key}=${JSON.stringify(g).slice(0, 12)}`, owner.post('/api/stock/inventory' + q, { site: ws, counts: [{ item_id: ids.item, counted: 5, [key]: g }] }));
 for (const raw of ['', 'null', '[]', '1', '"x"', '{']) for (const [m, p] of muts.map((x) => [x[0], x[1]])) await hit(`${m} ${p} Körper ${raw}`, owner.req(m, p, raw, J));
+
+// 7) Andere Rollen (Fuhrparkleitung, Werkstatt, Disposition, Fahrer, Nur-Lesen): eigene Codepfade (Lager der eigenen Werkstatt,
+//    nur eigene Daten, Rechteprüfung vor Feldprüfung) – gekürzte Stör-Auswahl
+const me = (await owner.get('/api/me')).data; const myEnv = (me.user && me.user.environment) || me.environment || 'test';
+const roles = {};
+for (const [role, extra] of [['fleet', {}], ['workshop', { workshop_site: ws }], ['dispatch', {}], ['driver', {}], ['viewer', {}]]) {
+  const r = await owner.post('/api/users', { username: 'fz.' + role, display_name: 'Fuzz ' + role, role, environment: myEnv, ...extra });
+  const c = new Client(worker, env, 'fz.' + role);
+  const a = await c.post('/api/invite/accept', { token: r.data && r.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  if (a.status !== 200) { console.log(`  ✘ Vorbereitung: Rolle ${role} nicht angemeldet (${r.status}/${a.status})`); process.exit(1); }
+  roles[role] = c;
+}
+await owner.post(`/api/vehicles/${VE}/drivers`, { user_id: (await owner.get('/api/users')).data.users.find((x) => x.username === 'fz.driver').id, evidence: 'Fuzz', end_previous: true });
+const G2 = [null, 123, [], { a: [] }, '   ', 'x'.repeat(5000), '0000-00-00'];
+for (const [role, c] of Object.entries(roles)) {
+  for (const p of gets) for (const kk of ['limit', 'site', 'from', 'status', 'vehicle', 'q']) for (const v of ['2.5', '-1', '[]', '2026-13']) await hit(`${role} GET ${p}?${kk}=${v}`, c.get(`${p}?${kk}=${encodeURIComponent(v)}`));
+  for (const [m, p, base, fields] of muts) for (const f of fields) for (const g of G2) await hit(`${role} ${m} ${p.replace(/[\w-]{20,}/g, ':id')} ${f}=${JSON.stringify(g).slice(0, 12)}`, c.req(m, p, { ...base, [f]: g }));
+  for (const [p, [base, fields]] of Object.entries(posts)) for (const f of fields) for (const g of G2) {
+    const body = { ...base, [f]: g, ...(p === '/api/cases' ? { request_key: 'fz-r' + (k++) } : {}) };
+    await hit(`${role} POST ${p} ${f}=${JSON.stringify(g).slice(0, 12)}`, c.post(p, body));
+  }
+  for (const a of acts) for (const key of ['note', 'priority', 'workshop_site', 'hours', 'quantity', 'planned_date']) for (const g of G2) {
+    const cs = await c.get(`/api/cases/${cid}`); const ver = cs.data && cs.data.case ? cs.data.case.version : 1;
+    await hit(`${role} Befehl ${a} ${key}=${JSON.stringify(g).slice(0, 12)}`, c.post(`/api/cases/${cid}/commands`, { action: a, command_id: `fz-${k++}`, expected_version: ver, note: 'n', payload: { [key]: g } }));
+  }
+}
 
 console.log(`${n} Anfragen (${gets.length} GET-Pfade, ${ipaths.length} API-Pfade), ${bad.length} Serverfehler; Status: ${JSON.stringify(st)}`);
 // Plausibilität: der Lauf muss angemeldet gewesen sein (sonst prüft er nur die Anmeldepflicht)
