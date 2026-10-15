@@ -2742,6 +2742,7 @@ await test('Lagerliste: Lagerwert der angezeigten Artikel (Bestand × hinterlegt
   ok(app.includes("const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);"), 'nur Artikel mit Bestand, bewertet nur mit Preis');
   ok(app.includes("const v = priced.length ? eur(") && app.includes(": '–';"), 'ohne bewertbaren Artikel „–“ statt 0 €');
   ok(app.includes("<b>${esc(t('reorder_sum'))}:</b> ${valued.length ? eur(sum) : '–'}"), 'Bestellvorschlag: Summe ohne bewertete Position „–“ statt 0 €');
+  ok(app.includes("${x.count} · ${x.unvalued === x.count ? '–' : eur(x.value_net)}"), 'Lagerjournal: Summe je Buchungsart nur unbewerteter Buchungen „–“ statt 0 €');
   ok(app.includes("t('stock_value_sum').replace('{n}', shown.length)") && app.includes("$('#sf').onchange = applyStock; applyStock();"), 'Summe immer, gleich beim Öffnen (nicht nur im Filter „ohne Entnahme“)');
   const { STRINGS } = await import('../public/i18n.js');
   const word = { de: 'Lagerwert', uk: 'Вартість складу', en: 'Stock value' };

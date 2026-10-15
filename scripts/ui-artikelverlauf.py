@@ -53,6 +53,8 @@ with sync_playwright() as p:
         if SHOTS: q.screenshot(path=f'{SHOTS}/artikelverlauf_{lang}_{w}.png')
         q.click('#histjournal'); q.wait_for_selector('#jitem')
         check(JOURNAL[lang] in q.inner_text('h1') and 'Verlaufsartikel UI' in q.inner_text('#jitem'),f'{lang} {w}px: Journal mit Artikel-Chip')
+        zl=[x for x in q.locator('ul.small li').all_inner_texts() if '201' in x]
+        check(len(zl)==1 and '–' in zl[0] and '0,00' not in zl[0],f'{lang} {w}px: Journal-Summe nur unbewerteter Zugänge „–“ statt 0 € ({zl!r})')
         rows=q.locator('table.printsm tbody tr')
         check(rows.count()==201 and all('Verlaufsartikel UI' in x for x in rows.all_inner_texts()[:5]),f'{lang} {w}px: alle 201 Buchungen nur dieses Artikels ({rows.count()})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Journal ohne Querscrollen')

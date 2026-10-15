@@ -1736,7 +1736,7 @@ async function viewStockJournal() {
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const TYPES = ['zugang', 'entnahme', 'korrektur', 'umlagerung'];
   const inv = type === 'inventur' && rep && rep.summary.inventur; const is = inv ? rep.summary.inventur : null;
-  const sumRow = rep ? TYPES.map((k) => { const x = rep.summary[k]; return x.count ? `<li>${esc(t('mv_' + k))}: ${x.count} · ${eur(x.value_net)}${x.unvalued ? ` <span class="small muted">(${x.unvalued} ${esc(t('unvalued_short'))})</span>` : ''}</li>` : ''; }).join('') : '';
+  const sumRow = rep ? TYPES.map((k) => { const x = rep.summary[k]; return x.count ? `<li>${esc(t('mv_' + k))}: ${x.count} · ${x.unvalued === x.count ? '–' : eur(x.value_net)}${x.unvalued ? ` <span class="small muted">(${x.unvalued} ${esc(t('unvalued_short'))})</span>` : ''}</li>` : ''; }).join('') : '';
   render(`<p class="noprint"><a href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t(inv ? 'inventory_diffs' : 'stock_journal'))}</h1>
     <p class="small muted">${esc(t(inv ? 'inv_hint' : 'journal_hint'))}</p>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${esc(from)} – ${esc(to)}${site ? ' · ' + esc(wsName(site)) : ''}${rep && rep.item ? ' · ' + esc(rep.item.name) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
