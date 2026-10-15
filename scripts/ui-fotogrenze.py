@@ -21,9 +21,11 @@ with sync_playwright() as p:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.evaluate(JS,['POST','/api/login',{'username':'fm.inhaber','password':PW}])
         for route in ['#/new','#/check']:
-            q.goto(B+'/'+route); q.wait_for_selector('#ph', state='attached')
+            # Hash-Wechsel #/new → #/check: neu laden, sonst greift set_input_files ggf. das alte Feld der vorigen Seite (Flake 15.10.2026)
+            q.goto(B+'/'+route); q.reload(); q.wait_for_selector('#ph', state='attached')
             q.set_input_files('#ph',[{'name':f'b{i}.png','mimeType':'image/png','buffer':PNG} for i in range(12)])
-            q.wait_for_timeout(200)
+            try: q.wait_for_selector('[data-photomax]', state='visible', timeout=3000)
+            except Exception: pass
             t=q.locator('[data-photomax]').inner_text() if q.locator('[data-photomax]').is_visible() else ''
             check('12 Bilder' in t and 'ersten 10' in t,f'{w}px {route}: Hinweis bei 12 Bildern')
             if SHOTS: q.locator('#ph').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/fotogrenze_{w}_{route[2:]}.png')
