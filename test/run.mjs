@@ -3896,6 +3896,12 @@ await test('Fahrerakte: Verläufe Auslesungen/Führerscheinkontrollen bis 100 Ei
   eq(d.license_checks.length, 100); eq(d.license_checks_truncated, true);
   eq(d.tacho_downloads[0].downloaded_on, day(100), 'neueste zuerst'); eq(d.tacho.last, day(100), 'Frist aus der neuesten Auslesung');
   eq(d.license_checks[0].checked_on, day(100), 'Status aus der neuesten Kontrolle');
+  // Hilfe nennt dieselben Grenzen wie Server und App (Zeitleiste lädt 500, Fahrerakte DRIVER_HIST_MAX, Akte 50)
+  const { STRINGS } = await import('../public/i18n.js'); const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('/timeline?limit=500'), 'App lädt 500');
+  ok(STRINGS.de.help_exports_s.includes('Zeitleiste bis 500, Fahrerakte je ' + DRIVER_HIST_MAX + ', Kontrollen in der Fahrzeugakte 50'), 'Hilfe DE');
+  ok(STRINGS.uk.help_exports_s.includes('до 500') && STRINGS.en.help_exports_s.includes('timeline up to 500, driver file ' + DRIVER_HIST_MAX + ' each'), 'Hilfe UK/EN');
 });
 
 await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nach FPersV § 2 Abs. 5: nur aus erfassten Auslesungen, Rechte, Befunde', async () => {
