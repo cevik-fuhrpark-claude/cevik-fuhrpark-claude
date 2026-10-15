@@ -55,6 +55,7 @@ UI-Dublette wählen (alle offenen)|ui-dublette-auswahl.py|/tmp/cfp-dublette.log
 UI-Zahlenformat je Sprache|ui-zahlenformat.py|/tmp/cfp-zahlenformat.log
 UI-Gewährleistungen (Hinweis bei Kappung)|ui-gewaehrleistung.py|/tmp/cfp-gewaehrleistung.log
 UI-Konflikt-Meldungen in der Sprache|ui-konfliktsprache.py|/tmp/cfp-konfliktsprache.log
+UI-Artikel-Stammdaten bearbeiten|ui-artikel-bearbeiten.py|/tmp/cfp-artikel-bearbeiten.log
 '
 N=0
 NL='

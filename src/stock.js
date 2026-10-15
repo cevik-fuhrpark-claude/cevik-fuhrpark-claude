@@ -101,6 +101,9 @@ export async function updateItem(env, user, envName, id, body) {
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (body.active ? 1 : 0),
   };
+  // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
+  const changed = Object.keys(fields).filter((k) => fields[k] !== it[k]);
+  if (!changed.length) return { ok: true, changed: [] };
   try {
     await env.DB.prepare('UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=? WHERE id=?')
       .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), id).run();
@@ -109,7 +112,8 @@ export async function updateItem(env, user, envName, id, body) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
     throw e;
   }
-  return { ok: true };
+  await audit(env, user.id, 'stock.update', null, { item: id, name: fields.name, site: it.site, changed: Object.fromEntries(changed.map((k) => [k, { from: it[k], to: fields[k] }])) });
+  return { ok: true, changed };
 }
 
 export async function addMovement(env, user, envName, id, body) {

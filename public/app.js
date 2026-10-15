@@ -1992,11 +1992,20 @@ async function viewStockItem(id) {
   const d = await api('GET', '/api/stock/' + id);
   const it = d.item;
   const others = (S.meta.workshops || []).filter((w) => w.code !== it.site);
-  render(`<p class="noprint"><a href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(it.name)}</h1>${printHead([`${t('workshop')}: ${wsName(it.site)}`, it.part_number ? `${t('part_number')}: ${it.part_number}` : ''])}
+  render(`<p class="noprint"><a href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(it.name)}${it.active ? '' : ` <span class="chip" id="itinact">${esc(t('item_inactive_badge'))}</span>`}</h1>${printHead([`${t('workshop')}: ${wsName(it.site)}`, it.part_number ? `${t('part_number')}: ${it.part_number}` : ''])}
     <section class="panel"><dl class="kv"><dt>${esc(t('on_hand'))}</dt><dd><b style="font-size:1.4rem">${it.on_hand} ${esc(it.unit)}</b></dd><dt>${esc(t('part_number'))}</dt><dd>${esc(it.part_number || '–')}</dd><dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(it.site))}</dd><dt>${esc(t('storage'))}</dt><dd>${esc(it.location || '–')}</dd><dt>${esc(t('min_qty'))}</dt><dd>${it.min_qty ?? '–'}</dd><dt>€</dt><dd>${eur(it.unit_price_net)}</dd><dt>${esc(t('last_counted'))}</dt><dd id="lcnt">${it.last_counted_at ? `${esc(fmtD(it.last_counted_at))} · ${fmtNum(it.last_counted_qty)} ${esc(it.unit)}` : esc(t('never_counted'))}</dd></dl></section>
     <form id="mf" class="panel"><h3>${esc(t('book'))}</h3><label>${esc(t('kind'))}</label><select name="type"><option value="zugang">${esc(t('mv_zugang'))}</option><option value="entnahme">${esc(t('mv_entnahme'))}</option><option value="korrektur">${esc(t('mv_korrektur'))}</option></select>
       <label>${esc(t('qty'))}</label><input name="qty" inputmode="decimal" required><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label>${esc(t('supplier'))}</label><input name="supplier"><label>${esc(t('doc_ref'))}</label><input name="document_ref"><label>${esc(t('note'))}</label><input name="note">
       <div class="actions"><button class="btn">${esc(t('book'))}</button></div></form>
+    <details class="panel noprint" id="itedp"><summary>${esc(t('item_edit'))}</summary><form id="itedf">
+      <label for="ie_name">${esc(t('part_name'))}</label><input id="ie_name" name="name" required maxlength="200" value="${esc(it.name)}">
+      <label for="ie_pn">${esc(t('part_number'))}</label><input id="ie_pn" name="part_number" maxlength="80" value="${esc(it.part_number || '')}">
+      <label for="ie_min">${esc(t('min_qty'))} (${esc(it.unit)})</label><input id="ie_min" name="min_qty" inputmode="decimal" value="${it.min_qty === null || it.min_qty === undefined ? '' : esc(String(it.min_qty).replace('.', ','))}">
+      <label for="ie_loc">${esc(t('storage'))}</label><input id="ie_loc" name="location" maxlength="80" value="${esc(it.location || '')}">
+      <label for="ie_price">${esc(t('price_net'))}</label><input id="ie_price" name="unit_price_net" inputmode="decimal" value="${it.unit_price_net === null || it.unit_price_net === undefined ? '' : esc(String(it.unit_price_net).replace('.', ','))}">
+      <label class="check"><input type="checkbox" name="active" id="ie_act" ${it.active ? 'checked' : ''}> ${esc(t('item_active'))}</label>
+      <p class="small muted">${esc(t('item_edit_hint'))}</p>
+      <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
     ${it.ordered_on ? `<section class="panel" id="ordp"><h3>${esc(t('ordered'))}</h3><p>${esc(t('ordered_line').replace('{q}', fmtNum(it.ordered_qty)).replace('{u}', it.unit).replace('{d}', fmtD(it.ordered_on)))}${it.ordered_eta ? ` · ${esc(t('ordered_eta'))}: ${esc(fmtD(it.ordered_eta))}` : ''}${it.ordered_note ? ` · ${esc(it.ordered_note)}` : ''}</p>
       <p class="small muted">${esc(t('ordered_hint'))}</p><div class="actions"><button type="button" class="btn secondary" id="ordclr">${esc(t('ordered_clear'))}</button></div></section>`
     : it.active ? `<details class="panel" id="ordp"><summary>${esc(t('order_mark'))}</summary><form id="of"><p class="small muted">${esc(t('ordered_hint'))}</p>
@@ -2013,6 +2022,11 @@ async function viewStockItem(id) {
   $('#histjournal').onclick = () => { try { const today = bDate(); const f = bDate(-365);
     sessionStorage.setItem('cfp_sj_item', id); sessionStorage.setItem('cfp_sj_from', f); sessionStorage.setItem('cfp_sj_to', today); sessionStorage.setItem('cfp_sj_type', ''); sessionStorage.setItem('cfp_sj_site', ''); } catch { /* ohne Sitzungsspeicher: Journal ungefiltert */ } location.hash = '#/stock/journal'; };
   $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].replace(',', '.'); } try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+  // Artikel-Stammdaten: alle Felder senden (leer = entfernen); Deaktivieren mit Restbestand nur nach Rückfrage
+  $('#itedf').onsubmit = async (e) => { e.preventDefault(); const g = (k) => e.target.elements.namedItem(k);
+    const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
+    if (it.active && !b.active && it.on_hand !== 0 && !confirm(t('item_inactive_onhand').replace('{q}', fmtNum(it.on_hand)).replace('{u}', it.unit))) return;
+    try { const r = await api('PATCH', `/api/stock/${id}`, b); toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).replace(',', '.'); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order`); viewStockItem(id); } catch (err) { toast(err.message, true); } };

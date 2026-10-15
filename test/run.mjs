@@ -4537,7 +4537,7 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
-  ok(rest.length === 2 && rest.every((l) => /value="|const money/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length);
+  ok(rest.length === 4 && rest.every((l) => /value="|const money/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length);
   // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
   const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
   eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');
@@ -4627,6 +4627,33 @@ await test('Fuzz-Funde ändernde Endpunkte: Artikel auf vorhandenen Namen umbene
   // Reifengröße für ein unbekanntes Fahrzeug: 404 statt Fremdschlüssel-Fehler
   const ts = await owner.post('/api/vehicles/VIN:' + 'A'.repeat(40) + '/tires/specs', { axle: 'lenkachse', size: '315/70 R22.5' });
   eq(ts.status, 404, 'Reifengröße unbekanntes Fahrzeug → ' + ts.status);
+});
+
+await test('Lagerartikel-Stammdaten bearbeiten: nur Änderungen gespeichert und protokolliert, leer = entfernen, Deaktivieren blendet aus, fremde Werkstatt/Fahrer gesperrt', async () => {
+  const c = await users.ws.post('/api/stock', { name: 'Stamm-Probe Luftfilter', part_number: 'SP-1', site: 'DORTMUND', min_qty: 2, unit_price_net: '12,50', location: 'Regal 1' });
+  eq(c.status, 201); const id = c.data.id;
+  const n0 = env.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='stock.update'`).get().n;
+  const same = await users.ws.req('PATCH', `/api/stock/${id}`, { name: 'Stamm-Probe Luftfilter', part_number: 'SP-1', min_qty: '2', location: 'Regal 1', unit_price_net: '12,5', active: true });
+  eq(same.status, 200); eq(same.data.changed.length, 0, 'unverändert: ' + JSON.stringify(same.data));
+  eq(env.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='stock.update'`).get().n, n0, 'ohne Änderung kein Protokolleintrag');
+  const r = await users.ws.req('PATCH', `/api/stock/${id}`, { name: 'Stamm-Probe Luftfilter groß', part_number: 'SP-1', min_qty: '', location: '', unit_price_net: '13,10', active: true });
+  eq(r.status, 200); eq(r.data.changed.sort().join(), 'location,min_qty,name,unit_price_net');
+  const it = (await users.ws.get(`/api/stock/${id}`)).data.item;
+  eq(it.name, 'Stamm-Probe Luftfilter groß'); eq(it.min_qty, null, 'Mindestbestand entfernt'); eq(it.location, null); eq(it.unit_price_net, 13.1); eq(it.unit, 'Stk', 'Einheit fest');
+  const ae = JSON.parse(env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='stock.update' ORDER BY created_at DESC LIMIT 1`).get().detail);
+  eq(ae.item, id); eq(ae.changed.min_qty.from, 2); eq(ae.changed.min_qty.to, null); eq(ae.changed.unit_price_net.to, 13.1);
+  const { auditActionLabel, auditDetailText } = await import('../public/i18n.js');
+  eq(auditActionLabel('en', 'stock.update'), 'Item details changed');
+  ok(/Minimum stock 2 → –/.test(auditDetailText('en', ae)), auditDetailText('en', ae));
+  eq((await users.wsMuc.req('PATCH', `/api/stock/${id}`, { name: 'X' })).status, 404, 'andere Werkstatt');
+  eq((await users.driver.req('PATCH', `/api/stock/${id}`, { name: 'X' })).status, 403, 'Fahrer');
+  eq((await users.ws.req('PATCH', `/api/stock/${id}`, { name: '  ' })).status, 400, 'Bezeichnung Pflicht');
+  eq((await users.ws.req('PATCH', `/api/stock/${id}`, { min_qty: '-1' })).status, 400, 'Mindestbestand nicht negativ');
+  eq((await users.ws.req('PATCH', `/api/stock/${id}`, { active: false })).data.changed.join(), 'active');
+  ok(!(await users.ws.get('/api/stock')).data.items.some((x) => x.id === id), 'deaktiviert: nicht in der Lagerliste');
+  eq((await users.ws.get(`/api/stock/${id}`)).data.item.active, 0, 'Artikelakte bleibt erreichbar');
+  eq((await users.ws.req('PATCH', `/api/stock/${id}`, { active: true })).status, 200, 'wieder aktivierbar');
+  ok((await users.ws.get('/api/stock')).data.items.some((x) => x.id === id), 'wieder in der Lagerliste');
 });
 
 await test('Stör-Parameter an allen festen GET-Pfaden: nie „Interner Fehler“ (Regressionsschutz aus dem Fuzz-Lauf 15.10.2026)', async () => {

@@ -1225,6 +1225,7 @@ const AUDIT_ACTIONS = {
   'stock.transfer': ['Lager-Umbuchung', 'Переміщення на складі', 'Stock transfer'],
   'stock.order_mark': ['Als bestellt markiert', 'Позначено як замовлене', 'Marked as ordered'],
   'stock.order_clear': ['Bestellvermerk entfernt', 'Позначку замовлення знято', 'Order mark removed'],
+  'stock.update': ['Artikel-Stammdaten geändert', 'Дані артикула змінено', 'Item details changed'],
   'stock.journal.export': ['Lagerjournal exportiert', 'Журнал складу експортовано', 'Stock journal exported'],
   'emergency.add': ['Notfallnummer hinzugefügt', 'Екстрений номер додано', 'Emergency number added'],
   'emergency.update': ['Notfallnummer geändert', 'Екстрений номер змінено', 'Emergency number changed'],
@@ -1270,6 +1271,8 @@ const AUDIT_DETAIL_KEYS = {
   user: ['Person', 'Особа', 'Person'], counted: ['gezählt', 'пораховано', 'counted'], differences: ['Abweichungen', 'Відхилення', 'Differences'], eta: ['erwartet am', 'очікується', 'expected on'],
   with_driver: ['mit Fahrer', 'з водієм', 'with driver'], ended_previous: ['beendete Zuordnungen', 'завершені призначення', 'ended assignments'],
   action: ['Bereich', 'Розділ', 'Area'], counts: ['Anzahlen', 'Кількості', 'Counts'], item: ['Artikel', 'Артикул', 'Item'],
+  part_number: ['Teilenummer', 'Номер деталі', 'Part number'], min_qty: ['Mindestbestand', 'Мінімальний залишок', 'Minimum stock'],
+  location: ['Lagerort', 'Місце зберігання', 'Location'], unit_price_net: ['Preis netto (€)', 'Ціна нетто (євро)', 'Net price (€)'],
   part: ['Teil', 'Частина', 'Part'], type: ['Typ', 'Тип', 'Type'], neu: ['neu', 'нові', 'new'], geaendert: ['geändert', 'змінено', 'changed'],
   unveraendert: ['unverändert', 'без змін', 'unchanged'], vorhanden: ['vorhanden', 'вже є', 'existing'], uebersprungen: ['übersprungen', 'пропущено', 'skipped'],
   plate_conflict: ['Kennzeichen-Konflikt', 'Конфлікт номерного знака', 'plate conflict'],
@@ -1381,3 +1384,7 @@ Object.assign(STRINGS.en, { imp_first_n: 'Showing the first {n} of {m} rows – 
 Object.assign(STRINGS.de, { warr_more: 'Es werden die {n} mit dem frühesten Ablauf angezeigt – es laufen weitere Gewährleistungen (Teile/Fremdleistungen in den Vorgängen des Fahrzeugs).' });
 Object.assign(STRINGS.uk, { warr_more: 'Показано {n} із найближчим закінченням – є ще інші чинні гарантії (запчастини/сторонні послуги в заявках цього транспорту).' });
 Object.assign(STRINGS.en, { warr_more: 'Showing the {n} expiring first – further warranties are running (parts/external services in this vehicle’s cases).' });
+// [CLAUDE] Artikel-Stammdaten in der Artikelakte bearbeiten (Bezeichnung, Teilenummer, Mindestbestand, Lagerort, Preis, aktiv) – 15.10.2026
+Object.assign(STRINGS.de, { item_edit: 'Artikel bearbeiten', item_active: 'Artikel aktiv (in Lagerliste, Bestellvorschlag und Inventur)', item_edit_hint: 'Änderungen stehen im Protokoll. Bestand und Buchungen bleiben unverändert – Mengen nur über „Buchen“ oder die Inventur ändern. Die Einheit ist fest, weil die Buchungen in ihr erfasst sind.', item_inactive_onhand: 'Artikel deaktivieren, obwohl noch {q} {u} am Lager sind? Er erscheint dann nicht mehr in Lagerliste, Bestellvorschlag und Inventur.', item_unchanged: 'Keine Änderung.', item_inactive_badge: 'inaktiv' });
+Object.assign(STRINGS.uk, { item_edit: 'Редагувати артикул', item_active: 'Артикул активний (у списку складу, пропозиції замовлення та інвентаризації)', item_edit_hint: 'Зміни записуються в журнал. Залишок і проведення не змінюються – кількості змінюйте лише через «Провести» або інвентаризацію. Одиниця фіксована, бо проведення ведуться в ній.', item_inactive_onhand: 'Деактивувати артикул, хоча на складі ще {q} {u}? Він більше не з’являтиметься у списку складу, пропозиції замовлення та інвентаризації.', item_unchanged: 'Без змін.', item_inactive_badge: 'неактивний' });
+Object.assign(STRINGS.en, { item_edit: 'Edit item', item_active: 'Item active (in stock list, reorder proposal and stocktake)', item_edit_hint: 'Changes are logged. Stock level and bookings stay unchanged – change quantities only via “Book” or the stocktake. The unit is fixed because bookings are recorded in it.', item_inactive_onhand: 'Deactivate the item although {q} {u} are still in stock? It will no longer appear in the stock list, reorder proposal and stocktake.', item_unchanged: 'No change.', item_inactive_badge: 'inactive' });
