@@ -4585,6 +4585,21 @@ await test('Anfragekörper muss ein JSON-Objekt sein: null/Zahl/Text/Liste → 4
   ok(translateValidation('en', rv.data.message) && !/ungültig/.test(translateValidation('en', rv.data.message)), 'EN übersetzt: ' + translateValidation('en', rv.data.message));
 });
 
+await test('Stör-Parameter an allen festen GET-Pfaden: nie „Interner Fehler“ (Regressionsschutz aus dem Fuzz-Lauf 15.10.2026)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const paths = [...new Set([...w.matchAll(/path === '(\/api\/[a-z0-9/_-]+)' && m === 'GET'/g)].map((x) => x[1]))].filter((p) => !/backup|setup|logout|integration/.test(p));
+  ok(paths.length >= 30, 'GET-Pfade gefunden: ' + paths.length);
+  const V = (await owner.get('/api/vehicles')).data.vehicles[0].id;
+  paths.push(`/api/vehicles/${encodeURIComponent(V)}`, `/api/vehicles/${encodeURIComponent(V)}/timeline`, `/api/vehicles/${encodeURIComponent(V)}/tires`, `/api/vehicles/${encodeURIComponent(V)}/notes`);
+  const bad = [];
+  for (const p of paths) for (const k of ['limit', 'days', 'from', 'to', 'until', 'site', 'status', 'q', 'filter', 'before']) for (const v of ['2.5', '-1', '[]', '2026-13']) {
+    const r = await owner.get(`${p}?${k}=${encodeURIComponent(v)}`);
+    if (r.status >= 500) bad.push(`${p}?${k}=${v} → ${r.status}`);
+  }
+  eq(bad.slice(0, 5).join(' | '), '', 'Serverfehler');
+});
+
 await test('Laufende Gewährleistungen: Akte (50) und Kurzinfo im Vorgang (20) melden weitere statt still zu kappen', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'VT-GW 9', vin: 'WDB96340310555649', site: 'Dortmund' })).status, 201);
   const V = 'VIN:WDB96340310555649';
