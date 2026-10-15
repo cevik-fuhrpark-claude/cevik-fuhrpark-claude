@@ -4530,6 +4530,25 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(app.includes("currencyDisplay: 'narrowSymbol'"), 'App nutzt das Euro-Zeichen');
 });
 
+await test('Listen mit Anzeigegrenze schneiden nie still ab (Import-Vorschauen nennen „die ersten N von M“)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // Jede gekappte Darstellung `.slice(0, N).map(` hat in derselben Zeile einen Hinweis (impMore, *_more, truncated, Längenprüfung)
+  const capped = []; app.split('\n').forEach((l, i) => { if (/\.slice\(0, \d+\)\.map\(/.test(l)) capped.push([i + 1, l]); });
+  ok(capped.length >= 5, 'gekappte Listen gefunden: ' + capped.length);
+  const silent = capped.filter(([, l]) => !/impMore\(|_more\b|_more'|truncated|\.length > \d+ \?/.test(l)).map(([n]) => n);
+  eq(silent.join(','), '', 'Zeilen ohne Hinweis auf weitere Einträge');
+  ok(app.includes('${impMore(r.skipped.length, 300)}') && app.includes('${impMore(changed.length, 200)}'), 'Reifen-Import (übersprungene Zeilen) und Fahrzeug-Import (Änderungen) nennen die Gesamtzahl');
+  const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  eq((i18n.match(/imp_first_n: '[^']*\{n\}[^']*\{m\}/g) || []).length, 3, 'imp_first_n mit {n}/{m} in DE/UK/EN');
+  // Laufzeit: Vorschau mit 201 neuen Fahrzeugen meldet alle 201 (Server kappt nicht), die App zeigt 200 + Hinweis
+  const rows = Array.from({ length: 201 }, (_, i) => `WDB9634031${String(500000 + i).padStart(7, '0')};XX-IM ${i + 1};Dortmund`).join('\n');
+  const r = await owner.req('POST', '/api/vehicles/import?dry_run=1', 'FIN;Kennzeichen;Standort\n' + rows, { 'content-type': 'text/csv' });
+  eq(r.status, 200, 'Vorschau ' + JSON.stringify(r.data).slice(0, 200));
+  eq(r.data.counts.neu, 201); eq(r.data.preview.filter((x) => x.action === 'neu').length, 201, 'Vorschau vollständig');
+  eq((await owner.get('/api/vehicles')).data.vehicles.filter((v) => /^XX-IM /.test(v.plate)).length, 0, 'Vorschau legt nichts an');
+});
+
 await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Termin setzen/verschieben nur gültig; Werkstatt nur eigener Standort', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'WP-LN 1', vin: 'WDB96340310555504', site: 'Dortmund' })).status, 201);
   const VP = 'VIN:WDB96340310555504';

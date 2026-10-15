@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test: Zeilenhinweise der Import-Vorschauen (Prüftermine inkl. Rückruf-Zeile, Verträge, Reifengrößen; Auslesungen: falsche Datei) in der App-Sprache DE/UK/EN bei 390/820/1366 px;
-# Werte aus der Datei bleiben wörtlich. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
+# Werte aus der Datei bleiben wörtlich. Lange Vorschauen (Reifen > 300, Fahrzeuge > 200 Zeilen) nennen „die ersten N von M“. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -12,6 +12,10 @@ CCSV=b'Kennzeichen;Vertragsart;Vertragspartner;Vertragsbeginn\nXX-NIE 9;Leasing;
 # Fristen-Übersicht der App (Export „Auslesungen“) versehentlich im Auslese-Import → klare Meldung in der App-Sprache
 ACSV='\ufeffArt;Fahrer/Kennzeichen;Personalnummer;Standort;Letzte Auslesung;Spätestens fällig;Tage;Status\r\nMassenspeicher;SZ-YC 5514;;Dortmund;;;;keine Auslesung erfasst\r\n'.encode('utf-8')
 AEXP={'de':'Fristen-Übersicht dieser App','uk':'огляд строків із цього застосунку','en':"this app's deadline overview"}
+# Lange Vorschauen: 301 übersprungene Reifenzeilen (Anzeige 300) und 201 neue Fahrzeuge (Anzeige 200) → Hinweis „die ersten N von M“
+TBIG=('Quelle;Kennzeichen;FIN;Reifen Lenkachse\n'+''.join(f'Liste;XX-NIE {i};WDB0000000{i:07d};315/80 R22.5\n' for i in range(301))).encode()
+VBIG=('FIN;Kennzeichen;Standort\n'+''.join(f'WDB9634031{500000+i:07d};XX-IM {i+1};Dortmund\n' for i in range(201))).encode()
+MORE={'de':('Die ersten 300 von 301 Zeilen','Die ersten 200 von 201 Zeilen'),'uk':('Показано перші 300 з 301 рядків','Показано перші 200 з 201 рядків'),'en':('Showing the first 300 of 301 rows','Showing the first 200 of 201 rows')}
 GAP={'de':'Lückenzeilen ohne Eintrag','uk':'Рядки-пропуски без даних','en':'Gap rows without entry'}
 TEXP={'uk':'Рядок 2 · XX-NIE 7: VIN немає в реєстрі транспорту','en':'Line 2 · XX-NIE 7: VIN not in the vehicle master data','de':'Zeile 2 · XX-NIE 7: FIN nicht im Fahrzeugstamm'}
 EXP={'uk':(['Невідомий вид перевірки: Ölxyz','Номерного знака немає в реєстрі транспорту','через «Імпорт відкликань»'],['Транспорт не знайдено: XX-NIE 9','Невідомий вид договору: Zauber']),
@@ -64,6 +68,11 @@ with sync_playwright() as p:
         q.set_input_files('#tcsv',{'name':'r.csv','mimeType':'text/csv','buffer':TCSV}); q.wait_for_selector('#tcsvr details')
         check(TEXP[lang] in q.inner_text('#tcsvr'),'Reifen: '+TEXP[lang])
         if SHOTS: q.locator('#tcsvr').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/reifen_{lang}_{w}.png')
+        q.set_input_files('#tcsv',{'name':'r2.csv','mimeType':'text/csv','buffer':TBIG}); q.wait_for_selector('#tcsvr [data-impmore]')
+        check(MORE[lang][0] in q.inner_text('#tcsvr [data-impmore]') and q.locator('#tcsvr li').count()==300,'Reifen: 300 von 301 angezeigt + Hinweis')
+        q.set_input_files('#csv',{'name':'f.csv','mimeType':'text/csv','buffer':VBIG}); q.wait_for_selector('#csvr [data-impmore]')
+        check(MORE[lang][1] in q.inner_text('#csvr [data-impmore]') and q.locator('#csvr .list .row').count()==200,'Fahrzeuge: 200 von 201 angezeigt + Hinweis')
+        if SHOTS: q.locator('#csvr [data-impmore]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/fzgmehr_{lang}_{w}.png')
         q.goto(B+'/#/tacho'); q.wait_for_selector('#timp',state='attached')
         q.set_input_files('#timp',{'name':'a.csv','mimeType':'text/csv','buffer':ACSV}); q.wait_for_selector('.toast.err')
         check(AEXP[lang] in q.inner_text('.toast.err'),'Auslesungen: '+AEXP[lang])
