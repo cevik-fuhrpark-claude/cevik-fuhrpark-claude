@@ -2251,6 +2251,18 @@ async function viewInbox() {
   $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; viewInbox(); }));
 }
 
+// Push bei geöffneten Hinweisen: Liste nur neu aufbauen, wenn nichts eingegeben und „Push für diese Hinweise“ zugeklappt ist –
+// sonst gingen Ruhezeit-Eingaben bzw. der aufgeklappte Bereich verloren; stattdessen Hinweis mit Knopf „Liste aktualisieren“
+function inboxPush() {
+  if (!S.me || !/^#\/inbox/.test(location.hash)) return;
+  const np = $('#np');
+  if (!viewDirty() && !(np && np.open)) { route(); return; }
+  if ($('#nnew')) return;
+  const h = $('#main h1') || document.querySelector('main h1'); if (!h) return;
+  h.insertAdjacentHTML('afterend', `<p class="panel small" id="nnew" role="status">${esc(t('nf_new'))} <button type="button" class="btn secondary" id="nnewb">${esc(t('nf_reload'))}</button></p>`);
+  $('#nnewb').onclick = () => route();
+}
+
 async function pushPanel(el) {
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ios = /iPhone|iPad/.test(navigator.userAgent) && !window.navigator.standalone;
@@ -3250,7 +3262,7 @@ setInterval(checkVersion, 30 * 60 * 1000);
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') location.hash = e.data.hash; if (e.data && e.data.type === 'push') refreshUnread(true).then(() => { if (S.me && /^#\/inbox/.test(location.hash)) route(); }); });
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') location.hash = e.data.hash; if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
 }
 document.documentElement.lang = S.lang;
 route();

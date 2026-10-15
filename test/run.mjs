@@ -7662,7 +7662,13 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
   // Push-Nachricht des Service Workers: nur Zahl am Glockensymbol aktualisieren, Seite nicht neu aufbauen (außer Hinweise) – sonst gehen Formulareingaben verloren
   const sw = app.slice(app.indexOf("e.data.type === 'push')"), app.indexOf("e.data.type === 'push')") + 160);
   ok(sw.includes('refreshUnread(true)') && app.includes("refreshUnread(true);\n}"), 'Push und Nachfragen laufen als Hintergrund-Abfrage');
-  ok(sw.includes("/^#\\/inbox/.test(location.hash)) route()"), 'Push baut nur die Hinweise neu auf: ' + sw);
+  ok(sw.includes('refreshUnread(true).then(inboxPush)'), 'Push ruft inboxPush auf: ' + sw);
+  { const ib = app.slice(app.indexOf('function inboxPush()'), app.indexOf('async function pushPanel('));
+    ok(ib.includes("if (!S.me || !/^#\\/inbox/.test(location.hash)) return;"), 'nur in den Hinweisen');
+    ok(ib.includes("if (!viewDirty() && !(np && np.open)) { route(); return; }"), 'Neuaufbau nur ohne Eingaben und mit zugeklapptem „Push für diese Hinweise“');
+    ok(ib.includes("t('nf_new')") && ib.includes("t('nf_reload')") && ib.includes("if ($('#nnew')) return;"), 'sonst einmaliger Hinweis mit Knopf');
+    for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_new && STRINGS[l].nf_reload && (l === 'de' || STRINGS[l].nf_new !== STRINGS.de.nf_new), 'nf_new/nf_reload übersetzt: ' + l);
+    for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_push_s.includes(STRINGS[l].nf_reload), 'Hilfe „Push“ nennt „' + STRINGS[l].nf_reload + '“'); }
   ok(app.includes('function paintBadge()') && app.slice(app.indexOf('async function refreshUnread('), app.indexOf('async function refreshUnread(') + 300).includes('paintBadge()'), 'Zahl wird an Ort und Stelle aktualisiert');
   for (const l of ['de', 'uk', 'en']) { const h = STRINGS[l].help_push_s; ok(h.includes(String(NOTIF_MAX)) && h.includes(STRINGS[l].nf_unread) && h.includes(STRINGS[l].mark_read) && h.includes(STRINGS[l].notifications), 'Hilfe „Push“ ' + l + ' nennt Grenze und echte Namen'); }
 });
