@@ -8030,6 +8030,17 @@ await test('Hilfe „Höchstzahlen auf einen Blick“ (DE/UK/EN) nennt dieselben
   for (const p of paras) eq((p.match(/\d+/g) || []).map(Number).join(','), [...lim, 5].join(','), 'Zahlen in der Reihenfolge Fotos, Vorgang, Bußgeld, Dokumente, Hinweise, Rufnummern, MB');
 });
 
+await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest), Optionen dokumentiert', async () => {
+  const fs = await import('node:fs');
+  const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  const all = fs.readdirSync(new URL('../scripts/', import.meta.url)).filter((f) => /^ui-.*\.py$/.test(f) && !['ui-rauchtest.py', 'ui-lastpanel.py'].includes(f));
+  const listed = [...sh.matchAll(/^[^|\n]+\|(ui-[a-z0-9-]+\.py)\|\/tmp\/cfp-[a-z0-9-]+\.log$/gm)].map((m) => m[1]);
+  eq(all.filter((f) => !listed.includes(f)).join(', '), '', 'nicht in UI_SKRIPTE eingetragen');
+  eq(listed.length, new Set(listed).size, 'keine doppelten Einträge');
+  const logs = [...sh.matchAll(/\|(\/tmp\/cfp-[a-z0-9-]+\.log)$/gm)].map((m) => m[1]); eq(logs.length, new Set(logs).size, 'eigene Logdatei je Skript');
+  for (const o of ['--schnell', '--ohne-tests', '--ohne-rauch', '--nur']) ok(sh.includes(`#   ${o}`) && sh.includes(`${o})`), `Option ${o} dokumentiert und ausgewertet`);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
