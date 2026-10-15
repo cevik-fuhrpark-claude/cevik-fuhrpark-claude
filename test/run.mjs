@@ -7906,6 +7906,17 @@ await test('Globale Suche: Gesamtzahl je Bereich und Hinweis statt stillem Absch
   ok(r.cases.length === 1 && r.truncated === true, 'limit=1 → truncated');
 });
 
+await test('Fotos: mehr als 10 gewählt → sichtbarer Hinweis (Schadensmeldung, Abfahrtskontrolle), Grenze wie Server', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const srv = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  eq(Number((app.match(/const PHOTO_MAX = (\d+);/) || [])[1]), Number((srv.match(/const MAX_FILES = (\d+);/) || [])[1]), 'Grenze App = Server');
+  eq((app.match(/photoLimitWatch\(\$\('#ph'\)\)/g) || []).length, 2, 'beide Fotofelder überwacht');
+  ok(!app.includes("files || [])].slice(0, 10)"), 'keine feste 10 mehr');
+  eq((i18n.match(/photos_over_max: '/g) || []).length, 3, 'Hinweis DE/UK/EN');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

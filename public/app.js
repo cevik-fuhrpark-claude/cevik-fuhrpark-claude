@@ -909,6 +909,7 @@ async function viewNew(preId) {
   // Beschreibung nennt einen Unfall: kurze Hinweise für vollständige Unterlagen (Fotos, Unfallstelle, Fuhrparkleitung informieren)
   const ACC = /unfall|accident|дтп|авар/i;
   $('#d').addEventListener('input', () => { $('#acc').hidden = !ACC.test($('#d').value); });
+  photoLimitWatch($('#ph'));
   const key = uid();
   $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => (l.hidden = q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q))); if (q) $$('details').forEach((d) => (d.open = true)); };
   $('#f').onsubmit = async (e) => {
@@ -922,7 +923,7 @@ async function viewNew(preId) {
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
     try {
       const r = await api('POST', '/api/cases', body);
-      const files = [...($('#ph').files || [])].slice(0, 10);
+      const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
       let failed = 0;
       for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
@@ -932,7 +933,7 @@ async function viewNew(preId) {
       location.hash = '#/cases/' + r.id;
     } catch (err) {
       if (err.offline) {
-        const files = [...($('#ph').files || [])].slice(0, 10);
+        const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
         let stored = 0;
         if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/cases', body, stored);
@@ -1103,6 +1104,18 @@ const wsName = (code) => (S.meta.workshops.find((w) => w.code === code) || {}).n
 const checkLabel = (k) => (CHECK_LABELS[S.lang] || CHECK_LABELS.de)[k] || k;
 
 // Bilder vor dem Hochladen verkleinern (max. 1600 px, JPEG) – spart Datenvolumen unterwegs
+// Mehr als 10 Fotos gewählt: nur die ersten 10 werden angehängt (Server-Grenze je Vorgang) – sofort sichtbar sagen statt still weglassen
+const PHOTO_MAX = 10;
+function photoLimitWatch(input) {
+  if (!input) return;
+  const note = document.createElement('p'); note.className = 'panel warn small'; note.setAttribute('role', 'status'); note.hidden = true; note.dataset.photomax = '';
+  input.insertAdjacentElement('afterend', note);
+  input.onchange = () => {
+    const n = (input.files || []).length;
+    note.hidden = n <= PHOTO_MAX;
+    note.textContent = n > PHOTO_MAX ? t('photos_over_max').replace('{n}', n).replace('{max}', PHOTO_MAX) : '';
+  };
+}
 async function prepareUpload(file) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
@@ -1236,11 +1249,12 @@ async function viewDepartureCheck(preId) {
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => {});
     $('#v').addEventListener('change', showKnown);
   }
+  photoLimitWatch($('#ph'));
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
-    const files = [...($('#ph').files || [])].slice(0, 10);
+    const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const hasDefect = body.items.some((i) => i.result === 'mangel');
     try {
       $('#sb').disabled = true;
