@@ -3901,6 +3901,8 @@ await test('Fahrerakte: Verläufe Auslesungen/Führerscheinkontrollen bis 100 Ei
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('/timeline?limit=500'), 'App lädt 500');
   ok(STRINGS.de.help_exports_s.includes('Zeitleiste bis 500, Fahrerakte je ' + DRIVER_HIST_MAX + ', Kontrollen in der Fahrzeugakte 50'), 'Hilfe DE');
+  { const { TIRE_HIST_MAX } = await import('../src/tires.js'); const { DQ_MAX } = await import('../src/quality.js');
+    ok(STRINGS.de.help_exports_s.includes(`Reifenverlauf ${TIRE_HIST_MAX}, Datenqualität je Prüfung ${DQ_MAX}`) && STRINGS.en.help_exports_s.includes(`tyre history ${TIRE_HIST_MAX}, data quality ${DQ_MAX} per check`) && STRINGS.uk.help_exports_s.includes(`історія шин ${TIRE_HIST_MAX}`), 'Hilfe nennt Reifen-/Datenqualitäts-Grenzen'); }
   ok(STRINGS.uk.help_exports_s.includes('до 500') && STRINGS.en.help_exports_s.includes('timeline up to 500, driver file ' + DRIVER_HIST_MAX + ' each'), 'Hilfe UK/EN');
 });
 
@@ -7450,6 +7452,67 @@ await test('Benutzer bearbeiten: Name/Rolle/Werkstatt/Umgebung, Protokoll „ge�
   ok(/if \(b\.dataset\.on !== '1' && !confirm\(t\('deactivate_confirm'\)/.test(app), 'Deaktivieren mit Rückfrage, Aktivieren ohne');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].deactivate_confirm.includes('{name}') && STRINGS[l].deactivate_confirm.includes(STRINGS[l].activate), 'Rückfrage nennt Aktivieren ' + l);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_title.includes('{name}') && STRINGS[l].ue_confirm.includes('{name}'), 'Platzhalter ' + l);
+});
+
+await test('Datenqualität: Listen-Prüfungen nicht still gekappt – mehr als 200 Befunde → truncated_checks, Anzahl „200+“, Hinweis DE/UK/EN', async () => {
+  const vin = 'WDB96340310777714'; const VID = 'VIN:' + vin; const db = env.DB.db;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-DQ 1', site: 'DQ-Kappung' })).status, 201);
+  const src = db.prepare(`SELECT * FROM inspections WHERE environment='test' LIMIT 1`).get(); ok(src, 'Vorlage-Kontrolle'); const cols = Object.keys(src);
+  const iso = (d) => new Date(Date.now() - d * 86400000).toISOString();
+  db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('tzdq-o', VID, 300000, iso(60), 'manuell', null, iso(60));
+  // Kontrollen mit km-Stand unter dem zuvor erfassten (nicht übernommen) → Befund km_inspection_rejected je Kontrolle
+  const ins = (i) => db.prepare(`INSERT INTO inspections(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map((c) => (c === 'id' ? 'tzdq-i' + i : c === 'vehicle_id' ? VID : c === 'case_id' ? null : c === 'created_at' ? iso(1 + i * 0.2) : c === 'odometer_km' ? 1000 + i : c === 'request_key' ? 'tzdq-i' + i : src[c])));
+  const dq = async () => (await users.fleet.get('/api/admin/data-quality')).data;
+  let r = await dq();
+  eq(r.check_max, 200); ok(!r.truncated_checks.includes('km_inspection_rejected'), 'ohne Kappung kein Hinweis');
+  const before = r.counts.km_inspection_rejected || 0;
+  for (let i = 0; i < 200 - before; i++) ins(i);
+  r = await dq();
+  eq(r.counts.km_inspection_rejected, 200, 'genau 200'); eq(r.truncated_checks.length, 0, 'genau 200 → nicht gekappt');
+  ins(200 - before);
+  r = await dq();
+  eq(r.counts.km_inspection_rejected, 200, 'höchstens 200 gezeigt');
+  eq(JSON.stringify(r.truncated_checks), JSON.stringify(['km_inspection_rejected']), 'Kappung gemeldet');
+  // die neuesten werden gezeigt (absteigend nach Zeitpunkt), die älteste fällt weg
+  const mine = r.items.filter((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === VID);
+  ok(mine.some((i) => i.detail.startsWith('1000 km')), 'neueste Kontrolle enthalten');
+  ok(!mine.some((i) => i.detail.startsWith(`${1000 + 200 - before} km`)) || before > 0, 'älteste nicht enthalten');
+  // Standortfilter: Hinweis bleibt (Kappung gilt vor dem Filter)
+  const rs = (await users.fleet.get('/api/admin/data-quality?site=' + encodeURIComponent('DQ-Kappung'))).data;
+  ok(rs.truncated_checks.includes('km_inspection_rejected'), 'Hinweis auch mit Standort');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_truncated && STRINGS[l].dq_truncated.includes('{n}'), 'Text ' + l);
+  const app = await (await import('node:fs/promises')).readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('dq_truncated')") && app.includes('truncated_checks'), 'Oberfläche zeigt den Hinweis');
+  // aufräumen, damit spätere Zählungen unberührt bleiben
+  db.prepare(`DELETE FROM inspections WHERE id LIKE 'tzdq-i%'`).run(); db.prepare(`DELETE FROM odometer_readings WHERE id='tzdq-o'`).run();
+  r = await dq(); eq(r.truncated_checks.length, 0, 'nach Aufräumen kein Hinweis');
+});
+
+await test('Reifenakte: aktueller Stand (Profil, DOT, Winter) aus allen Ereignissen, Verlauf 200 mit Hinweis – gleich wie Flottenübersicht', async () => {
+  const vin = 'WDB96340310777715'; const VID = 'VIN:' + vin; const db = env.DB.db;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-RF 1', site: 'Reifen-Kappung' })).status, 201);
+  const iso = (d) => new Date(Date.now() - d * 86400000).toISOString();
+  const ins = db.prepare('INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,dot,winter_mark,recorded_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  // vor langer Zeit: Wechsel aller vier Pflichtpositionen auf M+S mit Alpine-Symbol und DOT
+  for (const p of ['VA-L', 'VA-R', 'HA-L-aussen', 'HA-R-aussen']) ins.run('tzrf-w-' + p, 'test', VID, p, 'wechsel', 14, '2321', '3pmsf', users.fleet.id, iso(400));
+  let r = (await users.fleet.get(`/api/vehicles/${VID}/tires`)).data;
+  eq(r.history_truncated, false); eq(r.history_max, 200); eq(r.winter.status, 'erfuellt');
+  // danach 210 Messungen nur an VA-L (z. B. wöchentlich) – die übrigen Positionen haben kein Ereignis unter den neuesten 200
+  for (let i = 0; i < 210; i++) ins.run('tzrf-m' + i, 'test', VID, 'VA-L', 'messung', 12 - i / 100, null, null, users.fleet.id, iso(300 - i));
+  r = (await users.fleet.get(`/api/vehicles/${VID}/tires`)).data;
+  eq(r.history.length, 200, 'Verlauf höchstens 200'); eq(r.history_truncated, true, 'Hinweis auf ältere Ereignisse');
+  ok(r.history[0].created_at > r.history[199].created_at, 'neueste zuerst');
+  eq(r.positions.length, 4, 'alle vier Positionen weiter im Stand (vorher nur VA-L)');
+  const vr = r.positions.find((p) => p.position === 'VA-R');
+  eq(vr.tread_mm, 14); eq(vr.dot, '2321'); eq(vr.winter_mark, '3pmsf');
+  eq(r.winter.status, 'erfuellt', 'Winterstatus unverändert (vorher „unbekannt“)');
+  const fl = (await users.fleet.get('/api/tires/fleet?site=' + encodeURIComponent('Reifen-Kappung'))).data;
+  const row = (fl.vehicles || fl.rows || fl.items).find((x) => x.vehicle_id === VID);
+  eq(row.winter, r.winter.status, 'Flottenübersicht und Akte gleich'); eq(row.measured_positions, 4); eq(row.dot_positions, 4);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tire_hist_truncated && STRINGS[l].tire_hist_truncated.includes('{n}'), 'Text ' + l);
+  db.prepare(`DELETE FROM tire_events WHERE id LIKE 'tzrf-%'`).run();
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

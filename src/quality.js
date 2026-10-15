@@ -65,6 +65,10 @@ export async function myInspectionsWithoutResult(env, user) {
   return { items: (await noResultQuery(env, user.id).all()).results };
 }
 
+// Höchstzahl Befunde je Listen-Prüfung (Kontroll-km, Unfall ohne Versicherungsfall, Prüfmängel, Wiederholungsmangel, Prüfergebnis fehlt).
+// Gelesen wird eine Zeile mehr: dann steht fest, dass es weitere gibt → truncated_checks (App zeigt Hinweis statt still abzuschneiden).
+export const DQ_MAX = 200;
+
 export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
@@ -88,7 +92,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung
     env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km
-      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?) WHERE prev_km IS NOT NULL AND odometer_km < prev_km ORDER BY created_at DESC LIMIT 200`).bind(envName, staleBefore).all(),
+      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?) WHERE prev_km IS NOT NULL AND odometer_km < prev_km ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore).all(),
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
@@ -102,9 +106,9 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.created_at FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.created_at >= ? AND c.status<>'abgelehnt' AND v.eval_excluded=0
       AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
-      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString(), ...ACC_CYR).all(),
+      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString(), ...ACC_CYR).all(),
     // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher ohne Vorgang zum Fahrzeug seit dem Prüfdatum
-    defectsWithoutCaseQuery(env, envName).all(),
+    defectsWithoutCaseQuery(env, envName, DQ_MAX + 1).all(),
     // Nachprüfung (nächste spätere Durchführung derselben Prüfart, ≤ 365 Tage, am/nach dem Freigabetag des Mängelauftrags) erneut mit erheblichen Mängeln
     env.DB.prepare(`SELECT n.id, n.vehicle_id, v.plate, n.kind, n.done_date, n.result, e.done_date AS first_date, MAX(c.case_no) AS case_no
       FROM maintenance_events e JOIN cases c ON c.maintenance_event_id=e.id AND c.environment=? AND c.status='fahrzeug_freigegeben'
@@ -113,8 +117,8 @@ export async function dataQuality(env, user, envName, query = {}) {
       JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND ${berlinDaySql('c.closed_at')} <= n.done_date
       AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
-      GROUP BY n.id ORDER BY n.done_date DESC LIMIT 200`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
-    noResultQuery(env).all(),
+      GROUP BY n.id ORDER BY n.done_date DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
+    noResultQuery(env, null, DQ_MAX + 1).all(),
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
     // außerdem: Stände außer Betrieb genommener Fahrzeuge mit dem letzten Zeitpunkt „außer Betrieb genommen“ laut Protokoll (ohne Protokolleintrag kein Befund)
@@ -125,6 +129,10 @@ export async function dataQuality(env, user, envName, query = {}) {
       LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
       WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) OR v.active=0`).all(),
   ]);
+  const truncatedChecks = [];
+  for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult]]) {
+    if (res.results.length > DQ_MAX) { truncatedChecks.push(check); res.results = res.results.slice(0, DQ_MAX); }
+  }
   const vs = veh.results;
   const items = [];
   const add = (check, v, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: v && v.id || null, plate: v && v.plate || null, detail });
@@ -219,5 +227,5 @@ export async function dataQuality(env, user, envName, query = {}) {
   }
   const counts = {};
   for (const i of shown) counts[i.check] = (counts[i.check] || 0) + 1;
-  return { generated_at: nowIso(), environment: envName, stale_days: staleDays, vehicles_checked: checked, site: sel.site, site_options: sel.options, other_hidden: otherHidden, counts, items: shown };
+  return { generated_at: nowIso(), environment: envName, stale_days: staleDays, vehicles_checked: checked, site: sel.site, site_options: sel.options, other_hidden: otherHidden, counts, check_max: DQ_MAX, truncated_checks: truncatedChecks, items: shown };
 }

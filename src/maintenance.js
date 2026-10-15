@@ -118,17 +118,18 @@ function daysUntil(due, today) {
 
 // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen).
 // Mit recordedBy: nur selbst erfasste Durchführungen (Startseite „Prüfergebnis fehlt“).
-export function noResultQuery(env, recordedBy = null) {
-  const [sql, params] = noResultSql(recordedBy);
+// limit: Datenqualität liest 201 (eine Zeile mehr), um eine Kappung zu erkennen
+export function noResultQuery(env, recordedBy = null, limit = 200) {
+  const [sql, params] = noResultSql(recordedBy, limit);
   return env.DB.prepare(sql).bind(...params);
 }
-function noResultSql(recordedBy = null) {
+function noResultSql(recordedBy = null, limit = 200) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
       ${recordedBy ? 'AND e.recorded_by = ?' : ''}
       AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
-      ORDER BY e.done_date DESC LIMIT 200`, [...REQUIRED_KINDS, new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10), ...(recordedBy ? [recordedBy] : [])]];
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...REQUIRED_KINDS, new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10), ...(recordedBy ? [recordedBy] : [])]];
 }
 
 // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
@@ -136,17 +137,17 @@ function noResultSql(recordedBy = null) {
 // Ist danach bereits eine neuere Durchführung derselben Prüfart eingetragen (Nachprüfung, z. B. nach Reparatur außerhalb der App), gilt
 // die ältere als überholt: Zeigt die neuere erneut Mängel, erscheint stattdessen sie selbst.
 export const DEFECT_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];
-export function defectsWithoutCaseQuery(env, envName) {
-  const [sql, params] = defectsWithoutCaseSql(envName);
+export function defectsWithoutCaseQuery(env, envName, limit = 200) {
+  const [sql, params] = defectsWithoutCaseSql(envName, limit);
   return env.DB.prepare(sql).bind(...params);
 }
-function defectsWithoutCaseSql(envName) {
+function defectsWithoutCaseSql(envName, limit = 200) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND c.created_at >= e.done_date)
       AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-      ORDER BY e.done_date DESC LIMIT 200`, [new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), envName]];
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), envName]];
 }
 
 // Mängelauftrag aus Prüfung technisch freigegeben (≤ 365 Tage nach der Prüfung), kein weiterer offener Auftrag dazu und seitdem keine neuere

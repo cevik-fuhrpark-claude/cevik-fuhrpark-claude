@@ -160,7 +160,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const items = q.items.filter((i) => i.vehicle_id).map((i) => ({ check: i.check, severity: i.severity, vehicle_id: i.vehicle_id, plate: i.plate,
       event_id: i.event_id || null, case_id: i.case_id || null, detail: NAMED.has(i.check) ? null : i.detail }));
     return json({ schema_version: '1.0', generated_at: q.generated_at, environment: q.environment, stale_days: q.stale_days, vehicles_checked: q.vehicles_checked,
-      checks: CHECKS, counts: q.counts, by_severity, items });
+      checks: CHECKS, counts: q.counts, by_severity, check_max: q.check_max, truncated_checks: q.truncated_checks, items });
   }
   if (p === '/v1/master' && m === 'GET') {
     const [mp, names] = await Promise.all([masterPanel(env, envParam(url)), personNames(env, envParam(url))]);

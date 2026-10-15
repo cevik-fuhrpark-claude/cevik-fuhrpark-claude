@@ -92,6 +92,7 @@ export async function winterOrders(env, envName, vehicleId = null) {
 const canWrite = (u) => ['owner', 'fleet', 'workshop'].includes(u.role);
 const canMeasure = (u) => ['owner', 'fleet', 'workshop', 'driver'].includes(u.role);
 
+export const TIRE_HIST_MAX = 200;
 export async function tireOverview(env, user, envName, vehicleId) {
   if (user.role === 'driver') {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
@@ -100,11 +101,20 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const v = await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
-  const history = (await env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, u.role AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
-    WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT 200`).bind(envName, vehicleId).all()).results
-    .map((e) => hideDriverName(user, e, 'recorded_by_name', 'recorded_by_role'));
+  // Verlauf zur Anzeige: die neuesten TIRE_HIST_MAX Ereignisse (eine Zeile mehr gelesen → history_truncated).
+  // Der aktuelle Stand je Position (Profil, DOT, Winterkennzeichnung) wird dagegen aus ALLEN Ereignissen bestimmt – vorher nur aus den
+  // neuesten 200: Positionen mit älterem letzten Ereignis (z. B. Reserverad, Anhänger) fielen dann aus Akte und Winterstatus heraus,
+  // während die Flottenübersicht sie zeigte.
+  const [histRows, all] = await Promise.all([
+    env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, u.role AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
+    WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT ?`).bind(envName, vehicleId, TIRE_HIST_MAX + 1).all(),
+    env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
+  ]);
+  const historyTruncated = histRows.results.length > TIRE_HIST_MAX;
+  const history = histRows.results.slice(0, TIRE_HIST_MAX).map((e) => hideDriverName(user, e, 'recorded_by_name', 'recorded_by_role'));
+  const allEv = all.results;
   const latest = {};
-  for (const e of history) {
+  for (const e of allEv) {
     const cur = latest[e.position] || {};
     // letzter Messwert je Position; ein Wechsel setzt den Stand zurück
     if (!cur.event) cur.event = e;
@@ -117,15 +127,15 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const sRows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('tire_warn_tread_mm','tire_warn_age_years')`).all()).results;
   const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
   const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null;
-  const wm = winterMarks(history);
+  const wm = winterMarks(allEv);
   const wo = v.kind === 'anhaenger' ? null : await winterOrders(env, envName, vehicleId);
   const wOrder = wo ? wo.open.get(vehicleId) || null : null;
-  const dots = currentDots(history); const today = berlinDate();
+  const dots = currentDots(allEv); const today = berlinDate();
   const positions = Object.entries(latest).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: x.tread_mm === undefined || x.tread_mm === null ? 'unbekannt' : x.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && x.tread_mm < warn ? 'warnung' : 'ok',
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status) : null }; })() };
+  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status) : null }; })() };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
