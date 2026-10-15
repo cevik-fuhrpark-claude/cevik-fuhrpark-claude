@@ -1,8 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants,
-} from './util.js';
+  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
 import { notifyUsers, nt } from './notify.js';
 
@@ -542,7 +541,7 @@ function auditPrefixWhere(prefix, where, args, esc) {
 }
 export async function listAudit(env, user, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
-  const limit = Math.min(Math.max(Number(query.limit) || 200, 1), 1000);
+  const limit = intParam(query.limit, 200, 1, 1000);
   const prefix = auditPrefix(query);
   let before = query.before && /^\d{4}-\d{2}-\d{2}T/.test(query.before) ? query.before : '9999';
   // „bis Datum“ (Berliner Kalendertag einschließlich) – nur wenn kein späterer Blätter-Zeitpunkt gesetzt ist

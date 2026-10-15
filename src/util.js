@@ -148,6 +148,13 @@ export async function readJson(request, maxBytes = 64 * 1024) {
   try { return JSON.parse(text); } catch { throw bad('invalid_json', 'Ungültiges JSON.'); }
 }
 
+// Ganzzahliger Abfrageparameter (limit, days, weeks …): fehlend/ungültig → Vorgabe, Kommazahl abgerundet, in [min, max] begrenzt.
+// Vorher führten „limit=2.5“ (SQLite: datatype mismatch) oder „limit=-2“ (LIMIT -1 = unbegrenzt, danach Array-Fehler) zu „Interner Fehler“.
+export function intParam(v, def, min, max) {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n !== 0 ? Math.min(Math.max(n, min), max) : def;
+}
+
 export function parseCookies(header) {
   const out = {};
   if (!header) return out;

@@ -1,6 +1,6 @@
 // [CLAUDE] Nutzungsstatistik ohne Personenbezug: welche Funktionen werden genutzt (für die Einführungsphase)
 // Gespeichert werden nur Tag, Umgebung, Funktionspfad (IDs/Kennzeichen/Token ersetzt) und Anzahl – keine Person, keine Rolle, keine Inhalte.
-import { berlinDate, HttpError } from './util.js';
+import { berlinDate, HttpError, intParam } from './util.js';
 
 const AREA = { cases: 'cases', vehicles: 'vehicles', contracts: 'vehicles', tires: 'tires', stock: 'stock', fines: 'fines', maintenance: 'maintenance', reports: 'reports',
   master: 'master', agent: 'master', notifications: 'notifications', push: 'notifications', users: 'admin', admin: 'admin', settings: 'admin',
@@ -25,7 +25,7 @@ export function recordUsage(env, ctx, environment, method, path, status, action)
 
 export async function usageReport(env, user, environment, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht die Nutzungsstatistik.');
-  const days = Math.min(Math.max(Number(query.days) || 30, 1), 366);
+  const days = intParam(query.days, 30, 1, 366);
   const from = berlinDate(new Date(Date.now() - (days - 1) * 86400000).toISOString());
   const rows = (await env.DB.prepare(`SELECT day, feature, calls, errors FROM usage_daily WHERE environment=? AND day >= ? ORDER BY day`).bind(environment, from).all()).results;
   const byFeature = new Map(); const byDay = new Map(); const byArea = new Map();

@@ -1,7 +1,7 @@
 // [CLAUDE] Kostenbericht je Fahrzeug und Monat (Controlling). Gleiche Regeln wie caseCosts:
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
-import { bad, forbidden, berlinDate, icsCalendar } from './util.js';
+import { bad, forbidden, berlinDate, icsCalendar, intParam } from './util.js';
 import { maintenanceOverview } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -403,7 +403,7 @@ export function isoWeek(dateStr) {
 const OPEN_WS = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
 export async function workshopLoad(env, user, envName, query = {}) {
   if (!['owner', 'fleet', 'viewer', 'workshop'].includes(user.role)) throw forbidden();
-  const weeks = Math.min(Math.max(Number(query.weeks) || 8, 1), 52);
+  const weeks = intParam(query.weeks, 8, 1, 52);
   const today = berlinDate();
   const startDate = new Date(Date.parse(today + 'T00:00:00Z') - ((new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7) * 86400000 - (weeks - 1) * 7 * 86400000).toISOString().slice(0, 10);
   const siteFilter = user.role === 'workshop' ? user.workshop_site : null;
@@ -485,7 +485,7 @@ export async function defectReport(env, user, envName, query = {}) {
 const PLAN_STATUSES = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
 export async function workshopPlan(env, user, envName, query = {}) {
   if (!['owner', 'fleet', 'viewer', 'workshop', 'dispatch'].includes(user.role)) throw forbidden();
-  const days = Math.min(Math.max(Number(query.days) || 14, 1), 60);
+  const days = intParam(query.days, 14, 1, 60);
   const today = berlinDate();
   const to = new Date(Date.parse(today + 'T00:00:00Z') + (days - 1) * 86400000).toISOString().slice(0, 10);
   const site = user.role === 'workshop' ? user.workshop_site : (query.site ? String(query.site).slice(0, 20) : null);

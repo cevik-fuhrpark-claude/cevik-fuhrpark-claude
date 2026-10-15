@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName, berlinDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -266,7 +266,7 @@ export async function tireFindings(env, environment, settings = null) {
 // Nur gemessene Werte; ohne Messung = „kein Messwert“ (nie geschätzt).
 export async function fleetTires(env, user, envName, query = {}) {
   if (!['owner', 'fleet', 'workshop', 'viewer'].includes(user.role)) throw forbidden();
-  const staleDays = Math.min(Math.max(Math.round(Number(query.stale_days) || 90), 1), 3650);
+  const staleDays = intParam(query.stale_days, 90, 1, 3650);
   const sRows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('tire_warn_tread_mm','tire_warn_age_years')`).all()).results;
   const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
   const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null; const today = berlinDate();

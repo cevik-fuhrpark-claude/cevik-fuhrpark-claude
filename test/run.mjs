@@ -4530,6 +4530,30 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(app.includes("currencyDisplay: 'narrowSymbol'"), 'App nutzt das Euro-Zeichen');
 });
 
+await test('Zahlen-Parameter (limit, days, weeks, stale_days): Kommazahl, negativ, 0, Text, riesig → nie „Interner Fehler“, immer begrenzt', async () => {
+  const { intParam } = await import('../src/util.js');
+  eq(intParam('2.5', 200, 1, 500), 2); eq(intParam('-2', 200, 1, 500), 1); eq(intParam('0', 200, 1, 500), 200); eq(intParam('abc', 200, 1, 500), 200);
+  eq(intParam('1e9', 200, 1, 500), 500); eq(intParam('Infinity', 200, 1, 500), 200); eq(intParam(undefined, 30, 1, 366), 30); eq(intParam('', 8, 1, 52), 8); eq(intParam('0.4', 8, 1, 52), 8);
+  const V = (await owner.get('/api/vehicles')).data.vehicles[0].id;
+  const urls = ['/api/cases?status=open&limit=', '/api/cases?status=closed&limit=', `/api/vehicles/${encodeURIComponent(V)}/timeline?limit=`, '/api/admin/audit?limit=',
+    '/api/admin/data-quality?stale_days=', '/api/reports/workshop-load?weeks=', '/api/workshop/plan?days=', '/api/tires/fleet?stale_days=', '/api/admin/usage?days='];
+  for (const u of urls) for (const val of ['2.5', '-2', '-1', '0', 'abc', '1e9', '1.5e3']) {
+    const r = await owner.get(u + encodeURIComponent(val));
+    eq(r.status, 200, `${u}${val} → ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`);
+  }
+  // Begrenzung wirkt: limit=-2 liefert höchstens 1 Vorgang (vorher LIMIT -1 = alle, dann Array-Fehler), limit=2.5 höchstens 2
+  ok((await owner.get('/api/cases?status=open&limit=-2')).data.cases.length <= 1, 'negativ → 1');
+  ok((await owner.get('/api/cases?status=open&limit=2.5')).data.cases.length <= 2, 'Kommazahl abgerundet');
+  ok((await owner.get('/api/admin/audit?limit=2.5')).data.entries.length <= 2, 'Protokoll abgerundet');
+  // kein Modul parst Zahlen-Parameter mehr am Helfer vorbei
+  const fs = await import('node:fs');
+  for (const f of fs.readdirSync(new URL('../src/', import.meta.url))) {
+    if (!f.endsWith('.js')) continue;
+    const src = fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
+    ok(!/Number\(query\.\w+\) \|\|/.test(src), f + ': Zahlen-Parameter über intParam');
+  }
+});
+
 await test('Laufende Gewährleistungen: Akte (50) und Kurzinfo im Vorgang (20) melden weitere statt still zu kappen', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'VT-GW 9', vin: 'WDB96340310555649', site: 'Dortmund' })).status, 201);
   const V = 'VIN:WDB96340310555649';

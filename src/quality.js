@@ -1,6 +1,6 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso, berlinDate, berlinDateTime, berlinDaySql, normPlate, caseVariants } from './util.js';
+import { forbidden, nowIso, berlinDate, berlinDateTime, berlinDaySql, normPlate, caseVariants, intParam } from './util.js';
 
 // Unfall-Wortstämme auf Ukrainisch: lower() wirkt in SQLite/D1 nur auf A–Z – daher alle Schreibweisen (klein, GROSS, Anfang groß)
 // einzeln suchen („АВАРІЯ“, „Дтп“ wurden vorher nicht erkannt). Deutsch/Englisch genügt lower().
@@ -71,7 +71,7 @@ export const DQ_MAX = 200;
 
 export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
-  const staleDays = Math.min(Math.max(Number(query.stale_days) || 90, 7), 730);
+  const staleDays = intParam(query.stale_days, 90, 7, 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
   const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
