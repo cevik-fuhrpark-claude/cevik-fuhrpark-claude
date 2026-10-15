@@ -7965,6 +7965,18 @@ await test('Bußgelder: höchstens 20 Dateien je Vorgang (Server), gleiche Datei
   ok(app.includes('accept="application/pdf,image/jpeg,image/png"'), 'Auswahl nur erlaubte Typen (kein WEBP/GIF)');
 });
 
+await test('Fahrzeugdokumente: Höchstzahl sichtbar (freie Plätze ab Hälfte, voll → Hinweis statt Formular), Grenze wie Server, Dublette vor Grenze', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const srv = fs.readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
+  eq(Number((app.match(/const VEH_DOCS_MAX = (\d+);/) || [])[1]), Number((srv.match(/const MAX_VEHICLE_DOCS = (\d+);/) || [])[1]), 'Grenze App = Server');
+  ok(app.includes('id="docfull"') && app.includes('id="docfree"') && app.includes('canDoc && d.documents.length < VEH_DOCS_MAX'), 'Hinweise und Formular nur bei freiem Platz');
+  { const up = srv.slice(srv.indexOf("'Nur PDF, JPG, PNG oder WEBP erlaubt.'"), srv.indexOf('MAX_VEHICLE_DOCS) throw') + 30);
+    ok(up.length > 100 && up.length < 1200 && up.includes('duplicate: true'), 'Dublette vor Grenze'); }
+  eq((i18n.match(/docs_full: '/g) || []).length, 3, 'docs_full DE/UK/EN');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

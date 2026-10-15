@@ -735,7 +735,7 @@ Historie:\n${history}`;
 
 // Dokumentablage je Fahrzeug: PDF/JPG/PNG/WEBP bis 5 MB, max. 30 je Fahrzeug und Umgebung, Dubletten (SHA-256) werden erkannt
 export const DOC_KINDS = ['zulassung', 'pruefbericht', 'rechnung', 'versicherung', 'leasing', 'rueckruf', 'foto', 'sonstiges'];
-const MAX_VEHICLE_DOCS = 30;
+export const MAX_VEHICLE_DOCS = 30;
 export async function uploadVehicleDocument(env, user, envName, vehicleId, request, query = {}) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
@@ -749,11 +749,11 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
   if (buf.length > 5 * 1024 * 1024) throw bad('too_large', 'Datei zu groß (max. 5 MB).');
   const type = sniffType(buf);
   if (!type) throw bad('type', 'Nur PDF, JPG, PNG oder WEBP erlaubt.');
-  const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=?').bind(vehicleId, envName).first();
-  if (cnt.n >= MAX_VEHICLE_DOCS) throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
   const sha = await sha256Hex(buf);
   const dup = await env.DB.prepare('SELECT id FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
   if (dup) return { id: dup.id, duplicate: true };
+  const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=?').bind(vehicleId, envName).first();
+  if (cnt.n >= MAX_VEHICLE_DOCS) throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
   const id = uuid();
   const key = `${envName}/vehicles/${vehicleId}/${id}`;
   await env.FILES.put(key, buf, { metadata: { type, vehicle_id: vehicleId, env: envName } });
