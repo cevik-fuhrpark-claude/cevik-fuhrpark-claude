@@ -203,6 +203,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   return { ok: true, version: f.version + 1 };
 }
 
+export const MAX_FINE_FILES = 20;
 export async function uploadFineFile(env, user, envName, id, request) {
   const f = await loadFine(env, user, envName, id);
   if (!fineActions(user, f).includes('upload')) throw forbidden();
@@ -216,6 +217,9 @@ export async function uploadFineFile(env, user, envName, id, request) {
   const sha = await sha256Hex(buf);
   const dup = await env.DB.prepare('SELECT id FROM files WHERE fine_id=? AND sha256=?').bind(id, sha).first();
   if (dup) return { id: dup.id, duplicate: true };
+  // Höchstzahl je Bußgeldvorgang (Schreiben, Fotos, Zeugenfragebogen) – begrenzt Speicher; gleiche Datei zählt nicht doppelt (oben)
+  const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM files WHERE fine_id=?').bind(id).first();
+  if (cnt.n >= MAX_FINE_FILES) throw bad('too_many', `Maximal ${MAX_FINE_FILES} Dateien je Bußgeldvorgang.`);
   const fid = uuid();
   const key = `${envName}/fines/${id}/${fid}`;
   await env.FILES.put(key, buf, { metadata: { type, fine_id: id } });

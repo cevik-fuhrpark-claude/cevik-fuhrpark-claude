@@ -2036,7 +2036,9 @@ async function viewFine(id) {
       <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? fmtD(f.response_due) : '–'}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(f.driver_evidence)}</div>` : ''}</dd></dl>
       ${f.note ? `<p style="white-space:pre-wrap;margin-top:8px">${esc(f.note)}</p>` : ''}</section>`;
   html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
-  if (A.includes('upload')) html += `<label class="btn secondary" style="margin-top:8px;display:inline-flex">${esc(t('upload'))}<input id="ff" type="file" accept="application/pdf,image/*" hidden></label>`;
+  // Höchstzahl je Bußgeldvorgang wie Server (MAX_FINE_FILES): voll → Hinweis statt Knopf
+  if (A.includes('upload') && d.files.length < FINE_FILES_MAX) html += `<label class="btn secondary" style="margin-top:8px;display:inline-flex">${esc(t('upload'))}<input id="ff" type="file" accept="application/pdf,image/jpeg,image/png" hidden></label>`;
+  else if (A.includes('upload')) html += `<p class="small muted" id="ffull">${esc(t('files_full').replace('{max}', FINE_FILES_MAX))}</p>`;
   if (A.includes('confirm_driver')) {
     html += `<div class="noprint"><h2>${esc(t('candidates'))}</h2>${d.candidates.length ? `<div class="list">${d.candidates.map((c, i) => `<label class="row"><input type="radio" name="cand" value="${i}"><span class="title">${esc(c.display_name)}</span><span class="chip">${esc(t('fb_' + c.basis))}</span><span class="sub" style="white-space:normal">${esc(candEv(c))}</span></label>`).join('')}</div>` : `<p class="muted">${esc(t('no_candidates'))}</p>`}</div>
       <form id="cf" class="panel"><h3>${esc(t('confirm_driver'))}</h3><label>${esc(t('role_driver'))}</label><select name="driver_id" id="drv"><option value="">–</option></select>
@@ -2606,6 +2608,7 @@ async function viewMaint() {
 
 // ---------- Kennzahlen Instandhaltung ----------
 const KPI_VEH_MAX = 20;
+const FINE_FILES_MAX = 20;
 const dur = (h) => (h === null || h === undefined ? '–' : h < 48 ? `${String(h).replace('.', ',')} h` : `${String(Math.round(h / 2.4) / 10).replace('.', ',')} ${t('days')}`);
 async function viewKpi() {
   const to = S.kpiTo || bYm(); const from = S.kpiFrom || bYm(2);

@@ -7947,6 +7947,24 @@ await test('Vorgangsdateien: Höchstzahl vor dem Hochladen sichtbar (freie Plät
   for (const k of ['files_free', 'files_full', 'files_skipped']) eq((i18n.match(new RegExp(`${k}: '`, 'g')) || []).length, 3, `${k} DE/UK/EN`);
 });
 
+await test('Bußgelder: höchstens 20 Dateien je Vorgang (Server), gleiche Datei zählt nicht, Oberfläche zeigt Hinweis statt Knopf', async () => {
+  const body = { kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: 'AZ-DATEIGRENZE', offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1', plate_in_letter: 'SZ YC 5513' };
+  const r = await users.fleet.post('/api/fines', body); eq(r.status, 201);
+  const fid = r.data.id;
+  for (let i = 0; i < 20; i++) eq((await users.fleet.req('POST', `/api/fines/${fid}/files`, new TextEncoder().encode(`%PDF-1.4 Grenze ${i}`), { 'x-filename': `s${i}.pdf` })).status, 201, `Datei ${i + 1}`);
+  const dup = await users.fleet.req('POST', `/api/fines/${fid}/files`, new TextEncoder().encode('%PDF-1.4 Grenze 3'), { 'x-filename': 'dup.pdf' });
+  ok(dup.status < 300 && dup.data.duplicate === true, 'gleiche Datei bei vollem Vorgang: Dublette, kein Fehler');
+  const over = await users.fleet.req('POST', `/api/fines/${fid}/files`, new TextEncoder().encode('%PDF-1.4 zu viel'), { 'x-filename': 'x.pdf' });
+  eq(over.status, 400); eq(over.data.error, 'too_many');
+  eq((await users.fleet.get(`/api/fines/${fid}`)).data.files.length, 20, 'genau 20 gespeichert');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const srv = fs.readFileSync(new URL('../src/fines.js', import.meta.url), 'utf8');
+  eq(Number((app.match(/const FINE_FILES_MAX = (\d+);/) || [])[1]), Number((srv.match(/const MAX_FINE_FILES = (\d+);/) || [])[1]), 'Grenze App = Server');
+  ok(app.includes("d.files.length < FINE_FILES_MAX") && app.includes('id="ffull"'), 'voll → Hinweis statt Knopf');
+  ok(app.includes('accept="application/pdf,image/jpeg,image/png"'), 'Auswahl nur erlaubte Typen (kein WEBP/GIF)');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);
