@@ -1325,3 +1325,13 @@ Object.assign(STRINGS.en, { last_counted: 'Last counted', never_counted: 'never 
 Object.assign(STRINGS.de, { count_age: 'Artikel', count_age_all: 'alle Artikel', count_age_n: 'nicht gezählt seit {n} Tagen (inkl. nie gezählt)', count_age_none: 'Alle Artikel dieses Lagers wurden in diesem Zeitraum gezählt.' });
 Object.assign(STRINGS.uk, { count_age: 'Артикули', count_age_all: 'усі артикули', count_age_n: 'не підраховані понад {n} днів (вкл. ніколи)', count_age_none: 'Усі артикули цього складу підраховано за цей період.' });
 Object.assign(STRINGS.en, { count_age: 'Items', count_age_all: 'all items', count_age_n: 'not counted for {n} days (incl. never)', count_age_none: 'All items in this stock were counted within this period.' });
+// [CLAUDE] Zeitleiste: Hinweis, wenn ältere Einträge nicht angezeigt werden (15.10.2026)
+Object.assign(STRINGS.de, { tl_trunc_short: 'nur die neuesten', tl_truncated: 'Angezeigt werden nur die neuesten {n} Einträge – ältere sind gespeichert, aber hier nicht aufgeführt. Oben einen Bereich wählen, um gezielt ältere Einträge zu sehen.' });
+Object.assign(STRINGS.uk, { tl_trunc_short: 'лише найновіші', tl_truncated: 'Показано лише {n} найновіших записів – старіші збережено, але тут не наведено. Виберіть розділ угорі, щоб переглянути старіші записи.' });
+Object.assign(STRINGS.en, { tl_trunc_short: 'newest only', tl_truncated: 'Only the newest {n} entries are shown – older ones are stored but not listed here. Choose a section above to see older entries of that kind.' });
+Object.assign(STRINGS.de, { hist_truncated: 'Angezeigt werden die neuesten {n} Einträge – ältere sind gespeichert (z. B. in der Datensicherung).' });
+Object.assign(STRINGS.uk, { hist_truncated: 'Показано {n} найновіших записів – старіші збережено (наприклад, у резервній копії).' });
+Object.assign(STRINGS.en, { hist_truncated: 'Showing the newest {n} entries – older ones are stored (e.g. in the backup).' });
+Object.assign(STRINGS.de, { insp_truncated: 'Hier stehen die letzten {n} Kontrollen – alle weiteren in der' });
+Object.assign(STRINGS.uk, { insp_truncated: 'Тут показано останні {n} перевірок – усі інші в розділі' });
+Object.assign(STRINGS.en, { insp_truncated: 'The last {n} checks are listed here – all others in the' });

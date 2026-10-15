@@ -94,6 +94,9 @@ export function failedInspectionOf(v, events, cases, since) {
 // opts.timeline: nur die Teile laden, die die Zeitleiste braucht (gleiche Rechte, weniger D1-Abfragen)
 export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const tl = !!opts.timeline;
+  // Zeitleiste: je Quelle bis zu `cap` Einträge (Anzeige-Grenze + 1) – sonst fehlten ältere Kontrollen/km-Stände ohne Hinweis
+  const cap = tl ? Math.min(Math.max(Number(opts.cap) || 0, 0), 1001) : 0;
+  const inspCap = cap || 51; // Akte: 50 anzeigen, eine mehr lesen → inspections_truncated (Hinweis + Link zur Zeitleiste)
   if (user.role === 'driver') throw forbidden('Fahrzeugakten sind für Fahrer nicht freigegeben.');
   const v = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
@@ -110,11 +113,12 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
   if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name, u.role AS performed_by_role
-    FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT 50`).bind(vehicleId, envName).all()).results;
+    FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT ?`).bind(vehicleId, envName, inspCap).all()).results;
   // letzte Abfahrtskontrolle (nur Information); meist in den letzten 50 Kontrollen enthalten, sonst gezielt nachladen
-  const lastCheck = inspections.find((i) => i.kind === 'abfahrt') || (inspections.length < 50 ? null
+  const lastCheck = inspections.find((i) => i.kind === 'abfahrt') || (inspections.length < inspCap ? null
     : await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name, u.role AS performed_by_role
         FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? AND i.kind='abfahrt' ORDER BY i.created_at DESC LIMIT 1`).bind(vehicleId, envName).first());
+  const inspectionsTruncated = !tl && inspections.length > 50; if (inspectionsTruncated) inspections.length = 50;
   for (const i of inspections) hideDriverName(user, i, 'performed_by_name', 'performed_by_role');
   if (lastCheck && !inspections.includes(lastCheck)) hideDriverName(user, lastCheck, 'performed_by_name', 'performed_by_role');
   // Wiederkehrende Mängel: gleicher Prüfpunkt mindestens 2× als Mangel in Kontrollen der letzten 90 Tage
@@ -123,8 +127,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     GROUP BY item HAVING COUNT(*) >= 2 ORDER BY n DESC, last_at DESC`).bind(vehicleId, envName, new Date(Date.now() - 90 * 86400000).toISOString()).all()).results;
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
   const maintenanceHistory = (await env.DB.prepare(`SELECT e.id, e.rule_id, e.kind, e.done_date, e.done_km, e.evidence, e.source, e.result, e.created_at, u.display_name AS recorded_by_name
-    FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC LIMIT 200`).bind(vehicleId).all()).results;
-  const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 20').bind(vehicleId).all()).results;
+    FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC LIMIT ?`).bind(vehicleId, Math.max(cap, 200)).all()).results;
+  const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results;
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
         WHERE d.vehicle_id=? AND u.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
@@ -165,7 +169,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     const today = berlinDate();
     for (const m of maintenance) if (ruleDueKm(m) !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
   }
-  const out = { inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
+  const out = { inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
@@ -184,7 +188,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
       out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
-        WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT 20`).bind(vehicleId, envName).all()).results;
+        WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT ?`).bind(vehicleId, envName, cap || 20).all()).results;
       out.tacho = { ...tachoStatus(out.tacho_downloads[0] ? out.tacho_downloads[0].downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
     }
   }
@@ -194,9 +198,12 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
 // Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
 export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim', 'note'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
-  const d = await vehicleDetail(env, user, envName, vehicleId, { timeline: true });
-  const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
   const limit = Math.min(Math.max(Number(query.limit) || 300, 1), 1000);
+  // Jede Quelle liefert bis zu limit + 1 Einträge: die neuesten `limit` Einträge der Gesamtliste stammen je Quelle aus deren
+  // neuesten `limit` – die Auswahl ist damit exakt; ein Eintrag mehr zeigt an, dass ältere Einträge nicht angezeigt werden (truncated)
+  const cap = limit + 1;
+  const d = await vehicleDetail(env, user, envName, vehicleId, { timeline: true, cap });
+  const want = new Set(String(query.types || '').split(',').filter((x) => TIMELINE_TYPES.includes(x)));
   const items = [];
   const add = (type, at, data) => { if (at && (!want.size || want.has(type))) items.push({ type, at, ...data }); };
   for (const c of d.cases) {
@@ -209,12 +216,12 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
   for (const m of d.maintenance_history) add('maintenance', m.done_date, { maintenance_kind: m.kind, km: m.done_km, evidence: m.evidence, by: m.recorded_by_name, result: m.result || null });
   if (user.role !== 'driver') {
-    const tires = (await env.DB.prepare(`SELECT created_at, position, event_type, tread_mm, odometer_km, case_id FROM tire_events WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 300`)
-      .bind(vehicleId, envName).all()).results;
+    const tires = (await env.DB.prepare(`SELECT created_at, position, event_type, tread_mm, odometer_km, case_id FROM tire_events WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT ?`)
+      .bind(vehicleId, envName, cap).all()).results;
     for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: t.case_id });
     // Hinweise zum Fahrzeug: angelegt und archiviert (nur wenn der Bereich gewünscht ist – spart sonst die Abfrage)
     if (!want.size || want.has('note')) {
-      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at, valid_until FROM vehicle_notes WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT 200`).bind(vehicleId, envName).all()).results;
+      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at, valid_until FROM vehicle_notes WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results;
       const today = berlinDate();
       for (const n of notes) {
         add('note', n.created_at, { note_event: 'add', text: n.text, for_driver: !!n.for_driver, valid_until: n.valid_until || null });
@@ -226,8 +233,8 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     }
   }
   if (isManager(user)) {
-    const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT 200`)
-      .bind(vehicleId, envName).all()).results;
+    const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT ?`)
+      .bind(vehicleId, envName, cap).all()).results;
     for (const x of d.tacho_downloads || []) add('tacho', x.downloaded_on, { evidence: x.evidence, by: x.created_by_name });
     for (const c of d.contracts || []) {
       add('contract', c.start_date || c.created_at, { contract_event: 'start', contract_kind: c.kind, partner: c.partner, evidence: c.evidence });
@@ -235,7 +242,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     }
     // Versicherungsfälle (nur Leitung): Meldung an den Versicherer und Erstattung laut Abrechnung – nur gespeicherte Daten
     const claims = (await env.DB.prepare(`SELECT ic.case_id, c.case_no, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.reimbursed_net, ic.reimbursed_on
-      FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.vehicle_id=? AND ic.environment=? ORDER BY ic.reported_on DESC LIMIT 200`).bind(vehicleId, envName).all()).results;
+      FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.vehicle_id=? AND ic.environment=? ORDER BY ic.reported_on DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results;
     for (const c of claims) {
       add('claim', c.reported_on, { claim_event: 'reported', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, status: c.status });
       add('claim', c.reimbursed_on, { claim_event: 'reimbursed', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, reimbursed_net: c.reimbursed_net });
@@ -245,7 +252,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   // Datum ohne Uhrzeit (z. B. Prüfung „erledigt am“) als Tagesmitte einsortieren
   const key = (x) => (x.at.length === 10 ? x.at + 'T12:00:00.000Z' : x.at);
   items.sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
-  return { vehicle: { id: d.vehicle.id, plate: d.vehicle.plate, kind: d.vehicle.kind }, types: TIMELINE_TYPES, total: items.length, items: items.slice(0, limit) };
+  return { vehicle: { id: d.vehicle.id, plate: d.vehicle.plate, kind: d.vehicle.kind }, types: TIMELINE_TYPES, total: items.length, truncated: items.length > limit, limit, items: items.slice(0, limit) };
 }
 
 // Fahrzeugliste als CSV (Excel): Stammdaten + Verfügbarkeit laut System

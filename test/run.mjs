@@ -1944,6 +1944,35 @@ await test('Zeitleiste der Fahrzeugakte: chronologisch, Filter, gleiche Rechte w
   ok(!prod.data.items.some((x) => x.type === 'case'), 'Betrieb ohne Testvorgänge');
 });
 
+await test('Zeitleiste: ältere Kontrollen/km-Stände nicht mehr stillschweigend abgeschnitten, Hinweis „truncated“', async () => {
+  const vin = 'WDB96340310777713'; const VID = 'VIN:' + vin; const db = env.DB.db;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-TL 1', site: 'Zeitleiste-Test' })).status, 201);
+  const src = db.prepare(`SELECT * FROM inspections WHERE environment='test' LIMIT 1`).get(); ok(src, 'Vorlage-Kontrolle'); const cols = Object.keys(src);
+  const iso = (d) => new Date(Date.now() - d * 86400000).toISOString();
+  for (let i = 0; i < 60; i++) db.prepare(`INSERT INTO inspections(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map((c) => (c === 'id' ? 'tztl-i' + i : c === 'vehicle_id' ? VID : c === 'case_id' ? null : c === 'created_at' ? iso(i + 1) : c === 'odometer_km' ? null : c === 'request_key' ? 'tztl-i' + i : src[c])));
+  for (let i = 0; i < 30; i++) db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('tztl-o' + i, VID, 200000 - i * 100, iso(i + 0.5), 'manuell', null, iso(i + 0.5));
+  const tl = (q) => users.fleet.get(`/api/vehicles/${VID}/timeline${q}`);
+  let r = (await tl('?limit=500')).data;
+  eq(r.items.filter((x) => x.type === 'inspection').length, 60, 'alle 60 Kontrollen (vorher höchstens 50)');
+  eq(r.items.filter((x) => x.type === 'odometer').length, 30, 'alle 30 km-Stände (vorher höchstens 20)');
+  eq(r.truncated, false); eq(r.total, 90);
+  r = (await tl('?types=inspection&limit=10')).data;
+  eq(r.items.length, 10); eq(r.truncated, true, 'ältere vorhanden → Hinweis');
+  ok(r.items[0].at > r.items[9].at && r.items[0].at > iso(1.5), 'neueste Kontrolle zuerst');
+  r = (await tl('?limit=70')).data;
+  eq(r.items.length, 70); eq(r.truncated, true);
+  // exakte Auswahl: die 70 neuesten Einträge über beide Quellen
+  const all = (await tl('?limit=500')).data.items.slice(0, 70).map((x) => x.type + x.at);
+  eq(JSON.stringify(r.items.map((x) => x.type + x.at)), JSON.stringify(all), 'gleiche 70 neueste wie in der vollen Liste');
+  eq((await tl('?types=inspection&limit=60')).data.truncated, false, 'genau 60 → nicht abgeschnitten');
+  const ws = (await users.ws.get(`/api/vehicles/${VID}/timeline?limit=5`)); eq(ws.status, 200);
+  // Akte selbst unverändert: höchstens 50 Kontrollen, 20 km-Stände
+  const akte = (await users.fleet.get(`/api/vehicles/${VID}`)).data;
+  eq(akte.inspections.length, 50); eq(akte.odometer.length, 20);
+  eq(akte.inspections_truncated, true, 'Akte meldet weitere Kontrollen');
+  const fresh = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data; eq(fresh.inspections_truncated, false, 'wenige Kontrollen → kein Hinweis');
+});
+
 await test('Kilometerstand: Ablesedatum (nicht Zukunft), Plausibilität gegen Nachbarwerte nur mit Begründung', async () => {
   const p = `/api/vehicles/${encodeURIComponent(V2)}/odometer`;
   const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -3848,6 +3877,25 @@ await test('Führerscheinkontrolle: Vermerk bei Mangel, Intervall nur wenn einge
   ok(!f.some((x) => x.finding_code === 'DRIVER_DOC_EXPIRES_SOON' && /Fahrerkarte/.test(x.message) && /Testfahrer Eins/.test(x.message)), 'ersetzte Karte nicht mehr gemeldet');
   ok(f.some((x) => x.finding_code === 'LICENSE_CHECK_DUE'), 'Kontrolle fällig (Intervall 6 Monate eingestellt)');
   eq((await owner.put('/api/settings', { license_check_months: '' })).status, 200);
+});
+
+await test('Fahrerakte: Verläufe Auslesungen/Führerscheinkontrollen bis 100 Einträge, darüber Hinweis (truncated)', async () => {
+  const { DRIVER_HIST_MAX } = await import('../src/drivers.js'); eq(DRIVER_HIST_MAX, 100);
+  const c = await users.fleet.post('/api/drivers', { display_name: 'Verlauf Testfahrer' }); eq(c.status, 201); const id = c.data.id; const db = env.DB.db;
+  const day = (i) => new Date(Date.UTC(2020, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+  const ins = (n, off) => { for (let i = off; i < off + n; i++) {
+    db.prepare(`INSERT INTO tacho_downloads(id,environment,kind,driver_id,vehicle_id,downloaded_on,evidence,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('vtd-' + i, 'test', 'fahrerkarte', id, null, day(i), 'Datei ' + i, null, users.fleet.id, new Date().toISOString());
+    db.prepare(`INSERT INTO driver_license_checks(id,driver_id,checked_on,result,checked_by,note,created_at) VALUES (?,?,?,?,?,?,?)`).run('vlc-' + i, id, day(i), 'in_ordnung', users.fleet.id, null, new Date().toISOString()); } };
+  ins(100, 0);
+  let d = (await users.fleet.get(`/api/drivers/${id}`)).data;
+  eq(d.tacho_downloads.length, 100, 'alle 100 Auslesungen (vorher 20)'); eq(d.tacho_downloads_truncated, false);
+  eq(d.license_checks.length, 100, 'alle 100 Kontrollen (vorher 50)'); eq(d.license_checks_truncated, false); eq(d.history_max, 100);
+  ins(1, 100);
+  d = (await users.fleet.get(`/api/drivers/${id}`)).data;
+  eq(d.tacho_downloads.length, 100); eq(d.tacho_downloads_truncated, true, 'ältere vorhanden → Hinweis');
+  eq(d.license_checks.length, 100); eq(d.license_checks_truncated, true);
+  eq(d.tacho_downloads[0].downloaded_on, day(100), 'neueste zuerst'); eq(d.tacho.last, day(100), 'Frist aus der neuesten Auslesung');
+  eq(d.license_checks[0].checked_on, day(100), 'Status aus der neuesten Kontrolle');
 });
 
 await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nach FPersV § 2 Abs. 5: nur aus erfassten Auslesungen, Rechte, Befunde', async () => {
