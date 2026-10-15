@@ -1593,11 +1593,14 @@ async function viewStock() {
     const hit = (i) => (!f || (f === 'min' ? i.below_min : f === 'c365' ? !i.last_counted_date || i.last_counted_date <= bDate(-365) : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
     const shown = [];
     $$('#sl a').forEach((a) => { const i = byId.get(a.dataset.id); a.hidden = !!((q && !a.dataset.s.includes(q)) || !hit(i)); if (!a.hidden) shown.push(i); });
-    const sum = $('#sfsum'); sum.hidden = !cut;
-    if (cut) { const priced = shown.filter((i) => i.unit_price_net !== null); const v = Math.round(priced.reduce((a, i) => a + i.on_hand * i.unit_price_net, 0) * 100) / 100;
-      sum.textContent = t('stock_idle_sum').replace('{n}', shown.length).replace('{v}', eur(v)) + (priced.length < shown.length ? ` (${shown.length - priced.length} ${t('unvalued_short')})` : ''); }
+    // Summe der angezeigten Artikel: Bestand × hinterlegter Artikelpreis (netto); Artikel mit Bestand ohne Preis = unbewertet (nie 0 €), ohne bewertbaren Artikel „–“
+    const sum = $('#sfsum'); sum.hidden = !shown.length;
+    const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
+    const v = priced.length ? eur(Math.round(priced.reduce((a, i) => a + i.on_hand * i.unit_price_net, 0) * 100) / 100) : '–';
+    const unv = stocked.length - priced.length ? ` (${stocked.length - priced.length} ${t('unvalued_short')})` : '';
+    sum.textContent = cut ? t('stock_idle_sum').replace('{n}', shown.length).replace('{v}', v) + unv : t('stock_value_sum').replace('{n}', shown.length).replace('{v}', v) + unv;
   };
-  $('#q').oninput = applyStock; $('#sf').onchange = applyStock;
+  $('#q').oninput = applyStock; $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
   $('#scsv').onclick = async () => { try { download(await api('GET', '/api/stock?format=csv'), `fuhrpark-lager_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
   if ($('#inv')) {
     // „Inventurdifferenzen“: Lagerjournal mit Auswahl Inventur, letzte 12 Monate, aktuelles Inventurlager
@@ -1684,7 +1687,7 @@ async function viewReorder() {
     ${items.length ? `<div class="scroll"><table class="stack printsm"><thead><tr><th>${esc(t('workshop'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('on_hand'))}</th><th>${esc(t('min_qty'))}</th><th>${esc(t('shortfall'))}</th><th>${esc(t('used_90d'))}</th><th>${esc(t('shortfall_value'))}</th><th>${esc(t('last_supplier'))}</th></tr></thead><tbody>
       ${items.map((i) => `<tr><td>${esc(wsName(i.site))}</td><td><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number || i.location ? `<div class="small muted">${[i.part_number, i.location].filter(Boolean).map(esc).join(' · ')}</div>` : ''}</td><td>${n(i.on_hand)} ${esc(i.unit)}</td><td>${n(i.min_qty)}</td><td><b>${n(i.shortfall)} ${esc(i.unit)}</b>${i.ordered_on ? `<div class="small">${esc(t('ordered_line').replace('{q}', n(i.ordered_qty)).replace('{u}', i.unit).replace('{d}', fmtD(i.ordered_on)))}${i.ordered_eta ? ` · ${esc(t('ordered_eta'))}: ${esc(fmtD(i.ordered_eta))}` : ''}</div><div class="small muted">${esc(t('open_after_order'))}: ${n(i.open_after_order)} ${esc(i.unit)}</div>` : ''}</td><td>${n(i.used_90d)}</td><td>${i.shortfall_value_net === null ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : eur(i.shortfall_value_net)}</td><td>${i.last_supplier ? esc(i.last_supplier) : '–'}${i.last_receipt_date ? `<div class="small muted">${esc(t('last_receipt'))}: ${esc(fmtD(i.last_receipt_date))}</div>` : ''}</td></tr>`).join('')}
       </tbody></table></div>
-      <p><b>${esc(t('reorder_sum'))}:</b> ${eur(sum)}${valued.length < items.length ? ` <span class="small muted">(${items.length - valued.length} ${esc(t('unvalued_positions'))})</span>` : ''}</p>` : `<p class="muted">${esc(t('reorder_none'))}</p>`}`, 'more');
+      <p id="rosum"><b>${esc(t('reorder_sum'))}:</b> ${valued.length ? eur(sum) : '–'}${valued.length < items.length ? ` <span class="small muted">(${items.length - valued.length} ${esc(t('unvalued_positions'))})</span>` : ''}</p>` : `<p class="muted">${esc(t('reorder_none'))}</p>`}`, 'more');
   if ($('#rsite')) $('#rsite').onchange = () => { try { sessionStorage.setItem('cfp_reorder_site', $('#rsite').value); } catch {} viewReorder(); };
   $('#rprt').onclick = () => window.print();
   $('#rcsv').onclick = async () => { try { download(await api('GET', '/api/stock?reorder=1&format=csv' + q), `fuhrpark-bestellvorschlag_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };

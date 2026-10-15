@@ -2737,6 +2737,24 @@ await test('Artikel-Verlauf: höchstens 200 Buchungen mit Hinweis, Lagerjournal 
   env.DB.db.prepare('UPDATE stock_items SET active=0 WHERE id IN (?,?)').run(id, other);
 });
 
+await test('Lagerliste: Lagerwert der angezeigten Artikel (Bestand × hinterlegter Preis), ohne Preis unbewertet statt 0 €, Texte und Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);"), 'nur Artikel mit Bestand, bewertet nur mit Preis');
+  ok(app.includes("const v = priced.length ? eur(") && app.includes(": '–';"), 'ohne bewertbaren Artikel „–“ statt 0 €');
+  ok(app.includes("<b>${esc(t('reorder_sum'))}:</b> ${valued.length ? eur(sum) : '–'}"), 'Bestellvorschlag: Summe ohne bewertete Position „–“ statt 0 €');
+  ok(app.includes("t('stock_value_sum').replace('{n}', shown.length)") && app.includes("$('#sf').onchange = applyStock; applyStock();"), 'Summe immer, gleich beim Öffnen (nicht nur im Filter „ohne Entnahme“)');
+  const { STRINGS } = await import('../public/i18n.js');
+  const word = { de: 'Lagerwert', uk: 'Вартість складу', en: 'Stock value' };
+  for (const l of ['de', 'uk', 'en']) ok(['{n}', '{v}'].every((x) => STRINGS[l].stock_value_sum.includes(x)) && STRINGS[l].help_stock_s.includes(word[l]) && STRINGS[l].help_stock_s.includes(STRINGS[l].asof_title), 'Text und Hilfe ' + l);
+  // Daten wie die Oberfläche sie bekommt: Preis je Artikel und Bestand aus Buchungen
+  const a = (await users.ws.post('/api/stock', { name: 'Wertartikel', unit: 'Stk', initial_qty: 4, unit_price_net: 2.5 })).data.id;
+  const b = (await users.ws.post('/api/stock', { name: 'Wertartikel ohne Preis', unit: 'Stk', initial_qty: 3 })).data.id;
+  const items = (await users.ws.get('/api/stock')).data.items;
+  const ia = items.find((i) => i.id === a), ib = items.find((i) => i.id === b);
+  eq(ia.on_hand * ia.unit_price_net, 10, 'Wert 4 × 2,50 €'); eq(ib.unit_price_net, null, 'ohne Preis bleibt null (nie 0)');
+  env.DB.db.prepare('UPDATE stock_items SET active=0 WHERE id IN (?,?)').run(a, b);
+});
+
 await test('Lager-Umlagerung: Entnahme hier, Zugang im Ziellager (gleiche Kennung), kein Verbrauch, Zielartikel gefunden/angelegt, Rechte, Journal', async () => {
   const src = (await users.ws.post('/api/stock', { name: 'Umlagerteil', part_number: 'UML-1', unit: 'Stk', min_qty: 1, unit_price_net: 10, initial_qty: 6 })).data.id;
   eq((await users.ws.post(`/api/stock/${src}/transfer`, { to_site: 'DORTMUND', qty: 1 })).status, 400, 'eigenes Lager');

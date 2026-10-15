@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test: Artikelakte mit mehr als 200 Buchungen → Hinweis + „Im Lagerjournal anzeigen“ → Journal nur dieses Artikels
+# [CLAUDE] UI-Test: Lagerliste mit Lagerwert (Bestand × Preis, unbewertet statt 0 €); Artikelakte mit mehr als 200 Buchungen → Hinweis + „Im Lagerjournal anzeigen“ → Journal nur dieses Artikels
 # (Artikel-Chip, alle 201 Buchungen), „Alle Artikel“ hebt die Eingrenzung auf, Lagerliste setzt sie zurück. DE/UK/EN bei 390/820/1366 px,
 # kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os
@@ -8,6 +8,8 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 BULK = """async ([id, n]) => { for (let k = 0; k < n; k++) { const r = await fetch(`/api/stock/${id}/movements`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: JSON.stringify({ type: 'zugang', qty: '1', note: 'Verlauf ' + k }) }); if (!r.ok) return r.status; } return 0; }"""
 JOURNAL={'de':'Lagerjournal','uk':'Журнал складу','en':'Stock journal'}
+VAL={'de':'Lagerwert','uk':'вартість складу','en':'stock value'}
+UNV={'de':'unbewertet','uk':'неоцінено','en':'unvalued'}
 ALL={'de':'Alle Artikel','uk':'Усі артикули','en':'All items'}
 fails=[]
 def check(c,m):
@@ -24,12 +26,24 @@ with sync_playwright() as p:
     api('POST','/api/login',{'username':'av.werkstatt','password':PW})
     big=api('POST','/api/stock',{'name':'Verlaufsartikel UI','part_number':'VA-UI','unit':'Stk','initial_qty':1})['d']['id']
     small=api('POST','/api/stock',{'name':'Kleiner Artikel UI','unit':'Stk','initial_qty':2})['d']['id']
+    api('POST','/api/stock',{'name':'Mindestartikel UI','unit':'Stk','initial_qty':1,'min_qty':5})
+    api('POST','/api/stock',{'name':'Preisartikel UI','unit':'Stk','initial_qty':4,'unit_price_net':2.5})
     check(a.evaluate(BULK,[big,200])==0,'200 Zugänge gebucht')
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
       for w,h in [(390,844),(820,1180),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h}); q=c.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'av.werkstatt','password':PW}])
+        # Lagerwert der angezeigten Artikel: nur mit Preis, sonst „unbewertet“/„–“ (nie 0 €)
+        q.goto(B+'/#/stock'); q.wait_for_selector('#sfsum:not([hidden])')
+        check('10,00' in q.inner_text('#sfsum') and VAL[lang] in q.inner_text('#sfsum') and '3 '+UNV[lang] in q.inner_text('#sfsum'),f'{lang} {w}px: Lagerwert mit unbewerteten Artikeln ({q.inner_text("#sfsum")!r})')
+        q.fill('#q','Kleiner'); q.wait_for_timeout(100)
+        check(VAL[lang]+' –' in q.inner_text('#sfsum') and '0,00' not in q.inner_text('#sfsum'),f'{lang} {w}px: nur unbewertete Artikel → „–“ statt 0 € ({q.inner_text("#sfsum")!r})')
+        q.fill('#q','Preisartikel'); q.wait_for_timeout(100)
+        check('10,00' in q.inner_text('#sfsum') and UNV[lang] not in q.inner_text('#sfsum'),f'{lang} {w}px: Suche grenzt Lagerwert ein')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/lagerwert_{lang}_{w}.png')
+        q.goto(B+'/#/stock/reorder'); q.wait_for_selector('#rosum')
+        check(q.inner_text('#rosum').split(':',1)[1].strip().startswith('–') and '0,00' not in q.inner_text('#rosum'),f'{lang} {w}px: Bestellvorschlag ohne Preis „–“ statt 0 € ({q.inner_text("#rosum")!r})')
         q.goto(B+'/#/stock/'+small); q.wait_for_selector('#histjournal')
         check(q.locator('#histtrunc').count()==0,f'{lang} {w}px: wenige Buchungen ohne Hinweis')
         q.goto(B+'/#/stock/'+big); q.wait_for_selector('#histtrunc')
