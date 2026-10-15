@@ -350,25 +350,26 @@ async function checkCostLimit(env, ctx, user, envName, c) {
 export function computeCosts(rate, work, parts, ext) {
   const hours = work.reduce((s, w) => s + w.hours, 0);
   const coveredByExternal = ext.some((e) => e.covers_work_and_parts);
-  let valued = 0; let estimate = 0; const unvalued = [];
+  // valuedItems: Anzahl belegter Positionen – ohne belegte Position ist „Ist 0 €“ keine Aussage (Anzeige „–“)
+  let valued = 0; let valuedItems = 0; let estimate = 0; const unvalued = [];
   if (!coveredByExternal) {
     if (hours > 0) {
       if (rate === null || !Number.isFinite(rate)) unvalued.push({ type: 'arbeitszeit', hours });
-      else valued += hours * rate;
+      else { valued += hours * rate; valuedItems++; }
     }
     for (const p of parts) {
       if (p.unit_price_net === null || p.valuation === 'unvalued') unvalued.push({ type: 'teil', quantity: p.quantity });
       else if (p.valuation === 'estimate') estimate += p.quantity * p.unit_price_net;
-      else valued += p.quantity * p.unit_price_net;
+      else { valued += p.quantity * p.unit_price_net; valuedItems++; }
     }
   }
   for (const e of ext) {
     if (e.amount_net === null || e.valuation === 'unvalued') unvalued.push({ type: 'fremdleistung' });
     else if (e.valuation === 'estimate') estimate += e.amount_net;
-    else valued += e.amount_net;
+    else { valued += e.amount_net; valuedItems++; }
   }
   return {
-    hours, hourly_rate_net: rate, actual_net: round2(valued), estimate_net: round2(estimate),
+    hours, hourly_rate_net: rate, actual_net: round2(valued), valued_items: valuedItems, estimate_net: round2(estimate),
     unvalued_items: unvalued.length, unvalued, complete: unvalued.length === 0,
     external_replaces_own: coveredByExternal,
   };
@@ -404,14 +405,14 @@ export async function vehicleCosts(env, envName, vehicleId) {
     return m;
   };
   const work = by(r.w); const parts = by(r.p); const ext = by(r.e);
-  let actual = 0; let estimate = 0; let unvalued = 0;
+  let actual = 0; let valuedItems = 0; let estimate = 0; let unvalued = 0;
   for (const id of new Set([...work.keys(), ...parts.keys(), ...ext.keys()])) {
     const k = computeCosts(rate, work.get(id) || [], parts.get(id) || [], ext.get(id) || []);
-    actual += k.actual_net; estimate += k.estimate_net; unvalued += k.unvalued_items;
+    actual += k.actual_net; valuedItems += k.valued_items; estimate += k.estimate_net; unvalued += k.unvalued_items;
   }
   // laufende Gewährleistungen (heute noch gültig) aus Teilen/Fremdleistungen der Vorgänge – getrennt von der Kostensumme
   const warranties = JSON.parse(r.g || '[]');
-  return { actual_net: round2(actual), estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0, warranties };
+  return { actual_net: round2(actual), valued_items: valuedItems, estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0, warranties };
 }
 const round2 = (n) => Math.round(n * 100) / 100;
 

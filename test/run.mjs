@@ -3602,6 +3602,45 @@ await test('Kosten je km: gefahrene km aus erster/letzter Ablesung im Zeitraum, 
   ok(!v2 || v2.km === null, 'Rückgang (Tachotausch) → kein km-Wert');
 });
 
+await test('Nur unbewertete Positionen: „Belegt“ zeigt „–“ statt 0 €, kein Wert je km (valued_items in Vorgang, Fahrzeug, Bericht, Standort, Summe)', async () => {
+  const { computeCosts } = await import('../src/cases.js');
+  let k = computeCosts(null, [{ hours: 2 }], [{ quantity: 1, unit_price_net: null, valuation: 'unvalued' }], []);
+  eq(k.valued_items, 0); eq(k.unvalued_items, 2); eq(k.actual_net, 0);
+  k = computeCosts(80, [{ hours: 1 }], [{ quantity: 1, unit_price_net: 0, valuation: 'actual' }, { quantity: 1, unit_price_net: 5, valuation: 'estimate' }], [{ amount_net: 10, valuation: 'actual' }]);
+  eq(k.valued_items, 3, 'Arbeitszeit + belegtes Teil (auch 0 €) + Fremdleistung; Schätzung zählt nicht'); eq(k.actual_net, 90);
+  eq(computeCosts(80, [], [{ quantity: 1, unit_price_net: 3, valuation: 'actual' }], [{ amount_net: 50, valuation: 'actual', covers_work_and_parts: 1 }]).valued_items, 1, 'ersetzte eigene Teile zählen nicht');
+  const vin = 'WDB96340310777702'; const VID = 'VIN:' + vin; const db = env.DB.db;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-UV 1', site: 'Unbewertet-Test' })).status, 201);
+  const now = new Date(); const iso = (d) => new Date(now.getTime() - d * 86400000).toISOString();
+  const src = db.prepare(`SELECT * FROM cases WHERE environment='test' LIMIT 1`).get(); const cols = Object.keys(src);
+  try {
+    db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('tzuv-1', VID, 100000, iso(0.02), 'manuell', null, iso(0.02));
+    db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('tzuv-2', VID, 100500, iso(0.01), 'manuell', null, iso(0.01));
+    db.prepare(`INSERT INTO cases(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map((c) => (c === 'id' ? 'tzuv-case' : c === 'case_no' ? 'TZUV-1' : c === 'request_key' ? 'tzuv-case' : c === 'vehicle_id' ? VID : c === 'duplicate_of' ? null : c === 'created_at' ? iso(0.01) : src[c])));
+    db.prepare(`INSERT INTO parts(id,case_id,user_id,name,quantity,unit,unit_price_net,valuation,created_at) VALUES ('tzuv-p','tzuv-case',?,'Spiegel',1,'Stk',NULL,'unvalued',?)`).run(users.ws.id, iso(0.01));
+    const ym = BERLIN_YM;
+    const r = (await users.fleet.get(`/api/reports/costs?from=${ym}&to=${ym}&site=Unbewertet-Test`)).data;
+    eq(r.rows.length, 1); eq(r.rows[0].valued_items, 0); eq(r.rows[0].unvalued_items, 1); eq(r.rows[0].actual_net, 0);
+    eq(r.totals.valued_items, 0, 'Summe'); eq(r.totals.unvalued_items, 1);
+    eq(r.sites.length, 1); eq(r.sites[0].valued_items, 0, 'Standort');
+    const v = r.vehicles.find((x) => x.vehicle_id === VID); eq(v.km, 500); eq(v.valued_items, 0); eq(v.cost_per_km, null, 'ohne belegten Betrag kein Wert je km'); eq(v.complete, false);
+    const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
+    eq(all.totals.valued_items, all.rows.reduce((s, x) => s + x.valued_items, 0), 'Summe = Zeilen');
+    ok(all.rows.every((x) => x.valued_items > 0 || x.actual_net === 0), 'ohne belegte Position nie ein Ist-Betrag');
+    eq((await users.fleet.get(`/api/cases/tzuv-case`)).data.costs.valued_items, 0, 'Vorgang');
+    eq((await users.fleet.get(`/api/vehicles/${VID}`)).data.costs.valued_items, 0, 'Fahrzeugakte');
+    const app = await (await import('node:fs/promises')).readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(/const eurIst = \(o\) => \(o && o\.valued_items === 0 && o\.unvalued_items > 0 \? '–' : eur\(o\.actual_net\)\)/.test(app), 'Oberfläche: „–“-Regel');
+    eq((app.match(/eurIst\(/g) || []).length, 6, 'Vorgang, Fahrzeugakte, Summe, Standort, Fahrzeug, Monat');
+    const i18n = await (await import('node:fs/promises')).readFile(new URL('../public/i18n.js', import.meta.url), 'utf8');
+    for (const w of ['steht bei „Belegt“ „–“ statt 0 €', 'стоїть «–» замість 0 €', '“Documented” shows “–” instead of €0']) ok(i18n.includes(w), 'Hilfe: ' + w);
+  } finally {
+    db.prepare(`DELETE FROM parts WHERE id='tzuv-p'`).run(); db.prepare(`DELETE FROM case_events WHERE case_id='tzuv-case'`).run(); db.prepare(`DELETE FROM cases WHERE id='tzuv-case'`).run();
+    db.prepare(`DELETE FROM odometer_readings WHERE id LIKE 'tzuv-%'`).run();
+    await owner.post(`/api/vehicles/${VID}/active`, { active: false, reason: 'Testdaten unbewertet' });
+  }
+});
+
 await test('Tätigkeitsvorschläge aus bisherigen Arbeiten der eigenen Werkstatt', async () => {
   const r = await users.ws.get('/api/work-suggestions');
   eq(r.status, 200); ok(Array.isArray(r.data.suggestions) && r.data.suggestions.length > 0, 'Vorschläge vorhanden');

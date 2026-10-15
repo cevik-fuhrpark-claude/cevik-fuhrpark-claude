@@ -63,7 +63,7 @@ export async function costReport(env, user, envName, query = {}) {
   const rows = new Map();
   const row = (vehicleId, month) => {
     const k = `${vehicleId}|${month}`;
-    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0 });
+    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0 });
     return rows.get(k);
   };
   const inRange = (m) => m >= from && m <= to;
@@ -73,7 +73,7 @@ export async function costReport(env, user, envName, query = {}) {
     if (covered.has(w.case_id)) continue;
     const m = monthOf(w.d); if (!inRange(m)) continue;
     const r = row(w.vehicle_id, m); r.hours += w.hours;
-    if (rate === null) r.unvalued_items++; else r.work_net += w.hours * rate;
+    if (rate === null) r.unvalued_items++; else { r.work_net += w.hours * rate; r.valued_items++; }
   }
   for (const p of parts) {
     if (covered.has(p.case_id)) continue;
@@ -81,14 +81,14 @@ export async function costReport(env, user, envName, query = {}) {
     const r = row(p.vehicle_id, m);
     if (p.unit_price_net === null || p.valuation === 'unvalued') r.unvalued_items++;
     else if (p.valuation === 'estimate') r.parts_estimate_net += p.quantity * p.unit_price_net;
-    else r.parts_actual_net += p.quantity * p.unit_price_net;
+    else { r.parts_actual_net += p.quantity * p.unit_price_net; r.valued_items++; }
   }
   for (const e of ext) {
     const m = monthOf(e.d); if (!inRange(m)) continue;
     const r = row(e.vehicle_id, m);
     if (e.amount_net === null || e.valuation === 'unvalued') r.unvalued_items++;
     else if (e.valuation === 'estimate') r.external_estimate_net += e.amount_net;
-    else r.external_actual_net += e.amount_net;
+    else { r.external_actual_net += e.amount_net; r.valued_items++; }
   }
   const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
   // Standortfilter (Standort laut Fahrzeugstamm, 'ohne' = ohne Standort): wirkt auf Zeilen, km, Vertragsraten und Erstattungen
@@ -107,20 +107,20 @@ export async function costReport(env, user, envName, query = {}) {
       vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, month: r.month, cases_opened: r.cases_opened,
       hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
-      actual_net: r2(actual), estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0,
+      actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0,
     };
   }).sort((a, b) => (a.plate || a.vehicle_id).localeCompare(b.plate || b.vehicle_id) || a.month.localeCompare(b.month));
-  const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
-    { actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0 });
+  const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, valued_items: t.valued_items + r.valued_items, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
+    { actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0, hours: 0 });
   // Summe je Fahrzeug-Standort (Stammdaten; ohne Standort = 'ohne') – nur Zusammenfassung der Zeilen, keine eigene Bewertung
   const siteMap = new Map();
   for (const r of out) {
     const k = siteKey(r.site);
-    const s = siteMap.get(k) || { site: label.get(k) || r.site || 'ohne', actual_net: 0, estimate_net: 0, unvalued_items: 0, hours: 0, vehicles: new Set() };
-    s.actual_net += r.actual_net; s.estimate_net += r.estimate_net; s.unvalued_items += r.unvalued_items; s.hours += r.hours; s.vehicles.add(r.vehicle_id);
+    const s = siteMap.get(k) || { site: label.get(k) || r.site || 'ohne', actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0, hours: 0, vehicles: new Set() };
+    s.actual_net += r.actual_net; s.valued_items += r.valued_items; s.estimate_net += r.estimate_net; s.unvalued_items += r.unvalued_items; s.hours += r.hours; s.vehicles.add(r.vehicle_id);
     siteMap.set(k, s);
   }
-  const sites = [...siteMap.values()].map((s) => ({ site: s.site, actual_net: r2(s.actual_net), estimate_net: r2(s.estimate_net), unvalued_items: s.unvalued_items, hours: r2(s.hours), vehicles: s.vehicles.size, complete: s.unvalued_items === 0 }))
+  const sites = [...siteMap.values()].map((s) => ({ site: s.site, actual_net: r2(s.actual_net), valued_items: s.valued_items, estimate_net: r2(s.estimate_net), unvalued_items: s.unvalued_items, hours: r2(s.hours), vehicles: s.vehicles.size, complete: s.unvalued_items === 0 }))
     .sort((a, b) => (a.site === 'ohne') - (b.site === 'ohne') || b.actual_net - a.actual_net || a.site.localeCompare(b.site));
   // Kosten je Kilometer: gefahrene km im Zeitraum aus erster und letzter Ablesung (mind. 2 Ablesungen, kein Rückgang); sonst ohne Wert
   const kmRows = (await env.DB.prepare(`SELECT o.vehicle_id, COUNT(*) AS n,
@@ -130,22 +130,22 @@ export async function costReport(env, user, envName, query = {}) {
   const kmOf = new Map(kmRows.map((k) => [k.vehicle_id, k]));
   const perVehicle = new Map();
   for (const r of out) {
-    const v = perVehicle.get(r.vehicle_id) || { vehicle_id: r.vehicle_id, plate: r.plate, site: r.site, actual_net: 0, estimate_net: 0, unvalued_items: 0 };
-    v.actual_net += r.actual_net; v.estimate_net += r.estimate_net; v.unvalued_items += r.unvalued_items; perVehicle.set(r.vehicle_id, v);
+    const v = perVehicle.get(r.vehicle_id) || { vehicle_id: r.vehicle_id, plate: r.plate, site: r.site, actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0 };
+    v.actual_net += r.actual_net; v.valued_items += r.valued_items; v.estimate_net += r.estimate_net; v.unvalued_items += r.unvalued_items; perVehicle.set(r.vehicle_id, v);
   }
   for (const k of kmRows) if (!perVehicle.has(k.vehicle_id) && plates.has(k.vehicle_id) && !plates.get(k.vehicle_id).eval_excluded && (!vehicleFilter || k.vehicle_id === vehicleFilter)) {
-    const v = plates.get(k.vehicle_id); perVehicle.set(k.vehicle_id, { vehicle_id: k.vehicle_id, plate: v.plate, site: v.site, actual_net: 0, estimate_net: 0, unvalued_items: 0 });
+    const v = plates.get(k.vehicle_id); perVehicle.set(k.vehicle_id, { vehicle_id: k.vehicle_id, plate: v.plate, site: v.site, actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0 });
   }
   const vehicles = [...perVehicle.values()].map((v) => {
     const k = kmOf.get(v.vehicle_id);
     const km = k && k.n >= 2 && k.km_last >= k.km_first ? k.km_last - k.km_first : null;
-    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, cost_per_km: km ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
+    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, cost_per_km: km && !(v.valued_items === 0 && v.unvalued_items > 0) ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, site: siteFilter, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  return { from, to, environment: envName, site: siteFilter, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
 }
 
 // Monatsraten laut Vertrag je Fahrzeug im Zeitraum: je Kalendermonat, der ganz oder teilweise in der Laufzeit liegt
