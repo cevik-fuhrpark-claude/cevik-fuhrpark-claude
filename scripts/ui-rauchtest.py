@@ -16,9 +16,9 @@ PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 ROUTES = {
-    'owner': ['emergency', 'emergency/edit', 'guide?l=de', 'guide?l=uk', 'guide?l=en', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'stock/count', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
-    'fleet': ['emergency', 'emergency/edit', '', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'stock/count', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
-    'workshop': ['emergency', '', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'stock/count', 'wsload', 'help'],
+    'owner': ['emergency', 'emergency/edit', 'guide?l=de', 'guide?l=uk', 'guide?l=en', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'stock/count', 'stock/asof', 'fines', 'users', 'audit', 'usage', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'drivers', 'settings', 'help', 'new', 'check'],
+    'fleet': ['emergency', 'emergency/edit', '', 'search', 'inbox', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'vehicles', 'master', 'more', 'maintenance', 'tires', 'kpi', 'defects', 'costs', 'stock', 'stock/reorder', 'stock/journal', 'stock/count', 'stock/asof', 'fines', 'users', 'quality', 'wsload', 'telematics', 'contracts', 'claims', 'help', 'help?s=dates', 'help?s=dates&q=hu%20nachweis'],
+    'workshop': ['emergency', '', 'search', 'plan', 'cases', 'cases?f=repeat', 'cases?f=warranty', 'cases?f=stale', 'cases?f=followup', 'inbox', 'vehicles', 'more', 'maintenance', 'tires', 'stock', 'stock/reorder', 'stock/journal', 'stock/count', 'stock/asof', 'wsload', 'help'],
     'driver': ['emergency', '', 'inbox', 'cases', 'cases?f=repeat', 'new', 'check', 'check/paper', 'more', 'fines', 'help', 'help?s=check', 'help?q=foto'],
     'dispatch': ['emergency', 'emergency/edit', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'help', 'guide'],
     # Lesezugriff (z. B. Büro/Steuerberatung): nur lesen, keine Meldungen/Kontrollen
@@ -76,8 +76,8 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
-    'workshop': ['cases/', 'stock/reorder', 'stock/count', 'plan'],
+    'owner': ['guide', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
+    'workshop': ['cases/', 'stock/reorder', 'stock/count', 'stock/asof', 'plan'],
     'driver': ['check/paper'],
 }
 # Ausdruckvermerk: Druckzeitpunkt (Datum + Uhrzeit), angemeldete Person und „CEVIK“ – außer Papier-Formular/QR-Bogen/Aushang (ohne Personennamen)

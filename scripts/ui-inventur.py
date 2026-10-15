@@ -7,6 +7,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 DIFFS={'de':'Inventurdifferenzen','uk':'Розбіжності інвентаризації','en':'Stocktake differences'}
+ASOF={'de':'Bestand zum Stichtag','uk':'Залишок на дату','en':'Stock at key date'}
 BOOK={'de':'Buchbestand','uk':'Обліковий залишок','en':'Book stock'}
 RE={'de':'erneut ausführen','uk':'знову виконайте','en':'run “Check differences” again'}
 fails=[]
@@ -79,6 +80,15 @@ with sync_playwright() as p:
         if SHOTS and w==1366: q.screenshot(path=f'{SHOTS}/zaehlliste_{lang}.png',full_page=True)
         q.emulate_media(media='screen')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Zählliste ohne Querscrollen')
+        # Bestand zum Stichtag: Knopf im Lager, Stichtag heute → Artikel mit 6 Stk, Summen, kein Querscrollen
+        q.goto(B+'/#/stock'); q.wait_for_selector('#sasof'); q.click('#sasof'); q.wait_for_selector('#saf')
+        check(ASOF[lang] in q.inner_text('h1'),f'{lang} {w}px: Bestand zum Stichtag geöffnet')
+        q.fill('#sadate',q.evaluate("()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Berlin'}).format(new Date())")); q.click('#saf button.btn:not(.secondary)'); q.wait_for_selector('#satab')
+        row=q.locator('#satab tbody tr',has_text=name).inner_text()
+        check('6' in row and q.locator('#sasum li').count()==3,f'{lang} {w}px: Stichtagszeile + Summen ({row!r})')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Stichtag ohne Querscrollen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/stichtag_{lang}_{w}.png',full_page=True)
+        q.evaluate("()=>sessionStorage.removeItem('cfp_sa_date')")
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         c.close()
     br.close()

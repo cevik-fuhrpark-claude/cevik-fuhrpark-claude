@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate, berlinDateTime, isCalendarDate } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -298,6 +298,35 @@ export async function journal(env, user, envName, query = {}) {
     sum.inventur = s;
   }
   return { from, to, site, type, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
+}
+
+// Bestand zum Stichtag (z. B. 31.12. für den Jahresabschluss): Summe aller Buchungen bis Ende des Berliner Kalendertags,
+// auch inzwischen ausgebuchte Artikel; nur Artikel mit Bestand ≠ 0. Zwei Preisangaben, die Bewertungsmethode legt die Buchhaltung fest:
+// letzter Einkaufspreis bis zum Stichtag (jüngster Zugang mit Preis, ohne Umlagerungen) und der heute hinterlegte Artikelpreis.
+// Ohne Preis bleibt der Wert leer (nie 0 €). Werkstattrolle nur eigenes Lager.
+export async function stockAsOf(env, user, envName, query = {}) {
+  const site = siteScope(user, query.site ? String(query.site).slice(0, 20) : null);
+  const today = berlinDate();
+  const date = query.date ? String(query.date) : `${Number(today.slice(0, 4)) - 1}-12-31`;
+  if (!isCalendarDate(date)) throw bad('validation', 'Stichtag: Datum im Format JJJJ-MM-TT angeben.');
+  if (date > today) throw bad('validation', 'Stichtag liegt in der Zukunft.');
+  const end = berlinDayStartIso(new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10));
+  const rows = (await env.DB.prepare(`SELECT i.id, i.site, i.part_number, i.name, i.unit, i.location, i.active, i.unit_price_net AS price_today,
+      (SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.created_at < ?) AS qty,
+      (SELECT m.unit_price_net FROM stock_movements m WHERE m.item_id=i.id AND m.type='zugang' AND m.transfer_id IS NULL AND m.unit_price_net IS NOT NULL AND m.created_at < ? ORDER BY m.created_at DESC LIMIT 1) AS last_purchase_price
+    FROM stock_items i WHERE i.environment=? ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`).bind(...[end, end, envName, ...(site ? [site] : [])]).all()).results;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const items = rows.map((r) => ({ ...r, qty: r3(r.qty || 0) })).filter((r) => r.qty !== 0).map((r) => ({ ...r, active: !!r.active,
+    value_purchase_net: r.last_purchase_price === null ? null : r2(r.qty * r.last_purchase_price), value_today_net: r.price_today === null ? null : r2(r.qty * r.price_today) }));
+  const sum = (k) => ({ value_net: r2(items.reduce((a, i) => a + (i[k] || 0), 0)), unvalued: items.filter((i) => i[k] === null).length });
+  return { date, site, environment: envName, items, summary: { count: items.length, purchase: sum('value_purchase_net'), today: sum('value_today_net'), negative: items.filter((i) => i.qty < 0).length } };
+}
+export function stockAsOfCsv(rep, csvCell) {
+  const head = ['Stichtag', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand zum Stichtag', 'Letzter Einkaufspreis netto bis Stichtag', 'Wert netto (letzter Einkaufspreis)', 'Artikelpreis netto (heute)', 'Wert netto (Artikelpreis heute)', 'Artikel aktiv'];
+  const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const lines = [head.join(';')];
+  for (const i of rep.items) lines.push([rep.date, csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.qty), n(i.last_purchase_price), n(i.value_purchase_net), n(i.price_today), n(i.value_today_net), i.active ? 'ja' : 'nein'].join(';'));
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
 const TYPE_DE = { zugang: 'Zugang', entnahme: 'Entnahme', korrektur: 'Korrektur' };

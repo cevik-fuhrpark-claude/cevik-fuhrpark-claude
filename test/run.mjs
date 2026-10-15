@@ -2714,6 +2714,47 @@ await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, end
   await users.ws.patch(`/api/stock/${id}`, { active: false });
 });
 
+await test('Bestand zum Stichtag: Buchungen bis Ende des Berliner Tages, letzter Einkaufspreis (ohne Umlagerung) und heutiger Preis, ohne Preis unbewertet, Rechte, CSV', async () => {
+  const n = await users.ws.post('/api/stock', { name: 'Stichtagartikel', unit: 'Stk' });
+  eq(n.status, 201); const id = n.data.id;
+  const ins = (qty, type, price, at, transfer) => env.DB.db.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,unit_price_net,note,user_id,created_at,transfer_id,transfer_site) VALUES (?,'test',?,?,?,?,'Stichtagtest',?,?,?,?)`)
+    .run(crypto.randomUUID(), id, type, qty, price, users.ws.id, at, transfer || null, transfer ? 'MUENCHEN' : null);
+  ins(4, 'zugang', 1.5, '2025-06-01T08:00:00.000Z');
+  ins(-2, 'entnahme', null, '2025-11-01T08:00:00.000Z');
+  ins(5, 'zugang', 3, '2025-12-31T22:00:00.000Z'); // 23:00 Berliner Zeit am 31.12. → zählt
+  ins(1, 'zugang', 99, '2025-12-31T22:10:00.000Z', 'T-STICHTAG'); // Umlagerung: zählt zur Menge, nicht als Einkaufspreis
+  ins(10, 'zugang', 2, '2025-12-31T23:30:00.000Z'); // 00:30 am 01.01. → nicht mehr
+  const get = async (q) => (await users.ws.get('/api/stock/asof' + q));
+  let r = (await get('?date=2025-12-31')).data;
+  let it = r.items.find((i) => i.id === id);
+  eq(it.qty, 8, 'Menge bis Tagesende Berlin'); eq(it.last_purchase_price, 3, 'letzter Einkaufspreis ohne Umlagerung'); eq(it.value_purchase_net, 24);
+  eq(it.price_today, null); eq(it.value_today_net, null, 'ohne heutigen Preis unbewertet (nie 0 €)');
+  ok(r.summary.today.unvalued >= 1 && r.summary.count === r.items.length && r.items.every((i) => i.qty !== 0 && i.site === 'DORTMUND'), 'Summen, nur Bestand ≠ 0, nur eigenes Lager');
+  eq(r.summary.purchase.value_net, Math.round(r.items.reduce((a, i) => a + (i.value_purchase_net || 0), 0) * 100) / 100, 'Summe Einkaufspreis');
+  eq((await get('?date=2025-10-31')).data.items.find((i) => i.id === id).qty, 4, 'früherer Stichtag');
+  eq((await get('?date=2025-05-31')).data.items.find((i) => i.id === id), undefined, 'vor dem ersten Zugang nicht enthalten');
+  eq((await get('?date=2026-01-01')).data.items.find((i) => i.id === id).last_purchase_price, 2, 'Preis des späteren Zugangs ab 01.01.');
+  eq((await users.ws.patch(`/api/stock/${id}`, { unit_price_net: 2.5, active: false })).status, 200);
+  it = (await get('?date=2025-12-31')).data.items.find((i) => i.id === id);
+  ok(it && it.active === false && it.value_today_net === 20, 'inzwischen ausgebuchter Artikel enthalten, Wert zum heutigen Preis');
+  const def = (await get('')).data; eq(def.date, `${Number(def.date.slice(0, 4))}-12-31`); ok(def.date < new Date().toISOString().slice(0, 10), 'Standard: 31.12. des Vorjahres');
+  eq((await get('?date=2099-12-31')).status, 400, 'Zukunft'); eq((await get('?date=2025-02-30')).status, 400, 'kein Kalenderdatum');
+  eq((await users.wsMuc.get('/api/stock/asof?date=2025-12-31&site=DORTMUND')).status, 403, 'fremdes Lager');
+  ok(!(await users.wsMuc.get('/api/stock/asof?date=2025-12-31')).data.items.some((i) => i.id === id), 'München sieht Dortmund nicht');
+  eq((await users.driver.get('/api/stock/asof')).status, 403, 'Fahrer');
+  eq((await users.prodFleet.get('/api/stock/asof?date=2025-12-31')).data.items.some((i) => i.id === id), false, 'Testdaten nicht im Betrieb');
+  const csv = await users.ws.get('/api/stock/asof?date=2025-12-31&format=csv');
+  eq(csv.status, 200); ok(/lagerbestand-stichtag_test_2025-12-31/.test(csv.headers.get('content-disposition')), 'Dateiname');
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/\r\n$/, '').split('\r\n');
+  ok(lines[0].startsWith('﻿Stichtag;Lager;Artikelnummer;Bezeichnung;Einheit;Lagerort;Bestand zum Stichtag;'), 'Kopfzeile'); eq(lines.length - 1, r.items.length);
+  ok(lines.some((l) => l.startsWith('2025-12-31;DORTMUND;;Stichtagartikel;Stk;;8;3;24;2,5;20;nein')), 'Zeile');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.indexOf('[/^#\\/stock\\/asof$/') > 0 && app.indexOf('[/^#\\/stock\\/asof$/') < app.indexOf('[/^#\\/stock\\/([\\w-]+)$/, viewStockItem]') && app.includes('href="#/stock/asof" id="sasof"'), 'Route vor Artikel-Route, Knopf im Lager');
+  ok(app.includes("rep.summary[k].unvalued === rep.summary.count ? '–'"), 'Summe ohne bewertete Zeilen: – statt 0 €');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['asof_title', 'asof_hint', 'asof_date', 'asof_count', 'asof_qty', 'asof_last_purchase', 'asof_val_purchase', 'asof_val_today', 'asof_negative', 'asof_inactive', 'asof_none']) ok(STRINGS[l][k], `${k} ${l}`);
+});
+
 await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, für Fahrer nur freigegebene auf „Mein Fahrzeug“', async () => {
   const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles; ok(mv.length, 'Fahrer hat ein Fahrzeug');
   const viewer = await invite(owner, { username: 'test.lesen.notes', display_name: 'Test Lesezugriff Hinweise', role: 'viewer', environment: 'test' });

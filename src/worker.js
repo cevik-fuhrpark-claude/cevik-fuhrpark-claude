@@ -407,6 +407,11 @@ async function handleApi(request, env, ctx, url) {
     if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
     return json({ items });
   }
+  if (path === '/api/stock/asof' && m === 'GET') {
+    const rep = await stock.stockAsOf(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockAsOfCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lagerbestand-stichtag_${envName}_${rep.date}${rep.site ? '_' + rep.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    return json(rep);
+  }
   if (path === '/api/stock/journal' && m === 'GET') {
     const rep = await stock.journal(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
