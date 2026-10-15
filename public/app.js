@@ -285,7 +285,27 @@ async function checkIdle() {
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, noteActivity, { passive: true, capture: true }));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
 setInterval(checkIdle, 5000); // nur Zeitvergleich, ohne Serveraufruf
-window.addEventListener('online', () => { if (S.offlineStart) { S.offlineStart = false; S.me = null; route(); } });
+// Netz wieder da nach Offline-Start: Seite nur neu aufbauen, wenn nichts eingegeben ist – sonst (z. B. halb ausgefüllte Schadensmeldung im Funkloch)
+// Sitzung und Stammdaten im Hintergrund auffrischen, die Eingaben bleiben stehen
+window.addEventListener('online', async () => {
+  if (!S.offlineStart) return;
+  if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }
+  try {
+    const r = await api('GET', '/api/me'); S.me = r.user; S.offlineStart = false;
+    S.meta = await api('GET', '/api/meta'); saveOfflineSession(); refreshUnread(true); flushOutbox();
+  } catch {}
+});
+// Hat die Person in der aktuellen Ansicht etwas eingegeben oder ausgewählt? (vorsichtig: im Zweifel ja)
+function viewDirty() {
+  const m = document.getElementById('main') || document.querySelector('main'); if (!m) return false;
+  return [...m.querySelectorAll('input, textarea, select')].some((el) => {
+    if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
+    if (el.type === 'file') return !!el.value;
+    if (el.type === 'checkbox' || el.type === 'radio') return el.checked !== el.defaultChecked;
+    if (el.tagName === 'SELECT') { const d = [...el.options].findIndex((o) => o.defaultSelected); return el.selectedIndex !== (d < 0 ? (el.multiple ? -1 : 0) : d); }
+    return el.value !== el.defaultValue;
+  });
+}
 
 async function refreshUnread(bg = false) {
   try { const n = await api('GET', '/api/notifications?count=1', undefined, { bg }); S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge(); } catch {}

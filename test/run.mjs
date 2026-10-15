@@ -7689,6 +7689,25 @@ await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nic
   } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM master_inbox WHERE event_id LIKE 'mix-%'`).run(); }
 });
 
+await test('Netz wieder da nach Offline-Start: Seite nur ohne Eingaben neu aufbauen (Eingaben im Funkloch bleiben erhalten)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const h = app.slice(app.indexOf("window.addEventListener('online'"), app.indexOf('function viewDirty()'));
+  ok(h.includes('if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }') && h.includes("api('GET', '/api/me')") && h.includes('saveOfflineSession()'), 'online: mit Eingaben kein route(), Sitzung im Hintergrund');
+  // viewDirty mit nachgebauten Feldern prüfen (ohne Browser)
+  const src = app.slice(app.indexOf('function viewDirty()'), app.indexOf('\n}\n', app.indexOf('function viewDirty()')) + 2);
+  const mk = (els) => ({ getElementById: () => ({ querySelectorAll: () => els }), querySelector: () => null });
+  const vd = (els) => new Function('document', src + '\nreturn viewDirty();')(mk(els));
+  const opt = (sel, def) => ({ selected: sel, defaultSelected: def });
+  eq(vd([]), false); eq(vd([{ type: 'text', tagName: 'INPUT', value: '', defaultValue: '' }]), false);
+  eq(vd([{ type: 'textarea', tagName: 'TEXTAREA', value: 'Spiegel', defaultValue: '' }]), true, 'Text eingegeben');
+  eq(vd([{ type: 'radio', tagName: 'INPUT', checked: true, defaultChecked: false }]), true, 'Auswahl getroffen');
+  eq(vd([{ type: 'file', tagName: 'INPUT', value: 'C:\\fakepath\\a.jpg' }]), true, 'Foto gewählt');
+  eq(vd([{ type: 'hidden', tagName: 'INPUT', value: 'x', defaultValue: '' }]), false, 'versteckte Felder zählen nicht');
+  eq(vd([{ type: 'select-one', tagName: 'SELECT', selectedIndex: 0, options: [opt(true, false), opt(false, false)] }]), false, 'Auswahlliste unverändert (erste Option)');
+  eq(vd([{ type: 'select-one', tagName: 'SELECT', selectedIndex: 1, options: [opt(false, false), opt(true, false)] }]), true, 'Auswahlliste geändert');
+  eq(vd([{ type: 'select-one', tagName: 'SELECT', selectedIndex: 1, options: [opt(false, false), opt(true, true)] }]), false, 'vorbelegte Option');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

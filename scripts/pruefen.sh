@@ -29,6 +29,7 @@ step "UI-Datenqualität Hinweis bei Kappung"; sh scripts/restart-dev.sh > /dev/n
 step "UI-Archive Hinweis bei Kürzung"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-archiv-hinweis.py > /tmp/cfp-archiv.log 2>&1 || { tail -20 /tmp/cfp-archiv.log; fail "Archiv-Hinweis"; }; tail -1 /tmp/cfp-archiv.log
 step "UI-Hinweise Zähler über alle"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-hinweise-zaehler.py > /tmp/cfp-hzaehler.log 2>&1 || { tail -20 /tmp/cfp-hzaehler.log; fail "Hinweise Zähler"; }; tail -1 /tmp/cfp-hzaehler.log
 step "UI-Glockensymbol (Push ohne Neuaufbau)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-glocke.py > /tmp/cfp-glocke.log 2>&1 || { tail -20 /tmp/cfp-glocke.log; fail "Glockensymbol"; }; tail -1 /tmp/cfp-glocke.log
+step "UI-Wieder online (Eingaben bleiben)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-wieder-online.py > /tmp/cfp-online.log 2>&1 || { tail -20 /tmp/cfp-online.log; fail "Wieder online"; }; tail -1 /tmp/cfp-online.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
