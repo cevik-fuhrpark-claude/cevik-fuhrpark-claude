@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test: Zahlen und Beträge im Format der Oberflächensprache – Fahrzeugakte mit km-Stand und Vertragsrate:
 # Deutsch „123.456 km“/„1.234,50 €“, Englisch „123,456 km“/„€1,234.50“, Ukrainisch „123 456 km“/„1 234,50 €“.
+# Fahrer-Aushang: Druckdatum in der Sprache des Aushangs (DE/UK „TT.MM.JJJJ“, EN „TT/MM/JJJJ“).
 # Eingabefeld „Rate“ bleibt mit Komma vorbelegt (Server liest Komma und Punkt). 390/820/1366 px, keine Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, re, datetime
@@ -34,6 +35,13 @@ with sync_playwright() as p:
         check(re.search(km,txt) is not None,f'{w}px/{lang}: km-Stand im Sprachformat ({km})')
         check(re.search(eu,txt) is not None,f'{w}px/{lang}: Rate im Sprachformat ({eu})')
         if SHOTS: q.screenshot(path=f'{SHOTS}/zahlenformat_{lang}_{w}.png',full_page=True)
+        # Fahrer-Aushang: Druckdatum in der Sprache des Aushangs (unabhängig von der App-Sprache), nie handgebautes TT.MM.JJJJ auf Englisch
+        dd=td.strftime('%d'); mm=td.strftime('%m'); yy=td.strftime('%Y')
+        for gl,pat in (('de',rf'{dd}\.{mm}\.{yy}'),('uk',rf'{dd}\.{mm}\.{yy}'),('en',rf'{dd}/{mm}/{yy}')):
+            q.goto(B+f'/#/guide?l={gl}'); q.wait_for_selector('article.guide',timeout=15000); q.wait_for_timeout(300)
+            last=q.locator('article.guide > p.small.muted').last.inner_text()
+            check(re.search(pat,last) is not None,f'{w}px/App {lang}: Aushang {gl} Druckdatum {last.split("·")[0].strip()}')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/aushang_en_{w}.png',full_page=True)
         check(not errs,f'{w}px/{lang}: keine Skriptfehler {errs[:1]}')
         c.close()
     br.close()

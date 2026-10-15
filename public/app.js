@@ -30,7 +30,8 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) 
 // z. B. Tatzeit im Bußgeld ≠ Schreiben). Formatierer je Sprache einmal erzeugt (Listen mit Hunderten Zeitstempeln).
 const DT_FMT = {};
 // Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache (Eingabefelder akzeptieren weiter Komma und Punkt)
-const uiLoc = () => (S.lang === 'uk' ? 'uk-UA' : S.lang === 'en' ? 'en-GB' : 'de-DE');
+const locOf = (l) => (l === 'uk' ? 'uk-UA' : l === 'en' ? 'en-GB' : 'de-DE');
+const uiLoc = () => locOf(S.lang);
 const fmtNum = (x, o) => Number(x).toLocaleString(uiLoc(), o);
 const dtFmt = (kind) => { const loc = uiLoc(); const k = kind + loc; return DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(loc, kind === 'dt' ? { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' } : { timeZone: kind === 'd' ? 'Europe/Berlin' : 'UTC' })); };
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
@@ -2336,7 +2337,7 @@ function viewDriverGuide(l) {
     <article class="guide" lang="${g}"><h1>${esc(gt('g_title'))}</h1>
     <div class="guide-top"><div class="qr">${(() => { try { return qrSvg(addr, { label: gt('g_addr') }); } catch { return ''; } })()}</div><div><p class="small"><b>${esc(gt('g_addr'))}</b></p><p class="guide-addr">${esc(addr)}</p></div></div>
     ${GUIDE_SECTIONS.map(sec).join('')}
-    <p class="small muted">${esc(gt('g_printed'))}: ${esc(bDate().split("-").reverse().join("."))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
+    <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), { timeZone: 'UTC' }).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
   $('#gprt').onclick = () => window.print();
 }
 
@@ -2715,7 +2716,7 @@ async function viewAudit(more, uArg, vArg) {
   const auTarget = (e) => (e.target_plate ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/vehicles/${esc(e.target)}">${esc(e.target_plate)}</a>`
     : (e.target_name || e.target_username) && e.target !== e.actor_id ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/audit?u=${esc(e.target)}">${esc(e.target_name || e.target_username)}</a>` : '');
   render(`<h1>${esc(t('audit'))}</h1>${helpLink('access')}<p class="small muted">${esc(t('audit_hint'))}</p>
-    ${printHead([t('audit'), f ? `${t('audit_area')}: ${gl || f}` : '', aq.length >= 2 ? `${t('print_search')}: „${aq}“` : '', au ? `${t('audit_until')} ${au.split('-').reverse().join('.')}` : '', pu ? `${t('audit_person')}: ${S.auditUserName || ''}` : '', pv ? `${t('vehicle')}: ${S.auditVehName || ''}` : '', t('print_count').replace('{n}', S.auditRows.length)])}
+    ${printHead([t('audit'), f ? `${t('audit_area')}: ${gl || f}` : '', aq.length >= 2 ? `${t('print_search')}: „${aq}“` : '', au ? `${t('audit_until')} ${fmtD(au)}` : '', pu ? `${t('audit_person')}: ${S.auditUserName || ''}` : '', pv ? `${t('vehicle')}: ${S.auditVehName || ''}` : '', t('print_count').replace('{n}', S.auditRows.length)])}
     <form id="aqf" class="actions noprint" style="flex-wrap:wrap;align-items:flex-end;margin-top:0"><div style="flex:1 1 200px"><label for="afsel">${esc(t('audit_area'))}</label><select id="afsel">${groups.map(([k, l]) => `<option value="${esc(k)}"${f === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       <div style="flex:1 1 200px"><label for="aqs">${esc(t('audit_search'))}</label><input id="aqs" name="q" type="search" value="${esc(aq)}" maxlength="60" placeholder="${esc(t('audit_search_ph'))}"></div>
       <div><label for="auntil">${esc(t('audit_until'))}</label><input id="auntil" name="until" type="date" value="${esc(au)}" max="${esc(bDate())}"></div><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="aprt">${esc(t('print'))}</button></form>

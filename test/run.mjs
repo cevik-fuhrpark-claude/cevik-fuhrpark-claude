@@ -4510,11 +4510,14 @@ await test('Dublette wählen: mehr als 5 andere offene Vorgänge – vollständi
   eq((i18n.match(/dup_(loading|all): '[^']*\{n\}/g) || []).length, 6, 'Platzhalter {n} in jeder Sprache');
 });
 
-await test('Zahlen und Beträge im Format der Oberflächensprache (DE/UK/EN), Eingabefelder unverändert mit Komma vorbelegt', async () => {
+await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache (DE/UK/EN), Eingabefelder unverändert mit Komma vorbelegt', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   eq((app.match(/'de-DE'/g) || []).length, 1, 'Gebietsschema nur an einer Stelle (uiLoc)');
-  ok(/const uiLoc = \(\) => \(S\.lang === 'uk' \? 'uk-UA' : S\.lang === 'en' \? 'en-GB' : 'de-DE'\);/.test(app), 'uiLoc je Sprache');
+  ok(/const locOf = \(l\) => \(l === 'uk' \? 'uk-UA' : l === 'en' \? 'en-GB' : 'de-DE'\);/.test(app) && app.includes('const uiLoc = () => locOf(S.lang);'), 'uiLoc je Sprache');
+  // Datumsangaben nie von Hand ins deutsche Format drehen (Aushang/Protokoll-Ausdruck zeigten „15.10.2026“ auch auf Englisch)
+  ok(!/split\(['"]-['"]\)\.reverse\(\)\.join/.test(app), 'kein handgebautes TT.MM.JJJJ');
+  ok(app.includes('new Intl.DateTimeFormat(locOf(g)'), 'Fahrer-Aushang: Druckdatum in der Sprache des Aushangs');
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
