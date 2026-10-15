@@ -8,6 +8,7 @@ import { siteKey, siteLabels } from './reports.js';
 
 export const EMERGENCY_KINDS = ['dispo', 'panne', 'werkstatt', 'versicherung', 'sonstiges'];
 export const EMERGENCY_MAX_ACTIVE = 50;
+export const EMERGENCY_ARCHIVE_MAX = 200; // Archiv-Anzeige: neueste 200 (eine Zeile mehr gelesen → truncated; alle Änderungen im Protokoll)
 const WRITE = ['owner', 'fleet', 'dispatch'];
 const KIND_ORDER = (k) => EMERGENCY_KINDS.indexOf(k);
 const sortContacts = (a, b) => KIND_ORDER(a.kind) - KIND_ORDER(b.kind) || a.label.localeCompare(b.label, 'de');
@@ -52,10 +53,11 @@ export async function listContacts(env, user, envName, query = {}) {
   const rows = (await env.DB.prepare(`SELECT c.id, c.kind, c.label, c.phone, c.note, c.site, c.vehicle_id, v.plate, c.created_at, c.updated_at, c.archived_at,
       COALESCE(uu.display_name, cu.display_name) AS changed_by_name, au.display_name AS archived_by_name
     FROM emergency_contacts c LEFT JOIN vehicles v ON v.id=c.vehicle_id JOIN users cu ON cu.id=c.created_by LEFT JOIN users uu ON uu.id=c.updated_by LEFT JOIN users au ON au.id=c.archived_by
-    WHERE c.environment=? AND c.archived_at IS ${archived ? 'NOT NULL' : 'NULL'} ORDER BY ${archived ? 'c.archived_at DESC' : 'c.created_at'} LIMIT 200`).bind(envName).all()).results;
+    WHERE c.environment=? AND c.archived_at IS ${archived ? 'NOT NULL' : 'NULL'} ORDER BY ${archived ? 'c.archived_at DESC, c.rowid DESC' : 'c.created_at'} LIMIT ?`).bind(envName, EMERGENCY_ARCHIVE_MAX + 1).all()).results;
+  const truncated = archived && rows.length > EMERGENCY_ARCHIVE_MAX; if (rows.length > EMERGENCY_ARCHIVE_MAX) rows.length = EMERGENCY_ARCHIVE_MAX;
   const contacts = rows.map((r) => ({ ...pub(r), plate: r.plate || null, vehicle_id: r.vehicle_id || null, created_at: r.created_at, updated_at: r.updated_at, changed_by_name: r.changed_by_name, archived_at: r.archived_at, archived_by_name: r.archived_by_name || null }));
   if (!archived) contacts.sort((a, b) => ({ all: 0, site: 1, vehicle: 2 }[a.scope] - { all: 0, site: 1, vehicle: 2 }[b.scope]) || sortContacts(a, b));
-  return { contacts, kinds: EMERGENCY_KINDS, max_active: EMERGENCY_MAX_ACTIVE };
+  return { contacts, kinds: EMERGENCY_KINDS, max_active: EMERGENCY_MAX_ACTIVE, ...(archived ? { truncated, archive_max: EMERGENCY_ARCHIVE_MAX } : {}) };
 }
 
 async function readBody(env, body, existing = {}) {

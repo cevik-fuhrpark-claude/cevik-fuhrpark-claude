@@ -7568,6 +7568,49 @@ await test('Fahrzeugakte: Prüf-/Wartungsverlauf höchstens 200 mit Hinweis, Zei
   ok(app.includes("d.maintenance_history_truncated ? '+'") && app.includes("tlHash(v.id, 'maintenance')"), 'Oberfläche: „+“ und Link zur Zeitleiste');
 });
 
+await test('Archive ohne stilles Abschneiden: Hinweise zum Fahrzeug (100) und Notfall-Rufnummern (200) melden truncated', async () => {
+  const db = env.DB.db; const { NOTES_ARCHIVE_MAX } = await import('../src/vnotes.js'); const { EMERGENCY_ARCHIVE_MAX } = await import('../src/emergency.js');
+  eq(NOTES_ARCHIVE_MAX, 100); eq(EMERGENCY_ARCHIVE_MAX, 200);
+  const vin = 'WDB96340310777715'; const VID = 'VIN:' + vin; const base = `/api/vehicles/${VID}/notes`;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-AR 1', site: 'Archiv-Test' })).status, 201);
+  const n0 = (await users.fleet.post(base, { text: 'Vorlage Archiv' })).data.id; eq((await users.fleet.post(`${base}/${n0}/archive`)).status, 200);
+  let r = (await users.fleet.get(base + '?archived=1')).data; eq(r.notes.length, 1); eq(r.truncated, false); eq(r.max, 100);
+  eq((await users.fleet.get(base)).data.truncated, undefined, 'aktive Liste ohne Feld (höchstens 20 aktiv)');
+  const src = db.prepare('SELECT * FROM vehicle_notes WHERE id=?').get(n0); const cols = Object.keys(src);
+  const iso = (i) => new Date(Date.UTC(2025, 0, 1) + i * 3600000).toISOString();
+  const insN = db.prepare(`INSERT INTO vehicle_notes(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+  try {
+    db.exec('BEGIN'); for (let i = 0; i < 99; i++) insN.run(...cols.map((c) => (c === 'id' ? 'arn-' + i : c === 'archived_at' ? iso(i) : c === 'text' ? 'Archiv ' + i : src[c]))); db.exec('COMMIT');
+    r = (await users.fleet.get(base + '?archived=1')).data; eq(r.notes.length, 100); eq(r.truncated, false, 'genau 100 → kein Hinweis');
+    insN.run(...cols.map((c) => (c === 'id' ? 'arn-99' : c === 'archived_at' ? iso(-1) : c === 'text' ? 'Archiv ältester' : src[c])));
+    r = (await users.fleet.get(base + '?archived=1')).data; eq(r.notes.length, 100); eq(r.truncated, true, '101 → Hinweis');
+    ok(!r.notes.some((n) => n.text === 'Archiv ältester'), 'ältester fehlt im Archiv');
+    const tl = (await users.fleet.get(`/api/vehicles/${VID}/timeline?types=note&limit=500`)).data;
+    ok(tl.items.some((x) => x.text === 'Archiv ältester'), 'Zeitleiste enthält ihn');
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM vehicle_notes WHERE id LIKE 'arn-%'`).run(); }
+  // Notfall-Rufnummern: Archiv
+  const c0 = (await users.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Archiv-Vorlage (Test)', phone: '0123 4' })).data.id;
+  eq((await users.fleet.post(`/api/emergency/contacts/${c0}/archive`)).status, 200);
+  let e = (await users.fleet.get('/api/emergency/contacts?archived=1')).data; eq(e.truncated, false); eq(e.archive_max, 200);
+  eq((await users.fleet.get('/api/emergency/contacts')).data.truncated, undefined, 'aktive Liste ohne Feld');
+  const cs = db.prepare('SELECT * FROM emergency_contacts WHERE id=?').get(c0); const ccols = Object.keys(cs);
+  const insC = db.prepare(`INSERT INTO emergency_contacts(${ccols.join(',')}) VALUES (${ccols.map(() => '?').join(',')})`);
+  const have = e.contacts.length;
+  try {
+    db.exec('BEGIN'); for (let i = have; i < 200; i++) insC.run(...ccols.map((c) => (c === 'id' ? 'arc-' + i : c === 'archived_at' ? iso(i) : cs[c]))); db.exec('COMMIT');
+    e = (await users.fleet.get('/api/emergency/contacts?archived=1')).data; eq(e.contacts.length, 200); eq(e.truncated, false, 'genau 200 → kein Hinweis');
+    insC.run(...ccols.map((c) => (c === 'id' ? 'arc-x' : c === 'archived_at' ? '2000-01-01T00:00:00.000Z' : cs[c])));
+    e = (await users.fleet.get('/api/emergency/contacts?archived=1')).data; eq(e.contacts.length, 200); eq(e.truncated, true, '201 → Hinweis');
+    ok(!e.contacts.some((c) => c.id === 'arc-x'), 'ältester fehlt');
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM emergency_contacts WHERE id LIKE 'arc-%'`).run(); }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vnote_arch_truncated.includes('{n}') && STRINGS[l].em_arch_truncated.includes('{n}') && STRINGS[l].em_arch_truncated.includes(STRINGS[l].em_title) && STRINGS[l].em_arch_truncated.includes(STRINGS[l].audit), 'Texte ' + l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('vnote_arch_truncated')") && app.includes("tlHash(encodeURIComponent(vid), 'note')") && app.includes("showArch && d.truncated"), 'Oberfläche zeigt Hinweise');
+  // nachladende Kästchen (Hinweise, Zwei-Faktor) schreiben nach dem Laden nicht in eine inzwischen gewechselte Ansicht (Skriptfehler 15.10.2026)
+  for (const fn of ['loadVehicleNotes', 'loadTotp']) { const body = app.slice(app.indexOf(`async function ${fn}(`), app.indexOf('\n}\n', app.indexOf(`async function ${fn}(`))); ok(body.includes('if (!box.isConnected) return;'), fn + ' prüft isConnected'); }
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

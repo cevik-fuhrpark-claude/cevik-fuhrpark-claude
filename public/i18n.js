@@ -1344,6 +1344,9 @@ Object.assign(STRINGS.en, { tire_hist_truncated: 'The last {n} tyre events are l
 Object.assign(STRINGS.de, { maint_hist_truncated: 'Hier stehen die letzten {n} Prüfungen und Wartungen (Fälligkeiten oben berücksichtigen alle) – alle weiteren in der' });
 Object.assign(STRINGS.uk, { maint_hist_truncated: 'Тут показано останні {n} перевірок і обслуговувань (терміни вище враховують усі) – усі інші в розділі' });
 Object.assign(STRINGS.en, { maint_hist_truncated: 'The last {n} inspections and services are listed here (the due dates above include all) – all others in the' });
+Object.assign(STRINGS.de, { vnote_arch_truncated: 'Angezeigt werden die letzten {n} archivierten Hinweise – alle stehen in der', em_arch_truncated: 'Angezeigt werden die letzten {n} archivierten Rufnummern. Ältere Änderungen sieht der Inhaber im Protokoll (Mehr → Protokoll, Bereich „Panne & Notfall“).' });
+Object.assign(STRINGS.uk, { vnote_arch_truncated: 'Показано останні {n} архівованих приміток – усі є в розділі', em_arch_truncated: 'Показано останні {n} архівованих номерів. Старіші зміни власник бачить у журналі (Ще → Журнал, розділ «Поломка та екстрений випадок»).' });
+Object.assign(STRINGS.en, { vnote_arch_truncated: 'Showing the last {n} archived notes – all of them are in the', em_arch_truncated: 'Showing the last {n} archived numbers. The owner sees older changes in the audit log (More → Audit log, area “Breakdown & emergency”).' });
 Object.assign(STRINGS.de, { master_cases_truncated: 'Hier stehen {n} Vorgänge (offene zuerst, nach Dringlichkeit) – alle weiteren in der Liste' });
 Object.assign(STRINGS.uk, { master_cases_truncated: 'Тут показано {n} заявок (спершу відкриті, за терміновістю) – усі інші у списку' });
 Object.assign(STRINGS.en, { master_cases_truncated: '{n} cases are listed here (open first, by urgency) – all others in the list' });

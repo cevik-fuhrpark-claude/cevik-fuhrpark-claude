@@ -1298,16 +1298,17 @@ async function loadVehicleNotes(vid, showArchive = false) {
   const box = $('#vnotes'); if (!box) return;
   const base = '/api/vehicles/' + encodeURIComponent(vid) + '/notes';
   let r; try { r = await api('GET', base); } catch { box.hidden = true; return; }
-  const ar = showArchive ? (await api('GET', base + '?archived=1').catch(() => ({ notes: [] }))).notes : null;
+  const arr = showArchive ? await api('GET', base + '?archived=1').catch(() => ({ notes: [] })) : null; const ar = arr ? arr.notes : null;
+  if (!box.isConnected) return; // Ansicht inzwischen gewechselt (z. B. Link angeklickt, während das Archiv lud)
   box.innerHTML = `<h3 style="margin-top:0">${esc(t('vnotes'))}${r.notes.length ? ` <span class="chip mittel">${r.notes.length}</span>` : ''}</h3>
     ${r.notes.length ? `<ul class="vnotes">${r.notes.map((n) => `<li><b>${esc(n.text)}</b>${n.for_driver ? ` <span class="chip">${esc(t('vnote_driver_chip'))}</span>` : ''}${n.valid_until ? ` <span class="chip">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}<div class="small muted">${esc(pnm(n.created_by_name, n.created_by_name_hidden))} · ${fmtDT(n.created_at)}</div>${r.can_write ? `<button type="button" class="linkbtn noprint" data-arch="${esc(n.id)}">${esc(t('vnote_archive'))}</button>` : ''}</li>`).join('')}</ul>` : `<p class="small muted">${esc(t('vnotes_none'))}</p>`}
     ${r.can_write ? `<details class="noprint"><summary>${esc(t('vnote_add'))}</summary><form id="vnf"><label for="vnt">${esc(t('vnote_text'))}</label><textarea id="vnt" name="text" maxlength="500" required></textarea>
       <label class="check"><input type="checkbox" name="for_driver"> ${esc(t('vnote_for_driver'))}</label><label for="vnv">${esc(t('vnote_valid'))}<span class="hint">${esc(t('vnote_valid_hint'))}</span></label><input type="date" id="vnv" name="valid_until" style="max-width:220px"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
     <p class="noprint"><button type="button" class="linkbtn" id="vnar">${esc(showArchive ? t('vnote_hide_archive') : t('vnote_show_archive'))}</button></p>
-    ${ar ? (ar.length ? `<ul class="vnotes small muted">${ar.map((n) => `<li><s>${esc(n.text)}</s> · ${fmtDT(n.created_at)} – ${n.archived_at ? `${esc(t('vnote_archived'))} ${fmtDT(n.archived_at)}${n.archived_by_name ? ' · ' + esc(n.archived_by_name) : ''}` : esc(t('vnote_expired').replace('{d}', fmtD(n.valid_until)))}</li>`).join('')}</ul>` : `<p class="small muted">–</p>`) : ''}`;
+    ${ar ? (ar.length ? `<ul class="vnotes small muted">${ar.map((n) => `<li><s>${esc(n.text)}</s> · ${fmtDT(n.created_at)} – ${n.archived_at ? `${esc(t('vnote_archived'))} ${fmtDT(n.archived_at)}${n.archived_by_name ? ' · ' + esc(n.archived_by_name) : ''}` : esc(t('vnote_expired').replace('{d}', fmtD(n.valid_until)))}</li>`).join('')}</ul>${arr.truncated ? `<p class="small muted" id="vnartrunc">${esc(t('vnote_arch_truncated').replace('{n}', ar.length))} <a href="${tlHash(encodeURIComponent(vid), 'note')}">${esc(t('timeline'))}</a></p>` : ''}` : `<p class="small muted">–</p>`) : ''}`;
   $$('[data-arch]', box).forEach((b) => (b.onclick = async () => { try { await api('POST', `${base}/${b.dataset.arch}/archive`); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } }));
-  $('#vnar').onclick = () => loadVehicleNotes(vid, !showArchive);
-  if ($('#vnf')) $('#vnf').onsubmit = async (e) => { e.preventDefault(); const fd = new FormData(e.target);
+  $('#vnar', box).onclick = () => loadVehicleNotes(vid, !showArchive);
+  if ($('#vnf', box)) $('#vnf', box).onsubmit = async (e) => { e.preventDefault(); const fd = new FormData(e.target);
     try { await api('POST', base, { text: fd.get('text'), for_driver: fd.get('for_driver') === 'on', valid_until: fd.get('valid_until') || null }); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } };
 }
 
@@ -2057,7 +2058,7 @@ async function viewEmergencyEdit() {
   render(`<p class="noprint"><a href="#/emergency">‹ ${esc(t('back'))}</a></p><h1>${esc(t('em_manage'))}</h1><p class="small muted">${esc(t('em_manage_hint'))}</p>
     <div class="actions" role="group" aria-label="${esc(t('em_manage'))}"><button type="button" class="btn ${showArch ? 'secondary' : ''}" data-emtab="0" aria-pressed="${!showArch}">${esc(t('em_active'))}</button><button type="button" class="btn ${showArch ? '' : 'secondary'}" data-emtab="1" aria-pressed="${showArch}">${esc(t('em_archive_list'))}</button></div>
     ${form}${showArch ? '' : `<p class="small muted" id="emcount">${esc(t('em_count').replace('{n}', d.contacts.length).replace('{m}', d.max_active))}</p>`}
-    <div class="list" id="emlist">${rows || `<p class="muted">–</p>`}</div>`, 'more');
+    ${showArch && d.truncated ? `<p class="small muted" id="emartrunc">${esc(t('em_arch_truncated').replace('{n}', d.contacts.length))}</p>` : ''}<div class="list" id="emlist">${rows || `<p class="muted">–</p>`}</div>`, 'more');
   $$('[data-emtab]').forEach((b) => (b.onclick = () => { S.emArch = b.dataset.emtab === '1'; S.emEdit = null; viewEmergencyEdit(); }));
   const f = $('#emf');
   if (f) {
@@ -2991,6 +2992,7 @@ async function loadTotp() {
   const box = $('#tfabox'); if (!box) return;
   const st = await api('GET', '/api/me/totp');
   S.me.totp_enabled = st.enabled;
+  if (!box.isConnected) return; // Ansicht inzwischen gewechselt
   if (!st.enabled) {
     box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
       <form id="tfs"><label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
