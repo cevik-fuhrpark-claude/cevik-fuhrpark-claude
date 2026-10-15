@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test: Lager → Inventur (Werkstatt), DE/UK/EN bei 390/820/1366 px.
 # „Abweichungen buchen“ erst nach „Abweichungen prüfen“; Zählmenge danach geändert → Buchen wieder gesperrt + Hinweis „erneut prüfen“;
 # Buchen fragt mit Anzahl nach (Abbrechen bucht nichts), Bestätigen bucht; „Zuletzt gezählt“ in Inventurliste, Zählliste und Artikelakte. Kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
-import os
+import os, re
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
@@ -100,6 +100,7 @@ with sync_playwright() as p:
         # Artikelakte: „Zuletzt gezählt“ mit Datum und Zählmenge
         q.goto(B+f'/#/stock/{iid}'); q.wait_for_selector('#lcnt')
         check('6' in q.inner_text('#lcnt') and NEVER[lang] not in q.inner_text('#lcnt'),f'{lang} {w}px: Artikelakte zuletzt gezählt ({q.inner_text("#lcnt")!r})')
+        check(not re.search(r'Inventur \d{4}-\d\d-\d\d +Inventur',q.inner_text('body')),f'{lang} {w}px: Verlauf ohne doppelten Inventur-Beleg')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/artikel_gezaehlt_{lang}.png',full_page=True)
         # Bestand zum Stichtag: Knopf im Lager, Stichtag heute → Artikel mit 6 Stk, Summen, kein Querscrollen
         q.goto(B+'/#/stock'); q.wait_for_selector('#sasof'); q.click('#sasof'); q.wait_for_selector('#saf')
