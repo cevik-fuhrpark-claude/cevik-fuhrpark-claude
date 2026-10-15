@@ -312,7 +312,8 @@ export function parseCsv(text) {
 
 // iCalendar (RFC 5545): ganztägige Termine mit optionaler Erinnerung; TEXT-Werte maskiert (\\ ; , Zeilenumbruch), Zeilen auf 75 Oktette gefaltet
 export function icsEscape(x) {
-  return String(x ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  // Zeilenumbrüche aller Arten (auch einzelnes CR) → \\n; übrige Steuerzeichen sind in iCalendar-Text unzulässig (RFC 5545 3.3.11) → entfernt
+  return String(x ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '');
 }
 export function icsCalendar(name, events, stamp = new Date().toISOString()) {
   // Byte-Länge je Zeichen ohne TextEncoder (der je Zeichen aufgerufen ≈ 50× langsamer war: 900 Termine ≈ 600 ms CPU)

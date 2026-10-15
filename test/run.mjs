@@ -3556,6 +3556,7 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   ok(ics.includes('DTSTART;VALUE=DATE:20990315') && ics.includes('Bußgeldstelle Süd\\; Abt. 3'), 'Frist mit maskiertem Semikolon');
   const { icsEscape } = await import('../src/util.js');
   eq(icsEscape('a;b,c\\d\nx'), 'a\\;b\\,c\\\\d\\nx');
+  eq(icsEscape('a\rb\r\nc\u0000d\u001be\tf'), 'a\\nb\\ncd' + 'e\tf', 'einzelnes CR → \\n, Steuerzeichen entfernt, Tab bleibt');
 });
 
 await test('Bußgelder: Tatzeit ohne Zeitzone = Berliner Ortszeit wie im Schreiben (unabhängig vom Gerät), ungültige Uhrzeit abgewiesen', async () => {
@@ -4598,6 +4599,22 @@ await test('Stör-Parameter an allen festen GET-Pfaden: nie „Interner Fehler�
     if (r.status >= 500) bad.push(`${p}?${k}=${v} → ${r.status}`);
   }
   eq(bad.slice(0, 5).join(' | '), '', 'Serverfehler');
+});
+
+await test('Server-CSV: eine gemeinsame Zellregel (Formelschutz, Anführungszeichen auch bei einzelnem CR), Kalender ohne Steuerzeichen', async () => {
+  const fs = await import('node:fs');
+  const hits = [];
+  for (const f of fs.readdirSync(new URL('../src/', import.meta.url))) {
+    if (!f.endsWith('.js') || f === 'backup.js') continue; // Sicherung: eigenes, immer gequotetes Format
+    const src = fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
+    hits.push(...[...src.matchAll(/replace\(\/"\/g, '""'\)/g)].map(() => f));
+  }
+  eq(hits.join(','), 'maintenance.js', 'nur csvCell quotet');
+  const { csvCell } = await import('../src/maintenance.js');
+  eq(csvCell('a\rb'), '"a\rb"', 'einzelnes CR gequotet'); eq(csvCell('=1+1'), "'=1+1"); eq(csvCell('-150,5'), '-150,5'); eq(csvCell('x;"y"'), '"x;""y"""');
+  const { icsCalendar } = await import('../src/util.js');
+  const ics = icsCalendar('T', [{ uid: 'u1', date: '2099-01-01', summary: 'A\rB\u0007C', description: 'x' }]);
+  ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(ics) && ics.split('\r\n').every((l) => !l.includes('\r')), 'keine Steuerzeichen/kein loses CR im Kalender');
 });
 
 await test('Laufende Gewährleistungen: Akte (50) und Kurzinfo im Vorgang (20) melden weitere statt still zu kappen', async () => {

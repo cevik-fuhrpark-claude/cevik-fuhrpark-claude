@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { bad, forbidden, berlinDate, icsCalendar, intParam } from './util.js';
-import { maintenanceOverview } from './maintenance.js';
+import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -191,11 +191,7 @@ export async function claimReimbursements(env, envName, from, to, vehicleFilter,
 // CSV für Excel (DE): Semikolon, Dezimalkomma, UTF-8 mit BOM; Formel-Injektion wird neutralisiert
 export function costReportCsv(rep) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
-  const cell = (x) => {
-    let s = x === null || x === undefined ? '' : String(x);
-    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Monat', 'Neue Vorgänge', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto',
     'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet'];
   const lines = [head.join(';')];
@@ -210,11 +206,7 @@ export function costReportCsv(rep) {
 // Nur Anzahlen und Dauern in Stunden, keine Personen; leere Zelle = kein Wert (nicht 0).
 export function kpiReportCsv(rep, part = 'vehicles') {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
-  const cell = (x) => {
-    let v = x === null || x === undefined ? '' : String(x);
-    if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
-    return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  };
+  const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const lines = [];
   if (part === 'priority') {
     const st = (x) => [x.n, num(x.median_h), num(x.p90_h)];
@@ -380,7 +372,7 @@ export async function kpiReport(env, user, envName, query = {}) {
 const OPEN_DE = { werkstatt_freigegeben: 'Offen: zur Übernahme', in_reparatur: 'Offen: in Reparatur', wartet_teile: 'Offen: wartet auf Teile', abschlusskontrolle: 'Offen: Abschlusskontrolle' };
 export function workshopLoadCsv(rep) {
   const num = (x) => String(x).replace('.', ',');
-  const cell = (x) => { let v = x === null || x === undefined ? '' : String(x); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const last = rep.weeks[rep.weeks.length - 1];
   const lines = [['Standort', 'Werkstatt-Code', 'Kalenderwoche', 'Stunden', 'Übernommen', 'Freigegeben', ...rep.open_statuses.map((st) => OPEN_DE[st] || st)].join(';')];
   for (const s of rep.sites) for (const w of s.weeks) {
