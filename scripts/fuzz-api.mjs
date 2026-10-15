@@ -221,6 +221,8 @@ const rule2 = id(await owner.post(`/api/vehicles/${VE}/maintenance`, { kind: 'Fe
 one('Prüftermin-Auftrag (neu)', await par('Prüftermin-Auftrag neu', () => owner.post(`/api/maintenance/${rule2}/order`, { workshop_site: ws, request_key: 'fz-par-mo2' })));
 const VIN2 = 'WDB96340310777088'; await owner.post('/api/vehicles', { vin: VIN2, plate: 'FZ-WIN', site: 'Dortmund' });
 one('Winterauftrag (neu)', await par('Winterauftrag neu', () => owner.post(`/api/vehicles/${encodeURIComponent('VIN:' + VIN2)}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-04', request_key: 'fz-par-wo2' })));
+// Integrations-API: gleiche Telematik-Lieferung mehrfach gleichzeitig (n8n-Wiederholung) – auch für ein zugeordnetes Gerät
+await par('Telematik gleiche Lieferung', () => anon.req('POST', '/api/integration/v1/telematics?environment=test', { provider: 'yellowfox', items: [{ external_id: 'YF-PAR', km: 6000, gps_time: '2026-10-15T10:00:00Z', lat: 51.5, lon: 7.4 }, { external_id: 'YF-UNBEKANNT', km: 1, gps_time: '2026-10-15T10:00:00Z' }] }, IH));
 const pc = (await owner.post('/api/cases', { vehicle_id: V, description: 'Parallel: Befehle', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fz-par-2' })).data.id;
 const pv = (await owner.get(`/api/cases/${pc}`)).data.case.version;
 await par('Befehl gleiche command_id', () => owner.post(`/api/cases/${pc}/commands`, { action: 'comment', command_id: 'fz-par-cmd', expected_version: pv, note: 'parallel' }));
