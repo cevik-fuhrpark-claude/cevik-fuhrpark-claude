@@ -2939,22 +2939,25 @@ async function viewSearch() {
     try {
       if (!vehicles) vehicles = (await api('GET', '/api/vehicles')).vehicles;
       const n = norm(q);
-      const vs = vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate].some((x) => norm(x).includes(n))).slice(0, 10);
-      const cs = (await api('GET', '/api/cases?limit=20&q=' + encodeURIComponent(q))).cases;
+      // Treffer je Bereich höchstens 10 (Vorgänge 20) – Gesamtzahl und Hinweis „Suche genauer eingeben“ statt stillem Abschneiden
+      const vAll = vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate, v.manufacturer, v.model].some((x) => norm(x).includes(n))); const vs = vAll.slice(0, 10);
+      const cr = await api('GET', '/api/cases?status=&limit=20&q=' + encodeURIComponent(q)); const cs = cr.cases;
       if (canFines && !fineList) fineList = (await api('GET', '/api/fines')).fines;
       if (canStock && !stockList) stockList = (await api('GET', '/api/stock')).items;
       if (my !== seq) return;
       const lq = q.toLowerCase();
-      const fs = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))).slice(0, 10) : [];
+      const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))) : []; const fs = fAll.slice(0, 10);
       const hq = helpNorm(q); // Lager: Umlaute/ue gleich (wie Lagerliste und Hilfe)
-      const ss = canStock ? stockList.filter((i) => [i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(hq))).slice(0, 10) : [];
+      const sAll = canStock ? stockList.filter((i) => [i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(hq))) : []; const ss = sAll.slice(0, 10);
+      const more = (shown, all) => (all > shown ? `<p class="small muted" data-more>${esc(t('search_more').replace('{n}', shown).replace('{m}', all))}</p>` : '');
       // Hilfe-Abschnitte der eigenen Rolle (gleiche Suche wie auf der Hilfeseite)
       const hs = (helpMatches(helpSections(S.me.role).map((h) => ({ name: h, title: t(`help_${h}_t`), steps: t(`help_${h}_s`).split('|') })), q) || []).sort((a, b) => b.title_hit - a.title_hit).slice(0, 5);
-      box.innerHTML = `<h2>${esc(t('nav_vehicles'))} <span class="chip">${vs.length}</span></h2>${vs.length ? `<div class="list">${vs.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.site || '')}</span><span class="chip">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.vin || '')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
-        <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}</span></h2>${caseList(cs, '–')}`
-        + (fs.length ? `<h2>${esc(t('fines'))} <span class="chip">${fs.length}</span></h2><div class="list" id="gfines">${fs.map((f) => `<a class="row" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))}</span><span class="chip">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)}${f.reference ? ' · ' + esc(f.reference) : ''}${f.authority ? ' · ' + esc(f.authority) : ''}</span></a>`).join('')}</div>` : '')
-        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${ss.length}</span></h2><div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '')
+      box.innerHTML = `<h2>${esc(t('nav_vehicles'))} <span class="chip">${vAll.length}</span></h2>${more(vs.length, vAll.length)}${vs.length ? `<div class="list">${vs.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.site || '')}</span><span class="chip">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.vin || '')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
+        <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}${cr.truncated ? '+' : ''}</span></h2>${cr.truncated ? `<p class="small muted" data-more>${esc(t('search_more_cases').replace('{n}', cs.length))} <a href="#/cases" id="gcases">${esc(t('search_all_cases'))}</a></p>` : ''}${caseList(cs, '–')}`
+        + (fs.length ? `<h2>${esc(t('fines'))} <span class="chip">${fAll.length}</span></h2>${more(fs.length, fAll.length)}<div class="list" id="gfines">${fs.map((f) => `<a class="row" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))}</span><span class="chip">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)}${f.reference ? ' · ' + esc(f.reference) : ''}${f.authority ? ' · ' + esc(f.authority) : ''}</span></a>`).join('')}</div>` : '')
+        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${sAll.length}</span></h2>${more(ss.length, sAll.length)}<div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${i.on_hand} ${esc(i.unit)}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '')
         + (hs.length ? `<h2>${esc(t('help'))} <span class="chip">${hs.length}</span></h2><div class="list" id="ghelp">${hs.map((h) => `<a class="row" href="#/help?s=${h.name}&q=${encodeURIComponent(q)}"><span>?</span><span class="title">${esc(t(`help_${h.name}_t`))}</span><span></span></a>`).join('')}</div>` : '');
+      const gc = $('#gcases'); if (gc) gc.onclick = () => { S.caseQ = q; try { sessionStorage.setItem('cfp_cf', 'all'); } catch {} };
     } catch (err) { if (my === seq) box.innerHTML = `<div class="panel alert">${esc(err.message)}</div>`; }
   };
   $('#gq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 300); };

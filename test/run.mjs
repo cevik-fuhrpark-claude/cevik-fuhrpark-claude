@@ -7890,6 +7890,22 @@ await test('Fahrzeugliste: Suche findet Hersteller/Modell, Liste zeigt beides; P
   env.DB.db.prepare('DELETE FROM vehicles WHERE vin=?').run(vin);
 });
 
+await test('Globale Suche: Gesamtzahl je Bereich und Hinweis statt stillem Abschneiden (Fahrzeuge/Bußgelder/Lager 10, Vorgänge 20+), Hersteller/Modell', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const v = app.slice(app.indexOf('async function viewSearch()'), app.indexOf('// ---------- Hilfe (Schritt für Schritt'));
+  ok(v.length > 1000, 'viewSearch gefunden');
+  ok(!/\)\)\.slice\(0, 10\)/.test(v), 'keine gekappte Trefferliste ohne Gesamtzahl');
+  for (const [all, shown] of [['vAll', 'vs'], ['fAll', 'fs'], ['sAll', 'ss']]) ok(v.includes(`${all}.length}</span></h2>\${more(${shown}.length, ${all}.length)}`), `${all}: Zähler über alle + Hinweis`);
+  ok(v.includes("cr.truncated ? '+' : ''") && v.includes("t('search_more_cases')"), 'Vorgänge: „20+“ und Hinweis');
+  ok(v.includes('v.manufacturer, v.model].some'), 'Fahrzeuge: Hersteller/Modell durchsucht');
+  for (const k of ['search_more', 'search_more_cases', 'search_all_cases']) eq((i18n.match(new RegExp(`${k}: '`, 'g')) || []).length, 3, `${k} DE/UK/EN`);
+  // Server meldet die Kappung der Vorgangssuche
+  const r = (await users.fleet.get('/api/cases?status=&limit=1')).data;
+  ok(r.cases.length === 1 && r.truncated === true, 'limit=1 → truncated');
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

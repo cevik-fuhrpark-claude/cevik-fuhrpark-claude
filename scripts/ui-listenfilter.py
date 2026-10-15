@@ -21,6 +21,10 @@ with sync_playwright() as p:
     for j,(pl,kind) in enumerate([('FM-LF 11','lkw'),('FM-LF 12','lkw'),('FM-XY 13','lkw'),('FM-LF 14','anhaenger')]):
         r=api('POST','/api/vehicles',{'vin':f'WDB96340310777{j:03d}','plate':pl,'site':'Dortmund','kind':kind,**({'manufacturer':'Volvo','model':'FH 500'} if pl=='FM-XY 13' else {})})
         check(r['s'] in (200,201),f'Fahrzeug {pl} angelegt ({r["s"]})')
+    for j in range(12):
+        api('POST','/api/vehicles',{'vin':f'WDB96340310666{j:03d}','plate':f'FM-GS {j+1}','site':'Dortmund'})
+    for j in range(21):
+        api('POST','/api/cases',{'vehicle_id':'VIN:WDB96340310666000','description':f'Globalsuche Spiegel {j}','priority':'niedrig','driveability':'fahrbereit','request_key':f'fm-gs-{j}'})
     for w,h in [(390,844),(820,1180),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE'); q=c.new_page(); q.goto(B)
         errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
@@ -52,6 +56,19 @@ with sync_playwright() as p:
             check(len(vis)==1 and 'fm-xy 13' in vis[0],f'{w}px: Suche „{term}“ findet FM-XY 13 ({len(vis)})')
         check('Volvo FH 500' in q.locator('#vl a:not([hidden])').first.inner_text(),f'{w}px: Liste zeigt Hersteller und Modell')
         check('Hersteller' in (q.get_attribute('#q','placeholder') or ''),f'{w}px: Platzhalter nennt Suchfelder')
+        # Globale Suche: Gesamtzahl + Hinweis statt stillem Abschneiden (Fahrzeuge 10, Vorgänge 20)
+        q.goto(B+'/#/search'); q.wait_for_selector('#gq'); q.fill('#gq','fm-gs'); q.wait_for_selector('#gr h2')
+        q.wait_for_function("()=>document.querySelector('#gr h2 .chip') && document.querySelector('#gr h2 .chip').textContent==='12'", timeout=10000)
+        check(q.locator('#gr .list').first.locator('a.row').count()==10,f'{w}px: Suche zeigt 10 Fahrzeuge')
+        check('10 von 12' in q.locator('#gr [data-more]').first.inner_text(),f'{w}px: Hinweis „ersten 10 von 12“')
+        q.fill('#gq','volvo'); q.wait_for_function("()=>document.querySelector('#gr h2 .chip') && document.querySelector('#gr h2 .chip').textContent==='1'", timeout=10000)
+        check(q.locator('#gr [data-more]').count()==0,f'{w}px: kein Hinweis bei wenigen Treffern')
+        q.fill('#gq','Globalsuche Spiegel'); q.wait_for_selector('#gcases', timeout=10000)
+        check(q.locator('#gr h2 .chip').nth(1).inner_text()=='20+',f'{w}px: Vorgänge „20+“')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/globalsuche_{w}.png', full_page=False)
+        q.click('#gcases'); q.wait_for_selector('#cq'); q.wait_for_timeout(500)
+        check(q.input_value('#cq')=='Globalsuche Spiegel',f'{w}px: „Alle unter Vorgänge“ übernimmt die Suche')
+        check(q.locator('#cl a.row').count()>=21,f'{w}px: Vorgangsliste zeigt alle Treffer ({q.locator("#cl a.row").count()})')
         check(not errs,f'{w}px: keine Skriptfehler {errs}')
         c.close()
     br.close()
