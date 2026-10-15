@@ -65,7 +65,7 @@ Format, Spaltenzahl je Zeile, Formelschutz und Rechte prüft `npm test` für jed
 |---|---|---|---|---|---|---|
 | Fahrzeuge, Prüftermine (+ .ics), Vorgänge, Werkstattplan (.ics) | ✓ | ✓ | ✓ | ✓ | ✓ | – |
 | Reifen, Werkstattauslastung | ✓ | ✓ | ✓ | – | ✓ | – |
-| Lager, Bestellvorschlag, Lagerjournal | ✓ | ✓ | ✓ | – | – | – |
+| Lager, Bestellvorschlag, Lagerjournal, Inventurdifferenzen, Bestand zum Stichtag | ✓ | ✓ | ✓ | – | – | – |
 | Wiedervorlagen (.ics) | ✓ | ✓ | – | ✓ | ✓ | – |
 | Durchgeführte Prüfungen, Kosten, Kennzahlen, Bußgelder (+ .ics; Fahrernamen nur Inhaber/Leitung) | ✓ | ✓ | – | – | ✓ | – |
 | Verträge (+ .ics), Fahrer, Auslesungen, Versicherungsfälle, Telematik – letzter Stand je Fahrzeug | ✓ | ✓ | – | – | – | – |
