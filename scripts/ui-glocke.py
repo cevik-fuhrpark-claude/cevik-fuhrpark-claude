@@ -17,6 +17,7 @@ with sync_playwright() as p:
     if s['s']==200: api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW})
     api('POST','/api/login',{'username':'gl.inhaber','password':PW})
     api('POST','/api/vehicles',{'plate':'GL-GL 1','vin':'WDB96340310999913','site':'Dortmund'})
+    api('POST','/api/push/test')  # ein Hinweis, damit Filter und „Alle gelesen“ erscheinen
     for w,h in [(390,844),(820,1180),(1366,900)]:
         ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.clock.install(); q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'gl.inhaber','password':PW}])
@@ -58,6 +59,15 @@ with sync_playwright() as p:
         if SHOTS: q.screenshot(path=f'{SHOTS}/glocke_hinweis_{w}.png')
         q.click('#nnewb'); q.wait_for_function("()=>{const p=document.querySelector('#push'); return p && !p.dataset.alt && !document.querySelector('#nnew')}")
         check(True,f'{w}px: „Liste aktualisieren“ lädt neu')
+        # Filterwechsel bei aufgeklapptem Bereich: bleibt offen; „Alle gelesen“ ohne Netz → Fehlermeldung statt stillem Abbruch
+        if not q.evaluate("()=>document.querySelector('#np').open"): q.locator('#np summary').click()
+        check(q.locator('[data-nf]').count()>0 and q.locator('#ra').count()>0,f'{w}px: Filter und „Alle gelesen“ vorhanden')
+        if q.locator('[data-nf]').count():
+            q.locator('[data-nf="all"]').click(); q.wait_for_timeout(400)
+            check(q.evaluate("()=>document.querySelector('#np').open"),f'{w}px: Filterwechsel lässt Bereich offen')
+        if q.locator('#ra').count():
+            q.route('**/api/notifications/read-all', lambda r: r.abort()); q.click('#ra'); q.wait_for_selector('.toast')
+            check(True,f'{w}px: „Alle gelesen“ ohne Netz zeigt Meldung'); q.unroute('**/api/notifications/read-all')
         check(not errs,f'{w}px: keine Skriptfehler {errs}')
         ctx.close()
     br.close()

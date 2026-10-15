@@ -7668,6 +7668,9 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
     ok(ib.includes("if (!viewDirty() && !(np && np.open)) { route(); return; }"), 'Neuaufbau nur ohne Eingaben und mit zugeklapptem „Push für diese Hinweise“');
     ok(ib.includes("t('nf_new')") && ib.includes("t('nf_reload')") && ib.includes("if ($('#nnew')) return;"), 'sonst einmaliger Hinweis mit Knopf');
     for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_new && STRINGS[l].nf_reload && (l === 'de' || STRINGS[l].nf_new !== STRINGS.de.nf_new), 'nf_new/nf_reload übersetzt: ' + l);
+    { const vi = app.slice(app.indexOf('async function viewInbox()'), app.indexOf('function inboxPush()'));
+      ok(vi.includes('const again = async () => { const o = np.open; await viewInbox();'), 'Quittieren/Filter: Bereich bleibt offen');
+      ok(!/onclick = async \(\) => \{ await api/.test(app), 'keine Aktion ohne Fehlerbehandlung (sonst stiller Abbruch ohne Netz)'); }
     for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_push_s.includes(STRINGS[l].nf_reload), 'Hilfe „Push“ nennt „' + STRINGS[l].nf_reload + '“'); }
   ok(app.includes('function paintBadge()') && app.slice(app.indexOf('async function refreshUnread('), app.indexOf('async function refreshUnread(') + 300).includes('paintBadge()'), 'Zahl wird an Ort und Stelle aktualisiert');
   for (const l of ['de', 'uk', 'en']) { const h = STRINGS[l].help_push_s; ok(h.includes(String(NOTIF_MAX)) && h.includes(STRINGS[l].nf_unread) && h.includes(STRINGS[l].mark_read) && h.includes(STRINGS[l].notifications), 'Hilfe „Push“ ' + l + ' nennt Grenze und echte Namen'); }

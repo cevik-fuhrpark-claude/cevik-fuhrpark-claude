@@ -2245,10 +2245,12 @@ async function viewInbox() {
       }));
     } catch (err) { toast(err.message, true); }
   };
-  $$('[data-ack]').forEach((b) => (b.onclick = async () => { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); viewInbox(); }));
+  // Nach Quittieren/„Alle gelesen“/Filterwechsel: aufgeklappter Bereich „Push für diese Hinweise“ bleibt offen; Fehler (z. B. kein Netz) als Meldung statt stillem Abbruch
+  const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
+  $$('[data-ack]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
   $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).catch(() => {})));
-  const ra = $('#ra'); if (ra) ra.onclick = async () => { await api('POST', '/api/notifications/read-all'); S.unread = 0; viewInbox(); };
-  $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; viewInbox(); }));
+  const ra = $('#ra'); if (ra) ra.onclick = async () => { try { await api('POST', '/api/notifications/read-all'); S.unread = 0; paintBadge(); again(); } catch (err) { toast(err.message, true); } };
+  $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; again().catch((err) => toast(err.message, true)); }));
 }
 
 // Push bei geöffneten Hinweisen: Liste nur neu aufbauen, wenn nichts eingegeben und „Push für diese Hinweise“ zugeklappt ist –
@@ -3028,7 +3030,8 @@ function viewMore(open) {
   if (open === 'sess') { sess.open = true; sess.scrollIntoView({ block: 'start' }); }
   const tfa = $('#tfa');
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
-  $('#lo').onclick = async () => { await api('POST', '/api/logout'); clearOfflineData(); resetUserState(); location.hash = '#/login'; };
+  // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
+  $('#lo').onclick = async () => { try { await api('POST', '/api/logout'); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
 }
 
