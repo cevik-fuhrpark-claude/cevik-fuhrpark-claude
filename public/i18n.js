@@ -1353,3 +1353,6 @@ Object.assign(STRINGS.en, { master_cases_truncated: '{n} cases are listed here (
 Object.assign(STRINGS.de, { kpi_veh_more: 'Angezeigt: die ersten {n} von {m} Fahrzeugen (meiste Werkstattzeit zuerst). Der Ausdruck und die CSV enthalten alle.', kpi_veh_all: 'Alle {m} anzeigen' });
 Object.assign(STRINGS.uk, { kpi_veh_more: 'Показано перші {n} з {m} транспортних засобів (спершу з найбільшим часом у майстерні). Друк і CSV містять усі.', kpi_veh_all: 'Показати всі {m}' });
 Object.assign(STRINGS.en, { kpi_veh_more: 'Showing the first {n} of {m} vehicles (most workshop time first). The printout and the CSV contain all of them.', kpi_veh_all: 'Show all {m}' });
+Object.assign(STRINGS.de, { files_free: 'Noch {n} von {max} Dateien möglich.', files_full: 'Dieser Vorgang hat die Höchstzahl von {max} Dateien erreicht.', files_skipped: '{n} Datei(en) nicht angehängt – höchstens {max} je Vorgang: {names}' });
+Object.assign(STRINGS.uk, { files_free: 'Ще можна додати {n} з {max} файлів.', files_full: 'Ця заявка вже має максимальну кількість файлів ({max}).', files_skipped: 'Не додано файлів: {n} – максимум {max} на заявку: {names}' });
+Object.assign(STRINGS.en, { files_free: '{n} of {max} files still possible.', files_full: 'This case has reached the maximum of {max} files.', files_skipped: '{n} file(s) not attached – at most {max} per case: {names}' });

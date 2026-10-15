@@ -7934,6 +7934,19 @@ await test('Kennzahlen: Fahrzeugliste mit Gesamtzahl, Hinweis und „Alle anzeig
   ok(Array.isArray(r.data?.vehicles), 'Fahrzeuge im Bericht: ' + r.status + ' ' + JSON.stringify(r.data).slice(0, 200));
 });
 
+await test('Vorgangsdateien: Höchstzahl vor dem Hochladen sichtbar (freie Plätze, voll, Überzählige genannt statt Serverfehler je Datei)', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const v = app.slice(app.indexOf('async function viewCase(id)'), app.indexOf('function photoLimitWatch('));
+  ok(!v.includes('d.files.length < 10'), 'keine feste 10 mehr');
+  ok(v.includes('const filesFree = Math.max(0, PHOTO_MAX - d.files.length);'), 'freie Plätze aus PHOTO_MAX');
+  ok(v.includes('id="filesfull"') && v.includes('id="filesfree"'), 'Hinweise voll / freie Plätze');
+  ok(v.includes('all.slice(0, filesFree)') && v.includes("t('files_skipped')"), 'nur freie hochladen, Rest genannt');
+  ok(/await viewCase\(c\.id\);\s*if \(skipped\.length\)/.test(v), 'Meldung nach dem Neuaufbau');
+  for (const k of ['files_free', 'files_full', 'files_skipped']) eq((i18n.match(new RegExp(`${k}: '`, 'g')) || []).length, 3, `${k} DE/UK/EN`);
+});
+
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
   const R = HSTAT.responses.filter((r) => r.path.startsWith('/api/'));
   ok(R.length > 1000, `nur ${R.length} Antworten aufgezeichnet`);

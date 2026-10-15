@@ -35,6 +35,7 @@ step "UI-Eingaben bleiben beim Neuaufbau"; sh scripts/restart-dev.sh > /dev/null
 step "UI-Listen-Filter (Suche bleibt)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-listenfilter.py > /tmp/cfp-listenfilter.log 2>&1 || { tail -20 /tmp/cfp-listenfilter.log; fail "Listen-Filter"; }; tail -1 /tmp/cfp-listenfilter.log
 step "UI-Fotogrenze (Hinweis > 10 Bilder)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-fotogrenze.py > /tmp/cfp-fotogrenze.log 2>&1 || { tail -20 /tmp/cfp-fotogrenze.log; fail "Fotogrenze"; }; tail -1 /tmp/cfp-fotogrenze.log
 step "UI-Kennzahlen Fahrzeugliste (alle anzeigen)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-kpi-fahrzeuge.py > /tmp/cfp-kpiveh.log 2>&1 || { tail -20 /tmp/cfp-kpiveh.log; fail "Kennzahlen Fahrzeugliste"; }; tail -1 /tmp/cfp-kpiveh.log
+step "UI-Vorgangsdateien (Höchstzahl)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-vorgangsdateien.py > /tmp/cfp-vdateien.log 2>&1 || { tail -20 /tmp/cfp-vdateien.log; fail "Vorgangsdateien"; }; tail -1 /tmp/cfp-vdateien.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
