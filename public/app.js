@@ -1137,7 +1137,7 @@ async function prepareUpload(file) {
 }
 
 // Ablehnen als Dublette: alle offenen Vorgänge desselben Fahrzeugs (neueste Meldung zuerst, ohne diesen und ohne Dubletten) –
-// Auswahl bleibt erhalten; schlägt das Nachladen fehl, bleiben die 5 neuesten mit Hinweis auf die Vorgangsliste
+// Auswahl bleibt erhalten; schlägt das Nachladen fehl, bleiben die 5 neuesten mit Hinweis auf die Fahrzeugakte
 async function loadDupOptions(c) {
   const hint = () => $('#dupmore');
   try {
