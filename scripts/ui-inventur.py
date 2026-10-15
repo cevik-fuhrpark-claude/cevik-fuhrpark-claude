@@ -102,6 +102,10 @@ with sync_playwright() as p:
         if SHOTS and w==1366: q.screenshot(path=f'{SHOTS}/zaehlliste_{lang}.png',full_page=True)
         q.emulate_media(media='screen')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Zählliste ohne Querscrollen')
+        # Artikelliste „Anzeigen: nicht gezählt seit 365 Tagen“ blendet den heute gezählten Artikel aus
+        q.goto(B+'/#/stock'); q.wait_for_selector('#sf'); q.select_option('#sf','c365')
+        check(q.locator(f'#sl a[data-id="{iid}"]').is_hidden(),f'{lang} {w}px: Artikelliste „nicht gezählt seit 365 Tagen“ ohne gezählten Artikel')
+        q.select_option('#sf',''); check(q.locator(f'#sl a[data-id="{iid}"]').is_visible(),f'{lang} {w}px: Artikelliste „alle“ mit Artikel')
         # Artikelakte: „Zuletzt gezählt“ mit Datum und Zählmenge
         q.goto(B+f'/#/stock/{iid}'); q.wait_for_selector('#lcnt')
         check('6' in q.inner_text('#lcnt') and NEVER[lang] not in q.inner_text('#lcnt'),f'{lang} {w}px: Artikelakte zuletzt gezählt ({q.inner_text("#lcnt")!r})')
