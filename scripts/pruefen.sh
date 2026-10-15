@@ -27,6 +27,7 @@ step "UI-Kosten nur unbewertet (– statt 0 €)"; sh scripts/restart-dev.sh > /
 step "UI-Zeitleiste Hinweis bei Kürzung"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-zeitleiste-hinweis.py > /tmp/cfp-zlhinweis.log 2>&1 || { tail -20 /tmp/cfp-zlhinweis.log; fail "Zeitleiste Hinweis"; }; tail -1 /tmp/cfp-zlhinweis.log
 step "UI-Datenqualität Hinweis bei Kappung"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-dq-kappung.py > /tmp/cfp-dqkappung.log 2>&1 || { tail -20 /tmp/cfp-dqkappung.log; fail "Datenqualität Kappung"; }; tail -1 /tmp/cfp-dqkappung.log
 step "UI-Archive Hinweis bei Kürzung"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-archiv-hinweis.py > /tmp/cfp-archiv.log 2>&1 || { tail -20 /tmp/cfp-archiv.log; fail "Archiv-Hinweis"; }; tail -1 /tmp/cfp-archiv.log
+step "UI-Hinweise Zähler über alle"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-hinweise-zaehler.py > /tmp/cfp-hzaehler.log 2>&1 || { tail -20 /tmp/cfp-hzaehler.log; fail "Hinweise Zähler"; }; tail -1 /tmp/cfp-hzaehler.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark

@@ -6012,7 +6012,7 @@ await test('Hinweise: Filter alle/ungelesen/dringend mit Anzahlen (nur Anzeige),
   const list = [{ urgent: 1 }, { opened_at: 'x' }, { acknowledged_at: 'x', urgent: 1 }, {}];
   eq(list.filter(NF.all).length, 4); eq(list.filter(NF.unread).length, 2, 'ungelesen = weder geöffnet noch quittiert'); eq(list.filter(NF.urgent).length, 2);
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].nf_unread && STRINGS[lang].nf_urgent && STRINGS[lang].nf_none, `Texte ${lang}`);
-  ok(/NF\[S\.inboxF\] \? S\.inboxF : n\.notifications\.some\(NF\.unread\) \? 'unread' : 'all'/.test(app), 'ohne Wahl: Ungelesen, solange vorhanden; gewählter Filter bleibt');
+  ok(/NF\[S\.inboxF\] \? S\.inboxF : n\.counts\.unread \? 'unread' : 'all'/.test(app), 'ohne Wahl: Ungelesen, solange vorhanden (Zähler über alle); gewählter Filter bleibt');
   const n = await users.fleet.get('/api/notifications');
   eq(n.data.unread, n.data.notifications.filter(NF.unread).length, 'gleiche Regel wie der Zähler am Glockensymbol');
 });
@@ -7609,6 +7609,49 @@ await test('Archive ohne stilles Abschneiden: Hinweise zum Fahrzeug (100) und No
   ok(app.includes("t('vnote_arch_truncated')") && app.includes("tlHash(encodeURIComponent(vid), 'note')") && app.includes("showArch && d.truncated"), 'Oberfläche zeigt Hinweise');
   // nachladende Kästchen (Hinweise, Zwei-Faktor) schreiben nach dem Laden nicht in eine inzwischen gewechselte Ansicht (Skriptfehler 15.10.2026)
   for (const fn of ['loadVehicleNotes', 'loadTotp']) { const body = app.slice(app.indexOf(`async function ${fn}(`), app.indexOf('\n}\n', app.indexOf(`async function ${fn}(`))); ok(body.includes('if (!box.isConnected) return;'), fn + ' prüft isConnected'); }
+});
+
+await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter serverseitig, Hinweis bei mehr als 100', async () => {
+  const db = env.DB.db; const { NOTIF_MAX } = await import('../src/worker.js'); eq(NOTIF_MAX, 100);
+  const me = (await users.wsMuc.get('/api/me')).data.user; const uid = me.id;
+  const before = (await users.wsMuc.get('/api/notifications')).data;
+  const iso = (i) => new Date(Date.UTC(2025, 0, 1) + i * 60000).toISOString();
+  const ins = db.prepare(`INSERT INTO notifications(id, environment, user_id, case_id, event_key, kind, urgent, title, body, created_at, push_status, opened_at)
+    VALUES (?, 'test', ?, NULL, ?, 'agent_reminder', ?, ?, 'Test', ?, 'no_subscription', ?)`);
+  try {
+    // 3 ältere UNGELESENE (eines dringend), danach 120 neuere bereits gelesene → die ungelesenen liegen jenseits der neuesten 100
+    db.exec('BEGIN');
+    for (let i = 0; i < 3; i++) ins.run('ntx-u' + i, uid, 'ntx-u' + i, i === 0 ? 1 : 0, 'Alt ungelesen ' + i, iso(i), null);
+    for (let i = 0; i < 120; i++) ins.run('ntx-r' + i, uid, 'ntx-r' + i, 0, 'Gelesen ' + i, iso(10 + i), iso(10 + i));
+    db.exec('COMMIT');
+    const all = (await users.wsMuc.get('/api/notifications')).data;
+    eq(all.notifications.length, 100); eq(all.truncated, true); eq(all.max, 100); eq(all.filter, 'all');
+    eq(all.counts.all, before.counts.all + 123, 'Zähler „Alle“ über alle');
+    eq(all.unread, before.unread + 3, 'Ungelesen zählt auch ältere (früher nur aus den neuesten 100 gezählt)'); eq(all.counts.unread, all.unread);
+    eq(all.counts.urgent, before.counts.urgent + 1);
+    ok(!all.notifications.some((n) => n.id.startsWith('ntx-u')), 'ältere ungelesene nicht unter den neuesten 100');
+    const un = (await users.wsMuc.get('/api/notifications?filter=unread')).data;
+    eq(un.filter, 'unread'); ok(['ntx-u0', 'ntx-u1', 'ntx-u2'].every((id) => un.notifications.some((n) => n.id === id)), 'Filter „Ungelesen“ zeigt die älteren');
+    ok(un.notifications.every((n) => !n.opened_at && !n.acknowledged_at), 'nur ungelesene'); eq(un.truncated, false);
+    const ur = (await users.wsMuc.get('/api/notifications?filter=urgent')).data;
+    ok(ur.notifications.some((n) => n.id === 'ntx-u0') && ur.notifications.every((n) => n.urgent), 'Filter „Dringend“');
+    eq((await users.wsMuc.get('/api/notifications?filter=quatsch')).data.filter, 'all', 'unbekannter Filter = alle');
+    const cnt = (await users.wsMuc.get('/api/notifications?count=1')).data;
+    eq(cnt.unread, all.unread); eq(cnt.notifications, undefined, 'count=1 ohne Liste');
+    // genau 100 in der Auswahl → kein Hinweis
+    db.prepare(`DELETE FROM notifications WHERE id IN ('ntx-r0','ntx-r1','ntx-r2')`).run();
+    const ex = (await users.wsMuc.get('/api/notifications')).data;
+    eq(ex.truncated, ex.counts.all > 100, 'Hinweis nur bei mehr als 100');
+    // andere Personen sehen nichts davon
+    ok(!(await users.fleet.get('/api/notifications?filter=unread')).data.notifications.some((n) => n.id.startsWith('ntx-')), 'nur eigene');
+    // „Alle gelesen“ erfasst auch die älteren
+    eq((await users.wsMuc.post('/api/notifications/read-all')).status, 200);
+    eq((await users.wsMuc.get('/api/notifications?count=1')).data.unread, 0);
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM notifications WHERE id LIKE 'ntx-%'`).run(); }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_truncated.includes('{max}') && STRINGS[l].nf_truncated.includes('{n}') && STRINGS[l].nf_truncated.includes(STRINGS[l].nf_unread) && STRINGS[l].nf_truncated.includes(STRINGS[l].mark_read), 'Text ' + l + ' nennt die echten Knopfnamen');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'/api/notifications?count=1'") && app.includes('n.counts[k]') && app.includes("t('nf_truncated')"), 'Oberfläche: Zähler vom Server, Hinweis');
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

@@ -19,6 +19,8 @@ import * as drivers from './drivers.js';
 import * as tacho from './tacho.js';
 import * as reports from './reports.js';
 import { exportBackup } from './backup.js';
+// Hinweisliste: neueste 100 je Abruf (eine Zeile mehr gelesen → truncated); Zähler immer über alle
+export const NOTIF_MAX = 100;
 import * as maint from './maintenance.js';
 import { recordUsage, usageReport } from './usage.js';
 import { dataQuality, myInspectionsWithoutResult } from './quality.js';
@@ -541,11 +543,20 @@ async function handleApi(request, env, ctx, url) {
 
   // Benachrichtigungen & Push
   if (path === '/api/notifications' && m === 'GET') {
+    // Zähler immer über ALLE Hinweise der Person (nicht nur die angezeigten) – sonst fehlt im Zähler/Reiter, was älter als die neuesten NOTIF_MAX ist.
+    // ?filter=unread|urgent filtert serverseitig (ältere ungelesene erscheinen so auch bei vielen Hinweisen); ?count=1 nur die Zähler (Kennzahl am Menü).
+    const UNREAD = 'n.opened_at IS NULL AND n.acknowledged_at IS NULL';
+    const c = await env.DB.prepare(`SELECT COUNT(*) AS all_n, COALESCE(SUM(CASE WHEN ${UNREAD} THEN 1 ELSE 0 END), 0) AS unread_n, COALESCE(SUM(CASE WHEN n.urgent=1 THEN 1 ELSE 0 END), 0) AS urgent_n
+      FROM notifications n WHERE n.user_id=?`).bind(user.id).first();
+    const counts = { all: c.all_n, unread: c.unread_n, urgent: c.urgent_n };
+    if (url.searchParams.get('count') === '1') return json({ unread: counts.unread, counts });
+    const filter = { unread: UNREAD, urgent: 'n.urgent=1' }[url.searchParams.get('filter') || ''] || null;
     const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
-      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ORDER BY n.created_at DESC LIMIT 100`).bind(user.id).all()).results;
+      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, NOTIF_MAX + 1).all()).results;
+    const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
     for (const r of rows) { r.title = localizedTitle(r, r.lang); delete r.lang; }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
-    return json({ notifications: rows, unread: rows.filter((r) => !r.opened_at && !r.acknowledged_at).length, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
+    return json({ notifications: rows, unread: counts.unread, counts, filter: filter ? url.searchParams.get('filter') : 'all', truncated, max: NOTIF_MAX, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
   }
   if ((mm = path.match(/^\/api\/notifications\/([\w-]+)\/(received|opened|ack)$/)) && m === 'POST') {
     const col = { received: 'device_received_at', opened: 'opened_at', ack: 'acknowledged_at' }[mm[2]];

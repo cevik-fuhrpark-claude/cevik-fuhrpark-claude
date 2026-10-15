@@ -288,7 +288,7 @@ setInterval(checkIdle, 5000); // nur Zeitvergleich, ohne Serveraufruf
 window.addEventListener('online', () => { if (S.offlineStart) { S.offlineStart = false; S.me = null; route(); } });
 
 async function refreshUnread() {
-  try { const n = await api('GET', '/api/notifications'); S.unread = n.unread; } catch {}
+  try { const n = await api('GET', '/api/notifications?count=1'); S.unread = n.unread; } catch {}
 }
 
 // ---------- Öffentliche Ansichten ----------
@@ -2171,17 +2171,20 @@ async function viewTacho() {
 
 // ---------- Hinweise & Push ----------
 async function viewInbox() {
-  const n = await api('GET', '/api/notifications');
-  // Filter (nur Anzeige): alle / ungelesen (weder geöffnet noch quittiert) / dringend
+  // Filter: alle / ungelesen (weder geöffnet noch quittiert) / dringend – serverseitig, Zähler über ALLE Hinweise (nicht nur die neuesten 100)
   const NF = { all: () => true, unread: (x) => !x.opened_at && !x.acknowledged_at, urgent: (x) => !!x.urgent };
   // Gewählter Filter gilt für die App-Sitzung; ohne Wahl: „Ungelesen“, solange es ungelesene gibt, sonst „Alle“
-  const nf = NF[S.inboxF] ? S.inboxF : n.notifications.some(NF.unread) ? 'unread' : 'all';
-  const shown = n.notifications.filter(NF[nf]);
+  let n = await api('GET', '/api/notifications' + (NF[S.inboxF] && S.inboxF !== 'all' ? '?filter=' + S.inboxF : ''));
+  const nf = NF[S.inboxF] ? S.inboxF : n.counts.unread ? 'unread' : 'all';
+  if (nf !== n.filter) n = await api('GET', '/api/notifications?filter=' + nf);
+  S.unread = n.counts.unread;
+  const shown = n.notifications;
   render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>
     <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
-    ${n.notifications.length ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
-    <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.notifications.filter(NF[k]).length})</a>`).join('')}</div>` : ''}
-    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : x.kind === 'new_login' ? '#/more?o=sess' : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.notifications.length ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
+    ${n.counts.all ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
+    <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.counts[k]})</a>`).join('')}</div>` : ''}
+    ${n.truncated ? `<p class="small panel" id="ntrunc">${esc(t('nf_truncated').replace('{max}', n.max).replace('{n}', n.counts[nf]))}</p>` : ''}
+    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${x.case_id ? '#/cases/' + esc(x.case_id) : x.kind === 'new_login' ? '#/more?o=sess' : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.counts.all ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
   pushPanel($('#push'));
   const np = $('#np');
   np.ontoggle = async () => {
