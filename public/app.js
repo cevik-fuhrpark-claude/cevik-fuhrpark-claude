@@ -68,9 +68,9 @@ async function api(method, path, body, extra = {}) {
   // Exporte mit Zeilengrenze melden die Begrenzung per Header (z. B. Vorgangs-CSV)
   if (data instanceof Blob && res.headers.get('x-cfp-truncated')) data.cfpTruncated = Number(res.headers.get('x-cfp-truncated')) || true;
   if (!res.ok) {
-    // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch); unbekannte Codes: Server-Text
+    // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch): erst Code (err_*), sonst bekannter Text (Prüf- und Konfliktmeldungen); unbekannt: Server-Text
     const code = data && data.error;
-    const tr = code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || (code === 'validation' && translateValidation(S.lang, data.message)));
+    const tr = code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, data.message));
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; throw e;
   }
   return data;

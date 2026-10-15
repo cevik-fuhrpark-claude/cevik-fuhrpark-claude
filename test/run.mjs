@@ -1434,7 +1434,22 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     for (const l of ['de', 'uk', 'en']) ok(STR[l]['err_' + code], `err_${code} (${l})`);
   }
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/code === 'validation' && translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung');
+  ok(/STRINGS\[S\.lang\]\['err_' \+ code\]\) \|\| translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung (Code, sonst bekannter Text – auch bei Konflikten)');
+  // Konflikt-Meldungen (409): jeder Code hat err_*-Übersetzung oder sein Text wird übersetzt (Vorlagen mit Beispielwert)
+  const conf = [...src.matchAll(/conflict\('([a-z_]+)', (?:'([^']+)'|`([^`]+)`)/g)];
+  ok(conf.length >= 15, 'Konflikt-Meldungen gefunden: ' + conf.length);
+  const confTpl = {
+    '`Aktenzeichen bereits erfasst (${dup.fine_no}).`': ['Aktenzeichen bereits erfasst (TB-2026-0007).', 'Номер справи вже внесено (TB-2026-0007).', 'Case reference already recorded (TB-2026-0007).'],
+    '`Fahrzeug hat noch ${open.n} offene Vorgänge (alle Umgebungen) – zuerst abschließen.`': ['Fahrzeug hat noch 3 offene Vorgänge (alle Umgebungen) – zuerst abschließen.', 'Транспорт ще має відкриті заявки (3, усі середовища) – спочатку закрийте їх.', 'Vehicle still has open cases (3, all environments) – close them first.'],
+    '`${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`': ['Olena $& K. ist diesem Fahrzeug bereits zugeordnet.', 'Olena $& K. уже призначено цьому транспорту.', 'Olena $& K. is already assigned to this vehicle.'],
+  };
+  for (const [, code, lit, tplc] of conf) {
+    if (STR.uk['err_' + code] && STR.en['err_' + code]) continue;
+    if (lit) { ok(tv('uk', lit) && tv('en', lit), `Konflikt ${code} ohne Übersetzung: ${lit}`); continue; }
+    const ex = confTpl['`' + tplc + '`'];
+    ok(ex, `Konflikt-Vorlage ${code} ohne Übersetzung/Test: ${tplc}`);
+    if (ex) { eq(tv('uk', ex[0]), ex[1], ex[0]); eq(tv('en', ex[0]), ex[2], ex[0]); }
+  }
 });
 await test('Import-Vorschauen: Zeilenhinweise (übersprungene Zeilen) auf Ukrainisch/Englisch, Werte aus der Datei bleiben wörtlich', async () => {
   const fs = await import('node:fs');
