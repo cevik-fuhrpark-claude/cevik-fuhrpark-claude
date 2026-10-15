@@ -32,6 +32,7 @@ step "UI-Glockensymbol (Push ohne Neuaufbau)"; sh scripts/restart-dev.sh > /dev/
 step "UI-Wieder online (Eingaben bleiben)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-wieder-online.py > /tmp/cfp-online.log 2>&1 || { tail -20 /tmp/cfp-online.log; fail "Wieder online"; }; tail -1 /tmp/cfp-online.log
 step "UI-Fehlermeldungen (Aktion ohne Netz)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-fehlermeldung.py > /tmp/cfp-fehlermeldung.log 2>&1 || { tail -20 /tmp/cfp-fehlermeldung.log; fail "Fehlermeldungen"; }; tail -1 /tmp/cfp-fehlermeldung.log
 step "UI-Eingaben bleiben beim Neuaufbau"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-eingaben-bleiben.py > /tmp/cfp-eingaben.log 2>&1 || { tail -20 /tmp/cfp-eingaben.log; fail "Eingaben bleiben"; }; tail -1 /tmp/cfp-eingaben.log
+step "UI-Listen-Filter (Suche bleibt)"; sh scripts/restart-dev.sh > /dev/null; python3 scripts/ui-listenfilter.py > /tmp/cfp-listenfilter.log 2>&1 || { tail -20 /tmp/cfp-listenfilter.log; fail "Listen-Filter"; }; tail -1 /tmp/cfp-listenfilter.log
 step "UI-Rauchtest hell"; run_smoke CFP_LANG=
 if [ "$1" != "--schnell" ]; then
   step "UI-Rauchtest dunkel"; run_smoke CFP_SCHEME=dark
