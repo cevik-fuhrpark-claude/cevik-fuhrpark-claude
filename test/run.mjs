@@ -2530,14 +2530,30 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   const pv2 = (await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }] })).data.differences;
   const ok2 = await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }], preview: pv2 });
   eq(ok2.status, 200); eq(ok2.data.booked, 1); eq((await users.ws.get(`/api/stock/${it.id}`)).data.item.on_hand, 5);
+  // „Letzte Inventur“ je Lager (Protokoll-Ziel stock:<Umgebung>:<Lager>), Inventur ohne Abweichungen abschließen, ohne Zählmenge nichts
+  let li = (await users.ws.get('/api/stock')).data.last_inventory.DORTMUND;
+  ok(li && li.counted === 1 && li.differences === 1 && Date.now() - Date.parse(li.at) < 60000, 'letzte Inventur mit Ergebnis');
+  const z = await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 5 }], preview: [] });
+  eq(z.status, 200, 'ohne Abweichung abschließen'); eq(z.data.booked, 0); eq(z.data.counted, 1);
+  eq((await users.ws.get(`/api/stock/${it.id}`)).data.movements.filter((m) => m.type === 'korrektur').length, 3, 'keine Buchung');
+  li = (await users.ws.get('/api/stock')).data.last_inventory.DORTMUND; eq(li.differences, 0, 'vermerkt mit 0 Abweichungen');
+  const ae = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='stock.inventory' AND target='stock:test:DORTMUND' ORDER BY created_at DESC LIMIT 1`).get();
+  ok(ae && JSON.parse(ae.detail).environment === 'test', 'Protokoll mit Ziel und Umgebung');
+  const none = await users.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: '' }] });
+  eq(none.status, 400, 'ohne Zählmenge nichts zu buchen');
+  eq((await users.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: '' }] })).data.counted, 0, 'Prüfung meldet 0 gezählt');
+  eq((await users.prodFleet.get('/api/stock')).data.last_inventory.DORTMUND, undefined, 'Testinventur nicht im Betrieb');
+  ok(!('last_inventory' in (await users.ws.get('/api/stock?reorder=1')).data), 'Bestellvorschlag unverändert');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/confirm\(t\('inventory_book_confirm'\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
+  ok(/confirm\(invPrev\.length \? t\('inventory_book_confirm'\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_book_confirm.includes('{n}') && STRINGS[l].inventory_recheck && STRINGS[l].err_inventory_changed, 'Texte ' + l);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_close && STRINGS[l].inventory_close_confirm && STRINGS[l].inventory_closed && ['{d}', '{c}', '{x}'].every((x) => STRINGS[l].inventory_last.includes(x)) && STRINGS[l].inventory_last_none, 'Abschluss-Texte ' + l);
+  ok(app.includes("$('#invbook').disabled = !(r.counted > 0)") && app.includes("t('inventory_close_confirm')"), 'Abschließen ohne Abweichung mit Rückfrage');
   // Zählliste (#/stock/count): Route vor der Artikel-Route, Link im Inventur-Bereich, Standard ohne Buchbestand, Texte in allen Sprachen
   ok(app.indexOf('[/^#\\/stock\\/count$/, viewStockCount]') > 0 && app.indexOf('[/^#\\/stock\\/count$/') < app.indexOf('[/^#\\/stock\\/([\\w-]+)$/, viewStockItem]'), 'Route Zählliste vor Artikel-Route');
   // Entwurf der Zählmengen: je Person/Umgebung/Lager auf dem Gerät, nach Buchung gelöscht, beim Abmelden gelöscht, Texte in allen Sprachen
-  ok(app.includes('cfp_inv_${S.me.id}_') && app.includes("invDraft.clear(); toast(`✓ ${r.booked}`)") && app.includes("k.startsWith('cfp_inv_')"), 'Inventur-Entwurf: Schlüssel je Person, nach Buchung und Abmeldung gelöscht');
+  ok(app.includes('cfp_inv_${S.me.id}_') && app.includes("invDraft.clear(); toast(r.booked ? `✓ ${r.booked}` : t('inventory_closed'))") && app.includes("k.startsWith('cfp_inv_')"), 'Inventur-Entwurf: Schlüssel je Person, nach Buchung und Abmeldung gelöscht');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_draft.includes('{n}') && STRINGS[l].inventory_draft.includes('{d}') && STRINGS[l].inventory_draft_discard && STRINGS[l].inventory_draft_discard_confirm, 'Entwurf-Texte ' + l);
   ok(app.includes('href="#/stock/count" id="invsheet"') && /const withBook = !!S\.countBook;/.test(app), 'Link + Blindzählung als Standard');
   for (const l of ['de', 'uk', 'en']) for (const k of ['count_sheet', 'count_sheet_title', 'count_sheet_hint', 'count_with_book', 'count_blind', 'count_sign', 'count_none']) ok(STRINGS[l][k], `${k} ${l}`);

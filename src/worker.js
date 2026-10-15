@@ -405,7 +405,8 @@ async function handleApi(request, env, ctx, url) {
     const items = await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${berlinDate()}.csv"` } });
     if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
-    return json({ items });
+    if (url.searchParams.get('reorder') === '1') return json({ items });
+    return json({ items, last_inventory: await stock.lastInventories(env, envName, [...new Set(items.map((i) => i.site))]) });
   }
   if (path === '/api/stock/asof' && m === 'GET') {
     const rep = await stock.stockAsOf(env, user, envName, Object.fromEntries(url.searchParams));

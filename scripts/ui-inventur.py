@@ -8,6 +8,9 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 DIFFS={'de':'Inventurdifferenzen','uk':'Розбіжності інвентаризації','en':'Stocktake differences'}
 ASOF={'de':'Bestand zum Stichtag','uk':'Залишок на дату','en':'Stock at key date'}
+LAST={'de':'Letzte Inventur','uk':'Остання інвентаризація','en':'Last stocktake'}
+CLOSE={'de':'Inventur abschließen','uk':'Завершити інвентаризацію','en':'Complete stocktake'}
+ZERO={'de':'0 Abweichung(en)','uk':'відхилень: 0','en':'0 difference(s)'}
 BOOK={'de':'Buchbestand','uk':'Обліковий залишок','en':'Book stock'}
 RE={'de':'erneut ausführen','uk':'знову виконайте','en':'run “Check differences” again'}
 fails=[]
@@ -57,6 +60,14 @@ with sync_playwright() as p:
         check(st==6,f'{lang} {w}px: Bestätigen bucht ({st})')
         q.wait_for_selector('#inv'); q.click('#inv summary')
         check(q.locator('#invdx').count()==0 and q.locator(f'[data-inv="{iid}"]').input_value()=='',f'{lang} {w}px: Entwurf nach Buchung gelöscht')
+        check(LAST[lang] in q.inner_text('#invlast'),f'{lang} {w}px: „Letzte Inventur“ angezeigt')
+        # Inventur ohne Abweichung abschließen: Zählmenge = Buchbestand → Knopf „Inventur abschließen“, Rückfrage, nichts gebucht, vermerkt
+        q.locator(f'[data-inv="{iid}"]').fill('6'); q.click('#invchk'); q.wait_for_function("()=>!document.querySelector('#invbook').disabled")
+        check(CLOSE[lang] in q.inner_text('#invbook'),f'{lang} {w}px: Knopf „Inventur abschließen“')
+        n0=len(dlg); q.click('#invbook'); q.wait_for_timeout(600)
+        check(len(dlg)==n0+1 and api('GET',f'/api/stock/{iid}')['d']['item']['on_hand']==6,f'{lang} {w}px: Abschluss mit Rückfrage, nichts gebucht')
+        q.wait_for_selector('#inv'); q.click('#inv summary')
+        check(q.inner_text('#invlast').rstrip().endswith(ZERO[lang]),f'{lang} {w}px: letzte Inventur mit 0 Abweichungen ({q.inner_text("#invlast")!r})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         # Inventurdifferenzen: Link im Inventur-Bereich → Lagerjournal mit Auswahl Inventur, Zeile Buchbestand 10 → gezählt 6, Differenz −4
         q.click('#invdiffs'); q.wait_for_selector('#invtab')

@@ -234,22 +234,41 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
     const delta = Math.round((counted - it.on_hand) * 1000) / 1000;
     if (delta !== 0) diffs.push({ item_id: it.id, name: it.name, part_number: it.part_number, unit: it.unit, book: it.on_hand, counted, delta });
   }
-  const result = { site, counted_items: seen.size, differences: diffs, booked: 0 };
+  const countedN = body.counts.filter((c) => !(c.counted === '' || c.counted === null || c.counted === undefined)).length;
+  const result = { site, counted_items: seen.size, counted: countedN, differences: diffs, booked: 0 };
   if (dryRun) return result;
+  if (!countedN) throw bad('validation', 'Keine Zählmengen eingetragen – nichts zu buchen.');
   // Optional (Oberfläche sendet sie immer): die geprüften Abweichungen. Weicht das heutige Ergebnis ab (Buchbestand hat sich seit der
   // Prüfung geändert, z. B. Entnahme in einem Auftrag, oder Zählmengen wurden danach geändert), wird nichts gebucht → erneut prüfen.
   if (Array.isArray(body.preview)) {
     const sig = (list) => list.map((d) => (d && typeof d === 'object' ? `${d.item_id}|${Number(d.book)}|${Number(d.counted)}` : '?')).sort().join('\n');
     if (body.preview.length > 2000 || sig(body.preview) !== sig(diffs)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
   }
-  if (!diffs.length) return result;
+  // Inventur ohne Abweichungen: nichts zu buchen, aber mit Datum im Protokoll vermerkt (Nachweis „Lager gezählt“)
+  if (!diffs.length) { await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
   const now = nowIso();
   await env.DB.batch(diffs.map((d) => env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
     VALUES (?,?,?,'korrektur',?,NULL,NULL,NULL,?,?,?,?)`).bind(uuid(), envName, d.item_id, d.delta, `Inventur ${date}`,
     `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now)));
-  await audit(env, user.id, 'stock.inventory', null, { site, counted: seen.size, differences: diffs.length });
+  await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: diffs.length });
   result.booked = diffs.length;
   return result;
+}
+
+// Letzte Inventur je Lager (auch ohne Abweichung) aus dem Protokoll: Ziel „stock:<Umgebung>:<Lager>“ über idx_audit_target_action.
+// Einträge vor dem 15.10.2026 hatten kein Ziel und erscheinen hier nicht.
+export async function lastInventories(env, envName, sites) {
+  if (!sites.length) return {};
+  const rows = (await env.DB.prepare(`SELECT j.value AS t, (SELECT a.created_at || '|' || COALESCE(a.detail, '') FROM audit_log a WHERE a.target=j.value AND a.action='stock.inventory' ORDER BY a.created_at DESC LIMIT 1) AS last
+    FROM json_each(?) j`).bind(JSON.stringify(sites.slice(0, 50).map((x) => `stock:${envName}:${x}`))).all()).results;
+  const out = {};
+  for (const r of rows) {
+    if (!r.last) continue;
+    const at = r.last.slice(0, r.last.indexOf('|')); let d = {};
+    try { d = JSON.parse(r.last.slice(at.length + 1) || '{}') || {}; } catch { d = {}; }
+    out[r.t.slice(`stock:${envName}:`.length)] = { at, counted: d.counted ?? null, differences: d.differences ?? null };
+  }
+  return out;
 }
 
 // Lagerjournal: alle Buchungen (Zugang/Entnahme/Korrektur) eines Zeitraums nach Berliner Datum – z. B. für die Monatsabgrenzung.
