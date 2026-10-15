@@ -7676,6 +7676,41 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
   for (const l of ['de', 'uk', 'en']) { const h = STRINGS[l].help_push_s; ok(h.includes(String(NOTIF_MAX)) && h.includes(STRINGS[l].nf_unread) && h.includes(STRINGS[l].mark_read) && h.includes(STRINGS[l].notifications), 'Hilfe „Push“ ' + l + ' nennt Grenze und echte Namen'); }
 });
 
+await test('Oberfläche: jede Aktion mit API-Aufruf hat eine Fehlerbehandlung; nicht abgefangene API-Fehler erscheinen als Meldung', async () => {
+  const fs = await import('node:fs');
+  for (const file of ['../public/app.js', '../public/werkstatt/app.js']) {
+    let src; try { src = fs.readFileSync(new URL(file, import.meta.url), 'utf8'); } catch { continue; }
+    // Alle asynchronen Ereignis-Handler: ein `await api(` vor dem ersten `try {` (oder ganz ohne try) bricht ohne Netz still ab
+    const re = /(addEventListener\('[a-z]+', *async|\.on[a-z]+ *= *async)[^{]*\{/g; let m; const bad = []; let n = 0;
+    while ((m = re.exec(src))) {
+      let i = m.index + m[0].length, d = 1;
+      while (i < src.length && d) { const ch = src[i]; if (ch === '{') d++; else if (ch === '}') d--; i++; }
+      const body = src.slice(m.index + m[0].length, i - 1); if (!body.includes('api(')) continue; n++;
+      const ti = body.indexOf('try {'); const pre = ti < 0 ? body : body.slice(0, ti);
+      if (/await api\(/.test(pre.replace(/await api\([^;]*?\)\.catch\(/g, ''))) bad.push(src.slice(0, m.index).split('\n').length);
+    }
+    ok(n > 50 || file.includes('werkstatt'), file + ': Handler gefunden: ' + n);
+    eq(bad.join(','), '', file + ': Handler mit API-Aufruf ohne Fehlerbehandlung (Zeilen)');
+  }
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("window.addEventListener('unhandledrejection', (e) => { if (onUnhandledApiError(e.reason)) e.preventDefault(); });"), 'Sicherheitsnetz registriert');
+  // Verhalten des Sicherheitsnetzes mit nachgebautem toast()
+  const fn = app.slice(app.indexOf("let lastRejectMsg = ''"), app.indexOf("window.addEventListener('unhandledrejection'"));
+  const shown = []; const net = new Function('toast', 'Date', fn + '; return onUnhandledApiError;');
+  let now = 1000; const D = { now: () => now }; const h = net((m, e) => shown.push([m, e]), D);
+  const off = Object.assign(new Error('Keine Verbindung'), { offline: true });
+  eq(h(off), true); eq(JSON.stringify(shown), '[["Keine Verbindung",true]]', 'Offline-Fehler wird gemeldet');
+  now += 1000; h(off); eq(shown.length, 1, 'gleiche Meldung innerhalb 3 s nur einmal');
+  now += 3000; h(off); eq(shown.length, 2, 'nach 3 s erneut');
+  eq(h(Object.assign(new Error('Nicht angemeldet'), { status: 401 })), false, '401: keine Meldung (Umleitung zur Anmeldung)');
+  eq(h(new TypeError('x is null')), false, 'Programmfehler ohne API-Bezug: keine Meldung'); eq(h(undefined), false);
+  eq(h(Object.assign(new Error('Konflikt'), { status: 409 })), true); eq(shown.length, 3);
+  // Einzelfälle, die vorher still abbrachen
+  ok(app.includes("try { await api('POST', `/api/master/${a.dataset.dec}/decision`"), 'Master-Eingang: Entscheidung mit Fehlerbehandlung');
+  ok(app.includes("if (a.dataset.busy) return;"), 'Master-Eingang: Doppeltippen sendet nicht zweimal');
+  ok(app.includes("try { const r = await api('POST', '/api/push/test');"), 'Push-Test mit Fehlerbehandlung');
+});
+
 await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nicht nur 100), Zähler stimmt, entschiedene höchstens 100', async () => {
   const db = env.DB.db; const { MASTER_INBOX_DONE_MAX } = await import('../src/agent.js'); eq(MASTER_INBOX_DONE_MAX, 100);
   const src = db.prepare(`SELECT m.* FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE m.environment='test' AND f.status='offen' LIMIT 1`).get();

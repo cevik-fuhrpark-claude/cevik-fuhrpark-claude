@@ -228,6 +228,19 @@ async function route() {
   }
 }
 window.addEventListener('hashchange', route);
+// Sicherheitsnetz: Lädt eine Ansicht nach einer Aktion neu (z. B. `viewVehicle(id)` außerhalb von route()) und bricht dabei das Netz
+// ab, ging der Fehler bisher still verloren – die Seite blieb veraltet stehen. Jetzt: Meldung (nur Fehler der eigenen API, nicht 401 –
+// dort leitet api() schon zur Anmeldung um; gleiche Meldung höchstens einmal je 3 s).
+let lastRejectMsg = '', lastRejectAt = 0;
+function onUnhandledApiError(err) {
+  if (!err || !(err.offline || err.status) || err.status === 401) return false;
+  const now = Date.now();
+  if (err.message === lastRejectMsg && now - lastRejectAt < 3000) return true;
+  lastRejectMsg = err.message; lastRejectAt = now;
+  toast(err.message, true);
+  return true;
+}
+window.addEventListener('unhandledrejection', (e) => { if (onUnhandledApiError(e.reason)) e.preventDefault(); });
 
 // Offline-Start: nur Anzeige-Daten des Kontos (keine Zugangsdaten – die Anmeldung bleibt im HttpOnly-Cookie); beim Abmelden gelöscht
 const OFFLINE_KEY = 'cfp_offline_session';
@@ -2287,7 +2300,7 @@ async function pushPanel(el) {
     } catch (err) { toast(err.message, true); }
   };
   const pt = $('#pt', el);
-  if (pt) pt.onclick = async () => { const r = await api('POST', '/api/push/test'); toast(`Push: ${r.push_status}${r.error ? ' – ' + r.error : ''}`, r.push_status !== 'accepted'); };
+  if (pt) pt.onclick = async () => { pt.disabled = true; try { const r = await api('POST', '/api/push/test'); toast(`Push: ${r.push_status}${r.error ? ' – ' + r.error : ''}`, r.push_status !== 'accepted'); } catch (err) { toast(err.message, true); } finally { pt.disabled = false; } };
 }
 const deviceLabel = () => (/Android/.test(navigator.userAgent) ? 'Android' : /iPhone/.test(navigator.userAgent) ? 'iPhone' : /iPad/.test(navigator.userAgent) ? 'iPad' : /Windows/.test(navigator.userAgent) ? 'Windows-PC' : /Mac/.test(navigator.userAgent) ? 'Mac' : t('device'));
 
@@ -2338,7 +2351,9 @@ async function viewMaster(q) {
   const afq = $('#afq'); if (afq) afq.oninput = () => { S.afQ = afq.value; applyAf(); };
   const afc = $('#afcsv'); if (afc) afc.onclick = () => download(new Blob([agentFindingsCsv(afShown(), t, (f) => fMsg(f.message_args, f.message), (x) => translateNextAction(S.lang, x), fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-agentenbefunde_${p.environment}_${bDate()}.csv`);
   $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${r.findings_open} ${t('findings')}`); viewMaster(); } catch (err) { toast(err.message, true); } };
-  $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st }); viewMaster(); }));
+  // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
+  $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
+    try { await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st }); await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
 }
 
 // ---------- Prüftermine (Fuhrpark gesamt) ----------
@@ -3012,8 +3027,8 @@ function viewMore(open) {
     const list = (await api('GET', '/api/me/sessions')).sessions;
     box.innerHTML = list.map((x) => `<div class="row"><span>${x.current ? '●' : '○'}</span><span class="title">${esc(x.device === 'Unbekanntes Gerät' ? t('unknown_device_l') : x.device)}${x.current ? ` <span class="chip ok">${esc(t('this_device'))}</span>` : ''}</span>${x.current ? '<span></span>' : `<button type="button" class="btn secondary" data-sid="${esc(x.id)}">${esc(t('sign_out_device'))}</button>`}<span class="sub" style="white-space:normal">${esc(t('last_active'))}: ${fmtDT(x.last_seen)} · ${esc(t('signed_in_at'))}: ${fmtDT(x.created_at)}</span></div>`).join('')
       + (list.length > 1 ? `<div class="actions"><button type="button" class="btn secondary" id="sessall">${esc(t('sign_out_others'))}</button></div>` : '');
-    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`); toast('✓'); loadSessions(); } catch (err) { toast(err.message, true); } }));
-    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); loadSessions(); } catch (err) { toast(err.message, true); } };
+    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`); toast('✓'); await loadSessions(); } catch (err) { toast(err.message, true); } }));
+    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); await loadSessions(); } catch (err) { toast(err.message, true); } };
     await loadKnown();
   };
   // Bekannte Geräte: „dieses Gerät“ über die Gerätekennung (Header, wird serverseitig nur gehasht verglichen); dieses Gerät kann nicht vergessen werden
@@ -3023,7 +3038,7 @@ function viewMore(open) {
     const dev = (x) => (x.device === 'Unbekanntes Gerät' ? t('unknown_device_l') : x.device);
     box.innerHTML = list.length ? list.map((x) => `<div class="row"><span>${x.current ? '●' : '○'}</span><span class="title">${esc(dev(x))}${x.current ? ` <span class="chip ok">${esc(t('this_device'))}</span>` : ''}</span>${x.current ? '<span></span>' : `<button type="button" class="btn secondary" data-kd="${esc(x.id)}" data-dev="${esc(dev(x))}">${esc(t('kd_forget'))}</button>`}<span class="sub" style="white-space:normal">${esc(t('kd_last'))}: ${fmtDT(x.last_seen)} · ${esc(t('kd_first'))}: ${fmtDT(x.first_seen)}</span></div>`).join('')
       : `<p class="muted">${esc(t('kd_none'))}</p>`;
-    $$('[data-kd]', box).forEach((b) => (b.onclick = async () => { if (!confirm(t('kd_forget_confirm').replace('{d}', b.dataset.dev))) return; try { await api('DELETE', `/api/me/known-devices/${b.dataset.kd}`, undefined, { headers: { 'x-cfp-device': deviceId() } }); toast('✓'); loadKnown(); } catch (err) { toast(err.message, true); } }));
+    $$('[data-kd]', box).forEach((b) => (b.onclick = async () => { if (!confirm(t('kd_forget_confirm').replace('{d}', b.dataset.dev))) return; try { await api('DELETE', `/api/me/known-devices/${b.dataset.kd}`, undefined, { headers: { 'x-cfp-device': deviceId() } }); toast('✓'); await loadKnown(); } catch (err) { toast(err.message, true); } }));
   };
   sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
   // Sprung aus dem Hinweis „Neue Anmeldung auf einem anderen Gerät“: Geräteliste gleich öffnen
