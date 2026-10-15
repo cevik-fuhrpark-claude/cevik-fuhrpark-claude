@@ -2597,6 +2597,7 @@ async function viewMaint() {
 }
 
 // ---------- Kennzahlen Instandhaltung ----------
+const KPI_VEH_MAX = 20;
 const dur = (h) => (h === null || h === undefined ? '–' : h < 48 ? `${String(h).replace('.', ',')} h` : `${String(Math.round(h / 2.4) / 10).replace('.', ',')} ${t('days')}`);
 async function viewKpi() {
   const to = S.kpiTo || bYm(); const from = S.kpiFrom || bYm(2);
@@ -2611,7 +2612,9 @@ async function viewKpi() {
   html += r.by_priority.length ? r.by_priority.map((p) => `<section class="panel ${p.priority === 'kritisch' ? 'alert' : ''}"><h3>${esc(p.priority === 'alle' ? t('filter_all') : t('prio_' + p.priority))}</h3><dl class="kv">
     <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}${p.duplicates ? ` (${esc(t('kpi_dupes').replace('{n}', p.duplicates))})` : ''}` : ''}</dd>
     <dt>${esc(t('kpi_triage'))}</dt><dd>${st(p.triage)}</dd><dt>${esc(t('kpi_ack'))}</dt><dd>${st(p.workshop_ack)}</dd><dt>${esc(t('kpi_total'))}</dt><dd>${st(p.created_to_release)}</dd><dt>${esc(t('kpi_parts'))}</dt><dd>${dur(p.parts_wait_h)}</dd></dl></section>`).join('') : `<p class="muted">–</p>`;
-  if (r.vehicles.length) html += `<h2>${esc(t('kpi_vehicles'))}</h2><div class="list">${r.vehicles.slice(0, 20).map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.vehicle_id)}">${plate(v.plate || v.vehicle_id)}<span class="title">${esc(t('kpi_workshop'))}: ${dur(v.workshop_h)}</span><span class="chip">${v.cases}</span><span class="sub">${esc(t('kpi_parts'))}: ${dur(v.parts_wait_h)} · ${esc(t('kpi_released'))} ${v.released}${v.duplicates ? ` · ${esc(t('kpi_dupes').replace('{n}', v.duplicates))}` : ''}${v.locked_h ? ` · <b style="color:var(--stop)">${esc(t('kpi_locked'))}: ${dur(v.locked_h)}</b>` : ''}</span></a>`).join('')}</div>`;
+  // Fahrzeugliste: meiste Werkstattzeit zuerst, die ersten KPI_VEH_MAX; Gesamtzahl und „Alle anzeigen“ statt stillem Abschneiden (Druck zeigt alle)
+  const kvAll = !!S.kpiVehAll || r.vehicles.length <= KPI_VEH_MAX; const kvShown = kvAll ? r.vehicles : r.vehicles.slice(0, KPI_VEH_MAX);
+  if (r.vehicles.length) html += `<h2 id="kpiveh">${esc(t('kpi_vehicles'))} <span class="chip">${r.vehicles.length}</span></h2>${kvAll ? '' : `<div id="kpivmore" role="status"><p class="small muted">${esc(t('kpi_veh_more').replace('{n}', KPI_VEH_MAX).replace('{m}', r.vehicles.length))}</p><div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kpivall">${esc(t('kpi_veh_all').replace('{m}', r.vehicles.length))}</button></div></div>`}<div class="list" id="kpivl">${kvShown.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.vehicle_id)}">${plate(v.plate || v.vehicle_id)}<span class="title">${esc(t('kpi_workshop'))}: ${dur(v.workshop_h)}</span><span class="chip">${v.cases}</span><span class="sub">${esc(t('kpi_parts'))}: ${dur(v.parts_wait_h)} · ${esc(t('kpi_released'))} ${v.released}${v.duplicates ? ` · ${esc(t('kpi_dupes').replace('{n}', v.duplicates))}` : ''}${v.locked_h ? ` · <b style="color:var(--stop)">${esc(t('kpi_locked'))}: ${dur(v.locked_h)}</b>` : ''}</span></a>`).join('')}</div>`;
   // Termintreue Teile-Liefertermine (nur Abschnitte „wartet auf Teile“ aus dem Zeitraum; Termin laut Werkstatt)
   const pe = r.parts_eta;
   const peLine = (x) => `${esc(t('kpi_pe_kept'))} ${x.kept} · ${esc(t('kpi_pe_late'))} ${x.late}${x.on_time_pct !== null ? ` (${x.on_time_pct} % ${esc(t('kpi_pe_on_time'))})` : ''}${x.late_days_median !== null ? ` · ${esc(t('kpi_pe_median'))} ${String(x.late_days_median).replace('.', ',')} ${esc(t('days'))}` : ''}${x.open_overdue ? ` · <b style="color:var(--stop)">${esc(t('kpi_pe_open'))} ${x.open_overdue}</b>` : ''}${x.without_eta ? ` · ${esc(t('kpi_pe_without'))} ${x.without_eta}` : ''}`;
@@ -2636,8 +2639,9 @@ async function viewKpi() {
     <dt>${esc(t('kpi_id_reinsp'))}</dt><dd>${idf.reinspected}${idf.defects_again ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_again'))} ${idf.defects_again}</b>` : ''}</dd></dl><p class="small muted">${esc(t('kpi_id_rule'))}</p></section>`;
   html += `<p class="small muted">${esc(t('kpi_rules'))}</p>`;
   render(html, 'more');
-  $('#kpiprt').onclick = () => window.print();
-  const f = $('#kf2'); f.onsubmit = (e) => { e.preventDefault(); S.kpiFrom = f.from.value; S.kpiTo = f.to.value; S.kpiSite = f.site ? f.site.value : ''; S.kpiVsite = f.vsite ? f.vsite.value : ''; viewKpi(); };
+  $('#kpiprt').onclick = async () => { if (!kvAll) { S.kpiVehAll = true; await viewKpi(); } window.print(); };
+  const kva = $('#kpivall'); if (kva) kva.onclick = async () => { S.kpiVehAll = true; await viewKpi(); };
+  const f = $('#kf2'); f.onsubmit = (e) => { e.preventDefault(); S.kpiVehAll = false; S.kpiFrom = f.from.value; S.kpiTo = f.to.value; S.kpiSite = f.site ? f.site.value : ''; S.kpiVsite = f.vsite ? f.vsite.value : ''; viewKpi(); };
   const kq = `/api/reports/kpi?from=${from}&to=${to}${r.site ? '&site=' + encodeURIComponent(r.site) : ''}${r.vehicle_site ? '&vsite=' + encodeURIComponent(r.vehicle_site) : ''}&format=csv`;
   for (const [id, part, name] of [['#kcsvv', 'vehicles', 'fahrzeuge'], ['#kcsvp', 'priority', 'dringlichkeit']]) {
     const b = $(id); if (b) b.onclick = async () => { try { download(await api('GET', `${kq}&part=${part}`), `fuhrpark-kennzahlen-${name}_${from}_${to}.csv`); } catch (err) { toast(err.message, true); } };

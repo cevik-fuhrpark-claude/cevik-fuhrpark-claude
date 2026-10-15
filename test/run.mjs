@@ -6889,7 +6889,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/async function fleetTodo[\s\S]*?\/api\/vehicles'\)\.then\(\(r\) => r\.vehicles\.filter\(\(v\) => v\.agent_findings_critical > 0\)\)[\s\S]*?\['todo_vfind_crit', af,/.test(app), '„Heute zu tun“: Gruppe kritische Agentenbefunde');
     ok(app.includes('href="#/vehicles?f=with_findings"') && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
     ok(/printHead\(\[`\$\{t\('period'\)\}: \$\{from\} – \$\{to\}`[\s\S]*?id="costprt"[\s\S]*?class="list print-summary"[\s\S]*?\$\('#costprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Kosten je Fahrzeug druckbar (Zeitraum/Standort im Vermerk, Fahrzeugzeilen zusammengefasst)');
-    ok(/async function viewKpi[\s\S]*?printHead\(\[`\$\{t\('period'\)\}[\s\S]*?id="kpiprt"[\s\S]*?\$\('#kpiprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Kennzahlen druckbar');
+    ok(/async function viewKpi[\s\S]*?printHead\(\[`\$\{t\('period'\)\}[\s\S]*?id="kpiprt"[\s\S]*?\$\('#kpiprt'\)\.onclick = async \(\) => \{[^\n]*window\.print\(\)/.test(app), 'Kennzahlen druckbar');
     ok(/@media print[\s\S]*?\.print-summary details:not\(\[open\]\) \{ display: block !important; \}/.test((await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Druck-CSS: zugeklappte Zeilen als Zusammenfassung');
     ok(/const PRINT_OPEN = '#mhist, #vaf[^']*';/.test(app) && /addEventListener\('beforeprint'[^\n]*PRINT_OPEN/.test(app) && /addEventListener\('afterprint'[^\n]*PRINT_OPEN/.test(app), 'Druck: Prüfhistorie und Agentenbefunde der Akte werden mitgedruckt');
     ok(/VEH_AV_LINK\.includes\(hf\) && \(hf !== 'with_findings' \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
@@ -7915,6 +7915,23 @@ await test('Fotos: mehr als 10 gewählt → sichtbarer Hinweis (Schadensmeldung,
   eq((app.match(/photoLimitWatch\(\$\('#ph'\)\)/g) || []).length, 2, 'beide Fotofelder überwacht');
   ok(!app.includes("files || [])].slice(0, 10)"), 'keine feste 10 mehr');
   eq((i18n.match(/photos_over_max: '/g) || []).length, 3, 'Hinweis DE/UK/EN');
+});
+
+await test('Kennzahlen: Fahrzeugliste mit Gesamtzahl, Hinweis und „Alle anzeigen“ statt stillem Abschneiden bei 20; Druck zeigt alle', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const v = app.slice(app.indexOf('async function viewKpi()'), app.indexOf('// ---------- Protokoll (Inhaber)'));
+  ok(v.length > 1000, 'viewKpi gefunden');
+  ok(!v.includes('r.vehicles.slice(0, 20)'), 'keine feste stille Kappung mehr');
+  ok(v.includes("<span class=\"chip\">${r.vehicles.length}</span>"), 'Zähler über alle Fahrzeuge');
+  ok(v.includes("t('kpi_veh_more')") && v.includes("id=\"kpivall\""), 'Hinweis und Knopf „Alle anzeigen“');
+  ok(/kpiprt'\)\.onclick = async \(\) => \{ if \(!kvAll\) \{ S\.kpiVehAll = true; await viewKpi\(\); \} window\.print\(\)/.test(v), 'Druck zeigt alle');
+  ok(v.includes('S.kpiVehAll = false;'), 'neuer Zeitraum setzt „alle“ zurück');
+  for (const k of ['kpi_veh_more', 'kpi_veh_all']) eq((i18n.match(new RegExp(`${k}: '`, 'g')) || []).length, 3, `${k} DE/UK/EN`);
+  // Server liefert alle Fahrzeuge (keine Kappung im Bericht)
+  const r = (await users.fleet.get('/api/reports/kpi?from=2026-01&to=2026-12'));
+  ok(Array.isArray(r.data?.vehicles), 'Fahrzeuge im Bericht: ' + r.status + ' ' + JSON.stringify(r.data).slice(0, 200));
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {

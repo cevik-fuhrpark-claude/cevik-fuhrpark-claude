@@ -1350,3 +1350,6 @@ Object.assign(STRINGS.en, { vnote_arch_truncated: 'Showing the last {n} archived
 Object.assign(STRINGS.de, { master_cases_truncated: 'Hier stehen {n} Vorgänge (offene zuerst, nach Dringlichkeit) – alle weiteren in der Liste' });
 Object.assign(STRINGS.uk, { master_cases_truncated: 'Тут показано {n} заявок (спершу відкриті, за терміновістю) – усі інші у списку' });
 Object.assign(STRINGS.en, { master_cases_truncated: '{n} cases are listed here (open first, by urgency) – all others in the list' });
+Object.assign(STRINGS.de, { kpi_veh_more: 'Angezeigt: die ersten {n} von {m} Fahrzeugen (meiste Werkstattzeit zuerst). Der Ausdruck und die CSV enthalten alle.', kpi_veh_all: 'Alle {m} anzeigen' });
+Object.assign(STRINGS.uk, { kpi_veh_more: 'Показано перші {n} з {m} транспортних засобів (спершу з найбільшим часом у майстерні). Друк і CSV містять усі.', kpi_veh_all: 'Показати всі {m}' });
+Object.assign(STRINGS.en, { kpi_veh_more: 'Showing the first {n} of {m} vehicles (most workshop time first). The printout and the CSV contain all of them.', kpi_veh_all: 'Show all {m}' });
