@@ -76,7 +76,7 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['guide', 'claims', 'tacho', 'quality', 'stock', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
+    'owner': ['guide', 'vehicles//timeline', 'claims', 'tacho', 'quality', 'stock', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
     'workshop': ['cases/', 'stock', 'stock/', 'stock/reorder', 'stock/count', 'stock/asof', 'plan'],
     'driver': ['check/paper'],
 }
@@ -453,7 +453,9 @@ with sync_playwright() as p:
     for role in PRINT:
         for r in ROUTES[role]:
             base = r.split('?')[0]
-            if any(base == x or (x.endswith('/') and base.startswith(x) and base.count('/') == x.count('/')) for x in PRINT[role]):
+            # 'x/' = Detailseite (ein Platzhalter am Ende), 'x//y' = Platzhalter in der Mitte (z. B. vehicles//timeline)
+            if any(base == x or (x.endswith('/') and base.startswith(x) and base.count('/') == x.count('/'))
+                   or ('//' in x and base.startswith(x.split('//')[0] + '/') and base.endswith('/' + x.split('//')[1]) and base.count('/') == x.count('/')) for x in PRINT[role]):
                 print_routes.append((role, r))
     for role, r in print_routes:
         pg = pages[role]

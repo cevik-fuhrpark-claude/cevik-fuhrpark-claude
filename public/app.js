@@ -2523,11 +2523,14 @@ async function viewTimeline(id, fArg) {
   };
   const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines'), tacho: t('tacho'), contract: t('ct_title'), claim: t('claims'), note: t('vnotes') };
   const visible = Object.keys(groups).filter((k) => !TL_MGR_ONLY.includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger');
-  render(`<p><a href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
-    <h1 style="margin-top:12px">${esc(t('timeline'))}</h1><p class="small muted">${esc(t('timeline_hint'))}</p>
+  // Ausdruck (z. B. Fahrzeughistorie für Verkauf/Rückgabe): Kennzeichen, Auswahl und Anzahl im Vermerk
+  render(`<p class="noprint"><a href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
+    <h1 style="margin-top:12px">${esc(t('timeline'))}</h1>${printHead([r.vehicle.plate, `${t('print_filter')}: ${labels[f]}`, t('print_count').replace('{n}', r.items.length) + (r.total > r.items.length ? ` / ${r.total}` : '')])}<p class="small muted">${esc(t('timeline_hint'))}</p>
+    <div class="actions noprint"><button type="button" class="btn secondary" id="tlprt">${esc(t('print'))}</button></div>
     <div class="actions" style="flex-wrap:wrap">${visible.map((k) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" aria-pressed="${f === k}" data-tl="${esc(k)}">${esc(labels[k])}</button>`).join('')}</div>
     <div class="list">${r.items.map((x) => { const [cls, title, sub] = line(x); return `<div class="row ${cls}"><span class="chip">${x.at.length === 10 ? fmtD(x.at) : fmtDT(x.at)}</span><span class="title" style="white-space:normal">${title}</span><span></span>${sub ? `<span class="sub" style="white-space:normal">${sub}</span>` : ''}</div>`; }).join('') || `<p class="muted">–</p>`}</div>
     ${r.total > r.items.length ? `<p class="small muted">${r.items.length} / ${r.total}</p>` : ''}`, 'vehicles');
+  $('#tlprt').onclick = () => window.print();
   // Filterwechsel ersetzt nur den Verlaufseintrag (kein neuer Eintrag je Klick), Fokus bleibt auf dem gewählten Knopf
   $$('[data-tl]').forEach((b) => (b.onclick = async () => {
     const k = b.dataset.tl;
