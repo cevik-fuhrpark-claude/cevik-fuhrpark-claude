@@ -9137,5 +9137,14 @@ await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentlic
   console.log(`     ${R.length} API-Antworten geprüft, davon ${cookies.length} mit Sitzungscookie`);
 });
 
+// Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
+await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
+  const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
+  const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
+  const cp = readFileSync(new URL('../docs/CHECKPOINT.md', import.meta.url), 'utf8').match(/`npm test` → (\d+) automatisierte Abnahmetests/);
+  ok(rd && cp, 'Zahl in README („# N Abnahmetests“) bzw. CHECKPOINT („`npm test` → N automatisierte Abnahmetests“) nicht gefunden');
+  eq(`${rd[1]}/${cp[1]}`, `${n}/${n}`, 'README/CHECKPOINT: Testanzahl anpassen –');
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 if (failed) { console.log('Fehlgeschlagen:', failures.join(' | ')); process.exit(1); }
