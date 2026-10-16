@@ -1445,6 +1445,9 @@ const P_UNUSED_EN = ' without a sign-in for over {d} (no sign-in recorded: since
 // Einstellungen: Wert außerhalb des zulässigen Bereichs bzw. nicht lesbar (Server-Code setting_invalid mit Schlüssel und Grenzen, 16.10.2026)
 Object.assign(STRINGS.de, { err_setting_invalid: '„{f}“: bitte einen Wert von {min} bis {max}{int} eingeben – nichts gespeichert.', setting_int: ' (ganze Zahl)' });
 Object.assign(STRINGS.uk, { err_setting_invalid: '«{f}»: введіть значення від {min} до {max}{int} – нічого не збережено.', setting_int: ' (ціле число)' });
+Object.assign(STRINGS.de, { settings_stored_invalid: 'Gespeicherte Einstellungen außerhalb des zulässigen Bereichs – bitte prüfen, korrigieren und speichern:', setting_stored_item: '„{f}“: gespeichert {v}', setting_stored_range: ' – erlaubt {min} bis {max}{int}' });
+Object.assign(STRINGS.uk, { settings_stored_invalid: 'Збережені налаштування поза допустимим діапазоном – перевірте, виправте та збережіть:', setting_stored_item: '«{f}»: збережено {v}', setting_stored_range: ' – дозволено від {min} до {max}{int}' });
+Object.assign(STRINGS.en, { settings_stored_invalid: 'Saved settings outside the permitted range – please check, correct and save:', setting_stored_item: '“{f}”: saved {v}', setting_stored_range: ' – permitted {min} to {max}{int}' });
 Object.assign(STRINGS.en, { err_setting_invalid: '“{f}”: please enter a value from {min} to {max}{int} – nothing saved.', setting_int: ' (whole number)' });
 export const PLURALS = {
   de: {

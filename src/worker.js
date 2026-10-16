@@ -4,7 +4,7 @@ import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, now
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
-import { SETTINGS_KEYS, settingPairs } from './settings.js';
+import { SETTINGS_KEYS, settingPairs, storedInvalid } from './settings.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
 import * as vnotes from './vnotes.js';
@@ -608,7 +608,8 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/settings' && m === 'GET') {
     requireRole(user, ['owner']);
     const rows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTINGS_KEYS.map(() => '?').join(',')})`).bind(...SETTINGS_KEYS).all()).results;
-    return json({ keys: SETTINGS_KEYS, values: Object.fromEntries(rows.map((r) => [r.key, r.value])) });
+    const values = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    return json({ keys: SETTINGS_KEYS, values, invalid: storedInvalid(values) });
   }
   if (path === '/api/settings' && m === 'PUT') {
     requireRole(user, ['owner']);

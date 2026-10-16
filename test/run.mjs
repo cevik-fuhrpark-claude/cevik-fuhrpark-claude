@@ -426,7 +426,7 @@ await test('Einstellungen: nur plausible Werte (Bereich, ganze Zahl, deutsches Z
     eq((await owner.put('/api/settings', { repair_cost_limit_net: '1.000,50', tire_warn_tread_mm: '3,5', maintenance_warn_km: '120.000', maintenance_warn_days: ' 30 ' })).status, 200);
     let v = await val(); eq(v.repair_cost_limit_net, '1000.5'); eq(v.tire_warn_tread_mm, '3.5'); eq(v.maintenance_warn_km, '120000'); eq(v.maintenance_warn_days, '30');
     // vorher: „1.000“ wurde als 1 € gespeichert, „abc“/„−5“/„2,5 Minuten“ still übergangen bzw. gespeichert
-    for (const [k, x, min, max, int] of [['repair_cost_limit_net', '1.000', 0, 1000000, false], ['maintenance_warn_days', '-5', 1, 365, true], ['idle_logout_workshop_min', '2,5', 1, 10080, true],
+    for (const [k, x, min, max, int] of [['repair_cost_limit_net', '1.000', 0, 1000000, false], ['maintenance_warn_days', '-5', 1, 365, true], ['idle_logout_workshop_min', '2,5', 5, 10080, true], ['idle_logout_other_min', '3', 5, 10080, true],
       ['workshop_hourly_rate_net', 0, 0.01, 1000, false], ['tire_warn_tread_mm', '1,2', 1.6, 30, false], ['case_stale_days', 'abc', 1, 365, true], ['sla_production_triage_kritisch_min', '1e9', 1, 43200, true], ['license_check_months', [6], 1, 60, true]]) {
       const r = await owner.put('/api/settings', { claim_followup_days: '9', [k]: x });
       eq(r.status, 400, `${k}=${JSON.stringify(x)}`); eq(r.data.error, 'setting_invalid'); eq(r.data.setting, k); eq(r.data.min, min, k); eq(r.data.max, max, k); eq(r.data.integer, int, k);
@@ -450,6 +450,32 @@ await test('Einstellungen: nur plausible Werte (Bereich, ganze Zahl, deutsches Z
   ok(app.includes("err.code === 'setting_invalid'") && app.includes("inp.setAttribute('aria-invalid', 'true')"), 'App nennt das Feld und markiert es');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const p of ['{f}', '{min}', '{max}', '{int}']) ok(STRINGS[l].err_setting_invalid.includes(p), `${l}: ${p}`); ok(STRINGS[l].setting_int, l); }
+});
+await test('Einstellungen: gespeicherte Werte außerhalb der Regeln werden beim Öffnen gemeldet (Feld, Wert, Grenzen), nichts wird geändert', async () => {
+  const before = (await owner.get('/api/settings')).data;
+  eq((before.invalid || []).length, 0, 'Ausgangslage ohne ungültige Werte');
+  const old = { maintenance_warn_days: '-5', idle_logout_workshop_min: '3', workshop_hourly_rate_net: '0', test_master_readonly: 'ja', case_stale_days: 'abc' };
+  try {
+    for (const [k, v] of Object.entries(old)) await env.DB.prepare(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(k, v, new Date().toISOString()).run();
+    await env.DB.prepare(`INSERT INTO settings(key,value,updated_at) VALUES('tire_warn_tread_mm','3.5',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(new Date().toISOString()).run();
+    eq((await users.fleet.get('/api/settings')).status, 403);
+    const r = await owner.get('/api/settings'); eq(r.status, 200);
+    const inv = Object.fromEntries(r.data.invalid.map((x) => [x.setting, x]));
+    eq(Object.keys(inv).sort().join(), Object.keys(old).sort().join(), 'genau die ungültigen Werte (3,5 mm gültig)');
+    eq(inv.maintenance_warn_days.value, '-5'); eq(inv.maintenance_warn_days.min, 1); eq(inv.maintenance_warn_days.max, 365); eq(inv.maintenance_warn_days.integer, true);
+    eq(inv.workshop_hourly_rate_net.min, 0.01); eq(inv.workshop_hourly_rate_net.integer, false);
+    eq(inv.test_master_readonly.min, undefined, 'Schalter ohne Bereich'); eq(inv.idle_logout_workshop_min.min, 5, 'Leerlauf: wirksam erst ab 5 Minuten');
+    for (const [k, v] of Object.entries(old)) eq(r.data.values[k], v, `${k} unverändert`);
+    // korrigiert speichern → keine Meldung mehr
+    eq((await owner.put('/api/settings', { maintenance_warn_days: '30', idle_logout_workshop_min: '', workshop_hourly_rate_net: '95', test_master_readonly: '0', case_stale_days: '' })).status, 200);
+    eq((await owner.get('/api/settings')).data.invalid.length, 0, 'nach dem Korrigieren keine Meldung');
+  } finally {
+    eq((await owner.put('/api/settings', Object.fromEntries(before.keys.map((k) => [k, before.values[k] ?? ''])))).status, 200, 'Ausgangswerte wiederhergestellt');
+  }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("$('#sinv').innerHTML") && app.includes("(s.invalid || []).length"), 'App zeigt gespeicherte ungültige Werte beim Öffnen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].settings_stored_invalid, l); ok(STRINGS[l].setting_stored_item.includes('{f}') && STRINGS[l].setting_stored_item.includes('{v}'), l); for (const p of ['{min}', '{max}', '{int}']) ok(STRINGS[l].setting_stored_range.includes(p), `${l}: ${p}`); }
 });
 await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () => {
   eq((await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', next_due_date: '2026-10-20' })).status, 400, 'Nachweis Pflicht');
@@ -1961,7 +1987,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {

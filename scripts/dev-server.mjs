@@ -64,6 +64,13 @@ http.createServer(async (req, res) => {
     const b = env.DB.db.prepare(`UPDATE case_events SET ${sh('created_at')} WHERE case_id=?`).run(id).changes;
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ cases: Number(a), events: Number(b) })); return;
   }
+  // Nur lokal (nicht im Worker): Einstellung roh speichern (ohne Werteprüfung) – simuliert Altwerte von vor dem 16.10.2026 (scripts/ui-einstellungen-altwerte.py)
+  if (url.pathname === '/__dev/setting-raw' && req.method === 'POST') {
+    const k = String(url.searchParams.get('key') || ''); const v = url.searchParams.get('value');
+    const n = v === null ? env.DB.db.prepare('DELETE FROM settings WHERE key=?').run(k).changes
+      : env.DB.db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(k, v, new Date().toISOString()).changes;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ changed: Number(n) })); return;
+  }
   if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') {
     const chunks = []; for await (const c of req) chunks.push(c);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;

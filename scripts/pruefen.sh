@@ -48,6 +48,7 @@ UI-Restarbeiten in der App-Sprache|ui-restarbeiten-sprache.py|/tmp/cfp-restarbei
 UI-Datensicherung im Protokoll|ui-sicherung-protokoll.py|/tmp/cfp-sicherung-protokoll.log
 UI-Reifenalter/Zahlformen|ui-reifenalter.py|/tmp/cfp-reifenalter.log
 UI-Einstellungen Werteprüfung|ui-einstellungen-pruefung.py|/tmp/cfp-einstellungen.log
+UI-Einstellungen Altwerte|ui-einstellungen-altwerte.py|/tmp/cfp-einstellungen-altwerte.log
 UI-Wieder online (Eingaben bleiben)|ui-wieder-online.py|/tmp/cfp-online.log
 UI-Fehlermeldungen (Aktion ohne Netz)|ui-fehlermeldung.py|/tmp/cfp-fehlermeldung.log
 UI-Eingaben bleiben beim Neuaufbau|ui-eingaben-bleiben.py|/tmp/cfp-eingaben.log

@@ -9,8 +9,8 @@ const SLA_KEYS = ['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap
 // int = ganze Zahl; min/max einschließlich. 0 nur, wo es eine Bedeutung hat (Vorwarnung 0 Tage, Freigabegrenze/„lange nicht angemeldet“ 0 = aus).
 export const SETTING_RULES = {
   workshop_hourly_rate_net: { min: 0.01, max: 1000 },
-  idle_logout_workshop_min: { int: true, min: 1, max: 10080 },
-  idle_logout_other_min: { int: true, min: 1, max: 10080 },
+  idle_logout_workshop_min: { int: true, min: 5, max: 10080 }, // wirksam war schon immer mind. 5 (src/auth.js, Hilfetext) – 1–4 wurde still auf 5 angehoben
+  idle_logout_other_min: { int: true, min: 5, max: 10080 }, // wirksam war schon immer mind. 5 (src/auth.js, Hilfetext) – 1–4 wurde still auf 5 angehoben
   driver_doc_warn_days: { int: true, min: 0, max: 365 },
   tacho_warn_days: { int: true, min: 0, max: 90 },
   license_check_months: { int: true, min: 1, max: 60 },
@@ -54,4 +54,16 @@ export function settingPairs(body) {
   const pairs = [];
   for (const [k, v] of Object.entries(body)) if (SETTINGS_KEYS.includes(k)) pairs.push([k, settingValue(k, v)]);
   return pairs;
+}
+
+// Gespeicherte Werte gegen die Regeln prüfen (Werte von vor der Werteprüfung am 16.10.2026 oder aus einer eingespielten Sicherung):
+// die App markiert sie beim Öffnen der Einstellungen, statt dass sie erst beim nächsten Speichern auffallen. Nichts wird geändert.
+export function storedInvalid(values) {
+  const out = [];
+  for (const k of SETTINGS_KEYS) {
+    const v = values[k];
+    if (v === null || v === undefined || v === '') continue;
+    try { settingValue(k, v); } catch (e) { out.push({ setting: k, value: String(v), ...(e.extra || {}) }); }
+  }
+  return out;
 }
