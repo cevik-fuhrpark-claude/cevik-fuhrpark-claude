@@ -7,7 +7,7 @@
 # Zusätzlich: Kontrast WCAG AA (Handy-Breite) und Druckansichten (A4).
 # Prüft je Ansicht: keine JavaScript-Fehler, keine Fehlermeldung (rote Meldung), keine waagrechte Scrollleiste der Seite,
 # Überschrift vorhanden. Nur synthetische Testdaten (Kennzeichen RT-…), nichts verlässt den Rechner.
-import sys, os, datetime
+import sys, os, re, datetime
 from playwright.sync_api import sync_playwright
 
 B = os.environ.get('CFP_URL', 'http://localhost:8787')
@@ -439,16 +439,25 @@ with sync_playwright() as p:
                     if iso:
                         problems.append(f'{where}: ISO-Datum sichtbar {iso[:3]}')
                     # Fenstertitel = erste Überschrift – App-Name (Reiter, Vorlesefunktion, PDF-Dateiname beim Drucken; 16.10.2026)
-                    tt = pg.evaluate("""() => { const h = document.querySelector('#app h1'); const head = h ? h.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80) : '';
+                    tt = pg.evaluate("""() => { const h = document.querySelector('#app h1'); const head = h ? (h.dataset.title || h.textContent).replace(/\\s+/g, ' ').trim().slice(0, 80) : '';
                       return [document.title, head]; }""")
                     if not tt[1] or not tt[0].startswith(tt[1] + ' – CEVIK '):
                         problems.append(f'{where}: Fenstertitel „{tt[0]}“ passt nicht zur Überschrift „{tt[1]}“')
+                    # Detailseiten (Fahrzeugakte, Zeitleiste, Vorgang, Kontrolle): Titel nennt den Gegenstand – sonst hießen alle PDFs gleich
+                    if re.match(r'(vehicles/[^q/][^/?]*(/timeline)?|cases/[^/?]+|inspect/[^/?]+)(\?|$)', r):
+                        pl = pg.evaluate("""() => { const e = document.querySelector('#app .plate .num'); return e ? e.textContent.replace(/\\s+/g, ' ').trim() : ''; }""")
+                        if not pl or pl not in tt[0]:
+                            problems.append(f'{where}: Fenstertitel ohne Kennzeichen „{pl}“: „{tt[0]}“')
                 if LANG and name == 'handy':
                     # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
                     # zusätzlich deutsche Fachwörter ohne Umlaut (z. B. „Inspektion“, „Sonstiges“ – so fiel die fehlende Übersetzung der Prüfarten auf)
                     de = pg.evaluate(r"""() => { const out = []; const DEW = /\b(Inspektion|Sonstiges|Fahrzeug\w*|Vorgang|Vorgänge|Abfahrtskontrolle|Hinweise?|Bremsen|Reifen|Hydraulik|Verbandkasten|Ladungssicherung|Speichern|Abbrechen|Zuordnung|Einstellungen|Nachweis|erledigt|Kennzeichen|Ölwechsel|Feuerlöscher|Prognose|Fahrer|Meldung|Standort|Anhänger)\b/; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
                       while (w.nextNode()) { const x = w.currentNode.textContent.trim(); const el = w.currentNode.parentElement;
-                        if (x && (/[äöüßÄÖÜ]/.test(x) || DEW.test(x)) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null && !el.closest('[lang="de"]')) out.push(x.slice(0, 60)); } return out; }""")
+                        if (x && (/[äöüßÄÖÜ]/.test(x) || DEW.test(x)) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el && el.offsetParent !== null && !el.closest('[lang="de"]')) out.push(x.slice(0, 60)); }
+                      // auch vorgelesene Beschriftungen (aria-label, title) – 16.10.2026: Kennzeichen-Schild las auf UK/EN „Kennzeichen …“ vor
+                      for (const el of document.querySelectorAll('#app [aria-label], #app [title]')) for (const x of [el.getAttribute('aria-label'), el.getAttribute('title')]) {
+                        if (x && (/[äöüßÄÖÜ]/.test(x) || DEW.test(x)) && !/Bußgeldstelle|StVZO|Rauchtest|;|^Werkstatt [A-ZÄÖÜ]/.test(x) && el.offsetParent !== null && !el.closest('[lang="de"]')) out.push('@' + x.slice(0, 60)); }
+                      return out; }""")
                     if de:
                         problems.append(f'{where}: deutscher Text in {LANG}: {de[:4]}')
                 # Datensparsamkeit: Lesezugriff sieht keine Fahrernamen (Melder „Rauchtest driver“) in Vorgängen und Fahrzeugakte
