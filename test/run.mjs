@@ -8535,6 +8535,9 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) und den Zeitpunkt de
     ok(/lang: d\.lang/.test(sw) && /timestamp: d\.ts/.test(sw), 'sw.js setzt lang und timestamp der Mitteilung');
     ok(sw.includes("d.kind === 'new_login' ? '#/more?o=sess'"), 'Klick auf Anmelde-Hinweis öffnet „Meine Anmeldungen“ wie die Hinweisliste');
     ok(sw.includes('ref: d.ref') && /\^\(vehicle\|fine\):/.test(sw), 'Push-Klick folgt dem Bezug (Fahrzeugakte/Bußgeld)');
+    // Hilfe „Push“ erklärt das Ziel beim Tippen mit dem echten Menünamen (DE/UK/EN)
+    const { STRINGS } = await import('../public/i18n.js');
+    for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_push_s.split('|').some((x) => x.includes(STRINGS[l].my_sessions)), `Hilfe Tippen-Ziel ${l}`);
     ok((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("x.kind === 'new_login' ? '#/more?o=sess'"), 'Hinweisliste nutzt dasselbe Ziel');
   } finally {
     await u.patch('/api/me', { language: 'de' });
