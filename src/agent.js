@@ -462,7 +462,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (newCritical.length > 1) {
         await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: AGENT_PUSH_T.de.agent, body: '', eventKey: `agent:${runId}`, caseId: null, localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: AGENT_PUSH_T[l].critical_n.replace('{n}', newCritical.length) + (environment === 'test' ? ' · TEST' : '') }), langOf, urgent: true });
       } else for (const { eventId, f } of newCritical) {
-        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: criticalBody(f.code, l, environment) }), langOf, title: AGENT_PUSH_T.de.agent, body: criticalBody(f.code, 'de', environment), eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true });
+        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: criticalBody(f.code, l, environment) }), langOf, title: AGENT_PUSH_T.de.agent, body: criticalBody(f.code, 'de', environment), eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true,
+          ref: !f.case_id && f.vehicle_id ? `vehicle:${f.vehicle_id}` : null }); // Befund ohne Vorgang → Tippen öffnet die Fahrzeugakte
       }
     }
 

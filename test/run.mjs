@@ -782,6 +782,7 @@ await test('Reifengrößen-Import nur über FIN; geprüfte Werte bleiben erhalte
 await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitung 1,6 mm wird kritischer Befund', async () => {
   eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 5 })).status, 403);
   eq((await users.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: users.driver.id, evidence: 'Test-Zuordnung' })).status, 201);
+  await users.fleet.post('/api/agent/run'); // bisherige Befunde abarbeiten → danach genau ein neuer kritischer Befund (Einzel-Push)
   const m = await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: '1,2' });
   eq(m.status, 201); eq(m.data.warnings.length, 1);
   eq((await users.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5' })).status, 403, 'Fahrer wechselt keine Reifen');
@@ -791,6 +792,8 @@ await test('Profilmessung: Fahrer nur für zugeordnete Fahrzeuge; Unterschreitun
   eq(o.data.positions.find((p) => p.position === 'VA-L').status, 'unter_minimum');
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'Agent meldet Reifen');
+  { const an = (await users.fleet.get('/api/notifications')).data.notifications.filter((x) => x.kind === 'agent' && x.body.includes('(TIRE_BELOW_MINIMUM)'));
+    ok(an.length === 1 && an[0].case_id === null && an[0].ref === `vehicle:${V1}`, 'Einzel-Push zum Befund ohne Vorgang verweist auf die Fahrzeugakte: ' + JSON.stringify(an.map((x) => [x.case_id, x.ref]))); }
   const ft = await users.fleet.get('/api/tires/fleet');
   eq(ft.status, 200);
   const r1 = ft.data.rows.find((x) => x.vehicle_id === V1); const r2 = ft.data.rows.find((x) => x.vehicle_id === V2);
