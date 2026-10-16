@@ -3448,7 +3448,7 @@ async function viewSettings() {
       const inp = x.setting === 'test_master_readonly' ? $('#tmr') : $(`#sf [name="${x.setting}"]`);
       if (inp) inp.setAttribute('aria-invalid', 'true');
       const range = x.min !== undefined ? t('setting_stored_range').replace('{min}', fmtNum(x.min)).replace('{max}', fmtNum(x.max)).replace('{int}', x.integer ? t('setting_int') : '') : '';
-      return `<li>${esc(t('setting_stored_item').replace('{f}', setLabel(inp, x.setting)).replace('{v}', x.value))}${esc(range)}</li>`;
+      return `<li>${esc(t('setting_stored_item').replace('{f}', setLabel(inp, x.setting)).replace('{v}', shown(x.value)))}${esc(range)}</li>`;
     });
     $('#sinv').innerHTML = `<section class="panel warn" role="alert"><p style="margin-top:0"><b>${esc(t('settings_stored_invalid'))}</b></p><ul class="small">${items.join('')}</ul></section>`;
   }
