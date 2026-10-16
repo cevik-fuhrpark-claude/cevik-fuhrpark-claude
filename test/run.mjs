@@ -1212,6 +1212,8 @@ await test('Fahrerermittlung: Kandidat aus Fahrzeugzuordnung, Bestätigung nur m
   { const raw = await env.DB.prepare("SELECT title FROM notifications WHERE user_id=? AND kind='fine'").bind(users.driver.id).first(); eq(raw.title, 'Новий лист від органу влади', 'Push-Titel in der Sprache des Fahrers'); }
   ok(n.data.notifications.some((x) => x.kind === 'fine' && x.title === 'Neues Schreiben einer Behörde'), 'Hinweisliste zeigt den Titel in der aktuellen Sprache');
   ok(n.data.notifications.some((x) => x.kind === 'fine' && !x.body.includes('Dortmund')), 'Push ohne Details');
+  ok(n.data.notifications.some((x) => x.kind === 'fine' && x.ref === `fine:${FINE}`), 'Hinweis verweist auf das Bußgeld (Tippen öffnet es)');
+  eq((await users.driver.get(`/api/fines/${FINE}`)).status, 200, 'Fahrer darf das verwiesene Bußgeld öffnen');
   const dv = await users.driver.get(`/api/fines/${FINE}`);
   eq(dv.status, 200); ok(!('driver_evidence' in dv.data.fine), 'Fahrer sieht keine internen Nachweise');
   eq((await users.driver.post(`/api/fines/${FINE}/commands`, { action: 'driver_ack' })).status, 200);
@@ -5837,6 +5839,7 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   eq(cur.status, 200); ok(cur.data.notified >= 1, 'Alarm versendet');
   const nd = await notes(users.dispatch);
   ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('verkehrsunsicher – nicht einplanen') && nd[0].title === 'Prüfung mit gefährlichen Mängeln', 'Dispo dringend informiert (Liste in der aktuellen Sprache, gespeichert englisch): ' + JSON.stringify(nd[0] || null));
+  eq(nd[0].ref, `vehicle:${VD}`, 'Hinweis verweist auf die Fahrzeugakte (Tippen öffnet sie)');
   eq((await notes(users.fleet)).length, 0, 'Erfassende Person nicht');
   eq((await notes(users.driver)).length, 0, 'Fahrer nicht');
   eq((await notes(users.ws)).length, 0, 'Werkstatt nicht');
@@ -8528,6 +8531,7 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) und den Zeitpunkt de
     const sw = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
     ok(/lang: d\.lang/.test(sw) && /timestamp: d\.ts/.test(sw), 'sw.js setzt lang und timestamp der Mitteilung');
     ok(sw.includes("d.kind === 'new_login' ? '#/more?o=sess'"), 'Klick auf Anmelde-Hinweis öffnet „Meine Anmeldungen“ wie die Hinweisliste');
+    ok(sw.includes('ref: d.ref') && /\^\(vehicle\|fine\):/.test(sw), 'Push-Klick folgt dem Bezug (Fahrzeugakte/Bußgeld)');
     ok((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("x.kind === 'new_login' ? '#/more?o=sess'"), 'Hinweisliste nutzt dasselbe Ziel');
   } finally {
     await u.patch('/api/me', { language: 'de' });

@@ -57,6 +57,7 @@ export function localizedTitle(n, lang) {
 // Vorgangs-Hinweise „Nr · Kennzeichen · Priorität[ · TEST]“ und „Prüfung mit gefährlichen Mängeln“ „Kennzeichen · Art Datum: Ergebnis[ – nicht einplanen][ · TEST]“.
 // Alles andere (Agent, Anmeldung, Bußgeld, Test) bleibt wie gespeichert. Unbekannte Form → unverändert.
 const LANGS = ['de', 'uk', 'en'];
+export const NOTIF_REF = /^(vehicle|fine):[A-Za-z0-9:_-]{1,80}$/;
 const PRIO_KEY = new Map(LANGS.flatMap((l) => Object.entries(PRIO[l]).map(([k, v]) => [v, k])));
 const RES_KEY = new Map(LANGS.flatMap((l) => ['gefaehrliche_maengel', 'verkehrsunsicher'].map((k) => [T[l]['res_' + k], k])));
 const DNP = new Set(LANGS.map((l) => T[l].do_not_plan));
@@ -178,14 +179,14 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
 // Abfragebudget: ab 2 Empfängern 2 Anweisungen statt einer je Empfänger (Agent-Läufe mit mehreren Leitungskonten blieben sonst nicht unter 50).
 async function insertNotifications(env, rows) {
   if (!rows.length) return [];
-  const sql = `INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,lang,push_status)`;
+  const sql = `INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,lang,ref,push_status)`;
   if (rows.length === 1) {
     const x = rows[0];
-    const r = await env.DB.prepare(`${sql} VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending')`).bind(x.id, x.environment, x.user_id, x.case_id, x.event_key, x.kind, x.urgent, x.title, x.body, x.created_at, x.lang || null).run();
+    const r = await env.DB.prepare(`${sql} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending')`).bind(x.id, x.environment, x.user_id, x.case_id, x.event_key, x.kind, x.urgent, x.title, x.body, x.created_at, x.lang || null, x.ref || null).run();
     return r.meta && r.meta.changes === 1 ? rows : [];
   }
   const f = (k) => `json_extract(value,'$.${k}')`;
-  await env.DB.prepare(`${sql} SELECT ${['id', 'environment', 'user_id', 'case_id', 'event_key', 'kind', 'urgent', 'title', 'body', 'created_at', 'lang'].map(f).join(',')},'pending' FROM json_each(?)`)
+  await env.DB.prepare(`${sql} SELECT ${['id', 'environment', 'user_id', 'case_id', 'event_key', 'kind', 'urgent', 'title', 'body', 'created_at', 'lang', 'ref'].map(f).join(',')},'pending' FROM json_each(?)`)
     .bind(JSON.stringify(rows)).run();
   const ok = new Set((await env.DB.prepare('SELECT id FROM notifications WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(rows.map((r) => r.id))).all()).results.map((r) => r.id));
   return rows.filter((r) => ok.has(r.id));
@@ -237,7 +238,8 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
 }
 
 // localize(lang) → { title?, body? } je Sprache der Person (langOf: Map Benutzer-ID → Sprache); ohne Angabe gilt title/body für alle
-export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null }) {
+// ref: Bezug ohne Vorgang ('vehicle:<id>', 'fine:<id>') – Ziel beim Tippen auf Hinweis/Push
+export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null, ref = null }) {
   const now = nowIso();
   const langFor = (uid) => (langOf && LANGS.includes(langOf.get(uid)) ? langOf.get(uid) : 'de');
   const text = (uid) => {
@@ -245,8 +247,8 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
     const x = localize(langFor(uid)) || {}; return { title: x.title ?? title, body: x.body ?? body };
   };
   // Sprache des Textes (für die Vorlesefunktion des Geräts) nur, wenn sie feststeht: übersetzt (localize) oder vom Aufrufer genannt (langOf)
-  const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now, lang: localize || langOf ? langFor(uid) : null }));
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at }));
+  const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now, lang: localize || langOf ? langFor(uid) : null, ref: NOTIF_REF.test(ref || '') ? ref : null }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at, ref: r.ref }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -307,7 +309,7 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     for (const s of subs) {
       sends++;
       // lang: Sprache des Textes, damit das Gerät die Mitteilung richtig vorliest/trennt (fehlt bei nicht übersetzten Freitexten)
-      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
+      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(n.ref ? { ref: n.ref } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
         // ts: Zeitpunkt des Ereignisses (ms) – nachgeholte Pushs (Wiederholung, Ende der Ruhezeit) zeigen am Gerät die echte Uhrzeit, nicht die Zustellzeit
         ...(Date.parse(n.created_at) ? { ts: Date.parse(n.created_at) } : {}) }, { urgent: n.urgent });
       if (res.status === 'accepted') {
@@ -362,7 +364,7 @@ const forDelivery = (r) => {
 export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
     WHERE n.acknowledged_at IS NULL AND n.created_at > ? AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND n.push_hold_until IS NULL AND n.created_at < ?))
     ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
@@ -374,7 +376,7 @@ export async function retryFailedPush(env) {
 // Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now()) {
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
     WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.created_at > ?
     ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
   if (rows.length) await deliverPush(env, rows.map(forDelivery), { collapse: true });

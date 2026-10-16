@@ -57,6 +57,7 @@ UI-Gewährleistungen (Hinweis bei Kappung)|ui-gewaehrleistung.py|/tmp/cfp-gewaeh
 UI-Konflikt-Meldungen in der Sprache|ui-konfliktsprache.py|/tmp/cfp-konfliktsprache.log
 UI-Artikel-Stammdaten bearbeiten|ui-artikel-bearbeiten.py|/tmp/cfp-artikel-bearbeiten.log
 UI-Dokumentsprache (html lang)|ui-html-lang.py|/tmp/cfp-htmllang.log
+UI-Hinweis öffnet Gegenstand (Fahrzeugakte)|ui-hinweis-ziel.py|/tmp/cfp-hinweisziel.log
 '
 N=0
 NL='

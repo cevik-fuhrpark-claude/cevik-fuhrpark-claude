@@ -559,7 +559,7 @@ async function notifyInspectionDefect(env, ctx, envName, user, { vehicleId, kind
   if (!us.length) return 0;
   const text = (l) => ({ title: nt(l, 'inspection_defect'), body: `${v.plate} · ${kind} ${dateLang(date, l)}: ${nt(l, 'res_' + result)}${result === 'verkehrsunsicher' ? ' – ' + nt(l, 'do_not_plan') : ''}${envName === 'test' ? ' · TEST' : ''}` });
   return notifyUsers(env, ctx, envName, us.map((x) => x.id), { kind: 'inspection_defect', ...text('de'), urgent: true, localize: text, langOf: new Map(us.map((x) => [x.id, x.language])),
-    eventKey: `inspdef:${key}:${date}:${result}` });
+    eventKey: `inspdef:${key}:${date}:${result}`, ref: `vehicle:${vehicleId}` });
 }
 
 export const INSPECTION_RESULTS = ['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];

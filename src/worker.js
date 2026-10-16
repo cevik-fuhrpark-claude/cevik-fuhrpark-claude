@@ -551,7 +551,7 @@ async function handleApi(request, env, ctx, url) {
     const counts = { all: c.all_n, unread: c.unread_n, urgent: c.urgent_n };
     if (url.searchParams.get('count') === '1') return json({ unread: counts.unread, counts });
     const filter = { unread: UNREAD, urgent: 'n.urgent=1' }[url.searchParams.get('filter') || ''] || null;
-    const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
+    const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, n.ref, u.language AS lang
       FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
     for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; }

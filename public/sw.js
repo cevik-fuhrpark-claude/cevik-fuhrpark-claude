@@ -1,5 +1,5 @@
 // [CLAUDE] Service Worker: Push-Empfang mit Empfangsquittung, Klick öffnet den Vorgang, App-Hülle offline
-const CACHE = 'cfp-shell-v9';
+const CACHE = 'cfp-shell-v10';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n.js', '/finding-labels.js', '/finding-messages.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/icons/icon.svg'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -15,7 +15,7 @@ self.addEventListener('push', (e) => {
   const work = [
     self.registration.showNotification(d.title || 'Fuhrpark', {
       body: d.body || '', tag: d.case_id || d.id, ...(d.lang ? { lang: d.lang, dir: 'ltr' } : {}), ...(d.ts ? { timestamp: d.ts } : {}), renotify: true, requireInteraction: !!d.urgent,
-      icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', data: { id: d.id, case_id: d.case_id, kind: d.kind },
+      icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', data: { id: d.id, case_id: d.case_id, kind: d.kind, ref: d.ref },
     }),
     d.id ? fetch(`/api/notifications/${d.id}/received`, { method: 'POST', headers: { 'x-cfp': '1' }, credentials: 'include' }).catch(() => {}) : null,
     self.clients.matchAll({ type: 'window' }).then((cs) => cs.forEach((c) => c.postMessage({ type: 'push' }))),
@@ -26,7 +26,8 @@ self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const d = e.notification.data || {};
   // Ziel wie in der Hinweisliste: Vorgang; Anmelde-Hinweis → Mein Konto „Meine Anmeldungen“ (fremdes Gerät sofort abmelden); sonst Hinweise
-  const hash = d.case_id ? `#/cases/${d.case_id}` : d.kind === 'new_login' ? '#/more?o=sess' : '#/inbox';
+  const m = /^(vehicle|fine):(.+)$/.exec(d.ref || '');
+  const hash = d.case_id ? `#/cases/${encodeURIComponent(d.case_id)}` : m ? `#/${m[1] === 'vehicle' ? 'vehicles' : 'fines'}/${encodeURIComponent(m[2])}` : d.kind === 'new_login' ? '#/more?o=sess' : '#/inbox';
   e.waitUntil((async () => {
     if (d.id) fetch(`/api/notifications/${d.id}/opened`, { method: 'POST', headers: { 'x-cfp': '1' }, credentials: 'include' }).catch(() => {});
     const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
