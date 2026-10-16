@@ -4,6 +4,7 @@ import { makeEnv, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { dotDate, ageMonths } from '../src/tires.js';
 import { b64urlEncode, b64urlDecode, concatBytes, dateLang } from '../src/util.js';
+import { criticalBody, reminderBody } from '../src/agent.js';
 
 let passed = 0; let failed = 0; const failures = [];
 async function test(name, fn) {
@@ -425,9 +426,11 @@ await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () =>
   await users.fleet.post('/api/agent/run');
   eq((await users.fleet.patch('/api/me', { language: 'de' })).status, 200);
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_DUE'), 'HU-Fälligkeit erkannt');
-  const remUk = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
-  eq(remUk.length, 1); eq(remUk[0].title, 'Агент автопарку: нові терміни/строки', 'Sammel-Erinnerung in der Sprache der Person');
+  const remUk = (await env.DB.prepare("SELECT title, body FROM notifications WHERE user_id=? AND kind='agent_reminder'").bind(users.fleet.id).all()).results;
+  eq(remUk.length, 1); eq(remUk[0].title, 'Агент автопарку: нові терміни/строки', 'Sammel-Erinnerung in der Sprache der Person (gespeichert)');
   ok(/1× Техогляд незабаром/.test(remUk[0].body) && !/Prüftermin/.test(remUk[0].body), remUk[0].body);
+  const remDe = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
+  ok(remDe[0].title === 'Fuhrparkagent: neue Termine/Fristen' && /1× Prüftermin bald fällig/.test(remDe[0].body), 'Liste nach Sprachwechsel deutsch: ' + JSON.stringify(remDe[0]));
   const { reminderBody, AGENT_PUSH_T } = await import('../src/agent.js');
   eq(reminderBody(['MAINTENANCE_DUE', 'FINE_OVERDUE', 'MAINTENANCE_DUE'], 'en', 'test'), '2× Inspection due soon, 1× Authority deadline passed · TEST');
   eq(reminderBody(['MAINTENANCE_DUE'], 'xx', 'production'), '1× Prüftermin bald fällig', 'unbekannte Sprache → Deutsch');
@@ -440,7 +443,7 @@ await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () =>
   eq(criticalBody('GIBT_ES_NICHT', 'en', 'production'), 'GIBT_ES_NICHT', 'unbekannter Code bleibt Code');
   for (const l of ['de', 'uk', 'en']) ok(AGENT_PUSH_T[l].agent && AGENT_PUSH_T[l].reminder && AGENT_PUSH_T[l].critical_n.includes('{n}'), l);
   const rem = (await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder');
-  eq(rem.length, 1, 'eine Sammel-Erinnerung'); ok(/1× Техогляд незабаром/.test(rem[0].body) && !rem[0].urgent && !/SZ-/.test(rem[0].body), 'ruhig, ohne Details');
+  eq(rem.length, 1, 'eine Sammel-Erinnerung'); ok(/1× Prüftermin bald fällig/.test(rem[0].body) && !rem[0].urgent && !/SZ-/.test(rem[0].body), 'ruhig, ohne Details');
   await users.fleet.post('/api/agent/run');
   eq((await users.fleet.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'agent_reminder').length, 1, 'keine Wiederholung bei gleichem Befund');
   ok(!(await users.ws.get('/api/notifications')).data.notifications.some((n) => n.kind === 'agent_reminder'), 'Werkstatt nicht');
@@ -8366,6 +8369,11 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
     ['lb-5', 'agent', 'Fuhrparkagent: Handlungsbedarf', 'Freitext · kritisch'],
     ['lb-6', 'comment', 'Neuer Kommentar', 'Freitext ohne Muster'],
     ['lb-7', 'inspection_defect', 'Prüfung mit gefährlichen Mängeln', 'LB-XY 7 · UVV 2020-01-05: etwas anderes'],
+    ['lb-8', 'agent', 'Fuhrparkagent: Handlungsbedarf', `${criticalBody('MAINTENANCE_OVERDUE', 'de', 'test')}`],
+    ['lb-9', 'agent', 'Fuhrparkagent: Handlungsbedarf', '3 neue kritische Befunde'],
+    ['lb-10', 'agent_reminder', 'Fuhrparkagent: neue Termine/Fristen', reminderBody(['MAINTENANCE_DUE', 'MAINTENANCE_DUE', 'CONTRACT_ENDS_SOON'], 'de', 'production')],
+    ['lb-11', 'agent_reminder', 'Fuhrparkagent: neue Termine/Fristen', '2× Unbekanntes'],
+    ['lb-12', 'agent', 'Fuhrparkagent: Handlungsbedarf', 'Etwas (UNBEKANNT_X)'],
   ];
   for (const [id, kind, title, body] of rows) await ins.bind(id, 'test', u.id, null, 'lb:' + id, kind, 0, title, body, new Date(Date.now() - rows.findIndex((r) => r[0] === id) * 1000).toISOString()).run();
   const get = async () => Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.body]));
@@ -8374,10 +8382,15 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
     let b = await get();
     eq(b['lb-1'], 'SM-2020-0001 · LB-XY 1 · critical · TEST'); eq(b['lb-2'], 'SM-2020-0002 · LB-XY 2 · low');
     eq(b['lb-3'], 'LB-XY 3 · UVV 05/01/2020: unroadworthy – do not schedule · TEST'); eq(b['lb-4'], 'LB-XY 4 · HU 05/01/2020: dangerous defects');
+    eq(b['lb-8'], criticalBody('MAINTENANCE_OVERDUE', 'en', 'test')); ok(b['lb-8'].endsWith('(MAINTENANCE_OVERDUE) · TEST') && b['lb-8'] !== rows[7][3], 'Agent-Befund englisch: ' + b['lb-8']);
+    eq(b['lb-9'], '3 new critical findings'); eq(b['lb-10'], reminderBody(['MAINTENANCE_DUE', 'MAINTENANCE_DUE', 'CONTRACT_ENDS_SOON'], 'en', 'production'));
+    eq(b['lb-11'], '2× Unbekanntes'); eq(b['lb-12'], 'Etwas (UNBEKANNT_X)');
+    { const t = Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.title]));
+      eq(t['lb-10'], 'Fleet agent: new dates/deadlines'); eq(t['lb-8'], 'Fleet agent: action required'); }
     eq(b['lb-5'], 'Freitext · kritisch', 'Agent-Text unverändert'); eq(b['lb-6'], 'Freitext ohne Muster'); eq(b['lb-7'], 'LB-XY 7 · UVV 2020-01-05: etwas anderes', 'unbekanntes Ergebnis unverändert');
     eq((await u.patch('/api/me', { language: 'uk' })).status, 200);
     b = await get();
-    eq(b['lb-1'], 'SM-2020-0001 · LB-XY 1 · критичний · TEST'); eq(b['lb-4'], 'LB-XY 4 · HU 05.01.2020: небезпечні дефекти');
+    eq(b['lb-1'], 'SM-2020-0001 · LB-XY 1 · критичний · TEST'); eq(b['lb-9'], 'Нових критичних знахідок: 3'); eq(b['lb-4'], 'LB-XY 4 · HU 05.01.2020: небезпечні дефекти');
     eq((await u.patch('/api/me', { language: 'de' })).status, 200);
     b = await get();
     eq(b['lb-2'], 'SM-2020-0002 · LB-XY 2 · niedrig'); eq(b['lb-3'], 'LB-XY 3 · UVV 05.01.2020: verkehrsunsicher – nicht einplanen · TEST');

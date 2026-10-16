@@ -57,6 +57,33 @@ export function reminderBody(codes, lang, environment) {
 // Einzelner neuer kritischer Befund: Kurzbezeichnung in der Sprache der Person statt des rohen Codes (ohne Kennzeichen/Namen –
 // Push-Texte erscheinen auf dem Sperrbildschirm), Code in Klammern für Rückfragen.
 export const criticalBody = (code, lang, environment) => `${findingLabel(code, lang)}${findingLabel(code, lang) !== code ? ` (${code})` : ''}${environment === 'test' ? ' · TEST' : ''}`;
+// Gespeicherte Agent-Hinweise in der aktuellen Sprache der Person anzeigen (Hinweisliste): Einzelbefund „Bezeichnung (CODE)“,
+// Sammel-Erinnerung „2× Bezeichnung, 1× …“ und „N neue kritische Befunde“. Unbekannte Bestandteile → Text unverändert.
+const REM_LABEL_CODE = new Map(['de', 'uk', 'en'].flatMap((l) => Object.keys(REMINDER_LABEL).map((c) => [reminderLabel(c, l), c])));
+export function localizedAgentBody(n, lang) {
+  const L = AGENT_PUSH_T[lang] ? lang : 'de';
+  const b = n.body;
+  if (typeof b !== 'string' || !b || (n.kind !== 'agent' && n.kind !== 'agent_reminder')) return b;
+  const test = b.endsWith(' · TEST') ? ' · TEST' : '';
+  const core = test ? b.slice(0, -test.length) : b;
+  if (n.kind === 'agent') {
+    const c = /^.+ \(([A-Z][A-Z0-9_]*)\)$/.exec(core);
+    if (c) return findingLabel(c[1], L) !== c[1] ? criticalBody(c[1], L, test ? 'test' : 'production') : b;
+    for (const l of ['de', 'uk', 'en']) {
+      const [pre, post] = AGENT_PUSH_T[l].critical_n.split('{n}');
+      if (core.startsWith(pre) && core.endsWith(post) && /^\d+$/.test(core.slice(pre.length, core.length - post.length))) return AGENT_PUSH_T[L].critical_n.replace('{n}', core.slice(pre.length, core.length - post.length)) + test;
+    }
+    return b;
+  }
+  const parts = core.split(', ').map((x) => /^(\d+)× (.+)$/.exec(x));
+  if (!parts.every((m) => m && REM_LABEL_CODE.has(m[2]))) return b;
+  return parts.map((m) => `${m[1]}× ${reminderLabel(REM_LABEL_CODE.get(m[2]), L)}`).join(', ') + test;
+}
+export function localizedAgentTitle(n, lang) {
+  const L = AGENT_PUSH_T[lang] ? lang : 'de';
+  if (n.kind !== 'agent_reminder') return n.title;
+  return ['de', 'uk', 'en'].some((l) => AGENT_PUSH_T[l].reminder === n.title) ? AGENT_PUSH_T[L].reminder : n.title;
+}
 const chunks = (a) => { const out = []; for (let i = 0; i < a.length; i += CHUNK) out.push(a.slice(i, i + CHUNK)); return out; };
 
 const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
