@@ -490,6 +490,9 @@ with sync_playwright() as p:
         res = pg.evaluate(PRINT_CHECK, 'Rauchtest Inhaber' if role == 'owner' else f'Rauchtest {role}')
         for x in res:
             problems.append(f'{where}: {x}')
+        iso = pg.evaluate(ISO_DATES)
+        if iso:
+            problems.append(f'{where}: ISO-Datum sichtbar {iso[:3]}')
         if OUT:
             os.makedirs(OUT, exist_ok=True)
             pg.pdf(path=os.path.join(OUT, f"druck_{role}_{r.replace('/', '_').replace(':', '')}.pdf"), format='A4')
