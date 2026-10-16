@@ -2,7 +2,7 @@
 # [CLAUDE] Gesamtprüfung vor jedem Push: Tests, UI-Skripte, UI-Rauchtest (hell/dunkel/Ukrainisch/Englisch) je mit frischem Dev-Server.
 # Bricht beim ersten Fehler mit Fehlercode ab (keine durch Pipes verdeckten Fehler).
 # Aufruf: sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Teil des Skriptnamens>]
-#   --schnell     nur Tests + UI-Skripte + Rauchtest hell; ohne: zusätzlich Rauchtest dunkel, Ukrainisch, Englisch, HTML-Einschleusung und Zeitreise.
+#   --schnell     nur Tests + UI-Skripte + Rauchtest hell; ohne: zusätzlich Rauchtest dunkel, Ukrainisch, Englisch, HTML-Einschleusung, Zeitreise und UI-Zeitreise.
 #   --ohne-tests  `npm test` überspringen (wenn gerade schon gelaufen)
 #   --ohne-rauch  Rauchtests und Zeitreise überspringen (nur Tests + UI-Skripte)
 #   --nur X       nur die UI-Skripte, deren Dateiname X enthält (z. B. --nur hoechstzahl); keine Rauchtests
@@ -82,6 +82,7 @@ if [ -z "$OHNE_RAUCH" ]; then
     step "UI-Rauchtest Englisch"; run_smoke CFP_LANG=en
     step "UI-Rauchtest HTML-Einschleusung (Freitexte)"; run_smoke CFP_XSS=1
     step "Zeitreise"; sh scripts/zeitreise-test.sh > /tmp/cfp-zeit.log 2>&1 || { cat /tmp/cfp-zeit.log; fail "Zeitreise"; }; echo "8 Zeitpunkte grün"
+    step "UI-Zeitreise"; sh scripts/ui-zeitreise.sh > /tmp/cfp-uizeit.log 2>&1 || { grep -v ' grün$' /tmp/cfp-uizeit.log | tail -30; fail "UI-Zeitreise"; }; echo "4 Zeitpunkte grün"
   fi
 fi
 echo "Alles grün ($N UI-Skripte)."

@@ -33,7 +33,10 @@ const DT_FMT = {};
 const locOf = (l) => (l === 'uk' ? 'uk-UA' : l === 'en' ? 'en-GB' : 'de-DE');
 const uiLoc = () => locOf(S.lang);
 const fmtNum = (x, o) => Number(x).toLocaleString(uiLoc(), o);
-const dtFmt = (kind) => { const loc = uiLoc(); const k = kind + loc; return DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(loc, kind === 'dt' ? { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' } : { timeZone: kind === 'd' ? 'Europe/Berlin' : 'UTC' })); };
+// Datum immer zweistellig (TT.MM.JJJJ bzw. TT/MM/JJJJ): „de-DE“ ohne Vorgabe schreibt „1.1.2027“ – fiel erst an Tagen/Monaten < 10 auf
+// (Zeitreise der Oberfläche 15.10.2026). Gleiche Optionen für den Fahrer-Aushang (`dateOpts`).
+const dateOpts = (timeZone) => ({ day: '2-digit', month: '2-digit', year: 'numeric', timeZone });
+const dtFmt = (kind) => { const loc = uiLoc(); const k = kind + loc; return DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(loc, kind === 'dt' ? { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' } : dateOpts(kind === 'd' ? 'Europe/Berlin' : 'UTC'))); };
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
 // Kalenderdatum „JJJJ-MM-TT“ bleibt dieser Tag; Zeitstempel → Berliner Kalendertag
 const fmtD = (iso) => { if (!iso) return '–'; const d = new Date(iso.length === 10 ? iso + 'T12:00:00Z' : iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt(iso.length === 10 ? 'd10' : 'd').format(d); };
@@ -2353,7 +2356,7 @@ function viewDriverGuide(l) {
     <article class="guide" lang="${g}"><h1>${esc(gt('g_title'))}</h1>
     <div class="guide-top"><div class="qr">${(() => { try { return qrSvg(addr, { label: gt('g_addr') }); } catch { return ''; } })()}</div><div><p class="small"><b>${esc(gt('g_addr'))}</b></p><p class="guide-addr">${esc(addr)}</p></div></div>
     ${GUIDE_SECTIONS.map(sec).join('')}
-    <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), { timeZone: 'UTC' }).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
+    <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), dateOpts('UTC')).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
   $('#gprt').onclick = () => window.print();
 }
 

@@ -13,6 +13,7 @@ fi
 rm -f "$PIDF"
 sleep 0.5
 cd "$(dirname "$0")/.." || exit 1
-nohup env PORT=8787 node --experimental-sqlite --no-warnings scripts/dev-server.mjs > "${1:-/dev/null}" 2>&1 &
+# CFP_FAKE_NOW gesetzt (UI-Zeitreise): Server-Uhr über scripts/zeitreise.mjs verschieben
+nohup env PORT=8787 node --experimental-sqlite --no-warnings ${CFP_FAKE_NOW:+--import ./scripts/zeitreise.mjs} scripts/dev-server.mjs > "${1:-/dev/null}" 2>&1 &
 sleep 1.5
 curl -s localhost:8787/api/setup/status

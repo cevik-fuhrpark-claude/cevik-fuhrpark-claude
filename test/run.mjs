@@ -8287,6 +8287,30 @@ await test('Hilfe „Höchstzahlen auf einen Blick“ (DE/UK/EN, auch Werkstatt)
   for (const p of ws) eq((p.match(/\d+/g) || []).map(Number).join(','), [lim[1], 5].join(','), 'Werkstatt: Dateien je Vorgang, MB');
 });
 
+await test('Datumsanzeige immer zweistellig (01.01.2027 statt 1.1.2027) in DE/UK/EN, auch Fahrer-Aushang; UI-Zeitreise eingerichtet', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const DT_FMT = {};'), b = app.indexOf('const dqDetail =');
+  ok(a > 0 && b > a, 'Formatierer gefunden');
+  const mk = (lang) => new Function('S', app.slice(a, b) + '\nreturn { fmtD, fmtDT, dateOpts, locOf };')({ lang });
+  const want = { de: ['01.01.2027', '05.03.2027', '01.01.2027'], uk: ['01.01.2027', '05.03.2027', '01.01.2027'], en: ['01/01/2027', '05/03/2027', '01/01/2027'] };
+  for (const lang of ['de', 'uk', 'en']) {
+    const f = mk(lang);
+    // Kalenderdatum, Datum im März, Zeitstempel kurz nach Mitternacht Berlin (Silvester 23:30 UTC = 01.01. 00:30)
+    eq([f.fmtD('2027-01-01'), f.fmtD('2027-03-05'), f.fmtD('2026-12-31T23:30:00Z')].join(' | '), want[lang].join(' | '), lang);
+    // Aushang-Datum: gleiche Optionen wie die Oberfläche
+    eq(new Intl.DateTimeFormat(f.locOf(lang), f.dateOpts('UTC')).format(new Date('2027-01-01T12:00:00Z')), want[lang][0], lang + ' Aushang');
+  }
+  // Wächter: jeder Datumsformatierer in app.js nutzt dateOpts, dateStyle oder ist der interne JJJJ-MM-TT-Formatierer (sv-SE)
+  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour/.test(x));
+  eq(bad.join(' || '), '', 'Datumsformatierer ohne zweistellige Vorgabe');
+  eq(app.split('\n').filter((l) => l.includes('toLocaleDateString(') && !l.includes("day: '2-digit'")).length, 0, 'toLocaleDateString nur mit 2-digit');
+  // UI-Zeitreise: Server- und Browser-Uhr über CFP_FAKE_NOW
+  ok(fs.readFileSync(new URL('../scripts/restart-dev.sh', import.meta.url), 'utf8').includes('${CFP_FAKE_NOW:+--import ./scripts/zeitreise.mjs}'), 'restart-dev.sh verschiebt die Server-Uhr');
+  const zr = fs.readFileSync(new URL('../scripts/ui-zeitreise.sh', import.meta.url), 'utf8');
+  ok(zr.includes('PYTHONPATH=scripts/zeitreise_py') && fs.existsSync(new URL('../scripts/zeitreise_py/sitecustomize.py', import.meta.url)), 'Browser-/Python-Uhr');
+  for (const s of [...zr.matchAll(/(ui-[a-z0-9-]+\.py)/g)].map((m) => m[1])) ok(fs.existsSync(new URL('../scripts/' + s, import.meta.url)), 'Skript vorhanden: ' + s);
+});
 await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest), Optionen dokumentiert', async () => {
   const fs = await import('node:fs');
   const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
