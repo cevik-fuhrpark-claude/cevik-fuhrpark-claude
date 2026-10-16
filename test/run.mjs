@@ -8944,6 +8944,14 @@ await test('km-Zähler gesunken + Datum bald fällig: Werkstattplan „Fällig �
   eq(row(soon.data.id).status, 'ungeklaert', 'Gesamtstatus: km ungeklärt überdeckt „bald fällig“'); eq(row(soon.data.id).date_status, 'faellig', 'Datumsstatus getrennt');
   eq(row(late.data.id).status, 'ueberfaellig'); eq(row(late.data.id).date_status, 'ueberfaellig'); eq(row(late.data.id).km_unclear, 'counter_drop');
   eq(row(fine.data.id).date_status, 'ok');
+  // Fahrzeugliste, CSV und Integrations-API: kleinste km-Fälligkeit ohne Rest aus gemischten Zählern (vorher 328 800 km „Rest“)
+  let lv = (await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.id === V);
+  eq(lv.next_due_km, 330000); eq(lv.km_remaining, null, 'Liste: kein Rest'); eq(lv.km_unclear, 'counter_drop'); ok(lv.km_drop_at, 'Liste: Datum');
+  const vcsv = (await users.fleet.get('/api/vehicles?format=csv')).data; const vcsvT = typeof vcsv === 'string' ? vcsv : new TextDecoder().decode(vcsv);
+  const vline = vcsvT.split('\n').find((l) => l.startsWith('KP-TT 3;')); ok(vline && /;330000;Ölwechsel;;/.test(vline), 'CSV: Rest-km leer: ' + vline);
+  const iav = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' });
+  const iv = iav.data.vehicles.find((x) => x.id === V); eq(iv.km_remaining, null, 'Integration: kein Rest'); eq(iv.km_unclear, 'counter_drop');
+  ok(iav.data.vehicles.filter((x) => x.id !== V).every((x) => x.km_unclear === null), 'andere Fahrzeuge: km_unclear null');
   let p = (await users.fleet.get('/api/workshop/plan?days=14')).data;
   const md = (id) => p.maintenance_due.find((x) => x.id === id);
   ok(md(soon.data.id), 'bald fällig nach Datum bleibt einzuplanen (vorher verschwunden)');
@@ -8967,9 +8975,12 @@ await test('km-Zähler gesunken + Datum bald fällig: Werkstattplan „Fällig �
   eq((await users.fleet.post(`/api/maintenance/${soon.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Ölwechsel (Test)', done_km: 1200 })).status, 200);
   const r3 = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === soon.data.id);
   eq(r3.km_status, 'ok'); eq(r3.km_remaining, 50000); ok(!r3.km_unclear);
+  lv = (await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.id === V);
+  eq(lv.next_due_km, 51200); eq(lv.km_remaining, 50000, 'Liste nach Durchführung wieder mit Rest'); ok(!lv.km_unclear);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/const noPlan = \(r\) => \([^\n]*kmUnclearDateDue\(r\)/.test(app), 'Prüftermine „Fällig ohne Termin“ nutzt dieselbe Regel');
   ok(/function kmTxt[\s\S]{0,300}i\.km_unclear/.test(app), 'Werkstattplan zeigt km-Hinweis statt Rest');
+  ok(app.includes('(v.km_unclear ? `'), 'Fahrzeugliste kennzeichnet km ungeklärt');
   eq((await owner.post(`${vp}/active`, { active: false, reason: 'Testdaten Plan Tachotausch' })).status, 200);
 });
 

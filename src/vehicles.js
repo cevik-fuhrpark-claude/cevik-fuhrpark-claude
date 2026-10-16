@@ -7,7 +7,7 @@ import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } fro
 import { sha256Hex, berlinDateTime, hideDriverName, dateLang } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
-import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
+import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth } from './reports.js';
 
@@ -27,8 +27,10 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
       (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL) AS next_due,
       -- nächste km-Fälligkeit (belegter Wert vor „km bei letzter Durchführung + Intervall“, wie ruleDueKm; HU/SP nur nach Datum)
-      (SELECT x.k || '|' || x.kind FROM (SELECT COALESCE(m.due_km, m.last_done_km + NULLIF(m.interval_km, 0)) AS k, m.kind FROM maintenance_rules m
+      -- + Zeitpunkt der km-Grundlage dieser Regel und letzter km-Rücksprung (Tachotausch) – wie kmDue: danach kein Rest aus gemischten Zählern
+      (SELECT x.k || '|' || x.kb || '|' || x.kind FROM (SELECT COALESCE(m.due_km, m.last_done_km + NULLIF(m.interval_km, 0)) AS k, COALESCE(m.km_basis_at, m.updated_at, '') AS kb, m.kind FROM maintenance_rules m
         WHERE m.vehicle_id=v.id AND m.kind NOT IN ('HU','SP')) x WHERE x.k IS NOT NULL ORDER BY x.k, x.kind LIMIT 1) AS next_km,
+      ${KM_DROP_SQL('v.id')} AS km_drop,
       (SELECT i.created_at || '|' || i.result FROM inspections i WHERE i.vehicle_id=v.id AND i.environment=? AND i.kind='abfahrt' ORDER BY i.created_at DESC LIMIT 1) AS last_check,
       (SELECT MIN(c.planned_date) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile') AND c.planned_date >= ?) AS planned_workshop_date,
       (SELECT m.planned_date || '|' || group_concat(m.kind, ', ') FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.planned_date = (SELECT MIN(m2.planned_date) FROM maintenance_rules m2 WHERE m2.vehicle_id=v.id AND m2.planned_date >= ?)) AS planned_inspection,
@@ -51,8 +53,12 @@ export async function listVehicles(env, user, envName, query = {}) {
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
     // km-Fälligkeit: Rest-km nur mit erfasstem km-Stand (keine Schätzung)
-    const [nk, nkk] = v.next_km ? [Number(v.next_km.split('|')[0]), v.next_km.slice(v.next_km.indexOf('|') + 1)] : [null, null];
+    const nkp = v.next_km ? String(v.next_km).split('|') : null;
+    const [nk, nkb, nkk] = nkp ? [Number(nkp[0]), nkp[1] || null, nkp.slice(2).join('|')] : [null, null, null];
     v.next_due_km = nk; v.next_due_km_kind = nkk; v.km_remaining = nk !== null && v.last_km !== null && v.last_km !== undefined ? nk - v.last_km : null; delete v.next_km;
+    // km-Zähler nach der letzten Änderung der km-Grundlage gesunken (Tachotausch): Rest wäre aus gemischten Zählern → kein Wert, Kennzeichen
+    const drop = parseKmDrop(v.km_drop); delete v.km_drop;
+    if (nk !== null && kmCounterDropAfter({ km_basis_at: nkb }, drop)) { v.km_remaining = null; v.km_unclear = 'counter_drop'; v.km_drop_at = drop.drop_at; }
     // Agentenbefunde je Fahrzeug: nur für Inhaber/Fuhrparkleitung (gleiche Sichtbarkeit wie Management-Panel und Fahrzeugakte)
     if (isManager(user)) { const [an, ac] = String(v.af || '0|0').split('|'); v.agent_findings_open = Number(an) || 0; v.agent_findings_critical = Number(ac) || 0; }
     delete v.af;

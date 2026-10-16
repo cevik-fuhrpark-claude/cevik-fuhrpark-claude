@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (16.10.2026): km-Zähler gesunken + Datum bald fällig – Werkstattplan „Fällig – ohne Termin“ und Prüftermine
 # „Fällig ohne Termin“ zeigen die Prüfung weiter (vorher verschwunden), mit Hinweis „Fälligkeit nach km ungeklärt“ statt Restlaufleistung;
-# DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Screenshots: CFP_SHOTS=<Ordner>.
+# Fahrzeugliste: kleinste km-Fälligkeit mit „Frist ungeklärt“ statt Rest; DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
@@ -9,6 +9,7 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 VIN='WDB96340310777800'; VID='VIN:'+VIN; PLATE='TT-UI 2'
 UNCLEAR={'de':'Fälligkeit nach km ungeklärt','uk':'Строк за пробігом не з’ясовано','en':'Mileage due unclear'}
+MSU={'de':'Frist ungeklärt','uk':'строк не з’ясовано','en':'deadline unclear'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -50,6 +51,11 @@ with sync_playwright() as p:
         check(r2.count()>=1 and UNCLEAR[lang] in r2.first.inner_text(),f'{lang}/{w}: Prüftermine „Fällig ohne Termin“ mit Hinweis')
         if SHOTS and r2.count(): r2.first.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/tp_maint_{lang}_{w}.png')
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: Prüftermine kein Querscrollen')
+        q.goto(B+'/#/vehicles'); q.wait_for_selector('#vl',timeout=15000)
+        r3=q.locator('#vl a.row', has_text=PLATE)
+        check(r3.count()>=1 and MSU[lang] in r3.first.inner_text() and '328' not in r3.first.inner_text(),f'{lang}/{w}: Fahrzeugliste „{MSU[lang]}“ statt Rest')
+        if SHOTS and r3.count(): r3.first.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/tp_list_{lang}_{w}.png')
+        check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: Fahrzeugliste kein Querscrollen')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
         ctx.close()
     api('PATCH','/api/me',{'language':'de'})
