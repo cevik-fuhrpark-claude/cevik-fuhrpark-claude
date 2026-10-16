@@ -1932,8 +1932,19 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   ok(run('uk', 'uk-UA', 'outbox_pending', 5).startsWith('5 заявок чекають'), 'uk many');
   ok(run('uk', 'uk-UA', 'outbox_pending', 21).startsWith('21 заявка чекає'), 'uk 21 = one');
   eq(run('uk', 'uk-UA', 'vnotes_n', 2), STRINGS.uk.vnotes_n.replace('{n}', '2'), 'uk ohne Pluralformen → Grundtext');
-  eq(run('de', 'de-DE', 'unused_admin_hint', 1).replace('{d}', '90'), '1 aktives Konto seit über 90 Tagen nicht angemeldet (ohne protokollierte Anmeldung: seit der Anlage). Bitte prüfen, ob der Zugang noch gebraucht wird – sonst deaktivieren. Die App deaktiviert nichts selbst.');
-  eq(run('de', 'de-DE', 'claim_days_open', 1), 'seit 1 Tag offen'); eq(run('en', 'en-GB', 'claim_days_open', 0), 'open for 0 days');
+  eq(run('de', 'de-DE', 'unused_admin_hint', 1).replace('{d}', '90 Tage'), '1 aktives Konto länger als 90 Tage nicht angemeldet (ohne protokollierte Anmeldung: seit der Anlage). Bitte prüfen, ob der Zugang noch gebraucht wird – sonst deaktivieren. Die App deaktiviert nichts selbst.');
+  eq(run('de', 'de-DE', 'claim_days_open', 1), 'seit 1 Tag offen');
+  // Tage aus Einstellungen (beliebige Zahl): Tageswort über nDays je Sprache, nicht fest im Text („понад 31 днів“, „seit über 1 Tagen“) – 16.10.2026
+  for (const k of ['ufilter_unused', 'unused_chip', 'unused_admin_hint', 'filter_stale_hint']) for (const l of ['de', 'uk', 'en']) {
+    for (const v of [STRINGS[l][k], ...Object.values((PLURALS[l] || {})[k] || {})]) ok(!/\{[dn]\} (Tagen|Tage|днів|дні|days)/.test(v), `${l}.${k}: Tageswort fest im Text`);
+  }
+  eq(app.split("replace('{d}', nDays(ud))").length - 1, 3, 'Tage ohne Anmeldung über nDays'); ok(app.includes("t('filter_stale_hint').replace('{n}', nDays(res.stale_days))"), 'Vorgänge ohne Bewegung über nDays');
+  ok(run('uk', 'uk-UA', 'asof_negative', 1).startsWith('1 артикул із') && run('uk', 'uk-UA', 'asof_negative', 3).startsWith('3 артикули') && run('uk', 'uk-UA', 'asof_negative', 5).startsWith('5 артикулів'), 'uk Stichtag: Artikel-Pluralform');
+  // jeder tn-Text, in dem die Zahl vor einem veränderlichen Wort steht („{n} артикулів“), hat Pluralformen in dieser Sprache (Ausnahme: unveränderliches „фото“, „Artikel“)
+  for (const k of new Set([...app.matchAll(/tn\('([a-z0-9_]+)'/g)].map((m) => m[1]))) for (const l of ['de', 'uk', 'en']) {
+    const v = STRINGS[l][k] || ''; if ((PLURALS[l] || {})[k]) continue;
+    ok(!/\{n\} (?!фото|Artikel|дн\.)[A-Za-zÄÖÜäöüа-яіїєґА-ЯІЇЄҐ]/.test(v), `${l}.${k}: Zahl vor Wort ohne Pluralformen – ${v.slice(0, 60)}`);
+  } eq(run('en', 'en-GB', 'claim_days_open', 0), 'open for 0 days');
 });
 
 await test('Agentenbefunde: Zähl-/Tagesangaben in der Pluralform je Sprache ({n#Form/Formen}) – statt „seit 1 Tag(en)“, „1 recipient(s)“', async () => {
