@@ -34,7 +34,7 @@ with sync_playwright() as p:
         n=len(api('GET',f'/api/cases/{cid}')['d']['files'])
         check(n==10,f'{w}px: genau 10 Dateien am Vorgang ({n})')
         tt=q.evaluate("()=>[...document.querySelectorAll('.toast')].map(x=>x.textContent).join(' | ')")
-        check('2 Datei(en) nicht angehängt' in tt and 'neu3.png' in tt and 'neu4.png' in tt and 'too_many' not in tt and 'Maximal' not in tt,f'{w}px: eine Meldung nennt die 2 Überzähligen ({tt[:90]})')
+        check('2 Dateien nicht angehängt' in tt and 'neu3.png' in tt and 'neu4.png' in tt and 'too_many' not in tt and 'Maximal' not in tt,f'{w}px: eine Meldung nennt die 2 Überzähligen ({tt[:90]})')
         check(not q.locator('#file').count(),f'{w}px: voll → kein Hochladeknopf')
         check('Höchstzahl von 10' in q.inner_text('#filesfull'),f'{w}px: Hinweis „Höchstzahl erreicht“')
         if SHOTS: q.locator('#filesfull').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vorgangsdateien_{w}.png')

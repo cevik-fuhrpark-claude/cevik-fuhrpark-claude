@@ -1804,6 +1804,46 @@ await test('Oberfläche: nur bekannte Umwandlungs-Methoden (.toXxx) – 16.10.20
   eq(app.split('\n').filter((l) => /\$\{[^}]*\} \$\{(esc\()?t\('days'\)/.test(l)).length, 0, 'keine Zahl + t(days) ohne Pluralform');
 });
 
+await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt „1 Hinweis(e)“, „3 заявк(и)“, „1 device(s)“', async () => {
+  const fs = await import('node:fs');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const ph = (s) => [...new Set(s.match(/\{[a-z]+\}/g) || [])].sort().join(',');
+  const need = { de: ['one', 'other'], en: ['one', 'other'], uk: ['one', 'few', 'many'] };
+  for (const [lang, keys] of Object.entries(PLURALS)) for (const [k, forms] of Object.entries(keys)) {
+    ok(STRINGS.de[k] && STRINGS[lang][k], `${lang}.${k}: Grundtext vorhanden`);
+    for (const f of need[lang]) ok(forms[f], `${lang}.${k}.${f} vorhanden`);
+    for (const [f, s] of Object.entries(forms)) {
+      eq(ph(s), ph(STRINGS[lang][k]), `${lang}.${k}.${f}: gleiche Platzhalter wie der Grundtext`);
+      ok(!/\((e|en|s|n|r|ies|ів|и|ях)\)/.test(s), `${lang}.${k}.${f}: keine Klammer-Endung`);
+    }
+  }
+  for (const k of Object.keys(PLURALS.de)) ok(PLURALS.en[k], `en.${k} hat ebenfalls Pluralformen`);
+  // keine Klammer-Endungen mehr in Texten ohne Pluralformen (mehrere Zahlen: „Bezeichnung: {n}“ statt „{n} Abweichung(en)“)
+  const left = [];
+  for (const l of ['de', 'en', 'uk']) for (const [k, v] of Object.entries(STRINGS[l])) if (typeof v === 'string' && /\w\((e|en|s|n|r|ies|ів|и|ях)\)/.test(v) && !(PLURALS[l] || {})[k]) left.push(`${l}.${k}`);
+  eq(left.join(', '), '', 'Texte mit Klammer-Endung');
+  for (const k of new Set([...Object.keys(PLURALS.de), ...Object.keys(PLURALS.en), ...Object.keys(PLURALS.uk)])) {
+    eq(app.split(`t('${k}').replace('{n}'`).length - 1, 0, `${k}: immer über tn()`);
+    ok(app.includes(`tn('${k}', `), `${k}: wird genutzt`);
+  }
+  const line = app.split('\n').find((l) => l.startsWith('const tn = '));
+  ok(line, 'tn vorhanden');
+  const run = (lang, loc, k, n) => {
+    const t = (x) => STRINGS[lang][x] || STRINGS.de[x] || x;
+    return new Function('t', 'fmtNum', 'uiLoc', 'PLURALS', 'S', line.replace(/^const tn = /, 'return ').replace(/;$/, ''))(t, (x) => Number(x).toLocaleString(loc), () => loc, PLURALS, { lang })(k, n);
+  };
+  eq(run('de', 'de-DE', 'vnotes_n', 1), '1 Hinweis'); eq(run('de', 'de-DE', 'vnotes_n', 3), '3 Hinweise'); eq(run('de', 'de-DE', 'vnotes_n', 1200), '1.200 Hinweise');
+  eq(run('en', 'en-GB', 'push_dev_n', 1), 'Push: 1 device'); eq(run('en', 'en-GB', 'push_dev_n', 2), 'Push: 2 devices');
+  eq(run('uk', 'uk-UA', 'outbox_pending', 1), '1 заявка чекає на з’єднання і буде надіслана автоматично.');
+  ok(run('uk', 'uk-UA', 'outbox_pending', 3).startsWith('3 заявки чекають'), 'uk few');
+  ok(run('uk', 'uk-UA', 'outbox_pending', 5).startsWith('5 заявок чекають'), 'uk many');
+  ok(run('uk', 'uk-UA', 'outbox_pending', 21).startsWith('21 заявка чекає'), 'uk 21 = one');
+  eq(run('uk', 'uk-UA', 'vnotes_n', 2), STRINGS.uk.vnotes_n.replace('{n}', '2'), 'uk ohne Pluralformen → Grundtext');
+  eq(run('de', 'de-DE', 'unused_admin_hint', 1).replace('{d}', '90'), '1 aktives Konto seit über 90 Tagen nicht angemeldet (ohne protokollierte Anmeldung: seit der Anlage). Bitte prüfen, ob der Zugang noch gebraucht wird – sonst deaktivieren. Die App deaktiviert nichts selbst.');
+  eq(run('de', 'de-DE', 'claim_days_open', 1), 'seit 1 Tag offen'); eq(run('en', 'en-GB', 'claim_days_open', 0), 'open for 0 days');
+});
+
 await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von anderen Rollen; Aktivität verlängert', async () => {
   const tab = await invite(owner, { username: 'test.tablet', display_name: 'Test Tablet DO', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' });
   const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
@@ -2677,7 +2717,7 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   eq((await users.prodFleet.get('/api/stock')).data.last_inventory.DORTMUND, undefined, 'Testinventur nicht im Betrieb');
   ok(!('last_inventory' in (await users.ws.get('/api/stock?reorder=1')).data), 'Bestellvorschlag unverändert');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/confirm\(invPrev\.length \? t\('inventory_book_confirm'\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
+  ok(/confirm\(invPrev\.length \? tn\('inventory_book_confirm', invPrev\.length\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_book_confirm.includes('{n}') && STRINGS[l].inventory_recheck && STRINGS[l].err_inventory_changed, 'Texte ' + l);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_close && STRINGS[l].inventory_close_confirm && STRINGS[l].inventory_closed && ['{d}', '{c}', '{x}'].every((x) => STRINGS[l].inventory_last.includes(x)) && STRINGS[l].inventory_last_none, 'Abschluss-Texte ' + l);
@@ -8301,7 +8341,7 @@ await test('Vorgangsdateien: Höchstzahl vor dem Hochladen sichtbar (freie Plät
   ok(!v.includes('d.files.length < 10'), 'keine feste 10 mehr');
   ok(v.includes('const filesFree = Math.max(0, PHOTO_MAX - d.files.length);'), 'freie Plätze aus PHOTO_MAX');
   ok(v.includes('id="filesfull"') && v.includes('id="filesfree"'), 'Hinweise voll / freie Plätze');
-  ok(v.includes('all.slice(0, filesFree)') && v.includes("t('files_skipped')"), 'nur freie hochladen, Rest genannt');
+  ok(v.includes('all.slice(0, filesFree)') && v.includes("tn('files_skipped', skipped.length)"), 'nur freie hochladen, Rest genannt');
   ok(/await viewCase\(c\.id\);\s*if \(skipped\.length\)/.test(v), 'Meldung nach dem Neuaufbau');
   for (const k of ['files_free', 'files_full', 'files_skipped']) eq((i18n.match(new RegExp(`${k}: '`, 'g')) || []).length, 3, `${k} DE/UK/EN`);
 });
