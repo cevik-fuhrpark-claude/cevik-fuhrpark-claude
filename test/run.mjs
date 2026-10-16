@@ -1641,7 +1641,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   const vt = dec(v); ok(vt.startsWith('\ufeffKennzeichen;FIN-Schlüssel;Art;Standort;'), 'BOM + Kopfzeile');
   const vl = vt.trim().split('\r\n');
   eq(vl.length, r.vehicles.length + 1, 'alle Fahrzeuge (nicht nur 20)');
-  ok(vl.slice(1).every((l) => l.split(';').length === 10), 'gleiche Spaltenzahl');
+  ok(vl.slice(1).every((l) => l.split(';').length === 11), 'gleiche Spaltenzahl (inkl. Ausfallzeit)');
   ok(r.vehicles.every((x) => 'site' in x), 'Standort je Fahrzeug in der JSON-Antwort');
   const p = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`);
   const pl = dec(p).trim().split('\r\n');
@@ -1660,7 +1660,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok((await owner.get('/api/admin/audit?action=reports.kpi.export')).data.entries.length >= 3, 'protokolliert');
   const { kpiReportCsv } = await import('../src/reports.js');
   const inj = kpiReportCsv({ vehicles: [{ plate: '=X()', vehicle_id: 'VIN:X', kind: 'lkw', site: 'A;B', cases: 2, released: 1, workshop_h: 1.5, parts_wait_h: 0, locked_h: null }] });
-  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
+  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
 });
 
 await test('Standortauswahl (siteSelection): Schreibweisen zusammengefasst, „ohne“ zuletzt, Auswahl ohne Groß-/Kleinschreibung', async () => {
@@ -1723,6 +1723,62 @@ await test('Kennzahlen: Sperrzeit je Fahrzeug aus Sperre setzen/aufheben, Übers
   ok(r.definitions.locked_h, 'Definition');
   for (const id of [a, b]) { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; if (c.safety_lock) await users.fleet.post(`/api/cases/${id}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Testende', payload: { confirm: true } }); const c2 = (await users.fleet.get(`/api/cases/${id}`)).data.case; await users.fleet.post(`/api/cases/${id}/commands`, { action: 'reject', command_id: rk(), expected_version: c2.version, note: 'Testdaten' }); }
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Sperrzeit' })).status, 200);
+});
+
+await test('Kennzahlen: Werkstattzeit paralleler Aufträge einmal, Ausfallzeit aus Übernahme bis Freigabe plus Sperre', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'KP-AF 1', vin: 'WDB96340310555502', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310555502';
+  const mk = async (desc, extra = {}) => (await users.fleet.post('/api/cases', { vehicle_id: VK, description: desc, priority: 'mittel', driveability: 'fahrbereit', request_key: rk(), ...extra })).data.id;
+  const a = await mk('Ausfall-Test A: Bremse'); const b = await mk('Ausfall-Test B: Licht'); const c = await mk('Ausfall-Test C: Spiegel');
+  const h = (n) => new Date(Date.now() - n * 3600000).toISOString();
+  const envOf = async (id) => (await env.DB.prepare('SELECT environment FROM cases WHERE id=?').bind(id).first()).environment;
+  const fake = async (id, created, approved, ack, closed, status) => {
+    await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='create'`).bind(created, id).run();
+    await env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(crypto.randomUUID(), id, await envOf(id), 'test', 'fleet', 'approve_repair', 'gemeldet', 'werkstatt_freigegeben', 'Test', '{}', approved).run();
+    await env.DB.prepare(`UPDATE cases SET created_at=?, workshop_ack_at=?, closed_at=?, status=? WHERE id=?`).bind(created, ack, closed, status, id).run();
+  };
+  // A: Freigabe vor 10 h, Übernahme vor 9 h, fertig vor 4 h; B parallel: 8 h / 7 h / 2 h; C offen, übernommen vor 1 h
+  await fake(a, h(10), h(10), h(9), h(4), 'fahrzeug_freigegeben');
+  await fake(b, h(8), h(8), h(7), h(2), 'fahrzeug_freigegeben');
+  await fake(c, h(1.5), h(1.5), h(1), null, 'in_reparatur');
+  const { berlinDate } = await import('../src/util.js'); const from = berlinDate(h(12)).slice(0, 7);
+  const r = (await users.fleet.get(`/api/reports/kpi?from=${from}&to=${BERLIN_YM}`)).data;
+  const v = r.vehicles.find((x) => x.vehicle_id === VK);
+  ok(v, 'Fahrzeug in Kennzahlen');
+  ok(Math.abs(v.workshop_h - 8) < 0.05, 'Werkstattzeit 8 h (nicht 6 + 6 = 12): ' + v.workshop_h);
+  ok(Math.abs(v.downtime_h - 8) < 0.05, 'Ausfallzeit 7 h + 1 h offen = 8 h: ' + v.downtime_h);
+  ok(r.definitions.downtime_h && /einmal/.test(r.definitions.workshop_h), 'Definitionen');
+  // Sperre am offenen Auftrag C seit 3 h (vor der Übernahme) verlängert den Ausfall um die Lücke 3 h → 2 h vor jetzt
+  await env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(crypto.randomUUID(), c, await envOf(c), 'test', 'fleet', 'set_safety_lock', null, null, 'Test', '{}', h(3)).run();
+  const v2 = (await users.fleet.get(`/api/reports/kpi?from=${from}&to=${BERLIN_YM}`)).data.vehicles.find((x) => x.vehicle_id === VK);
+  ok(Math.abs(v2.locked_h - 3) < 0.05, 'Sperrzeit 3 h: ' + v2.locked_h);
+  ok(Math.abs(v2.downtime_h - 9) < 0.05, 'Ausfall [9 h, 2 h] ∪ [3 h, jetzt] = 9 h: ' + v2.downtime_h);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${from}&to=${BERLIN_YM}&format=csv`)).data).trim().split('\r\n');
+  const head = csv[0].split(';'); const row = csv.find((l) => l.startsWith('KP-AF 1;')).split(';');
+  eq(head[head.length - 1], 'Ausfallzeit h'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
+  const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${from}&to=${BERLIN_YM}&environment=${await envOf(a)}`, undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(ig.status, 200); ok(Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).downtime_h - 9) < 0.05, 'Integration liefert Ausfallzeit');
+  await env.DB.prepare(`UPDATE cases SET status='abgelehnt', closed_at=? WHERE id IN (?,?,?)`).bind(new Date().toISOString(), a, b, c).run();
+  eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Ausfallzeit' })).status, 200);
+});
+
+await test('Oberfläche: nur bekannte Umwandlungs-Methoden (.toXxx) – 16.10.2026: „.tofmtNum()“ ließ die Vorgangsansicht ab 48 h je Status abstürzen', async () => {
+  const fs = await import('node:fs');
+  const KNOWN = new Set(['toBlob', 'toFixed', 'toISOString', 'toJSON', 'toLocaleDateString', 'toLocaleTimeString', 'toLocaleLowerCase', 'toLocaleString', 'toLocaleUpperCase', 'toLowerCase', 'toString', 'toUpperCase', 'toDataURL', 'toPrecision', 'toSorted', 'toReversed', 'toSpliced', 'toUTCString', 'toDateString', 'toTimeString', 'toggle']);
+  const bad = [];
+  for (const f of fs.readdirSync(new URL('../public/', import.meta.url)).filter((x) => x.endsWith('.js'))) {
+    const src = fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+    for (const m of src.matchAll(/\.(to[a-zA-Z]+)\(/g)) if (!KNOWN.has(m[1])) bad.push(`${f}: .${m[1]}(`);
+  }
+  eq(bad.join(', '), '', 'unbekannte Methoden');
+  // Dauer je Status: Tage-Zweig (≥ 48 h) liefert eine Zahl mit Tagen, kein Absturz
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = app.split('\n').find((l) => l.includes('const dur = (ms) =>'));
+  ok(line && line.includes("fmtNum(Math.round((h / 24) * 10) / 10)} ${t('days')}"), 'Tage über fmtNum');
+  const dur = new Function('fmtNum', 't', line.trim().replace(/^const dur = /, 'return ').replace(/;$/, ''))((x) => String(x).replace('.', ','), (k) => k);
+  eq(dur(30 * 60000), '30 min_short'); eq(dur(5 * 3600000), '5 h_short'); eq(dur(72 * 3600000), '3 days'); eq(dur(60 * 3600000), '2,5 days');
 });
 
 await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von anderen Rollen; Aktivität verlängert', async () => {

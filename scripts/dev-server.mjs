@@ -50,6 +50,14 @@ http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ tainted: out })); return;
   }
+  // Nur lokal (nicht im Worker): Vorgang samt Ereignissen um N Stunden zurückdatieren (Dauer-Kennzahlen im Browser prüfen, scripts/ui-kpi-ausfall.py)
+  if (url.pathname === '/__dev/backdate' && req.method === 'POST') {
+    const id = String(url.searchParams.get('case') || ''); const hrs = Math.min(Math.max(Number(url.searchParams.get('hours')) || 0, 0), 24 * 60);
+    const sh = (col) => `${col} = CASE WHEN ${col} IS NULL THEN NULL ELSE strftime('%Y-%m-%dT%H:%M:%fZ', ${col}, '-${hrs} hours') END`;
+    const a = env.DB.db.prepare(`UPDATE cases SET ${['created_at', 'fleet_received_at', 'workshop_ack_at', 'closed_at'].map(sh).join(', ')} WHERE id=?`).run(id).changes;
+    const b = env.DB.db.prepare(`UPDATE case_events SET ${sh('created_at')} WHERE case_id=?`).run(id).changes;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ cases: Number(a), events: Number(b) })); return;
+  }
   if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') {
     const chunks = []; for await (const c of req) chunks.push(c);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;
