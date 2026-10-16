@@ -8469,7 +8469,7 @@ await test('Push-Wiederholung und Sammel-Push nach der Ruhezeit in der AKTUELLEN
   }
 });
 
-await test('Push-Inhalt nennt die Sprache des Textes (lang) – Gerät liest richtig vor; Nachholen: übersetzt = aktuelle Sprache, Freitext = gespeicherte Sprache, unbekannt = ohne Angabe', async () => {
+await test('Push-Inhalt nennt die Sprache des Textes (lang) und den Zeitpunkt des Ereignisses (ts) – Gerät liest richtig vor; Nachholen: übersetzt = aktuelle Sprache, Freitext = gespeicherte Sprache, unbekannt = ohne Angabe', async () => {
   const { retryFailedPush } = await import('../src/notify.js');
   const u = users.fleet;
   const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
@@ -8499,7 +8499,7 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) – Gerät liest ric
     env.pushLog.length = 0;
     eq((await u.post('/api/push/test', {})).status, 200);
     let msgs = await sentMsgs();
-    eq(msgs.length, 1, 'ein Test-Push'); eq(msgs[0].lang, 'uk', 'Sprache im Push ' + JSON.stringify(msgs[0])); eq(msgs[0].title, nt('uk', 'test'));
+    eq(msgs.length, 1, 'ein Test-Push'); ok(Math.abs(msgs[0].ts - Date.now()) < 60000, 'ts beim Sofortversand ≈ jetzt'); eq(msgs[0].lang, 'uk', 'Sprache im Push ' + JSON.stringify(msgs[0])); eq(msgs[0].title, nt('uk', 'test'));
     eq((await env.DB.prepare('SELECT lang FROM notifications WHERE id=?').bind(msgs[0].id).first()).lang, 'uk', 'Sprache gespeichert');
     // (2) Vorgangs-Hinweis an die Fuhrparkleitung (englisch) → lang 'en'
     eq((await u.patch('/api/me', { language: 'en' })).status, 200);
@@ -8522,9 +8522,11 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) – Gerät liest ric
     eq(by['pg-2'].lang, 'de', 'Freitext bleibt deutsch ausgezeichnet'); eq(by['pg-2'].title, 'Freier Titel');
     ok(!('lang' in by['pg-3']), 'unbekannte Sprache → keine Angabe');
     eq(by['pg-4'].lang, 'en', 'schon in aktueller Sprache');
+    // Zeitpunkt des Ereignisses im Push (ts): nachgeholter Push zeigt die echte Uhrzeit, nicht die Zustellzeit
+    ok(['pg-1', 'pg-2', 'pg-3', 'pg-4'].every((id) => by[id].ts === Date.parse(old)), 'ts = Zeitpunkt des Ereignisses: ' + JSON.stringify(msgs.map((m) => m.ts)));
     // Service Worker übergibt die Sprache an die Mitteilung
     const sw = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
-    ok(/lang: d\.lang/.test(sw), 'sw.js setzt lang der Mitteilung');
+    ok(/lang: d\.lang/.test(sw) && /timestamp: d\.ts/.test(sw), 'sw.js setzt lang und timestamp der Mitteilung');
   } finally {
     await u.patch('/api/me', { language: 'de' });
     await env.DB.prepare("DELETE FROM notifications WHERE id LIKE 'pg-%'").run();

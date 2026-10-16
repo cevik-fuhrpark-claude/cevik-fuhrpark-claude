@@ -204,7 +204,7 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned ? null : c.id, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind, lang: r.lang }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind, lang: r.lang, created_at: r.created_at }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -230,7 +230,7 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
       rows.push(row); meta.set(row.id, urgent);
     }
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: meta.get(r.id), case_id: r.case_id, kind: 'created', lang: r.lang }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: meta.get(r.id), case_id: r.case_id, kind: 'created', lang: r.lang, created_at: r.created_at }));
   const job = deliverPush(env, created, { collapse: true });
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -246,7 +246,7 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
   };
   // Sprache des Textes (für die Vorlesefunktion des Geräts) nur, wenn sie feststeht: übersetzt (localize) oder vom Aufrufer genannt (langOf)
   const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now, lang: localize || langOf ? langFor(uid) : null }));
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -307,7 +307,9 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     for (const s of subs) {
       sends++;
       // lang: Sprache des Textes, damit das Gerät die Mitteilung richtig vorliest/trennt (fehlt bei nicht übersetzten Freitexten)
-      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}) }, { urgent: n.urgent });
+      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
+        // ts: Zeitpunkt des Ereignisses (ms) – nachgeholte Pushs (Wiederholung, Ende der Ruhezeit) zeigen am Gerät die echte Uhrzeit, nicht die Zustellzeit
+        ...(Date.parse(n.created_at) ? { ts: Date.parse(n.created_at) } : {}) }, { urgent: n.urgent });
       if (res.status === 'accepted') {
         accepted = true;
         okSubs.add(s.id);
@@ -360,7 +362,7 @@ const forDelivery = (r) => {
 export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
     WHERE n.acknowledged_at IS NULL AND n.created_at > ? AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND n.push_hold_until IS NULL AND n.created_at < ?))
     ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
@@ -372,7 +374,7 @@ export async function retryFailedPush(env) {
 // Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now()) {
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
     WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.created_at > ?
     ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
   if (rows.length) await deliverPush(env, rows.map(forDelivery), { collapse: true });
