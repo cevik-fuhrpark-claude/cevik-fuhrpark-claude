@@ -226,4 +226,4 @@ Antwort (Aufbau; Werte nur zur Veranschaulichung, nicht aus dem Betrieb):
 Keine automatische technische Fahrzeugfreigabe, keine Bestellungen oder kostenpflichtigen Aufträge, keine erfundenen Fristen,
 Preise oder Kilometerstände, keine Fahrerzuordnung allein über Namen oder Kennzeichen.
 
-- Dev-Server (nur lokal): `POST /__dev/backdate?case=<id>&hours=<N>` datiert einen Vorgang samt Ereignissen um N Stunden zurück (Dauer-/Ausfall-Anzeigen prüfen; genutzt von `ui-kpi-ausfall.py` und dem Rauchtest).
+- Dev-Server (nur lokal): `POST /__dev/backdate?case=<id>&hours=<N>` datiert einen Vorgang samt Ereignissen um N Stunden zurück (Dauer-/Ausfall-Anzeigen prüfen; genutzt von `ui-kpi-ausfall.py` und dem Rauchtest); `POST /__dev/backdate?vehicle=<VIN:…>&hours=<N>` datiert die Anlage eines Fahrzeugs zurück (technische Verfügbarkeit zählt erst ab Anlage; `ui-kpi-verfuegbarkeit.py`).

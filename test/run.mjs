@@ -1641,7 +1641,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   const vt = dec(v); ok(vt.startsWith('\ufeffKennzeichen;FIN-Schlüssel;Art;Standort;'), 'BOM + Kopfzeile');
   const vl = vt.trim().split('\r\n');
   eq(vl.length, r.vehicles.length + 1, 'alle Fahrzeuge (nicht nur 20)');
-  ok(vl.slice(1).every((l) => l.split(';').length === 11), 'gleiche Spaltenzahl (inkl. Ausfallzeit)');
+  ok(vl.slice(1).every((l) => l.split(';').length === 12), 'gleiche Spaltenzahl (inkl. Ausfallzeit, Verfügbarkeit)');
   ok(r.vehicles.every((x) => 'site' in x), 'Standort je Fahrzeug in der JSON-Antwort');
   const p = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`);
   const pl = dec(p).trim().split('\r\n');
@@ -1660,7 +1660,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok((await owner.get('/api/admin/audit?action=reports.kpi.export')).data.entries.length >= 3, 'protokolliert');
   const { kpiReportCsv } = await import('../src/reports.js');
   const inj = kpiReportCsv({ vehicles: [{ plate: '=X()', vehicle_id: 'VIN:X', kind: 'lkw', site: 'A;B', cases: 2, released: 1, workshop_h: 1.5, parts_wait_h: 0, locked_h: null }] });
-  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
+  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
 });
 
 await test('Standortauswahl (siteSelection): Schreibweisen zusammengefasst, „ohne“ zuletzt, Auswahl ohne Groß-/Kleinschreibung', async () => {
@@ -1757,7 +1757,7 @@ await test('Kennzahlen: Werkstattzeit paralleler Aufträge einmal, Ausfallzeit a
   ok(Math.abs(v2.downtime_h - 9) < 0.05, 'Ausfall [9 h, 2 h] ∪ [3 h, jetzt] = 9 h: ' + v2.downtime_h);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${from}&to=${BERLIN_YM}&format=csv`)).data).trim().split('\r\n');
   const head = csv[0].split(';'); const row = csv.find((l) => l.startsWith('KP-AF 1;')).split(';');
-  eq(head[head.length - 1], 'Ausfallzeit h'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
+  eq(head[head.length - 2], 'Ausfallzeit h'); eq(head[head.length - 1], 'Verfügbarkeit %'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
   const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${from}&to=${BERLIN_YM}&environment=${await envOf(a)}`, undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(ig.status, 200); ok(Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).downtime_h - 9) < 0.05, 'Integration liefert Ausfallzeit');
   // Fahrzeugakte: Ausfall je Berliner Monat (letzte 12), gleiche Regel; Summe = Kennzahl; nur Leitung
@@ -1775,6 +1775,59 @@ await test('Kennzahlen: Werkstattzeit paralleler Aufträge einmal, Ausfallzeit a
   eq(downtimeByMonth([[Date.parse('2026-10-31T22:00:00Z'), Date.parse('2026-11-01T01:00:00Z')]], ['2026-11', '2026-10'], Date.parse('2026-12-01T00:00:00Z')).map((x) => x.hours).join('/'), '2/1', 'Monatsgrenze Winterzeit');
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt', closed_at=? WHERE id IN (?,?,?)`).bind(new Date().toISOString(), a, b, c).run();
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Ausfallzeit' })).status, 200);
+});
+
+await test('Kennzahlen: technische Verfügbarkeit – Vorgänge aus dem Vormonat auf den Zeitraum zugeschnitten, Überschneidung einmal, ruhende ausgenommen', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'KP-VF 1', vin: 'WDB96340310555503', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310555503';
+  const { berlinDayStartIso } = await import('../src/util.js');
+  const lo = Date.parse(berlinDayStartIso(`${BERLIN_YM}-01`)); const now = Date.now(); const span = now - lo;
+  const iso = (ms) => new Date(ms).toISOString();
+  await env.DB.prepare('UPDATE vehicles SET created_at=? WHERE id=?').bind(iso(lo - 40 * 86400000), VK).run();
+  const mk = async (desc) => (await users.fleet.post('/api/cases', { vehicle_id: VK, description: desc, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const a = await mk('Verfügbarkeit-Test A: Getriebe'); const b = await mk('Verfügbarkeit-Test B: Licht');
+  const set = async (id, created, ack, closed) => {
+    await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='create'`).bind(created, id).run();
+    await env.DB.prepare(`UPDATE cases SET created_at=?, workshop_ack_at=?, closed_at=?, status='fahrzeug_freigegeben' WHERE id=?`).bind(created, ack, closed, id).run();
+  };
+  // A: im Vormonat gemeldet und übernommen, fertig zur Hälfte des Zeitraums; B: im Zeitraum, 25 % → 75 % (überschneidet A) → Ausfall 75 %
+  await set(a, iso(lo - 48 * 3600000), iso(lo - 24 * 3600000), iso(lo + span * 0.5));
+  await set(b, iso(lo + span * 0.25), iso(lo + span * 0.25), iso(lo + span * 0.75));
+  const q = `/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`;
+  const r = (await users.fleet.get(q)).data;
+  ok(r.availability && r.definitions.availability, 'Verfügbarkeit + Definition');
+  const v = r.vehicles.find((x) => x.vehicle_id === VK);
+  ok(v && Math.abs(v.availability_pct - 25) < 0.2, 'Fahrzeug 25 % verfügbar: ' + (v && v.availability_pct));
+  ok(Math.abs(v.downtime_h - (span * 0.5) / 3600000) < 0.1, 'Ausfall je Fahrzeug weiter nur aus Vorgängen des Zeitraums (B): ' + v.downtime_h);
+  const av = r.availability;
+  ok(av.vehicles >= 1 && av.vehicle_h > 0 && av.pct >= 0 && av.pct <= 100, 'Flottenwerte plausibel');
+  ok(Math.abs(av.pct - 100 * (1 - av.downtime_h / av.vehicle_h)) < 0.2 + (100 * 0.1) / av.vehicle_h, 'Quote = 1 − Ausfall/Fahrzeugstunden (Rundung auf 0,1 h, kurz nach Monatsbeginn sehr wenige Stunden)');
+  ok(av.downtime_h + 0.1 >= (span * 0.75) / 3600000, 'Flottenausfall enthält das Fahrzeug');
+  ok(!('by_vehicle' in av) && av.lowest.length <= 5 && av.lowest.every((x) => x.downtime_h > 0), 'nur die geringsten mit Ausfall, höchstens 5');
+  for (let i = 1; i < av.lowest.length; i++) ok(av.lowest[i - 1].pct <= av.lowest[i].pct, 'aufsteigend');
+  const n0 = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND eval_excluded=0').first()).n;
+  eq(av.vehicles, n0, 'alle aktiven, nicht ruhenden Fahrzeuge');
+  // Werkstattfilter: keine Verfügbarkeit (gilt fürs ganze Fahrzeug)
+  eq((await users.fleet.get(q + '&site=dortmund')).data.availability, null, 'mit Werkstattfilter null');
+  // CSV-Spalte
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(q + '&format=csv')).data).trim().split('\r\n');
+  const head = csv[0].split(';'); const row = csv.find((l) => l.startsWith('KP-VF 1;')).split(';');
+  ok(Math.abs(Number(row[head.indexOf('Verfügbarkeit %')].replace(',', '.')) - 25) < 0.2, 'CSV Verfügbarkeit');
+  // Integrations-API liefert dasselbe
+  const envName = (await env.DB.prepare('SELECT environment FROM cases WHERE id=?').bind(a).first()).environment;
+  const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&environment=${envName}`, undefined, { authorization: 'Bearer integration-token-xyz' });
+  eq(ig.status, 200); ok(ig.data.availability && Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).availability_pct - 25) < 0.2, 'Integration');
+  // ruhend (von der Bewertung ausgenommen) → nicht mehr gezählt
+  await env.DB.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').bind(VK).run();
+  eq((await users.fleet.get(q)).data.availability.vehicles, av.vehicles - 1, 'ruhendes Fahrzeug ausgenommen');
+  await env.DB.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').bind(VK).run();
+  // Rechenkern: Zeitraum in der Zukunft → null; Fahrzeug später angelegt zählt erst ab Anlage
+  const { fleetAvailability } = await import('../src/reports.js');
+  eq(await fleetAvailability(env, envName, '2099-01', '2099-01', [{ id: VK, created_at: iso(lo) }]), null, 'Zukunft: null');
+  const late = await fleetAvailability(env, envName, BERLIN_YM, BERLIN_YM, [{ id: VK, plate: 'KP-VF 1', created_at: iso(lo + span * 0.5) }], now);
+  ok(late && Math.abs(late.vehicle_h - (span * 0.5) / 3600000) < 0.1, 'Fahrzeugstunden ab Anlage: ' + (late && late.vehicle_h));
+  ok(Math.abs(late.pct - 50) < 0.3, 'ab Anlage: Ausfall 50 % → 75 % der restlichen Zeit = 50 %: ' + late.pct);
+  eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Verfügbarkeit' })).status, 200);
 });
 
 await test('Oberfläche: nur bekannte Umwandlungs-Methoden (.toXxx) – 16.10.2026: „.tofmtNum()“ ließ die Vorgangsansicht ab 48 h je Status abstürzen', async () => {

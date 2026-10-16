@@ -52,6 +52,12 @@ http.createServer(async (req, res) => {
   }
   // Nur lokal (nicht im Worker): Vorgang samt Ereignissen um N Stunden zurückdatieren (Dauer-Kennzahlen im Browser prüfen, scripts/ui-kpi-ausfall.py)
   if (url.pathname === '/__dev/backdate' && req.method === 'POST') {
+    const vid = url.searchParams.get('vehicle');
+    if (vid) { // Fahrzeug-Anlage zurückdatieren (Verfügbarkeit zählt erst ab Anlage)
+      const hv = Math.min(Math.max(Number(url.searchParams.get('hours')) || 0, 0), 24 * 400);
+      const n = env.DB.db.prepare(`UPDATE vehicles SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '-${hv} hours') WHERE id=?`).run(String(vid)).changes;
+      res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ vehicles: Number(n) })); return;
+    }
     const id = String(url.searchParams.get('case') || ''); const hrs = Math.min(Math.max(Number(url.searchParams.get('hours')) || 0, 0), 24 * 60);
     const sh = (col) => `${col} = CASE WHEN ${col} IS NULL THEN NULL ELSE strftime('%Y-%m-%dT%H:%M:%fZ', ${col}, '-${hrs} hours') END`;
     const a = env.DB.db.prepare(`UPDATE cases SET ${['created_at', 'fleet_received_at', 'workshop_ack_at', 'closed_at'].map(sh).join(', ')} WHERE id=?`).run(id).changes;
