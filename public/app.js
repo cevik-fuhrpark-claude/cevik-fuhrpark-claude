@@ -1183,7 +1183,7 @@ async function loadDupOptions(c) {
     const keep = sel.value;
     sel.innerHTML = `<option value="">${esc(t('dup_none'))}</option>${list.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}`;
     if (list.some((o) => o.id === keep)) sel.value = keep;
-    hint().textContent = r.truncated ? t('dup_more_fail') : t('dup_all').replace('{n}', list.length);
+    hint().textContent = r.truncated ? t('dup_more_fail') : tn('dup_all', list.length);
   } catch { if (hint()) hint().textContent = t('dup_more_fail'); }
 }
 
@@ -1200,7 +1200,7 @@ function actionForm(action, c, cmd, preset = {}, d = null) {
     case 'reject': {
       // Kurzinfo liefert nur die 5 neuesten anderen offenen Vorgänge; gibt es mehr, wird die vollständige Liste nachgeladen (unten)
       const vi = (d && d.vehicle_info) || {}; const oc = vi.other_open_cases || []; const more = Math.max(0, (vi.other_open_total || 0) - oc.length);
-      if (oc.length) f.push(`<label for="dupsel">${esc(t('dup_select'))}<span class="hint">${esc(t('dup_hint'))}</span></label><select id="dupsel" name="duplicate_of"><option value="">${esc(t('dup_none'))}</option>${oc.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}</select>${more ? `<p class="small muted" id="dupmore">${esc(t('dup_loading').replace('{n}', more))}</p>` : ''}`);
+      if (oc.length) f.push(`<label for="dupsel">${esc(t('dup_select'))}<span class="hint">${esc(t('dup_hint'))}</span></label><select id="dupsel" name="duplicate_of"><option value="">${esc(t('dup_none'))}</option>${oc.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}</select>${more ? `<p class="small muted" id="dupmore">${esc(tn('dup_loading', more))}</p>` : ''}`);
       break;
     }
     case 'approve_costs': f.push(`<p class="small muted">${esc(t('cost_approve_hint'))}</p>`); break;
@@ -1867,7 +1867,7 @@ async function viewStock() {
     const unv = stocked.length - priced.length ? ` (${stocked.length - priced.length} ${t('unvalued_short')})` : '';
     const qv = $('#q').value.trim(); const sfo = $('#sf').selectedOptions[0];
     $('#sprsel').textContent = [`${t('print_filter')}: ${f && sfo ? sfo.textContent : t('all')}`, qv ? `${t('print_search')}: „${qv}“` : ''].filter(Boolean).join(' · ');
-    sum.textContent = cut ? t('stock_idle_sum').replace('{n}', shown.length).replace('{v}', v) + unv : t('stock_value_sum').replace('{n}', shown.length).replace('{v}', v) + unv;
+    sum.textContent = cut ? tn('stock_idle_sum', shown.length).replace('{v}', v) + unv : tn('stock_value_sum', shown.length).replace('{v}', v) + unv;
   };
   $('#q').oninput = applyStock; $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
   $('#sprt').onclick = () => window.print();
@@ -1982,7 +1982,7 @@ async function viewStockAsOf() {
     <form id="saf" class="panel noprint"><label for="sadate">${esc(t('asof_date'))}</label><input type="date" id="sadate" value="${esc(date)}" max="${esc(today)}" required>
       ${sites.length > 1 ? `<label for="sasite">${esc(t('workshop'))}</label><select id="sasite"><option value="">${esc(t('all'))}</option>${sites.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select>` : ''}
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="sacsv"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="saprt">${esc(t('print'))}</button></div></form>
-    ${rep && rep.items.length ? `<ul class="small" id="sasum"><li>${esc(t('asof_count').replace('{n}', rep.summary.count).replace('{d}', fmtD(rep.date)))}</li><li>${esc(t('asof_val_purchase'))}: ${sm('purchase')}</li><li>${esc(t('asof_val_today'))}: ${sm('today')}</li></ul>
+    ${rep && rep.items.length ? `<ul class="small" id="sasum"><li>${esc(tn('asof_count', rep.summary.count).replace('{d}', fmtD(rep.date)))}</li><li>${esc(t('asof_val_purchase'))}: ${sm('purchase')}</li><li>${esc(t('asof_val_today'))}: ${sm('today')}</li></ul>
       ${rep.summary.negative ? `<p class="panel warn">${esc(tn('asof_negative', rep.summary.negative))}</p>` : ''}
       <div class="scroll"><table class="stack printsm" id="satab"><thead><tr><th>${esc(t('workshop'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('asof_qty'))}</th><th>${esc(t('asof_last_purchase'))}</th><th>${esc(t('asof_val_purchase'))}</th><th>${esc(t('inv_item_price'))}</th><th>${esc(t('asof_val_today'))}</th></tr></thead><tbody>
       ${rep.items.map((i) => `<tr><td>${esc(wsName(i.site))}</td><td><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number || i.location ? `<div class="small muted">${[i.part_number, i.location].filter(Boolean).map(esc).join(' · ')}</div>` : ''}${i.active ? '' : ` <span class="chip">${esc(t('asof_inactive'))}</span>`}</td><td><b>${n(i.qty)}</b> ${esc(i.unit)}</td><td>${val(i.last_purchase_price)}</td><td>${i.value_purchase_net === null ? '–' : eur(i.value_purchase_net)}</td><td>${val(i.price_today)}</td><td>${i.value_today_net === null ? '–' : eur(i.value_today_net)}</td></tr>`).join('')}
@@ -3149,7 +3149,7 @@ function helpWire(parts, want) {
       $$('li', el).forEach((li, i) => li.classList.toggle('hit', !!m && m.steps.includes(i)));
       const tl = $(`[data-hn="${s.name}"]`); if (tl) tl.hidden = el.hidden;
     }
-    $('#hres').textContent = !res ? '' : res.length === 1 ? t('help_hits1') : res.length ? t('help_hits').replace('{n}', res.length) : t('help_none');
+    $('#hres').textContent = !res ? '' : res.length === 1 ? t('help_hits1') : res.length ? tn('help_hits', res.length) : t('help_none');
   };
   if (document.getElementById('hq').value) run(); // vorbelegter Suchbegriff: erst filtern, dann zum Abschnitt springen
   if (want && parts.includes(want)) go(want);
@@ -3507,8 +3507,8 @@ function nativeValidityText(el) {
   const isDate = el.type === 'date' || el.type === 'month';
   const lim = (x) => (isDate && /^\d{4}-\d{2}-\d{2}$/.test(x) ? fmtD(x) : x);
   if (v.valueMissing) return t(el.type === 'checkbox' ? 'v_check' : el.type === 'file' ? 'v_file' : el.type === 'radio' || el.tagName === 'SELECT' ? 'v_choose' : 'v_required');
-  if (v.tooShort) return t('v_too_short').replace('{n}', el.minLength).replace('{c}', el.value.length);
-  if (v.tooLong) return t('v_too_long').replace('{n}', el.maxLength);
+  if (v.tooShort) return tn('v_too_short', el.minLength).replace('{c}', el.value.length);
+  if (v.tooLong) return tn('v_too_long', el.maxLength);
   if (v.badInput) return t('v_bad');
   if (v.typeMismatch) return t(el.type === 'email' ? 'v_type_email' : 'v_type');
   if (v.patternMismatch) return t('v_pattern');

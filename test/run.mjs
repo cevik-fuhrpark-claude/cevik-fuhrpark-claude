@@ -1398,14 +1398,16 @@ await test('Abmelden/Sitzungsende verwirft Ansichtszustand der vorherigen Person
 await test('Browser-Prüfhinweise in der App-Sprache: Pflicht/Auswahl/Länge/Bereich, eigene Meldungen bleiben, Aufheben im ganzen Formular', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const { STRINGS } = await import('../public/i18n.js');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
   const a = app.indexOf('function nativeValidityText'); const b = app.indexOf('\ndocument.addEventListener(\'invalid\'', a);
   ok(a > 0 && b > a, 'Funktion vorhanden');
-  const fn = new Function('t', 'fmtD', app.slice(a, b) + '\nreturn nativeValidityText;')((k) => STRINGS.uk[k], (d) => d.split('-').reverse().join('.'));
+  const tnUk = (k, n) => { const p = PLURALS.uk[k]; return ((p && p[new Intl.PluralRules('uk-UA').select(n)]) || STRINGS.uk[k]).replace('{n}', n); };
+  const fn = new Function('t', 'fmtD', 'tn', app.slice(a, b) + '\nreturn nativeValidityText;')((k) => STRINGS.uk[k], (d) => d.split('-').reverse().join('.'), tnUk);
   const V = (o) => ({ valid: false, customError: false, ...o });
   eq(fn({ validity: V({ valueMissing: true }), type: 'text', tagName: 'INPUT' }), 'Заповніть це поле.');
   eq(fn({ validity: V({ valueMissing: true }), type: 'select-one', tagName: 'SELECT' }), 'Виберіть варіант.');
-  eq(fn({ validity: V({ tooShort: true }), minLength: 3, value: 'ab', type: 'text' }), 'Введіть щонайменше 3 символів (зараз 2).');
+  eq(fn({ validity: V({ tooShort: true }), minLength: 3, value: 'ab', type: 'text' }), 'Введіть щонайменше 3 символи (зараз 2).'); // Pluralform (vorher „3 символів“)
+  eq(fn({ validity: V({ tooShort: true }), minLength: 10, value: 'ab', type: 'text' }), 'Введіть щонайменше 10 символів (зараз 2).');
   eq(fn({ validity: V({ rangeOverflow: true }), type: 'date', max: '2026-10-12' }), 'Дата не може бути пізніше 12.10.2026.');
   eq(fn({ validity: V({ rangeUnderflow: true }), type: 'number', min: '0' }), 'Значення має бути не менше 0.');
   eq(fn({ validity: V({ customError: true, valueMissing: true }), type: 'text' }), '', 'eigene Meldung (z. B. mehrdeutig) bleibt');
@@ -1943,7 +1945,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   // jeder tn-Text, in dem die Zahl vor einem veränderlichen Wort steht („{n} артикулів“), hat Pluralformen in dieser Sprache (Ausnahme: unveränderliches „фото“, „Artikel“)
   for (const k of new Set([...app.matchAll(/tn\('([a-z0-9_]+)'/g)].map((m) => m[1]))) for (const l of ['de', 'uk', 'en']) {
     const v = STRINGS[l][k] || ''; if ((PLURALS[l] || {})[k]) continue;
-    ok(!/\{n\} (?!фото|Artikel|дн\.)[A-Za-zÄÖÜäöüа-яіїєґА-ЯІЇЄҐ]/.test(v), `${l}.${k}: Zahl vor Wort ohne Pluralformen – ${v.slice(0, 60)}`);
+    ok(!/\{n\} (?!фото|Artikel|Zeichen|дн\.)[A-Za-zÄÖÜäöüа-яіїєґА-ЯІЇЄҐ]/.test(v), `${l}.${k}: Zahl vor Wort ohne Pluralformen – ${v.slice(0, 60)}`);
   } eq(run('en', 'en-GB', 'claim_days_open', 0), 'open for 0 days');
 });
 
@@ -3042,7 +3044,7 @@ await test('Lagerliste: Lagerwert der angezeigten Artikel (Bestand × hinterlegt
   ok(app.includes("const v = priced.length ? eur(") && app.includes(": '–';"), 'ohne bewertbaren Artikel „–“ statt 0 €');
   ok(app.includes("<b>${esc(t('reorder_sum'))}:</b> ${valued.length ? eur(sum) : '–'}"), 'Bestellvorschlag: Summe ohne bewertete Position „–“ statt 0 €');
   ok(app.includes("${x.count} · ${x.unvalued === x.count ? '–' : eur(x.value_net)}"), 'Lagerjournal: Summe je Buchungsart nur unbewerteter Buchungen „–“ statt 0 €');
-  ok(app.includes("t('stock_value_sum').replace('{n}', shown.length)") && app.includes("$('#sf').onchange = applyStock; applyStock();"), 'Summe immer, gleich beim Öffnen (nicht nur im Filter „ohne Entnahme“)');
+  ok(app.includes("tn('stock_value_sum', shown.length)") && app.includes("$('#sf').onchange = applyStock; applyStock();"), 'Summe immer, gleich beim Öffnen (nicht nur im Filter „ohne Entnahme“)');
   const { STRINGS } = await import('../public/i18n.js');
   const word = { de: 'Lagerwert', uk: 'Вартість складу', en: 'Stock value' };
   for (const l of ['de', 'uk', 'en']) ok(['{n}', '{v}'].every((x) => STRINGS[l].stock_value_sum.includes(x)) && STRINGS[l].help_stock_s.includes(word[l]) && STRINGS[l].help_stock_s.includes(STRINGS[l].asof_title), 'Text und Hilfe ' + l);
