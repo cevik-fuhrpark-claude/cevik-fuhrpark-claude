@@ -186,29 +186,7 @@ export const STRINGS = {
   },
 };
 
-export const CHECK_LABELS = {
-  de: {
-    beleuchtung: 'Beleuchtung vorne/hinten', blinker_warnblinker: 'Blinker & Warnblinker', bremsleuchten: 'Bremsleuchten', kontrollleuchten: 'Kontrollleuchten im Cockpit',
-    bremsen_funktion: 'Bremsen – Funktion', bremsluft_dicht: 'Bremsluftanlage dicht', reifen_zustand: 'Reifenzustand / Profil', reifendruck: 'Reifendruck', radmuttern: 'Radmuttern fest',
-    lenkung: 'Lenkung ohne Spiel', fluessigkeiten: 'Öl, Kühlmittel, AdBlue', leckagen: 'Keine Leckagen', spiegel_scheiben_wischer: 'Spiegel, Scheiben, Wischer',
-    ladungssicherung_auffahrten: 'Auffahrten & Ladungssicherung', hydraulik_ladeetagen: 'Hydraulik & Ladeetagen', kupplung_anhaenger: 'Kupplung & Anhängeranschlüsse',
-    sicherheitsausruestung: 'Warndreieck, Weste, Verbandkasten', probefahrt: 'Probefahrt ohne Befund',
-  },
-  uk: {
-    beleuchtung: 'Освітлення спереду/ззаду', blinker_warnblinker: 'Покажчики повороту й аварійка', bremsleuchten: 'Стоп-сигнали', kontrollleuchten: 'Контрольні лампи',
-    bremsen_funktion: 'Гальма – робота', bremsluft_dicht: 'Пневмосистема гальм герметична', reifen_zustand: 'Стан шин / протектор', reifendruck: 'Тиск у шинах', radmuttern: 'Колісні гайки затягнуті',
-    lenkung: 'Рульове без люфту', fluessigkeiten: 'Масло, антифриз, AdBlue', leckagen: 'Немає протікань', spiegel_scheiben_wischer: 'Дзеркала, скло, двірники',
-    ladungssicherung_auffahrten: 'Трапи та кріплення вантажу', hydraulik_ladeetagen: 'Гідравліка та платформи', kupplung_anhaenger: 'Зчіпка та роз’єми причепа',
-    sicherheitsausruestung: 'Знак аварійної зупинки, жилет, аптечка', probefahrt: 'Пробний виїзд без зауважень',
-  },
-  en: {
-    beleuchtung: 'Lights front/rear', blinker_warnblinker: 'Indicators & hazards', bremsleuchten: 'Brake lights', kontrollleuchten: 'Dashboard warning lights',
-    bremsen_funktion: 'Brakes – function', bremsluft_dicht: 'Air brake system tight', reifen_zustand: 'Tyre condition / tread', reifendruck: 'Tyre pressure', radmuttern: 'Wheel nuts tight',
-    lenkung: 'Steering without play', fluessigkeiten: 'Oil, coolant, AdBlue', leckagen: 'No leaks', spiegel_scheiben_wischer: 'Mirrors, glass, wipers',
-    ladungssicherung_auffahrten: 'Ramps & load securing', hydraulik_ladeetagen: 'Hydraulics & decks', kupplung_anhaenger: 'Coupling & trailer connections',
-    sicherheitsausruestung: 'Warning triangle, vest, first aid', probefahrt: 'Test drive without findings',
-  },
-};
+export { CHECK_LABELS } from './check-labels.js';
 
 // [CLAUDE] HU/SP nach StVZO Anlage VIII (eigene Zeilen, damit parallele Änderungen nicht kollidieren)
 Object.assign(STRINGS.de, { hu_sp: 'HU / SP (StVZO Anlage VIII)', hu_long: 'Hauptuntersuchung (HU)', sp_long: 'Sicherheitsprüfung (SP)', hs_ok: 'in Ordnung', hs_bald_faellig: 'bald fällig', hs_ueberfaellig: 'überfällig', hs_ungeklaert: 'Frist ungeklärt', hs_nicht_sp_pflichtig: 'nicht SP-pflichtig', hs_erste_sp_kuenftig: 'erste SP künftig fällig', ms_ungeklaert: 'Frist ungeklärt', ms_nicht_pflichtig: 'nicht SP-pflichtig', ms_erste_sp: 'erste SP künftig', due_until_end: 'fällig bis Ende', db_nachweis: 'verbindlich laut Nachweis', db_berechnet: 'berechnet nach StVZO', prognosis: 'Prognose', not_binding: 'unverbindlich', planned_appt: 'geplanter Werkstatttermin', plan_appt: 'Werkstatttermin planen', plan_hint: 'Ein geplanter Termin ersetzt keine Durchführung und verschiebt keine Frist.', record_done: 'Durchführung erfassen', result: 'Prüfergebnis', res_ohne_maengel: 'ohne Mängel', res_geringe_maengel: 'geringe Mängel', res_erhebliche_maengel: 'erhebliche Mängel', res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', documented_due: 'Fälligkeit laut Plakette/Bericht (optional)', evidence_ph: 'z. B. Prüfbericht-Nr., Prüfstelle', zgm: 'zul. Gesamtmasse', zgm_class: 'Gewichtsklasse', first_reg: 'Erstzulassung', edit_spec: 'Prüfrelevante Fahrzeugdaten', spec_src_ph: 'z. B. Fahrzeugschein Teil I', zc_bis_3_5: 'bis 3,5 t', zc_3_5_7_5: 'über 3,5 bis 7,5 t', zc_7_5_12: 'über 7,5 bis 12 t', zc_ueber_12: 'über 12 t', zc_3_5_10: 'über 3,5 bis 10 t', zc_ueber_10: 'über 10 t' });

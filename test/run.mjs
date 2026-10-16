@@ -1004,7 +1004,7 @@ await test('Werkstattplan: Winterreifen-Auftrag mit Termin erscheint am geplante
   ok(icsT.includes(r.data.case_no) && icsT.includes('Winterreifen'), 'Kalender nennt Winterreifen');
   ok(!icsT.includes('Positionen laut Reifenerfassung'), 'Kalender ohne Beschreibung');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2 && app.includes('${woTag(c)}${esc(c.description)}'), 'Plan, Disposition und Vorgangsliste kennzeichnen Winterreifen-Aufträge');
+  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2 && app.includes('${woTag(c)}${esc(cDesc(c.description))}'), 'Plan, Disposition und Vorgangsliste kennzeichnen Winterreifen-Aufträge');
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
   await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
 });
@@ -4342,7 +4342,26 @@ await test('Abfahrtskontrolle mit Mangel: Fahrer kann Fotos an den Folgeauftrag 
   eq((await users.driver.req('POST', `/api/cases/${r.data.followups[0].id}/files`, png, { 'content-type': 'image/png', 'x-filename': 'ruecklicht.png' })).status, 201, 'Foto am Folgeauftrag');
   const c = (await users.fleet.get(`/api/cases/${r.data.followups[0].id}`)).data;
   eq(c.files.length, 1);
+  // gespeicherter Text bleibt maschinenlesbar (Schlüssel), CSV nennt die Bezeichnung des Prüfpunkts (16.10.2026: vorher „beleuchtung“)
+  ok(/^\[Kontrolle Abfahrt\] [a-z_]+: Rücklicht links defekt$/.test(c.case.description), 'gespeicherter Text: ' + c.case.description);
+  const { caseDescText, CHECK_LABELS } = await import('../public/check-labels.js');
+  const key = c.case.check_item; ok(CHECK_LABELS.de[key], 'Prüfpunkt bekannt');
+  const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv')).data);
+  const line = csvT.split('\r\n').find((l) => l.includes(c.case.case_no));
+  ok(line && line.includes(`[Kontrolle Abfahrt] ${CHECK_LABELS.de[key]}: Rücklicht links defekt`) && !line.includes(`] ${key}:`), 'CSV mit Bezeichnung: ' + line);
   eq((await users.fleet.post(`/api/cases/${c.case.id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.case.version, note: 'Testdaten' })).status, 200);
+  // Anzeige je Sprache (Oberfläche nutzt dieselbe Funktion)
+  eq(caseDescText('[Kontrolle Abfahrt] blinker_warnblinker: links ohne Funktion', 'en'), '[Pre-trip check] Indicators & hazards: links ohne Funktion', 'EN');
+  eq(caseDescText('[Kontrolle nach Reparatur] blinker_warnblinker: x', 'uk'), `[Перевірка після ремонту] ${CHECK_LABELS.uk.blinker_warnblinker}: x`, 'UK, nach Reparatur');
+  eq(caseDescText('[Kontrolle Abfahrt] blinker_warnblinker: x', 'de'), '[Kontrolle Abfahrt] Blinker & Warnblinker: x', 'DE');
+  eq(caseDescText('[Kontrolle Abfahrt] unbekannt_neu: x', 'en'), '[Kontrolle Abfahrt] unbekannt_neu: x', 'unbekannter Schlüssel unverändert');
+  eq(caseDescText('Bremse quietscht [Kontrolle Abfahrt] blinker_warnblinker: x', 'en'), 'Bremse quietscht [Kontrolle Abfahrt] blinker_warnblinker: x', 'Freitext unverändert');
+  eq(caseDescText(null, 'en'), null);
+  for (const l of ['uk', 'en']) eq(Object.keys(CHECK_LABELS[l]).sort().join(), Object.keys(CHECK_LABELS.de).sort().join(), `Prüfpunkte ${l} vollständig`);
+  // jeder Prüfpunkt des Servers hat eine Bezeichnung; die Oberfläche zeigt Vorgangstexte nur über cDesc()
+  for (const k of keys) ok(CHECK_LABELS.de[k], `Bezeichnung für ${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/(?<![A-Za-z])esc\([a-z]\.description\b/g) || []).filter((x) => !/^esc\([ow]\./.test(x)).length, 0, 'Vorgangstexte ohne cDesc()');
 });
 
 await test('Abfahrtskontrolle mit vielen Mängeln: Abfragezahl fest (vorher ≈ 14 je Mangel → ab 3 Mängeln über 50), je Person ein Push, Wiederholung idempotent', async () => {
