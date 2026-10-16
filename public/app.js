@@ -33,6 +33,8 @@ const DT_FMT = {};
 const locOf = (l) => (l === 'uk' ? 'uk-UA' : l === 'en' ? 'en-GB' : 'de-DE');
 const uiLoc = () => locOf(S.lang);
 const fmtNum = (x, o) => Number(x).toLocaleString(uiLoc(), o);
+// „3 Tage“ / „1 Tag“ / „3 дні“ / „5 днів“ / „1 day“ – Pluralform der Oberflächensprache (Intl.PluralRules), Zahl im Sprachformat
+const nDays = (n) => { let k = 'other'; try { k = new Intl.PluralRules(uiLoc()).select(Number(n)); } catch { /* alte Browser */ } return `${fmtNum(n)} ${t('days_' + k) !== 'days_' + k ? t('days_' + k) : t('days')}`; };
 // Monat „JJJJ-MM“ als „Oktober 2026“ in der Oberflächensprache (ohne Tag – zweistellige Vorgabe betrifft nur Tagesdaten)
 const fmtMonth = (ym) => new Intl.DateTimeFormat(uiLoc(), { year: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(ym + '-15T12:00:00Z'));
 // Datum immer zweistellig (TT.MM.JJJJ bzw. TT/MM/JJJJ): „de-DE“ ohne Vorgabe schreibt „1.1.2027“ – fiel erst an Tagen/Monaten < 10 auf
@@ -616,7 +618,7 @@ async function workshopBoard() {
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
     const kmDueNow = (r) => ['ueberfaellig', 'faellig'].includes(r.km_status);
     const soon = ov.rows.filter((r) => (r.days !== null && r.days <= 14) || kmDueNow(r));
-    if (soon.length) html += `<h2>${esc(t('inspections_due'))} (≤ 14 ${esc(t('days'))}${soon.some(kmDueNow) ? ' ' + esc(t('ws_due_km_suffix')) : ''})</h2><div class="list">${soon.map((r) => `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : 'p-mittel'}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(mk(r.kind))}${r.days !== null && r.days <= 14 ? ' · ' + fmtD(r.next_due_date) : ''}${kmDueNow(r) ? ` · ${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)} (${r.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-r.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(r.km_remaining)})` : ''}</span><span class="chip ${r.status === 'ueberfaellig' ? 'kritisch' : 'mittel'}">${esc(t('ms_' + r.status))}</span></a>`).join('')}</div><p class="small" style="margin-top:8px"><a href="#/plan?s=mdue">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a> <span class="muted">${esc(t('ws_mdue_link_hint'))}</span></p>`;
+    if (soon.length) html += `<h2>${esc(t('inspections_due'))} (≤ ${esc(nDays(14))}${soon.some(kmDueNow) ? ' ' + esc(t('ws_due_km_suffix')) : ''})</h2><div class="list">${soon.map((r) => `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : 'p-mittel'}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(mk(r.kind))}${r.days !== null && r.days <= 14 ? ' · ' + fmtD(r.next_due_date) : ''}${kmDueNow(r) ? ` · ${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)} (${r.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-r.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(r.km_remaining)})` : ''}</span><span class="chip ${r.status === 'ueberfaellig' ? 'kritisch' : 'mittel'}">${esc(t('ms_' + r.status))}</span></a>`).join('')}</div><p class="small" style="margin-top:8px"><a href="#/plan?s=mdue">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a> <span class="muted">${esc(t('ws_mdue_link_hint'))}</span></p>`;
     // Prüfung mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, noch kein Auftrag: nur zur Info – die Fuhrparkleitung entscheidet
     const dw = ov.defects_without_case || [];
     if (dw.length) html += `<h2>${esc(t('ws_defects_pending'))} <span class="chip">${dw.length}</span></h2><p class="small muted">${esc(t('ws_defects_hint'))}</p><div class="list">${dw.map((x) => `<a class="row p-kritisch" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${esc(mk(x.kind))} · ${fmtD(x.done_date)}</span><span class="chip kritisch">${esc(t('res_' + x.result))}</span></a>`).join('')}</div>`;
@@ -1062,7 +1064,7 @@ async function viewCase(id) {
     const closed = ['fahrzeug_freigegeben', 'abgelehnt'].includes(cur);
     if (!closed) spans.push([cur, Date.now() - Date.parse(since)]);
     const sum = {}; for (const [st, ms] of spans) sum[st] = (sum[st] || 0) + Math.max(0, ms);
-    const dur = (ms) => { const h = ms / 3600000; return h < 1 ? `${Math.round(ms / 60000)} ${t('min_short')}` : h < 48 ? `${fmtNum(Math.round(h * 10) / 10)} ${t('h_short')}` : `${fmtNum(Math.round((h / 24) * 10) / 10)} ${t('days')}`; };
+    const dur = (ms) => { const h = ms / 3600000; return h < 1 ? `${Math.round(ms / 60000)} ${t('min_short')}` : h < 48 ? `${fmtNum(Math.round(h * 10) / 10)} ${t('h_short')}` : `${nDays(Math.round((h / 24) * 10) / 10)}`; };
     if (Object.keys(sum).length > 1 || closed) html += `<h2>${esc(t('time_per_status'))}</h2><dl class="kv">${Object.entries(sum).map(([st, ms]) => `<dt>${esc(t('st_' + st))}${!closed && st === cur ? ` (${esc(t('current'))})` : ''}</dt><dd>${dur(ms)}</dd>`).join('')}</dl>`;
   }
   // Verlauf + Kommentar
@@ -2601,7 +2603,7 @@ async function viewMaint() {
   const cls = { ueberfaellig: 'kritisch', faellig: 'mittel', ok: 'ok', ohne_termin: '', erledigt: 'ok', ungeklaert: 'mittel', nicht_pflichtig: '', erste_sp: '' };
   const tabs = [['due', `${t('ms_ueberfaellig')} + ${t('ms_faellig')}`, ov.totals.overdue + ov.totals.due], ['noplan', t('due_no_plan'), ov.rows.filter(noPlan).length], ['ueberfaellig', t('ms_ueberfaellig'), ov.totals.overdue], ['ungeklaert', t('ms_ungeklaert'), ov.totals.unclear || 0], ...(kmN || f === 'km' ? [['km', t('km_due_tab'), kmN]] : []), ...(fcN || f === 'fc30' ? [['fc30', t('fc30_tab'), fcN]] : []), ['all', t('filter_all'), ov.rows.length], ['gaps', t('gaps'), ov.totals.vehicles_with_gaps]];
   let html = `<h1>${esc(t('inspections_due'))}</h1>${helpLink('dates')}
-    <section class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip ${ov.totals.overdue ? 'kritisch' : ''}">${esc(t('ms_ueberfaellig'))}: ${ov.totals.overdue}</span><span class="chip ${ov.totals.due ? 'mittel' : ''}">${esc(t('ms_faellig'))} (≤ ${ov.warn_days} ${esc(t('days'))}): ${ov.totals.due}</span><span class="chip ok">${esc(t('ms_ok'))}: ${ov.totals.ok}</span><span class="chip ${ov.totals.vehicles_with_gaps ? 'mittel' : ''}">${esc(t('gaps'))}: ${ov.totals.vehicles_with_gaps} / ${ov.totals.vehicles}</span></div>
+    <section class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip ${ov.totals.overdue ? 'kritisch' : ''}">${esc(t('ms_ueberfaellig'))}: ${ov.totals.overdue}</span><span class="chip ${ov.totals.due ? 'mittel' : ''}">${esc(t('ms_faellig'))} (≤ ${esc(nDays(ov.warn_days))}): ${ov.totals.due}</span><span class="chip ok">${esc(t('ms_ok'))}: ${ov.totals.ok}</span><span class="chip ${ov.totals.vehicles_with_gaps ? 'mittel' : ''}">${esc(t('gaps'))}: ${ov.totals.vehicles_with_gaps} / ${ov.totals.vehicles}</span></div>
     ${(ov.site_options || []).length > 1 || ov.site ? `<div class="noprint" style="margin-top:10px">${siteSelect('msite', '', ov.site_options, ov.site)}</div>` : ''}
     <div class="actions"><button type="button" class="btn secondary" id="mcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="mics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="mprt">${esc(t('print'))}</button></div></section>
     <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)}${ov.site ? ' · ' + esc(t('site')) + ': ' + esc(ov.site === 'ohne' ? t('cs_nosite') : ov.site) : ''}${(tabs.find(([k]) => k === f) || [])[1] ? ' · ' + esc(t('print_filter')) + ': ' + esc(tabs.find(([k]) => k === f)[1]) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -2678,7 +2680,7 @@ async function viewMaint() {
 const KPI_VEH_MAX = 20;
 const FINE_FILES_MAX = 20;
 const VEH_DOCS_MAX = 30; // wie Server MAX_VEHICLE_DOCS (src/vehicles.js)
-const dur = (h) => (h === null || h === undefined ? '–' : h < 48 ? `${fmtNum(h)} h` : `${fmtNum(Math.round(h / 2.4) / 10)} ${t('days')}`);
+const dur = (h) => (h === null || h === undefined ? '–' : h < 48 ? `${fmtNum(h)} h` : `${nDays(Math.round(h / 2.4) / 10)}`);
 async function viewKpi() {
   const to = S.kpiTo || bYm(); const from = S.kpiFrom || bYm(2);
   let r;
@@ -2697,7 +2699,7 @@ async function viewKpi() {
   if (r.vehicles.length) html += `<h2 id="kpiveh">${esc(t('kpi_vehicles'))} <span class="chip">${r.vehicles.length}</span></h2>${kvAll ? '' : `<div id="kpivmore" role="status"><p class="small muted">${esc(t('kpi_veh_more').replace('{n}', KPI_VEH_MAX).replace('{m}', r.vehicles.length))}</p><div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kpivall">${esc(t('kpi_veh_all').replace('{m}', r.vehicles.length))}</button></div></div>`}<div class="list" id="kpivl">${kvShown.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.vehicle_id)}">${plate(v.plate || v.vehicle_id)}<span class="title">${esc(t('kpi_workshop'))}: ${dur(v.workshop_h)}</span><span class="chip">${v.cases}</span><span class="sub">${esc(t('kpi_parts'))}: ${dur(v.parts_wait_h)} · ${esc(t('kpi_released'))} ${v.released}${v.duplicates ? ` · ${esc(t('kpi_dupes').replace('{n}', v.duplicates))}` : ''}${v.locked_h ? ` · <b style="color:var(--stop)">${esc(t('kpi_locked'))}: ${dur(v.locked_h)}</b>` : ''}${v.downtime_h ? ` · ${esc(t('kpi_downtime'))}: ${dur(v.downtime_h)}` : ''}</span></a>`).join('')}</div>`;
   // Termintreue Teile-Liefertermine (nur Abschnitte „wartet auf Teile“ aus dem Zeitraum; Termin laut Werkstatt)
   const pe = r.parts_eta;
-  const peLine = (x) => `${esc(t('kpi_pe_kept'))} ${x.kept} · ${esc(t('kpi_pe_late'))} ${x.late}${x.on_time_pct !== null ? ` (${x.on_time_pct} % ${esc(t('kpi_pe_on_time'))})` : ''}${x.late_days_median !== null ? ` · ${esc(t('kpi_pe_median'))} ${fmtNum(x.late_days_median)} ${esc(t('days'))}` : ''}${x.open_overdue ? ` · <b style="color:var(--stop)">${esc(t('kpi_pe_open'))} ${x.open_overdue}</b>` : ''}${x.without_eta ? ` · ${esc(t('kpi_pe_without'))} ${x.without_eta}` : ''}`;
+  const peLine = (x) => `${esc(t('kpi_pe_kept'))} ${x.kept} · ${esc(t('kpi_pe_late'))} ${x.late}${x.on_time_pct !== null ? ` (${x.on_time_pct} % ${esc(t('kpi_pe_on_time'))})` : ''}${x.late_days_median !== null ? ` · ${esc(t('kpi_pe_median'))} ${esc(nDays(x.late_days_median))}` : ''}${x.open_overdue ? ` · <b style="color:var(--stop)">${esc(t('kpi_pe_open'))} ${x.open_overdue}</b>` : ''}${x.without_eta ? ` · ${esc(t('kpi_pe_without'))} ${x.without_eta}` : ''}`;
   if (pe && (pe.kept + pe.late + pe.without_eta + pe.open_overdue)) html += `<section class="panel" id="kpipe"><h3>${esc(t('kpi_pe'))}</h3><p>${peLine(pe)}</p>${pe.by_site.length > 1 ? `<dl class="kv">${pe.by_site.map((x) => `<dt>${esc(x.site === 'ohne' ? t('kpi_pe_nosite') : wsName(x.site))}</dt><dd>${peLine(x)}</dd>`).join('')}</dl>` : ''}<p class="small muted">${esc(t('kpi_pe_rule'))}</p></section>`;
   // Kostenfreigaben (nur Anzahl und Dauer bis zur Freigabe, keine Beträge)
   const ca = r.cost_approvals;
@@ -2709,7 +2711,7 @@ async function viewKpi() {
     ${ca.closed_without ? `<dt>${esc(t('kpi_ca_closed'))}</dt><dd>${ca.closed_without}</dd>` : ''}</dl><p class="small muted">${esc(t('kpi_ca_rule'))}</p></section>`;
   // Mängelbeseitigung aus Prüfungen (Prüfdatum im Zeitraum; Dauer in Tagen bis zur technischen Freigabe des Mängelauftrags)
   const idf = r.inspection_defects;
-  const dD = (v) => `${fmtNum(v)} ${esc(t('days'))}`;
+  const dD = (v) => `${esc(nDays(v))}`;
   const stD = (x) => (x.n ? `${dD(x.median_d)} <span class="small muted">(P90 ${dD(x.p90_d)}, n=${x.n})</span>` : '–');
   if (idf && idf.inspections) html += `<section class="panel" id="kpiid"><h3>${esc(t('kpi_id'))}</h3><dl class="kv">
     <dt>${esc(t('kpi_id_insp'))}</dt><dd>${idf.inspections}</dd>
@@ -2859,7 +2861,7 @@ async function viewPlan(sec) {
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('pvsite', '', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
-      <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${n} ${esc(t('days'))}</option>`).join('')}</select></div>
+      <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${esc(nDays(n))}</option>`).join('')}</select></div>
       <button type="button" class="btn secondary" id="plprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
   // Termin direkt im Plan setzen (Backlog 60): nur für Aufträge, die der Vorgangsbefehl set_planned_date zulässt.
   // „Vorschlag“ füllt nur das Feld (Werktag mit den wenigsten geplanten Aufträgen) – gespeichert wird erst mit „Termin setzen“.
@@ -3013,7 +3015,7 @@ async function viewUsage() {
     master: 'nav_master', notifications: 'notifications', admin: 'area_admin', account: 'nav_profile', dashboard: 'nav_home', checks: 'departure_check', other: 'area_other' };
   const max = Math.max(1, ...r.daily.map((d) => d.calls));
   render(`<h1>${esc(t('usage'))}</h1><p class="small muted">${esc(t('usage_hint'))}</p>
-    <div class="actions" style="flex-wrap:wrap">${[7, 30, 90, 365].map((d) => `<button type="button" class="btn ${d === days ? '' : 'secondary'}" data-ud="${d}">${d} ${esc(t('days'))}</button>`).join('')}</div>
+    <div class="actions" style="flex-wrap:wrap">${[7, 30, 90, 365].map((d) => `<button type="button" class="btn ${d === days ? '' : 'secondary'}" data-ud="${d}">${esc(nDays(d))}</button>`).join('')}</div>
     <div class="stats"><div><b>${r.total_calls}</b>${esc(t('calls'))}</div><div><b>${r.daily.length}</b>${esc(t('days_used'))}</div><div><b${r.areas.some((a) => a.errors) ? ' style="color:var(--stop)"' : ''}>${r.areas.reduce((s, a) => s + a.errors, 0)}</b>${esc(t('errors_count'))}</div></div>
     ${r.daily.length ? `<div class="panel" aria-hidden="true" style="display:flex;align-items:flex-end;gap:2px;height:70px;padding:8px">${r.daily.map((d) => `<span title="${esc(fmtD(d.day))}: ${d.calls}" style="flex:1;min-width:2px;max-width:28px;background:var(--steel);height:${Math.max(4, Math.round((d.calls / max) * 100))}%"></span>`).join('')}</div>` : ''}
     <div class="scroll"><table><thead><tr><th>${esc(t('area_col'))}</th><th>${esc(t('calls'))}</th><th>${esc(t('errors_count'))}</th></tr></thead><tbody>
@@ -3138,9 +3140,9 @@ async function viewDefects() {
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
   render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
-    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${days} ${esc(t('days'))}${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · ${esc(nDays(days))}${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-      <div><label for="dd">${esc(t('period'))}</label><select id="dd">${[30, 90, 180, 365].map((d) => `<option value="${d}"${d === days ? ' selected' : ''}>${d} ${esc(t('days'))}</option>`).join('')}</select></div>
+      <div><label for="dd">${esc(t('period'))}</label><select id="dd">${[30, 90, 180, 365].map((d) => `<option value="${d}"${d === days ? ' selected' : ''}>${esc(nDays(d))}</option>`).join('')}</select></div>
       <div><label for="dk">${esc(t('check_kind'))}</label><select id="dk">${[['', t('all')], ['abfahrt', t('nav_check')], ['nach_reparatur', t('inspection')]].map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       ${(r.site_options || []).length > 1 || r.site ? `<div>${siteSelect('dsite', '', r.site_options, r.site)}</div>` : ''}
       <button type="button" class="btn secondary" id="dprt">${esc(t('print'))}</button>

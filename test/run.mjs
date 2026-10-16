@@ -1789,9 +1789,19 @@ await test('Oberfläche: nur bekannte Umwandlungs-Methoden (.toXxx) – 16.10.20
   // Dauer je Status: Tage-Zweig (≥ 48 h) liefert eine Zahl mit Tagen, kein Absturz
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const line = app.split('\n').find((l) => l.includes('const dur = (ms) =>'));
-  ok(line && line.includes("fmtNum(Math.round((h / 24) * 10) / 10)} ${t('days')}"), 'Tage über fmtNum');
-  const dur = new Function('fmtNum', 't', line.trim().replace(/^const dur = /, 'return ').replace(/;$/, ''))((x) => String(x).replace('.', ','), (k) => k);
-  eq(dur(30 * 60000), '30 min_short'); eq(dur(5 * 3600000), '5 h_short'); eq(dur(72 * 3600000), '3 days'); eq(dur(60 * 3600000), '2,5 days');
+  ok(line && line.includes('${nDays(Math.round((h / 24) * 10) / 10)}'), 'Tage über nDays');
+  const dur = new Function('fmtNum', 't', 'nDays', line.trim().replace(/^const dur = /, 'return ').replace(/;$/, ''))((x) => String(x).replace('.', ','), (k) => k, (n) => `${String(n).replace('.', ',')} T`);
+  eq(dur(30 * 60000), '30 min_short'); eq(dur(5 * 3600000), '5 h_short'); eq(dur(72 * 3600000), '3 T'); eq(dur(60 * 3600000), '2,5 T');
+  // Pluralformen je Sprache (16.10.2026: „1 Tage“, „3 Днів“, „3 Days“) – nDays aus app.js mit den echten Texten
+  const { STRINGS } = await import('../public/i18n.js');
+  const nl = app.split('\n').find((l) => l.startsWith('const nDays = '));
+  ok(nl, 'nDays vorhanden');
+  for (const [lang, loc, want] of [['de', 'de-DE', ['1 Tag', '3 Tage', '2,5 Tage', '30 Tage']], ['uk', 'uk-UA', ['1 день', '3 дні', '2,5 дня', '30 днів']], ['en', 'en-GB', ['1 day', '3 days', '2.5 days', '30 days']]]) {
+    const t = (k) => STRINGS[lang][k] || STRINGS.de[k] || k;
+    const nDays = new Function('t', 'fmtNum', 'uiLoc', nl.replace(/^const nDays = /, 'return ').replace(/;$/, ''))(t, (x) => Number(x).toLocaleString(loc), () => loc);
+    eq([1, 3, 2.5, 30].map(nDays).join(' | '), want.join(' | '), lang);
+  }
+  eq(app.split('\n').filter((l) => /\$\{[^}]*\} \$\{(esc\()?t\('days'\)/.test(l)).length, 0, 'keine Zahl + t(days) ohne Pluralform');
 });
 
 await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von anderen Rollen; Aktivität verlängert', async () => {
