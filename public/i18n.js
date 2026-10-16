@@ -820,7 +820,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^Einheit im Ziellager abweichend \((.{0,40}) statt (.{0,40})\) – bitte dort prüfen\.$/))) return T.unit_differs.replace('{a}', () => m[1]).replace('{b}', () => m[2]);
   if ((m = msg.match(/^Vorgang (\S{1,40}) ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen\.$/))) return T.dup_of_dup.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Unbekannter Prüfpunkt (.{1,60})\.$/))) return T.unknown_item.replace('{v}', () => m[1]);
-  if ((m = msg.match(/^Fahrzeug hat noch (\d{1,6}) offene Vorgänge \(alle Umgebungen\) – zuerst abschließen\.$/))) return T.open_cases.replace('{n}', m[1]);
+  if ((m = msg.match(/^Fahrzeug hat noch offene Vorgänge \((\d{1,6}), alle Umgebungen\) – zuerst abschließen\.$/))) return T.open_cases.replace('{n}', m[1]);
   if ((m = msg.match(/^(.{1,120}) ist diesem Fahrzeug bereits zugeordnet\.$/))) return T.already_assigned.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Aktenzeichen bereits erfasst \((\S{1,40})\)\.$/))) return T.duplicate_fine.replace('{v}', () => m[1]);
   return null;

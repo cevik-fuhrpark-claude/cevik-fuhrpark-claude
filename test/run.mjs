@@ -1449,7 +1449,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   ok(conf.length >= 15, 'Konflikt-Meldungen gefunden: ' + conf.length);
   const confTpl = {
     '`Aktenzeichen bereits erfasst (${dup.fine_no}).`': ['Aktenzeichen bereits erfasst (TB-2026-0007).', 'Номер справи вже внесено (TB-2026-0007).', 'Case reference already recorded (TB-2026-0007).'],
-    '`Fahrzeug hat noch ${open.n} offene Vorgänge (alle Umgebungen) – zuerst abschließen.`': ['Fahrzeug hat noch 3 offene Vorgänge (alle Umgebungen) – zuerst abschließen.', 'Транспорт ще має відкриті заявки (3, усі середовища) – спочатку закрийте їх.', 'Vehicle still has open cases (3, all environments) – close them first.'],
+    '`Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`': ['Fahrzeug hat noch offene Vorgänge (3, alle Umgebungen) – zuerst abschließen.', 'Транспорт ще має відкриті заявки (3, усі середовища) – спочатку закрийте їх.', 'Vehicle still has open cases (3, all environments) – close them first.'],
     '`${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`': ['Olena $& K. ist diesem Fahrzeug bereits zugeordnet.', 'Olena $& K. уже призначено цьому транспорту.', 'Olena $& K. is already assigned to this vehicle.'],
   };
   for (const [, code, lit, tplc] of conf) {
