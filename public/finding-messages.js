@@ -214,18 +214,33 @@ const LOCALE = { de: 'de-DE', uk: 'uk-UA', en: 'en-GB' };
 const empty = (v) => v === null || v === undefined || v === '';
 const PH = /\{([a-z_]+)(?::(km)|\|([A-Z]+))?\}/g;
 
-function fill(text, args, lang) {
+// Datumswerte in Befunden kommen gemischt an: ISO „2027-01-05“ (Ablauf-/Vertragsdaten) oder deutsch „05.01.2027“ (ggf. mit Uhrzeit).
+// Für die Anzeige (nicht für den gespeicherten deutschen Text) im Format der Sprache: DE/UK „05.01.2027“, EN „05/01/2027“ –
+// wie die übrige Oberfläche (vorher z. B. „abgelaufen am 2027-01-05“ bzw. auf Englisch „on 05.01.2027“).
+// Nur Platzhalter, die laut Vorlagen Datumswerte tragen (Teilenummern o. Ä. wie „12.34.5678“ bleiben unverändert)
+export const DATE_ARGS = new Set(['date', 'due', 'end', 'eta', 'last', 'planned', 'hu', 'at', 'oon', 'by']);
+export function localDateArg(v, lang) {
+  if (typeof v !== 'string') return v;
+  const sep = lang === 'en' ? '/' : '.';
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (m) return [m[3], m[2], m[1]].join(sep);
+  m = /^(\d{2})\.(\d{2})\.(\d{4})( \d{2}:\d{2})?$/.exec(v);
+  if (m) return [m[1], m[2], m[3]].join(sep) + (m[4] || '');
+  return v;
+}
+
+function fill(text, args, lang, dates = false) {
   return text.replace(PH, (_, name, fmt, list) => {
     const v = args[name];
     if (empty(v)) return '';
     if (fmt === 'km') return Number(v).toLocaleString(LOCALE[lang] || 'de-DE');
     if (list) { const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {}; return e[v] ?? FINDING_ENUMS.de[list]?.[v] ?? String(v); }
-    return String(v);
+    return String(dates && DATE_ARGS.has(name) ? localDateArg(v, lang) : v);
   });
 }
 
 // Text einer Vorlage in einer Sprache; null, wenn die Vorlage fehlt (Aufrufer nimmt dann den gespeicherten deutschen Text)
-export function renderFindingMessage(key, args = {}, lang = 'de') {
+export function renderFindingMessage(key, args = {}, lang = 'de', { dates = false } = {}) {
   const tpl = (FINDING_MESSAGES[lang] && FINDING_MESSAGES[lang][key]) || null;
   if (!tpl) return null;
   const a = args || {};
@@ -233,7 +248,7 @@ export function renderFindingMessage(key, args = {}, lang = 'de') {
     const names = [...inner.matchAll(PH)].map((m) => m[1]);
     return names.some((n) => empty(a[n])) ? '' : inner;
   });
-  return fill(withOptional, a, lang);
+  return fill(withOptional, a, lang, dates);
 }
 
 // Gespeicherte Form `message_args` (JSON-Text oder Objekt) → Text; Rückfall auf den deutschen Text des Befunds
@@ -242,7 +257,7 @@ export function findingMessage(stored, fallback, lang) {
   let o = stored;
   if (typeof o === 'string') { try { o = JSON.parse(o); } catch { return fallback; } }
   if (!o || typeof o.k !== 'string') return fallback;
-  return renderFindingMessage(o.k, o.a, lang) ?? fallback;
+  return renderFindingMessage(o.k, o.a, lang, { dates: true }) ?? fallback;
 }
 
 // Server: Befund-Felder aus einer Vorlage – deutscher Text in `message` (Master, Integrations-API, Protokoll), Schlüssel + Werte

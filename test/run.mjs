@@ -7073,7 +7073,9 @@ await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE
   ok(!noArgs.length && withArgs.length >= 50, `Befunde ohne Vorlage (nur deutscher Text): ${noArgs.join(', ')}`);
   const diff = []; const leftovers = [];
   for (const r of withArgs) {
-    if (findingMessage(r.message_args, null, 'de') !== r.message) diff.push(`${r.finding_code}: ${r.message}`);
+    // gespeicherter Text = Vorlage ohne Datumsanpassung; die Anzeige (findingMessage) schreibt Datumswerte zusätzlich im Format der Sprache
+    { const o = JSON.parse(r.message_args); if (renderFindingMessage(o.k, o.a, 'de') !== r.message) diff.push(`${r.finding_code}: ${r.message}`); }
+    if (/\b\d{4}-\d{2}-\d{2}\b/.test(findingMessage(r.message_args, null, 'de') || '')) diff.push(`ISO-Datum in der Anzeige: ${r.finding_code}: ${findingMessage(r.message_args, null, 'de')}`);
     for (const l of ['uk', 'en']) { const t = findingMessage(r.message_args, null, l); if (!t || /[{}]|\[\[|undefined|null/.test(t)) leftovers.push(`${l}:${r.finding_code}: ${t}`); }
   }
   ok(!diff.length, `Vorlage weicht vom gespeicherten Text ab: ${diff.slice(0, 3).join(' | ')}`);
@@ -8310,6 +8312,27 @@ await test('Datumsanzeige immer zweistellig (01.01.2027 statt 1.1.2027) in DE/UK
   const zr = fs.readFileSync(new URL('../scripts/ui-zeitreise.sh', import.meta.url), 'utf8');
   ok(zr.includes('PYTHONPATH=scripts/zeitreise_py') && fs.existsSync(new URL('../scripts/zeitreise_py/sitecustomize.py', import.meta.url)), 'Browser-/Python-Uhr');
   for (const s of [...zr.matchAll(/(ui-[a-z0-9-]+\.py)/g)].map((m) => m[1])) ok(fs.existsSync(new URL('../scripts/' + s, import.meta.url)), 'Skript vorhanden: ' + s);
+});
+await test('Befund-Texte: Datumswerte in der Anzeige im Format der Sprache (ISO und deutsch → DE/UK TT.MM.JJJJ, EN TT/MM/JJJJ), gespeicherter Text unverändert', async () => {
+  const fm = await import('../public/finding-messages.js');
+  const want = { de: 'SZ-1: Zulassung abgelaufen am 05.01.2027.', en: 'SZ-1: Registration expired on 05/01/2027.' };
+  for (const l of ['de', 'en']) eq(fm.findingMessage({ k: 'DOCUMENT_EXPIRED', a: { plate: 'SZ-1', doc: 'zulassung', date: '2027-01-05' } }, 'x', l), want[l], l + ' ISO-Datum');
+  ok(fm.findingMessage({ k: 'DOCUMENT_EXPIRED', a: { plate: 'SZ-1', doc: 'zulassung', date: '2027-01-05' } }, 'x', 'uk').includes('05.01.2027'), 'uk ISO-Datum');
+  ok(fm.findingMessage({ k: 'CASE_FOLLOWUP_DUE', a: { label: 'S-1', date: '01.01.2027' } }, 'x', 'en').includes('01/01/2027'), 'en deutsches Datum');
+  eq(fm.localDateArg('16.10.2026 01:30', 'en'), '16/10/2026 01:30', 'Datum mit Uhrzeit');
+  eq(fm.localDateArg('01/2027', 'de'), '01/2027', 'Monat bleibt');
+  eq(fm.localDateArg(12000, 'en'), 12000, 'Zahl bleibt');
+  // nur Datums-Platzhalter: eine Teilenummer im Datumsformat bleibt unverändert
+  const tpl = Object.entries(fm.FINDING_MESSAGES.en).find(([, v]) => v.includes('{pn}'));
+  ok(tpl, 'Vorlage mit Teilenummer');
+  ok(fm.findingMessage({ k: tpl[0], a: { pn: '12.34.5678', name: 'X', stock: 1, min: 2, unit: 'Stk', site: 'D' } }, 'x', 'en').includes('12.34.5678'), 'Teilenummer unverändert');
+  // gespeicherter deutscher Text (Master, Integrations-API, Protokoll) bleibt wie bisher – keine Neuschreibung bestehender Befunde
+  eq(fm.findingText('DOCUMENT_EXPIRED', { plate: 'SZ-1', doc: 'zulassung', date: '2027-01-05' }).message, 'SZ-1: Zulassung abgelaufen am 2027-01-05.');
+  // jede Vorlage mit Datums-Platzhalter existiert in allen Sprachen mit denselben Platzhaltern
+  for (const [k, v] of Object.entries(fm.FINDING_MESSAGES.de)) for (const l of ['uk', 'en']) {
+    const ph = (x) => [...(x || '').matchAll(/\{([a-z_]+)/g)].map((m) => m[1]).filter((n) => fm.DATE_ARGS.has(n)).sort().join();
+    eq(ph(fm.FINDING_MESSAGES[l][k]), ph(v), `${k} ${l}: Datums-Platzhalter`);
+  }
 });
 await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest), Optionen dokumentiert', async () => {
   const fs = await import('node:fs');
