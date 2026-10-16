@@ -308,6 +308,22 @@ with sync_playwright() as p:
                 problems.append(f'Vorbereitung Wartet auf Teile: {r}')
             # Werkstatttermin heute, Teile erst morgen → Werkstattplan zeigt „Termin vor Liefertermin der Teile“
             cmd(pages['workshop'], c6, 'set_planned_date', {'planned_date': datetime.date.today().isoformat()})
+        # Zeit-Zweige der Anzeige (16.10.2026: „Dauer je Status“ stürzte ab 48 h ab): Werkstattvorgang um 60 h zurückdatieren,
+        # dazu ein seit 40 Tagen übernommener, offener Auftrag (Tage-/Wochen-Zweige, Agent „lange in Werkstatt“, Ausfallzeit)
+        def backdate(c, hrs):
+            r = adm.evaluate("async (u) => (await fetch(u, { method: 'POST' })).json()", f'/__dev/backdate?case={c}&hours={hrs}')
+            if not r.get('cases'): problems.append(f'Vorbereitung Zurückdatieren {c}: {r}')
+        backdate(cid2, 60)
+        cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Kupplung schleift (alt)', 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': 'rt-alt'}])
+        calt = (cx.get('d') or {}).get('id')
+        if calt:
+            cmd(adm, calt, 'approve_repair', {'workshop_site': ws_site}, 'Rauchtest Umfang')
+            cmd(pages['workshop'], calt, 'acknowledge')
+            backdate(calt, 40 * 24)
+            for rr in ('owner', 'fleet', 'workshop', 'viewer'):
+                ROUTES[rr] += [f'cases/{calt}']
+        else:
+            problems.append(f'Vorbereitung alter Auftrag: {cx}')
         # Abgeschlossenes Warten auf Teile mit Liefertermin → Kennzahlen „Termintreue Teile-Liefertermine“ (eingehalten)
         cx = pages['driver'].evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Rauchtest: Spiegelglas', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': 'rt-7'}])
         c7 = (cx.get('d') or {}).get('id')
