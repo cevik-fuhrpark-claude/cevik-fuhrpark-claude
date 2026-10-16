@@ -478,7 +478,7 @@ async function handleApi(request, env, ctx, url) {
       const day = berlinDate();
       if (q.format === 'ics') {
         const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
-        const warn = w && Number(w.value) > 0 ? Number(w.value) : null;
+        const warn = w && w.value !== '' && Number(w.value) >= 0 ? Number(w.value) : null; // wie Agent: 0 = Erinnerung am Fristtag, leer = keine
         return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"`, ...trunc } });
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);

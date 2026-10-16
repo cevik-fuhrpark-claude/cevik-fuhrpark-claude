@@ -3874,6 +3874,14 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   eq((await users.driver.get('/api/fines?format=csv')).status, 403);
   const ics = dec(await users.fleet.get('/api/fines?format=ics'));
   ok(ics.includes('DTSTART;VALUE=DATE:20990315') && ics.includes('Bußgeldstelle Süd\\; Abt. 3'), 'Frist mit maskiertem Semikolon');
+  try {
+    eq((await owner.put('/api/settings', { fine_warn_days: '' })).status, 200);
+    ok(!dec(await users.fleet.get('/api/fines?format=ics')).includes('VALARM'), 'leer = keine Erinnerung');
+    eq((await owner.put('/api/settings', { fine_warn_days: '0' })).status, 200);
+    ok(dec(await users.fleet.get('/api/fines?format=ics')).includes('TRIGGER:-P0D'), '0 = Erinnerung am Fristtag (wie Agent; vorher keine)');
+    eq((await owner.put('/api/settings', { fine_warn_days: '14' })).status, 200);
+    ok(dec(await users.fleet.get('/api/fines?format=ics')).includes('TRIGGER:-P14D'));
+  } finally { await owner.put('/api/settings', { fine_warn_days: '' }); }
   const { icsEscape } = await import('../src/util.js');
   eq(icsEscape('a;b,c\\d\nx'), 'a\\;b\\,c\\\\d\\nx');
   eq(icsEscape('a\rb\r\nc\u0000d\u001be\tf'), 'a\\nb\\ncd' + 'e\tf', 'einzelnes CR → \\n, Steuerzeichen entfernt, Tab bleibt');
