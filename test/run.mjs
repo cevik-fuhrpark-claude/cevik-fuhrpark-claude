@@ -418,6 +418,37 @@ await test('Stundensatz festlegen → Kosten bewertet; ohne Satz unbewertet', as
   const d = await users.fleet.get(`/api/cases/${C1}`);
   eq(d.data.costs.actual_net, 71.25); eq(d.data.costs.unvalued_items, 1, 'Teil weiter unbewertet');
 });
+await test('Einstellungen: nur plausible Werte (Bereich, ganze Zahl, deutsches Zahlenformat), Ungültiges → 400 mit Feld und Grenzen, nichts halb gespeichert', async () => {
+  const before = (await owner.get('/api/settings')).data;
+  const val = async () => (await owner.get('/api/settings')).data.values;
+  try {
+    // deutsches Format wird verstanden; ganze Zahlen mit Tausenderpunkt (km), Kommazahlen mit Komma
+    eq((await owner.put('/api/settings', { repair_cost_limit_net: '1.000,50', tire_warn_tread_mm: '3,5', maintenance_warn_km: '120.000', maintenance_warn_days: ' 30 ' })).status, 200);
+    let v = await val(); eq(v.repair_cost_limit_net, '1000.5'); eq(v.tire_warn_tread_mm, '3.5'); eq(v.maintenance_warn_km, '120000'); eq(v.maintenance_warn_days, '30');
+    // vorher: „1.000“ wurde als 1 € gespeichert, „abc“/„−5“/„2,5 Minuten“ still übergangen bzw. gespeichert
+    for (const [k, x, min, max, int] of [['repair_cost_limit_net', '1.000', 0, 1000000, false], ['maintenance_warn_days', '-5', 1, 365, true], ['idle_logout_workshop_min', '2,5', 1, 10080, true],
+      ['workshop_hourly_rate_net', 0, 0.01, 1000, false], ['tire_warn_tread_mm', '1,2', 1.6, 30, false], ['case_stale_days', 'abc', 1, 365, true], ['sla_production_triage_kritisch_min', '1e9', 1, 43200, true], ['license_check_months', [6], 1, 60, true]]) {
+      const r = await owner.put('/api/settings', { claim_followup_days: '9', [k]: x });
+      eq(r.status, 400, `${k}=${JSON.stringify(x)}`); eq(r.data.error, 'setting_invalid'); eq(r.data.setting, k); eq(r.data.min, min, k); eq(r.data.max, max, k); eq(r.data.integer, int, k);
+      ok(/^Einstellung ungültig – nichts gespeichert\. Erlaubt: .+ bis .+\.$/.test(r.data.message), r.data.message);
+      eq((await val()).claim_followup_days, before.values.claim_followup_days, `${k}: andere Felder derselben Anfrage nicht gespeichert`);
+    }
+    eq((await owner.put('/api/settings', { test_master_readonly: 'ja' })).status, 400, 'Schalter nur 1/0');
+    eq((await owner.put('/api/settings', { test_master_readonly: '0' })).status, 200); eq((await val()).test_master_readonly, '', '0 = aus');
+    eq((await owner.put('/api/settings', { unbekannt_x: 'abc', user_unused_days: 0 })).status, 200, 'unbekannte Schlüssel ignoriert, 0 = aus erlaubt');
+    eq((await owner.put('/api/settings', { repair_cost_limit_net: null, tire_warn_tread_mm: '' })).status, 200); v = await val(); eq(v.repair_cost_limit_net, ''); eq(v.tire_warn_tread_mm, '');
+  } finally {
+    eq((await owner.put('/api/settings', Object.fromEntries(before.keys.map((k) => [k, before.values[k] ?? ''])))).status, 200, 'Ausgangswerte wiederhergestellt');
+  }
+  // jeder Schlüssel hat eine Regel und ein Feld im Formular; Fehlermeldung in DE/UK/EN mit Platzhaltern
+  const { SETTING_RULES, SETTINGS_KEYS } = await import('../src/settings.js');
+  ok(SETTINGS_KEYS.every((k) => k === 'test_master_readonly' || SETTING_RULES[k]), 'Regel je Schlüssel');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const k of SETTINGS_KEYS) ok(app.includes(`field('${k}'`) || k.startsWith('sla_') || k === 'test_master_readonly', `Formularfeld ${k}`);
+  ok(app.includes("err.code === 'setting_invalid'") && app.includes("inp.setAttribute('aria-invalid', 'true')"), 'App nennt das Feld und markiert es');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const p of ['{f}', '{min}', '{max}', '{int}']) ok(STRINGS[l].err_setting_invalid.includes(p), `${l}: ${p}`); ok(STRINGS[l].setting_int, l); }
+});
 await test('Wartungsregel mit Nachweis; Fälligkeit erzeugt Befund', async () => {
   eq((await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', next_due_date: '2026-10-20' })).status, 400, 'Nachweis Pflicht');
   for (const V of [V1, V2]) eq((await users.fleet.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
@@ -4826,7 +4857,7 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
-  ok(rest.length === 4 && rest.every((l) => /value="|const money/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length);
+  ok(rest.length === 5 && rest.every((l) => /value="|const money|const shown/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // const shown = Einstellungen-Formular
   // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
   const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
   eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');

@@ -84,7 +84,7 @@ async function api(method, path, body, extra = {}) {
     // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch): erst Code (err_*), sonst bekannter Text (Prüf- und Konfliktmeldungen); unbekannt: Server-Text
     const code = data && data.error;
     const tr = code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, data.message));
-    const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; throw e;
+    const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data; throw e;
   }
   return data;
 }
@@ -3431,7 +3431,9 @@ async function viewUsers() {
 async function viewSettings() {
   const s = await api('GET', '/api/settings');
   const v = s.values;
-  const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="decimal" value="${esc(v[k] ?? '')}">`;
+  // gespeicherte Kommazahlen („12.5“) im Formular mit Dezimalkomma (DE/UK) – der Server liest beide Schreibweisen
+  const shown = (x) => (x !== null && x !== undefined && S.lang !== 'en' && /^\d+\.\d+$/.test(String(x)) ? String(x).replace('.', ',') : x ?? '');
+  const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="decimal" value="${esc(shown(v[k]))}">`;
   const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
   render(`<h1>${esc(t('settings'))}</h1><form id="sf" class="panel"><label class="check"><input type="checkbox" id="tmr"${v.test_master_readonly === '1' ? ' checked' : ''}> ${esc(t('test_master_readonly'))}</label><p class="small muted">${esc(t('test_master_readonly_hint'))}</p>${field('idle_logout_workshop_min', t('idle_ws'))}${field('idle_logout_other_min', t('idle_other'))}<p class="small muted">${esc(t('idle_hint'))}</p>${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('tire_warn_age_years', t('tire_warn_age'))}<p class="small muted">${esc(t('tire_age_hint'))}</p>${field('fine_warn_days', t('response_due') + ' – ' + t('warn_days'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}${field('tacho_warn_days', t('tacho_warn'))}${field('contract_warn_days', t('ct_warn'))}${field('claim_followup_days', t('claim_followup'))}${field('case_stale_days', t('case_stale_setting'))}${field('user_unused_days', t('unused_setting'))}<p class="small muted">${esc(t('unused_setting_hint'))}</p>${field('repair_cost_limit_net', t('cost_limit_setting'))}<p class="small muted">${esc(t('cost_limit_setting_hint'))}</p><h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
@@ -3447,7 +3449,19 @@ async function viewSettings() {
       $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${g.imported}</p>`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
-  $('#sf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k] === '' ? null : b[k].replace(',', '.'); b.test_master_readonly = $('#tmr').checked ? '1' : null; try { await api('PUT', '/api/settings', b); toast('✓'); } catch (err) { toast(err.message, true); } };
+  // Werte unverändert senden (Server versteht „12,5“, „1.234,50“, „2000“ und weist Mehrdeutiges/außerhalb des Bereichs ab – nichts wird halb gespeichert)
+  $('#sf').onsubmit = async (e) => {
+    e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k].trim() === '' ? null : b[k].trim(); b.test_master_readonly = $('#tmr').checked ? '1' : null;
+    $$('#sf [aria-invalid]').forEach((x) => x.removeAttribute('aria-invalid'));
+    try { await api('PUT', '/api/settings', b); toast('✓'); } catch (err) {
+      const d = err.code === 'setting_invalid' && err.data; const inp = d && d.setting ? $(`#sf [name="${d.setting}"]`) : null;
+      if (inp && d.min !== undefined) {
+        const lab = (inp.id && $(`label[for="${inp.id}"]`) ? $(`label[for="${inp.id}"]`).textContent : inp.getAttribute('aria-label')) || d.setting;
+        inp.setAttribute('aria-invalid', 'true'); inp.focus();
+        toast(t('err_setting_invalid').replace('{f}', lab.trim()).replace('{min}', fmtNum(d.min)).replace('{max}', fmtNum(d.max)).replace('{int}', d.integer ? t('setting_int') : ''), true);
+      } else toast(err.message, true);
+    }
+  };
   $('#csv').onchange = async () => {
     const f = $('#csv').files[0]; if (!f) return;
     const text = await readCsvFile(f);

@@ -1442,6 +1442,10 @@ const P_PUSH_DE = 'dringende Hinweise (z. B. Fahrzeugsperre) erreichen {who} nur
 const pushDe = (who, sub, open) => P_PUSH_DE.replace('{who}', who).replace('{sub}', sub).replace('{open}', open);
 const P_UNUSED_DE = ' seit über {d} Tagen nicht angemeldet (ohne protokollierte Anmeldung: seit der Anlage). Bitte prüfen, ob der Zugang noch gebraucht wird – sonst deaktivieren. Die App deaktiviert nichts selbst.';
 const P_UNUSED_EN = ' without a sign-in for over {d} days (no sign-in recorded: since creation). Please check whether the access is still needed – otherwise deactivate it. The app does not deactivate anything by itself.';
+// Einstellungen: Wert außerhalb des zulässigen Bereichs bzw. nicht lesbar (Server-Code setting_invalid mit Schlüssel und Grenzen, 16.10.2026)
+Object.assign(STRINGS.de, { err_setting_invalid: '„{f}“: bitte einen Wert von {min} bis {max}{int} eingeben – nichts gespeichert.', setting_int: ' (ganze Zahl)' });
+Object.assign(STRINGS.uk, { err_setting_invalid: '«{f}»: введіть значення від {min} до {max}{int} – нічого не збережено.', setting_int: ' (ціле число)' });
+Object.assign(STRINGS.en, { err_setting_invalid: '“{f}”: please enter a value from {min} to {max}{int} – nothing saved.', setting_int: ' (whole number)' });
 export const PLURALS = {
   de: {
     vnotes_n: { one: '{n} Hinweis', other: '{n} Hinweise' },

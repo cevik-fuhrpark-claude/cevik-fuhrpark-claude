@@ -4,6 +4,7 @@ import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, now
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
+import { SETTINGS_KEYS, settingPairs } from './settings.js';
 import * as cases from './cases.js';
 import * as veh from './vehicles.js';
 import * as vnotes from './vnotes.js';
@@ -81,10 +82,6 @@ function requireRole(user, roles) {
   if (!roles.includes(user.role)) throw forbidden();
 }
 
-const SETTINGS_KEYS = [
-  'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'tire_warn_age_years', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net', 'user_unused_days',
-  ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
-];
 
 // Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
@@ -616,19 +613,13 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/settings' && m === 'PUT') {
     requireRole(user, ['owner']);
     const b = await readJson(request);
-    // Eine Anweisung für alle Schlüssel (vorher eine je Schlüssel – das volle Formular hat > 30 Felder)
-    const pairs = [];
-    for (const [k, v] of Object.entries(b)) {
-      if (!SETTINGS_KEYS.includes(k)) continue;
-      const val = v === null || v === '' ? '' : String(Number(v));
-      if (val !== '' && !Number.isFinite(Number(val))) continue;
-      pairs.push([k, val]);
-    }
+    // Eine Anweisung für alle Schlüssel (vorher eine je Schlüssel – das volle Formular hat > 30 Felder); erst alle Werte prüfen (src/settings.js)
+    const pairs = settingPairs(b);
     if (pairs.length) {
       await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs)).run();
     }
-    await auth.audit(env, user.id, 'settings.update', null, b);
+    await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
     return json({ ok: true });
   }
 
