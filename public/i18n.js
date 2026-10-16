@@ -1284,6 +1284,19 @@ const AUDIT_DETAIL_KEYS = {
 export const AUDIT_DETAIL_KEY_CODES = Object.keys(AUDIT_DETAIL_KEYS);
 const AUDIT_DETAIL_VALUES = { true: ['ja', 'так', 'yes'], false: ['nein', 'ні', 'no'], test: ['Test', 'Тест', 'Test'], production: ['Betrieb', 'Робочий', 'Production'] };
 // refs: vom Server aufgelöste Kennungen (Fahrer/Person → Name, Fahrzeug → Kennzeichen) je oberstem Schlüssel; ersetzt nur die Anzeige
+// Datumswerte im Protokoll-Detail (Anzeige) im Format der Sprache: „2026-08-01“ → DE/UK 01.08.2026, EN 01/08/2026; Zeitstempel in Berliner Zeit.
+// CSV und Suche nutzen weiter den Rohwert (Server). Gefunden 16.10.2026 vom Rauchtest („ausgelesen am: 2026-08-01“).
+const AUDIT_LOC = ['de-DE', 'uk-UA', 'en-GB'];
+const AUDIT_DT = {};
+function auditDateVal(v, li) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [y, m, d] = v.split('-'); return [d, m, y].join(li === 2 ? '/' : '.'); }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(v) && !Number.isNaN(Date.parse(v))) {
+    const f = AUDIT_DT[li] || (AUDIT_DT[li] = new Intl.DateTimeFormat(AUDIT_LOC[li], { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Berlin' }));
+    return f.format(new Date(v));
+  }
+  return v;
+}
+
 export function auditDetailText(lang, detail, refs) {
   if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail === null || detail === undefined ? '' : (typeof detail === 'object' ? JSON.stringify(detail) : String(detail));
   const li = { de: 0, uk: 1, en: 2 }[lang] ?? 0;
@@ -1298,6 +1311,7 @@ export function auditDetailText(lang, detail, refs) {
     if (isFT(v)) return `${val(k, v.from)} → ${val(k, v.to)}`;
     if (typeof v === 'object' && Object.values(v).every((x) => x === null || typeof x !== 'object')) return Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x)}`).join(', ');
     if (typeof v === 'object') return Object.values(v).every(isFT) ? Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x.from)} → ${val(f, x.to)}`).join(', ') : JSON.stringify(v);
+    if (typeof v === 'string') return auditDateVal(v, li);
     return String(v);
   };
   const rf = refs && typeof refs === 'object' ? refs : {};

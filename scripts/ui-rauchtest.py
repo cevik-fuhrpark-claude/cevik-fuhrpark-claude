@@ -41,6 +41,12 @@ A11Y = """() => {
   return out;
 }"""
 SIZES = [('handy', 390, 844), ('tablet', 820, 1180), ('pc', 1440, 900)]
+# Sichtbare ISO-Daten im Text (nicht in Eingabefeldern, Auswahllisten, Code oder als Dateiname/Adresse)
+ISO_DATES = r"""() => { const out = []; const re = /\b(19|20)\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/;
+  const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) { const x = w.currentNode.textContent; const el = w.currentNode.parentElement;
+    if (re.test(x) && el && el.offsetParent !== null && !el.closest('input,textarea,select,option,code,pre,script,style,[data-iso-ok]') && !/\.(csv|ics|json|pdf|png|jpe?g)\b|https?:/.test(x)) out.push(x.trim().slice(0, 70)); }
+  return out; }"""
 # Kontrast (WCAG 2.1 AA): Text ≥ 4,5:1, großer Text (≥ 24 px bzw. ≥ 18,7 px fett) ≥ 3:1; Hintergrund = erster deckender Vorfahr.
 # Ausgenommen: deaktivierte Elemente, Kennzeichen-Grafik (fest schwarz/weiß), Texte über Bildern.
 CONTRAST = """() => {
@@ -427,6 +433,11 @@ with sync_playwright() as p:
                     a11y = pg.evaluate(A11Y)
                     if a11y:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
+                    # Datumsangaben nur im Format der Sprache: sichtbares ISO-Datum (JJJJ-MM-TT) im Text = vergessene Formatierung
+                    # (15.10.2026: Agentenbefunde zeigten „abgelaufen am 2027-01-05“); Eingabefelder/Code/Dateinamen ausgenommen
+                    iso = pg.evaluate(ISO_DATES)
+                    if iso:
+                        problems.append(f'{where}: ISO-Datum sichtbar {iso[:3]}')
                 if LANG and name == 'handy':
                     # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
                     # zusätzlich deutsche Fachwörter ohne Umlaut (z. B. „Inspektion“, „Sonstiges“ – so fiel die fehlende Übersetzung der Prüfarten auf)

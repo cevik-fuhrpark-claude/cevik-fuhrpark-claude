@@ -7618,10 +7618,15 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   const settingKeys = new Set(env.DB.db.prepare('SELECT key FROM settings').all().map((r) => r.key));
   eq([...cnt].filter(([k, n]) => n >= 5 && !settingKeys.has(k) && !AUDIT_DETAIL_KEY_CODES.includes(k)).map(([k]) => k).sort().join(), '', 'häufige Schlüssel ohne Bezeichnung');
   const d = { environment: 'production', role: 'workshop', plate: 'SZ-YC 5513', with_driver: false, changed: { end_date: { from: '2026-10-25', to: null } }, phone: { from: '0123', to: '0124' }, rows: 3, unbekannt_x: 'roh', ended_previous: ['SZ-YC 5513'] };
-  eq(auditDetailText('de', d), 'Umgebung: Betrieb · Rolle: Werkstatt · Kennzeichen: SZ-YC 5513 · mit Fahrer: nein · geändert: Enddatum 2026-10-25 → – · Rufnummer: 0123 → 0124 · Zeilen: 3 · unbekannt_x: roh · beendete Zuordnungen: SZ-YC 5513', 'DE');
+  eq(auditDetailText('de', d), 'Umgebung: Betrieb · Rolle: Werkstatt · Kennzeichen: SZ-YC 5513 · mit Fahrer: nein · geändert: Enddatum 25.10.2026 → – · Rufnummer: 0123 → 0124 · Zeilen: 3 · unbekannt_x: roh · beendete Zuordnungen: SZ-YC 5513', 'DE');
   ok(auditDetailText('uk', d).startsWith('Середовище: Робочий · Роль: ') && auditDetailText('uk', d).includes('SZ-YC 5513'), 'UK');
   ok(auditDetailText('en', d).startsWith('Environment: Production · Role: ') && auditDetailText('en', d).includes('Plate: SZ-YC 5513'), 'EN');
   eq(auditDetailText('de', { changed: ['active', 'site'] }), 'geändert: aktiv, Standort', 'Liste geänderter Felder');
+  // Datumswerte im Format der Sprache (Anzeige), Zeitstempel in Berliner Zeit; andere Texte mit Bindestrich bleiben
+  eq(auditDetailText('en', { read_on: '2026-08-01' }).split(': ')[1], '01/08/2026', 'EN Datum');
+  eq(auditDetailText('uk', { read_on: '2026-08-01' }).split(': ')[1], '01.08.2026', 'UK Datum');
+  eq(auditDetailText('de', { at: '2026-12-31T23:30:00.000Z' }).split(': ').slice(1).join(': '), '01.01.2027, 00:30', 'Zeitstempel Berlin');
+  eq(auditDetailText('de', { no: 'RT-2026-10-01-X' }).split(': ')[1], 'RT-2026-10-01-X', 'kein reines Datum');
   eq(auditDetailText('de', { counts: { neu: 2, uebersprungen: 1 } }), 'Anzahlen: neu 2, übersprungen 1', 'Unterwerte');
   eq(auditDetailText('de', { from: { a: { b: 1 } } }), 'von: {"a":{"b":1}}', 'tief verschachtelt bleibt JSON');
   eq(auditDetailText('de', 'freier Text'), 'freier Text', 'Text unverändert');
