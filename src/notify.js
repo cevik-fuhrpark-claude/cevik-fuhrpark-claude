@@ -1,6 +1,6 @@
 // [CLAUDE] Benachrichtigungen: Ereignis -> Empfänger (nur bestätigte Benutzerkonten) -> In-App + Push
 // Zustände getrennt: gespeichert -> Push vom Dienst angenommen -> am Gerät empfangen -> geöffnet -> übernommen
-import { nowIso, uuid, quietHoldUntil } from './util.js';
+import { nowIso, uuid, quietHoldUntil, dateLang } from './util.js';
 import { sendPush } from './push.js';
 
 // Priorität im Hinweistext in der Sprache der Person (Sperrbildschirm)
@@ -50,6 +50,33 @@ export function localizedTitle(n, lang) {
   if (!T.de[n.kind] || !n.case_id && n.kind === 'created') return n.title; // Agent/Sonstiges: Text wie gespeichert
   if (n.title !== T.de[n.kind] && n.title !== T.uk[n.kind] && n.title !== T.en[n.kind] && !(n.kind === 'created' && [T.de, T.uk, T.en].some((x) => x.created_urgent === n.title))) return n.title;
   return n.kind === 'created' && n.urgent ? T[L].created_urgent : T[L][n.kind];
+}
+
+// Text (body) gespeicherter Hinweise in der aktuellen Sprache der Person – wie localizedTitle; nur bekannte, maschinell aufgebaute Formen:
+// Vorgangs-Hinweise „Nr · Kennzeichen · Priorität[ · TEST]“ und „Prüfung mit gefährlichen Mängeln“ „Kennzeichen · Art Datum: Ergebnis[ – nicht einplanen][ · TEST]“.
+// Alles andere (Agent, Anmeldung, Bußgeld, Test) bleibt wie gespeichert. Unbekannte Form → unverändert.
+const LANGS = ['de', 'uk', 'en'];
+const PRIO_KEY = new Map(LANGS.flatMap((l) => Object.entries(PRIO[l]).map(([k, v]) => [v, k])));
+const RES_KEY = new Map(LANGS.flatMap((l) => ['gefaehrliche_maengel', 'verkehrsunsicher'].map((k) => [T[l]['res_' + k], k])));
+const DNP = new Set(LANGS.map((l) => T[l].do_not_plan));
+const NO_CASE_BODY = new Set(['agent', 'agent_reminder', 'new_login', 'fine', 'test', 'inspection_defect']);
+export function localizedBody(n, lang) {
+  const L = T[lang] ? lang : 'de';
+  const b = n.body;
+  if (typeof b !== 'string' || !b) return b;
+  if (n.kind === 'inspection_defect') {
+    const m = /^(.+) · (.+) (\d{4}-\d{2}-\d{2}|\d{2}[./]\d{2}[./]\d{4}): (.+?)(?: – (.+?))?( · TEST)?$/.exec(b);
+    if (!m || !RES_KEY.has(m[4]) || (m[5] !== undefined && !DNP.has(m[5]))) return b;
+    const d = /^\d{4}/.test(m[3]) ? m[3] : `${m[3].slice(6)}-${m[3].slice(3, 5)}-${m[3].slice(0, 2)}`;
+    return `${m[1]} · ${m[2]} ${dateLang(d, L)}: ${T[L]['res_' + RES_KEY.get(m[4])]}${m[5] !== undefined ? ' – ' + T[L].do_not_plan : ''}${m[6] || ''}`;
+  }
+  if (NO_CASE_BODY.has(n.kind) || !T.de[n.kind]) return b;
+  const test = b.endsWith(' · TEST') ? ' · TEST' : '';
+  const core = test ? b.slice(0, -test.length) : b;
+  const i = core.lastIndexOf(' · ');
+  const prio = i > 0 ? core.slice(i + 3) : null;
+  if (!prio || !PRIO_KEY.has(prio)) return b;
+  return `${core.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${test}`;
 }
 
 export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.filter((k) => MUTABLE_KINDS.includes(k)) : []; } catch { return []; } }

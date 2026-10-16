@@ -5832,7 +5832,7 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
     eq(dateLang('2027-01', 'en'), '2027-01', 'kein Kalenderdatum: unverändert'); eq(dateLang(null, 'de'), ''); }
   eq(cur.status, 200); ok(cur.data.notified >= 1, 'Alarm versendet');
   const nd = await notes(users.dispatch);
-  ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('unroadworthy') && nd[0].title === 'Prüfung mit gefährlichen Mängeln', 'Dispo dringend informiert: ' + JSON.stringify(nd[0] || null));
+  ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('verkehrsunsicher – nicht einplanen') && nd[0].title === 'Prüfung mit gefährlichen Mängeln', 'Dispo dringend informiert (Liste in der aktuellen Sprache, gespeichert englisch): ' + JSON.stringify(nd[0] || null));
   eq((await notes(users.fleet)).length, 0, 'Erfassende Person nicht');
   eq((await notes(users.driver)).length, 0, 'Fahrer nicht');
   eq((await notes(users.ws)).length, 0, 'Werkstatt nicht');
@@ -8353,6 +8353,40 @@ await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest
   eq(listed.length, new Set(listed).size, 'keine doppelten Einträge');
   const logs = [...sh.matchAll(/\|(\/tmp\/cfp-[a-z0-9-]+\.log)$/gm)].map((m) => m[1]); eq(logs.length, new Set(logs).size, 'eigene Logdatei je Skript');
   for (const o of ['--schnell', '--ohne-tests', '--ohne-rauch', '--nur']) ok(sh.includes(`#   ${o}`) && sh.includes(`${o})`), `Option ${o} dokumentiert und ausgewertet`);
+});
+
+await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter Hinweise in der aktuellen Sprache der Person; Unbekanntes bleibt wie gespeichert', async () => {
+  const u = users.fleet;
+  const ins = env.DB.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status) VALUES (?,?,?,?,?,?,?,?,?,?,'accepted')`);
+  const rows = [
+    ['lb-1', 'priority_changed', 'Priorität geändert', 'SM-2020-0001 · LB-XY 1 · kritisch · TEST'],
+    ['lb-2', 'approved', 'Neuer Werkstattauftrag', 'SM-2020-0002 · LB-XY 2 · низький'],
+    ['lb-3', 'inspection_defect', 'Prüfung mit gefährlichen Mängeln', 'LB-XY 3 · UVV 2020-01-05: verkehrsunsicher – nicht einplanen · TEST'],
+    ['lb-4', 'inspection_defect', 'Inspection with dangerous defects', 'LB-XY 4 · HU 05/01/2020: dangerous defects'],
+    ['lb-5', 'agent', 'Fuhrparkagent: Handlungsbedarf', 'Freitext · kritisch'],
+    ['lb-6', 'comment', 'Neuer Kommentar', 'Freitext ohne Muster'],
+    ['lb-7', 'inspection_defect', 'Prüfung mit gefährlichen Mängeln', 'LB-XY 7 · UVV 2020-01-05: etwas anderes'],
+  ];
+  for (const [id, kind, title, body] of rows) await ins.bind(id, 'test', u.id, null, 'lb:' + id, kind, 0, title, body, new Date(Date.now() - rows.findIndex((r) => r[0] === id) * 1000).toISOString()).run();
+  const get = async () => Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.body]));
+  try {
+    eq((await u.patch('/api/me', { language: 'en' })).status, 200);
+    let b = await get();
+    eq(b['lb-1'], 'SM-2020-0001 · LB-XY 1 · critical · TEST'); eq(b['lb-2'], 'SM-2020-0002 · LB-XY 2 · low');
+    eq(b['lb-3'], 'LB-XY 3 · UVV 05/01/2020: unroadworthy – do not schedule · TEST'); eq(b['lb-4'], 'LB-XY 4 · HU 05/01/2020: dangerous defects');
+    eq(b['lb-5'], 'Freitext · kritisch', 'Agent-Text unverändert'); eq(b['lb-6'], 'Freitext ohne Muster'); eq(b['lb-7'], 'LB-XY 7 · UVV 2020-01-05: etwas anderes', 'unbekanntes Ergebnis unverändert');
+    eq((await u.patch('/api/me', { language: 'uk' })).status, 200);
+    b = await get();
+    eq(b['lb-1'], 'SM-2020-0001 · LB-XY 1 · критичний · TEST'); eq(b['lb-4'], 'LB-XY 4 · HU 05.01.2020: небезпечні дефекти');
+    eq((await u.patch('/api/me', { language: 'de' })).status, 200);
+    b = await get();
+    eq(b['lb-2'], 'SM-2020-0002 · LB-XY 2 · niedrig'); eq(b['lb-3'], 'LB-XY 3 · UVV 05.01.2020: verkehrsunsicher – nicht einplanen · TEST');
+    const raw = await env.DB.prepare("SELECT body FROM notifications WHERE id='lb-4'").first();
+    eq(raw.body, 'LB-XY 4 · HU 05/01/2020: dangerous defects', 'gespeicherter Text unverändert');
+  } finally {
+    await u.patch('/api/me', { language: 'de' });
+    await env.DB.prepare("DELETE FROM notifications WHERE id LIKE 'lb-%'").run();
+  }
 });
 
 await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {

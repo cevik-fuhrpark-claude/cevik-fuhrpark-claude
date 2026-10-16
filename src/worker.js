@@ -9,7 +9,7 @@ import * as vnotes from './vnotes.js';
 import * as emergency from './emergency.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle, nt } from './notify.js';
+import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, localizedTitle, localizedBody, nt } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -554,7 +554,7 @@ async function handleApi(request, env, ctx, url) {
     const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, u.language AS lang
       FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
-    for (const r of rows) { r.title = localizedTitle(r, r.lang); delete r.lang; }
+    for (const r of rows) { r.title = localizedTitle(r, r.lang); r.body = localizedBody(r, r.lang); delete r.lang; }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
     return json({ notifications: rows, unread: counts.unread, counts, filter: filter ? url.searchParams.get('filter') : 'all', truncated, max: NOTIF_MAX, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
   }
