@@ -130,7 +130,15 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const maintenance = (await env.DB.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? ORDER BY next_due_date IS NULL, next_due_date').bind(vehicleId).all()).results;
   const maintenanceHistory = (await env.DB.prepare(`SELECT e.id, e.rule_id, e.kind, e.done_date, e.done_km, e.evidence, e.source, e.result, e.created_at, u.display_name AS recorded_by_name
     FROM maintenance_events e LEFT JOIN users u ON u.id=e.recorded_by WHERE e.vehicle_id=? ORDER BY e.done_date DESC, e.created_at DESC LIMIT ?`).bind(vehicleId, Math.max(cap, MAINT_HIST_MAX + 1)).all()).results;
-  const odometer = (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results;
+  // Akte: dieselbe Abfrage liefert auch die Ablesungen für „Fahrleistung je Monat“ (Fenster + letzte davor) – kein Zusatzaufruf (Abfragebudget)
+  const mileageLo = tl ? null : berlinDayStartIso(`${addMonths(`${berlinDate().slice(0, 7)}-01`, -(MILEAGE_MONTHS - 1)).slice(0, 7)}-01`);
+  const odoRows = tl
+    ? (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results
+    : (await env.DB.prepare(`SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=?1 AND (measured_at >= ?2
+        OR rowid IN (SELECT rowid FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC, created_at DESC LIMIT 20)
+        OR rowid IN (SELECT rowid FROM odometer_readings WHERE vehicle_id=?1 AND measured_at < ?2 ORDER BY measured_at DESC, created_at DESC LIMIT 1))
+      ORDER BY measured_at DESC, created_at DESC`).bind(vehicleId, mileageLo).all()).results;
+  const odometer = odoRows.slice(0, cap || 20);
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
         WHERE d.vehicle_id=? AND u.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
@@ -199,7 +207,43 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
       out.tacho = { ...tachoStatus(out.tacho_downloads[0] ? out.tacho_downloads[0].downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
     }
   }
+  // Fahrleistung je Monat (16.10.2026) – nur aus gespeicherten Kilometerständen, keine Schätzung (alle, die die Akte sehen)
+  if (!tl) out.mileage = vehicleMileage(odoRows, mileageLo);
   return out;
+}
+
+// [CLAUDE] Fahrleistung je Berliner Monat (letzte 12, neuester zuerst) aus gespeicherten Ablesungen – keine Interpolation:
+// km des Monats = letzte Ablesung im Monat − letzte Ablesung vor dem Monat. Liegt diese vor dem Vormonat, umfasst der Wert
+// mehrere Monate (`spans`, mit `from_at`). Rückgang (z. B. Tachotausch mit Begründung) → kein Wert (`decrease`). Ohne Ablesung im Monat → km null.
+export const MILEAGE_MONTHS = 12;
+export function mileageByMonth(readings, months) {
+  // readings: [{km, measured_at}] aufsteigend nach measured_at; months: ['JJJJ-MM', …] neuester zuerst
+  const r = readings.map((x) => ({ km: x.km, at: x.measured_at, m: berlinDate(x.measured_at).slice(0, 7) }));
+  const rows = months.map((month) => {
+    let end = null; let start = null;
+    for (const x of r) { if (x.m === month) end = x; else if (x.m < month) start = x; }
+    const readingsIn = r.filter((x) => x.m === month).length;
+    if (!end) return { month, km: null, readings: 0, status: 'no_reading' };
+    if (!start) return { month, km: null, readings: readingsIn, to_km: end.km, to_at: end.at, status: 'no_previous' };
+    const prevMonth = addMonths(`${month}-01`, -1).slice(0, 7);
+    const base = { month, readings: readingsIn, from_km: start.km, from_at: start.at, to_km: end.km, to_at: end.at, spans: start.m < prevMonth };
+    // Rückgang irgendwo zwischen den beiden Ablesungen (auch innerhalb des Monats) → kein Wert
+    const seg = r.filter((x) => x.at >= start.at && x.at <= end.at);
+    if (seg.some((x, i) => i > 0 && x.km < seg[i - 1].km)) return { ...base, km: null, status: 'decrease' };
+    return { ...base, km: end.km - start.km, status: 'ok' };
+  });
+  return rows;
+}
+function vehicleMileage(rowsDesc, lo) {
+  // rowsDesc: Ablesungen absteigend (Fenster ab lo, die letzte davor und die neuesten 20) → nur Fenster + Ausgangswert, aufsteigend
+  const asc = [...rowsDesc].reverse(); const i0 = asc.findIndex((x) => x.measured_at >= lo);
+  const rows = i0 < 0 ? asc.slice(-1) : asc.slice(Math.max(0, i0 - 1));
+  const cur = berlinDate().slice(0, 7);
+  const months = Array.from({ length: MILEAGE_MONTHS }, (_, i) => addMonths(`${cur}-01`, -i).slice(0, 7));
+  const list = mileageByMonth(rows, months);
+  const ok = list.filter((x) => x.status === 'ok');
+  const decrease = list.some((x) => x.status === 'decrease');
+  return { months: list, total_km: ok.length && !decrease ? ok.reduce((a, x) => a + x.km, 0) : null, max_months: MILEAGE_MONTHS };
 }
 
 export const DOWNTIME_MONTHS = 12;

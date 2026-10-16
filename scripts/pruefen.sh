@@ -61,6 +61,7 @@ UI-Hinweis öffnet Gegenstand (Fahrzeugakte)|ui-hinweis-ziel.py|/tmp/cfp-hinweis
 UI-Ausfallzeit + Dauer je Status (> 48 h)|ui-kpi-ausfall.py|/tmp/cfp-kpiausfall.log
 UI-Pluralformen (Zähltexte je Sprache)|ui-pluralformen.py|/tmp/cfp-pluralformen.log
 UI-Technische Verfügbarkeit (Kennzahlen)|ui-kpi-verfuegbarkeit.py|/tmp/cfp-kpiverf.log
+UI-Fahrleistung je Monat (Fahrzeugakte)|ui-fahrleistung.py|/tmp/cfp-fahrleistung.log
 '
 N=0
 NL='

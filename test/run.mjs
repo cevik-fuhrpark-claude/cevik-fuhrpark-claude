@@ -8754,6 +8754,38 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) und den Zeitpunkt de
   }
 });
 
+await test('Fahrzeugakte: Fahrleistung je Monat nur aus gespeicherten Ablesungen (Berliner Monat, mehrere Monate gekennzeichnet, Rückgang ohne Wert)', async () => {
+  const { mileageByMonth } = await import('../src/vehicles.js');
+  const M = ['2026-10', '2026-09', '2026-08', '2026-07', '2026-06'];
+  const R = [{ km: 100000, measured_at: '2026-06-10T12:00:00.000Z' }, { km: 101000, measured_at: '2026-07-31T22:30:00.000Z' }, { km: 102000, measured_at: '2026-08-20T12:00:00.000Z' }, { km: 105000, measured_at: '2026-10-05T12:00:00.000Z' }];
+  const x = mileageByMonth(R, M);
+  eq(x.map((r) => r.status).join('/'), 'ok/no_reading/ok/no_reading/no_previous', 'Status je Monat (31.07. 22:30 UTC = 1.8. Berlin)');
+  eq(x[4].to_km, 100000, 'erste Ablesung ohne Vorwert: kein Monatswert'); eq(x[4].km, null);
+  eq(x[2].km, 2000, 'August: 102000 − 100000 (Juni)'); eq(x[2].spans, true, 'August umfasst Juli mit'); eq(x[2].readings, 2, 'zwei Ablesungen im August');
+  eq(x[0].km, 3000, 'Oktober: 105000 − 102000'); eq(x[0].spans, true, 'Oktober umfasst September mit');
+  const y = mileageByMonth([...R, { km: 104900, measured_at: '2026-10-20T12:00:00.000Z' }], M);
+  eq(y[0].status, 'decrease', 'Rückgang im Monat → kein Wert'); eq(y[0].km, null);
+  const z = mileageByMonth([{ km: 5, measured_at: '2026-09-30T12:00:00.000Z' }, { km: 905, measured_at: '2026-10-02T12:00:00.000Z' }], M);
+  eq(z[0].km, 900); eq(z[0].spans, false, 'Vorwert im Vormonat: kein Hinweis');
+  // über die API: Ablesung im Vormonat und heute
+  eq((await owner.post('/api/vehicles', { plate: 'KP-FL 1', vin: 'WDB96340310555577', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310555577'; const { addMonths } = await import('../src/util.js');
+  const prev = addMonths(`${BERLIN_YM}-10`, -1);
+  eq((await users.fleet.post(`/api/vehicles/${VK}/odometer`, { km: 200000, measured_on: prev })).status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VK}/odometer`, { km: 203500 })).status, 201);
+  const ml = (await users.fleet.get(`/api/vehicles/${VK}`)).data.mileage;
+  ok(ml && ml.months.length === 12 && ml.max_months === 12, '12 Monate');
+  eq(ml.months[0].month, BERLIN_YM); eq(ml.months[0].km, 3500, 'laufender Monat 3500 km'); eq(ml.months[0].spans, false);
+  eq(ml.months[1].status, 'no_previous', 'Vormonat: erste Ablesung'); eq(ml.total_km, 3500, 'Summe');
+  ok((await users.ws.get(`/api/vehicles/${VK}`)).data.mileage, 'Werkstatt sieht die Fahrleistung (Fahrzeugdaten, keine Personen)');
+  ok(!('mileage' in (await users.fleet.get(`/api/vehicles/${VK}/timeline`)).data), 'Zeitleiste ohne Monatsübersicht');
+  // Rückgang mit Begründung → kein Wert, keine Summe
+  eq((await users.fleet.post(`/api/vehicles/${VK}/odometer`, { km: 150, note: 'Tachotausch (Test)' })).status, 201);
+  const m2 = (await users.fleet.get(`/api/vehicles/${VK}`)).data.mileage;
+  eq(m2.months[0].status, 'decrease'); eq(m2.total_km, null, 'mit Rückgang keine Summe');
+  eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Fahrleistung' })).status, 200);
+});
+
 await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden bei jedem Seitenaufbau gesetzt (Vorlesefunktion, Silbentrennung, PDF-Dateiname)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));
