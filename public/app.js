@@ -143,6 +143,8 @@ function render(html, active) {
   const same = !!(S.me && S.lastHash && (location.hash || '#/').replace(/%3A/gi, ':') === S.lastHash);
   const interim = html === `<p class="muted">${esc(t('loading'))}</p>`;
   if (same) keepCapture(); else { S.keep = null; S.actSince = []; }
+  // Sprache des Dokuments = Oberflächensprache (Vorlesefunktion, Silbentrennung) – auch nach Anmeldung/Sprachwechsel, nicht nur beim Start
+  if (document.documentElement.lang !== S.lang) document.documentElement.lang = S.lang;
   document.getElementById('app').innerHTML = S.me ? frame(html, active) : `<main>${html}</main>`;
   const sk = $('.skip'); if (sk) sk.onclick = (e) => { e.preventDefault(); $('#main').focus(); };
   const es = $('#envsel');

@@ -96,6 +96,7 @@ export function localizedBody(n, lang) {
     return `${m[1]} · ${m[2]} ${dateLang(d, L)}: ${T[L]['res_' + RES_KEY.get(m[4])]}${m[5] !== undefined ? ' – ' + T[L].do_not_plan : ''}${m[6] || ''}`;
   }
   if (n.kind === 'new_login') return localizedLoginBody(b, L);
+  if (n.kind === 'test') return LANGS.some((l) => T[l].test_body === b) ? T[L].test_body : b;
   if (NO_CASE_BODY.has(n.kind) || !T.de[n.kind]) return b;
   const test = b.endsWith(' · TEST') ? ' · TEST' : '';
   const core = test ? b.slice(0, -test.length) : b;

@@ -8377,6 +8377,7 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
     ['lb-12', 'agent', 'Fuhrparkagent: Handlungsbedarf', 'Etwas (UNBEKANNT_X)'],
     ['lb-13', 'new_login', 'Neue Anmeldung auf einem anderen Gerät', nt('de', 'new_login_body').replace('{d}', 'Chrome · Android').replace('{t}', berlinDateTimeLang('2027-01-05T08:07:00Z', 'de'))],
     ['lb-14', 'new_login', 'Neue Anmeldung auf einem anderen Gerät', nt('en', 'new_login_body').replace('{d}', nt('en', 'unknown_device')).replace('{t}', berlinDateTimeLang('2026-07-01T20:30:00Z', 'en'))],
+    ['lb-15', 'test', 'Testbenachrichtigung', 'Push funktioniert auf diesem Gerät.'],
   ];
   for (const [id, kind, title, body] of rows) await ins.bind(id, 'test', u.id, null, 'lb:' + id, kind, 0, title, body, new Date(Date.now() - rows.findIndex((r) => r[0] === id) * 1000).toISOString()).run();
   const get = async () => Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.body]));
@@ -8390,6 +8391,7 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
     eq(b['lb-13'], nt('en', 'new_login_body').replace('{d}', 'Chrome · Android').replace('{t}', berlinDateTimeLang('2027-01-05T08:07:00Z', 'en')), 'Anmelde-Hinweis englisch');
     eq(b['lb-14'], rows[13][3], 'englisch bleibt englisch');
     eq(b['lb-11'], '2× Unbekanntes'); eq(b['lb-12'], 'Etwas (UNBEKANNT_X)');
+    eq(b['lb-15'], 'Push works on this device.', 'Testbenachrichtigung englisch');
     { const t = Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.title]));
       eq(t['lb-10'], 'Fleet agent: new dates/deadlines'); eq(t['lb-8'], 'Fleet agent: action required'); }
     eq(b['lb-5'], 'Freitext · kritisch', 'Agent-Text unverändert'); eq(b['lb-6'], 'Freitext ohne Muster'); eq(b['lb-7'], 'LB-XY 7 · UVV 2020-01-05: etwas anderes', 'unbekanntes Ergebnis unverändert');
@@ -8457,11 +8459,21 @@ await test('Push-Wiederholung und Sammel-Push nach der Ruhezeit in der AKTUELLEN
     eq(msgs[0].title, 'Огляд із небезпечними дефектами'); eq(msgs[0].body, 'PL-XY 3 · UVV 05.01.2020: небезпечний для руху – не планувати · TEST · +1');
     const st = (await env.DB.prepare("SELECT id, push_status FROM notifications WHERE id IN ('pl-3','pl-4')").all()).results;
     ok(st.every((r) => r.push_status === 'accepted'), 'beide zugestellt');
+    // Hilfe „Push“ erklärt die Sprache in allen drei Sprachen (mit dem echten Menünamen)
+    const { STRINGS } = await import('../public/i18n.js');
+    for (const l of ['de', 'uk', 'en']) { const last = STRINGS[l].help_push_s.split('|').at(-1); ok(last.includes(STRINGS[l].nav_profile) && last.includes(STRINGS[l].language), `Hilfe Sprache ${l}`); }
   } finally {
     await u.patch('/api/me', { language: 'de' });
     await env.DB.prepare("DELETE FROM notifications WHERE id LIKE 'pl-%'").run();
     env.DB.db.prepare('DELETE FROM push_subscriptions WHERE endpoint=?').run(ep);
   }
+});
+
+await test('Oberfläche: Dokumentsprache (<html lang>) wird bei jedem Seitenaufbau auf die Oberflächensprache gesetzt (Vorlesefunktion, Silbentrennung)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));
+  ok(/document\.documentElement\.lang = S\.lang/.test(body), 'render() setzt lang');
+  ok(/UI-Dokumentsprache[^\n]*ui-html-lang\.py/.test((await import('node:fs')).readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung eingebunden');
 });
 
 await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {
