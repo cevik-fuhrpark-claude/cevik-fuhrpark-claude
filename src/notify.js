@@ -2,6 +2,7 @@
 // Zustände getrennt: gespeichert -> Push vom Dienst angenommen -> am Gerät empfangen -> geöffnet -> übernommen
 import { nowIso, uuid, quietHoldUntil, dateLang } from './util.js';
 import { sendPush } from './push.js';
+import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 
 // Priorität im Hinweistext in der Sprache der Person (Sperrbildschirm)
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
@@ -337,25 +338,33 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   if (writes.length) await env.DB.batch(writes);
 }
 
+// Nachträglich zugestellte Pushs (Wiederholung, Ende der Ruhezeit) in der AKTUELLEN Sprache der Person – wie die Hinweisliste
+// (GET /api/notifications). Gespeichert bleibt der Text zum Zeitpunkt des Ereignisses; nur erkannte, maschinell aufgebaute Formen werden übersetzt.
+export function currentLangText(r) {
+  const lang = LANGS.includes(r.lang) ? r.lang : 'de';
+  return { title: localizedAgentTitle({ ...r, title: localizedTitle(r, lang) }, lang), body: localizedAgentBody({ ...r, body: localizedBody(r, lang) }, lang) };
+}
+const forDelivery = (r) => { const { lang, ...x } = r; return { ...x, ...currentLangText(r), urgent: !!r.urgent }; };
+
 // Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche. Wegen Ruhezeit zurückgehaltene Hinweise erst nach deren Ende.
 export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
-  const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id, kind FROM notifications
-    WHERE acknowledged_at IS NULL AND created_at > ? AND ((push_status='failed' AND push_attempts < 3) OR (push_status='pending' AND push_hold_until IS NULL AND created_at < ?))
-    ORDER BY urgent DESC, created_at LIMIT 20`)
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+    WHERE n.acknowledged_at IS NULL AND n.created_at > ? AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND n.push_hold_until IS NULL AND n.created_at < ?))
+    ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
     .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString()).all()).results;
-  await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })));
+  await deliverPush(env, rows.map(forDelivery));
   return rows.length;
 }
 
 // Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now()) {
-  const rows = (await env.DB.prepare(`SELECT id, user_id, title, body, urgent, case_id, kind FROM notifications
-    WHERE push_status='pending' AND push_hold_until IS NOT NULL AND push_hold_until <= ? AND acknowledged_at IS NULL AND opened_at IS NULL AND created_at > ?
-    ORDER BY created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
-  if (rows.length) await deliverPush(env, rows.map((r) => ({ ...r, urgent: !!r.urgent })), { collapse: true });
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+    WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.created_at > ?
+    ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
+  if (rows.length) await deliverPush(env, rows.map(forDelivery), { collapse: true });
   return rows.length;
 }

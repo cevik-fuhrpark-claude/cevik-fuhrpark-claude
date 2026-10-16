@@ -8409,6 +8409,61 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
   }
 });
 
+await test('Push-Wiederholung und Sammel-Push nach der Ruhezeit in der AKTUELLEN Sprache der Person (nicht der Sprache beim Ereignis); gespeicherter Text bleibt', async () => {
+  const { retryFailedPush } = await import('../src/notify.js');
+  const u = users.fleet;
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  const authSecret = crypto.getRandomValues(new Uint8Array(16));
+  const ep = 'https://push.example/ok/lang-' + rk();
+  eq((await u.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: b64urlEncode(pub), auth: b64urlEncode(authSecret) } })).status, 200);
+  const te = new TextEncoder();
+  const hk = async (salt, ikm, info, bits) => new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), bits));
+  const decrypt = async (sent) => {
+    const body = new Uint8Array(sent.init.body);
+    const salt = body.slice(0, 16); const idlen = body[20]; const asPub = body.slice(21, 21 + idlen); const ct = body.slice(21 + idlen);
+    const asKey = await crypto.subtle.importKey('raw', asPub, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: asKey }, kp.privateKey, 256));
+    const ikm = await hk(authSecret, shared, concatBytes(te.encode('WebPush: info\0'), pub, asPub), 256);
+    const cek = await hk(salt, ikm, te.encode('Content-Encoding: aes128gcm\0'), 128);
+    const nonce = await hk(salt, ikm, te.encode('Content-Encoding: nonce\0'), 96);
+    const pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['decrypt']), ct));
+    return JSON.parse(new TextDecoder().decode(pt.slice(0, -1)));
+  };
+  const sentMsgs = async () => Promise.all(env.pushLog.filter((p) => p.url === ep).map(decrypt));
+  const ins = env.DB.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status,push_attempts,push_hold_until) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const old = new Date(Date.now() - 10 * 60000).toISOString();
+  try {
+    // (1) fehlgeschlagener Push auf Deutsch, Person stellt danach auf Englisch um → Wiederholung auf Englisch
+    await ins.bind('pl-1', 'test', u.id, null, 'pl:1', 'released', 0, 'Fahrzeug technisch freigegeben', 'SM-2020-0101 · PL-XY 1 · kritisch · TEST', old, 'failed', 1, null).run();
+    await ins.bind('pl-2', 'test', u.id, null, 'pl:2', 'agent', 0, 'Freier Titel', 'Freitext · kritisch', old, 'failed', 1, null).run();
+    eq((await u.patch('/api/me', { language: 'en' })).status, 200);
+    env.pushLog.length = 0;
+    await retryFailedPush(env);
+    let msgs = await sentMsgs();
+    const m1 = msgs.find((m) => m.id === 'pl-1'); const m2 = msgs.find((m) => m.id === 'pl-2');
+    ok(m1 && m2, 'beide wiederholt: ' + msgs.length);
+    eq(m1.title, 'Vehicle technically released'); eq(m1.body, 'SM-2020-0101 · PL-XY 1 · critical · TEST');
+    eq(m2.title, 'Freier Titel', 'Freitext bleibt'); eq(m2.body, 'Freitext · kritisch');
+    eq((await env.DB.prepare("SELECT title, body, push_status FROM notifications WHERE id='pl-1'").first()).body, 'SM-2020-0101 · PL-XY 1 · kritisch · TEST', 'gespeicherter Text unverändert');
+    // (2) Ruhezeit vorbei: Sammel-Push (ein Push, „· +1“) auf Ukrainisch, obwohl auf Deutsch gespeichert
+    await ins.bind('pl-3', 'test', u.id, null, 'pl:3', 'inspection_defect', 0, 'Prüfung mit gefährlichen Mängeln', 'PL-XY 3 · UVV 05.01.2020: verkehrsunsicher – nicht einplanen · TEST', old, 'pending', 0, new Date(Date.now() - 60000).toISOString()).run();
+    await ins.bind('pl-4', 'test', u.id, null, 'pl:4', 'comment', 0, 'Neuer Kommentar', 'SM-2020-0104 · PL-XY 4 · niedrig', new Date(Date.now() - 9 * 60000).toISOString(), 'pending', 0, new Date(Date.now() - 60000).toISOString()).run();
+    eq((await u.patch('/api/me', { language: 'uk' })).status, 200);
+    env.pushLog.length = 0;
+    await retryFailedPush(env);
+    msgs = await sentMsgs();
+    eq(msgs.length, 1, 'ein Sammel-Push');
+    eq(msgs[0].title, 'Огляд із небезпечними дефектами'); eq(msgs[0].body, 'PL-XY 3 · UVV 05.01.2020: небезпечний для руху – не планувати · TEST · +1');
+    const st = (await env.DB.prepare("SELECT id, push_status FROM notifications WHERE id IN ('pl-3','pl-4')").all()).results;
+    ok(st.every((r) => r.push_status === 'accepted'), 'beide zugestellt');
+  } finally {
+    await u.patch('/api/me', { language: 'de' });
+    await env.DB.prepare("DELETE FROM notifications WHERE id LIKE 'pl-%'").run();
+    env.DB.db.prepare('DELETE FROM push_subscriptions WHERE endpoint=?').run(ep);
+  }
+});
+
 await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {
   const rows = (await env.DB.prepare('SELECT kind, title, body FROM notifications').all()).results;
   ok(rows.length > 20, 'genug Hinweise geprüft: ' + rows.length);
