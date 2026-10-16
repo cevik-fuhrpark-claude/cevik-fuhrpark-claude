@@ -1272,8 +1272,27 @@ const AUDIT_DETAIL_KEYS = {
   first_registration: ['Erstzulassung', 'Перша реєстрація', 'First registration'], duplicate_plate_of: ['Kennzeichen auch bei', 'Номерний знак також у', 'Plate also on'],
   display_name: ['Anzeigename', 'Відображуване ім’я', 'Display name'], workshop_site: ['Werkstatt', 'Майстерня', 'Workshop'],
   assignment: ['Zuordnung', 'Призначення', 'Assignment'], end_date: ['Enddatum', 'Дата завершення', 'End date'], downloaded_on: ['ausgelesen am', 'зчитано', 'downloaded on'], checked_on: ['geprüft am', 'перевірено', 'checked on'],
+  // ergänzt 16.10.2026 (Rauchtest-Prüfung auf sichtbare Codes): seltene Schlüssel und geänderte Felder
+  grund: ['Grund', 'Причина', 'Reason'], provider: ['Anbieter', 'Постачальник', 'Provider'], external_id: ['Gerätekennung beim Anbieter', 'Ідентифікатор у постачальника', 'Provider device ID'],
+  target: ['Ziel', 'Ціль', 'Target'], sessions: ['beendete Anmeldungen', 'завершені сеанси', 'ended sign-ins'], push_devices: ['abgemeldete Push-Geräte', 'вимкнені пристрої сповіщень', 'removed push devices'],
+  driver_only: ['nur Fahrerakte', 'лише картка водія', 'driver file only'], contract_no: ['Vertragsnummer', 'Номер договору', 'Contract no.'],
+  file_id: ['Datei', 'Файл', 'File'], reimbursed_net: ['Erstattung netto (€)', 'Відшкодування нетто (євро)', 'Reimbursement net (€)'], reimbursed_on: ['erstattet am', 'відшкодовано', 'reimbursed on'],
 };
 export const AUDIT_DETAIL_KEY_CODES = Object.keys(AUDIT_DETAIL_KEYS);
+// Einstellungen im Protokoll: Bezeichnung wie unter Einstellungen (STRINGS-Schlüssel); SLA-Fristen aus Umgebung · Schritt · Priorität
+const SETTING_LABEL_KEYS = { test_master_readonly: 'test_master_readonly', idle_logout_workshop_min: 'idle_ws', idle_logout_other_min: 'idle_other', workshop_hourly_rate_net: 'hourly_rate',
+  maintenance_warn_days: 'warn_days', maintenance_warn_km: 'warn_km', tire_warn_tread_mm: 'tire_warn', tire_warn_age_years: 'tire_warn_age', fine_warn_days: 'response_due',
+  driver_doc_warn_days: 'driver_doc_warn', license_check_months: 'license_check_months', tacho_warn_days: 'tacho_warn', contract_warn_days: 'ct_warn',
+  claim_followup_days: 'claim_followup', case_stale_days: 'case_stale_setting', user_unused_days: 'unused_setting', repair_cost_limit_net: 'cost_limit_setting' };
+export const AUDIT_SETTING_KEYS = Object.keys(SETTING_LABEL_KEYS);
+function settingLabel(lang, k) {
+  const S = (x) => (STRINGS[lang] && STRINGS[lang][x]) || STRINGS.de[x] || null;
+  if (SETTING_LABEL_KEYS[k]) return S(SETTING_LABEL_KEYS[k]);
+  const m = /^sla_(test|production)_(triage|ack)_(niedrig|mittel|kritisch)_min$/.exec(k);
+  return m ? `${S(m[1] === 'test' ? 'env_testname' : 'env_prod')} · ${S(m[2] === 'triage' ? 'act_receive' : 'act_acknowledge')} · ${S('prio_' + m[3])} (min)` : null;
+}
+// Codewerte (snake_case) je Schlüssel als Bezeichnung: Prüfergebnis, Ergebnis Führerscheinkontrolle, zGM-Klasse, HU/SP-Status
+const AUDIT_VALUE_PREFIX = { result: ['res_', 'lcr_'], zgm_class: ['zc_'], status: ['hs_'] };
 const AUDIT_DETAIL_VALUES = { true: ['ja', 'так', 'yes'], false: ['nein', 'ні', 'no'], test: ['Test', 'Тест', 'Test'], production: ['Betrieb', 'Робочий', 'Production'] };
 // refs: vom Server aufgelöste Kennungen (Fahrer/Person → Name, Fahrzeug → Kennzeichen) je oberstem Schlüssel; ersetzt nur die Anzeige
 // Datumswerte im Protokoll-Detail (Anzeige) im Format der Sprache: „2026-08-01“ → DE/UK 01.08.2026, EN 01/08/2026; Zeitstempel in Berliner Zeit.
@@ -1292,7 +1311,7 @@ function auditDateVal(v, li) {
 export function auditDetailText(lang, detail, refs) {
   if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail === null || detail === undefined ? '' : (typeof detail === 'object' ? JSON.stringify(detail) : String(detail));
   const li = { de: 0, uk: 1, en: 2 }[lang] ?? 0;
-  const key = (k) => (AUDIT_DETAIL_KEYS[k] ? AUDIT_DETAIL_KEYS[k][li] : k);
+  const key = (k) => (AUDIT_DETAIL_KEYS[k] ? AUDIT_DETAIL_KEYS[k][li] : settingLabel(lang, k) || k);
   const isFT = (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 2 && 'from' in v && 'to' in v && [v.from, v.to].every((x) => x === null || typeof x !== 'object');
   const val = (k, v) => {
     if (v === null || v === undefined || v === '') return '–';
@@ -1303,6 +1322,7 @@ export function auditDetailText(lang, detail, refs) {
     if (isFT(v)) return `${val(k, v.from)} → ${val(k, v.to)}`;
     if (typeof v === 'object' && Object.values(v).every((x) => x === null || typeof x !== 'object')) return Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x)}`).join(', ');
     if (typeof v === 'object') return Object.values(v).every(isFT) ? Object.entries(v).map(([f, x]) => `${key(f)} ${val(f, x.from)} → ${val(f, x.to)}`).join(', ') : JSON.stringify(v);
+    if (typeof v === 'string' && /^[a-z]+(_[a-z0-9]+)+$/.test(v) && AUDIT_VALUE_PREFIX[k]) { const p = AUDIT_VALUE_PREFIX[k].find((x) => STRINGS.de[x + v]); if (p) return (STRINGS[lang] && STRINGS[lang][p + v]) || STRINGS.de[p + v]; }
     if (typeof v === 'string') return auditDateVal(v, li);
     return String(v);
   };

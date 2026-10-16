@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Rauchtest: alle Ansichten je Rolle in Handy-, Tablet- und PC-Breite aufrufen
 # Voraussetzung: lokaler Entwicklungsserver mit frischer In-Memory-DB (sh scripts/restart-dev.sh) und Python-Playwright.
 # Aufruf: [CFP_LANG=uk|en] [CFP_SCHEME=dark] [CFP_XSS=1] python3 scripts/ui-rauchtest.py [Ausgabeordner für Screenshots]
+# Prüft u. a. sichtbare interne Codes (snake_case, z. B. „in_reparatur“) bzw. fehlende Übersetzungsschlüssel in allen Ansichten (16.10.2026).
 # CFP_XSS=1: HTML-Einschleusungs-Probe – nach der Vorbereitung hängt der Dev-Server (/__dev/taint) an alle Freitexte der Datenbank
 # '"'><b data-xss=1>X</b>' an; jede Ansicht (Bildschirm + Druck) darf kein Element mit data-xss enthalten (Freitext muss als Text
 # erscheinen). Layout-/Kontrast-/Sprachprüfungen entfallen in diesem Modus (lange Probetexte), JS-Fehler zählen weiter.
@@ -464,6 +465,14 @@ with sync_playwright() as p:
                         pl = pg.evaluate("""() => { const e = document.querySelector('#app .plate .num'); return e ? e.textContent.replace(/\\s+/g, ' ').trim() : ''; }""")
                         if not pl or pl not in tt[0]:
                             problems.append(f'{where}: Fenstertitel ohne Kennzeichen „{pl}“: „{tt[0]}“')
+                if name == 'handy':
+                    # interne Codes (snake_case, z. B. „in_reparatur“) bzw. fehlende Übersetzungsschlüssel (t() liefert dann den Schlüssel) sichtbar?
+                    codes = pg.evaluate(r"""() => { const out = []; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
+                      while (w.nextNode()) { const x = w.currentNode.textContent; const el = w.currentNode.parentElement; const m = x.match(/(^|[^\w.@\/-])([a-z]+(?:_[a-z0-9]+)+)(?![\w.@\/-])/);
+                        if (m && el && el.offsetParent !== null && !el.closest('code, pre, textarea, .mono, [data-raw]')) out.push(m[2] + ' ← ' + x.trim().slice(0, 50)); }
+                      return out; }""")
+                    if codes:
+                        problems.append(f'{where}: interner Code sichtbar: {codes[:4]}')
                 if LANG and name == 'handy':
                     # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
                     # zusätzlich deutsche Fachwörter ohne Umlaut (z. B. „Inspektion“, „Sonstiges“ – so fiel die fehlende Übersetzung der Prüfarten auf)

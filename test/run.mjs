@@ -7907,6 +7907,19 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   ok(cnt.size >= 40, 'Schlüssel gefunden: ' + cnt.size);
   const settingKeys = new Set(env.DB.db.prepare('SELECT key FROM settings').all().map((r) => r.key));
   eq([...cnt].filter(([k, n]) => n >= 5 && !settingKeys.has(k) && !AUDIT_DETAIL_KEY_CODES.includes(k)).map(([k]) => k).sort().join(), '', 'häufige Schlüssel ohne Bezeichnung');
+  // 16.10.2026 verschärft: jeder protokollierte Schlüssel (auch Einstellungen, SLA-Fristen, geänderte Felder) und jeder Codewert
+  // (Prüfergebnis, zGM-Klasse, Status) erscheint in DE/UK/EN als Bezeichnung – nicht als snake_case-Code (Ausnahme: Tabellennamen der Datensicherung „counts“)
+  const CODE = /^[a-z]+(_[a-z0-9]+)+$/; const rawKeys = new Set(); const rawVals = [];
+  for (const r of env.DB.db.prepare('SELECT detail FROM audit_log WHERE detail IS NOT NULL').all()) {
+    let o; try { o = JSON.parse(r.detail); } catch { continue; } if (!o || typeof o !== 'object' || Array.isArray(o)) continue;
+    for (const lang of ['de', 'uk', 'en']) {
+      const txt = auditDetailText(lang, Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'counts')));
+      for (const m of txt.matchAll(/(?:^| · )([a-z]+(?:_[a-z0-9]+)+):/g)) rawKeys.add(m[1]);
+      for (const part of txt.split(' · ')) { const v = part.split(': ').slice(1).join(': '); for (const w of v.split(/, | → | /)) if (CODE.test(w) && !rawVals.includes(w)) rawVals.push(w); }
+    }
+  }
+  eq([...rawKeys].sort().join(), '', 'Protokoll-Schlüssel ohne Bezeichnung');
+  eq(rawVals.sort().join(), '', 'Codewerte/Feldnamen im Protokoll');
   const d = { environment: 'production', role: 'workshop', plate: 'SZ-YC 5513', with_driver: false, changed: { end_date: { from: '2026-10-25', to: null } }, phone: { from: '0123', to: '0124' }, rows: 3, unbekannt_x: 'roh', ended_previous: ['SZ-YC 5513'] };
   eq(auditDetailText('de', d), 'Umgebung: Betrieb · Rolle: Werkstatt · Kennzeichen: SZ-YC 5513 · mit Fahrer: nein · geändert: Enddatum 25.10.2026 → – · Rufnummer: 0123 → 0124 · Zeilen: 3 · unbekannt_x: roh · beendete Zuordnungen: SZ-YC 5513', 'DE');
   ok(auditDetailText('uk', d).startsWith('Середовище: Робочий · Роль: ') && auditDetailText('uk', d).includes('SZ-YC 5513'), 'UK');
