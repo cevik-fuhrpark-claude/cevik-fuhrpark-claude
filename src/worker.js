@@ -1,4 +1,5 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
+import { icsLang } from '../public/ics-texts.js';
 import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, testMasterReadonly, QUIET_TIME } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
@@ -80,7 +81,6 @@ function requireRole(user, roles) {
   if (!roles.includes(user.role)) throw forbidden();
 }
 
-const STATUS_DE_ICS = { gemeldet: 'gemeldet', werkstatt_freigegeben: 'an Werkstatt freigegeben', in_reparatur: 'in Reparatur', wartet_teile: 'wartet auf Teile', abschlusskontrolle: 'Abschlusskontrolle' };
 const SETTINGS_KEYS = [
   'workshop_hourly_rate_net', 'test_master_readonly', 'idle_logout_workshop_min', 'idle_logout_other_min', 'driver_doc_warn_days', 'tacho_warn_days', 'license_check_months', 'maintenance_warn_days', 'maintenance_warn_km', 'tire_warn_tread_mm', 'tire_warn_age_years', 'fine_warn_days', 'contract_warn_days', 'claim_followup_days', 'case_stale_days', 'repair_cost_limit_net', 'user_unused_days',
   ...['test', 'production'].flatMap((e) => ['triage', 'ack'].flatMap((k) => ['niedrig', 'mittel', 'kritisch'].map((p) => `sla_${e}_${k}_${p}_min`))),
@@ -266,7 +266,7 @@ async function handleApi(request, env, ctx, url) {
       await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter, site: ov.site });
       return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.csv"` } });
     }
-    if (url.searchParams.get('format') === 'ics') return new Response(contracts.contractsIcs(ov), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.ics"` } });
+    if (url.searchParams.get('format') === 'ics') return new Response(contracts.contractsIcs(ov, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.ics"` } });
     return json(ov);
   }
   if (path === '/api/contracts/import' && m === 'POST') {
@@ -282,7 +282,7 @@ async function handleApi(request, env, ctx, url) {
     const ov = await maint.maintenanceOverview(env, user, envName, { site: url.searchParams.get('site') });
     if (url.searchParams.get('format') === 'ics') {
       await auth.audit(env, user.id, 'maintenance.export_ics', null, { rows: ov.rows.length, site: ov.site });
-      return new Response(maint.maintenanceIcs(ov), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
+      return new Response(maint.maintenanceIcs(ov, undefined, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
     }
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length, site: ov.site });
@@ -380,7 +380,7 @@ async function handleApi(request, env, ctx, url) {
 
   if (path === '/api/workshop/plan' && m === 'GET') {
     const plan = await reports.workshopPlan(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'ics') return new Response(reports.workshopPlanIcs(plan, envName), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstattplan_${envName}_${berlinDate()}.ics"` } });
+    if (url.searchParams.get('format') === 'ics') return new Response(reports.workshopPlanIcs(plan, envName, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstattplan_${envName}_${berlinDate()}.ics"` } });
     return json(plan);
   }
   if (path === '/api/reports/workshop-load' && m === 'GET') {
@@ -482,7 +482,7 @@ async function handleApi(request, env, ctx, url) {
       if (q.format === 'ics') {
         const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
         const warn = w && Number(w.value) > 0 ? Number(w.value) : null;
-        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"`, ...trunc } });
+        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"`, ...trunc } });
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
       await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site, ...(sel.truncated ? { truncated: true } : {}) });
@@ -503,8 +503,10 @@ async function handleApi(request, env, ctx, url) {
     if (q.format === 'ics') {
       if (['driver', 'workshop'].includes(user.role)) throw forbidden();
       const rows = await cases.listCases(env, user, envName, { status: 'open', followup: '1', vsite: q.vsite, limit: 5000, __export: true });
-      const ev = rows.filter((c) => c.followup_on).map((c) => ({ uid: `case-followup-${c.id}`, date: c.followup_on, summary: `Wiedervorlage ${c.case_no} – ${c.plate}`, description: `Vorgang ${c.case_no} (${STATUS_DE_ICS[c.status] || c.status}) in der App öffnen` }));
-      return new Response(icsCalendar(`Fuhrpark Wiedervorlagen${envName === 'test' ? ' (Test)' : ''}`, ev.sort((x, y) => x.date.localeCompare(y.date))), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-wiedervorlagen_${envName}_${berlinDate()}.ics"` } });
+      // Texte in der Sprache der Person (DE/UK/EN), Status als Bezeichnung
+      const I = icsLang(user.language);
+      const ev = rows.filter((c) => c.followup_on).map((c) => ({ uid: `case-followup-${c.id}`, date: c.followup_on, summary: I.tx('followup', { no: c.case_no, plate: c.plate }), description: I.tx('followup_desc', { no: c.case_no, status: I.status(c.status) }) }));
+      return new Response(icsCalendar(`${I.tx('cal_followup')}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, ev.sort((x, y) => x.date.localeCompare(y.date))), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-wiedervorlagen_${envName}_${berlinDate()}.ics"` } });
     }
     if (q.format === 'csv') {
       if (user.role === 'driver') throw forbidden();

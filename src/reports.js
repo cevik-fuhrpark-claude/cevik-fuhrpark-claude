@@ -1,6 +1,7 @@
 // [CLAUDE] Kostenbericht je Fahrzeug und Monat (Controlling). Gleiche Regeln wie caseCosts:
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
+import { icsLang } from '../public/ics-texts.js';
 import { bad, forbidden, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
@@ -668,13 +669,16 @@ export async function workshopPlan(env, user, envName, query = {}) {
 
 // Kalenderdatei des Werkstattplans: nur Vorgangsnummer, Kennzeichen, Status/Prüfart – keine Beschreibung, keine Namen
 // (Kalender werden oft in fremde Clouds synchronisiert).
-export function workshopPlanIcs(plan, envName) {
+// Texte in der Sprache der Person (lang; DE/UK/EN, sonst Deutsch); Status als Bezeichnung (bis 16.10.2026 roher Code, z. B. „in_reparatur“)
+export function workshopPlanIcs(plan, envName, lang = 'de') {
+  const I = icsLang(lang);
   const ev = [];
   for (const d of plan.days) for (const i of d.items) {
     ev.push(i.type === 'case'
-      ? { uid: `plan-case-${i.id}-${d.date}`, date: d.date, summary: `Werkstatt: ${i.case_no} – ${i.plate}${envName === 'test' ? ' (TEST)' : ''}`, description: `Status: ${i.status}${i.tire_order === 'winter' ? ' · Winterreifen' : ''}${i.safety_lock ? ' · gesperrt' : ''}` }
-      : { uid: `plan-maint-${i.id}-${d.date}`, date: d.date, summary: `Prüfung ${i.kind} – ${i.plate}`, description: i.next_due_date ? `fällig bis ${i.next_due_date}` : '' });
+      ? { uid: `plan-case-${i.id}-${d.date}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
+        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') }
+      : { uid: `plan-maint-${i.id}-${d.date}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '' });
   }
-  return icsCalendar(`Werkstattplan${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – Fahrzeuge ' + plan.vehicle_site : ''}`, ev);
+  return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site }) : ''}`, ev);
 }
 

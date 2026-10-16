@@ -43,6 +43,7 @@ UI-Datenqualität Hinweis bei Kappung|ui-dq-kappung.py|/tmp/cfp-dqkappung.log
 UI-Archive Hinweis bei Kürzung|ui-archiv-hinweis.py|/tmp/cfp-archiv.log
 UI-Hinweise Zähler über alle|ui-hinweise-zaehler.py|/tmp/cfp-hzaehler.log
 UI-Glockensymbol (Push ohne Neuaufbau)|ui-glocke.py|/tmp/cfp-glocke.log
+UI-Kalender in der App-Sprache|ui-kalender-sprache.py|/tmp/cfp-kalender.log
 UI-Wieder online (Eingaben bleiben)|ui-wieder-online.py|/tmp/cfp-online.log
 UI-Fehlermeldungen (Aktion ohne Netz)|ui-fehlermeldung.py|/tmp/cfp-fehlermeldung.log
 UI-Eingaben bleiben beim Neuaufbau|ui-eingaben-bleiben.py|/tmp/cfp-eingaben.log

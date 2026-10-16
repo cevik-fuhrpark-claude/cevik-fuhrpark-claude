@@ -1,5 +1,6 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
+import { icsLang } from '../public/ics-texts.js';
 import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, num, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
@@ -534,14 +535,16 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
 }
 
 // Kalenderdatei (iCalendar, RFC 5545) mit allen belegten Prüfterminen als ganztägige Termine + Erinnerung (Vorlauf = maintenance_warn_days)
-export function maintenanceIcs(ov, stamp = new Date().toISOString()) {
-  const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: r.id, date: r.next_due_date, summary: `${r.kind} fällig – ${r.plate || r.vehicle_id}`,
-    description: `Nachweis: ${r.evidence}${r.last_done_date ? ` · letzte Prüfung ${r.last_done_date}` : ''}`, alarm: `${r.kind} ${r.plate || ''}`, alarmDays: ov.warn_days }));
+// Texte in der Sprache der Person (lang; DE/UK/EN, sonst Deutsch) – Nachweis bleibt wie gespeichert
+export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de') {
+  const I = icsLang(lang);
+  const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: r.id, date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
+    description: I.tx('maint_desc', { evidence: r.evidence }) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();
-  for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${r.id}-plan`, date: r.planned_date, summary: `Werkstatttermin ${r.kind} – ${r.plate || r.vehicle_id}`,
-    description: `geplanter Werkstatttermin${r.next_due_date ? ` · fällig ${r.next_due_date}` : ''}` });
-  return icsCalendar('Fuhrpark Prüftermine', events, stamp);
+  for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${r.id}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
+    description: I.tx('maint_plan_desc') + (r.next_due_date ? ' · ' + I.tx('maint_plan_due', { d: I.d(r.next_due_date) }) : '') });
+  return icsCalendar(I.tx('cal_maint'), events, stamp);
 }
 
 // [CLAUDE] Durchgeführte Prüfungen/Wartungen über die ganze Flotte (Nachweis z. B. für Prüfungen durch Behörden/Versicherer):

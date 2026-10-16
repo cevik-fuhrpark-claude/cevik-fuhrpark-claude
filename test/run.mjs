@@ -8994,6 +8994,67 @@ await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden b
   ok(/UI-Dokumentsprache[^\n]*ui-html-lang\.py/.test((await import('node:fs')).readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung eingebunden');
 });
 
+await test('Kalenderdateien (.ics) in der Sprache der Person (DE/UK/EN): Texte, Datumsformat, Status als Bezeichnung (kein Code), Bezeichnungen wie in der Oberfläche', async () => {
+  const { ICS_LABELS, ICS_TEXTS, ICS_MK_KEYS, ICS_LANGS, icsLang } = await import('../public/ics-texts.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  // Bezeichnungen = Oberflächentexte (kein Auseinanderlaufen)
+  for (const L of ICS_LANGS) for (const [k, v] of Object.entries(ICS_LABELS[L])) eq(v, STRINGS[L][k], `${L}.${k} wie in i18n.js`);
+  const appSrc = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const mkSrc = /const MK_KEYS = (\{[^\n]*\});/.exec(appSrc); ok(mkSrc, 'MK_KEYS in app.js');
+  eq(JSON.stringify(Function(`return ${mkSrc[1]}`)()), JSON.stringify(ICS_MK_KEYS), 'Prüfarten wie in app.js');
+  // gleiche Platzhalter je Satzbaustein in allen Sprachen
+  const ph = (x) => [...String(x).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+  for (const k of Object.keys(ICS_TEXTS.de).filter((x) => !x.startsWith('month_'))) for (const L of ICS_LANGS) { ok(ICS_TEXTS[L][k], `${L}.${k} vorhanden`); eq(ph(ICS_TEXTS[L][k]), ph(ICS_TEXTS.de[k]), `${L}.${k} Platzhalter`); }
+  eq([1, 2, 5, 11, 21, 22].map((n) => icsLang('uk').months(n)).join('|'), 'місяць|місяці|місяців|місяців|місяць|місяці', 'ukrainische Monatsformen');
+  eq(icsLang('xx').lang, 'de', 'unbekannte Sprache → Deutsch'); eq(icsLang('en').d('2027-01-05'), '05/01/2027');
+  // Testdaten: Prüfregel mit Plan-Termin, Vertrag mit Kündigungsfrist, Vorgang mit Wiedervorlage + Werkstatttermin, Bußgeld mit Frist
+  const vid = (await env.DB.prepare("SELECT id, plate FROM vehicles WHERE active=1 AND eval_excluded=0 AND kind='lkw' ORDER BY plate LIMIT 1").first());
+  const today = (await users.fleet.get('/api/maintenance')).data.today;
+  const plus = (n) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const rule = await users.fleet.post(`/api/vehicles/${encodeURIComponent(vid.id)}/maintenance`, { kind: 'Ölwechsel', interval_months: 12, last_done_date: plus(-300), evidence: 'ICS-Sprachtest Beleg' });
+  ok([200, 201].includes(rule.status), 'Regel angelegt ' + JSON.stringify(rule.data));
+  eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: plus(3) })).status, 200, 'Plan-Termin');
+  const ctr = await users.fleet.post(`/api/vehicles/${encodeURIComponent(vid.id)}/contracts`, { kind: 'miete', partner: 'ICS-Vermieter', evidence: 'Mietvertrag ICS-Test', start_date: plus(-100), end_date: plus(400), notice_months: 2 });
+  eq(ctr.status, 201, 'Vertrag ' + JSON.stringify(ctr.data));
+  // Wiedervorlage + Werkstatttermin an offenen Vorgängen der Umgebung der Fuhrparkleitung (direkt gesetzt, nur Kalenderinhalt geprüft)
+  const open = (await users.fleet.get('/api/cases?status=open&limit=50')).data.cases; ok(open.length, 'offene Vorgänge vorhanden');
+  env.DB.db.prepare('UPDATE cases SET followup_on=? WHERE id=?').run(plus(5), open[0].id);
+  const wsCase = open.find((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status));
+  if (wsCase) env.DB.db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(plus(2), wsCase.id);
+  const langs = {};
+  for (const L of ['de', 'uk', 'en']) {
+    eq((await users.fleet.patch('/api/me', { language: L })).status, 200);
+    const get = async (u) => { const r = await users.fleet.get(u); eq(r.status, 200, u); return (typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data)).replace(/\r\n /g, ''); };
+    langs[L] = { maint: await get('/api/maintenance?format=ics'), ctr: await get('/api/contracts?format=ics'), plan: await get('/api/workshop/plan?days=14&format=ics'), fines: await get('/api/fines?format=ics'), fu: await get('/api/cases?format=ics') };
+  }
+  await users.fleet.patch('/api/me', { language: 'de' });
+  const texts = (cal) => cal.split('\r\n').filter((l) => /^(SUMMARY|DESCRIPTION|X-WR-CALNAME)[:;]/.test(l)).join('\n');
+  for (const L of ['de', 'uk', 'en']) for (const [name, cal] of Object.entries(langs[L])) {
+    ok(cal.startsWith('BEGIN:VCALENDAR') && cal.includes('BEGIN:VEVENT'), `${L}/${name}: Kalender mit Terminen`);
+    // gespeicherter Nachweis (Freitext) bleibt wie erfasst – nicht Teil der Prüfung
+    const tx = texts(cal).replace(/(Nachweis|Підстава|Evidence): .*?( · |$)/gm, '$1: … $2');
+    eq((tx.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []).length, 0, `${L}/${name}: kein ISO-Datum im Text`);
+    ok(!/\b(gemeldet|werkstatt_freigegeben|in_reparatur|wartet_teile|abschlusskontrolle)\b/.test(tx), `${L}/${name}: kein Statuscode`);
+    if (L !== 'de') ok(!/fällig|Wiedervorlage|Kündigung|Vertragsende|Werkstatttermin|Frist laut Schreiben|Fuhrpark |Prüfung /.test(tx), `${L}/${name}: keine deutschen Satzbausteine – ` + tx.split('\n').find((l) => /fällig|Wiedervorlage|Kündigung|Vertragsende|Werkstatttermin|Frist laut|Fuhrpark |Prüfung /.test(l)));
+  }
+  const d = langs.de; const u = langs.uk; const e = langs.en;
+  ok(d.maint.includes(`SUMMARY:Werkstatttermin Ölwechsel – ${vid.plate}`) && d.maint.includes('X-WR-CALNAME:Fuhrpark Prüftermine'), 'DE unverändert');
+  ok(u.maint.includes(`SUMMARY:Візит у майстерню Заміна оливи – ${vid.plate}`) && u.maint.includes('X-WR-CALNAME:Автопарк: терміни перевірок') && u.maint.includes('Підстава: ICS-Sprachtest Beleg'), 'UK Prüftermine, Nachweis wie gespeichert');
+  ok(e.maint.includes(`SUMMARY:Workshop appointment Oil change – ${vid.plate}`) && /DESCRIPTION:planned workshop appointment · due \d{2}\/\d{2}\/\d{4}/.test(e.maint), 'EN Prüftermine mit EN-Datum');
+  ok(d.maint.includes('SUMMARY:HU fällig') && u.maint.includes('SUMMARY:HU: строк') && e.maint.includes('SUMMARY:HU due'), 'HU bleibt Fachkürzel');
+  const end = (L) => icsLang(L).d(plus(400));
+  ok(u.ctr.includes(`SUMMARY:Розірвати не пізніше: Оренда ${vid.plate} (ICS-Vermieter)`) && u.ctr.includes(`за 2 місяці до закінчення договору ${end('uk')}`), 'UK Vertrag mit Pluralform und Datum');
+  ok(e.ctr.includes(`SUMMARY:Contract end: Rental ${vid.plate} (ICS-Vermieter)`) && e.ctr.includes(`2 months before contract end ${end('en')}`), 'EN Vertrag');
+  ok(d.ctr.includes(`Laut Vertrag 2 Monate vor Vertragsende ${end('de')}`), 'DE Vertrag mit deutschem Datum');
+  ok(u.fines.includes('X-WR-CALNAME:Автопарк: строки відповіді органам') && u.fines.includes('строк згідно з листом'), 'UK Behördenfristen');
+  ok(e.fu.includes('X-WR-CALNAME:Fleet follow-ups') && /SUMMARY:Follow-up /.test(e.fu) && /DESCRIPTION:Open case .+ \((Reported|Approved for workshop|In repair|Waiting for parts|Final inspection)\) in the app/.test(e.fu), 'EN Wiedervorlagen mit Statusbezeichnung');
+  ok(d.fu.includes('X-WR-CALNAME:Fuhrpark Wiedervorlagen') && /DESCRIPTION:Vorgang .+ \((Gemeldet|Werkstatt freigegeben|In Reparatur|Wartet auf Teile|Abschlusskontrolle)\) in der App öffnen/.test(d.fu), 'DE Wiedervorlagen');
+  ok(u.plan.includes('X-WR-CALNAME:План майстерні') && u.plan.includes(`SUMMARY:Перевірка Заміна оливи – ${vid.plate}`), 'UK Werkstattplan');
+  console.log(`     ${Object.values(langs.uk).reduce((n, c) => n + (c.match(/BEGIN:VEVENT/g) || []).length, 0)} Termine je Sprache in 5 Kalendern geprüft${wsCase ? ', Werkstattplan mit Auftrag' : ''}`);
+  if (wsCase) ok(u.plan.includes(`SUMMARY:Майстерня: ${wsCase.case_no}`) && /DESCRIPTION:Статус: (Передано в майстерню|У ремонті|Очікує запчастини)/.test(u.plan), 'UK Werkstattplan: Auftrag mit Statusbezeichnung');
+  ok(!/DESCRIPTION:Status: [a-z_]+(\r|\n|$| ·)/.test(d.plan) && !/DESCRIPTION:Статус: [a-z_]+/.test(u.plan), 'Werkstattplan: Status als Bezeichnung');
+});
+
 await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {
   const rows = (await env.DB.prepare('SELECT kind, title, body FROM notifications').all()).results;
   ok(rows.length > 20, 'genug Hinweise geprüft: ' + rows.length);

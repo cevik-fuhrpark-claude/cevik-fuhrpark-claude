@@ -1,4 +1,5 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
+import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate } from './util.js';
 import { notifyUsers, nt } from './notify.js';
@@ -245,10 +246,13 @@ export function finesCsv(rows, csvCell, withDriver) {
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 // Fristenkalender: nur Antwortfristen laut Schreiben offener Vorgänge, ohne Fahrernamen (Kalender werden oft geteilt)
-export function finesIcs(rows, warnDays, icsCalendar, site = null) {
+// Texte in der Sprache der Person (lang; DE/UK/EN, sonst Deutsch); Behörde/Aktenzeichen wie gespeichert
+export function finesIcs(rows, warnDays, icsCalendar, site = null, lang = 'de') {
+  const I = icsLang(lang);
   const open = rows.filter((f) => f.response_due && !['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status));
-  return icsCalendar(`Fuhrpark Behördenfristen${site ? ' – ' + (site === 'ohne' ? 'ohne Standort' : site) : ''}`, open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due, summary: `Frist ${KIND_DE[f.kind] || f.kind} – ${f.plate || f.plate_in_letter} (${f.fine_no})`,
-    description: `${f.authority}${f.reference ? ' · Az. ' + f.reference : ''} · Frist laut Schreiben`, alarmDays: warnDays })));
+  return icsCalendar(`${I.tx('cal_fines')}${site ? ' – ' + (site === 'ohne' ? I.tx('no_site') : site) : ''}`, open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due,
+    summary: I.tx('fine_due', { kind: I.label('fk_' + f.kind, KIND_DE[f.kind] || f.kind), plate: f.plate || f.plate_in_letter, no: f.fine_no }),
+    description: `${f.authority}${f.reference ? ' · ' + I.tx('fine_ref', { ref: f.reference }) : ''} · ${I.tx('fine_by_letter')}`, alarmDays: warnDays })));
 }
 
 export async function fineFindings(env, environment, settings = null) {
