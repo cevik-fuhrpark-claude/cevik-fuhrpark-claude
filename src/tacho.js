@@ -9,6 +9,7 @@ import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
 import { siteSelection } from './reports.js';
 import { audit } from './auth.js';
+import { SETTING_DEFAULTS } from './settings.js';
 
 export const TACHO_RULE = { card_days: 28, vu_days: 90, source: 'FPersV § 2 Abs. 5' };
 export const TACHO_KINDS = ['fahrerkarte', 'massenspeicher'];
@@ -19,7 +20,7 @@ const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.pa
 
 export function warnDaysOf(settings) {
   const v = settings.get('tacho_warn_days'); const n = Number(v);
-  return v !== undefined && v !== null && v !== '' && Number.isFinite(n) && n >= 0 ? n : 7;
+  return v !== undefined && v !== null && v !== '' && Number.isFinite(n) && n >= 0 ? n : SETTING_DEFAULTS.tacho_warn_days;
 }
 
 // Status einer Auslesepflicht aus der letzten erfassten Auslesung

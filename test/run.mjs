@@ -4248,7 +4248,11 @@ await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrer
     eq(await st(), 'laeuft_ab', 'Grenze eingeschlossen');
   } finally { eq((await owner.put('/api/settings', { driver_doc_warn_days: '' })).status, 200); }
   const { warnDaysOf, contractStatus } = await import('../src/contracts.js');
-  const { SETTING_RULES } = await import('../src/settings.js');
+  const { SETTING_RULES, SETTING_DEFAULTS } = await import('../src/settings.js');
+  eq((await owner.get('/api/settings')).data.defaults.contract_warn_days, 60, 'Standardwerte in der Antwort (Platzhalter im Formular)');
+  eq(Object.keys(SETTING_DEFAULTS).sort().join(), 'contract_warn_days,driver_doc_warn_days,maintenance_warn_days,tacho_warn_days');
+  const fs = await import('node:fs');
+  for (const f of ['maintenance', 'agent', 'vehicles', 'drivers', 'tacho', 'contracts']) ok(!/\|\| (30|60|7)\b|: (30|60|7);/.test(fs.readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8').replace(/max: \d+/g, '')), `${f}.js: kein eigener Standardwert neben SETTING_DEFAULTS`);
   eq(SETTING_RULES.contract_warn_days.min, 0); eq(SETTING_RULES.driver_doc_warn_days.min, 0);
   eq(warnDaysOf(new Map([['contract_warn_days', '0']])), 0, 'Verträge: 0 bleibt 0 (vorher still 60)');
   eq(warnDaysOf(new Map([['contract_warn_days', '']])), 60); eq(warnDaysOf(new Map()), 60); eq(warnDaysOf(new Map([['contract_warn_days', '14']])), 14);
@@ -4258,7 +4262,8 @@ await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrer
   const { STRINGS, AUDIT_SETTING_KEYS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].fine_warn && STRINGS[l].warn_zero_hint, `${l}: Bußgeld-Bezeichnung und Hinweis`);
-    ok(/30/.test(STRINGS[l].warn_days) && /30/.test(STRINGS[l].driver_doc_warn) && /7/.test(STRINGS[l].tacho_warn) && /60/.test(STRINGS[l].ct_warn), `${l}: Standardwerte in der Bezeichnung = Wirkung im Server`);
+    for (const [k, lk] of [['maintenance_warn_days', 'warn_days'], ['driver_doc_warn_days', 'driver_doc_warn'], ['tacho_warn_days', 'tacho_warn'], ['contract_warn_days', 'ct_warn']])
+      ok(new RegExp(`\\b${SETTING_DEFAULTS[k]}\\)`).test(STRINGS[l][lk]), `${l}: Bezeichnung „${STRINGS[l][lk]}“ nennt den Standard ${SETTING_DEFAULTS[k]} (= Wirkung im Server)`);
   }
   ok(!/Prüftermine/.test(STRINGS.de.fine_warn), 'Bußgeld-Feld heißt nicht mehr „Antwortfrist – Vorwarnung Prüftermine“');
   ok(AUDIT_SETTING_KEYS.includes('fine_warn_days'));

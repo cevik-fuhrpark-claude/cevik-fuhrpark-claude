@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test: Vorwarnfristen Regel = Wirkung. Bezeichnungen nennen den Standardwert (Prüftermine/Fahrernachweise 30, Auslesungen 7, Verträge 60),
 # Bußgeld-Feld hat eine eigene Bezeichnung (vorher „Antwortfrist – Vorwarnung Prüftermine“), Hinweis „0 = erst am Fälligkeitstag“ sichtbar;
 # 0 Tage für Fahrernachweise/Verträge wird gespeichert und als 0 wieder angezeigt. DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler.
-# Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# Leere Felder zeigen den Standard als Platzhalter (aus GET /api/settings → defaults). Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -33,6 +33,8 @@ with sync_playwright() as p:
           check(v in lab,f'{lang} {w}px: {k} → {lab!r}')
         check('Prüftermine' not in q.inner_text('label[for="fine_warn_days"]'),f'{lang} {w}px: Bußgeld-Feld ohne „Prüftermine“')
         check(HINT[lang] in q.inner_text('#sf'),f'{lang} {w}px: Hinweis zu 0 sichtbar')
+        ph={k:q.get_attribute(f'#{k}','placeholder') for k in ['driver_doc_warn_days','contract_warn_days','tacho_warn_days','fine_warn_days']}
+        check(ph['driver_doc_warn_days']=='30' and ph['contract_warn_days']=='60' and ph['tacho_warn_days']=='7' and ph['fine_warn_days'] is None,f'{lang} {w}px: Platzhalter = Standard bei leerem Feld {ph}')
         q.fill('#driver_doc_warn_days','0'); q.fill('#contract_warn_days','0'); q.click('#sf button:not([type])')
         q.wait_for_selector('.toast'); q.wait_for_timeout(300)
         vals=api('GET','/api/settings')['d']['values']

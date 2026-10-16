@@ -5,6 +5,7 @@ import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
+import { SETTING_DEFAULTS } from './settings.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
 export const CHECK_RESULTS = ['in_ordnung', 'maengel', 'nicht_vorgelegt'];
@@ -28,7 +29,7 @@ function cfg(map) {
   // Regel = Wirkung (SETTING_RULES: 0–365): 0 = keine Vorwarnung (nur „abgelaufen“), leer = Standard 30 – vorher wurde 0 still zu 30
   const wv = map.get('driver_doc_warn_days'); const warn = wv === undefined || wv === null || wv === '' ? NaN : Number(wv);
   const months = Number(map.get('license_check_months'));
-  return { warnDays: Number.isFinite(warn) && warn >= 0 ? warn : 30, checkMonths: Number.isInteger(months) && months > 0 ? months : null };
+  return { warnDays: Number.isFinite(warn) && warn >= 0 ? warn : SETTING_DEFAULTS.driver_doc_warn_days, checkMonths: Number.isInteger(months) && months > 0 ? months : null };
 }
 function addMonthsIso(d, m) {
   const [y, mo, da] = d.split('-').map(Number);

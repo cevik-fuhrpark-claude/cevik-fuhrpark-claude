@@ -26,6 +26,9 @@ export const SETTING_RULES = {
   user_unused_days: { int: true, min: 0, max: 3650 },
   ...Object.fromEntries(SLA_KEYS.map((k) => [k, { int: true, min: 1, max: 43200 }])),
 };
+// Standardwerte bei leerem Feld (einzige Quelle: Verbraucher, Einstellungs-Antwort `defaults`, Platzhalter im Formular; Bezeichnungen per Test geprüft).
+// Alle übrigen Einstellungen: leer = aus bzw. nicht festgelegt (keine eigene Vorgabe der App).
+export const SETTING_DEFAULTS = { maintenance_warn_days: 30, driver_doc_warn_days: 30, tacho_warn_days: 7, contract_warn_days: 60 };
 export const SETTINGS_KEYS = ['test_master_readonly', ...Object.keys(SETTING_RULES)];
 
 // Ein Wert → gespeicherter Text ('' = aus). Ungültig → 400 setting_invalid mit Schlüssel und Grenzen (die App nennt das Feld in ihrer Sprache).

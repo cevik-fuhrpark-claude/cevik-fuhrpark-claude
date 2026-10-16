@@ -15,6 +15,7 @@ import { latestKmByVehicle, kmDue, ruleDueKm, maintenanceEventLists } from './ma
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { findingLabel } from '../public/finding-labels.js';
 import { findingText as fm, FINDING_ENUMS } from '../public/finding-messages.js';
+import { SETTING_DEFAULTS } from './settings.js';
 
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
@@ -265,7 +266,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Wartung/Prüftermine (nur aus belegten Regeln); „heute“ nach Berliner Kalender wie Übersicht und HU/SP-Regeln
     const today = berlinDate();
     const rules = (await env.DB.prepare(`SELECT m.*, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
-    const warnDays = Number(settings.get('maintenance_warn_days')) || 30;
+    const warnDays = Number(settings.get('maintenance_warn_days')) || SETTING_DEFAULTS.maintenance_warn_days;
     const warnKm = Number(settings.get('maintenance_warn_km')) > 0 ? Number(settings.get('maintenance_warn_km')) : null;
     const latestKm = rules.some((r) => ruleDueKm(r) !== null) ? await latestKmByVehicle(env) : new Map();
     for (const r of rules) {

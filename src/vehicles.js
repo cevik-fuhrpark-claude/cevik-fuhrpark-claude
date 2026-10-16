@@ -11,6 +11,7 @@ import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth } from './reports.js';
+import { SETTING_DEFAULTS } from './settings.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
@@ -175,7 +176,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
         km_rejected_below: x.km !== null && prev_km !== null && x.gps_time && Math.round(x.km) < prev_km ? prev_km : null }))
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
-  const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || 30);
+  const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), Number(sets.get('maintenance_warn_days')) || SETTING_DEFAULTS.maintenance_warn_days);
   const failedInspection = failedInspectionOf(v, maintenanceHistory, allCases, addMonths(berlinDate(), -12));
   // Pflichtprüfung in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`, ohne Zusatzabfrage
   const sinceNr = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);

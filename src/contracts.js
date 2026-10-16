@@ -8,6 +8,7 @@ import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, ber
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
+import { SETTING_DEFAULTS } from './settings.js';
 
 export const CONTRACT_KINDS = ['leasing', 'miete', 'finanzierung', 'versicherung', 'wartung', 'sonstiges'];
 export const KIND_DE = { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' };
@@ -30,7 +31,7 @@ export function warnDaysOf(settings) {
   // Regel = Wirkung (SETTING_RULES: 0–730): 0 = Vorwarnung erst am Stichtag, leer = Standard 60 – vorher wurde 0 still zu 60
   const v = settings && settings.get ? settings.get('contract_warn_days') : null;
   const n = v === undefined || v === null || v === '' ? NaN : Number(v);
-  return Number.isFinite(n) && n >= 0 ? n : 60;
+  return Number.isFinite(n) && n >= 0 ? n : SETTING_DEFAULTS.contract_warn_days;
 }
 
 // Status eines Vertrags (reine Funktion, für Akte, Übersicht und Fuhrparkagent gleich)
