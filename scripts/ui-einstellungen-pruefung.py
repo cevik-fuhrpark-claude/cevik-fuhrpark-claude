@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test: Einstellungen nur mit plausiblen Werten. „2000000“ € Freigabegrenze und „-5“ Tage werden abgewiesen (vorher gespeichert):
 # Meldung nennt das Feld und den erlaubten Bereich in der App-Sprache, Feld rot markiert und fokussiert, nichts gespeichert.
 # „1.000,50“ (vorher im Browser zu „1.000.50“ gemacht und still übergangen, Meldung trotzdem ✓) wird als 1000,5 gespeichert und mit Dezimalkomma (DE/UK) angezeigt.
-# DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# Ganze Zahlen (km) mit Tausenderpunkt („15.000“) werden angenommen. DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -44,6 +44,9 @@ with sync_playwright() as p:
         q.wait_for_selector('.toast:not(.err)')
         check(api('GET','/api/settings')['d']['values'].get('repair_cost_limit_net')=='1000.5',f'{lang} {w}px: „1.000,50“ gespeichert als 1000,5')
         q.goto(B+'/#/more'); q.goto(B+'/#/settings'); q.wait_for_selector('#repair_cost_limit_net')
+        q.fill('#maintenance_warn_km','15.000'); q.click('#sf button[type=submit], #sf button:not([type])'); q.wait_for_selector('.toast:not(.err)')
+        check(api('GET','/api/settings')['d']['values'].get('maintenance_warn_km')=='15000',f'{lang} {w}px: ganze Zahl „15.000“ km gespeichert als 15000 (kein Mehrdeutig-Hinweis)')
+        api('PUT','/api/settings',{'maintenance_warn_km':None})
         check(q.input_value('#repair_cost_limit_net')==SHOWN[lang],f'{lang} {w}px: Anzeige „{SHOWN[lang]}“ ({q.input_value("#repair_cost_limit_net")})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')

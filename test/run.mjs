@@ -445,6 +445,8 @@ await test('Einstellungen: nur plausible Werte (Bereich, ganze Zahl, deutsches Z
   ok(SETTINGS_KEYS.every((k) => k === 'test_master_readonly' || SETTING_RULES[k]), 'Regel je Schlüssel');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   for (const k of SETTINGS_KEYS) ok(app.includes(`field('${k}'`) || k.startsWith('sla_') || k === 'test_master_readonly', `Formularfeld ${k}`);
+  { const dec = app.match(/const DEC = \[([^\]]+)\]/); ok(dec, 'DEC-Liste'); const decKeys = dec[1].match(/'([a-z_]+)'/g).map((x) => x.slice(1, -1)).sort().join();
+    eq(decKeys, SETTINGS_KEYS.filter((k) => SETTING_RULES[k] && !SETTING_RULES[k].int).sort().join(), 'Kommafelder im Formular = Regeln ohne ganze Zahl'); }
   ok(app.includes("err.code === 'setting_invalid'") && app.includes("inp.setAttribute('aria-invalid', 'true')"), 'App nennt das Feld und markiert es');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const p of ['{f}', '{min}', '{max}', '{int}']) ok(STRINGS[l].err_setting_invalid.includes(p), `${l}: ${p}`); ok(STRINGS[l].setting_int, l); }
