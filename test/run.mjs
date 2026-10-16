@@ -748,6 +748,10 @@ await test('Telematik-Prüffälle: Zuordnung nur durch Fuhrpark mit Nachweis; da
   const fcsv = await users.fleet.get('/api/telematics?format=csv&site=' + encodeURIComponent(p2.site));
   eq(parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode(fcsv.data).replace(/^\ufeff/, '')).length, fs.positions.length + 1, 'CSV gefiltert');
   ok((fcsv.headers.get('content-disposition') || '').includes('_' + p2.site.replace(/[^\w-]/g, '') + '.csv'), 'Dateiname mit Standort');
+  const { fileSlug, siteSuffix } = await import('../src/util.js');
+  eq(fileSlug('München Süd'), 'MuenchenSued', 'Umlaute ausgeschrieben statt gestrichen (vorher „MnchenSd“)'); eq(fileSlug('Łódź-Nord'), 'Lodz-Nord'); eq(fileSlug('Straße 5'), 'Strasse5');
+  eq(siteSuffix('Київ'), '', 'nichts Lesbares → kein Zusatz'); eq(siteSuffix(null), ''); eq(siteSuffix('Dortmund'), '_Dortmund');
+  ok(/^[\x20-\x7e]+$/.test(fcsv.headers.get('content-disposition')), 'Header nur ASCII');
   // Anhänger mit eigenem Gerät erscheinen zusätzlich (Vermerk kind=anhaenger, CSV-Spalte „Anhänger“); Status zählt Kfz unverändert
   const trl = (await env.DB.prepare("SELECT id, vin, plate FROM vehicles WHERE kind='anhaenger' AND active=1 AND eval_excluded=0 AND vin IS NOT NULL AND id NOT IN (SELECT vehicle_id FROM telematics_latest) LIMIT 1").first());
   ok(trl, 'Test-Anhänger vorhanden');

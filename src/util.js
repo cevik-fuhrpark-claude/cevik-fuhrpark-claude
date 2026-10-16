@@ -418,3 +418,11 @@ export function caseVariants(w) {
   const lo = w.toLocaleLowerCase('de');
   return [...new Set([w, lo, w.toLocaleUpperCase('de'), lo.charAt(0).toLocaleUpperCase('de') + lo.slice(1)])];
 }
+
+// Dateinamen-Teil (Content-Disposition, nur ASCII): Umlaute ausgeschrieben, Akzente entfernt, sonst nur Buchstaben/Ziffern/_/-.
+// Vorher wurden Nicht-ASCII-Zeichen ersatzlos gestrichen („München“ → „Mnchen“). Nichts Lesbares übrig → '' (Teil entfällt).
+export function fileSlug(s) {
+  return String(s ?? '').replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/Ł/g, 'L').replace(/ł/g, 'l').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]/g, '').slice(0, 60);
+}
+export const siteSuffix = (site) => { const s = site ? fileSlug(site) : ''; return s ? '_' + s : ''; };

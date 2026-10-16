@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME } from './util.js';
+import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -319,7 +319,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
   if (path === '/api/tires/fleet' && m === 'GET') {
     const ov = await tires.fleetTires(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'csv') return new Response(await tires.fleetTiresCsv(env, ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-reifen_${envName}_${berlinDate()}${ov.site ? '_' + ov.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    if (url.searchParams.get('format') === 'csv') return new Response(await tires.fleetTiresCsv(env, ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-reifen_${envName}_${berlinDate()}${siteSuffix(ov.site)}.csv"` } });
     return json(ov);
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/winter-order$/)) && m === 'POST') return json(await cases.orderWinterTires(env, ctx, user, envName, mm[1], await readJson(request)), 201);
@@ -333,7 +333,7 @@ async function handleApi(request, env, ctx, url) {
 
   if (path === '/api/telematics' && m === 'GET') {
     const ov = await telem.telematicsOverview(env, user, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'csv') return new Response(telem.positionsCsv(ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-telematik-stand_${berlinDate()}${ov.site ? '_' + ov.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    if (url.searchParams.get('format') === 'csv') return new Response(telem.positionsCsv(ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-telematik-stand_${berlinDate()}${siteSuffix(ov.site)}.csv"` } });
     return json(ov);
   }
   if (path === '/api/telematics/mappings' && m === 'POST') return json(await telem.confirmMapping(env, user, await readJson(request)), 201);
@@ -409,14 +409,14 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/stock/asof' && m === 'GET') {
     const rep = await stock.stockAsOf(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockAsOfCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lagerbestand-stichtag_${envName}_${rep.date}${rep.site ? '_' + rep.site.replace(/[^\w-]/g, '') : ''}.csv"` } });
+    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockAsOfCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lagerbestand-stichtag_${envName}_${rep.date}${siteSuffix(rep.site)}.csv"` } });
     return json(rep);
   }
   if (path === '/api/stock/journal' && m === 'GET') {
     const rep = await stock.journal(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'stock.journal.export', null, { from: rep.from, to: rep.to, site: rep.site, type: rep.type, ...(rep.item ? { item: rep.item.id } : {}), rows: rep.movements.length, environment: envName });
-      return new Response(rep.type === 'inventur' ? stock.inventoryDiffCsv(rep, maint.csvCell) : stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-${rep.type === 'inventur' ? 'inventurdifferenzen' : 'lagerjournal'}_${envName}_${rep.from}_${rep.to}${rep.site ? '_' + rep.site.replace(/[^\w-]/g, '') : ''}${rep.item ? '_' + String(rep.item.part_number || 'artikel').replace(/[^\w-]/g, '').slice(0, 40) : ''}.csv"` } });
+      return new Response(rep.type === 'inventur' ? stock.inventoryDiffCsv(rep, maint.csvCell) : stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-${rep.type === 'inventur' ? 'inventurdifferenzen' : 'lagerjournal'}_${envName}_${rep.from}_${rep.to}${siteSuffix(rep.site)}${rep.item ? '_' + String(rep.item.part_number || 'artikel').replace(/[^\w-]/g, '').slice(0, 40) : ''}.csv"` } });
     }
     return json(rep);
   }
