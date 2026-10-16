@@ -1827,6 +1827,8 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
     eq(app.split(`t('${k}').replace('{n}'`).length - 1, 0, `${k}: immer über tn()`);
     ok(app.includes(`tn('${k}', `), `${k}: wird genutzt`);
   }
+  // Zahl vor einem Mehrzahl-Begriff ohne Pluralform („1 Agentenbefunde“, „1 Entscheidungen offen“) → „Agentenbefunde: 1“
+  eq((app.match(/\$\{[^}]*\} \$\{(esc\()?t\('(findings|decisions)'\)/g) || []).join(' | '), '', 'Zahl + Mehrzahl-Begriff');
   const line = app.split('\n').find((l) => l.startsWith('const tn = '));
   ok(line, 'tn vorhanden');
   const run = (lang, loc, k, n) => {
@@ -1842,6 +1844,30 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   eq(run('uk', 'uk-UA', 'vnotes_n', 2), STRINGS.uk.vnotes_n.replace('{n}', '2'), 'uk ohne Pluralformen → Grundtext');
   eq(run('de', 'de-DE', 'unused_admin_hint', 1).replace('{d}', '90'), '1 aktives Konto seit über 90 Tagen nicht angemeldet (ohne protokollierte Anmeldung: seit der Anlage). Bitte prüfen, ob der Zugang noch gebraucht wird – sonst deaktivieren. Die App deaktiviert nichts selbst.');
   eq(run('de', 'de-DE', 'claim_days_open', 1), 'seit 1 Tag offen'); eq(run('en', 'en-GB', 'claim_days_open', 0), 'open for 0 days');
+});
+
+await test('Agentenbefunde: Zähl-/Tagesangaben in der Pluralform je Sprache ({n#Form/Formen}) – statt „seit 1 Tag(en)“, „1 recipient(s)“', async () => {
+  const { FINDING_MESSAGES, renderFindingMessage } = await import('../public/finding-messages.js');
+  const forms = { de: 2, en: 2, uk: 3 };
+  const bad = [];
+  for (const [lang, tpls] of Object.entries(FINDING_MESSAGES)) for (const [k, tpl] of Object.entries(tpls)) {
+    if (/\w\((e|en|s|n|r|ies|ів|и|ях)\)/.test(tpl)) bad.push(`${lang}.${k}: Klammer-Endung`);
+    for (const m of tpl.matchAll(/\{([a-z_]+)#([^{}]+)\}/g)) {
+      if (m[2].split('/').length !== forms[lang]) bad.push(`${lang}.${k}: ${m[0]} braucht ${forms[lang]} Formen`);
+      if (!tpl.includes(`{${m[1]}}`) && !tpl.includes(`{${m[1]}:`)) bad.push(`${lang}.${k}: Zahl {${m[1]}} fehlt neben der Pluralform`);
+    }
+  }
+  eq(bad.join(' | '), '', 'Vorlagen');
+  const r = (k, a, l) => renderFindingMessage(k, a, l);
+  eq(r('MAINT_DATE_OVERDUE', { plate: 'X', kind: 'UVV', days: 1, due: '01.01.2026' }, 'de'), 'X: UVV seit 1 Tag überfällig (fällig 01.01.2026).');
+  eq(r('MAINT_DATE_OVERDUE', { plate: 'X', kind: 'UVV', days: 3, due: '01.01.2026' }, 'de'), 'X: UVV seit 3 Tagen überfällig (fällig 01.01.2026).');
+  eq(r('MAINT_DATE_DUE', { plate: 'X', kind: 'HU', days: 1, due: '2026-01-01' }, 'en'), 'X: HU due on 2026-01-01 (in 1 day).');
+  eq(r('RELEASED_WITH_OPEN_ITEMS', { label: 'V-1', n: 1 }, 'de'), 'V-1: freigegeben mit 1 offener nicht sicherheitsrelevanter Restarbeit.');
+  eq(r('RELEASED_WITH_OPEN_ITEMS', { label: 'V-1', n: 2 }, 'de'), 'V-1: freigegeben mit 2 offenen nicht sicherheitsrelevanten Restarbeiten.');
+  eq(r('CONTRACT_NOTICE_DUE', { plate: 'X', ckind: 'leasing', partner: 'P', by: '2026-01-01', months: 1, end: '2026-02-01' }, 'de'), 'X: Leasing (P) – Kündigung laut Vertrag spätestens bis 2026-01-01 (1 Monat vor Ende 2026-02-01).');
+  for (const [n, w] of [[1, 'отримувача'], [3, 'отримувачів'], [5, 'отримувачів'], [21, 'отримувача']]) ok(r('URGENT_NOT_DELIVERED', { n }, 'uk').includes(`для ${n} ${w} `), `uk ${n} ${w}`);
+  eq(r('URGENT_NOT_DELIVERED', { n: 1 }, 'en').slice(0, 33), 'Urgent notification to 1 recipien');
+  ok(r('URGENT_NOT_DELIVERED', { n: 2 }, 'en').includes('2 recipients not'), 'en 2 recipients');
 });
 
 await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von anderen Rollen; Aktivität verlängert', async () => {

@@ -670,7 +670,7 @@ async function viewHome() {
       ${S.me.role === 'workshop' ? `<div><b>${d.inbox}</b>${esc(t('act_acknowledge'))}</div><div><b>${d.in_progress}</b>${esc(t('st_in_reparatur'))}</div>` : ''}</div>`;
     if (d.findings && d.findings.length) {
       const n = d.findings.filter((f) => ['kritisch', 'handeln'].includes(f.severity)).reduce((s, f) => s + f.n, 0);
-      if (n) html += `<a class="panel alert" style="display:block;text-decoration:none" href="#/master"><b>${esc(t('not_clear'))}</b>: ${n} ${esc(t('findings'))}</a>`;
+      if (n) html += `<a class="panel alert" style="display:block;text-decoration:none" href="#/master"><b>${esc(t('not_clear'))}</b> · ${esc(t('findings'))}: ${fmtNum(n)}</a>`;
     }
     if (S.me.role === 'workshop') html += await workshopBoard();
     else {
@@ -2547,7 +2547,7 @@ async function viewMaster(q) {
   const afSev = ['all', 'kritisch', 'handeln', 'hinweis', 'info'].includes(S.afSev) ? S.afSev : 'all';
   const sev = { kritisch: 'kritisch', handeln: 'mittel', hinweis: '', info: '' };
   let html = `<h1>${esc(t('master_title'))}</h1>
-    <div class="panel ${p.all_clear && !agentStale(p.last_agent_run) ? 'good' : 'alert'}"><b>${esc(p.all_clear ? t('all_clear') : t('not_clear'))}</b>${p.decisions_open ? ` · ${p.decisions_open} ${esc(t('decisions'))}` : ''}<div class="small muted">${esc(t('last_run'))}: ${p.last_agent_run ? fmtDT(p.last_agent_run.finished_at || p.last_agent_run.started_at) + (p.last_agent_run.error ? ' · ' + esc(p.last_agent_run.error) : '') : '–'}</div>${agentStale(p.last_agent_run) ? `<div class="alert small" style="margin-top:6px">${esc(t('agent_stale'))}</div>` : ''}</div>
+    <div class="panel ${p.all_clear && !agentStale(p.last_agent_run) ? 'good' : 'alert'}"><b>${esc(p.all_clear ? t('all_clear') : t('not_clear'))}</b>${p.decisions_open ? ` · ${esc(t('decisions'))}: ${fmtNum(p.decisions_open)}` : ''}<div class="small muted">${esc(t('last_run'))}: ${p.last_agent_run ? fmtDT(p.last_agent_run.finished_at || p.last_agent_run.started_at) + (p.last_agent_run.error ? ' · ' + esc(p.last_agent_run.error) : '') : '–'}</div>${agentStale(p.last_agent_run) ? `<div class="alert small" style="margin-top:6px">${esc(t('agent_stale'))}</div>` : ''}</div>
     <div class="stats"><div><b>${p.vehicles_total}</b>${esc(t('total'))}</div><div><b style="color:var(--stop)">${p.vehicles_locked}</b>${esc(t('locked_vehicles'))}</div><div><b>${p.vehicles_in_workshop}</b>${esc(t('in_workshop'))}</div></div>
     <div class="actions"><button class="btn secondary" id="ra">${esc(t('run_agent'))}</button><a class="btn secondary" href="#/vehicles">${esc(t('vehicles'))}</a>${p.findings.length ? `<button class="btn secondary noprint" id="afcsv">${esc(t('export_csv'))}</button>` : ''}<button type="button" class="btn secondary noprint" id="mprt">${esc(t('print'))}</button></div>
     ${printHead([t(p.environment === 'test' ? 'env_testname' : 'env_prod'), `${t('findings')}: ${p.findings.length}`, ...(afSev !== 'all' || (S.afQ || '').trim() ? [`${t('af_filter')}: ${afSev !== 'all' ? t('asev_' + afSev) : ''}${(S.afQ || '').trim() ? ` „${S.afQ.trim()}“` : ''}`] : []), `${t('decisions')}: ${p.decisions_open}`])}
@@ -2568,7 +2568,7 @@ async function viewMaster(q) {
   $$('[data-afsev]').forEach((b) => (b.onclick = () => { S.afSev = b.dataset.afsev; viewMaster(); }));
   const afq = $('#afq'); if (afq) afq.oninput = () => { S.afQ = afq.value; applyAf(); };
   const afc = $('#afcsv'); if (afc) afc.onclick = () => download(new Blob([agentFindingsCsv(afShown(), t, (f) => fMsg(f.message_args, f.message), (x) => translateNextAction(S.lang, x), fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-agentenbefunde_${p.environment}_${bDate()}.csv`);
-  $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${r.findings_open} ${t('findings')}`); viewMaster(); } catch (err) { toast(err.message, true); } };
+  $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${t('findings')}: ${fmtNum(r.findings_open)}`); viewMaster(); } catch (err) { toast(err.message, true); } };
   // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
   $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
     try { await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st }); await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));

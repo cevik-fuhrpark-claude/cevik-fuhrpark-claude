@@ -7,9 +7,9 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 # UVV zuletzt 10.01.2025, Intervall 12 Monate → überfällig (Prüfart-Wert „UVV“ bleibt wörtlich); Datum im Format der Sprache (EN 10/01/2026)
-EXP={'de':['PS-ANL 1: UVV seit','Tag(en) überfällig (fällig 10.01.2026)'],
+EXP={'de':['PS-ANL 1: UVV seit','Tagen überfällig (fällig 10.01.2026)'],
      'uk':['PS-ANL 1: UVV прострочено на','дн. (строк 10.01.2026)'],
-     'en':['PS-ANL 1: UVV overdue for','day(s) (due 10/01/2026)']}
+     'en':['PS-ANL 1: UVV overdue for','days (due 10/01/2026)']}
 UNCL={'de':'PS-ANL 1: HU-Frist ungeklärt – ','uk':'PS-ANL 1: строк HU не з’ясовано – ','en':'PS-ANL 1: HU deadline unclear – '}
 fails=[]
 def check(c,m):

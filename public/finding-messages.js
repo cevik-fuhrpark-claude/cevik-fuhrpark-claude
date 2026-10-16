@@ -21,23 +21,23 @@ export const FINDING_MESSAGES = {
     WAITING_PARTS: '{label}: Reparatur wartet auf Teile (seit {at}).',
     COST_APPROVAL_PENDING: '{label}: Kosten-Freigabegrenze überschritten – Kostenfreigabe offen (seit {at}).',
     QC_PENDING: '{label}: Reparatur gemeldet – Abschlusskontrolle und technische Freigabe durch einen Menschen offen.',
-    SAFETY_OPEN_ITEMS: '{label}: {n} sicherheitsrelevante Restarbeit(en) offen.',
+    SAFETY_OPEN_ITEMS: '{label}: {n} sicherheitsrelevante {n#Restarbeit/Restarbeiten} offen.',
     VEHICLE_LOCKED: '{plate}: gesperrt ({reason}) – nicht disponieren.',
     VEHICLE_LOCKED_DEFAULT: '{plate}: gesperrt (Sicherheitsprüfung) – nicht disponieren.',
-    RELEASED_WITH_OPEN_ITEMS: '{label}: freigegeben mit {n} offener nicht sicherheitsrelevanter Restarbeit(en).',
+    RELEASED_WITH_OPEN_ITEMS: '{label}: freigegeben mit {n} {n#offener nicht sicherheitsrelevanter Restarbeit/offenen nicht sicherheitsrelevanten Restarbeiten}.',
     URGENT_NOT_DELIVERED: 'Dringende Benachrichtigung an {n} Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler).',
     COSTS_UNVALUED_RATE: '{label}: Kosten unvollständig bewertet (kein Stundensatz).',
-    COSTS_UNVALUED_PARTS: '{label}: Kosten unvollständig bewertet ({n} Teil(e) ohne Preis).',
-    COSTS_UNVALUED_BOTH: '{label}: Kosten unvollständig bewertet (kein Stundensatz, {n} Teil(e) ohne Preis).',
+    COSTS_UNVALUED_PARTS: '{label}: Kosten unvollständig bewertet ({n} {n#Teil/Teile} ohne Preis).',
+    COSTS_UNVALUED_BOTH: '{label}: Kosten unvollständig bewertet (kein Stundensatz, {n} {n#Teil/Teile} ohne Preis).',
     MAINT_KM_OVERDUE: '{plate}: {kind} war bei {due:km} km fällig – Stand {km:km} km (abgelesen {date}).',
     MAINT_KM_DUE: '{plate}: {kind} fällig bei {due:km} km – Stand {km:km} km (noch {rest:km} km).',
-    MAINT_DATE_OVERDUE: '{plate}: {kind} seit {days} Tag(en) überfällig (fällig {due}).',
-    MAINT_DATE_DUE: '{plate}: {kind} fällig am {due} (in {days} Tag(en)).',
+    MAINT_DATE_OVERDUE: '{plate}: {kind} seit {days} {days#Tag/Tagen} überfällig (fällig {due}).',
+    MAINT_DATE_DUE: '{plate}: {kind} fällig am {due} (in {days} {days#Tag/Tagen}).',
     HUSP_OVERDUE: '{plate}: {kind} überfällig (fällig bis Ende {due}[[, 6 Monate nach HU {hu}]]).',
     HUSP_DUE: '{plate}: {kind} fällig bis Ende {due}[[ (Werkstatttermin geplant {planned})]].',
     INSPECTION_UNCLEAR: '{plate}: {kind}-Frist ungeklärt – {note}',
     DOCUMENT_EXPIRED: '{plate}: {doc|DOC} abgelaufen am {date}.',
-    DOCUMENT_EXPIRES_SOON: '{plate}: {doc|DOC} gültig bis {date} (in {days} Tag(en)).',
+    DOCUMENT_EXPIRES_SOON: '{plate}: {doc|DOC} gültig bis {date} (in {days} {days#Tag/Tagen}).',
     INSPECTION_DEFECTS_NO_CASE: '{plate}: {kind} vom {date} mit Ergebnis „{res|RES}“ – seitdem kein Vorgang/Auftrag.',
     REINSPECTION_PENDING: '{plate}: Mängel aus {kind} vom {date} ({res|RES}) laut Auftrag {case_no} beseitigt – Nachprüfung noch nicht eingetragen.',
     INSPECTION_RESULT_MISSING: '{plate}: {kind} vom {date} ohne eingetragenes Prüfergebnis.',
@@ -46,8 +46,8 @@ export const FINDING_MESSAGES = {
     STOCK_BELOW_MIN: 'Lager {site}: {name}[[ ({pn})]] – Bestand {stock} {unit}, Mindestbestand {min}.',
     STOCK_BELOW_MIN_ORD: 'Lager {site}: {name}[[ ({pn})]] – Bestand {stock} {unit}, Mindestbestand {min}. Bestellt {oq} {unit} am {oon}[[, Liefertermin laut Lieferant {eta}]]. Noch zu bestellen: {open} {unit}.',
     CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endete laut Eintrag am {end} – in der App noch nicht als beendet markiert.',
-    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endet am {end} (in {days} Tag(en)).',
-    CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – Kündigung laut Vertrag spätestens bis {by} ({months} Monat(e) vor Ende {end}).',
+    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endet am {end} (in {days} {days#Tag/Tagen}).',
+    CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – Kündigung laut Vertrag spätestens bis {by} ({months} {months#Monat/Monate} vor Ende {end}).',
     CONTRACT_KM_OVER: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – km-Kontingent {allow:km} km überschritten (seit Übernahme {driven:km} km).',
     CONTRACT_KM_FORECAST: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – bei gleicher Fahrleistung voraussichtlich {fc:km} km bis Vertragsende (Kontingent {allow:km} km; Prognose).',
     CLAIM_OPEN_LONG: '{label}: Versicherungsfall bei {insurer}[[, Schaden-Nr. {claim_no}]] seit {date} {st|CLAIM} (Nachfassen nach {days} Tagen eingestellt).',
@@ -60,7 +60,7 @@ export const FINDING_MESSAGES = {
     TACHO_VU_OVERDUE: '{plate}: Massenspeicher seit {due} nicht ausgelesen (letzte Auslesung {last}; Frist 90 Tage, FPersV § 2 Abs. 5).',
     TACHO_VU_DUE: '{plate}: Massenspeicher spätestens am {due} auslesen.',
     FINE_OVERDUE: '{label}: Antwortfrist {due} überschritten.',
-    FINE_DUE_SOON: '{label}: Antwortfrist {due} (in {days} Tag(en)).',
+    FINE_DUE_SOON: '{label}: Antwortfrist {due} (in {days} {days#Tag/Tagen}).',
     FINE_VEHICLE_UNKNOWN: '{label}: Kennzeichen {plate} keinem Fahrzeug zugeordnet.',
     FINE_DRIVER_OPEN: '{label}: Fahrer zur Tatzeit noch nicht ermittelt.',
   },
@@ -83,7 +83,7 @@ export const FINDING_MESSAGES = {
     VEHICLE_LOCKED: '{plate}: заблоковано ({reason}) – не планувати.',
     VEHICLE_LOCKED_DEFAULT: '{plate}: заблоковано (перевірка безпеки) – не планувати.',
     RELEASED_WITH_OPEN_ITEMS: '{label}: допущено з відкритими залишковими роботами, не важливими для безпеки: {n}.',
-    URGENT_NOT_DELIVERED: 'Термінове сповіщення для {n} отримувач(ів) не доставлено push-повідомленням (немає активованого пристрою або помилка).',
+    URGENT_NOT_DELIVERED: 'Термінове сповіщення для {n} {n#отримувача/отримувачів/отримувачів} не доставлено push-повідомленням (немає активованого пристрою або помилка).',
     COSTS_UNVALUED_RATE: '{label}: витрати оцінено не повністю (немає погодинної ставки).',
     COSTS_UNVALUED_PARTS: '{label}: витрати оцінено не повністю (запчастин без ціни: {n}).',
     COSTS_UNVALUED_BOTH: '{label}: витрати оцінено не повністю (немає погодинної ставки, запчастин без ціни: {n}).',
@@ -137,23 +137,23 @@ export const FINDING_MESSAGES = {
     WAITING_PARTS: '{label}: repair waiting for parts (since {at}).',
     COST_APPROVAL_PENDING: '{label}: cost approval limit exceeded – cost approval pending (since {at}).',
     QC_PENDING: '{label}: repair reported – final check and technical release by a person pending.',
-    SAFETY_OPEN_ITEMS: '{label}: {n} safety-relevant remaining job(s) open.',
+    SAFETY_OPEN_ITEMS: '{label}: {n} safety-relevant remaining {n#job/jobs} open.',
     VEHICLE_LOCKED: '{plate}: locked ({reason}) – do not dispatch.',
     VEHICLE_LOCKED_DEFAULT: '{plate}: locked (safety check) – do not dispatch.',
-    RELEASED_WITH_OPEN_ITEMS: '{label}: released with {n} open non-safety-relevant remaining job(s).',
-    URGENT_NOT_DELIVERED: 'Urgent notification to {n} recipient(s) not delivered by push (no enabled device or error).',
+    RELEASED_WITH_OPEN_ITEMS: '{label}: released with {n} open non-safety-relevant remaining {n#job/jobs}.',
+    URGENT_NOT_DELIVERED: 'Urgent notification to {n} {n#recipient/recipients} not delivered by push (no enabled device or error).',
     COSTS_UNVALUED_RATE: '{label}: costs not fully valued (no hourly rate).',
-    COSTS_UNVALUED_PARTS: '{label}: costs not fully valued ({n} part(s) without price).',
-    COSTS_UNVALUED_BOTH: '{label}: costs not fully valued (no hourly rate, {n} part(s) without price).',
+    COSTS_UNVALUED_PARTS: '{label}: costs not fully valued ({n} {n#part/parts} without price).',
+    COSTS_UNVALUED_BOTH: '{label}: costs not fully valued (no hourly rate, {n} {n#part/parts} without price).',
     MAINT_KM_OVERDUE: '{plate}: {kind} was due at {due:km} km – reading {km:km} km (read on {date}).',
     MAINT_KM_DUE: '{plate}: {kind} due at {due:km} km – reading {km:km} km ({rest:km} km left).',
-    MAINT_DATE_OVERDUE: '{plate}: {kind} overdue for {days} day(s) (due {due}).',
-    MAINT_DATE_DUE: '{plate}: {kind} due on {due} (in {days} day(s)).',
+    MAINT_DATE_OVERDUE: '{plate}: {kind} overdue for {days} {days#day/days} (due {due}).',
+    MAINT_DATE_DUE: '{plate}: {kind} due on {due} (in {days} {days#day/days}).',
     HUSP_OVERDUE: '{plate}: {kind} overdue (due by end of {due}[[, 6 months after HU {hu}]]).',
     HUSP_DUE: '{plate}: {kind} due by end of {due}[[ (workshop appointment planned {planned})]].',
     INSPECTION_UNCLEAR: '{plate}: {kind} deadline unclear – {note}',
     DOCUMENT_EXPIRED: '{plate}: {doc|DOC} expired on {date}.',
-    DOCUMENT_EXPIRES_SOON: '{plate}: {doc|DOC} valid until {date} (in {days} day(s)).',
+    DOCUMENT_EXPIRES_SOON: '{plate}: {doc|DOC} valid until {date} (in {days} {days#day/days}).',
     INSPECTION_DEFECTS_NO_CASE: '{plate}: {kind} on {date} with result “{res|RES}” – no case/order since.',
     REINSPECTION_PENDING: '{plate}: defects from {kind} on {date} ({res|RES}) fixed according to order {case_no} – re-inspection not yet recorded.',
     INSPECTION_RESULT_MISSING: '{plate}: {kind} on {date} without a recorded result.',
@@ -162,8 +162,8 @@ export const FINDING_MESSAGES = {
     STOCK_BELOW_MIN: 'Store {site}: {name}[[ ({pn})]] – stock {stock} {unit}, minimum stock {min}.',
     STOCK_BELOW_MIN_ORD: 'Store {site}: {name}[[ ({pn})]] – stock {stock} {unit}, minimum stock {min}. Ordered {oq} {unit} on {oon}[[, delivery date per supplier {eta}]]. Still to order: {open} {unit}.',
     CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ended on {end} according to the record – not yet marked as ended in the app.',
-    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ends on {end} (in {days} day(s)).',
-    CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – notice per contract by {by} at the latest ({months} month(s) before end {end}).',
+    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ends on {end} (in {days} {days#day/days}).',
+    CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – notice per contract by {by} at the latest ({months} {months#month/months} before end {end}).',
     CONTRACT_KM_OVER: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – mileage allowance {allow:km} km exceeded ({driven:km} km since handover).',
     CONTRACT_KM_FORECAST: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – at the same usage approx. {fc:km} km by contract end (allowance {allow:km} km; forecast).',
     CLAIM_OPEN_LONG: '{label}: insurance claim with {insurer}[[, claim no. {claim_no}]] {st|CLAIM} since {date} (follow-up after {days} days configured).',
@@ -176,7 +176,7 @@ export const FINDING_MESSAGES = {
     TACHO_VU_OVERDUE: '{plate}: vehicle unit not downloaded since {due} (last download {last}; limit 90 days, FPersV § 2 (5)).',
     TACHO_VU_DUE: '{plate}: download vehicle unit by {due} at the latest.',
     FINE_OVERDUE: '{label}: response deadline {due} passed.',
-    FINE_DUE_SOON: '{label}: response deadline {due} (in {days} day(s)).',
+    FINE_DUE_SOON: '{label}: response deadline {due} (in {days} {days#day/days}).',
     FINE_VEHICLE_UNKNOWN: '{label}: licence plate {plate} not assigned to any vehicle.',
     FINE_DRIVER_OPEN: '{label}: driver at the time of the offence not yet identified.',
   },
@@ -212,7 +212,14 @@ export const FINDING_ENUMS = {
 
 const LOCALE = { de: 'de-DE', uk: 'uk-UA', en: 'en-GB' };
 const empty = (v) => v === null || v === undefined || v === '';
-const PH = /\{([a-z_]+)(?::(km)|\|([A-Z]+))?\}/g;
+// {name#Form1/Form2[/Form3]}: Wort in der Pluralform der Zahl `name` (de/en: eins/sonst; uk: one/few/many) – statt „Tag(en)“
+const PH = /\{([a-z_]+)(?::(km)|\|([A-Z]+)|#([^{}]+))?\}/g;
+const PL_ORDER = { uk: ['one', 'few', 'many'] };
+const pluralWord = (v, forms, lang) => {
+  const f = forms.split('/'); const order = PL_ORDER[lang] || ['one', 'other'];
+  let c = 'other'; try { c = new Intl.PluralRules(LOCALE[lang] || 'de-DE').select(Number(v)); } catch { /* alte Umgebung */ }
+  const i = order.indexOf(c); return f[i >= 0 ? i : f.length - 1] ?? f[f.length - 1];
+};
 
 // Datumswerte in Befunden kommen gemischt an: ISO „2027-01-05“ (Ablauf-/Vertragsdaten) oder deutsch „05.01.2027“ (ggf. mit Uhrzeit).
 // Für die Anzeige (nicht für den gespeicherten deutschen Text) im Format der Sprache: DE/UK „05.01.2027“, EN „05/01/2027“ –
@@ -230,9 +237,10 @@ export function localDateArg(v, lang) {
 }
 
 function fill(text, args, lang, dates = false) {
-  return text.replace(PH, (_, name, fmt, list) => {
+  return text.replace(PH, (_, name, fmt, list, forms) => {
     const v = args[name];
     if (empty(v)) return '';
+    if (forms) return pluralWord(v, forms, lang);
     if (fmt === 'km') return Number(v).toLocaleString(LOCALE[lang] || 'de-DE');
     if (list) { const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {}; return e[v] ?? FINDING_ENUMS.de[list]?.[v] ?? String(v); }
     return String(dates && DATE_ARGS.has(name) ? localDateArg(v, lang) : v);

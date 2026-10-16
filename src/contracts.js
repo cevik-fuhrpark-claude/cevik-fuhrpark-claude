@@ -203,7 +203,7 @@ export function contractsIcs(ov) {
     if (c.ended_on) continue;
     const s = c.status; const label = `${KIND_DE[c.kind]} ${c.plate} (${c.partner})`;
     if (s.notice && s.notice.by >= ov.today) ev.push({ uid: `contract-${c.id}-notice`, date: s.notice.by, summary: `Kündigung spätestens: ${label}`,
-      description: `Laut Vertrag ${c.notice_months} Monat(e) vor Vertragsende ${c.end_date}. Form und Zugang der Kündigung laut Vertrag prüfen.`, alarmDays: ov.warn_days });
+      description: `Laut Vertrag ${c.notice_months} ${Number(c.notice_months) === 1 ? 'Monat' : 'Monate'} vor Vertragsende ${c.end_date}. Form und Zugang der Kündigung laut Vertrag prüfen.`, alarmDays: ov.warn_days });
     if (c.end_date && c.end_date >= ov.today) ev.push({ uid: `contract-${c.id}-end`, date: c.end_date, summary: `Vertragsende: ${label}`,
       description: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären; danach Vertrag in der Fahrzeugakte beenden.', alarmDays: ov.warn_days });
   }
