@@ -60,6 +60,30 @@ const PRIO_KEY = new Map(LANGS.flatMap((l) => Object.entries(PRIO[l]).map(([k, v
 const RES_KEY = new Map(LANGS.flatMap((l) => ['gefaehrliche_maengel', 'verkehrsunsicher'].map((k) => [T[l]['res_' + k], k])));
 const DNP = new Set(LANGS.map((l) => T[l].do_not_plan));
 const NO_CASE_BODY = new Set(['agent', 'agent_reminder', 'new_login', 'fine', 'test', 'inspection_defect']);
+// Anmelde-Hinweis „{Gerät} · {Zeit}. Waren Sie das nicht? …“: Zeit in der Schreibweise der Sprache (berlinDateTimeLang) zurücklesen und neu schreiben
+const EN_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const TIME_RE = { de: /^(\d{2})\.(\d{2})\.(\d{4}), (\d{2}:\d{2}) Uhr$/, uk: /^(\d{2})\.(\d{2})\.(\d{4}) о (\d{2}:\d{2})$/, en: /^(\d{1,2}) ([A-Z][a-z]{2}) (\d{4}), (\d{2}:\d{2})$/ };
+function loginTime(t, from, to) {
+  const m = TIME_RE[from].exec(t);
+  if (!m) return null;
+  const [d, mo, y, hm] = from === 'en' ? [m[1].padStart(2, '0'), String(EN_MON.indexOf(m[2]) + 1).padStart(2, '0'), m[3], m[4]] : [m[1], m[2], m[3], m[4]];
+  if (mo === '00') return null;
+  if (to === 'en') return `${Number(d)} ${EN_MON[Number(mo) - 1]} ${y}, ${hm}`;
+  return to === 'uk' ? `${d}.${mo}.${y} о ${hm}` : `${d}.${mo}.${y}, ${hm} Uhr`;
+}
+function localizedLoginBody(b, L) {
+  for (const l of LANGS) {
+    const tpl = T[l].new_login_body; const i = tpl.indexOf('{t}'); const tail = tpl.slice(i + 3);
+    if (!tpl.startsWith('{d} · ') || !b.endsWith(tail)) continue;
+    const head = b.slice(0, b.length - tail.length); const k = head.lastIndexOf(' · ');
+    if (k < 0) continue;
+    const dev = head.slice(0, k); const t = loginTime(head.slice(k + 3), l, L);
+    if (t === null) continue;
+    const devL = LANGS.some((x) => T[x].unknown_device === dev) ? T[L].unknown_device : dev;
+    return T[L].new_login_body.replace('{d}', devL).replace('{t}', t);
+  }
+  return b;
+}
 export function localizedBody(n, lang) {
   const L = T[lang] ? lang : 'de';
   const b = n.body;
@@ -70,6 +94,7 @@ export function localizedBody(n, lang) {
     const d = /^\d{4}/.test(m[3]) ? m[3] : `${m[3].slice(6)}-${m[3].slice(3, 5)}-${m[3].slice(0, 2)}`;
     return `${m[1]} · ${m[2]} ${dateLang(d, L)}: ${T[L]['res_' + RES_KEY.get(m[4])]}${m[5] !== undefined ? ' – ' + T[L].do_not_plan : ''}${m[6] || ''}`;
   }
+  if (n.kind === 'new_login') return localizedLoginBody(b, L);
   if (NO_CASE_BODY.has(n.kind) || !T.de[n.kind]) return b;
   const test = b.endsWith(' · TEST') ? ' · TEST' : '';
   const core = test ? b.slice(0, -test.length) : b;

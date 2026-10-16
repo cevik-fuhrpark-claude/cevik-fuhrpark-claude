@@ -3,7 +3,8 @@ import worker from '../src/worker.js';
 import { makeEnv, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { dotDate, ageMonths } from '../src/tires.js';
-import { b64urlEncode, b64urlDecode, concatBytes, dateLang } from '../src/util.js';
+import { b64urlEncode, b64urlDecode, concatBytes, dateLang, berlinDateTimeLang } from '../src/util.js';
+import { nt } from '../src/notify.js';
 import { criticalBody, reminderBody } from '../src/agent.js';
 
 let passed = 0; let failed = 0; const failures = [];
@@ -8374,6 +8375,8 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
     ['lb-10', 'agent_reminder', 'Fuhrparkagent: neue Termine/Fristen', reminderBody(['MAINTENANCE_DUE', 'MAINTENANCE_DUE', 'CONTRACT_ENDS_SOON'], 'de', 'production')],
     ['lb-11', 'agent_reminder', 'Fuhrparkagent: neue Termine/Fristen', '2× Unbekanntes'],
     ['lb-12', 'agent', 'Fuhrparkagent: Handlungsbedarf', 'Etwas (UNBEKANNT_X)'],
+    ['lb-13', 'new_login', 'Neue Anmeldung auf einem anderen Gerät', nt('de', 'new_login_body').replace('{d}', 'Chrome · Android').replace('{t}', berlinDateTimeLang('2027-01-05T08:07:00Z', 'de'))],
+    ['lb-14', 'new_login', 'Neue Anmeldung auf einem anderen Gerät', nt('en', 'new_login_body').replace('{d}', nt('en', 'unknown_device')).replace('{t}', berlinDateTimeLang('2026-07-01T20:30:00Z', 'en'))],
   ];
   for (const [id, kind, title, body] of rows) await ins.bind(id, 'test', u.id, null, 'lb:' + id, kind, 0, title, body, new Date(Date.now() - rows.findIndex((r) => r[0] === id) * 1000).toISOString()).run();
   const get = async () => Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.body]));
@@ -8384,16 +8387,20 @@ await test('Hinweisliste: Text (Priorität, Prüfergebnis, Datum) gespeicherter 
     eq(b['lb-3'], 'LB-XY 3 · UVV 05/01/2020: unroadworthy – do not schedule · TEST'); eq(b['lb-4'], 'LB-XY 4 · HU 05/01/2020: dangerous defects');
     eq(b['lb-8'], criticalBody('MAINTENANCE_OVERDUE', 'en', 'test')); ok(b['lb-8'].endsWith('(MAINTENANCE_OVERDUE) · TEST') && b['lb-8'] !== rows[7][3], 'Agent-Befund englisch: ' + b['lb-8']);
     eq(b['lb-9'], '3 new critical findings'); eq(b['lb-10'], reminderBody(['MAINTENANCE_DUE', 'MAINTENANCE_DUE', 'CONTRACT_ENDS_SOON'], 'en', 'production'));
+    eq(b['lb-13'], nt('en', 'new_login_body').replace('{d}', 'Chrome · Android').replace('{t}', berlinDateTimeLang('2027-01-05T08:07:00Z', 'en')), 'Anmelde-Hinweis englisch');
+    eq(b['lb-14'], rows[13][3], 'englisch bleibt englisch');
     eq(b['lb-11'], '2× Unbekanntes'); eq(b['lb-12'], 'Etwas (UNBEKANNT_X)');
     { const t = Object.fromEntries((await u.get('/api/notifications')).data.notifications.filter((n) => n.id.startsWith('lb-')).map((n) => [n.id, n.title]));
       eq(t['lb-10'], 'Fleet agent: new dates/deadlines'); eq(t['lb-8'], 'Fleet agent: action required'); }
     eq(b['lb-5'], 'Freitext · kritisch', 'Agent-Text unverändert'); eq(b['lb-6'], 'Freitext ohne Muster'); eq(b['lb-7'], 'LB-XY 7 · UVV 2020-01-05: etwas anderes', 'unbekanntes Ergebnis unverändert');
     eq((await u.patch('/api/me', { language: 'uk' })).status, 200);
     b = await get();
+    eq(b['lb-13'], nt('uk', 'new_login_body').replace('{d}', 'Chrome · Android').replace('{t}', berlinDateTimeLang('2027-01-05T08:07:00Z', 'uk')), 'Anmelde-Hinweis ukrainisch');
     eq(b['lb-1'], 'SM-2020-0001 · LB-XY 1 · критичний · TEST'); eq(b['lb-9'], 'Нових критичних знахідок: 3'); eq(b['lb-4'], 'LB-XY 4 · HU 05.01.2020: небезпечні дефекти');
     eq((await u.patch('/api/me', { language: 'de' })).status, 200);
     b = await get();
-    eq(b['lb-2'], 'SM-2020-0002 · LB-XY 2 · niedrig'); eq(b['lb-3'], 'LB-XY 3 · UVV 05.01.2020: verkehrsunsicher – nicht einplanen · TEST');
+    eq(b['lb-2'], 'SM-2020-0002 · LB-XY 2 · niedrig');
+    eq(b['lb-14'], nt('de', 'new_login_body').replace('{d}', nt('de', 'unknown_device')).replace('{t}', berlinDateTimeLang('2026-07-01T20:30:00Z', 'de')), 'Anmelde-Hinweis deutsch: ' + b['lb-14']); eq(b['lb-3'], 'LB-XY 3 · UVV 05.01.2020: verkehrsunsicher – nicht einplanen · TEST');
     const raw = await env.DB.prepare("SELECT body FROM notifications WHERE id='lb-4'").first();
     eq(raw.body, 'LB-XY 4 · HU 05/01/2020: dangerous defects', 'gespeicherter Text unverändert');
   } finally {
