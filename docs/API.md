@@ -103,6 +103,7 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 ## 2. App-API (Sitzungscookie)
 Schreibende Aufrufe brauchen den Header `x-cfp: 1` und gleiche Herkunft. Umgebung = Umgebung des Benutzers;
 nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
+CSV-Exporte (`format=csv`): UTF-8 mit BOM, Semikolon, CRLF; Kalendertage TT.MM.JJJJ (seit 16.10.2026 einheitlich, zentral im Worker), Zeitpunkte „TT.MM.JJJJ HH:MM“ (Berlin), Monate JJJJ-MM. Abfrageparameter bleiben JJJJ-MM-TT; JSON-Antworten unverändert ISO.
 
 | Bereich | Endpunkte |
 |---|---|

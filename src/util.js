@@ -292,6 +292,32 @@ export async function rateLimit(env, action, userId) {
 // CSV mit Anführungszeichen (RFC 4180, Trennzeichen ; oder ,)
 // Jede Zeile trägt die physische Zeilennummer der Datei als nicht aufzählbare Eigenschaft `line` (Kopfzeile = 1) –
 // Leerzeilen und Zeilenumbrüche in Anführungszeichen verschieben so die Zeilenangaben der Import-Vorschauen nicht.
+// [CLAUDE] CSV-Exporte: reine Kalendertage (JJJJ-MM-TT) als TT.MM.JJJJ wie in der App und in den übrigen Spalten
+// (Zeitpunkte kommen bereits als „TT.MM.JJJJ HH:MM“). Nur ganze, nicht in Anführungszeichen stehende Felder;
+// Monatswerte (JJJJ-MM), Kalenderwochen und Freitext bleiben unverändert. Ungültige Tage (2026-02-30) bleiben wie sie sind.
+export function csvDatesDe(text) {
+  const s = String(text); let out = ''; let field = ''; let q = false; let quoted = false;
+  const flush = () => {
+    const m = !quoted && /^(\d{4})-(\d{2})-(\d{2})$/.exec(field);
+    out += m && isCalendarDate(field) ? `${m[3]}.${m[2]}.${m[1]}` : field; field = ''; quoted = false;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) { field += c; if (c === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else q = false; } continue; }
+    if (c === '"' && field === '') { q = true; quoted = true; field += c; continue; }
+    if (c === ';' || c === '\n' || c === '\r') { flush(); out += c; continue; }
+    field += c;
+  }
+  flush();
+  return out;
+}
+
+// Zentral im Worker auf jede API-Antwort angewandt: nur erfolgreiche CSV-Exporte werden umgeschrieben, BOM (Excel) bleibt erhalten.
+export async function csvResponseDatesDe(res) {
+  if (res.status !== 200 || !(res.headers.get('content-type') || '').startsWith('text/csv')) return res;
+  return new Response(csvDatesDe(new TextDecoder('utf-8', { ignoreBOM: true }).decode(await res.arrayBuffer())), res);
+}
+
 export function parseCsv(text) {
   const src = String(text || '').replace(/^\uFEFF/, '');
   const firstLine = src.split(/\r?\n/, 1)[0] || '';

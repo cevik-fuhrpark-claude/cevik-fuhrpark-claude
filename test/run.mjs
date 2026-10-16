@@ -15,6 +15,7 @@ async function test(name, fn) {
 function eq(a, b, msg = '') { if (a !== b) throw new Error(`${msg} erwartet ${JSON.stringify(b)}, erhalten ${JSON.stringify(a)}`); }
 function ok(v, msg = 'Bedingung nicht erfüllt') { if (!v) throw new Error(msg); }
 const rk = () => crypto.randomUUID();
+const deD = (iso) => iso.split('-').reverse().join('.'); // CSV-Exporte: Kalendertage als TT.MM.JJJJ
 // Testdaten relativ zum heutigen Berliner Datum, damit die Suite an jedem Tag gleich läuft (Prüfung: scripts/zeitreise-test.sh)
 const BERLIN_TODAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
 const BERLIN_YM = BERLIN_TODAY.slice(0, 7);
@@ -1104,7 +1105,7 @@ await test('Reifenalter laut DOT: Herstellwoche geprüft (keine KW 53 ohne ISO-W
     eq(row.age_warn, 1); ok(r.totals.age_warn >= 1); eq(r.warn_age_years, 6);
     const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
     const hd = csv[0].split(';'); const line = csv.find((l) => l.startsWith(row.plate + ';')).split(';');
-    eq(line.length, hd.length); eq(line[hd.indexOf('Ältester Reifen (Herstellwoche laut DOT)')], '2018-01-01'); eq(line[hd.indexOf('Reifen über Warnalter')], '1');
+    eq(line.length, hd.length); eq(line[hd.indexOf('Ältester Reifen (Herstellwoche laut DOT)')], '01.01.2018'); eq(line[hd.indexOf('Reifen über Warnalter')], '1');
   } finally { await owner.put('/api/settings', { tire_warn_age_years: '' }); }
   // Wechsel ohne DOT: neuer Reifen, Alter unbekannt (nie vom alten Reifen übernommen)
   await W({ event_type: 'wechsel', position: 'HA-R-innen', size: '315/70 R22.5', winter_mark: '3pmsf' });
@@ -1170,7 +1171,7 @@ await test('Bestellvorschlag: nur Artikel unter Mindestbestand, Fehlmenge, Verbr
   const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data);
   ok(txt.startsWith('\ufeffLager;Artikelnummer;Bezeichnung;Einheit;Lagerort;Bestand;Mindestbestand;Fehlmenge bis Mindestbestand'), 'CSV-Kopf');
   ok(txt.includes(';1;2;1;2;84,5;84,5'), 'CSV-Zeile mit Komma-Dezimalen');
-  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;;;\d{4}-\d\d-\d\d;;;;4\r\n/.test(txt), 'ohne Preis: Wert leer, ohne Lieferant leer, letzter Zugang = Anfangsbestand');
+  ok(/Kabelbinder ohne Preis;Stk;;1;5;4;0;;;;\d\d\.\d\d\.\d{4};;;;4\r\n/.test(txt), 'ohne Preis: Wert leer, ohne Lieferant leer, letzter Zugang = Anfangsbestand');
   ok(txt.split('\r\n')[0].includes(';Letzter Lieferant;Letzter Zugang;'), 'CSV-Kopf mit Lieferant');
   eq(r2.find((i) => i.id === np.data.id).last_supplier, null, 'kein Lieferant erfunden');
   // Testartikel wieder entfernen (deaktivieren), damit spätere Zählungen unverändert bleiben
@@ -2281,7 +2282,7 @@ await test('km-Fälligkeit: Prognose aus gespeicherten km-Ständen (nur Planungs
   const akte = (await users.fleet.get(vp)).data.maintenance.find((m) => m.id === r0.data.id);
   eq(JSON.stringify(akte.km_forecast), JSON.stringify(x.km_forecast), 'Fahrzeugakte = Übersicht');
   const csv = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
-  ok(/km-Fälligkeit voraussichtlich \(Prognose\)/.test(csv) && csv.split('\r\n').some((l) => l.startsWith('KM-FC 1;') && l.split(';')[13] === exp), 'CSV-Spalte mit Datum (Spalte 14; danach km bei letzter Prüfung, Intervall km)');
+  ok(/km-Fälligkeit voraussichtlich \(Prognose\)/.test(csv) && csv.split('\r\n').some((l) => l.startsWith('KM-FC 1;') && l.split(';')[13] === deD(exp)), 'CSV-Spalte mit Datum (Spalte 14; danach km bei letzter Prüfung, Intervall km)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].km_forecast.includes('{d}') && ['{from}', '{to}', '{kpd}'].every((k) => STRINGS[lang].km_forecast_hint.includes(k)), `Texte ${lang}`);
   // Filter „Prognose ≤ 30 Tage“ (Prüftermine): reine Anzeige-Funktion aus der App, Grenzen inklusiv
@@ -2341,7 +2342,7 @@ await test('Wartungshistorie: jede Durchführung bleibt erhalten (erfasst, erled
   eq((await users.driver.get('/api/maintenance/history')).status, 403, 'Fahrer nicht');
   const hcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/maintenance/history?format=csv&from=2025-01-01&to=2026-12-31&kind=Inspektion')).data);
   ok(hcsv.startsWith('﻿Kennzeichen;FIN-Schlüssel;Fahrzeugart'), 'CSV-Kopf');
-  ok(hcsv.includes(';2026-09-01;') && hcsv.includes(';Import;') && hcsv.includes(';2025-09-02;'), 'CSV-Zeilen');
+  ok(hcsv.includes(';01.09.2026;') && hcsv.includes(';Import;') && hcsv.includes(';02.09.2025;'), 'CSV-Zeilen');
   ok((await owner.get('/api/admin/audit?action=maintenance.history_export')).data.entries.length >= 1, 'Export protokolliert');
   const ih = await anon.req('GET', '/api/integration/v1/maintenance/history?from=2025-01-01&to=2025-12-31&kind=Inspektion', undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(ih.status, 200); ok(ih.data.events.some((x) => x.vehicle_id === V2 && x.done_date === '2025-09-02'), 'Integrations-API Historie');
@@ -2941,7 +2942,7 @@ await test('Lager „Zuletzt gezählt“ je Artikel: Datum + Zählmenge bei Buch
   eq((await users.ws.get(`/api/stock/${a}`)).data.item.last_counted_qty, 3, 'Artikelakte');
   eq((await users.prodFleet.get('/api/stock')).data.items.filter((i) => i.last_counted_at).length, 0, 'Betrieb unberührt');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?format=csv')).data).split('\r\n');
-  ok(csv.find((l) => l.includes('Zählartikel B')).endsWith(`;${berlinDate()};2`) && csv.find((l) => l.includes('Zählartikel A')).endsWith(';2025-01-02;3'), 'CSV mit Datum und Zählmenge');
+  ok(csv.find((l) => l.includes('Zählartikel B')).endsWith(`;${deD(berlinDate())};2`) && csv.find((l) => l.includes('Zählartikel A')).endsWith(';02.01.2025;3'), 'CSV mit Datum und Zählmenge');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].last_counted && STRINGS[l].never_counted && STRINGS[l].help_stock_s.includes(STRINGS[l].last_counted), 'Texte/Hilfe ' + l);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -3076,7 +3077,7 @@ await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, end
   eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?reorder=1&format=csv')).data);
   ok(csv.split('\r\n')[0].endsWith(';Bestellt Menge;Bestellt am;Liefertermin laut Lieferant;Noch zu bestellen'), 'CSV-Kopf');
-  ok(csv.includes(`Bestellvermerk-Teil;Stk;;2;10;8;0;5;40;;${today};20;${today};;0`), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Bestellvermerk')));
+  ok(csv.includes(`Bestellvermerk-Teil;Stk;;2;10;8;0;5;40;;${deD(today)};20;${deD(today)};;0`), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Bestellvermerk')));
   eq((await users.ws.req('DELETE', `/api/stock/${id}/order`)).status, 200); eq((await ro()).ordered_on, null, 'manuell aufgehoben');
   await users.ws.put(`/api/stock/${id}/order`, { qty: 8 });
   await users.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 3, supplier: 'Teilehandel' });
@@ -3118,7 +3119,7 @@ await test('Bestand zum Stichtag: Buchungen bis Ende des Berliner Tages, letzter
   eq(csv.status, 200); ok(/lagerbestand-stichtag_test_2025-12-31/.test(csv.headers.get('content-disposition')), 'Dateiname');
   const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/\r\n$/, '').split('\r\n');
   ok(lines[0].startsWith('﻿Stichtag;Lager;Artikelnummer;Bezeichnung;Einheit;Lagerort;Bestand zum Stichtag;'), 'Kopfzeile'); eq(lines.length - 1, r.items.length);
-  ok(lines.some((l) => l.startsWith('2025-12-31;DORTMUND;;Stichtagartikel;Stk;;8;3;24;2,5;20;nein')), 'Zeile');
+  ok(lines.some((l) => l.startsWith('31.12.2025;DORTMUND;;Stichtagartikel;Stk;;8;3;24;2,5;20;nein')), 'Zeile');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.indexOf('[/^#\\/stock\\/asof$/') > 0 && app.indexOf('[/^#\\/stock\\/asof$/') < app.indexOf('[/^#\\/stock\\/([\\w-]+)$/, viewStockItem]') && app.includes('href="#/stock/asof" id="sasof"'), 'Route vor Artikel-Route, Knopf im Lager');
   ok(app.includes("rep.summary[k].unvalued === rep.summary.count ? '–'"), 'Summe ohne bewertete Zeilen: – statt 0 €');
@@ -4228,7 +4229,7 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
   eq((await users.driver.get('/api/drivers?format=csv')).status, 403, 'Fahrer: keine Fristenliste');
   const dcsv = new TextDecoder().decode((await users.fleet.get('/api/drivers?format=csv')).data);
-  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;2035-03-31;2031-05-31;;2026-01-10;in Ordnung;;/.test(dcsv) && dcsv.includes(`in Ordnung;;${ago(0)};${ago(-28)};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
+  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;31\.03\.2035;31\.05\.2031;;10\.01\.2026;in Ordnung;;/.test(dcsv) && dcsv.includes(`in Ordnung;;${deD(ago(0))};${deD(ago(-28))};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
   const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
   eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
   eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');
@@ -5988,7 +5989,7 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   ok(nach && nach.defect_case_no === null && nach.reinspection_date === null, 'Prüfung ohne Mängel: keine Auftrags-/Nachprüfungsangaben');
   const hc = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/maintenance/history?format=csv&from=${day(-30)}&to=${day(0)}&kind=UVV`)).data);
   ok(hc.split('\r\n')[0].endsWith(';Mängelauftrag;Status Mängelauftrag;Nachprüfung am;Ergebnis Nachprüfung'), 'CSV-Kopf erweitert');
-  ok(hc.split('\r\n').some((l) => l.includes('UVV-Protokoll 5501') && l.endsWith(`;${o.data.case_no};Fahrzeug freigegeben;${day(0)};ohne Mängel`)), 'CSV-Zeile mit Auftrag und Nachprüfung');
+  ok(hc.split('\r\n').some((l) => l.includes('UVV-Protokoll 5501') && l.endsWith(`;${o.data.case_no};Fahrzeug freigegeben;${deD(day(0))};ohne Mängel`)), 'CSV-Zeile mit Auftrag und Nachprüfung');
   const H = { authorization: 'Bearer integration-token-xyz' };
   const iev = async (q) => (await anon.req('GET', `/api/integration/v1/maintenance/history?from=${day(-30)}&to=${day(0)}&kind=UVV${q}`, undefined, H)).data;
   const ip = await iev('&environment=test');
@@ -6841,11 +6842,9 @@ await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) l
   ok(translateImportReason('en', gapReason) === 'No date entered – row left unchanged', 'Hinweis übersetzt');
 });
 
-await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), Dateiname, gleiche Spaltenzahl je Zeile, Formelschutz', async () => {
-  const { parseCsv } = await import('../src/util.js');
-  const { readFileSync } = await import('node:fs');
+const csvExportUrls = () => {
   const y = BERLIN_TODAY.slice(0, 4);
-  const urls = {
+  return {
     'fuhrpark-fahrzeuge': '/api/vehicles?format=csv', 'fuhrpark-vertraege': '/api/contracts?format=csv', 'fuhrpark-prueftermine': '/api/maintenance?format=csv',
     'fuhrpark-durchgefuehrte-pruefungen': `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, 'fuhrpark-reifen': '/api/tires/fleet?format=csv',
     'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`,
@@ -6855,6 +6854,11 @@ await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), D
     'fuhrpark-fahrer': '/api/drivers?format=csv', 'fuhrpark-auslesungen': '/api/tacho?format=csv', 'fuhrpark-bussgelder': '/api/fines?format=csv', 'fuhrpark-vorgaenge': '/api/cases?format=csv',
     'fuhrpark-versicherungsfaelle': '/api/claims?format=csv', 'fuhrpark-telematik-stand': '/api/telematics?format=csv',
   };
+};
+await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), Dateiname, gleiche Spaltenzahl je Zeile, Formelschutz', async () => {
+  const { parseCsv } = await import('../src/util.js');
+  const { readFileSync } = await import('node:fs');
+  const urls = csvExportUrls();
   // Wächter: jede CSV-Antwort im Router steht in dieser Liste (neue Exporte fallen sofort auf)
   const routes = (readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8').match(/text\/csv/g) || []).length;
   ok(routes <= Object.keys(urls).length, `${routes} CSV-Antworten im Router, ${Object.keys(urls).length} geprüft – neuen Export hier ergänzen`);
@@ -6873,6 +6877,32 @@ await test('Alle CSV-Exporte: Excel-tauglich (UTF-8 mit BOM, Semikolon, CRLF), D
     ok(!bad.length, `${name}: ${bad.length} Zeile(n) mit abweichender Spaltenzahl (Kopf ${rows[0].length}, z. B. Zeile ${bad[0] && bad[0].line}: ${bad[0] && bad[0].length})`);
     for (const row of rows) for (const c of row) ok(!/^[=+@]/.test(c) && !(/^-/.test(c) && !/^-\d+(?:[.,]\d+)?$/.test(c)), `${name}: ungeschützte Zelle ${c}`);
   }
+});
+await test('Alle CSV-Exporte: Kalendertage einheitlich TT.MM.JJJJ (wie in der App), Monatswerte/Freitext in Anführungszeichen unverändert, BOM bleibt', async () => {
+  const { csvDatesDe, parseCsv } = await import('../src/util.js');
+  // Hilfsfunktion: nur ganze, nicht zitierte Felder; ungültige Tage, Monate, Zeitstempel und zitierter Freitext bleiben
+  eq(csvDatesDe('\ufeffA;B;C;D;E;F\r\n2026-10-16;2026-10;"2026-10-16";2026-02-30;x 2026-10-16;16.10.2026 08:00\r\n'),
+    '\ufeffA;B;C;D;E;F\r\n16.10.2026;2026-10;"2026-10-16";2026-02-30;x 2026-10-16;16.10.2026 08:00\r\n');
+  eq(csvDatesDe('"a;""b"";2026-01-01";2026-01-01'), '"a;""b"";2026-01-01";01.01.2026', 'Anführungszeichen mit Semikolon/doppelten Zeichen');
+  eq(csvDatesDe('2026-12-31'), '31.12.2026', 'letztes Feld ohne Zeilenende');
+  let dates = 0;
+  const ownerTest = new Client(worker, env, 'owner'); ownerTest.cookie = owner.cookie; ownerTest.envHeader = 'test';
+  for (const c of [owner, ownerTest]) {
+    for (const [name, u] of Object.entries(csvExportUrls())) {
+      const r = await c.get(u); eq(r.status, 200, name);
+      const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+      ok(text.startsWith('\ufeff'), `${name}: BOM`);
+      for (const row of parseCsv(text).slice(1)) for (const cell of row) {
+        ok(!/^\d{4}-\d{2}-\d{2}/.test(cell), `${name} (${c.envHeader || 'Betrieb'}): Datum im ISO-Format ${cell}`);
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(cell)) dates++;
+      }
+    }
+  }
+  ok(dates >= 30, `Kalendertage in den Exporten geprüft: ${dates}`);
+  console.log(`     ${dates} Kalendertage in ${Object.keys(csvExportUrls()).length * 2} CSV-Exporten geprüft (Betrieb + Test)`);
+  // Importe lesen das Exportformat weiter (Verträge: Beginn/Ende als TT.MM.JJJJ)
+  const { parseDay } = await import('../src/contracts.js');
+  eq(parseDay('16.10.2026'), '2026-10-16');
 });
 
 await test('Exporte und Rollen: Fahrer bekommt keinen Export; Personen-/Kostendaten (Fahrer, Auslesungen, Bußgelder, Versicherung, Kosten, Verträge, Protokoll) nicht für Werkstatt/Disposition', async () => {
