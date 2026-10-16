@@ -344,7 +344,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
   for (const s of specs) { if (!byV.has(s.vehicle_id)) byV.set(s.vehicle_id, {}); byV.get(s.vehicle_id)[s.axle] = s; }
   const mm = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const head = ['Kennzeichen', 'Fahrzeugart', 'Standort', 'Status', 'Kleinste Profiltiefe (mm)', 'Gemessene Positionen', `Unter ${mm(ov.legal_min_tread_mm)} mm`, 'Unter Warnschwelle',
-    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} Tage`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen'];
+    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} ${ov.stale_days === 1 ? 'Tag' : 'Tage'}`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen'];
   const lines = [head.join(';')];
   for (const r of ov.rows) {
     const sp = byV.get(r.vehicle_id) || {};
