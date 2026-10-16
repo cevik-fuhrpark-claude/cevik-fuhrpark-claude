@@ -63,10 +63,23 @@ export async function latestKmByVehicle(env, { withBase = false } = {}) {
   // withBase: zusätzlich die früheste Ablesung der 90 Tage vor der letzten (für die Fahrleistungs-Prognose) – gleiche Abfrage, kein Zusatzaufruf
   const base = withBase ? `, (SELECT o3.km FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_km,
     (SELECT o3.measured_at FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_at` : '';
-  const rows = (await env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at${base} FROM odometer_readings o
+  // drop_at: letzte Ablesung, die kleiner ist als die unmittelbar vorherige (Tachotausch, Korrektur mit Begründung) – gleiche Abfrage
+  // drop_rec: wann der (späteste) Rücksprung erfasst wurde – maßgeblich für „Regel danach geändert“ (auch bei nachträglich datierter Ablesung)
+  const rows = (await env.DB.prepare(`WITH d AS (SELECT vehicle_id, MAX(measured_at) AS drop_at, MAX(created_at) AS drop_rec FROM (SELECT vehicle_id, km, measured_at, created_at,
+      LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) AS prev_km FROM odometer_readings) WHERE km < prev_km GROUP BY vehicle_id)
+    SELECT o.vehicle_id, o.km, o.measured_at, d.drop_at, d.drop_rec${base} FROM odometer_readings o LEFT JOIN d ON d.vehicle_id = o.vehicle_id
     WHERE o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id = o.vehicle_id)`).all()).results;
   return new Map(rows.map((r) => [r.vehicle_id, r]));
 }
+// SQL-Ausdruck „letzter km-Rücksprung“ eines Fahrzeugs (Parameter = Fahrzeug-ID), gleiche Regel wie latestKmByVehicle:
+// Text „Ablesezeitpunkt|Erfassungszeitpunkt“ oder NULL → parseKmDrop
+export const KM_DROP_SQL = (param) => `(SELECT MAX(measured_at) || '|' || MAX(created_at) FROM (SELECT km, measured_at, created_at, LAG(km) OVER (ORDER BY measured_at, rowid) AS prev_km
+  FROM odometer_readings WHERE vehicle_id=${param}) WHERE km < prev_km)`;
+export const parseKmDrop = (x) => { if (!x) return { drop_at: null, drop_rec: null }; const [a, b] = String(x).split('|'); return { drop_at: a || null, drop_rec: b || a || null }; };
+// km-Zähler gesunken (z. B. Tachotausch) nach der letzten Änderung der Regel: km bei letzter Durchführung bzw. belegte km-Fälligkeit
+// beziehen sich vermutlich auf den alten Zähler → km-Fälligkeit „ungeklärt“ statt einer falschen Restlaufleistung (nie geschätzt).
+// Erledigt wird das durch eine Durchführung mit neuem km-Stand oder das Neueintragen der Regel (updated_at nach Erfassung des Rücksprungs).
+export const kmCounterDropAfter = (rule, latest) => !!(latest && latest.drop_at && !(rule && rule.updated_at && rule.updated_at > (latest.drop_rec || latest.drop_at)));
 
 // Fahrleistungs-Prognose für km-Fälligkeiten – nur Planungshilfe, nie verbindlich und ohne Einfluss auf Status/Agent.
 // Grundlage ausschließlich gespeicherte km-Stände: früheste und letzte Ablesung innerhalb von 90 Tagen, mindestens 14 Tage auseinander,
@@ -100,11 +113,16 @@ export function kmDue(rule, latest, warnKm, today = null) {
   const next = ruleDueKm(rule);
   if (next === null) return null;
   if (!latest) return { next_due_km: next, current_km: null, km_measured_at: null, km_remaining: null, km_status: 'ohne_km' };
+  if (kmCounterDropAfter(rule, latest)) {
+    return { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: null, km_status: 'ungeklaert', km_unclear: 'counter_drop', km_drop_at: latest.drop_at,
+      ...('base_km' in latest ? { km_forecast: null } : {}) };
+  }
   const remaining = next - latest.km;
   const st = remaining < 0 ? 'ueberfaellig' : warnKm && remaining <= warnKm ? 'faellig' : 'ok';
   const out = { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: remaining, km_status: st };
   if ('base_km' in latest) {
-    const rate = kmRate(latest, { km: latest.base_km, measured_at: latest.base_at }, today);
+    // Prognose nie über einen km-Rücksprung hinweg (Ablesungen alter und neuer Zähler wären nicht vergleichbar)
+    const rate = latest.drop_at && latest.base_at && latest.base_at < latest.drop_at ? null : kmRate(latest, { km: latest.base_km, measured_at: latest.base_at }, today);
     const fc = kmForecastDate(remaining, rate, latest.measured_at);
     out.km_forecast = fc ? { date: fc, km_per_day: Math.round(rate.km_per_day), from: rate.from, to: rate.to } : null;
   }

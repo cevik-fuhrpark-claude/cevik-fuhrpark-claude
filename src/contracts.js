@@ -5,7 +5,7 @@
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate } from './util.js';
 import { audit } from './auth.js';
-import { latestKmByVehicle, csvCell } from './maintenance.js';
+import { latestKmByVehicle, csvCell, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
 
 export const CONTRACT_KINDS = ['leasing', 'miete', 'finanzierung', 'versicherung', 'wartung', 'sonstiges'];
@@ -45,6 +45,8 @@ export function contractStatus(c, latest, today, warnDays) {
   }
   if (c.km_allowance) {
     if (c.start_km === null || c.start_km === undefined) km = { status: 'ohne_start', allowance: c.km_allowance };
+    // km-Zähler nach Vertragsbeginn gesunken (Tachotausch o. Ä.): gefahrene km gegen das Kontingent nicht berechenbar – nie schätzen
+    else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date)) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
     else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date) || latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
     else {
       const driven = latest.km - c.start_km;
@@ -60,7 +62,7 @@ export function contractStatus(c, latest, today, warnDays) {
     }
   }
   const handeln = (end && end.status === 'abgelaufen') || (km && km.status === 'ueber');
-  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && km.status === 'prognose_ueber');
+  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler'));
   return { overall: handeln ? 'handeln' : hinweis ? 'hinweis' : 'ok', end, notice, km };
 }
 
@@ -213,10 +215,11 @@ export function contractsIcs(ov) {
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag
 export async function contractFindings(env, settings) {
   const rows = (await env.DB.prepare(`SELECT c.*, v.plate,
-      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC LIMIT 1) AS latest_km
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC LIMIT 1) AS latest_km,
+      ${KM_DROP_SQL('c.vehicle_id')} AS drop_at
     FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND (c.end_date IS NOT NULL OR c.km_allowance IS NOT NULL)`).all()).results;
   if (!rows.length) return [];
-  const km = new Map(rows.filter((r) => r.latest_km).map((r) => { const [k, at] = r.latest_km.split('|'); return [r.vehicle_id, { km: Number(k), measured_at: at }]; }));
+  const km = new Map(rows.filter((r) => r.latest_km).map((r) => { const [k, at] = r.latest_km.split('|'); return [r.vehicle_id, { km: Number(k), measured_at: at, ...parseKmDrop(r.drop_at) }]; }));
   const today = berlinDate(); const w = warnDaysOf(settings); const out = [];
   for (const c of rows) {
     const s = contractStatus(c, km.get(c.vehicle_id), today, w);

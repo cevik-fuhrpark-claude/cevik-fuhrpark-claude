@@ -63,6 +63,7 @@ UI-Pluralformen (Zähltexte je Sprache)|ui-pluralformen.py|/tmp/cfp-pluralformen
 UI-Technische Verfügbarkeit (Kennzahlen)|ui-kpi-verfuegbarkeit.py|/tmp/cfp-kpiverf.log
 UI-Fahrleistung je Monat (Fahrzeugakte)|ui-fahrleistung.py|/tmp/cfp-fahrleistung.log
 UI-Kosten je km (Regel Fahrleistung)|ui-kosten-km.py|/tmp/cfp-kostenkm.log
+UI-km-Zähler gesunken (Tachotausch)|ui-tachotausch.py|/tmp/cfp-tachotausch.log
 '
 N=0
 NL='

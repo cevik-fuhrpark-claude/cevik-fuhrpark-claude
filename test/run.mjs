@@ -8835,6 +8835,100 @@ await test('Fahrzeugakte: Fahrleistung je Monat nur aus gespeicherten Ablesungen
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Fahrleistung' })).status, 200);
 });
 
+await test('km-Zähler gesunken (Tachotausch): km-Fälligkeit „ungeklärt“ statt falscher Restlaufleistung, km-Kontingent ohne Wert, Agent-Hinweis, Auflösung durch Durchführung', async () => {
+  const { kmDue, parseKmDrop, kmCounterDropAfter } = await import('../src/maintenance.js');
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  // Rechenkern
+  const rule = { interval_km: 50000, last_done_km: 280000, updated_at: '2026-10-01T10:00:00.000Z' };
+  eq(kmDue(rule, { km: 1200, measured_at: '2026-10-05T12:00:00.000Z' }, null).km_remaining, 328800, 'ohne Rücksprung-Angabe: bisheriges Verhalten');
+  const k = kmDue(rule, { km: 1200, measured_at: '2026-10-05T12:00:00.000Z', drop_at: '2026-10-05T12:00:00.000Z', drop_rec: '2026-10-05T12:00:01.000Z' }, null);
+  eq(k.km_status, 'ungeklaert'); eq(k.km_unclear, 'counter_drop'); eq(k.km_remaining, null, 'keine Restlaufleistung aus gemischten Zählerständen'); eq(k.next_due_km, 330000);
+  ok(!kmCounterDropAfter({ ...rule, updated_at: '2026-10-06T08:00:00.000Z' }, { drop_at: '2026-10-05T12:00:00.000Z', drop_rec: '2026-10-05T12:00:01.000Z' }), 'Regel danach geändert → wieder berechnet');
+  ok(kmCounterDropAfter({ ...rule, updated_at: '2026-10-06T08:00:00.000Z' }, { drop_at: '2026-10-01T12:00:00.000Z', drop_rec: '2026-10-07T09:00:00.000Z' }), 'nachträglich datierter Rücksprung zählt ab Erfassung');
+  eq(JSON.stringify(parseKmDrop(null)), '{"drop_at":null,"drop_rec":null}');
+  ok(/ungeklärt.*Tachotausch/.test(renderFindingMessage('MAINT_KM_UNCLEAR', { plate: 'X', kind: 'Öl', date: '2026-10-05' }, 'de')), 'Befundtext DE');
+  ok(renderFindingMessage('MAINT_KM_UNCLEAR', { plate: 'X', kind: 'Öl', date: '2026-10-05' }, 'en', { dates: true }).includes('05/10/2026'), 'Befundtext EN mit Datum je Sprache');
+  ok(renderFindingMessage('MAINT_KM_UNCLEAR', { plate: 'X', kind: 'Öl', date: '2026-10-05' }, 'uk', { dates: true }).includes('05.10.2026'), 'Befundtext UK');
+  // über die API
+  eq((await owner.post('/api/vehicles', { plate: 'KP-TT 1', vin: 'WDB96340310555579', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555579'; const vp = `/api/vehicles/${V}`;
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 300000, measured_on: day(-40) })).status, 201);
+  const r = await users.fleet.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 50000, last_done_km: 280000, evidence: 'Testnachweis Tachotausch' });
+  eq(r.status, 201);
+  const c = await users.fleet.post(`${vp}/contracts`, { kind: 'leasing', partner: 'Test-Leasing', start_date: day(-60), end_date: day(600), km_allowance: 200000, start_km: 250000, evidence: 'Testvertrag Tachotausch' });
+  eq(c.status, 201);
+  let row = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id);
+  eq(row.km_status, 'ok'); eq(row.km_remaining, 30000, 'vor dem Tausch normal');
+  // Tachotausch: neuer Zähler (nachträglich datiert, mit Begründung), danach weitere Ablesung
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 1200, measured_on: day(-3), note: 'Tachotausch laut Werkstattrechnung (Test)' })).status, 201);
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 2400 })).status, 201);
+  let ov = (await users.fleet.get('/api/maintenance')).data;
+  row = ov.rows.find((x) => x.id === r.data.id);
+  eq(row.status, 'ungeklaert', 'Gesamtstatus Frist ungeklärt'); eq(row.km_status, 'ungeklaert'); eq(row.km_unclear, 'counter_drop');
+  eq(row.km_remaining, null, 'vorher fälschlich 327 600 km Rest'); ok(row.km_drop_at && row.km_drop_at.startsWith(day(-3)), 'Datum des Rücksprungs'); eq(row.km_forecast, null, 'keine Prognose über den Rücksprung');
+  ok(ov.totals.unclear >= 1, 'Zähler „ungeklärt“');
+  let d = (await users.fleet.get(vp)).data;
+  const m = d.maintenance.find((x) => x.id === r.data.id);
+  eq(m.km_unclear, 'counter_drop', 'Fahrzeugakte kennzeichnet die Regel'); ok(!('drop_at' in d.odometer[0]), 'Ablesungen ohne Hilfsspalte');
+  const ct = d.contracts.find((x) => x.id === c.data.id);
+  eq(ct.status.km.status, 'zaehler', 'Kontingent nicht berechenbar'); eq(ct.status.overall, 'hinweis'); ok(!('driven' in ct.status.km), 'keine gefahrenen km aus gemischten Zählern');
+  eq((await users.fleet.get('/api/contracts?filter=aktion')).data.contracts.find((x) => x.id === c.data.id).status.km.status, 'zaehler', 'Übersicht gleich');
+  await users.fleet.post('/api/agent/run');
+  let fs = (await users.fleet.get('/api/master')).data.findings;
+  const f = fs.find((x) => x.finding_code === 'INSPECTION_UNCLEAR' && x.subject_key === `${r.data.id}|km|zaehler`);
+  ok(f && /KP-TT 1: Ölwechsel – Fälligkeit nach km ungeklärt/.test(f.message), 'Agent-Hinweis: ' + (f && f.message));
+  ok(!fs.some((x) => x.subject_key === `${r.data.id}|km` && ['MAINTENANCE_DUE', 'MAINTENANCE_OVERDUE'].includes(x.finding_code)), 'keine km-Fälligkeit aus gemischten Zählern');
+  // Auflösung: Durchführung mit km-Stand des neuen Zählers
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Ölwechsel nach Tachotausch (Test)', done_km: 2400 })).status, 200);
+  row = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id);
+  eq(row.km_status, 'ok'); eq(row.next_due_km, 52400); eq(row.km_remaining, 50000, 'neuer Zyklus auf dem neuen Zähler'); ok(!row.km_unclear);
+  await users.fleet.post('/api/agent/run');
+  fs = (await users.fleet.get('/api/master')).data.findings;
+  ok(!fs.some((x) => x.subject_key === `${r.data.id}|km|zaehler`), 'Hinweis erledigt sich');
+  // Vertrag beginnt nach dem Tausch → normal berechnet
+  const c2 = await users.fleet.post(`${vp}/contracts`, { kind: 'wartung', partner: 'Test-Service', start_date: BERLIN_TODAY, end_date: day(400), km_allowance: 100000, start_km: 2400, evidence: 'Testvertrag 2' });
+  eq(c2.status, 201);
+  d = (await users.fleet.get(vp)).data;
+  eq(d.contracts.find((x) => x.id === c2.data.id).status.km.status, 'ok', 'Vertrag nach dem Tausch: normal');
+  // Oberfläche: Texte in drei Sprachen
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const key of ['km_unclear_drop', 'ct_km_counter_drop']) ok(STRINGS[l][key] && STRINGS[l][key].includes('{d}'), `${l}.${key}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('km_unclear_drop')") && app.includes("s.km.status === 'zaehler'"), 'Akte, Prüftermine und Verträge zeigen den Hinweis');
+  eq((await owner.post(`${vp}/active`, { active: false, reason: 'Testdaten Tachotausch' })).status, 200);
+});
+
+await test('km-Plausibilität bei „Prüfung erledigt“ (kleiner als zuvor erfasst → abgewiesen) und Datenqualität: km-Rücksprung ohne Begründung gemeldet, begründete nicht', async () => {
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await owner.post('/api/vehicles', { plate: 'KP-TT 2', vin: 'WDB96340310555580', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555580'; const vp = `/api/vehicles/${V}`;
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 100000, measured_on: day(-10) })).status, 201);
+  let dq = (await users.fleet.get('/api/admin/data-quality')).data;
+  ok(!dq.items.some((i) => i.check === 'km_drop_unexplained' && i.vehicle_id === V), 'ohne Rücksprung kein Befund');
+  const r = await users.fleet.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 50000, last_done_km: 90000, evidence: 'DQ-Test' });
+  // „Prüfung erledigt“ mit km kleiner als der zuvor erfasste: abgewiesen (Tippfehler), Text übersetzt
+  const rej = await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Tippfehler-Test', done_km: 10000 });
+  eq(rej.status, 400, 'kleinerer km-Stand abgewiesen'); ok(/kleiner als ein zuvor erfasster km-Stand/.test(rej.data.message || rej.data.error || JSON.stringify(rej.data)), 'Meldung');
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation('en', 'Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.'), 'Meldung übersetzt');
+  // nachträglich datierte Durchführung mit zu großem km-Stand (vor der Ablesung vom Tag −10) → die spätere Ablesung ist ein Rücksprung ohne Begründung
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-20), evidence: 'Tippfehler-Test', done_km: 150000 })).status, 200);
+  dq = (await users.fleet.get('/api/admin/data-quality')).data;
+  let f = dq.items.find((i) => i.check === 'km_drop_unexplained' && i.vehicle_id === V);
+  ok(f && f.severity === 'hinweis' && f.detail === `${day(-10)}: 150000 → 100000 km · manuell:fleet`, 'Befund mit Datum, Werten und Quelle: ' + (f && f.detail));
+  // begründeter Rücksprung (Tachotausch) zählt nicht; der unbegründete bleibt gemeldet
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 500, note: 'Tachotausch (Test)' })).status, 201);
+  dq = (await users.fleet.get('/api/admin/data-quality')).data;
+  f = dq.items.find((i) => i.check === 'km_drop_unexplained' && i.vehicle_id === V);
+  ok(f && !/×/.test(f.detail), 'nur der unbegründete, ohne Anzahl');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_km_drop_unexplained, `Bezeichnung ${l}`);
+  eq((await owner.post(`${vp}/active`, { active: false, reason: 'Testdaten DQ' })).status, 200);
+  dq = (await users.fleet.get('/api/admin/data-quality')).data;
+  ok(!dq.items.some((i) => i.vehicle_id === V), 'außer Betrieb: kein Befund');
+});
+
 await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden bei jedem Seitenaufbau gesetzt (Vorlesefunktion, Silbentrennung, PDF-Dateiname)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));

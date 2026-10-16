@@ -7,7 +7,7 @@ import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } fro
 import { sha256Hex, berlinDateTime, hideDriverName, dateLang } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
-import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS } from './maintenance.js';
+import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth } from './reports.js';
 
@@ -134,10 +134,13 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const mileageLo = tl ? null : berlinDayStartIso(`${addMonths(`${berlinDate().slice(0, 7)}-01`, -(MILEAGE_MONTHS - 1)).slice(0, 7)}-01`);
   const odoRows = tl
     ? (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results
-    : (await env.DB.prepare(`SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=?1 AND (measured_at >= ?2
+    : (await env.DB.prepare(`SELECT km, measured_at, source, note, ${KM_DROP_SQL('?1')} AS drop_at FROM odometer_readings WHERE vehicle_id=?1 AND (measured_at >= ?2
         OR rowid IN (SELECT rowid FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC, created_at DESC LIMIT 20)
         OR rowid IN (SELECT rowid FROM odometer_readings WHERE vehicle_id=?1 AND measured_at < ?2 ORDER BY measured_at DESC, created_at DESC LIMIT 1))
       ORDER BY measured_at DESC, created_at DESC`).bind(vehicleId, mileageLo).all()).results;
+  // letzter km-Rücksprung (Tachotausch o. Ä.; gleiche Regel wie Prüftermin-Übersicht) – Spalte derselben Abfrage, nicht je Ablesung ausgeben
+  const kmDrop = parseKmDrop(odoRows.length ? odoRows[0].drop_at : null);
+  for (const o of odoRows) delete o.drop_at;
   const odometer = odoRows.slice(0, cap || 20);
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
@@ -175,9 +178,12 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Fahrleistungs-Prognose für km-Fälligkeiten (nur Planungshilfe, gleiche Regel wie die Prüftermin-Übersicht) – Abfrage nur bei km-Regeln
   if (!tl && odometer[0] && maintenance.some((m) => ruleDueKm(m) !== null)) {
     const b = await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first();
-    const latest = { km: odometer[0].km, measured_at: odometer[0].measured_at, base_km: b ? b.km : null, base_at: b ? b.measured_at : null };
+    const latest = { km: odometer[0].km, measured_at: odometer[0].measured_at, ...kmDrop, base_km: b ? b.km : null, base_at: b ? b.measured_at : null };
     const today = berlinDate();
-    for (const m of maintenance) if (ruleDueKm(m) !== null) { const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null; }
+    for (const m of maintenance) if (ruleDueKm(m) !== null) {
+      const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null;
+      if (k && k.km_unclear) { m.km_unclear = k.km_unclear; m.km_drop_at = k.km_drop_at; }
+    }
   }
   // Akte: Verlauf höchstens MAINT_HIST_MAX (eine Zeile mehr gelesen → maintenance_history_truncated, App verlinkt die Zeitleiste „Prüfungen“).
   // Erst nach failedInspection/resultMissing kürzen – die Hinweise nutzen alle gelesenen Ereignisse.
@@ -199,7 +205,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
       ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, first_seen`).bind(vehicleId, envName).all()).results;
     }
     // Verträge (Leasing/Miete/…): km-Auswertung mit dem letzten km-Stand der Akte
-    out.contracts = await vehicleContracts(env, vehicleId, odometer[0] || null, sets, envName);
+    out.contracts = await vehicleContracts(env, vehicleId, odometer[0] ? { ...odometer[0], ...kmDrop } : null, sets, envName);
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
       out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
@@ -661,6 +667,13 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   if (r.interval_km && km === null) throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
+  // Plausibilität wie „Kilometerstand erfassen“: nicht kleiner als der zuletzt davor erfasste km-Stand (Tippfehler würde km-Fälligkeiten
+  // und €/km verfälschen). Tachotausch: zuerst den km-Stand des neuen Zählers mit Begründung in der Fahrzeugakte erfassen.
+  if (km !== null) {
+    const at = date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`;
+    const prev = await env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC, rowid DESC LIMIT 1').bind(r.vehicle_id, at).first();
+    if (prev && km < prev.km) throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.');
+  }
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10 });
   // einmalige Aktion (Rückruf): nur einmal durchführbar, keine Folgefrist (sonst stünde sie nie auf „erledigt“)

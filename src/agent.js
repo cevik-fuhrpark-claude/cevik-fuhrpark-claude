@@ -275,6 +275,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, rest: k.km_remaining }), next_action: 'Werkstatttermin einplanen.' });
+      // km-Zähler nach der letzten Änderung der Regel gesunken (Tachotausch o. Ä.): Fälligkeit nach km ungeklärt statt falscher Restlaufleistung
+      else if (k && k.km_status === 'ungeklaert' && k.km_unclear === 'counter_drop') add({ code: 'INSPECTION_UNCLEAR', subject: `${r.id}|km|zaehler`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
+        ...fm('MAINT_KM_UNCLEAR', { plate: r.plate, kind: r.kind, date: berlinDateTime(k.km_drop_at).slice(0, 10) }), next_action: 'Durchführung mit km-Stand des neuen Zählers erfassen oder km-Fälligkeit mit Nachweis neu eintragen.' });
       if (r.kind === 'HU' || r.kind === 'SP') continue; // HU/SP: zentrale Berechnung nach StVZO Anlage VIII (unten)
       const due = r.next_due_date;
       if (!due) continue;

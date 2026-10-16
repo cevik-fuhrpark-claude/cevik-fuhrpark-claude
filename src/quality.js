@@ -12,7 +12,9 @@ import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResu
 export const CHECKS = {
   duplicate_plate: 'fehler', vin_similar: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
   missing_site: 'luecke', no_km: 'luecke', km_stale: 'hinweis', missing_inspection: 'luecke',
-  km_inspection_rejected: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
+  km_inspection_rejected: 'hinweis',
+  // km-Stand kleiner als der vorherige, ohne Begründung gespeichert (z. B. Tippfehler bei „Prüfung erledigt“) – km-Fälligkeiten werden „ungeklärt“
+  km_drop_unexplained: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
   // fest gekoppeltes Gespann (Stammliste), aber Lkw und Anhänger mit unterschiedlichem Standort – Stammdaten prüfen
   coupled_site_mismatch: 'hinweis',
   // gleicher Standort in abweichender Schreibweise (Dortmund/DORTMUND) – Auswertungen fassen sie zusammen, Stammdaten vereinheitlichen
@@ -75,7 +77,13 @@ export async function dataQuality(env, user, envName, query = {}) {
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
   const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates] = await Promise.all([
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
-    env.DB.prepare('SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id').all(),
+    // letzter km-Stand je Fahrzeug; dazu der späteste Rücksprung OHNE Begründung (Ablesung kleiner als die unmittelbar vorherige, z. B. aus
+    // „Prüfung erledigt“ oder Import – die Akte verlangt sonst eine Begründung) mit Anzahl – eine Abfrage (Abfragebudget)
+    env.DB.prepare(`WITH w AS (SELECT vehicle_id, km, measured_at, source, note, LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) AS prev_km FROM odometer_readings),
+      u AS (SELECT vehicle_id, km, prev_km, measured_at, source, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at DESC) AS rn, COUNT(*) OVER (PARTITION BY vehicle_id) AS n
+        FROM w WHERE km < prev_km AND (note IS NULL OR trim(note) = ''))
+      SELECT k.vehicle_id, k.last, u.km AS drop_km, u.prev_km AS drop_prev_km, u.measured_at AS drop_at, u.source AS drop_source, u.n AS drop_n
+      FROM (SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id) k LEFT JOIN u ON u.vehicle_id = k.vehicle_id AND u.rn = 1`).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL
       OR (interval_km IS NOT NULL AND last_done_km IS NULL AND due_km IS NULL AND kind NOT IN ('HU','SP'))`).all(),
     env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, u.display_name, u.active FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles v ON v.id=d.vehicle_id
@@ -142,6 +150,11 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const [, list] of byPlate) if (list.length > 1) for (const v of list) add('duplicate_plate', v, list.filter((x) => x !== v).map((x) => x.id).join(', '));
   for (const [v, other, pos] of similarVins(vins.results)) add('vin_similar', v, `${other.plate} · ${other.vin} · #${pos}`);
   const lastKm = new Map(kms.results.map((r) => [r.vehicle_id, r.last]));
+  // Rücksprung ohne Begründung (alle aktiven, bewerteten Fahrzeuge, auch Anhänger mit km-Ständen) – Datum/Werte des spätesten, Anzahl
+  for (const r of kms.results) {
+    const v = r.drop_at ? vs.find((x) => x.id === r.vehicle_id) : null;
+    if (v) add('km_drop_unexplained', v, `${berlinDate(r.drop_at)}: ${r.drop_prev_km} → ${r.drop_km} km · ${r.drop_source}${r.drop_n > 1 ? ` · ${r.drop_n}×` : ''}`);
+  }
   const hasRule = new Set(rules.results.filter((r) => r.next_due_date).map((r) => `${r.vehicle_id}|${r.kind}`));
   const pulledBy = new Map();
   const siteLabel = siteLabels(vs);
