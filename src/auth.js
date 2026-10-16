@@ -35,7 +35,8 @@ export async function getSessionUser(env, request) {
     await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(nowIso(), h).run();
   }
   // Für die App: gleiche Leerlauf-Grenze, damit sie geteilte Bildschirme selbst leert (ohne auf den nächsten Aufruf zu warten)
-  return { ...publicUser(row, h), idle_logout_min: idleMs ? idleMs / 60000 : null };
+  // language: Sprache der Person für serverseitig erzeugte Texte (z. B. Testbenachrichtigung) – fehlte bis 16.10.2026, Test-Push kam immer deutsch
+  return { ...publicUser(row, h), language: row.language, idle_logout_min: idleMs ? idleMs / 60000 : null };
 }
 
 export function publicUser(row, sessionHash) {

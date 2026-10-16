@@ -8469,6 +8469,69 @@ await test('Push-Wiederholung und Sammel-Push nach der Ruhezeit in der AKTUELLEN
   }
 });
 
+await test('Push-Inhalt nennt die Sprache des Textes (lang) – Gerät liest richtig vor; Nachholen: übersetzt = aktuelle Sprache, Freitext = gespeicherte Sprache, unbekannt = ohne Angabe', async () => {
+  const { retryFailedPush } = await import('../src/notify.js');
+  const u = users.fleet;
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  const authSecret = crypto.getRandomValues(new Uint8Array(16));
+  const ep = 'https://push.example/ok/plang-' + rk();
+  eq((await u.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: b64urlEncode(pub), auth: b64urlEncode(authSecret) } })).status, 200);
+  const te = new TextEncoder();
+  const hk = async (salt, ikm, info, bits) => new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), bits));
+  const decrypt = async (sent) => {
+    const body = new Uint8Array(sent.init.body);
+    const salt = body.slice(0, 16); const idlen = body[20]; const asPub = body.slice(21, 21 + idlen); const ct = body.slice(21 + idlen);
+    const asKey = await crypto.subtle.importKey('raw', asPub, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: asKey }, kp.privateKey, 256));
+    const ikm = await hk(authSecret, shared, concatBytes(te.encode('WebPush: info\0'), pub, asPub), 256);
+    const cek = await hk(salt, ikm, te.encode('Content-Encoding: aes128gcm\0'), 128);
+    const nonce = await hk(salt, ikm, te.encode('Content-Encoding: nonce\0'), 96);
+    const pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['decrypt']), ct));
+    return JSON.parse(new TextDecoder().decode(pt.slice(0, -1)));
+  };
+  const sentMsgs = async () => Promise.all(env.pushLog.filter((p) => p.url === ep).map(decrypt));
+  const ins = env.DB.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status,push_attempts,lang) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const old = new Date(Date.now() - 10 * 60000).toISOString();
+  try {
+    // (1) Testbenachrichtigung auf Ukrainisch → Push mit lang 'uk', gespeichert mit Sprache
+    eq((await u.patch('/api/me', { language: 'uk' })).status, 200);
+    env.pushLog.length = 0;
+    eq((await u.post('/api/push/test', {})).status, 200);
+    let msgs = await sentMsgs();
+    eq(msgs.length, 1, 'ein Test-Push'); eq(msgs[0].lang, 'uk', 'Sprache im Push ' + JSON.stringify(msgs[0])); eq(msgs[0].title, nt('uk', 'test'));
+    eq((await env.DB.prepare('SELECT lang FROM notifications WHERE id=?').bind(msgs[0].id).first()).lang, 'uk', 'Sprache gespeichert');
+    // (2) Vorgangs-Hinweis an die Fuhrparkleitung (englisch) → lang 'en'
+    eq((await u.patch('/api/me', { language: 'en' })).status, 200);
+    env.pushLog.length = 0;
+    const cr = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Push-Sprachtest', priority: 'kritisch', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk() });
+    ok(cr.status === 200 || cr.status === 201, 'Vorgang angelegt: ' + cr.status);
+    msgs = await sentMsgs();
+    ok(msgs.length >= 1 && msgs.every((m) => m.lang === 'en'), 'Vorgangs-Push englisch ausgezeichnet: ' + JSON.stringify(msgs.map((m) => [m.lang, m.title])));
+    // (3) Nachholen nach Sprachwechsel auf Englisch: übersetzter Text → 'en'; deutscher Freitext → bleibt 'de'; alter Hinweis ohne Sprache, Freitext → ohne Angabe
+    await ins.bind('pg-1', 'test', u.id, null, 'pg:1', 'released', 0, 'Fahrzeug technisch freigegeben', 'SM-2020-0201 · PG-XY 1 · kritisch · TEST', old, 'failed', 1, 'de').run();
+    await ins.bind('pg-2', 'test', u.id, null, 'pg:2', 'agent', 0, 'Freier Titel', 'Freitext', old, 'failed', 1, 'de').run();
+    await ins.bind('pg-3', 'test', u.id, null, 'pg:3', 'agent', 0, 'Alter Freitext', 'ohne Sprache', old, 'failed', 1, null).run();
+    await ins.bind('pg-4', 'test', u.id, null, 'pg:4', 'agent', 0, 'Free title', 'already English', old, 'failed', 1, 'en').run();
+    env.pushLog.length = 0;
+    await retryFailedPush(env);
+    msgs = await sentMsgs();
+    const by = Object.fromEntries(msgs.map((m) => [m.id, m]));
+    ok(by['pg-1'] && by['pg-2'] && by['pg-3'] && by['pg-4'], 'alle wiederholt: ' + msgs.map((m) => m.id));
+    eq(by['pg-1'].lang, 'en'); eq(by['pg-1'].title, 'Vehicle technically released');
+    eq(by['pg-2'].lang, 'de', 'Freitext bleibt deutsch ausgezeichnet'); eq(by['pg-2'].title, 'Freier Titel');
+    ok(!('lang' in by['pg-3']), 'unbekannte Sprache → keine Angabe');
+    eq(by['pg-4'].lang, 'en', 'schon in aktueller Sprache');
+    // Service Worker übergibt die Sprache an die Mitteilung
+    const sw = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+    ok(/lang: d\.lang/.test(sw), 'sw.js setzt lang der Mitteilung');
+  } finally {
+    await u.patch('/api/me', { language: 'de' });
+    await env.DB.prepare("DELETE FROM notifications WHERE id LIKE 'pg-%'").run();
+    env.DB.db.prepare('DELETE FROM push_subscriptions WHERE endpoint=?').run(ep);
+  }
+});
+
 await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden bei jedem Seitenaufbau gesetzt (Vorlesefunktion, Silbentrennung, PDF-Dateiname)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));

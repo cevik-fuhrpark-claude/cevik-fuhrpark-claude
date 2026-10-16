@@ -14,7 +14,7 @@ self.addEventListener('push', (e) => {
   try { d = e.data.json(); } catch { d = { title: 'Fuhrpark', body: e.data ? e.data.text() : '' }; }
   const work = [
     self.registration.showNotification(d.title || 'Fuhrpark', {
-      body: d.body || '', tag: d.case_id || d.id, renotify: true, requireInteraction: !!d.urgent,
+      body: d.body || '', tag: d.case_id || d.id, ...(d.lang ? { lang: d.lang, dir: 'ltr' } : {}), renotify: true, requireInteraction: !!d.urgent,
       icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', data: { id: d.id, case_id: d.case_id },
     }),
     d.id ? fetch(`/api/notifications/${d.id}/received`, { method: 'POST', headers: { 'x-cfp': '1' }, credentials: 'include' }).catch(() => {}) : null,

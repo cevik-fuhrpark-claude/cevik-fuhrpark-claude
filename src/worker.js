@@ -591,7 +591,7 @@ async function handleApi(request, env, ctx, url) {
     return json({ devices: (await env.DB.prepare('SELECT id, device_label, created_at, last_success_at FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL').bind(user.id).all()).results });
   }
   if (path === '/api/push/test' && m === 'POST') {
-    const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}` });
+    const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}`, langOf: new Map([[user.id, user.language]]) });
     const row = await env.DB.prepare('SELECT push_status, push_last_error FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
     return json({ created: n, push_status: row?.push_status, error: row?.push_last_error });
   }

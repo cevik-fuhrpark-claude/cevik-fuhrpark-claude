@@ -198,7 +198,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     // Sperrbildschirm: nur Vorgangsnummer; Details erst nach Anmeldung
     // Fahrer arbeiten oft auf Ukrainisch/Englisch: Titel in ihrer Sprache
     const du = await env.DB.prepare('SELECT language FROM users WHERE id=?').bind(f.driver_id).first();
-    await notifyUsers(env, ctx, envName, [f.driver_id], { kind: 'fine', title: nt(du && du.language, 'fine'), body: `${f.fine_no}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `fine:${id}:inform:${f.version}`, urgent: false });
+    await notifyUsers(env, ctx, envName, [f.driver_id], { kind: 'fine', title: nt(du && du.language, 'fine'), body: `${f.fine_no}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `fine:${id}:inform:${f.version}`, urgent: false, langOf: new Map([[f.driver_id, du && du.language]]) });
   }
   return { ok: true, version: f.version + 1 };
 }
