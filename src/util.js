@@ -269,6 +269,13 @@ export function berlinDateTimeLang(iso, lang) {
   return `${dmy}, ${hm} Uhr`;
 }
 
+// Kalenderdatum (JJJJ-MM-TT) in der Schreibweise der Sprache wie in der Oberfläche: DE/UK 05.01.2027, EN 05/01/2027 (sonst unverändert)
+export function dateLang(ymd, lang) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return String(ymd ?? '');
+  return lang === 'en' ? `${m[3]}/${m[2]}/${m[1]}` : `${m[3]}.${m[2]}.${m[1]}`;
+}
+
 // Mengenbegrenzung: höchstens `max` Aufrufe je `windowSec` und Schlüssel (eine Abfrage, atomar per UPSERT … RETURNING)
 // Importe: Übernehmen 20/Std.; Vorschauen (dry_run, schreiben nichts) eigenes Fenster 120/Std. – Datei korrigieren und erneut prüfen
 // soll die Übernahme nicht aufbrauchen (5 Importarten × mehrere Vorschauen je Datei)

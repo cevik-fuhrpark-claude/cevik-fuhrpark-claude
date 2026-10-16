@@ -3,7 +3,7 @@ import worker from '../src/worker.js';
 import { makeEnv, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { dotDate, ageMonths } from '../src/tires.js';
-import { b64urlEncode, b64urlDecode, concatBytes } from '../src/util.js';
+import { b64urlEncode, b64urlDecode, concatBytes, dateLang } from '../src/util.js';
 
 let passed = 0; let failed = 0; const failures = [];
 async function test(name, fn) {
@@ -5825,7 +5825,11 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
   const cur = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'GM 2', result: 'verkehrsunsicher' });
   eq((await users.dispatch.patch('/api/me', { language: 'de' })).status, 200);
   { const raw = await env.DB.prepare("SELECT title, body FROM notifications WHERE user_id=? AND kind='inspection_defect' AND body LIKE '%GM-XY 82%'").bind(users.dispatch.id).first();
-    ok(raw && raw.title === 'Inspection with dangerous defects' && /unroadworthy – do not schedule/.test(raw.body), 'Dispo auf Englisch: ' + JSON.stringify(raw)); }
+    ok(raw && raw.title === 'Inspection with dangerous defects' && /unroadworthy – do not schedule/.test(raw.body), 'Dispo auf Englisch: ' + JSON.stringify(raw));
+    const [y, m, d] = day(-1).split('-');
+    ok(raw.body.includes(`UVV ${d}/${m}/${y}:`) && !raw.body.includes(day(-1)), 'Prüfdatum im englischen Format, kein ISO-Datum: ' + raw.body);
+    eq(dateLang('2027-01-05', 'de'), '05.01.2027'); eq(dateLang('2027-01-05', 'uk'), '05.01.2027'); eq(dateLang('2027-01-05', 'en'), '05/01/2027');
+    eq(dateLang('2027-01', 'en'), '2027-01', 'kein Kalenderdatum: unverändert'); eq(dateLang(null, 'de'), ''); }
   eq(cur.status, 200); ok(cur.data.notified >= 1, 'Alarm versendet');
   const nd = await notes(users.dispatch);
   ok(nd.length === 1 && nd[0].urgent && nd[0].body.includes('unroadworthy') && nd[0].title === 'Prüfung mit gefährlichen Mängeln', 'Dispo dringend informiert: ' + JSON.stringify(nd[0] || null));
@@ -8349,6 +8353,13 @@ await test('Prüfskript pruefen.sh: alle UI-Skripte eingetragen (außer Lasttest
   eq(listed.length, new Set(listed).size, 'keine doppelten Einträge');
   const logs = [...sh.matchAll(/\|(\/tmp\/cfp-[a-z0-9-]+\.log)$/gm)].map((m) => m[1]); eq(logs.length, new Set(logs).size, 'eigene Logdatei je Skript');
   for (const o of ['--schnell', '--ohne-tests', '--ohne-rauch', '--nur']) ok(sh.includes(`#   ${o}`) && sh.includes(`${o})`), `Option ${o} dokumentiert und ausgewertet`);
+});
+
+await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {
+  const rows = (await env.DB.prepare('SELECT kind, title, body FROM notifications').all()).results;
+  ok(rows.length > 20, 'genug Hinweise geprüft: ' + rows.length);
+  const iso = rows.filter((r) => /\b\d{4}-\d{2}-\d{2}\b/.test(`${r.title} ${r.body}`));
+  eq(iso.length, 0, 'ISO-Daten: ' + JSON.stringify(iso.slice(0, 3)));
 });
 
 await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentliches Caching, Sitzungscookie HttpOnly/Secure/SameSite', async () => {
