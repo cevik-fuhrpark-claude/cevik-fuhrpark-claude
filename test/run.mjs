@@ -3859,6 +3859,55 @@ await test('Kosten je km: gefahrene km aus erster/letzter Ablesung im Zeitraum, 
   ok(!v2 || v2.km === null, 'Rückgang (Tachotausch) → kein km-Wert');
 });
 
+await test('Kosten je km wie „Fahrleistung je Monat“: exakte Berliner Monatsgrenzen, Vorwert aus dem Vormonat, km je Monat (API/CSV), Rückgang, Oberfläche', async () => {
+  const vin = 'WDB96340310777703'; const VID = 'VIN:' + vin; const db = env.DB.db;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'TZ-KM 1', site: 'Km-Regel-Test' })).status, 201);
+  const add = (id, km, at) => db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run(id, VID, km, at, 'manuell', null, at);
+  const src = db.prepare(`SELECT * FROM cases WHERE environment='test' LIMIT 1`).get(); const cols = Object.keys(src);
+  const dec = (x) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(x.data);
+  const q = (x = '') => `/api/reports/costs?from=2026-03&to=2026-05&vehicle_id=${encodeURIComponent(VID)}${x}`;
+  const get = async () => (await users.fleet.get(q())).data;
+  try {
+    add('tzkm-1', 1000, '2026-01-15T10:00:00.000Z'); // älter als der Vormonat → kein Vorwert
+    add('tzkm-2', 2000, '2026-03-10T10:00:00.000Z');
+    add('tzkm-3', 2500, '2026-03-31T22:30:00.000Z'); // Berlin: 01.04. 00:30 → April
+    add('tzkm-4', 3000, '2026-04-20T10:00:00.000Z');
+    add('tzkm-5', 9999, '2026-05-31T23:00:00.000Z'); // Berlin: 01.06. → außerhalb des Zeitraums
+    db.prepare(`INSERT INTO cases(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map((c) => (c === 'id' ? 'tzkm-case' : c === 'case_no' ? 'TZKM-1' : c === 'request_key' ? 'tzkm-case' : c === 'vehicle_id' ? VID : c === 'duplicate_of' ? null : c === 'created_at' ? '2026-04-15T10:00:00.000Z' : src[c])));
+    let r = await get(); let v = r.vehicles.find((x) => x.vehicle_id === VID);
+    eq(v.km, 1000, 'ab erster Ablesung im Zeitraum (Ablesung im Januar zählt nicht), Juni-Ablesung (Berlin) nicht im Zeitraum');
+    eq(v.km_basis, 'first_in_period'); eq(v.km_status, 'ok'); eq(v.km_from_at, '2026-03-10T10:00:00.000Z'); eq(v.km_to_at, '2026-04-20T10:00:00.000Z');
+    eq(r.rows.length, 1); eq(r.rows[0].month, '2026-04'); eq(r.rows[0].km, 1000, 'April: letzte im April (3000) − letzte im März (2000; 31.03. 22:30 UTC ist schon April)');
+    add('tzkm-0', 1800, '2026-02-20T10:00:00.000Z'); // Vorwert im Vormonat von „Von“
+    r = await get(); v = r.vehicles.find((x) => x.vehicle_id === VID);
+    eq(v.km, 1200, 'letzte im Zeitraum − letzte davor (Februar)'); eq(v.km_basis, 'previous'); eq(v.km_from_at, '2026-02-20T10:00:00.000Z');
+    const pm = await periodMileageOf(VID);
+    eq(pm.months.get('2026-03'), 200, 'März: 2000 − 1800'); eq(pm.months.get('2026-04'), 1000);
+    // Summe der Monate = Zeitraum (wie Fahrzeugakte)
+    eq([...pm.months.values()].reduce((s, x) => s + x, 0), v.km);
+    let csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n');
+    ok(csv[0].endsWith(';Gefahrene km (Monat)'), 'CSV-Spalte'); ok(csv[1].startsWith('TZ-KM 1;') && csv[1].endsWith(';1000'), 'CSV April 1000 km');
+    add('tzkm-6', 2900, '2026-04-25T10:00:00.000Z'); // Rückgang im April
+    r = await get(); v = r.vehicles.find((x) => x.vehicle_id === VID);
+    eq(v.km, null, 'Rückgang → kein Wert'); eq(v.km_status, 'decrease'); eq(v.cost_per_km, null); eq(r.rows[0].km, null, 'April ohne Wert');
+    csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n'); ok(csv[1].endsWith('ja;') || csv[1].endsWith('nein;'), 'CSV leer statt 0');
+    const pm2 = await periodMileageOf(VID); eq(pm2.months.get('2026-03'), 200, 'März bleibt');
+    // Rückgang gegenüber dem Vorwert vor dem Zeitraum
+    db.prepare(`DELETE FROM odometer_readings WHERE id='tzkm-6'`).run(); db.prepare(`UPDATE odometer_readings SET km=2100 WHERE id='tzkm-0'`).run();
+    db.prepare(`UPDATE odometer_readings SET km=2050 WHERE id='tzkm-2'`).run();
+    v = (await get()).vehicles.find((x) => x.vehicle_id === VID); eq(v.km, null, 'erste Ablesung im Zeitraum (2050) unter dem Vorwert (2100) → kein Wert'); eq(v.km_status, 'decrease');
+    eq((await periodMileageOf(VID)).months.get('2026-03'), null, 'März ohne Wert');
+  } finally {
+    db.prepare(`DELETE FROM odometer_readings WHERE vehicle_id=?`).run(VID); db.prepare(`DELETE FROM cases WHERE id='tzkm-case'`).run();
+  }
+  // nur eine Ablesung, kein Vorwert → kein Wert
+  add('tzkm-7', 5000, '2026-04-02T10:00:00.000Z');
+  try { const v = (await get()).vehicles.find((x) => x.vehicle_id === VID); eq(v.km, null); eq(v.km_status, 'insufficient'); } finally { db.prepare(`DELETE FROM odometer_readings WHERE vehicle_id=?`).run(VID); }
+  const app = await (await import('node:fs/promises')).readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("data-ckm=\"span\"") && app.includes("t('ckm_first')") && app.includes("m.km !== null && m.km !== undefined ? ' · ' + fmtKm(m.km)"), 'Oberfläche: km-Stände, Basis und km je Monat');
+  async function periodMileageOf(id) { const { periodMileage } = await import('../src/reports.js'); return (await periodMileage(env, '2026-03', '2026-05', id)).get(id); }
+});
+
 await test('Nur unbewertete Positionen: „Belegt“ zeigt „–“ statt 0 €, kein Wert je km (valued_items in Vorgang, Fahrzeug, Bericht, Standort, Summe)', async () => {
   const { computeCosts } = await import('../src/cases.js');
   let k = computeCosts(null, [{ hours: 2 }], [{ quantity: 1, unit_price_net: null, valuation: 'unvalued' }], []);

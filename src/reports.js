@@ -1,7 +1,7 @@
 // [CLAUDE] Kostenbericht je Fahrzeug und Monat (Controlling). Gleiche Regeln wie caseCosts:
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
-import { bad, forbidden, berlinDate, berlinDayStartIso, icsCalendar, intParam } from './util.js';
+import { bad, forbidden, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -122,12 +122,10 @@ export async function costReport(env, user, envName, query = {}) {
   }
   const sites = [...siteMap.values()].map((s) => ({ site: s.site, actual_net: r2(s.actual_net), valued_items: s.valued_items, estimate_net: r2(s.estimate_net), unvalued_items: s.unvalued_items, hours: r2(s.hours), vehicles: s.vehicles.size, complete: s.unvalued_items === 0 }))
     .sort((a, b) => (a.site === 'ohne') - (b.site === 'ohne') || b.actual_net - a.actual_net || a.site.localeCompare(b.site));
-  // Kosten je Kilometer: gefahrene km im Zeitraum aus erster und letzter Ablesung (mind. 2 Ablesungen, kein Rückgang); sonst ohne Wert
-  const kmRows = (await env.DB.prepare(`SELECT o.vehicle_id, COUNT(*) AS n,
-      (SELECT o2.km FROM odometer_readings o2 WHERE o2.vehicle_id=o.vehicle_id AND o2.measured_at >= ?1 AND o2.measured_at < ?2 ORDER BY o2.measured_at ASC LIMIT 1) AS km_first,
-      (SELECT o3.km FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= ?1 AND o3.measured_at < ?2 ORDER BY o3.measured_at DESC LIMIT 1) AS km_last
-    FROM odometer_readings o WHERE o.measured_at >= ?1 AND o.measured_at < ?2 GROUP BY o.vehicle_id`).bind(lo, hi).all()).results;
-  const kmOf = new Map(kmRows.map((k) => [k.vehicle_id, k]));
+  // Kosten je Kilometer: gefahrene km im Zeitraum nach derselben Regel wie „Fahrleistung je Monat“ der Fahrzeugakte (16.10.2026)
+  const kmOf = await periodMileage(env, from, to, vehicleFilter);
+  for (const r of out) { const k = kmOf.get(r.vehicle_id); r.km = k ? k.months.get(r.month) ?? null : null; }
+  const kmRows = [...kmOf.keys()].map((vehicle_id) => ({ vehicle_id }));
   const perVehicle = new Map();
   for (const r of out) {
     const v = perVehicle.get(r.vehicle_id) || { vehicle_id: r.vehicle_id, plate: r.plate, site: r.site, actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0 };
@@ -138,14 +136,68 @@ export async function costReport(env, user, envName, query = {}) {
   }
   const vehicles = [...perVehicle.values()].map((v) => {
     const k = kmOf.get(v.vehicle_id);
-    const km = k && k.n >= 2 && k.km_last >= k.km_first ? k.km_last - k.km_first : null;
-    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, cost_per_km: km && !(v.valued_items === 0 && v.unvalued_items > 0) ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
+    const km = k ? k.km : null;
+    const kmInfo = k ? { km_status: k.status, km_basis: k.basis, km_from_at: k.from_at, km_to_at: k.to_at } : { km_status: 'no_reading', km_basis: null, km_from_at: null, km_to_at: null };
+    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, ...kmInfo, cost_per_km: km && !(v.valued_items === 0 && v.unvalued_items > 0) ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
   return { from, to, environment: envName, site: siteFilter, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+}
+
+// [CLAUDE] Gefahrene km je Fahrzeug im Zeitraum (Berliner Monatsgrenzen, exakt) – dieselbe Regel wie „Fahrleistung je Monat“ der Fahrzeugakte
+// (`mileageByMonth`), nur aus gespeicherten Ablesungen, keine Interpolation:
+// - Zeitraum: letzte Ablesung im Zeitraum − letzte Ablesung davor (`basis` 'previous'), sofern diese im Monat vor „Von“ liegt.
+//   Fehlt sie oder ist sie älter (würde Fahrten vor dem Zeitraum mitzählen), ab der ersten Ablesung im Zeitraum (`basis` 'first_in_period', mind. 2 Ablesungen).
+// - Monat (Zeilen/CSV): letzte Ablesung im Monat − letzte Ablesung im Vormonat; sonst kein Wert (wie Akte ohne „seit Ablesung vom …“-Zeiträume).
+// - Rückgang irgendwo im betrachteten Abschnitt (z. B. Tachotausch) → kein Wert (`decrease`). Eine Abfrage (Fensterfunktionen), unabhängig von der Fahrzeugzahl.
+export async function periodMileage(env, from, to, vehicleFilter = null) {
+  const loX = berlinDayStartIso(`${from}-01`);
+  const hiX = berlinDayStartIso(addMonths(`${to}-01`, 1));
+  const prevOfFrom = addMonths(`${from}-01`, -1).slice(0, 7);
+  const vf = vehicleFilter ? ' AND vehicle_id=?3' : '';
+  const binds = vehicleFilter ? [loX, hiX, vehicleFilter] : [loX, hiX];
+  const rows = (await env.DB.prepare(`WITH x AS (
+      SELECT vehicle_id, km, measured_at, substr(${berlinDaySql('measured_at')},1,7) AS m,
+        LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, id) AS pkm,
+        ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at, id) AS rn
+      FROM odometer_readings WHERE measured_at >= ?1 AND measured_at < ?2${vf}),
+    y AS (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY vehicle_id, m ORDER BY measured_at DESC, rn DESC) AS rd FROM x)
+    SELECT y.vehicle_id, y.m, COUNT(*) AS n, SUM(CASE WHEN y.pkm IS NOT NULL AND y.km < y.pkm THEN 1 ELSE 0 END) AS dec,
+      MAX(CASE WHEN y.rd=1 THEN y.km END) AS last_km, MAX(CASE WHEN y.rd=1 THEN y.measured_at END) AS last_at,
+      MAX(CASE WHEN y.rn=1 THEN y.km END) AS first_km, MAX(CASE WHEN y.rn=1 THEN y.measured_at END) AS first_at,
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=y.vehicle_id AND o.measured_at < ?1 ORDER BY o.measured_at DESC, o.id DESC LIMIT 1) AS base
+    FROM y GROUP BY y.vehicle_id, y.m ORDER BY y.vehicle_id, y.m`).bind(...binds).all()).results;
+  const by = new Map();
+  for (const r of rows) { const a = by.get(r.vehicle_id) || []; a.push(r); by.set(r.vehicle_id, a); }
+  const out = new Map();
+  for (const [vid, ms] of by) {
+    let base = null;
+    if (ms[0].base) { const i = ms[0].base.indexOf('|'); const at = ms[0].base.slice(i + 1); base = { km: Number(ms[0].base.slice(0, i)), at, m: berlinDate(at).slice(0, 7) }; }
+    const first = ms.find((x) => x.first_at !== null); const last = ms[ms.length - 1];
+    const n = ms.reduce((s, x) => s + x.n, 0); const decIn = ms.reduce((s, x) => s + x.dec, 0);
+    const useBase = base && base.m >= prevOfFrom;
+    let res;
+    if (useBase) {
+      const dec = decIn > 0 || first.first_km < base.km;
+      res = { km: dec ? null : last.last_km - base.km, status: dec ? 'decrease' : 'ok', basis: 'previous', from_at: base.at, to_at: last.last_at };
+    } else if (n >= 2) {
+      res = { km: decIn > 0 ? null : last.last_km - first.first_km, status: decIn > 0 ? 'decrease' : 'ok', basis: 'first_in_period', from_at: first.first_at, to_at: last.last_at };
+    } else res = { km: null, status: 'insufficient', basis: null, from_at: null, to_at: last.last_at };
+    // je Monat: Vorwert = letzte Ablesung im Vormonat (im Zeitraum bzw. Ausgangswert vor dem Zeitraum)
+    const months = new Map(); const lastOf = new Map(ms.map((x) => [x.m, x]));
+    for (const x of ms) {
+      const pm = addMonths(`${x.m}-01`, -1).slice(0, 7);
+      const p = lastOf.get(pm);
+      const start = p ? { km: p.last_km } : (x.m === ms[0].m && base && base.m === pm ? { km: base.km } : null);
+      const dec = x.dec > 0 || (x.m === ms[0].m && start && x.first_km < start.km);
+      months.set(x.m, start && !dec ? x.last_km - start.km : null);
+    }
+    out.set(vid, { ...res, months, readings: n });
+  }
+  return out;
 }
 
 // Monatsraten laut Vertrag je Fahrzeug im Zeitraum: je Kalendermonat, der ganz oder teilweise in der Laufzeit liegt
@@ -193,11 +245,11 @@ export function costReportCsv(rep) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Monat', 'Neue Vorgänge', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto',
-    'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet'];
+    'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km (Monat)'];
   const lines = [head.join(';')];
   for (const r of rep.rows) {
     lines.push([cell(r.plate), cell(r.vehicle_id), cell(r.site), r.month, r.cases_opened, num(r.hours), num(r.work_net), num(r.parts_actual_net), num(r.parts_estimate_net),
-      num(r.external_actual_net), num(r.external_estimate_net), num(r.actual_net), num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein'].join(';'));
+      num(r.external_actual_net), num(r.external_estimate_net), num(r.actual_net), num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km)].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
