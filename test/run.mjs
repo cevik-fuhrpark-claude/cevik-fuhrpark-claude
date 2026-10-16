@@ -4349,6 +4349,14 @@ await test('Abfahrtskontrolle mit Mangel: Fahrer kann Fotos an den Folgeauftrag 
   const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv')).data);
   const line = csvT.split('\r\n').find((l) => l.includes(c.case.case_no));
   ok(line && line.includes(`[Kontrolle Abfahrt] ${CHECK_LABELS.de[key]}: Rücklicht links defekt`) && !line.includes(`] ${key}:`), 'CSV mit Bezeichnung: ' + line);
+  // Suche nach der angezeigten Bezeichnung (EN/UK/DE) findet den Vorgang, obwohl der Schlüssel gespeichert ist
+  for (const l of ['en', 'uk', 'de']) {
+    const w = CHECK_LABELS[l][key].split(/[\s/&–-]+/).filter((x) => x.length >= 4)[0];
+    const res = await users.fleet.get(`/api/cases?q=${encodeURIComponent(w)}&filter=all`);
+    eq(res.status, 200); ok(res.data.cases.some((x) => x.id === c.case.id), `Suche „${w}“ (${l}) findet den Vorgang`);
+  }
+  // viele Wörter, die jeweils mehrere Prüfpunkte treffen: Parametergrenze eingehalten
+  eq((await users.fleet.get(`/api/cases?q=${encodeURIComponent('Brems Reifen Licht Ladung Spiegel')}&filter=all`)).status, 200, 'fünf Wörter mit Prüfpunkt-Treffern');
   eq((await users.fleet.post(`/api/cases/${c.case.id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.case.version, note: 'Testdaten' })).status, 200);
   // Anzeige je Sprache (Oberfläche nutzt dieselbe Funktion)
   eq(caseDescText('[Kontrolle Abfahrt] blinker_warnblinker: links ohne Funktion', 'en'), '[Pre-trip check] Indicators & hazards: links ohne Funktion', 'EN');

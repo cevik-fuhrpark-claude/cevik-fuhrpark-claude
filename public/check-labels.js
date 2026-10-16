@@ -41,3 +41,15 @@ export function caseDescText(s, lang = 'de') {
   if (!label) return s; // unbekannter Schlüssel: Text unverändert (nichts erfinden)
   return `[${CHECK_PREFIX[L][m[1] === 'Abfahrt' ? 'abfahrt' : 'nach_reparatur']}] ${label}: ${s.slice(m[0].length)}`;
 }
+
+// Suche: Prüfpunkt-Schlüssel, deren Bezeichnung (DE/UK/EN) das Wort enthält – damit „Indicators“ oder „Blinker“ erzeugte Vorgänge findet
+export function checkKeysFor(word) {
+  const w = String(word || '').toLocaleLowerCase('de');
+  if (w.length < 3) return [];
+  const out = [];
+  for (const k of Object.keys(CHECK_LABELS.de)) {
+    if (['de', 'uk', 'en'].some((l) => String(CHECK_LABELS[l][k] || '').toLocaleLowerCase('de').includes(w))) out.push(k);
+    if (out.length >= 3) break; // D1: höchstens 100 Parameter je Abfrage (5 Wörter × (4 Schreibweisen + 3 Schlüssel))
+  }
+  return out;
+}

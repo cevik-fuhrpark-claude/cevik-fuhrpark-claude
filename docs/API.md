@@ -172,6 +172,8 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 
 **Kalenderdateien (`format=ics`, alle fünf: Prüftermine, Werkstattplan, Verträge, Behördenfristen, Wiedervorlagen):** Termintexte und Kalendername in der Sprache der angemeldeten Person (`users.language` DE/UK/EN, sonst Deutsch; Texte `public/ics-texts.js`), Datumsangaben im Text TT.MM.JJJJ (EN TT/MM/JJJJ), Vorgangsstatus als Bezeichnung (bis 16.10.2026 im Werkstattplan roher Code). Freitexte (Nachweis, Partner, Behörde, Aktenzeichen) wie gespeichert. UID/Datum/Erinnerung unverändert.
 
+**Vorgänge aus Kontrollen (seit 16.10.2026):** gespeichert bleibt „[Kontrolle Abfahrt] <prüfpunkt-schlüssel>: <Vermerk>“ (maschinenlesbar, JSON/Integrations-API unverändert); die Oberfläche zeigt den Prüfpunkt als Bezeichnung in der Sprache der Person, die Vorgangs-CSV und die KI-Analyse mit deutscher Bezeichnung (`public/check-labels.js`). Die Suche `q` findet solche Vorgänge auch über die Bezeichnung in DE/UK/EN (je Wort höchstens 3 Prüfpunkte, D1-Parametergrenze).
+
 **CSV-Status (seit 16.10.2026):** `GET /api/cases?format=csv` (Spalte „Status“), `GET /api/fines?format=csv` („Status“) `GET /api/maintenance/history?format=csv` („Status Mängelauftrag“) und `GET /api/drivers?format=csv` („Ergebnis“ der Führerscheinkontrolle, `CHECK_RESULT_DE`) liefern die deutsche Bezeichnung wie in der App (`CASE_STATUS_DE`/`FINE_STATUS_DE`) statt des Codes; JSON-Antworten und Integrations-API liefern weiter Codes.
 
 

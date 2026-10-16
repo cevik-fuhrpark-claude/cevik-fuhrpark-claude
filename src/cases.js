@@ -1,6 +1,6 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
-import { caseDescText } from '../public/check-labels.js';
+import { caseDescText, checkKeysFor } from '../public/check-labels.js';
 import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal } from './stock.js';
@@ -140,7 +140,9 @@ export async function listCases(env, user, envName, query, meta = null) {
     const words = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 5);
     const wordSql = []; const wordArgs = [];
     for (const w of words) {
-      const vs = caseVariants(w);
+      // aus Kontrollen erzeugte Vorgänge speichern den Prüfpunkt-Schlüssel („… blinker_warnblinker: …“) und zeigen die Bezeichnung je Sprache:
+      // passt das Suchwort (ab 3 Zeichen) zu einer Bezeichnung in DE/UK/EN, wird der Schlüssel mitgesucht (höchstens 3)
+      const vs = [...caseVariants(w), ...checkKeysFor(w)];
       wordSql.push(`(${vs.map(() => `c.description LIKE ? ESCAPE '\\'`).join(' OR ')})`); wordArgs.push(...vs.map(like));
     }
     where.push(`((${wordSql.join(' AND ')}) OR c.case_no LIKE ? ESCAPE '\\' OR REPLACE(REPLACE(UPPER(v.plate),' ',''),'-','') LIKE ?)`);
