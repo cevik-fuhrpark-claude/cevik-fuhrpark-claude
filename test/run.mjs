@@ -8929,6 +8929,37 @@ await test('km-Plausibilität bei „Prüfung erledigt“ (kleiner als zuvor erf
   ok(!dq.items.some((i) => i.vehicle_id === V), 'außer Betrieb: kein Befund');
 });
 
+await test('km-Zähler gesunken: Fahrer-Ansicht „Meine Fahrzeuge“ zeigt keine km-Fälligkeit aus gemischten Zählern (gleiche Regel wie Übersicht), nach Durchführung wieder', async () => {
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await owner.post('/api/vehicles', { plate: 'KP-TT 4', vin: 'WDB96340310555582', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555582'; const vp = `/api/vehicles/${V}`;
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 360000, measured_on: day(-40) })).status, 201);
+  const r = await users.fleet.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 10000, last_done_km: 340000, evidence: 'Testnachweis Fahrer-Tachotausch' });
+  eq(r.status, 201);
+  eq((await users.fleet.post(`${vp}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  const myV = async () => (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.plate === 'KP-TT 4');
+  let mv = await myV();
+  eq(JSON.stringify(mv.km_due.map((x) => [x.kind, x.km_remaining, x.status])), JSON.stringify([['Ölwechsel', -10000, 'ueberfaellig']]), 'vor dem Tausch: überschritten');
+  // gebrauchter Ersatz-Tacho mit niedrigerem Stand (Rücksprung 360 000 → 355 000): Rest aus gemischten Zählern wäre −5 000 „überfällig“
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 355000, measured_on: day(-2), note: 'Tachotausch laut Werkstattrechnung (Test Fahrer)' })).status, 201);
+  const row = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id);
+  eq(row.km_status, 'ungeklaert', 'Übersicht: ungeklärt');
+  mv = await myV();
+  eq(mv.km_due.length, 0, 'Fahrer: keine Fälligkeit aus gemischten Zählern (vorher −5 000 km „überfällig“)');
+  eq(JSON.stringify(Object.keys(mv.last_km).sort()), JSON.stringify(['km', 'measured_at', 'vehicle_id']), 'letzter km-Stand ohne Hilfsspalten');
+  eq(mv.last_km.km, 355000);
+  // Durchführung mit neuem km-Stand → Regel wieder berechnet, Fahrer sieht nichts (weit entfernt)
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: BERLIN_TODAY, done_km: 355100, evidence: 'Ölwechsel nach Tachotausch (Test Fahrer)' })).status, 200);
+  const warn = Number((await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id).km_remaining);
+  eq(warn, 10000, 'Übersicht: wieder berechnet (355 100 + 10 000 − 355 100)');
+  eq((await myV()).km_due.length, 0, 'ohne Vorwarnung: nicht überschritten → nichts');
+  eq((await owner.put('/api/settings', { maintenance_warn_km: 15000 })).status, 200);
+  try {
+    mv = await myV();
+    eq(JSON.stringify(mv.km_due.map((x) => [x.kind, x.km_remaining, x.status])), JSON.stringify([['Ölwechsel', 10000, 'faellig']]), 'Fahrer: gleiche Rechnung wie Übersicht');
+  } finally { await owner.put('/api/settings', { maintenance_warn_km: null }); }
+});
+
 await test('km-Zähler gesunken + Datum bald fällig: Werkstattplan „Fällig – ohne Termin“ zeigt die Prüfung weiter (Status nach Datum, km ungeklärt gekennzeichnet), Prüftermine „ohne Termin“ ebenso', async () => {
   const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
   eq((await owner.post('/api/vehicles', { plate: 'KP-TT 3', vin: 'WDB96340310555581', site: 'Dortmund' })).status, 201);
