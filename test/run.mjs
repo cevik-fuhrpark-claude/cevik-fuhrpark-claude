@@ -8499,7 +8499,7 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) und den Zeitpunkt de
     env.pushLog.length = 0;
     eq((await u.post('/api/push/test', {})).status, 200);
     let msgs = await sentMsgs();
-    eq(msgs.length, 1, 'ein Test-Push'); ok(Math.abs(msgs[0].ts - Date.now()) < 60000, 'ts beim Sofortversand ≈ jetzt'); eq(msgs[0].lang, 'uk', 'Sprache im Push ' + JSON.stringify(msgs[0])); eq(msgs[0].title, nt('uk', 'test'));
+    eq(msgs.length, 1, 'ein Test-Push'); ok(Math.abs(msgs[0].ts - Date.now()) < 60000, 'ts beim Sofortversand ≈ jetzt'); eq(msgs[0].kind, 'test', 'Art im Push (Klickziel)'); eq(msgs[0].lang, 'uk', 'Sprache im Push ' + JSON.stringify(msgs[0])); eq(msgs[0].title, nt('uk', 'test'));
     eq((await env.DB.prepare('SELECT lang FROM notifications WHERE id=?').bind(msgs[0].id).first()).lang, 'uk', 'Sprache gespeichert');
     // (2) Vorgangs-Hinweis an die Fuhrparkleitung (englisch) → lang 'en'
     eq((await u.patch('/api/me', { language: 'en' })).status, 200);
@@ -8527,6 +8527,8 @@ await test('Push-Inhalt nennt die Sprache des Textes (lang) und den Zeitpunkt de
     // Service Worker übergibt die Sprache an die Mitteilung
     const sw = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
     ok(/lang: d\.lang/.test(sw) && /timestamp: d\.ts/.test(sw), 'sw.js setzt lang und timestamp der Mitteilung');
+    ok(sw.includes("d.kind === 'new_login' ? '#/more?o=sess'"), 'Klick auf Anmelde-Hinweis öffnet „Meine Anmeldungen“ wie die Hinweisliste');
+    ok((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("x.kind === 'new_login' ? '#/more?o=sess'"), 'Hinweisliste nutzt dasselbe Ziel');
   } finally {
     await u.patch('/api/me', { language: 'de' });
     await env.DB.prepare("DELETE FROM notifications WHERE id LIKE 'pg-%'").run();

@@ -307,7 +307,7 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     for (const s of subs) {
       sends++;
       // lang: Sprache des Textes, damit das Gerät die Mitteilung richtig vorliest/trennt (fehlt bei nicht übersetzten Freitexten)
-      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
+      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
         // ts: Zeitpunkt des Ereignisses (ms) – nachgeholte Pushs (Wiederholung, Ende der Ruhezeit) zeigen am Gerät die echte Uhrzeit, nicht die Zustellzeit
         ...(Date.parse(n.created_at) ? { ts: Date.parse(n.created_at) } : {}) }, { urgent: n.urgent });
       if (res.status === 'accepted') {
