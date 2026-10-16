@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test: Anmelde-Hinweis bei neuem Gerät. Anmeldung über das echte Formular (App erzeugt die Gerätekennung selbst):
 # erstes Gerät still, gleiches Gerät still, zweites Gerät → Hinweis; Hinweis öffnet Mein Konto mit aufgeklappter Geräteliste;
-# bekannte Geräte mit „dieses Gerät“, ein anderes Gerät vergessen.
+# bekannte Geräte mit „dieses Gerät“, ein anderes Gerät vergessen; Hinweistext nach Sprachwechsel in der aktuellen Sprache.
 # DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -8,6 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TITLE={'de':'Neue Anmeldung auf einem anderen Gerät','uk':'Новий вхід на іншому пристрої','en':'New sign-in on another device'}
+NOTYOU={'de':'Waren Sie das nicht?','uk':'Це були не ви?','en':'Not you?'}  # Text gespeichert auf Deutsch, Liste in der aktuellen Sprache
 HINT={'de':'erhalten Sie einen Hinweis','uk':'ви отримаєте сповіщення','en':'you receive a notification'}
 fails=[]
 def check(c,m):
@@ -43,6 +44,8 @@ with sync_playwright() as p:
         q.goto(B+'/#/inbox'); q.reload(); q.wait_for_selector('.row.note')
         link=q.locator('a.title',has_text=TITLE[lang]).first
         check(link.count()==1,f'{lang} {w}px: Titel „{TITLE[lang]}“')
+        body=q.locator('.row.note',has=link).first.inner_text()
+        check(NOTYOU[lang] in body and all(NOTYOU[o] not in body for o in NOTYOU if o!=lang),f'{lang} {w}px: Text in der aktuellen Sprache (gespeichert deutsch)')
         if SHOTS and w!=820: q.screenshot(path=f'{SHOTS}/neugeraet_inbox_{lang}_{w}.png')
         link.click(); q.wait_for_function("()=>location.hash==='#/more?o=sess'")
         q.wait_for_function("()=>document.querySelector('#sess') && document.querySelector('#sess').open && !document.querySelector('#sesslist').innerText.includes('…') && document.querySelectorAll('#sesslist .row').length>0")
