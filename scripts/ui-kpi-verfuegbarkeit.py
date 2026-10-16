@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (16.10.2026): Kennzahlen „Technische Verfügbarkeit“ – Panel mit Quote (Prozent im Sprachformat), Fahrzeuge,
-# Ausfall gesamt, Liste „Geringste Verfügbarkeit“ mit dem Testfahrzeug, Wert auch in der Fahrzeugzeile; Erklärung; Hilfe nennt es.
+# Ausfall gesamt, Liste „Geringste Verfügbarkeit“ mit dem Testfahrzeug, Wert auch in der Fahrzeugzeile; Fahrzeugakte „Ausfall je Monat“ mit Verfügbarkeit.
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server mit /__dev/backdate. Screenshots: CFP_SHOTS=<Ordner>.
 import os, re
 from playwright.sync_api import sync_playwright
@@ -51,6 +51,11 @@ with sync_playwright() as p:
         check(SHORT[lang] in rt and '%' in rt,f'{lang}/{w}: Fahrzeugzeile nennt „{SHORT[lang]}“ ({rt.replace(chr(10)," ")[:100]})')
         if SHOTS: q.locator('#kpiav').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vf_kpi_{lang}_{w}.png')
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: kein Querscrollen')
+        q.goto(B+f'/#/vehicles/{VID}'); q.wait_for_selector('#vdown',timeout=15000)
+        vd=q.inner_text('#vdown')
+        check(SHORT[lang] in vd and re.search(r'\d+[.,]\d\s%',vd) is not None and 'NaN' not in vd,f'{lang}/{w}: Akte „Ausfall je Monat“ mit {SHORT[lang]} ({vd.replace(chr(10)," | ")[:110]})')
+        if SHOTS: q.locator('#vdown').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vf_akte_{lang}_{w}.png')
+        check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: Akte kein Querscrollen')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
         ctx.close()
     br.close()

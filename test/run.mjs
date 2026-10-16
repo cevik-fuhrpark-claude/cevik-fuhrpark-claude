@@ -1817,6 +1817,11 @@ await test('Kennzahlen: technische Verfügbarkeit – Vorgänge aus dem Vormonat
   const envName = (await env.DB.prepare('SELECT environment FROM cases WHERE id=?').bind(a).first()).environment;
   const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&environment=${envName}`, undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(ig.status, 200); ok(ig.data.availability && Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).availability_pct - 25) < 0.2, 'Integration');
+  // Fahrzeugakte: Verfügbarkeit je Monat (gleiche Regel) – laufender Monat 25 %, Monate vor der Anlage ohne Wert
+  const ak = (await users.fleet.get(`/api/vehicles/${VK}`)).data.downtime;
+  const m0 = ak.months.find((x) => x.month === BERLIN_YM);
+  ok(m0 && Math.abs(m0.pct - 25) < 0.5 + 10 / (span / 3600000), 'Akte: Verfügbarkeit laufender Monat 25 %: ' + (m0 && m0.pct));
+  eq(ak.months[ak.months.length - 1].pct, null, 'Akte: Monat vor der Anlage ohne Verfügbarkeit');
   // ruhend (von der Bewertung ausgenommen) → nicht mehr gezählt
   await env.DB.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').bind(VK).run();
   eq((await users.fleet.get(q)).data.availability.vehicles, av.vehicles - 1, 'ruhendes Fahrzeug ausgenommen');

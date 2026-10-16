@@ -1,6 +1,6 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, parseCsv, isCalendarDate, normPlate, intParam } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
@@ -185,7 +185,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     out.claims_summary = { total: out.claims_summary.total, open: out.claims_summary.open || 0, reimbursed_net: out.claims_summary.reimbursed_net === null ? null : Math.round(out.claims_summary.reimbursed_net * 100) / 100 };
     // Offene Befunde des Fuhrparkagenten zu diesem Fahrzeug (Umgebung der Person; gleiche Sichtbarkeit wie das Management-Panel) – schwerste zuerst
     // Ausfall je Berliner Monat (letzte 12): Werkstatt-Übernahme → Freigabe/Ablehnung (offen bis jetzt) ∪ Sicherheitssperre – gleiche Regel wie Kennzahlen
-    out.downtime = await vehicleDowntime(env, envName, vehicleId, allCases);
+    out.downtime = await vehicleDowntime(env, envName, vehicleId, allCases, v.created_at);
     out.agent_findings = (await env.DB.prepare(`SELECT id, finding_code, severity, message, message_args, next_action, owner_role, case_id, first_seen FROM agent_findings
       WHERE vehicle_id=? AND environment=? AND status='offen'
       ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, first_seen`).bind(vehicleId, envName).all()).results;
@@ -203,7 +203,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
 }
 
 export const DOWNTIME_MONTHS = 12;
-async function vehicleDowntime(env, envName, vehicleId, cases) {
+async function vehicleDowntime(env, envName, vehicleId, cases, createdAt) {
   const now = Date.now(); const cur = berlinDate().slice(0, 7);
   const months = Array.from({ length: DOWNTIME_MONTHS }, (_, i) => addMonths(`${cur}-01`, -i).slice(0, 7));
   const since = Date.parse(`${months[months.length - 1]}-01T00:00:00Z`) - 86400000;
@@ -216,7 +216,14 @@ async function vehicleDowntime(env, envName, vehicleId, cases) {
     .bind(JSON.stringify(rel.map((c) => c.id))).all()).results : [];
   const by = new Map(); for (const e of evs) { if (!by.has(e.case_id)) by.set(e.case_id, []); by.get(e.case_id).push(e); }
   for (const list of by.values()) ivs.push(...lockIntervalsOf(list, now));
-  const rows = downtimeByMonth(ivs, months, now);
+  // Verfügbarkeit je Monat (16.10.2026): Ausfall gegen die Stunden des Monats ab Anlage des Fahrzeugs bis Monatsende bzw. jetzt; davor null
+  const c0 = Date.parse(createdAt);
+  const rows = downtimeByMonth(ivs, months, now).map((r) => {
+    const y = +r.month.slice(0, 4); const mo = +r.month.slice(5, 7);
+    const lo = Math.max(Date.parse(berlinDayStartIso(`${r.month}-01`)), Number.isFinite(c0) ? c0 : 0);
+    const hi = Math.min(now, Date.parse(berlinDayStartIso(mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`)));
+    return { ...r, pct: hi > lo ? Math.max(0, Math.round(1000 * (1 - (r.hours * 3600000) / (hi - lo))) / 10) : null };
+  });
   return { months: rows, total_h: Math.round(rows.reduce((x, r) => x + r.hours, 0) * 10) / 10, max_months: DOWNTIME_MONTHS };
 }
 
