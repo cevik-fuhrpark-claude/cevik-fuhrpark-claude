@@ -1,7 +1,7 @@
 // [CLAUDE] Kostenbericht je Fahrzeug und Monat (Controlling). Gleiche Regeln wie caseCosts:
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
-import { bad, forbidden, berlinDate, icsCalendar, intParam } from './util.js';
+import { bad, forbidden, berlinDate, berlinDayStartIso, icsCalendar, intParam } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -238,6 +238,36 @@ export function unionMs(list) {
   for (const [x, y] of s.slice(1)) { if (x <= b) b = Math.max(b, y); else { sum += b - a; a = x; b = y; } }
   return sum + (b - a);
 }
+// Sicherheitssperre eines Vorgangs als Zeitabschnitte: ab Meldung mit Sperre bzw. „Sperre setzen“ bis „Sperre aufheben“ oder
+// technische Freigabe/Ablehnung (offen bis jetzt). evs: Ereignisse des Vorgangs zeitlich sortiert (action, to_status, created_at, create_payload).
+export function lockIntervalsOf(evs, now = Date.now()) {
+  const out = []; let lockFrom = null;
+  for (const e of evs) {
+    const at = Date.parse(e.created_at);
+    if (e.action === 'create') { try { if (JSON.parse(e.create_payload || '{}').safety_lock) lockFrom = at; } catch { /* altes Format */ } }
+    else if (e.action === 'set_safety_lock' && lockFrom === null) lockFrom = at;
+    else if (lockFrom !== null && (e.action === 'lift_safety_lock' || e.to_status === 'fahrzeug_freigegeben' || e.to_status === 'abgelehnt')) { if (at > lockFrom) out.push([lockFrom, at]); lockFrom = null; }
+  }
+  if (lockFrom !== null && now > lockFrom) out.push([lockFrom, now]);
+  return out;
+}
+// Ausfall eines Vorgangs in der Werkstatt: Übernahme → technische Freigabe/Ablehnung (offen bis jetzt); ohne Übernahme-Zeitstempel keiner
+export function workshopIntervalOf(c, now = Date.now()) {
+  if (!c.workshop_ack_at) return null;
+  const a = Date.parse(c.workshop_ack_at);
+  const b = c.status === 'fahrzeug_freigegeben' || c.status === 'abgelehnt' ? (c.closed_at ? Date.parse(c.closed_at) : NaN) : now;
+  return Number.isFinite(a) && Number.isFinite(b) && b > a ? [a, b] : null;
+}
+// Ausfallstunden je Berliner Kalendermonat (months: ['JJJJ-MM', …]); Abschnitte an Monatsgrenzen geteilt, Überschneidungen einmal
+export function downtimeByMonth(intervals, months, now = Date.now()) {
+  return months.map((m) => {
+    const y = +m.slice(0, 4); const mo = +m.slice(5, 7);
+    const lo = Date.parse(berlinDayStartIso(`${m}-01`));
+    const hi = Math.min(now, Date.parse(berlinDayStartIso(mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`)));
+    const clipped = intervals.map(([a, b]) => [Math.max(a, lo), Math.min(b, hi)]).filter(([a, b]) => b > a);
+    return { month: m, hours: r1(unionMs(clipped) / H) };
+  });
+}
 const stat = (arr) => ({ n: arr.length, median_h: r1(quantile(arr, 0.5)), p90_h: r1(quantile(arr, 0.9)) });
 
 export async function kpiReport(env, user, envName, query = {}) {
@@ -309,15 +339,7 @@ export async function kpiReport(env, user, envName, query = {}) {
       else if (seg && e.to_status && e.to_status !== 'wartet_teile') closeSeg(e.created_at);
     }
     if (seg) closeSeg(null);
-    // Sicherheitssperre: ab Meldung mit Sperre bzw. „Sperre setzen“ bis „Sperre aufheben“ oder technische Freigabe (offen bis jetzt)
-    let lockFrom = null;
-    for (const e of evs) {
-      const at = Date.parse(e.created_at);
-      if (e.action === 'create') { try { if (JSON.parse(e.create_payload || '{}').safety_lock) lockFrom = at; } catch { /* altes Format */ } }
-      else if (e.action === 'set_safety_lock' && lockFrom === null) lockFrom = at;
-      else if (lockFrom !== null && (e.action === 'lift_safety_lock' || e.to_status === 'fahrzeug_freigegeben' || e.to_status === 'abgelehnt')) { addLock(c.vehicle_id, lockFrom, at); lockFrom = null; }
-    }
-    if (lockFrom !== null) addLock(c.vehicle_id, lockFrom, now);
+    for (const [a, b] of lockIntervalsOf(evs, now)) addLock(c.vehicle_id, a, b);
     let costFrom = null; let costHit = false;
     for (const e of evs) {
       if (e.action === 'cost_limit_exceeded') { if (costFrom === null) { costFrom = Date.parse(e.created_at); ca.exceeded++; costHit = true; } }
@@ -337,7 +359,7 @@ export async function kpiReport(env, user, envName, query = {}) {
     const v = byVehicle.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, cases: 0, released: 0, duplicates: 0, workshop_h: 0, parts_wait_h: 0, locked_h: 0, downtime_h: 0 };
     v.cases++; if (c.status === 'fahrzeug_freigegeben') v.released++; if (c.status === 'abgelehnt' && c.duplicate_of) v.duplicates++;
     if (workshop !== null) addIv(shop, c.vehicle_id, Date.parse(approved.created_at), Date.parse(c.closed_at));
-    if (c.workshop_ack_at) addIv(down, c.vehicle_id, Date.parse(c.workshop_ack_at), (c.status === 'fahrzeug_freigegeben' || c.status === 'abgelehnt') ? (c.closed_at ? Date.parse(c.closed_at) : NaN) : now);
+    { const iv = workshopIntervalOf(c, now); if (iv) addIv(down, c.vehicle_id, iv[0], iv[1]); }
     v.parts_wait_h += wait / H;
     byVehicle.set(c.vehicle_id, v);
   }

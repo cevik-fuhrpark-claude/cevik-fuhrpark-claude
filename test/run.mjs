@@ -1760,6 +1760,19 @@ await test('Kennzahlen: Werkstattzeit paralleler Aufträge einmal, Ausfallzeit a
   eq(head[head.length - 1], 'Ausfallzeit h'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
   const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${from}&to=${BERLIN_YM}&environment=${await envOf(a)}`, undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(ig.status, 200); ok(Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).downtime_h - 9) < 0.05, 'Integration liefert Ausfallzeit');
+  // Fahrzeugakte: Ausfall je Berliner Monat (letzte 12), gleiche Regel; Summe = Kennzahl; nur Leitung
+  const ak = (await users.fleet.get(`/api/vehicles/${VK}`)).data;
+  ok(ak.downtime && ak.downtime.months.length === 12 && ak.downtime.max_months === 12, 'Akte: 12 Monate');
+  eq(ak.downtime.months[0].month, BERLIN_YM, 'neuester Monat zuerst');
+  ok(Math.abs(ak.downtime.total_h - 9) < 0.15, 'Akte: Summe 9 h: ' + ak.downtime.total_h);
+  ok(!('downtime' in (await users.ws.get(`/api/vehicles/${VK}`)).data), 'Werkstatt sieht keinen Ausfall');
+  const { downtimeByMonth } = await import('../src/reports.js');
+  // Abschnitt über die Berliner Monatsgrenze (30.09. 22:00 → 01.10. 04:00 MESZ) wird geteilt; Überschneidung einmal; Zukunft abgeschnitten
+  const iv = [[Date.parse('2026-09-30T20:00:00Z'), Date.parse('2026-10-01T02:00:00Z')], [Date.parse('2026-09-30T21:00:00Z'), Date.parse('2026-09-30T21:30:00Z')]];
+  const dm = downtimeByMonth(iv, ['2026-10', '2026-09', '2026-08'], Date.parse('2026-10-01T01:00:00Z'));
+  eq(JSON.stringify(dm), JSON.stringify([{ month: '2026-10', hours: 3 }, { month: '2026-09', hours: 2 }, { month: '2026-08', hours: 0 }]), 'Monatsgrenze Berlin');
+  // Winterzeit: Oktober endet am 31.10. 23:00 UTC
+  eq(downtimeByMonth([[Date.parse('2026-10-31T22:00:00Z'), Date.parse('2026-11-01T01:00:00Z')]], ['2026-11', '2026-10'], Date.parse('2026-12-01T00:00:00Z')).map((x) => x.hours).join('/'), '2/1', 'Monatsgrenze Winterzeit');
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt', closed_at=? WHERE id IN (?,?,?)`).bind(new Date().toISOString(), a, b, c).run();
   eq((await owner.post(`/api/vehicles/${VK}/active`, { active: false, reason: 'Testdaten Ausfallzeit' })).status, 200);
 });
@@ -6746,7 +6759,7 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/(:vin|VIN[^/]+)$/));
   if (process.env.CFP_TOP) { const m = new Map(); for (const w of QSTAT.perRequest.slice(1)) { const k = w.method + " " + w.path; m.set(k, Math.max(m.get(k) || 0, w.n)); } console.log([...m].sort((a, b) => b[1] - a[1]).slice(0, 15).map((x) => x.join(" = ")).join("\n")); }
   console.log(`     Fahrzeugakte max. ${akteMax}, Zeitleiste max. ${tlMax} Abfragen`);
-  ok(akteMax <= 23, `Fahrzeugakte braucht ${akteMax} Abfragen`);
+  ok(akteMax <= 24, `Fahrzeugakte braucht ${akteMax} Abfragen`); // 16.10.2026: +1 für „Ausfall je Monat“ (Sperr-Ereignisse)
   ok(tlMax < akteMax && tlMax <= 18, `Zeitleiste braucht ${tlMax} Abfragen`);
   // Cron am Ende der Suite (alle Testdaten vorhanden): Agent + Push-Wiederholung bzw. Bereinigung in einem Aufruf
   const cronN = [];
@@ -6954,6 +6967,11 @@ await test('Integrations-API: keine Personennamen in Lese-Antworten (alle GET-En
     .map((r) => String(r.n)).filter((n) => n.length >= 5);
   ok(ppl.length >= 6, `zu wenige Personen im Testbestand (${ppl.length})`);
   const H = { authorization: 'Bearer integration-token-xyz' };
+  // manueller Agentenlauf: Auslöser ohne Benutzernamen (vorher „manuell:test.fuhrpark“ – nur aufgefallen, wenn der letzte Lauf manuell war)
+  eq((await users.fleet.post('/api/agent/run', {})).status, 200);
+  const lm = (await anon.req('GET', '/api/integration/v1/master?environment=test', undefined, H)).data.last_agent_run;
+  eq(lm && lm.trigger, 'manuell', 'Auslöser ohne Person');
+  ok((await users.fleet.get('/api/master')).data.last_agent_run.trigger.startsWith('manuell:'), 'App zeigt weiterhin, wer gestartet hat');
   const hits = []; let calls = 0;
   for (const environment of ['test', 'production']) for (const [ep, q] of Object.entries(EP)) {
     const r = await anon.req('GET', `/api/integration/v1${ep.slice(3)}${q}${q ? '&' : '?'}environment=${environment}`, undefined, H);
@@ -8379,7 +8397,7 @@ await test('Datumsanzeige immer zweistellig (01.01.2027 statt 1.1.2027) in DE/UK
     eq(new Intl.DateTimeFormat(f.locOf(lang), f.dateOpts('UTC')).format(new Date('2027-01-01T12:00:00Z')), want[lang][0], lang + ' Aushang');
   }
   // Wächter: jeder Datumsformatierer in app.js nutzt dateOpts, dateStyle oder ist der interne JJJJ-MM-TT-Formatierer (sv-SE)
-  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour/.test(x));
+  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour|^uiLoc\(\), \{ year: 'numeric', month: 'long', timeZone: 'UTC' \}\)/.test(x));
   eq(bad.join(' || '), '', 'Datumsformatierer ohne zweistellige Vorgabe');
   eq(app.split('\n').filter((l) => l.includes('toLocaleDateString(') && !l.includes("day: '2-digit'")).length, 0, 'toLocaleDateString nur mit 2-digit');
   // UI-Zeitreise: Server- und Browser-Uhr über CFP_FAKE_NOW

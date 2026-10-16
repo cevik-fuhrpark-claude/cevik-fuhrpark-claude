@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (16.10.2026): (1) Vorgangsansicht mit einem Status länger als 48 h – „Dauer je Status“ in Tagen, kein Absturz
 # (vorher „.tofmtNum()“ → Seite brach ab); (2) Kennzahlen je Fahrzeug zeigen „Ausfall“ (Werkstatt-Übernahme bis jetzt bzw. Sperre),
-# zwei parallele Aufträge am selben Fahrzeug zählen einmal. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# zwei parallele Aufträge am selben Fahrzeug zählen einmal; (3) Fahrzeugakte „Ausfall je Monat“ (Monat ausgeschrieben, Summe). DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server mit /__dev/backdate (scripts/dev-server.mjs, frisch: sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, re
 from playwright.sync_api import sync_playwright
@@ -10,6 +10,8 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 VIN='WDB96340310777761'; VID='VIN:'+VIN
 TPS={'de':'Dauer je Status','uk':'Тривалість за статусом','en':'Time per status'}
 DOWN={'de':'Ausfall','uk':'Простій','en':'Downtime'}
+VD={'de':'Ausfall je Monat (letzte 12)','uk':'Простій за місяцями (останні 12)','en':'Downtime per month (last 12)'}
+TOT={'de':'Summe','uk':'Разом','en':'Total'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -53,6 +55,13 @@ with sync_playwright() as p:
         rules=q.inner_text('#app')
         check(DOWN[lang] in rules.split(TPS[lang])[0] or DOWN[lang] in rules,f'{lang}/{w}: Erklärung nennt „{DOWN[lang]}“')
         if SHOTS and row.count(): row.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/af_kpi_{lang}_{w}.png')
+        # Fahrzeugakte: Ausfall je Monat (Summe 3 Tage, Monat in der Sprache)
+        q.goto(B+f'/#/vehicles/{VID}'); q.wait_for_selector('#vdown',timeout=15000)
+        vd=q.inner_text('#vdown')
+        check(VD[lang] in vd and TOT[lang] in vd and re.search(r'3([,.]0)? ',vd) is not None and 'NaN' not in vd,f'{lang}/{w}: Akte „{VD[lang]}“ ({vd.replace(chr(10)," | ")[:120]})')
+        check(re.search(r'\b20\d\d\b',vd) is not None and not re.search(r'\d{4}-\d{2}',vd),f'{lang}/{w}: Monat ausgeschrieben, kein JJJJ-MM')
+        if SHOTS: q.locator('#vdown').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/af_akte_{lang}_{w}.png')
+        check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: Akte kein Querscrollen')
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: kein Querscrollen')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
         ctx.close()

@@ -9,6 +9,7 @@ import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
+import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth } from './reports.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
@@ -109,7 +110,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     let reason = null; try { reason = JSON.parse(deact.detail || '{}').reason || null; } catch { reason = null; }
     inactiveInfo = isManager(user) ? { since: deact.created_at, reason, by_name: deact.display_name || null } : { since: deact.created_at };
   }
-  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
+  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
   if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');
@@ -183,6 +184,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
       SUM(reimbursed_net) AS reimbursed_net FROM insurance_claims WHERE vehicle_id=? AND environment=?`).bind(vehicleId, envName).first();
     out.claims_summary = { total: out.claims_summary.total, open: out.claims_summary.open || 0, reimbursed_net: out.claims_summary.reimbursed_net === null ? null : Math.round(out.claims_summary.reimbursed_net * 100) / 100 };
     // Offene Befunde des Fuhrparkagenten zu diesem Fahrzeug (Umgebung der Person; gleiche Sichtbarkeit wie das Management-Panel) – schwerste zuerst
+    // Ausfall je Berliner Monat (letzte 12): Werkstatt-Übernahme → Freigabe/Ablehnung (offen bis jetzt) ∪ Sicherheitssperre – gleiche Regel wie Kennzahlen
+    out.downtime = await vehicleDowntime(env, envName, vehicleId, allCases);
     out.agent_findings = (await env.DB.prepare(`SELECT id, finding_code, severity, message, message_args, next_action, owner_role, case_id, first_seen FROM agent_findings
       WHERE vehicle_id=? AND environment=? AND status='offen'
       ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, first_seen`).bind(vehicleId, envName).all()).results;
@@ -199,7 +202,25 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   return out;
 }
 
-// Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
+export const DOWNTIME_MONTHS = 12;
+async function vehicleDowntime(env, envName, vehicleId, cases) {
+  const now = Date.now(); const cur = berlinDate().slice(0, 7);
+  const months = Array.from({ length: DOWNTIME_MONTHS }, (_, i) => addMonths(`${cur}-01`, -i).slice(0, 7));
+  const since = Date.parse(`${months[months.length - 1]}-01T00:00:00Z`) - 86400000;
+  // nur Vorgänge, die in den Zeitraum hineinreichen (offen oder nach Beginn abgeschlossen)
+  const rel = cases.filter((c) => !c.closed_at || Date.parse(c.closed_at) >= since);
+  const ivs = [];
+  for (const c of rel) { const iv = workshopIntervalOf(c, now); if (iv) ivs.push(iv); }
+  const evs = rel.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload FROM case_events
+    WHERE case_id IN (SELECT value FROM json_each(?)) AND (action IN ('create','set_safety_lock','lift_safety_lock') OR to_status IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY case_id, created_at`)
+    .bind(JSON.stringify(rel.map((c) => c.id))).all()).results : [];
+  const by = new Map(); for (const e of evs) { if (!by.has(e.case_id)) by.set(e.case_id, []); by.get(e.case_id).push(e); }
+  for (const list of by.values()) ivs.push(...lockIntervalsOf(list, now));
+  const rows = downtimeByMonth(ivs, months, now);
+  return { months: rows, total_h: Math.round(rows.reduce((x, r) => x + r.hours, 0) * 10) / 10, max_months: DOWNTIME_MONTHS };
+}
+
+// Zeitleiste der Fahrzeugakte:// Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
 export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim', 'note'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
   const limit = intParam(query.limit, 300, 1, 1000);
