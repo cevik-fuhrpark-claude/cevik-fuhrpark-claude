@@ -236,12 +236,14 @@ export async function canReadFineFile(env, user, envName, fineId) {
 }
 
 // CSV-Export (Buchhaltung/Steuerberatung): Tatzeit in Berliner Ortszeit (TT.MM.JJJJ HH:MM, wie im Schreiben – gespeichert ist UTC); Fahrernamen nur auf ausdrücklichen Wunsch (with_driver=1) und nur für Inhaber/Fuhrparkleitung
+// Status als Bezeichnung wie in der App (bis 16.10.2026 Code in der CSV); Test prüft Gleichheit mit i18n.js
+export const FINE_STATUS_DE = { eingegangen: 'Eingegangen', fahrer_ermittelt: 'Fahrer ermittelt', fahrer_informiert: 'Fahrer informiert', beantwortet: 'Beantwortet', bezahlt: 'Bezahlt', eingestellt: 'Eingestellt', erledigt: 'Erledigt' };
 const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', bussgeldbescheid: 'Bußgeldbescheid', verwarnung: 'Verwarnung', maut: 'Maut', sonstiges: 'Sonstiges' };
 export function finesCsv(rows, csvCell, withDriver) {
   const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
   const lines = [head.join(';')];
   for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), csvCell(f.reference), csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
-    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : String(f.amount_eur).replace('.', ','), f.response_due || '', csvCell(f.status),
+    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : String(f.amount_eur).replace('.', ','), f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
     ...(withDriver ? [csvCell(f.driver_name || f.driver_name_note)] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }

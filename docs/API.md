@@ -172,6 +172,8 @@ nur `owner` darf per Header `x-cfp-env: test|production` umschalten.
 
 **Kalenderdateien (`format=ics`, alle fünf: Prüftermine, Werkstattplan, Verträge, Behördenfristen, Wiedervorlagen):** Termintexte und Kalendername in der Sprache der angemeldeten Person (`users.language` DE/UK/EN, sonst Deutsch; Texte `public/ics-texts.js`), Datumsangaben im Text TT.MM.JJJJ (EN TT/MM/JJJJ), Vorgangsstatus als Bezeichnung (bis 16.10.2026 im Werkstattplan roher Code). Freitexte (Nachweis, Partner, Behörde, Aktenzeichen) wie gespeichert. UID/Datum/Erinnerung unverändert.
 
+**CSV-Status (seit 16.10.2026):** `GET /api/cases?format=csv` (Spalte „Status“), `GET /api/fines?format=csv` („Status“) und `GET /api/maintenance/history?format=csv` („Status Mängelauftrag“) liefern die deutsche Bezeichnung wie in der App (`CASE_STATUS_DE`/`FINE_STATUS_DE`) statt des Codes; JSON-Antworten und Integrations-API liefern weiter Codes.
+
 
 ### Befehle auf Vorgängen
 `POST /api/cases/:id/commands` mit `{ action, command_id, expected_version, note, payload }`.

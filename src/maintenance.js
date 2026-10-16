@@ -6,6 +6,7 @@ import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, maintEventStmt } from './vehicles.js';
 import { siteSelection } from './reports.js';
+import { CASE_STATUS_DE } from './cases.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
 const WRITE_ROLES = ['owner', 'fleet'];
@@ -585,6 +586,6 @@ export function maintenanceHistoryCsv(h) {
   const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Fahrzeugart', 'Standort', 'Prüfart', 'Durchgeführt am', 'km bei Durchführung', 'Ergebnis', 'Nachweis', 'Herkunft', 'Erfasst von', 'Erfasst am', 'Mängelauftrag', 'Status Mängelauftrag', 'Nachprüfung am', 'Ergebnis Nachprüfung'].join(';')];
   for (const r of h.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), csvCell(r.kind), r.done_date, r.done_km ?? '',
     RESULT_DE[r.result] || '', csvCell(r.evidence), SOURCE_DE[r.source] || csvCell(r.source), csvCell(r.recorded_by_name), r.created_at ? berlinDate(r.created_at) : '', // Berliner Kalendertag (nicht UTC)
-    csvCell(r.defect_case_no), csvCell(r.defect_case_status), r.reinspection_date || '', RESULT_DE[r.reinspection_result] || (r.reinspection_date ? 'ohne Angabe' : '')].join(';'));
+    csvCell(r.defect_case_no), CASE_STATUS_DE[r.defect_case_status] || csvCell(r.defect_case_status), r.reinspection_date || '', RESULT_DE[r.reinspection_result] || (r.reinspection_date ? 'ohne Angabe' : '')].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

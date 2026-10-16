@@ -183,6 +183,8 @@ export async function partSuggestions(env, user, envName) {
 
 // CSV-Export der Vorgangsliste (gleiche Filter und Rechte wie die Liste), Excel-tauglich (UTF-8 mit BOM, Semikolon)
 const PRIO_DE = { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' };
+// Status als Bezeichnung wie in der App (bis 16.10.2026 stand in der CSV der Code, z. B. „werkstatt_freigegeben“); Test prüft Gleichheit mit i18n.js
+export const CASE_STATUS_DE = { gemeldet: 'Gemeldet', werkstatt_freigegeben: 'Werkstatt freigegeben', in_reparatur: 'In Reparatur', wartet_teile: 'Wartet auf Teile', abschlusskontrolle: 'Abschlusskontrolle', fahrzeug_freigegeben: 'Fahrzeug freigegeben', abgelehnt: 'Abgelehnt' };
 // claims (optional, nur Inhaber/Fuhrparkleitung): Map case_id → Versicherungsfall; dann drei zusätzliche Spalten
 const ORIGIN_DE = { meldung: 'Meldung', kontrolle: 'Abfahrtskontrolle', wartung: 'Prüfauftrag', agent: 'Fuhrparkagent' };
 const CLAIM_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 'reguliert', abgelehnt: 'abgelehnt', zurueckgezogen: 'zurückgezogen' };
@@ -192,7 +194,7 @@ export function casesCsv(rows, csvCell, fmt, claims = null) {
   const lines = [head.join(';')];
   for (const c of rows) {
     const k = claims && claims.get(c.id);
-    lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
+    lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, CASE_STATUS_DE[c.status] || csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       csvCell(c.reported_driveability), csvCell(c.workshop_site), csvCell(c.description), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
       ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), csvCell(k ? k.claim_no : ''), c.cost_over_limit_at ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : ''].join(';'));

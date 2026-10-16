@@ -5961,7 +5961,7 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   ok(nach && nach.defect_case_no === null && nach.reinspection_date === null, 'Prüfung ohne Mängel: keine Auftrags-/Nachprüfungsangaben');
   const hc = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/maintenance/history?format=csv&from=${day(-30)}&to=${day(0)}&kind=UVV`)).data);
   ok(hc.split('\r\n')[0].endsWith(';Mängelauftrag;Status Mängelauftrag;Nachprüfung am;Ergebnis Nachprüfung'), 'CSV-Kopf erweitert');
-  ok(hc.split('\r\n').some((l) => l.includes('UVV-Protokoll 5501') && l.endsWith(`;${o.data.case_no};fahrzeug_freigegeben;${day(0)};ohne Mängel`)), 'CSV-Zeile mit Auftrag und Nachprüfung');
+  ok(hc.split('\r\n').some((l) => l.includes('UVV-Protokoll 5501') && l.endsWith(`;${o.data.case_no};Fahrzeug freigegeben;${day(0)};ohne Mängel`)), 'CSV-Zeile mit Auftrag und Nachprüfung');
   const H = { authorization: 'Bearer integration-token-xyz' };
   const iev = async (q) => (await anon.req('GET', `/api/integration/v1/maintenance/history?from=${day(-30)}&to=${day(0)}&kind=UVV${q}`, undefined, H)).data;
   const ip = await iev('&environment=test');
@@ -9053,6 +9053,26 @@ await test('Kalenderdateien (.ics) in der Sprache der Person (DE/UK/EN): Texte, 
   console.log(`     ${Object.values(langs.uk).reduce((n, c) => n + (c.match(/BEGIN:VEVENT/g) || []).length, 0)} Termine je Sprache in 5 Kalendern geprüft${wsCase ? ', Werkstattplan mit Auftrag' : ''}`);
   if (wsCase) ok(u.plan.includes(`SUMMARY:Майстерня: ${wsCase.case_no}`) && /DESCRIPTION:Статус: (Передано в майстерню|У ремонті|Очікує запчастини)/.test(u.plan), 'UK Werkstattplan: Auftrag mit Statusbezeichnung');
   ok(!/DESCRIPTION:Status: [a-z_]+(\r|\n|$| ·)/.test(d.plan) && !/DESCRIPTION:Статус: [a-z_]+/.test(u.plan), 'Werkstattplan: Status als Bezeichnung');
+});
+
+await test('CSV-Exporte: Status als Bezeichnung wie in der App (Vorgänge, Bußgelder, Mängelauftrag in „Durchgeführte Prüfungen“) statt Code', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  const { CASE_STATUS_DE, STATUSES } = await import('../src/cases.js');
+  const { FINE_STATUS_DE, FINE_STATUSES } = await import('../src/fines.js');
+  const { parseCsv } = await import('../src/util.js');
+  eq(Object.keys(CASE_STATUS_DE).sort().join(), [...STATUSES].sort().join(), 'alle Vorgangsstatus');
+  for (const [k, v] of Object.entries(CASE_STATUS_DE)) eq(v, STRINGS.de['st_' + k], `Vorgang ${k} wie in der App`);
+  eq(Object.keys(FINE_STATUS_DE).sort().join(), [...FINE_STATUSES].sort().join(), 'alle Bußgeldstatus');
+  for (const [k, v] of Object.entries(FINE_STATUS_DE)) eq(v, STRINGS.de['fs_' + k], `Bußgeld ${k} wie in der App`);
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data).replace(/^﻿/, '');
+  const col = (txt, name) => { const rows = parseCsv(txt); const i = rows[0].indexOf(name); ok(i >= 0, 'Spalte ' + name); return rows.slice(1).map((r) => r[i]).filter((x) => x); };
+  const cs = col(dec(await users.fleet.get('/api/cases?format=csv&status=')), 'Status');
+  ok(cs.length > 10 && cs.every((x) => Object.values(CASE_STATUS_DE).includes(x)), 'Vorgänge: nur Bezeichnungen ' + [...new Set(cs)].join('|'));
+  const fs = col(dec(await users.fleet.get('/api/fines?format=csv')), 'Status');
+  ok(fs.length > 0 && fs.every((x) => Object.values(FINE_STATUS_DE).includes(x)), 'Bußgelder: nur Bezeichnungen ' + [...new Set(fs)].join('|'));
+  const hs = col(dec(await users.fleet.get('/api/maintenance/history?from=2000-01-01&format=csv')), 'Status Mängelauftrag');
+  ok(hs.every((x) => Object.values(CASE_STATUS_DE).includes(x)), 'Prüfhistorie: nur Bezeichnungen ' + [...new Set(hs)].join('|'));
+  console.log(`     Status geprüft: ${cs.length} Vorgänge, ${fs.length} Bußgelder, ${hs.length} Mängelaufträge`);
 });
 
 await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {
