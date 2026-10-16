@@ -1922,7 +1922,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
     ok(app.includes(`tn('${k}', `), `${k}: wird genutzt`);
   }
   // Zahl vor einem Mehrzahl-Begriff ohne Pluralform („1 Agentenbefunde“, „1 Entscheidungen offen“) → „Agentenbefunde: 1“
-  eq((app.match(/\$\{[^}]*\} \$\{(esc\()?t\('(findings|decisions)'\)/g) || []).join(' | '), '', 'Zahl + Mehrzahl-Begriff');
+  eq((app.match(/\$\{[^}]*\} \$\{(esc\()?t\('(findings|decisions|positions|weeks|unvalued_positions|imp_new|imp_changed|imp_same|tires_kept_verified|tires_no_vehicle|skipped)'\)/g) || []).join(' | '), '', 'Zahl + Mehrzahl-Begriff');
   const line = app.split('\n').find((l) => l.startsWith('const tn = '));
   ok(line, 'tn vorhanden');
   const run = (lang, loc, k, n) => {
@@ -1949,6 +1949,26 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
     const v = STRINGS[l][k] || ''; if ((PLURALS[l] || {})[k]) continue;
     ok(!/\{n\} (?!фото|Artikel|Zeichen|дн\.)[A-Za-zÄÖÜäöüа-яіїєґА-ЯІЇЄҐ]/.test(v), `${l}.${k}: Zahl vor Wort ohne Pluralformen – ${v.slice(0, 60)}`);
   } eq(run('en', 'en-GB', 'claim_days_open', 0), 'open for 0 days');
+  // Reifenübersicht „1 Positionen“/„0 Позиції“, Werkstattauslastung „4 тижнів“, Nachbestellung „(1 Unbewertete Positionen)“ – 16.10.2026
+  eq(run('de', 'de-DE', 'tires_measured_n', 1), '1 Position gemessen'); eq(run('uk', 'uk-UA', 'tires_measured_n', 0), 'виміряно 0 позицій'); eq(run('en', 'en-GB', 'tires_measured_n', 4), '4 positions measured');
+  eq(run('uk', 'uk-UA', 'weeks_n', 4), '4 тижні'); eq(run('uk', 'uk-UA', 'weeks_n', 13), '13 тижнів'); eq(run('de', 'de-DE', 'weeks_n', 8), '8 Wochen');
+  eq(run('de', 'de-DE', 'unvalued_items_n', 1), '1 Position unbewertet'); eq(run('uk', 'uk-UA', 'unvalued_items_n', 2), '2 позиції без оцінки'); eq(run('en', 'en-GB', 'unvalued_items_n', 1), '1 item unvalued');
+  // Reifen-Altersgrenze aus Einstellungen (1–20 Jahre): „älter als 1 Jahr“, „старше 1 року“, „older than 1 year“ (vorher „1 Jahre“/„1 years“) – 16.10.2026
+  eq(run('de', 'de-DE', 'tire_age_warn', 1), 'älter als 1 Jahr'); eq(run('de', 'de-DE', 'tires_age_tab', 6), 'Älter als 6 Jahre');
+  eq(run('en', 'en-GB', 'tires_age_tab', 1), 'Older than 1 year'); eq(run('en', 'en-GB', 'tire_age_warn', 8), 'older than 8 years');
+  eq(run('uk', 'uk-UA', 'tire_age_warn', 1), 'старше 1 року'); eq(run('uk', 'uk-UA', 'tire_age_warn', 21), 'старше 21 року'); eq(run('uk', 'uk-UA', 'tires_age_tab', 6), 'Старше 6 років');
+  // Zwei Zahlen, die zweite veränderlich („0 von 1 Konten“, „Showing 1 of 1 accounts“) → neutral „Konten angezeigt: {n} von {m}“
+  for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
+  // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
+  // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
+  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid ufilter_shown af_shown'.split(' '));
+  const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
+  const unreviewed = new Set();
+  for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
+    const phs = [...m[2].matchAll(/\.replace\('\{([a-z]+)\}', ((?:[^()]|\([^()]*\))*)\)/g)].filter((x) => NUMPH.includes(x[1]) && !/^\d+$/.test(x[2].trim()) && !/nDays|fmtD|esc\(|plate/.test(x[2]));
+    for (const l of ['de', 'uk', 'en']) for (const x of phs) if (new RegExp(`\\{${x[1]}\\} [A-Za-zÄÖÜäöüа-яіїєґА-ЯІЇЄҐ’]`).test(STRINGS[l][m[1]] || '') && !REVIEWED.has(m[1])) unreviewed.add(`${l}.${m[1]}`);
+  }
+  eq([...unreviewed].join(', '), '', 'Zahl vor Wort ohne tn() und ohne Prüfung');
 });
 
 await test('Agentenbefunde: Zähl-/Tagesangaben in der Pluralform je Sprache ({n#Form/Formen}) – statt „seit 1 Tag(en)“, „1 recipient(s)“', async () => {
@@ -7525,7 +7545,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/VEH_AV_LINK\.includes\(hf\) && \(hf !== 'with_findings' \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
-    ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{weeks\} \$\{t\('weeks'\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
+    ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
     ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && /\[\/\^#\\\/master\(\?:\\\?q=\(\[\^&\]\*\)\)\?\$\/, \(q\) => viewMaster\(q\)\]/.test(app) && /async function viewMaster\(q\) \{[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
     ok(app.includes('href="#/vehicles?f=with_notes" id="dnotes"') && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
     const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
