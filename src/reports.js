@@ -647,15 +647,18 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const ovById = new Map(ov.rows.map((r) => [r.id, r]));
   for (const [, items] of byDay) for (const i of items) if (i.type === 'maintenance') {
     const o = ovById.get(i.id);
-    if (o) Object.assign(i, { status: o.status, next_due_km: o.next_due_km ?? null, km_remaining: o.km_remaining ?? null, km_status: o.km_status ?? null });
+    if (o) Object.assign(i, { status: o.status, next_due_km: o.next_due_km ?? null, km_remaining: o.km_remaining ?? null, km_status: o.km_status ?? null, ...(o.km_unclear ? { km_unclear: o.km_unclear, km_drop_at: o.km_drop_at || null } : {}) });
   }
   const DUE = ['ueberfaellig', 'faellig'];
   // + offene Herstellerrückrufe ohne Frist (noch nicht durchgeführt): keine erfundene Frist, aber Werkstattarbeit, die eingeplant werden kann;
   // Referenz laut Nachweis (Schreiben/KBA-Nr.) wie in der Vorgangs-Kurzinfo – sonst kein Nachweistext
   const openRecall = (r) => r.kind === 'Rückruf' && r.status === 'ohne_termin' && !r.last_done_date;
-  const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || openRecall(r)) && !(r.planned_date && r.planned_date >= today) && !r.open_order)
-    .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: r.status,
+  // km-Fälligkeit „ungeklärt“ (Zähler gesunken) überdeckt im Gesamtstatus „bald fällig“ nach Datum – die Datumsfälligkeit bleibt aber einzuplanen
+  const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && r.km_unclear && DUE.includes(r.date_status);
+  const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || kmUnclearDateDue(r) || openRecall(r)) && !(r.planned_date && r.planned_date >= today) && !r.open_order)
+    .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: kmUnclearDateDue(r) ? r.date_status : r.status,
       next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null,
+      ...(r.km_unclear ? { km_unclear: r.km_unclear, km_drop_at: r.km_drop_at || null } : {}),
       by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null,
       ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));

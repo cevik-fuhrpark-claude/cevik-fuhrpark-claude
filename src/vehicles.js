@@ -581,8 +581,8 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const id = uuid();
   const now = nowIso();
-  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource)];
+  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource, now)];
   if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
   await env.DB.batch(stmts);
   if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
@@ -688,8 +688,8 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
   const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
   await env.DB.batch([
-    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, due_source=?, planned_date=NULL WHERE id=?')
-      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}`.slice(0, 300) : evidence, nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
+    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL WHERE id=?')
+      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}`.slice(0, 300) : evidence, nowIso(), nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
     ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=?').bind(result, ruleId, date)] : []),
   ]);

@@ -64,6 +64,7 @@ UI-Technische Verfügbarkeit (Kennzahlen)|ui-kpi-verfuegbarkeit.py|/tmp/cfp-kpiv
 UI-Fahrleistung je Monat (Fahrzeugakte)|ui-fahrleistung.py|/tmp/cfp-fahrleistung.log
 UI-Kosten je km (Regel Fahrleistung)|ui-kosten-km.py|/tmp/cfp-kostenkm.log
 UI-km-Zähler gesunken (Tachotausch)|ui-tachotausch.py|/tmp/cfp-tachotausch.log
+UI-Werkstattplan nach Tachotausch|ui-plan-tachotausch.py|/tmp/cfp-plan-tachotausch.log
 '
 N=0
 NL='

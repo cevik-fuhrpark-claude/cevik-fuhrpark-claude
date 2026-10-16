@@ -8929,6 +8929,50 @@ await test('km-Plausibilität bei „Prüfung erledigt“ (kleiner als zuvor erf
   ok(!dq.items.some((i) => i.vehicle_id === V), 'außer Betrieb: kein Befund');
 });
 
+await test('km-Zähler gesunken + Datum bald fällig: Werkstattplan „Fällig – ohne Termin“ zeigt die Prüfung weiter (Status nach Datum, km ungeklärt gekennzeichnet), Prüftermine „ohne Termin“ ebenso', async () => {
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await owner.post('/api/vehicles', { plate: 'KP-TT 3', vin: 'WDB96340310555581', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310555581'; const vp = `/api/vehicles/${V}`;
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 300000, measured_on: day(-40) })).status, 201);
+  const soon = await users.fleet.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 50000, last_done_km: 280000, next_due_date: day(10), evidence: 'Test Datum+km 1' });
+  const late = await users.fleet.post(`${vp}/maintenance`, { kind: 'Bremsen', interval_km: 100000, last_done_km: 250000, next_due_date: day(-2), evidence: 'Test Datum+km 2' });
+  const fine = await users.fleet.post(`${vp}/maintenance`, { kind: 'Inspektion', interval_km: 100000, last_done_km: 250000, next_due_date: day(300), evidence: 'Test Datum+km 3' });
+  for (const x of [soon, late, fine]) eq(x.status, 201, JSON.stringify(x.data));
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 1200, note: 'Tachotausch laut Werkstattrechnung (Test)' })).status, 201);
+  const ov = (await users.fleet.get('/api/maintenance')).data;
+  const row = (id) => ov.rows.find((x) => x.id === id);
+  eq(row(soon.data.id).status, 'ungeklaert', 'Gesamtstatus: km ungeklärt überdeckt „bald fällig“'); eq(row(soon.data.id).date_status, 'faellig', 'Datumsstatus getrennt');
+  eq(row(late.data.id).status, 'ueberfaellig'); eq(row(late.data.id).date_status, 'ueberfaellig'); eq(row(late.data.id).km_unclear, 'counter_drop');
+  eq(row(fine.data.id).date_status, 'ok');
+  let p = (await users.fleet.get('/api/workshop/plan?days=14')).data;
+  const md = (id) => p.maintenance_due.find((x) => x.id === id);
+  ok(md(soon.data.id), 'bald fällig nach Datum bleibt einzuplanen (vorher verschwunden)');
+  eq(md(soon.data.id).status, 'faellig', 'Status nach Datum'); eq(md(soon.data.id).km_unclear, 'counter_drop'); eq(md(soon.data.id).km_remaining, null, 'keine Restlaufleistung');
+  ok(md(soon.data.id).km_drop_at, 'Datum des Rücksprungs'); eq(md(soon.data.id).by_km, false, 'nicht „nach km fällig“');
+  eq(md(late.data.id).status, 'ueberfaellig'); eq(md(late.data.id).km_unclear, 'counter_drop', 'überfällig: km-Hinweis mitgeliefert');
+  ok(!md(fine.data.id), 'Datum in Ordnung + km ungeklärt: nicht im Plan (steht unter „Frist ungeklärt“)');
+  // geplanter Termin im Zeitraum: Planeintrag trägt die Kennzeichnung, „ohne Termin“ entfällt
+  eq((await users.fleet.post(`/api/maintenance/${soon.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  p = (await users.fleet.get('/api/workshop/plan?days=14')).data;
+  ok(!md(soon.data.id), 'mit Termin nicht mehr ohne Termin');
+  const it = p.days.flatMap((d) => d.items).find((i) => i.type === 'maintenance' && i.id === soon.data.id);
+  ok(it && it.km_unclear === 'counter_drop' && it.km_remaining === null, 'Planeintrag gekennzeichnet');
+  // Termin planen ändert die km-Grundlage nicht → bleibt ungeklärt (vorher: updated_at neu → wieder 328 800 km „Rest“ aus gemischten Zählern)
+  const r2 = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === soon.data.id);
+  eq(r2.km_status, 'ungeklaert', 'nach dem Planen weiter ungeklärt'); eq(r2.km_remaining, null);
+  eq((await users.fleet.get(vp)).data.maintenance.find((x) => x.id === soon.data.id).km_unclear, 'counter_drop', 'Akte ebenso');
+  await users.fleet.post('/api/agent/run');
+  ok((await users.fleet.get('/api/master')).data.findings.some((x) => x.subject_key === `${soon.data.id}|km|zaehler`), 'Agent-Hinweis bleibt nach dem Planen');
+  // Auflösung weiter durch Durchführung mit neuem km-Stand
+  eq((await users.fleet.post(`/api/maintenance/${soon.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Ölwechsel (Test)', done_km: 1200 })).status, 200);
+  const r3 = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === soon.data.id);
+  eq(r3.km_status, 'ok'); eq(r3.km_remaining, 50000); ok(!r3.km_unclear);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/const noPlan = \(r\) => \([^\n]*kmUnclearDateDue\(r\)/.test(app), 'Prüftermine „Fällig ohne Termin“ nutzt dieselbe Regel');
+  ok(/function kmTxt[\s\S]{0,300}i\.km_unclear/.test(app), 'Werkstattplan zeigt km-Hinweis statt Rest');
+  eq((await owner.post(`${vp}/active`, { active: false, reason: 'Testdaten Plan Tachotausch' })).status, 200);
+});
+
 await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden bei jedem Seitenaufbau gesetzt (Vorlesefunktion, Silbentrennung, PDF-Dateiname)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));
