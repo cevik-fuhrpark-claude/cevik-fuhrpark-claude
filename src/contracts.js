@@ -27,8 +27,10 @@ function date(v, field, { notFuture = false } = {}) {
 const intOrNull = (v, field, max) => { const n = num(v, { min: 0, max, field, nullable: true, grouped: true }); if (n !== null && !Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`); return n; };
 
 export function warnDaysOf(settings) {
-  const n = Number(settings && settings.get ? settings.get('contract_warn_days') : null);
-  return Number.isFinite(n) && n > 0 ? n : 60;
+  // Regel = Wirkung (SETTING_RULES: 0–730): 0 = Vorwarnung erst am Stichtag, leer = Standard 60 – vorher wurde 0 still zu 60
+  const v = settings && settings.get ? settings.get('contract_warn_days') : null;
+  const n = v === undefined || v === null || v === '' ? NaN : Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : 60;
 }
 
 // Status eines Vertrags (reine Funktion, für Akte, Übersicht und Fuhrparkagent gleich)

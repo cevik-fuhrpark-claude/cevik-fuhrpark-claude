@@ -4227,6 +4227,34 @@ await test('Fahrerakte: nur Fuhrpark/Inhaber anlegen und sehen, Fahrer nur eigen
   eq((await users.driver.get(`/api/drivers/${b.data.id}`)).status, 404, 'fremde Akte nicht sichtbar');
   eq((await users.driver.post(`/api/drivers/${a.data.id}/documents`, { kind: 'sonstiges', evidence: 'x' })).status, 403, 'Fahrer ändert nichts');
 });
+await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrernachweise, Verträge) statt still Standard 30/60; leer = Standard; Bußgeld-Feld mit eigener Bezeichnung', async () => {
+  const soon = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+  const st = async () => (await users.fleet.get('/api/drivers')).data.drivers.flatMap((d) => d.status.items).find((i) => i.kind === 'fahrerkarte' && i.valid_until === soon).status;
+  try {
+    eq(await st(), 'laeuft_ab', 'leer = Standard 30 Tage');
+    eq((await owner.put('/api/settings', { driver_doc_warn_days: '0' })).status, 200, '0 ist laut Regel erlaubt');
+    eq(await st(), 'ok', '0 = keine Vorwarnung (vorher still 30)');
+    eq((await owner.put('/api/settings', { driver_doc_warn_days: '5' })).status, 200);
+    eq(await st(), 'ok', '5 Tage < 10 Tage Rest');
+    eq((await owner.put('/api/settings', { driver_doc_warn_days: '10' })).status, 200);
+    eq(await st(), 'laeuft_ab', 'Grenze eingeschlossen');
+  } finally { eq((await owner.put('/api/settings', { driver_doc_warn_days: '' })).status, 200); }
+  const { warnDaysOf, contractStatus } = await import('../src/contracts.js');
+  const { SETTING_RULES } = await import('../src/settings.js');
+  eq(SETTING_RULES.contract_warn_days.min, 0); eq(SETTING_RULES.driver_doc_warn_days.min, 0);
+  eq(warnDaysOf(new Map([['contract_warn_days', '0']])), 0, 'Verträge: 0 bleibt 0 (vorher still 60)');
+  eq(warnDaysOf(new Map([['contract_warn_days', '']])), 60); eq(warnDaysOf(new Map()), 60); eq(warnDaysOf(new Map([['contract_warn_days', '14']])), 14);
+  const today = '2026-03-01';
+  eq(contractStatus({ end_date: '2026-03-11' }, null, today, warnDaysOf(new Map([['contract_warn_days', '0']]))).end.status, 'ok');
+  eq(contractStatus({ end_date: '2026-03-01' }, null, today, 0).end.status, 'laeuft_aus', 'am Stichtag');
+  const { STRINGS, AUDIT_SETTING_KEYS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].fine_warn && STRINGS[l].warn_zero_hint, `${l}: Bußgeld-Bezeichnung und Hinweis`);
+    ok(/30/.test(STRINGS[l].warn_days) && /30/.test(STRINGS[l].driver_doc_warn) && /7/.test(STRINGS[l].tacho_warn) && /60/.test(STRINGS[l].ct_warn), `${l}: Standardwerte in der Bezeichnung = Wirkung im Server`);
+  }
+  ok(!/Prüftermine/.test(STRINGS.de.fine_warn), 'Bußgeld-Feld heißt nicht mehr „Antwortfrist – Vorwarnung Prüftermine“');
+  ok(AUDIT_SETTING_KEYS.includes('fine_warn_days'));
+});
 await test('Führerscheinkontrolle: Vermerk bei Mangel, Intervall nur wenn eingestellt; Befunde und Ersetzen alter Nachweise', async () => {
   const id = (await users.fleet.get('/api/drivers')).data.drivers.find((x) => x.display_name === 'Testfahrer Eins').id;
   eq((await users.fleet.post(`/api/drivers/${id}/license-checks`, { checked_on: '2026-01-10', result: 'nicht_vorgelegt' })).status, 400, 'Vermerk Pflicht');
