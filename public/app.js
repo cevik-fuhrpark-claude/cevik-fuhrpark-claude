@@ -152,7 +152,18 @@ function render(html, active) {
   stackTables(document.getElementById('app'));
   markToggles(document.getElementById('app'));
   if (same && interim) return;
+  pageTitle();
   if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);
+}
+
+// Fenstertitel = Seitenüberschrift + App-Name (z. B. „Fahrzeuge – CEVIK Fuhrpark“): Browser-Reiter, Verlauf, Vorlesefunktion beim Seitenwechsel
+// und Dateiname bei „Drucken / PDF“ (vorher hieß jede PDF „CEVIK Fuhrpark.pdf“). Ladehinweis ändert den Titel nicht.
+function pageTitle() {
+  const app = `CEVIK ${t('app')}`;
+  const h = document.querySelector('#app h1');
+  const head = h ? h.textContent.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  const title = head && head !== app ? `${head} – ${app}` : app;
+  if (document.title !== title) document.title = title;
 }
 
 // Filterknöpfe (gelb = aktiv, „secondary“ = inaktiv): Zustand auch für Screenreader (aria-pressed), sofern nicht schon als Tab/Schalter ausgezeichnet
