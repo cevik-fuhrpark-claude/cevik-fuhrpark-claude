@@ -536,7 +536,7 @@ function viewLoginCode(challenge) {
   };
 }
 function langSelect() {
-  return `<label for="lang">${esc(t('language'))}</label><select id="lang"><option value="de"${S.lang === 'de' ? ' selected' : ''}>Deutsch</option><option value="uk"${S.lang === 'uk' ? ' selected' : ''}>Українська</option><option value="en"${S.lang === 'en' ? ' selected' : ''}>English</option></select>`;
+  return `<label for="lang">${esc(t('language'))}</label><select id="lang"><option value="de" lang="de"${S.lang === 'de' ? ' selected' : ''}>Deutsch</option><option value="uk" lang="uk"${S.lang === 'uk' ? ' selected' : ''}>Українська</option><option value="en" lang="en"${S.lang === 'en' ? ' selected' : ''}>English</option></select>`;
 }
 function bindLang(save = false) {
   const l = $('#lang');

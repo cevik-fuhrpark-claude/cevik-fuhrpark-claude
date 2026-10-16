@@ -8473,6 +8473,7 @@ await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden b
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));
   ok(/document\.documentElement\.lang = S\.lang/.test(body), 'render() setzt lang');
+  ok(['de', 'uk', 'en'].every((l) => app.includes(`<option value="${l}" lang="${l}"`)), 'Sprachnamen in der Auswahl mit eigener Sprache ausgezeichnet (Vorlesefunktion)');
   ok(/\n  pageTitle\(\);\n/.test(body) && /function pageTitle\(\) \{[\s\S]{0,400}document\.title = title/.test(app), 'render() setzt den Fenstertitel (Seitenüberschrift – App-Name, auch PDF-Dateiname)');
   { const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_exports_s.split('|')[0].includes(`${STRINGS[l].vehicles} – CEVIK ${STRINGS[l].app}.pdf`), `Hilfe Ausdrucke nennt den PDF-Dateinamen ${l}`); }
   ok(/UI-Dokumentsprache[^\n]*ui-html-lang\.py/.test((await import('node:fs')).readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung eingebunden');

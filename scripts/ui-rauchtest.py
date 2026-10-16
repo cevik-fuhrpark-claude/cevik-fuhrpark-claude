@@ -438,6 +438,11 @@ with sync_playwright() as p:
                     iso = pg.evaluate(ISO_DATES)
                     if iso:
                         problems.append(f'{where}: ISO-Datum sichtbar {iso[:3]}')
+                    # Fenstertitel = erste Überschrift – App-Name (Reiter, Vorlesefunktion, PDF-Dateiname beim Drucken; 16.10.2026)
+                    tt = pg.evaluate("""() => { const h = document.querySelector('#app h1'); const head = h ? h.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80) : '';
+                      return [document.title, head]; }""")
+                    if not tt[1] or not tt[0].startswith(tt[1] + ' – CEVIK '):
+                        problems.append(f'{where}: Fenstertitel „{tt[0]}“ passt nicht zur Überschrift „{tt[1]}“')
                 if LANG and name == 'handy':
                     # deutsche Reste in der Oberfläche; ausgenommen: Testdaten, Werkstattnamen, Gesetzeszitate, CSV-Spaltenköpfe (Dateiformat)
                     # zusätzlich deutsche Fachwörter ohne Umlaut (z. B. „Inspektion“, „Sonstiges“ – so fiel die fehlende Übersetzung der Prüfarten auf)
