@@ -9086,6 +9086,19 @@ await test('Kalenderdateien (.ics) in der Sprache der Person (DE/UK/EN): Texte, 
   ok(!/DESCRIPTION:Status: [a-z_]+(\r|\n|$| ·)/.test(d.plan) && !/DESCRIPTION:Статус: [a-z_]+/.test(u.plan), 'Werkstattplan: Status als Bezeichnung');
 });
 
+await test('Vorgang → Restarbeiten: Status als Bezeichnung in der Oberflächensprache (DE/UK/EN) statt Code „offen“/„erledigt“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { STRINGS } = await import('../public/i18n.js');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const cs = readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  // alle Status, die der Server für Restarbeiten schreibt
+  const st = new Set([...cs.matchAll(/open_items[^`]*?status='([a-z_]+)'/g), ...cs.matchAll(/INSERT INTO open_items\([^)]*\) VALUES \([^)]*'([a-z_]+)'/g)].map((m) => m[1]));
+  eq([...st].sort().join(','), 'erledigt,offen', 'Status der Restarbeiten');
+  for (const k of st) for (const l of ['de', 'uk', 'en']) ok(STRINGS[l]['oi_' + k], `oi_${k} fehlt (${l})`);
+  ok(STRINGS.uk.oi_offen !== 'offen' && STRINGS.en.oi_erledigt !== 'erledigt', 'UK/EN übersetzt');
+  ok(app.includes("t('oi_' + o.status)") && !/open_items\.map\(\(o\) => [^\n]*\$\{esc\(o\.status\)\}/.test(app), 'Restarbeiten-Liste zeigt Bezeichnung, keinen Code');
+});
+
 await test('CSV-Exporte: Status als Bezeichnung wie in der App (Vorgänge, Bußgelder, Mängelauftrag in „Durchgeführte Prüfungen“, Führerscheinkontrolle) statt Code', async () => {
   const { STRINGS } = await import('../public/i18n.js');
   const { CASE_STATUS_DE, STATUSES } = await import('../src/cases.js');
