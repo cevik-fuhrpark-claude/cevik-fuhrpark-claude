@@ -4228,7 +4228,7 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
   eq((await users.driver.get('/api/drivers?format=csv')).status, 403, 'Fahrer: keine Fristenliste');
   const dcsv = new TextDecoder().decode((await users.fleet.get('/api/drivers?format=csv')).data);
-  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;2035-03-31;2031-05-31;;2026-01-10;in_ordnung;;/.test(dcsv) && dcsv.includes(`in_ordnung;;${ago(0)};${ago(-28)};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
+  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;2035-03-31;2031-05-31;;2026-01-10;in Ordnung;;/.test(dcsv) && dcsv.includes(`in Ordnung;;${ago(0)};${ago(-28)};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
   const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
   eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
   eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');
@@ -9055,7 +9055,7 @@ await test('Kalenderdateien (.ics) in der Sprache der Person (DE/UK/EN): Texte, 
   ok(!/DESCRIPTION:Status: [a-z_]+(\r|\n|$| ·)/.test(d.plan) && !/DESCRIPTION:Статус: [a-z_]+/.test(u.plan), 'Werkstattplan: Status als Bezeichnung');
 });
 
-await test('CSV-Exporte: Status als Bezeichnung wie in der App (Vorgänge, Bußgelder, Mängelauftrag in „Durchgeführte Prüfungen“) statt Code', async () => {
+await test('CSV-Exporte: Status als Bezeichnung wie in der App (Vorgänge, Bußgelder, Mängelauftrag in „Durchgeführte Prüfungen“, Führerscheinkontrolle) statt Code', async () => {
   const { STRINGS } = await import('../public/i18n.js');
   const { CASE_STATUS_DE, STATUSES } = await import('../src/cases.js');
   const { FINE_STATUS_DE, FINE_STATUSES } = await import('../src/fines.js');
@@ -9072,7 +9072,12 @@ await test('CSV-Exporte: Status als Bezeichnung wie in der App (Vorgänge, Bußg
   ok(fs.length > 0 && fs.every((x) => Object.values(FINE_STATUS_DE).includes(x)), 'Bußgelder: nur Bezeichnungen ' + [...new Set(fs)].join('|'));
   const hs = col(dec(await users.fleet.get('/api/maintenance/history?from=2000-01-01&format=csv')), 'Status Mängelauftrag');
   ok(hs.every((x) => Object.values(CASE_STATUS_DE).includes(x)), 'Prüfhistorie: nur Bezeichnungen ' + [...new Set(hs)].join('|'));
-  console.log(`     Status geprüft: ${cs.length} Vorgänge, ${fs.length} Bußgelder, ${hs.length} Mängelaufträge`);
+  const { CHECK_RESULT_DE, CHECK_RESULTS } = await import('../src/drivers.js');
+  eq(Object.keys(CHECK_RESULT_DE).join(), CHECK_RESULTS.join(), 'alle Kontrollergebnisse');
+  for (const [k, v] of Object.entries(CHECK_RESULT_DE)) eq(v, STRINGS.de['lcr_' + k], `Führerscheinkontrolle ${k} wie in der App`);
+  const ds = col(dec(await users.fleet.get('/api/drivers?format=csv')), 'Ergebnis');
+  ok(ds.length > 0 && ds.every((x) => Object.values(CHECK_RESULT_DE).includes(x)), 'Fahrer-CSV: Kontrollergebnis als Bezeichnung ' + [...new Set(ds)].join('|'));
+  console.log(`     Status geprüft: ${cs.length} Vorgänge, ${fs.length} Bußgelder, ${hs.length} Mängelaufträge, ${ds.length} Führerscheinkontrollen`);
 });
 
 await test('Hinweise/Push aller Tests: kein ISO-Datum (JJJJ-MM-TT) in Titel oder Text – Datumsangaben in der Sprache der Person', async () => {

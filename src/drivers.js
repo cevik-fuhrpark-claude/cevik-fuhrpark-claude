@@ -8,6 +8,8 @@ import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
 export const CHECK_RESULTS = ['in_ordnung', 'maengel', 'nicht_vorgelegt'];
+// Ergebnis der Führerscheinkontrolle als Bezeichnung wie in der App (CSV; bis 16.10.2026 Code); Test prüft Gleichheit mit i18n.js
+export const CHECK_RESULT_DE = { in_ordnung: 'in Ordnung', maengel: 'Mängel', nicht_vorgelegt: 'nicht vorgelegt' };
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
 const date = (v, field, { required = false, notFuture = false } = {}) => {
@@ -195,7 +197,7 @@ export function driversCsv(list, tachoByDriver, cell) {
   for (const d of list) {
     const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';
     const tc = tachoByDriver.get(d.id);
-    lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', d.status.check.result || '',
+    lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
       d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', `${DOV[d.status.overall]}${d.status.check.status !== 'ok' ? ' · Kontrolle ' + DCK[d.status.check.status] : ''}${tc && tc.status !== 'ok' ? ' · Auslesung ' + TST[tc.status] : ''}`].join(';'));
   }
   return lines.join('\r\n') + '\r\n';
