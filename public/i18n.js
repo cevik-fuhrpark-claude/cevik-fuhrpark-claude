@@ -1279,6 +1279,28 @@ const AUDIT_DETAIL_KEYS = {
   file_id: ['Datei', 'Файл', 'File'], reimbursed_net: ['Erstattung netto (€)', 'Відшкодування нетто (євро)', 'Reimbursement net (€)'], reimbursed_on: ['erstattet am', 'відшкодовано', 'reimbursed on'],
 };
 export const AUDIT_DETAIL_KEY_CODES = Object.keys(AUDIT_DETAIL_KEYS);
+// Datensicherung („backup.export“, Detail „counts“): Tabellen als Bezeichnung statt Tabellenname (16.10.2026). Test: jede Tabelle aus
+// src/backup.js (BACKUP_TABLES + users/settings) hat hier eine Bezeichnung. Nur für Schlüssel ohne eigene Bezeichnung oben.
+const BACKUP_TABLE_KEYS = {
+  workshops: ['Werkstätten', 'Майстерні', 'Workshops'], vehicles: ['Fahrzeuge', 'Транспортні засоби', 'Vehicles'],
+  driver_vehicles: ['Fahrerzuordnungen', 'Призначення водіїв', 'Driver assignments'], case_counters: ['Vorgangszähler', 'Лічильники заявок', 'Case counters'],
+  cases: ['Vorgänge', 'Заявки', 'Cases'], case_events: ['Vorgangsverlauf', 'Історія заявок', 'Case history'], work_entries: ['Arbeitszeiten', 'Робочий час', 'Labour entries'],
+  parts: ['Teile', 'Запчастини', 'Parts'], open_items: ['Restarbeiten', 'Залишкові роботи', 'Remaining work'], external_costs: ['Fremdleistungen', 'Сторонні послуги', 'External services'],
+  files: ['Dateien (nur Angaben)', 'Файли (лише дані)', 'Files (metadata only)'], inspections: ['Kontrollen', 'Перевірки', 'Inspections'],
+  maintenance_rules: ['Prüftermine', 'Терміни перевірок', 'Inspection schedules'], maintenance_events: ['Prüf-/Wartungsverlauf', 'Історія перевірок/ТО', 'Inspection/maintenance history'],
+  odometer_readings: ['Kilometerstände', 'Показники одометра', 'Odometer readings'], tire_specs: ['Reifengrößen', 'Розміри шин', 'Tyre sizes'], tire_events: ['Reifenverlauf', 'Історія шин', 'Tyre history'],
+  stock_items: ['Lagerartikel', 'Артикули складу', 'Stock items'], stock_movements: ['Lagerbuchungen', 'Складські операції', 'Stock movements'],
+  fines: ['Bußgelder', 'Штрафи', 'Fines'], fine_events: ['Bußgeldverlauf', 'Історія штрафів', 'Fine history'], fine_counters: ['Bußgeldzähler', 'Лічильники штрафів', 'Fine counters'],
+  agent_findings: ['Agentenbefunde', 'Висновки агента', 'Agent findings'], master_inbox: ['Master-Eingang', 'Головні вхідні', 'Master inbox'], notifications: ['Hinweise', 'Сповіщення', 'Notifications'],
+  telematics_latest: ['Telematik-Stand', 'Стан телематики', 'Telematics status'], telematics_mappings: ['Telematik-Zuordnungen', 'Призначення телематики', 'Telematics mappings'],
+  telematics_unmatched: ['Telematik ohne Zuordnung', 'Телематика без призначення', 'Unmatched telematics'], drivers: ['Fahrerakten', 'Картки водіїв', 'Driver files'],
+  driver_documents: ['Fahrerdokumente', 'Документи водіїв', 'Driver documents'], driver_license_checks: ['Führerscheinkontrollen', 'Перевірки посвідчень', 'Licence checks'],
+  tacho_downloads: ['Auslesungen', 'Зчитування', 'Downloads'], vehicle_contracts: ['Fahrzeugverträge', 'Договори ТЗ', 'Vehicle contracts'],
+  insurance_claims: ['Versicherungsfälle', 'Страхові випадки', 'Insurance claims'], vehicle_notes: ['Hinweise zum Fahrzeug', 'Примітки до ТЗ', 'Vehicle notes'],
+  emergency_contacts: ['Panne-Rufnummern', 'Аварійні номери', 'Breakdown numbers'], audit_log: ['Protokoll', 'Журнал', 'Audit log'], _migrations: ['Schema-Versionen', 'Версії схеми', 'Schema versions'],
+  users: ['Benutzer', 'Користувачі', 'Users'], settings: ['Einstellungen', 'Налаштування', 'Settings'],
+};
+export const BACKUP_TABLE_KEY_CODES = Object.keys(BACKUP_TABLE_KEYS);
 // Einstellungen im Protokoll: Bezeichnung wie unter Einstellungen (STRINGS-Schlüssel); SLA-Fristen aus Umgebung · Schritt · Priorität
 const SETTING_LABEL_KEYS = { test_master_readonly: 'test_master_readonly', idle_logout_workshop_min: 'idle_ws', idle_logout_other_min: 'idle_other', workshop_hourly_rate_net: 'hourly_rate',
   maintenance_warn_days: 'warn_days', maintenance_warn_km: 'warn_km', tire_warn_tread_mm: 'tire_warn', tire_warn_age_years: 'tire_warn_age', fine_warn_days: 'response_due',
@@ -1311,7 +1333,7 @@ function auditDateVal(v, li) {
 export function auditDetailText(lang, detail, refs) {
   if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return detail === null || detail === undefined ? '' : (typeof detail === 'object' ? JSON.stringify(detail) : String(detail));
   const li = { de: 0, uk: 1, en: 2 }[lang] ?? 0;
-  const key = (k) => (AUDIT_DETAIL_KEYS[k] ? AUDIT_DETAIL_KEYS[k][li] : settingLabel(lang, k) || k);
+  const key = (k) => (AUDIT_DETAIL_KEYS[k] ? AUDIT_DETAIL_KEYS[k][li] : settingLabel(lang, k) || (BACKUP_TABLE_KEYS[k] ? BACKUP_TABLE_KEYS[k][li] : k));
   const isFT = (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 2 && 'from' in v && 'to' in v && [v.from, v.to].every((x) => x === null || typeof x !== 'object');
   const val = (k, v) => {
     if (v === null || v === undefined || v === '') return '–';

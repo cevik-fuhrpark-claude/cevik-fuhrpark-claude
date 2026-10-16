@@ -7946,12 +7946,12 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   const settingKeys = new Set(env.DB.db.prepare('SELECT key FROM settings').all().map((r) => r.key));
   eq([...cnt].filter(([k, n]) => n >= 5 && !settingKeys.has(k) && !AUDIT_DETAIL_KEY_CODES.includes(k)).map(([k]) => k).sort().join(), '', 'häufige Schlüssel ohne Bezeichnung');
   // 16.10.2026 verschärft: jeder protokollierte Schlüssel (auch Einstellungen, SLA-Fristen, geänderte Felder) und jeder Codewert
-  // (Prüfergebnis, zGM-Klasse, Status) erscheint in DE/UK/EN als Bezeichnung – nicht als snake_case-Code (Ausnahme: Tabellennamen der Datensicherung „counts“)
+  // (Prüfergebnis, zGM-Klasse, Status) erscheint in DE/UK/EN als Bezeichnung – nicht als snake_case-Code (seit 16.10. 19:15 auch die Tabellen der Datensicherung „counts“)
   const CODE = /^[a-z]+(_[a-z0-9]+)+$/; const rawKeys = new Set(); const rawVals = [];
   for (const r of env.DB.db.prepare('SELECT detail FROM audit_log WHERE detail IS NOT NULL').all()) {
     let o; try { o = JSON.parse(r.detail); } catch { continue; } if (!o || typeof o !== 'object' || Array.isArray(o)) continue;
     for (const lang of ['de', 'uk', 'en']) {
-      const txt = auditDetailText(lang, Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'counts')));
+      const txt = auditDetailText(lang, o);
       for (const m of txt.matchAll(/(?:^| · )([a-z]+(?:_[a-z0-9]+)+):/g)) rawKeys.add(m[1]);
       for (const part of txt.split(' · ')) { const v = part.split(': ').slice(1).join(': '); for (const w of v.split(/, | → | /)) if (CODE.test(w) && !rawVals.includes(w)) rawVals.push(w); }
     }
@@ -7969,6 +7969,14 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   eq(auditDetailText('de', { at: '2026-12-31T23:30:00.000Z' }).split(': ').slice(1).join(': '), '01.01.2027, 00:30', 'Zeitstempel Berlin');
   eq(auditDetailText('de', { no: 'RT-2026-10-01-X' }).split(': ')[1], 'RT-2026-10-01-X', 'kein reines Datum');
   eq(auditDetailText('de', { counts: { neu: 2, uebersprungen: 1 } }), 'Anzahlen: neu 2, übersprungen 1', 'Unterwerte');
+  // Datensicherung: jede gesicherte Tabelle (inkl. users/settings) als Bezeichnung in DE/UK/EN; Protokolleintrag der Suite ohne Tabellennamen
+  const { BACKUP_TABLE_KEY_CODES } = await import('../public/i18n.js'); const { BACKUP_TABLES } = await import('../src/backup.js');
+  eq([...BACKUP_TABLES, 'users', 'settings'].filter((x) => !BACKUP_TABLE_KEY_CODES.includes(x)).join(), '', 'Tabellen ohne Bezeichnung');
+  const bkRow = env.DB.db.prepare("SELECT detail FROM audit_log WHERE action = 'backup.export' ORDER BY created_at DESC LIMIT 1").get();
+  ok(bkRow, 'Sicherung protokolliert');
+  for (const lang of ['de', 'uk', 'en']) { const tx = auditDetailText(lang, JSON.parse(bkRow.detail)); ok(!/[a-z]*_[a-z]+/.test(tx), `${lang}: ${tx.slice(0, 160)}`); }
+  ok(auditDetailText('de', JSON.parse(bkRow.detail)).startsWith('Anzahlen: Werkstätten '), 'DE Sicherung');
+  ok(auditDetailText('uk', { counts: { vehicles: 3, _migrations: 55 } }) === 'Кількості: Транспортні засоби 3, Версії схеми 55', 'UK Sicherung');
   eq(auditDetailText('de', { from: { a: { b: 1 } } }), 'von: {"a":{"b":1}}', 'tief verschachtelt bleibt JSON');
   eq(auditDetailText('de', 'freier Text'), 'freier Text', 'Text unverändert');
   eq(auditDetailText('de', null), '', 'leer');
