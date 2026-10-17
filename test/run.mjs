@@ -1995,7 +1995,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -10499,6 +10499,46 @@ await test('Wettläufe und Importe: Vertragsimport parallel ohne Dubletten, Spal
   const tr = await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/tires/events', { position: 'VA-L', event_type: 'messung', tread_mm: 8 });
   eq(tr.data.message, 'Fahrzeug ist außer Betrieb.');
   eq(tr.status, 400, JSON.stringify(tr.data));
+});
+
+await test('Offline gespeicherte Abfahrtskontrolle mit Durchführungszeitpunkt (km zeitlich eingeordnet, > 7 Tage abgewiesen), nachgetragener km-Stand zweier Personen derselben Rolle am selben Tag, abgewiesene Postausgang-Einträge bleiben sichtbar', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const items = (await U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  // 1. Kontrolle vor 3 h offline mit 100 000 km gespeichert; inzwischen (vor 1 h) hat die Werkstatt 100 200 km erfasst
+  eq((await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 100200 })).status, 201);
+  db.prepare(`UPDATE odometer_readings SET measured_at=? WHERE vehicle_id=?`).run(ago(1), vid);
+  const at = ago(3);
+  const r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: 100000, performed_at: at });
+  eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.km_rejected, null, 'früherer Stand passt zeitlich (vorher: als „kleiner als zuletzt“ verworfen)');
+  eq(r.data.performed_at, at);
+  eq(db.prepare('SELECT created_at FROM inspections WHERE id=?').get(r.data.id).created_at, at, 'Kontrolle trägt den Durchführungszeitpunkt');
+  eq(db.prepare(`SELECT measured_at FROM odometer_readings WHERE vehicle_id=? AND km=100000`).get(vid).measured_at, at, 'km-Stand zum Durchführungszeitpunkt');
+  // 2. offline gespeicherter Stand größer als ein später erfasster → nicht übernommen (next_km)
+  const r2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: 100500, performed_at: ago(2) });
+  eq(r2.status, 201); eq(r2.data.km_rejected && r2.data.km_rejected.next_km, 100200, 'größer als später erfasst');
+  eq(db.prepare(`SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=? AND km=100500`).get(vid).n, 0);
+  // 3. Zukunft (Geräteuhr geht vor) → jetzt; älter als 7 Tage → 400; Unsinn → 400
+  const r3 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: new Date(Date.now() + 3600000).toISOString() });
+  eq(r3.status, 201); ok(Date.parse(r3.data.performed_at) <= Date.now(), 'nicht in der Zukunft');
+  const r4 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: ago(24 * 8) });
+  eq(r4.status, 400); ok(/7 Tage/.test(r4.data.message), r4.data.message);
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: 'gestern' })).status, 400);
+  // 4. zwei Werkstätten tragen für denselben vergangenen Tag einen Stand nach → beide gespeichert (vorher 409 km_duplicate)
+  const day = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10);
+  const w1 = await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 90000, measured_on: day });
+  const w2 = await U.wsMuc.post(`/api/vehicles/${V1}/odometer`, { km: 90010, measured_on: day });
+  eq(w1.status, 201, JSON.stringify(w1.data)); eq(w2.status, 201, JSON.stringify(w2.data));
+  ok(w2.data.measured_at > w1.data.measured_at, 'zweiter Stand zeitlich danach');
+  eq(db.prepare(`SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=? AND source='manuell:workshop' AND measured_at LIKE ?`).get(vid, day + '%').n, 2);
+  // dieselbe Person mit anderem Stand am selben Tag → weiterhin 409
+  eq((await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 90005, measured_on: day, note: 'Korrektur' })).data.error, 'km_duplicate');
+  // 5. App: abgewiesene Postausgang-Einträge werden nicht verworfen, sondern als „nicht gesendet“ mit Text, „Erneut senden“, „Verwerfen“
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/failedNow\.set\(/.test(app) && !/done\.add\(item\.body\.request_key\); photosDel/.test(app), 'abgewiesene bleiben');
+  ok(/performed_at: item\.saved_at/.test(app), 'Durchführungszeitpunkt wird mitgesendet');
+  for (const k of ['outbox_failed_n', 'outbox_failed_hint', 'outbox_retry', 'outbox_discard', 'outbox_discard_confirm', 'km_not_taken_next']) ok(app.includes(`'${k}'`), k);
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

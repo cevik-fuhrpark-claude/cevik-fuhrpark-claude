@@ -1124,6 +1124,18 @@ export async function submitInspection(env, ctx, user, envName, body) {
   const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
   const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
   const now = nowIso();
+  // Offline gespeicherte Abfahrtskontrolle (17.10.2026): Postausgang sendet den Zeitpunkt der Durchführung mit (`performed_at`).
+  // Übernommen, wenn plausibel: nicht in der Zukunft (Uhr des Geräts vorgehend → jetzt), höchstens 7 Tage alt (älter → 400,
+  // die Kontrolle ist dann nicht mehr aussagekräftig). Kontrolle und km-Stand tragen dann diesen Zeitpunkt.
+  let performedAt = now;
+  if (kind === 'abfahrt' && body.performed_at !== undefined && body.performed_at !== null && body.performed_at !== '') {
+    const raw = String(body.performed_at);
+    const ms = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) ? Date.parse(raw) : NaN;
+    if (!Number.isFinite(ms)) throw bad('validation', 'Durchführungszeitpunkt ungültig.');
+    const nowMs = Date.parse(now);
+    if (ms < nowMs - 7 * 86400000) throw bad('validation', 'Die Kontrolle liegt mehr als 7 Tage zurück und wird nicht mehr übernommen. Bitte neu durchführen.');
+    if (ms < nowMs) performedAt = new Date(ms).toISOString();
+  }
   const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
   // Wiederholung (Antwort ging verloren, Postausgang sendet erneut): dieselben Folgeaufträge wie beim ersten Senden zurückgeben –
   // sonst ließen sich die Fotos nicht mehr anhängen (17.10.2026)
@@ -1182,24 +1194,29 @@ export async function submitInspection(env, ctx, user, envName, body) {
   // km-Stand aus der Kontrolle nur in die Fahrzeugakte, wenn er nicht kleiner als der letzte erfasste ist (Tippfehler würden
   // km-Fälligkeiten und €/km verfälschen). Er bleibt an der Kontrolle gespeichert; Korrektur mit Begründung über die Fahrzeugakte.
   let kmRejected = null;
+  // Zeitlich eingeordnet (offline gespeicherte Kontrolle): nicht kleiner als der Stand davor, nicht größer als ein später erfasster.
   if (odo !== null) {
-    const last = await env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId).first();
+    const [last, later] = await Promise.all([
+      env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId, performedAt).first(),
+      performedAt < now ? env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC LIMIT 1').bind(vehicleId, performedAt).first() : null,
+    ]);
     if (last && odo < last.km) kmRejected = { km: odo, previous_km: last.km, previous_at: last.measured_at };
+    else if (later && odo > later.km) kmRejected = { km: odo, next_km: later.km, next_at: later.measured_at };
   }
   // Testumgebung mit „Stammdaten nur lesen“: km bleibt an der Kontrolle, nicht in der gemeinsamen Fahrzeugakte
   const kmTestOnly = odo !== null && !kmRejected && envName === 'test' && user.role !== 'owner' && await testMasterReadonly(env);
   {
     const stmts = [env.DB.prepare(`INSERT OR IGNORE INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
-      defects.length ? 'maengel' : 'ok', str(body.note, { max: 2000 }), now)];
+      defects.length ? 'maengel' : 'ok', str(body.note, { max: 2000 }), performedAt)];
     if (odo !== null && !kmRejected && !kmTestOnly) {
       stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)`)
-        .bind(uuid(), vehicleId, odo, now, `kontrolle:${kind}`, user.id, now));
+        .bind(uuid(), vehicleId, odo, performedAt, `kontrolle:${kind}`, user.id, now));
     }
     if (c) {
       stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         VALUES (?,?,?,?,?,'inspection',?,?,?,?,?,?,?)`).bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, c.version, c.version,
-        (defects.length ? `${defects.length} Mangel/Mängel festgestellt` : 'Kontrolle ohne Mängel') + (kmRejected ? ` · km-Stand ${odo} kleiner als zuletzt erfasst (${kmRejected.previous_km}) – nicht in die Fahrzeugakte übernommen` : ''),
+        (defects.length ? `${defects.length} Mangel/Mängel festgestellt` : 'Kontrolle ohne Mängel') + (kmRejected ? (kmRejected.next_km !== undefined ? ` · km-Stand ${odo} größer als später erfasst (${kmRejected.next_km}) – nicht in die Fahrzeugakte übernommen` : ` · km-Stand ${odo} kleiner als zuletzt erfasst (${kmRejected.previous_km}) – nicht in die Fahrzeugakte übernommen`) : ''),
         JSON.stringify({ inspection_id: id, followups: followups.map((f) => f.case_no) }), now));
     }
     if (repeats.length) { // zwei Anweisungen unabhängig von der Anzahl
@@ -1212,7 +1229,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
     }
     await env.DB.batch(stmts);
   }
-  return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected, km_test_only: kmTestOnly };
+  return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt };
 }
 
 // ---------- Dateien ----------

@@ -165,6 +165,7 @@ function render(html, active) {
   if (es) es.onchange = () => { S.viewEnv = es.value; localStorage.setItem('cfp_env', es.value); route(); };
   stackTables(document.getElementById('app'));
   markToggles(document.getElementById('app'));
+  bindOutbox();
   if (same && interim) return;
   pageTitle();
   if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);
@@ -885,13 +886,15 @@ let flushing = false;
 const photoTarget = (item, r) => (item.path === '/api/inspections' ? ((r.followups || []).find((f) => f && f.id && !f.repeat) || {}).id : r.id);
 async function flushOutbox() {
   if (!S.me || flushing) return;
-  const list = outboxGet(); if (!list.length) return;
+  const list = outboxGet().filter((x) => !x.failed); if (!list.length) return;
   flushing = true;
-  const done = new Set(); let kept = 0;
+  const done = new Set(); const failedNow = new Map(); let kept = 0;
   try {
     for (const item of list) {
       try {
-        const r = await api('POST', item.path || '/api/cases', item.body);
+        // Abfahrtskontrolle mit dem Zeitpunkt der Durchführung (nicht des Sendens) – km-Stand wird zeitlich richtig eingeordnet
+        const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at } : item.body;
+        const r = await api('POST', item.path || '/api/cases', sendBody);
         done.add(item.body.request_key);
         let failed = 0;
         if (item.photos) {
@@ -900,22 +903,69 @@ async function flushOutbox() {
           if (ph && ph.length) failed = target ? await uploadCasePhotos(target, ph) : ph.length;
           await photosDel(item.body.request_key).catch(() => {});
         }
-        toast(item.path === '/api/inspections' ? `${t('check_saved')}${failed ? ' · ' + tn('photos_failed', failed) : ''}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed);
+        toast(item.path === '/api/inspections' ? `${t('check_saved')}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed || !!r.km_rejected);
       }
       catch (err) {
         if (err.offline || err.status === 429 || err.status >= 500) { kept++; continue; }
-        done.add(item.body.request_key); photosDel(item.body.request_key).catch(() => {});
+        // Vom Server abgewiesen (z. B. Fahrzeug inzwischen außer Betrieb): nicht still verwerfen, sondern als „nicht gesendet“
+        // auf dem Gerät behalten – Text zum Kopieren, erneut senden oder bewusst verwerfen (17.10.2026). Fotos bleiben bis dahin.
+        failedNow.set(item.body.request_key, { status: err.status || 0, message: String(err.message || ''), at: new Date().toISOString() });
         toast(`${t('outbox_failed')}: ${err.message}`, true);
       }
     }
-  } finally { try { outboxSet(outboxGet().filter((x) => !done.has(x.body.request_key))); } catch {} flushing = false; }
-  const b = document.getElementById('outbox'); if (b && !(S.me && outboxGet().length)) b.remove();
+  } finally {
+    try { outboxSet(outboxGet().filter((x) => !done.has(x.body.request_key)).map((x) => (failedNow.has(x.body.request_key) ? { ...x, failed: failedNow.get(x.body.request_key) } : x))); } catch {}
+    flushing = false;
+  }
+  if (failedNow.size || done.size) refreshOutbox();
   if (kept && !S.outboxRetry) S.outboxRetry = setTimeout(() => { S.outboxRetry = null; if (navigator.onLine) flushOutbox(); }, 60000);
 }
 window.addEventListener('online', () => flushOutbox());
+// Hinweis „wartet auf Verbindung“ und Liste der vom Server abgewiesenen Meldungen (Text zum Kopieren, erneut senden, verwerfen)
+function outboxText(x) {
+  const b = x.body || {};
+  if (x.path === '/api/inspections') return (b.items || []).filter((i) => i.result === 'mangel').map((i) => `${checkLabel(i.key)}: ${i.note || ''}`).join('\n') || t('outbox_check_ok');
+  return b.description || '';
+}
+function outboxPlate(id) {
+  try { const vs = JSON.parse(localStorage.getItem(`cfp_veh_${S.me.id}_${S.me.environment}`) || '[]'); const v = vs.find((x) => x.id === id); if (v) return v.plate; } catch {}
+  return String(id || '').replace(/^VIN:/, '');
+}
 function outboxBanner() {
-  const n = S.me ? outboxGet().length : 0;
-  return n ? `<div class="panel alert" id="outbox" role="status">${esc(tn('outbox_pending', n))}</div>` : '';
+  if (!S.me) return '';
+  const all = outboxGet(); const n = all.filter((x) => !x.failed).length; const bad = all.filter((x) => x.failed);
+  let html = '';
+  if (bad.length) {
+    html += `<div class="panel alert" id="outbox_failed" role="alert"><h2>${esc(tn('outbox_failed_n', bad.length))}</h2><p class="small">${esc(t('outbox_failed_hint'))}</p>${bad.map((x) => {
+      const k = esc(x.body.request_key);
+      return `<div class="obx-item"><p><b>${esc(x.path === '/api/inspections' ? t('departure_check') : t('report_damage'))}</b> · ${esc(outboxPlate(x.body.vehicle_id))} · ${esc(t('outbox_saved_at'))} ${fmtDT(x.saved_at)}</p>
+        <p class="small">${esc(t('outbox_reason'))}: ${esc(x.failed.message || '')}</p>
+        <label for="obx_${k}">${esc(t('outbox_text'))}</label><textarea id="obx_${k}" readonly rows="3">${esc(outboxText(x))}</textarea>
+        <div class="actions"><button type="button" class="btn secondary" data-obx-retry="${k}">${esc(t('outbox_retry'))}</button><button type="button" class="btn secondary" data-obx-del="${k}">${esc(t('outbox_discard'))}</button></div></div>`;
+    }).join('')}</div>`;
+  }
+  if (n) html += `<div class="panel alert" id="outbox" role="status">${esc(tn('outbox_pending', n))}</div>`;
+  return html ? `<div id="outbox_area">${html}</div>` : '';
+}
+// Nach dem Senden: Hinweisbereich der aktuellen Seite aktualisieren, ohne die Seite neu aufzubauen (Eingaben bleiben)
+function refreshOutbox() {
+  const area = document.getElementById('outbox_area'); const html = outboxBanner();
+  if (area) { if (html) area.outerHTML = html; else area.remove(); }
+  else if (html && document.getElementById('outbox_slot')) document.getElementById('outbox_slot').innerHTML = html;
+  bindOutbox();
+}
+function bindOutbox() {
+  for (const b of document.querySelectorAll('[data-obx-del]')) b.onclick = async () => {
+    const key = b.dataset.obxDel;
+    if (!confirm(t('outbox_discard_confirm'))) return;
+    outboxSet(outboxGet().filter((x) => x.body.request_key !== key)); await photosDel(key).catch(() => {});
+    refreshOutbox();
+  };
+  for (const b of document.querySelectorAll('[data-obx-retry]')) b.onclick = async () => {
+    const key = b.dataset.obxRetry;
+    outboxSet(outboxGet().map((x) => (x.body.request_key === key ? { ...x, failed: undefined } : x)));
+    refreshOutbox(); await flushOutbox();
+  };
 }
 
 async function vehiclesCached() {
@@ -1272,7 +1322,7 @@ function checklistHtml() {
     <span class="seg" role="radiogroup" aria-labelledby="cl_${esc(i.key)}"><label><input type="radio" name="${esc(i.key)}" value="ok" required>${esc(t('ok'))}</label><label class="bad"><input type="radio" name="${esc(i.key)}" value="mangel">${esc(t('defect'))}</label><label><input type="radio" name="${esc(i.key)}" value="na">${esc(t('na'))}</label></span>
     <div class="detail" hidden><input name="${esc(i.key)}__note" minlength="3" maxlength="1000" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label></div></div>`).join('');
 }
-const kmWarn = (r) => (r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', r.km_rejected.km).replace('{prev}', r.km_rejected.previous_km) : r.km_test_only ? ' · ' + t('km_test_only') : '');
+const kmWarn = (r) => (r.km_rejected && r.km_rejected.next_km !== undefined ? ' · ' + t('km_not_taken_next').replace('{km}', r.km_rejected.km).replace('{next}', r.km_rejected.next_km) : r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', r.km_rejected.km).replace('{prev}', r.km_rejected.previous_km) : r.km_test_only ? ' · ' + t('km_test_only') : '');
 function bindChecklist(form) {
   $$('.checkitem', form).forEach((row) => {
     $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));

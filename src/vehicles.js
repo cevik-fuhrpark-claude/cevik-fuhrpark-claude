@@ -814,25 +814,35 @@ export async function addOdometer(env, user, vehicleId, body) {
   if (await env.DB.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND recorded_by=? AND km=? AND ${berlinDaySql('measured_at')}=? LIMIT 1`).bind(vehicleId, user.id, km, day).first()) {
     return { ok: true, duplicate: true, measured_at: measuredAt, warning: null };
   }
-  try {
-    // Plausibilität und Dublette im Einfügen selbst geprüft: zwei gleichzeitige Erfassungen (100 000 und 90 000 km) umgingen sonst
-    // die Prüfung und erzeugten einen unbegründeten Rücksprung bzw. doppelte Zeilen (17.10.2026)
-    const r = await env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note)
-      SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS (SELECT 1 FROM odometer_readings WHERE vehicle_id=?2 AND recorded_by=?6 AND km=?3 AND ${berlinDaySql('measured_at')}=?9)
-        AND (?8 IS NOT NULL OR (COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at <= ?4 ORDER BY measured_at DESC LIMIT 1), -1) <= ?3
-          AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at > ?4 ORDER BY measured_at ASC LIMIT 1), 9999999999) >= ?3))`)
-      .bind(uuid(), vehicleId, km, measuredAt, `manuell:${user.role}`, user.id, now, note, day).run();
-    if (!r.meta || r.meta.changes !== 1) {
-      if (await env.DB.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND recorded_by=? AND km=? AND ${berlinDaySql('measured_at')}=? LIMIT 1`).bind(vehicleId, user.id, km, day).first()) {
-        return { ok: true, duplicate: true, measured_at: measuredAt, warning: null };
+  // Nachgetragener Stand (Ablesedatum vor heute = 12:00 UTC): eindeutig je Fahrzeug/Zeitpunkt/Quelle (`manuell:<Rolle>`). Erfasst eine
+  // zweite Person derselben Rolle für denselben Tag, rückt ihr Zeitpunkt um Millisekunden weiter statt 409 (17.10.2026);
+  // dieselbe Person mit anderem Stand am selben Tag bleibt 409 `km_duplicate` (Korrektur statt zweiter Zeile).
+  let at = measuredAt;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // Plausibilität und Dublette im Einfügen selbst geprüft: zwei gleichzeitige Erfassungen (100 000 und 90 000 km) umgingen sonst
+      // die Prüfung und erzeugten einen unbegründeten Rücksprung bzw. doppelte Zeilen (17.10.2026)
+      const r = await env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note)
+        SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS (SELECT 1 FROM odometer_readings WHERE vehicle_id=?2 AND recorded_by=?6 AND km=?3 AND ${berlinDaySql('measured_at')}=?9)
+          AND (?8 IS NOT NULL OR (COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at <= ?4 ORDER BY measured_at DESC LIMIT 1), -1) <= ?3
+            AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at > ?4 ORDER BY measured_at ASC LIMIT 1), 9999999999) >= ?3))`)
+        .bind(uuid(), vehicleId, km, at, `manuell:${user.role}`, user.id, now, note, day).run();
+      if (!r.meta || r.meta.changes !== 1) {
+        if (await env.DB.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND recorded_by=? AND km=? AND ${berlinDaySql('measured_at')}=? LIMIT 1`).bind(vehicleId, user.id, km, day).first()) {
+          return { ok: true, duplicate: true, measured_at: at, warning: null };
+        }
+        throw conflict('km_changed', 'Inzwischen wurde ein anderer Kilometerstand erfasst. Bitte neu laden und prüfen.');
       }
-      throw conflict('km_changed', 'Inzwischen wurde ein anderer Kilometerstand erfasst. Bitte neu laden und prüfen.');
+      break;
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      if (!/UNIQUE/i.test(String(e && e.message))) throw e;
+      const other = await env.DB.prepare('SELECT recorded_by FROM odometer_readings WHERE vehicle_id=? AND measured_at=? AND source=?').bind(vehicleId, at, `manuell:${user.role}`).first();
+      if (attempt >= 20 || !other || other.recorded_by === user.id) throw conflict('km_duplicate', 'Für diesen Tag ist bereits ein Kilometerstand von dieser Rolle erfasst.');
+      at = new Date(Date.parse(at) + 1).toISOString();
     }
-  } catch (e) {
-    if (e instanceof HttpError) throw e;
-    if (/UNIQUE/i.test(String(e && e.message))) throw conflict('km_duplicate', 'Für diesen Tag ist bereits ein Kilometerstand von dieser Rolle erfasst.');
-    throw e;
   }
+  measuredAt = at;
   return { ok: true, measured_at: measuredAt, warning: problems.length ? `Abweichung mit Begründung gespeichert: ${problems.join(' und ')}.` : null };
 }
 
