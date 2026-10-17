@@ -10833,6 +10833,34 @@ await test('Fehlersuche 17.10. (3): Kontrolle (Prüfpunkt null, Vermerk vor Folg
   ok(x.agent_findings.some((f) => f.finding_code === 'DRIVER_DOC_EXPIRED'), 'Befund in der Auskunft'); ok(Array.isArray(x.master_inbox), 'Abschnitt Master-Eingang');
 });
 
+await test('Fehlersuche 17.10. (4): Zahlen (leer, Liste, Hex/Exponent) → 400, fremdes Cookie mit „%“, Datum 9999 abgewiesen, Gespann-Kennzeichen mit Gedankenstrich/geschütztem Leerzeichen, Standard-Standort nur Text', async () => {
+  const { num, parseCookies, isCalendarDate, normPlate } = await import('../src/util.js');
+  for (const v of ['', '   ', [], ['7'], true, '0x1E240', '0b101', '1e5', '1,2,3']) { let thrown = false; try { num(v, { field: 'X' }); } catch { thrown = true; } ok(thrown, 'abgewiesen: ' + JSON.stringify(v)); }
+  eq(num('12,5'), 12.5); eq(num('1.234,50'), 1234.5); eq(num('120.000', { grouped: true }), 120000); eq(num(' 7 '), 7); eq(num('', { nullable: true }), null); eq(num('-3'), -3); eq(num('0,5'), 0.5);
+  eq(parseCookies('consent=50%off; cfp=abc%20d').consent, '50%off'); eq(parseCookies('cfp=abc%20d').cfp, 'abc d');
+  ok(!isCalendarDate('9999-12-31') && !isCalendarDate('1899-12-31') && isCalendarDate('2199-12-31') && isCalendarDate('1950-06-01'), 'Datumsbereich');
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: '   ' })).status, 400);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: [] })).status, 400);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', evidence: 'x', next_due_date: '9999-12-31' })).status, 400);
+  // fremdes Cookie: angemeldete Aufrufe weiter 200
+  const c = new Client(worker, e, 'ck'); eq((await c.post('/api/login', { username: 'w.fuhrpark', password: 'Sicheres-Passwort-2026' })).status, 200);
+  c.cookie = c.cookie + '; consent=50%off'; eq((await c.get('/api/me')).status, 200);
+  eq((await U.fleet.req('PATCH', '/api/me', { home_site: { a: 1 } })).status, 400);
+  // Gespann: Anhänger-Kennzeichen mit Gedankenstrich in der Zugmaschine – Sperre am Anhänger erreicht den Fahrer
+  const lkw = db.prepare("SELECT id, trailer_plate FROM vehicles WHERE kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>'' LIMIT 1").get();
+  if (lkw) {
+    const tr = db.prepare('SELECT id, plate FROM vehicles WHERE kind=\'anhaenger\'').all().find((v) => normPlate(v.plate) === normPlate(lkw.trailer_plate));
+    if (tr) {
+      db.prepare('UPDATE vehicles SET trailer_plate=? WHERE id=?').run(lkw.trailer_plate.replace('-', '–').replace(' ', ' '), lkw.id);
+      const { PLATE_KEY_SQL } = await import('../src/util.js');
+      eq(db.prepare(`SELECT ${PLATE_KEY_SQL('?')} AS a, ${PLATE_KEY_SQL('?')} AS b`).get(db.prepare('SELECT trailer_plate FROM vehicles WHERE id=?').get(lkw.id).trailer_plate, tr.plate).a, normPlate(tr.plate).replace(/Ä/g, 'Ä'));
+    }
+  }
+  const { PLATE_KEY_SQL } = await import('../src/util.js');
+  for (const p of ['SZ–AH 200', 'SZ AH 200', 'sz-ah 200', 'SZ‑AH\t200']) eq(db.prepare(`SELECT ${PLATE_KEY_SQL('?')} AS k`).get(p).k, 'SZAH200', p);
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

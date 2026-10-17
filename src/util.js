@@ -134,11 +134,15 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
   let n;
   if (typeof v === 'number') n = v;
   else {
-    let t = String(v).trim().replace(/[\s\u00a0]/g, '');
-    if ((t === '') && nullable) return null;
+    // nur Text oder Zahl (17.10.2026: Liste ['7'] galt als 7, true als 1); leer ohne nullable → 400 statt still 0
+    if (typeof v !== 'string') throw bad('validation', `${field}: ungültige Zahl.`);
+    let t = v.trim().replace(/[\s\u00a0]/g, '');
+    if (t === '') { if (nullable) return null; throw bad('validation', `${field}: ungültige Zahl.`); }
     if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(t)) t = t.replace(/\./g, '');
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
+    // nur Dezimalzahlen (kein „0x1E240“, „0b101“, „1e5“ – Number() verstünde sie)
+    if (!/^[-+]?(\d+([.,]\d+)?|[.,]\d+)$/.test(t)) throw bad('validation', `${field}: ungültige Zahl.`);
     n = Number(t.replace(',', '.'));
   }
   if (!Number.isFinite(n) || n < min || n > max) throw bad('validation', `${field}: ungültige Zahl.`);
@@ -168,7 +172,9 @@ export function parseCookies(header) {
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
     if (i < 0) continue;
-    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const raw = part.slice(i + 1).trim();
+    // fremdes Cookie mit ungültiger %-Folge (z. B. „consent=50%off“) → unverändert statt 500 bei jedem Aufruf (17.10.2026)
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(raw); } catch { out[part.slice(0, i).trim()] = raw; }
   }
   return out;
 }
@@ -176,6 +182,8 @@ export function parseCookies(header) {
 // echtes Kalenderdatum JJJJ-MM-TT (z. B. 30.02. oder 31.04. abgewiesen – Date.parse nimmt Tage bis 31 an)
 export function isCalendarDate(d) {
   if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  // plausibler Bereich (17.10.2026: „9999-12-31“ als „unbefristet“ ergab Folgetag +010000 → ungültige Kalenderdatei)
+  if (d < '1900-01-01' || d > '2199-12-31') return false;
   const x = new Date(d + 'T00:00:00Z');
   return !Number.isNaN(x.getTime()) && x.toISOString().slice(0, 10) === d;
 }
@@ -402,7 +410,11 @@ export function hideDriverName(user, row, nameKey, roleKey) {
 // Kennzeichen-Vergleichsschlüssel: Groß-/Kleinschreibung, Leerzeichen und Bindestriche egal, Umlaute (TÜ, LÖ, MÜ …) bleiben erhalten.
 // In SQL ist UPPER() nur für A–Z wirksam – Kennzeichen daher in JS vergleichen, nicht per UPPER() in der Abfrage.
 // SQL-Gegenstück zu normPlate für übliche Schreibweisen (Leerzeichen, Bindestrich, Punkt, Schrägstrich, Unterstrich; ä/ö/ü → Ä/Ö/Ü)
-export const PLATE_KEY_SQL = (x) => `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(${x},'')),' ',''),'-',''),'.',''),'/',''),'_',''),'ä','Ä'),'ö','Ö'),'ü','Ü')`;
+// 17.10.2026: auch geschütztes/schmales Leerzeichen, Tab, Gedanken-/Geviertstrich und geschützter Bindestrich (kopierte Kennzeichen) – sonst
+// erreichte z. B. die Sperre am Anhänger „SZ–AH 200“ den Fahrer der Zugmaschine nicht, obwohl normPlate das Gespann erkannte
+const PLATE_STRIP = [' ', '-', '.', '/', '_', '\u00a0', '\u202f', '\t', '\u2013', '\u2014', '\u2011', '\u2010'];
+export const PLATE_KEY_SQL = (x) => PLATE_STRIP.reduce((acc, ch) => `REPLACE(${acc},'${ch}','')`, `UPPER(COALESCE(${x},''))`)
+  .replace(/^/, "REPLACE(REPLACE(REPLACE(").concat(",'ä','Ä'),'ö','Ö'),'ü','Ü')");
 export const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Fahrzeug zu einem Kennzeichen aus einem Schreiben/Gerät: zuerst aktive bewertete, dann ruhende (eval_excluded), dann außer Betrieb.
 // Mehrere Treffer in derselben Stufe = mehrdeutig → kein Fahrzeug (lieber manuell klären als falscher Fahrer/falsche Position).

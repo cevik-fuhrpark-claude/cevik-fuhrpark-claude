@@ -156,7 +156,8 @@ async function handleApi(request, env, ctx, url) {
     // Standard-Standort (nur Anzeige-Voreinstellung der Filter, keine Berechtigung); Fahrer haben keine Standortfilter
     if (b.home_site !== undefined) {
       if (user.role === 'driver') throw forbidden();
-      const hs = b.home_site === null ? '' : String(b.home_site).trim();
+      if (b.home_site !== null && typeof b.home_site !== 'string') throw bad('validation', 'Standort: ungültiger Wert.'); // Objekt → „[object Object]“ (17.10.2026)
+      const hs = b.home_site === null ? '' : b.home_site.trim();
       if (hs.length > 60) throw bad('validation', 'Standort: höchstens 60 Zeichen.');
       await env.DB.prepare('UPDATE users SET home_site=?, updated_at=? WHERE id=?').bind(hs || null, nowIso(), user.id).run();
     }

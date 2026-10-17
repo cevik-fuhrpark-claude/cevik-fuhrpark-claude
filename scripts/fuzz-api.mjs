@@ -97,7 +97,7 @@ const ids = {
   fine: id(await owner.post('/api/fines', { kind: 'anhoerung', authority: 'Bußgeldstelle', reference: 'AZ-FZ1', offense_type: 'geschwindigkeit', offense_at: '2026-10-01T08:00:00Z', plate_in_letter: 'FZ-1', amount_eur: 70 })),
   contact: id(await owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo', phone: '0123 456' })),
 };
-const done = await owner.post(`/api/maintenance/${ids.rule}/complete`, { done_date: '2026-10-01', evidence: 'Fuzz-Bericht', done_km: 2000 });
+const done = await owner.post(`/api/maintenance/${ids.rule}/complete`, { done_date: '2026-10-01', evidence: 'Fuzz-Bericht' });
 if (done.status !== 200) { console.log('  ✘ Vorbereitung: Durchführung ' + JSON.stringify(done.data)); process.exit(1); }
 ids.event = ((await owner.get(`/api/vehicles/${VE}`)).data.maintenance_history || [])[0]?.id;
 for (const [k2, v2] of Object.entries(ids)) if (!v2) { console.log(`  ✘ Vorbereitung: keine Kennung für ${k2}`); process.exit(1); }
