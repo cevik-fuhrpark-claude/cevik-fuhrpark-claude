@@ -7,7 +7,7 @@ import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, maintEventStmt } from './vehicles.js';
 import { siteSelection } from './reports.js';
 import { CASE_STATUS_DE } from './cases.js';
-import { SETTING_DEFAULTS } from './settings.js';
+import { maintenanceWarnDays } from './settings.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer', 'workshop', 'dispatch'];
 const WRITE_ROLES = ['owner', 'fleet'];
@@ -213,7 +213,7 @@ export async function maintenanceEventLists(env, envName) {
 export async function maintenanceOverview(env, user, envName = null, opts = {}) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const cfg = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
-  const warnDays = Number(cfg.get('maintenance_warn_days')) || SETTING_DEFAULTS.maintenance_warn_days;
+  const warnDays = maintenanceWarnDays(cfg.get('maintenance_warn_days'));
   const warnKm = Number(cfg.get('maintenance_warn_km')) > 0 ? Number(cfg.get('maintenance_warn_km')) : null;
   const today = berlinDate();
   const latestKm = await latestKmByVehicle(env, { withBase: true });

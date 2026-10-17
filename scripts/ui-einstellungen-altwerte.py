@@ -8,7 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 HEAD={'de':'außerhalb des zulässigen Bereichs','uk':'поза допустимим діапазоном','en':'outside the permitted range'}
-RANGE={'de':'erlaubt 1 bis 365 (ganze Zahl)','uk':'дозволено від 1 до 365 (ціле число)','en':'permitted 1 to 365 (whole number)'}
+RANGE={'de':'erlaubt 0 bis 365 (ganze Zahl)','uk':'дозволено від 0 до 365 (ціле число)','en':'permitted 0 to 365 (whole number)'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

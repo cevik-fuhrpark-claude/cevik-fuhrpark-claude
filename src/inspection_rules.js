@@ -11,6 +11,7 @@
 // Grundsätze: Es werden keine Fahrzeugdaten oder Prüfnachweise erfunden. Fehlende oder widersprüchliche Grundlagen → „Frist ungeklärt“.
 // Eine bestandene HU erledigt keine offene SP; erledigt wird eine SP nur durch einen SP-Nachweis (auch „SP i. V. m. HU“ am HU-Tag).
 
+import { maintenanceWarnDays, SETTING_DEFAULTS } from './settings.js';
 const RULE_VERSION = 'StVZO Anl. VIII Nr. 2.1/2.3/2.4 (geprüft 10.10.2026)';
 export const ZGM_CLASSES_LKW = ['bis_3_5', '3_5_7_5', '7_5_12', 'ueber_12'];
 export const ZGM_CLASSES_TRAILER = ['bis_3_5', '3_5_10', 'ueber_10'];
@@ -56,7 +57,7 @@ function statusFor(due, today, warnDays) {
 // Hinweis: deutscher Text (Agent, Protokoll) + Code mit Werten, damit die App ihn in UK/EN anzeigen kann
 const note = (o, code, text, p = {}) => { o.notes.push(text); o.note_codes.push({ code, p }); };
 
-export function computeHuSp(vehicle, events, { today, warnDays = 30, documented = {}, planned = {} } = {}) {
+export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULTS.maintenance_warn_days, documented = {}, planned = {} } = {}) {
   const kind = vehicle.kind === 'anhaenger' ? 'anhaenger' : 'lkw';
   const cls = vehicle.zgm_class || null;
   const sorted = (k) => events.filter((e) => e.kind === k && e.done_date).sort((a, b) => a.done_date.localeCompare(b.done_date));
@@ -203,7 +204,9 @@ export function huSpFor(x, today, warnDays) {
 
 // Verbindliche berechnete Fälligkeit in maintenance_rules.next_due_date spiegeln (nur due_source='berechnet', nie Nachweise überschreiben).
 // Jede Änderung wird im Audit-Log protokolliert.
-export async function syncHuSpDues(env, { today, warnDays = 30, actorId = null, vehicleIds = null } = {}) {
+export async function syncHuSpDues(env, { today, warnDays, actorId = null, vehicleIds = null } = {}) {
+  // Status im Protokolleintrag nach der eingestellten Vorwarnung (vorher fest 30 Tage, wenn der Aufrufer keine übergab)
+  if (warnDays === undefined) warnDays = maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first())?.value);
   const byV = await loadHuSpInputs(env, vehicleIds);
   const stmts = []; const changes = [];
   const now = new Date().toISOString();

@@ -24,7 +24,7 @@ with sync_playwright() as p:
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
       for w,h in [(390,844),(820,1180),(1366,900)]:
-        api('PUT','/api/settings',{'driver_doc_warn_days':None,'contract_warn_days':None})
+        api('PUT','/api/settings',{'driver_doc_warn_days':None,'contract_warn_days':None,'maintenance_warn_days':None})
         c=br.new_context(viewport={'width':w,'height':h}); q=c.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ep.inhaber','password':PW}])
         q.goto(B+'/#/settings'); q.wait_for_selector('#fine_warn_days')
@@ -33,19 +33,20 @@ with sync_playwright() as p:
           check(v in lab,f'{lang} {w}px: {k} → {lab!r}')
         check('Prüftermine' not in q.inner_text('label[for="fine_warn_days"]'),f'{lang} {w}px: Bußgeld-Feld ohne „Prüftermine“')
         check(HINT[lang] in q.inner_text('#sf'),f'{lang} {w}px: Hinweis zu 0 sichtbar')
-        ph={k:q.get_attribute(f'#{k}','placeholder') for k in ['driver_doc_warn_days','contract_warn_days','tacho_warn_days','fine_warn_days']}
-        check(ph['driver_doc_warn_days']=='30' and ph['contract_warn_days']=='60' and ph['tacho_warn_days']=='7' and ph['fine_warn_days'] is None,f'{lang} {w}px: Platzhalter = Standard bei leerem Feld {ph}')
-        q.fill('#driver_doc_warn_days','0'); q.fill('#contract_warn_days','0'); q.click('#sf button:not([type])')
+        ph={k:q.get_attribute(f'#{k}','placeholder') for k in ['maintenance_warn_days','driver_doc_warn_days','contract_warn_days','tacho_warn_days','fine_warn_days']}
+        check(ph['maintenance_warn_days']=='30' and ph['driver_doc_warn_days']=='30' and ph['contract_warn_days']=='60' and ph['tacho_warn_days']=='7' and ph['fine_warn_days'] is None,f'{lang} {w}px: Platzhalter = Standard bei leerem Feld {ph}')
+        q.fill('#maintenance_warn_days','0'); q.fill('#driver_doc_warn_days','0'); q.fill('#contract_warn_days','0'); q.click('#sf button:not([type])')
         q.wait_for_selector('.toast'); q.wait_for_timeout(300)
         vals=api('GET','/api/settings')['d']['values']
-        check(vals.get('driver_doc_warn_days')=='0' and vals.get('contract_warn_days')=='0',f'{lang} {w}px: 0 gespeichert')
+        check(vals.get('maintenance_warn_days')=='0' and vals.get('driver_doc_warn_days')=='0' and vals.get('contract_warn_days')=='0',f'{lang} {w}px: 0 gespeichert')
         q.goto(B+'/#/'); q.goto(B+'/#/settings'); q.wait_for_selector('#driver_doc_warn_days')
-        check(q.input_value('#driver_doc_warn_days')=='0' and q.input_value('#contract_warn_days')=='0',f'{lang} {w}px: 0 wieder angezeigt')
+        check(q.input_value('#maintenance_warn_days')=='0' and q.input_value('#driver_doc_warn_days')=='0' and q.input_value('#contract_warn_days')=='0',f'{lang} {w}px: 0 wieder angezeigt')
+        check(not q.query_selector('#sinv .warn, [aria-invalid="true"]'),f'{lang} {w}px: Prüftermine 0 nicht als Altwert gemeldet')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         if SHOTS: q.wait_for_timeout(400); q.evaluate("()=>document.getElementById('fine_warn_days').scrollIntoView({block:'center'})"); q.screenshot(path=f'{SHOTS}/einstellungen_vorwarnung_{lang}_{w}.png')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:1]}')
         c.close()
-    api('PUT','/api/settings',{'driver_doc_warn_days':None,'contract_warn_days':None}); api('PATCH','/api/me',{'language':'de'})
+    api('PUT','/api/settings',{'driver_doc_warn_days':None,'contract_warn_days':None,'maintenance_warn_days':None}); api('PATCH','/api/me',{'language':'de'})
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'OK')
 raise SystemExit(1 if fails else 0)

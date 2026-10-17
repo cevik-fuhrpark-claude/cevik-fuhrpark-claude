@@ -426,7 +426,7 @@ await test('Einstellungen: nur plausible Werte (Bereich, ganze Zahl, deutsches Z
     eq((await owner.put('/api/settings', { repair_cost_limit_net: '1.000,50', tire_warn_tread_mm: '3,5', maintenance_warn_km: '120.000', maintenance_warn_days: ' 30 ' })).status, 200);
     let v = await val(); eq(v.repair_cost_limit_net, '1000.5'); eq(v.tire_warn_tread_mm, '3.5'); eq(v.maintenance_warn_km, '120000'); eq(v.maintenance_warn_days, '30');
     // vorher: „1.000“ wurde als 1 € gespeichert, „abc“/„−5“/„2,5 Minuten“ still übergangen bzw. gespeichert
-    for (const [k, x, min, max, int] of [['repair_cost_limit_net', '1.000', 0, 1000000, false], ['maintenance_warn_days', '-5', 1, 365, true], ['idle_logout_workshop_min', '2,5', 5, 10080, true], ['idle_logout_other_min', '3', 5, 10080, true],
+    for (const [k, x, min, max, int] of [['repair_cost_limit_net', '1.000', 0, 1000000, false], ['maintenance_warn_days', '-5', 0, 365, true], ['idle_logout_workshop_min', '2,5', 5, 10080, true], ['idle_logout_other_min', '3', 5, 10080, true],
       ['workshop_hourly_rate_net', 0, 0.01, 1000, false], ['tire_warn_tread_mm', '1,2', 1.6, 30, false], ['case_stale_days', 'abc', 1, 365, true], ['sla_production_triage_kritisch_min', '1e9', 1, 43200, true], ['license_check_months', [6], 1, 60, true]]) {
       const r = await owner.put('/api/settings', { claim_followup_days: '9', [k]: x });
       eq(r.status, 400, `${k}=${JSON.stringify(x)}`); eq(r.data.error, 'setting_invalid'); eq(r.data.setting, k); eq(r.data.min, min, k); eq(r.data.max, max, k); eq(r.data.integer, int, k);
@@ -462,7 +462,7 @@ await test('Einstellungen: gespeicherte Werte außerhalb der Regeln werden beim 
     const r = await owner.get('/api/settings'); eq(r.status, 200);
     const inv = Object.fromEntries(r.data.invalid.map((x) => [x.setting, x]));
     eq(Object.keys(inv).sort().join(), Object.keys(old).sort().join(), 'genau die ungültigen Werte (3,5 mm gültig)');
-    eq(inv.maintenance_warn_days.value, '-5'); eq(inv.maintenance_warn_days.min, 1); eq(inv.maintenance_warn_days.max, 365); eq(inv.maintenance_warn_days.integer, true);
+    eq(inv.maintenance_warn_days.value, '-5'); eq(inv.maintenance_warn_days.min, 0); eq(inv.maintenance_warn_days.max, 365); eq(inv.maintenance_warn_days.integer, true);
     eq(inv.workshop_hourly_rate_net.min, 0.01); eq(inv.workshop_hourly_rate_net.integer, false);
     eq(inv.test_master_readonly.min, undefined, 'Schalter ohne Bereich'); eq(inv.idle_logout_workshop_min.min, 5, 'Leerlauf: wirksam erst ab 5 Minuten');
     for (const [k, v] of Object.entries(old)) eq(r.data.values[k], v, `${k} unverändert`);
@@ -4258,6 +4258,24 @@ await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrer
   const fs = await import('node:fs');
   for (const f of ['maintenance', 'agent', 'vehicles', 'drivers', 'tacho', 'contracts']) ok(!/\|\| (30|60|7)\b|: (30|60|7);/.test(fs.readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8').replace(/max: \d+/g, '')), `${f}.js: kein eigener Standardwert neben SETTING_DEFAULTS`);
   eq(SETTING_RULES.contract_warn_days.min, 0); eq(SETTING_RULES.driver_doc_warn_days.min, 0);
+  // Prüftermine (17.10.2026): 0 ist erlaubt und wirkt überall gleich (Übersicht, Akte, Agent, Kalender) – vorher min 1, 0 wäre still zu 30 geworden
+  const { maintenanceWarnDays } = await import('../src/settings.js');
+  eq(SETTING_RULES.maintenance_warn_days.min, 0);
+  eq(maintenanceWarnDays('0'), 0); eq(maintenanceWarnDays(''), 30); eq(maintenanceWarnDays(null), 30); eq(maintenanceWarnDays(undefined), 30); eq(maintenanceWarnDays('abc'), 30); eq(maintenanceWarnDays('14'), 14);
+  ok(!/warnDays = 30/.test(fs.readFileSync(new URL('../src/inspection_rules.js', import.meta.url), 'utf8')), 'HU/SP-Neuberechnung ohne festen Vorlauf 30');
+  try {
+    eq((await owner.put('/api/settings', { maintenance_warn_days: '0' })).status, 200);
+    const ov = (await owner.get('/api/maintenance')).data;
+    eq(ov.warn_days, 0, 'Übersicht rechnet mit 0 (nicht still 30)');
+    const future = ov.rows.filter((r) => r.days > 0); ok(future.length > 0, 'Testdaten mit künftigen Fälligkeiten');
+    // HU/SP: Gesamtstatus aus der StVZO-Berechnung; übrige Arten: Datumsstatus (km-Regeln getrennt)
+    const st = (r) => r.husp_status ? r.status : r.date_status;
+    for (const r of future) ok(st(r) !== 'faellig', `${r.kind} ${r.plate} in ${r.days} Tagen: bei Vorwarnung 0 noch nicht „fällig“ (${st(r)})`);
+    for (const r of ov.rows.filter((x) => x.days === 0)) eq(st(r), 'faellig', 'am Fälligkeitstag „fällig“');
+    const cal = new TextDecoder().decode((await owner.get('/api/maintenance?format=ics')).data);
+    ok(cal.includes('TRIGGER:-P0D') && !cal.includes('TRIGGER:-P30D'), 'Kalender-Erinnerung am Fälligkeitstag statt 30 Tage vorher');
+  } finally { eq((await owner.put('/api/settings', { maintenance_warn_days: '' })).status, 200); }
+  eq((await owner.get('/api/maintenance')).data.warn_days, 30, 'leer = Standard 30');
   eq(warnDaysOf(new Map([['contract_warn_days', '0']])), 0, 'Verträge: 0 bleibt 0 (vorher still 60)');
   eq(warnDaysOf(new Map([['contract_warn_days', '']])), 60); eq(warnDaysOf(new Map()), 60); eq(warnDaysOf(new Map([['contract_warn_days', '14']])), 14);
   const today = '2026-03-01';

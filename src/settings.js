@@ -14,7 +14,7 @@ export const SETTING_RULES = {
   driver_doc_warn_days: { int: true, min: 0, max: 365 },
   tacho_warn_days: { int: true, min: 0, max: 90 },
   license_check_months: { int: true, min: 1, max: 60 },
-  maintenance_warn_days: { int: true, min: 1, max: 365 },
+  maintenance_warn_days: { int: true, min: 0, max: 365 }, // 0 = „bald fällig“ erst am Fälligkeitstag (wie Fahrernachweise/Verträge/Auslesungen; bis 17.10.2026 min 1)
   maintenance_warn_km: { int: true, min: 1, max: 200000 },
   tire_warn_tread_mm: { min: 1.6, max: 30 },
   tire_warn_age_years: { int: true, min: 1, max: 20 },
@@ -29,6 +29,11 @@ export const SETTING_RULES = {
 // Standardwerte bei leerem Feld (einzige Quelle: Verbraucher, Einstellungs-Antwort `defaults`, Platzhalter im Formular; Bezeichnungen per Test geprüft).
 // Alle übrigen Einstellungen: leer = aus bzw. nicht festgelegt (keine eigene Vorgabe der App).
 export const SETTING_DEFAULTS = { maintenance_warn_days: 30, driver_doc_warn_days: 30, tacho_warn_days: 7, contract_warn_days: 60 };
+// Vorwarnung Prüftermine/Wartung (Tage) aus dem gespeicherten Text: 0 bleibt 0, leer/ungültig = Standard (einzige Auswertung für Übersicht, Akte, Agent, Kalender).
+export function maintenanceWarnDays(v) {
+  const n = v === undefined || v === null || v === '' ? NaN : Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : SETTING_DEFAULTS.maintenance_warn_days;
+}
 export const SETTINGS_KEYS = ['test_master_readonly', ...Object.keys(SETTING_RULES)];
 
 // Ein Wert → gespeicherter Text ('' = aus). Ungültig → 400 setting_invalid mit Schlüssel und Grenzen (die App nennt das Feld in ihrer Sprache).
