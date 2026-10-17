@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -126,10 +126,16 @@ export async function createDriver(env, user, envName, body) {
   const name = str(body.display_name, { required: true, max: 120, field: 'Name' });
   const userId = await validLinkedUser(env, envName, body.user_id);
   const id = uuid(); const now = nowIso();
+  const pno = str(body.personnel_no, { max: 40 });
+  // Personalnummer je Umgebung unter aktiven Fahrern eindeutig (Schreibweise wie beim Auslesungen-Import) – Doppelklick/parallel ergab
+  // sonst zwei Fahrer, und der Import übersprang danach jede Zeile „Fahrer nicht eindeutig“ (17.10.2026)
+  let r;
   try {
-    await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?,?,?)`)
-      .bind(id, envName, name, str(body.personnel_no, { max: 40 }), str(body.site, { max: 60 }), userId, str(body.note, { max: 1000 }), user.id, now, now).run();
+    r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10
+      WHERE ?4 IS NULL OR NOT EXISTS (SELECT 1 FROM drivers x WHERE x.environment=?2 AND x.active=1 AND lower(trim(x.personnel_no))=lower(?4))`)
+      .bind(id, envName, name, pno, str(body.site, { max: 60 }), userId, str(body.note, { max: 1000 }), user.id, now, now).run();
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
+  if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
   await audit(env, user.id, 'driver.create', id, { name, environment: envName });
   return { id };
 }
@@ -149,14 +155,24 @@ export async function updateDriver(env, user, envName, id, body) {
     personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { max: 40 }) : d.personnel_no,
     site: body.site !== undefined ? str(body.site, { max: 60 }) : d.site,
     user_id: body.user_id !== undefined ? await validLinkedUser(env, envName, body.user_id) : d.user_id,
-    active: body.active === undefined ? d.active : (body.active ? 1 : 0),
+    active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active) ? 1 : 0),
     note: body.note !== undefined ? str(body.note, { max: 1000 }) : d.note,
   };
   try {
     // nur mitgesendete Felder schreiben (17.10.2026: gleichzeitige Änderungen verschiedener Felder gingen sonst verloren)
     const cols = Object.keys(f).filter((k) => body[k] !== undefined);
-    if (cols.length) await env.DB.prepare(`UPDATE drivers SET ${cols.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?`)
-      .bind(...cols.map((k) => f[k]), nowIso(), id).run();
+    // Personalnummer bleibt unter aktiven Fahrern eindeutig (auch beim Wieder-Aktivieren), Prüfung in derselben Anweisung
+    const pnoCheck = cols.includes('personnel_no') || cols.includes('active');
+    if (cols.length) {
+      // WHERE sieht die alten Spaltenwerte – neue Werte daher als Parameter (unveränderte Spalte: aktueller Wert)
+      const nAct = cols.includes('active') ? String(f.active) : 'drivers.active';
+      const nPno = cols.includes('personnel_no') ? '?' : 'drivers.personnel_no';
+      const pBind = cols.includes('personnel_no') ? [f.personnel_no, f.personnel_no] : [];
+      const r = await env.DB.prepare(`UPDATE drivers SET ${cols.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?
+        ${pnoCheck ? `AND NOT (${nAct}=1 AND ${nPno} IS NOT NULL AND EXISTS (SELECT 1 FROM drivers x WHERE x.environment=drivers.environment AND x.active=1 AND x.id<>drivers.id AND lower(trim(x.personnel_no))=lower(trim(${nPno}))))` : ''}`)
+        .bind(...cols.map((k) => f[k]), nowIso(), id, ...pBind).run();
+      if (pnoCheck && (!r.meta || r.meta.changes !== 1)) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
+    }
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
   await audit(env, user.id, 'driver.update', id, { changed: Object.keys(body) });
   return { ok: true };
@@ -199,7 +215,10 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   const note = str(body.note, { max: 500 });
   if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.');
   const cid = uuid();
-  await env.DB.prepare('INSERT INTO driver_license_checks(id,driver_id,checked_on,result,checked_by,note,created_at) VALUES (?,?,?,?,?,?,?)').bind(cid, id, on, result, user.id, note, nowIso()).run();
+  // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026)
+  const r = await env.DB.prepare(`INSERT INTO driver_license_checks(id,driver_id,checked_on,result,checked_by,note,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7
+    WHERE NOT EXISTS (SELECT 1 FROM driver_license_checks x WHERE x.driver_id=?2 AND x.checked_on=?3 AND x.result=?4 AND x.note IS ?6)`).bind(cid, id, on, result, user.id, note, nowIso()).run();
+  if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate', 'Diese Kontrolle ist bereits erfasst.');
   await audit(env, user.id, 'driver.license_check', id, { checked_on: on, result });
   return { id: cid };
 }

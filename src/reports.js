@@ -170,14 +170,14 @@ export async function periodMileage(env, from, to, vehicleFilter = null) {
   const binds = vehicleFilter ? [loX, hiX, vehicleFilter] : [loX, hiX];
   const rows = (await env.DB.prepare(`WITH x AS (
       SELECT vehicle_id, km, measured_at, substr(${berlinDaySql('measured_at')},1,7) AS m,
-        LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, id) AS pkm,
-        ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at, id) AS rn
+        LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, rowid) AS pkm,
+        ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, rowid) AS rn
       FROM odometer_readings WHERE measured_at >= ?1 AND measured_at < ?2${vf}),
     y AS (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY vehicle_id, m ORDER BY measured_at DESC, rn DESC) AS rd FROM x)
     SELECT y.vehicle_id, y.m, COUNT(*) AS n, SUM(CASE WHEN y.pkm IS NOT NULL AND y.km < y.pkm THEN 1 ELSE 0 END) AS dec,
       MAX(CASE WHEN y.rd=1 THEN y.km END) AS last_km, MAX(CASE WHEN y.rd=1 THEN y.measured_at END) AS last_at,
       MAX(CASE WHEN y.rn=1 THEN y.km END) AS first_km, MAX(CASE WHEN y.rn=1 THEN y.measured_at END) AS first_at,
-      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=y.vehicle_id AND o.measured_at < ?1 ORDER BY o.measured_at DESC, o.id DESC LIMIT 1) AS base
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=y.vehicle_id AND o.measured_at < ?1 ORDER BY o.measured_at DESC, o.created_at DESC, o.rowid DESC LIMIT 1) AS base
     FROM y GROUP BY y.vehicle_id, y.m ORDER BY y.vehicle_id, y.m`).bind(...binds).all()).results;
   const by = new Map();
   for (const r of rows) { const a = by.get(r.vehicle_id) || []; a.push(r); by.set(r.vehicle_id, a); }

@@ -1,7 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { caseDescText } from '../public/check-labels.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
@@ -429,7 +429,7 @@ export async function upsertVehicle(env, user, body) {
   // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
   // in Betrieb – dann mit Protokoll `vehicle.activate` (vorher still, 17.10.2026)
   const before = await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(row.id).first();
-  await upsertVehicleRows(env, [row], { keepActive: !!body.keep_active, actorId: user.id });
+  await upsertVehicleRows(env, [row], { keepActive: flag(body.keep_active, 'Aktiv lassen'), actorId: user.id });
   if (before && !before.active && !body.keep_active) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
   // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
   // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.
@@ -446,7 +446,7 @@ export async function setVehicleEvaluation(env, user, envName, vehicleId, body) 
   if (!isManager(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
-  const excluded = body.excluded === true || body.excluded === 1;
+  const excluded = flag(body.excluded, 'Ausgenommen');
   const reason = str(body.reason, { required: excluded, max: 300, field: 'Grund' });
   await env.DB.prepare('UPDATE vehicles SET eval_excluded=?, eval_excluded_reason=?, updated_at=? WHERE id=?').bind(excluded ? 1 : 0, excluded ? reason : null, nowIso(), vehicleId).run();
   await audit(env, user.id, excluded ? 'vehicle.eval_exclude' : 'vehicle.eval_include', vehicleId, { plate: v.plate, reason });
@@ -457,7 +457,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
-  const active = body.active === true || body.active === 1;
+  const active = flag(body.active, 'Aktiv');
   const reason = str(body.reason, { required: !active, max: 300, field: 'Grund' });
   if (!active) {
     const open = await env.DB.prepare(`SELECT COUNT(*) AS n FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(vehicleId).first();
@@ -488,7 +488,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
     .bind(driver.id, now).all()).results;
   if (open.some((o) => o.vehicle_id === vehicleId)) throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
   // Fahrzeugwechsel: bisherige offene Zuordnungen des Fahrers beenden, wenn ausdrücklich gewünscht
-  const endPrev = body.end_previous === true || body.end_previous === 'on' || body.end_previous === '1';
+  const endPrev = body.end_previous === 'on' || flag(body.end_previous, 'Bisherige Zuordnung beenden');
   const id = uuid();
   const stmts = [];
   // atomar (17.10.2026): bisherige immer im selben Stapel beenden (nicht nur, wenn beim Lesen welche offen waren) und nur einfügen, wenn

@@ -10862,6 +10862,124 @@ await test('Fehlersuche 17.10. (4): Zahlen (leer, Liste, Hex/Exponent) → 400, 
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
+await test('Fehlersuche 17.10. (5): Telematik älter nie über neuer, Rufnummer-/Vertrags-Dublette beim Ändern, Personalnummer eindeutig, Kontrolle einmal, Ja/Nein-Felder streng, Kosten-Vermerke ohne Recht ausgeblendet, Versicherungsfall ohne Positionen „–“, Vertragsart mit Versicherungsfall, CSV-Zahl „1,234.50“, Wiedervorlage endet, km-Gleichstand im Kostenbericht, ruhend ohne Kostenbefund', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db; const { addMonths } = await import('../src/util.js');
+  const integ = (body) => anon.req('POST', '/api/integration/v1/telematics', body, { authorization: 'Bearer integration-token-xyz' });
+  const anon = new Client(worker, e, 'anon2');
+  // 1. Telematik: gleichzeitige Lieferungen – der ältere Stand überschreibt nie den neueren
+  const vin = 'WMA15SZZ2HM722774'; const vid = db.prepare('SELECT id FROM vehicles WHERE vin=?').get(vin).id;
+  addRandomLatency(e, 6);
+  for (let i = 0; i < 6; i++) {
+    const newer = new Date(Date.now() - 60000 + i * 1000).toISOString(); const older = new Date(Date.now() - 3600000 + i * 1000).toISOString();
+    const [a, b] = await Promise.all([integ({ provider: 'webfleet', items: [{ external_id: 'D1', vin, gps_time: newer, lat: 51.5, lon: 7.4 }] }),
+      integ({ provider: 'webfleet', items: [{ external_id: 'D1', vin, gps_time: older, lat: 48.1, lon: 11.5 }] })]);
+    eq(a.status, 200); eq(b.status, 200);
+    eq(db.prepare('SELECT gps_time FROM telematics_latest WHERE vehicle_id=?').get(vid).gps_time, newer, 'neuerer Stand bleibt');
+    eq(a.data.rejected + b.data.rejected, 1, 'genau eine Lieferung verworfen'); eq(a.data.matched + b.data.matched, 1);
+  }
+  // 2. Notfall-Rufnummer: Ändern auf eine vorhandene Nummer gleicher Art/Geltung → 409
+  const ca = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst A', phone: '0800 123456' });
+  const cb = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst B', phone: '0800 999999' });
+  eq(ca.status, 201, JSON.stringify(ca.data)); eq(cb.status, 201, JSON.stringify(cb.data));
+  const pc = await F.patch(`/api/emergency/contacts/${cb.data.id}`, { phone: '0800 123456' }); eq(pc.status, 409); eq(pc.data.error, 'duplicate_contact');
+  eq((await F.patch(`/api/emergency/contacts/${cb.data.id}`, { label: 'Pannendienst B2' })).status, 200, 'andere Änderung geht');
+  // 3. Fahrerakte: Personalnummer je Umgebung unter aktiven Fahrern eindeutig (parallel, Schreibweise), auch beim Ändern/Reaktivieren
+  const [d1, d2] = await Promise.all([F.post('/api/drivers', { display_name: 'Erika Muster', personnel_no: 'P-200' }), F.post('/api/drivers', { display_name: 'Erika Muster', personnel_no: 'P-200' })]);
+  eq([d1.status, d2.status].sort().join(), '201,409'); eq(db.prepare(`SELECT COUNT(*) n FROM drivers WHERE personnel_no='P-200'`).get().n, 1);
+  const x2 = (await F.post('/api/drivers', { display_name: 'Max Muster', personnel_no: 'P-300' })).data.id;
+  const dup = await F.post('/api/drivers', { display_name: 'Max M.', personnel_no: ' p-300 ' }); eq(dup.status, 409); eq(dup.data.error, 'duplicate_personnel_no');
+  const did = (d1.status === 201 ? d1 : d2).data.id;
+  eq((await F.patch(`/api/drivers/${x2}`, { personnel_no: 'p-200' })).status, 409, 'Ändern auf vorhandene');
+  eq((await F.patch(`/api/drivers/${x2}`, { active: false })).status, 200);
+  eq((await F.patch(`/api/drivers/${x2}`, { personnel_no: 'P-200' })).status, 200, 'inaktiv darf sie tragen');
+  eq((await F.patch(`/api/drivers/${x2}`, { active: true })).status, 409, 'Reaktivieren mit vergebener Nummer');
+  eq((await F.patch(`/api/drivers/${did}`, { note: 'x' })).status, 200);
+  // Führerscheinkontrolle doppelt gesendet → eine Zeile
+  const lc = await Promise.all([1, 2].map(() => F.post(`/api/drivers/${did}/license-checks`, { checked_on: BERLIN_TODAY, result: 'in_ordnung' })));
+  eq(lc.map((r) => r.status).sort().join(), '201,409'); eq(db.prepare('SELECT COUNT(*) n FROM driver_license_checks WHERE driver_id=?').get(did).n, 1);
+  // 4. Ja/Nein-Felder: Text "false"/"0" = nein, sonstiger Text → 400 (vorher „ja“)
+  eq((await F.patch(`/api/drivers/${did}`, { active: 'false' })).status, 200); eq(db.prepare('SELECT active FROM drivers WHERE id=?').get(did).active, 0, '"false" = nein');
+  const nb = await F.patch(`/api/drivers/${did}`, { active: 'nein' }); eq(nb.status, 400); eq(nb.data.error, 'validation');
+  eq(db.prepare('SELECT active FROM drivers WHERE id=?').get(did).active, 0, 'bleibt inaktiv');
+  const note = await F.post(`/api/vehicles/${encodeURIComponent(V1)}/notes`, { text: 'intern', for_driver: 'false' }); eq(note.status, 201);
+  eq(db.prepare('SELECT for_driver FROM vehicle_notes WHERE id=?').get(note.data.id).for_driver, 0, 'nicht für Fahrer');
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: 'ja' })).status, 400, 'Benutzer aktiv nur ja/nein');
+  const rid = await toRepair();
+  eq((await cmd(U.ws, rid, 'add_open_item', { description: 'Halter', safety_relevant: 'false' })).status, 200);
+  eq(db.prepare('SELECT safety_relevant FROM open_items WHERE case_id=?').get(rid).safety_relevant, 0);
+  eq((await cmd(U.ws, rid, 'add_open_item', { description: 'Halter 2', safety_relevant: 'vielleicht' })).status, 400);
+  eq((await cmd(F, rid, 'add_external_cost', { supplier: 'Glas', amount_net: 50, covers_work_and_parts: 'false' })).status, 200);
+  eq(db.prepare('SELECT covers_work_and_parts c FROM external_costs WHERE case_id=?').get(rid).c, 0);
+  // 5. Kosten-Vermerke ohne Kostenrecht ausgeblendet (Fahrer/Werkstatt/Lesen), Leitung sieht sie
+  eq((await cmd(F, rid, 'add_external_cost', { supplier: 'Lack', amount_net: 1450 }, 'Rechnung RE-77 über 1.450 € netto')).status, 200);
+  for (const c of [U.driver, U.ws, U.viewer]) {
+    const ev = (await c.get(`/api/cases/${rid}`)).data.events.filter((x) => x.action === 'add_external_cost');
+    ok(ev.length && ev.every((x) => x.note === null && x.payload === null), 'Vermerk ausgeblendet'); ok(ev.some((x) => x.note_hidden));
+  }
+  ok((await F.get(`/api/cases/${rid}`)).data.events.some((x) => x.note === 'Rechnung RE-77 über 1.450 € netto'), 'Leitung sieht ihn');
+  // 6. Versicherungsfall ohne jede Kostenposition: Kosten/Saldo „–“ statt 0 €/−Erstattung
+  const kV = (await F.post(`/api/vehicles/${encodeURIComponent(V1)}/contracts`, { kind: 'versicherung', partner: 'AllVers', evidence: 'Police' })).data.id;
+  const cid = await newCase();
+  eq((await F.put(`/api/cases/${cid}/claim`, { contract_id: kV, reported_on: BERLIN_TODAY, evidence: 'Meldung', status: 'reguliert', reimbursed_net: 2500, reimbursed_on: BERLIN_TODAY })).status, 200);
+  const co = (await F.get('/api/claims?filter=alle')).data.claims.find((r) => r.case_id === cid);
+  eq(co.case_cost_net, null); eq(co.balance_net, null);
+  // 7. Vertragsart nicht weg von „Versicherung“, solange ein Versicherungsfall verweist; Vertragsnummer-Dublette beim Ändern → 409
+  const kc = await F.patch(`/api/contracts/${kV}`, { kind: 'leasing' }); eq(kc.status, 409); eq(kc.data.error, 'contract_in_claim');
+  const l1 = (await F.post(`/api/vehicles/${encodeURIComponent(V1)}/contracts`, { kind: 'leasing', partner: 'L', contract_no: 'L-1', evidence: 'V' })).data.id;
+  const l2 = (await F.post(`/api/vehicles/${encodeURIComponent(V1)}/contracts`, { kind: 'leasing', partner: 'L', contract_no: 'L-2', evidence: 'V' })).data.id;
+  ok(l1 && l2);
+  const kd = await F.patch(`/api/contracts/${l2}`, { contract_no: 'l-1' }); eq(kd.status, 409); eq(kd.data.error, 'duplicate_contract');
+  eq((await F.patch(`/api/contracts/${l2}`, { note: 'ok' })).status, 200, 'sonst änderbar');
+  // 8. CSV-Vertragsimport: „1,234.50“ wird nicht still zu 1,2345
+  const { parseDeNum } = await import('../src/contracts.js');
+  ok(Number.isNaN(parseDeNum('1,234.50'))); eq(parseDeNum('1.234,50'), 1234.5); eq(parseDeNum('1234,5'), 1234.5); eq(parseDeNum('1.234'), 1234); eq(parseDeNum('99'), 99);
+  // 9. Wiedervorlage endet mit Abschluss/Ablehnung
+  const fid = await newCase(); const fu = addMonths(BERLIN_TODAY, 1);
+  eq((await cmd(F, fid, 'set_followup', { followup_on: fu }, 'nachfassen')).status, 200);
+  eq((await cmd(F, fid, 'reject', {}, 'kein Schaden')).status, 200);
+  const fc = db.prepare('SELECT followup_on, followup_note FROM cases WHERE id=?').get(fid); eq(fc.followup_on, null); eq(fc.followup_note, null);
+  ok(!(await F.get('/api/cases?followup=1')).data.cases.some((c) => c.id === fid), 'nicht in Wiedervorlage-Liste');
+  // 10. Kostenbericht: zwei Ablesungen auf demselben Zeitpunkt (zwei Rollen, nachgetragen) → kein „Rückgang“
+  const pm = addMonths(`${BERLIN_YM}-01`, -1).slice(0, 7); const ppm = addMonths(`${BERLIN_YM}-01`, -2).slice(0, 7);
+  const V2 = 'VIN:WDB9630051L917317';
+  eq((await F.post(`/api/vehicles/${encodeURIComponent(V2)}/odometer`, { km: 10000, measured_on: `${ppm}-10` })).status, 201);
+  eq((await F.post(`/api/vehicles/${encodeURIComponent(V2)}/odometer`, { km: 20000, measured_on: `${pm}-03` })).status, 201);
+  eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V2)}/odometer`, { km: 20500, measured_on: `${pm}-03` })).status, 201);
+  // gleiche measured_at, IDs so gesetzt, dass die UUID-Reihenfolge der Erfassung widerspricht
+  const v2id = db.prepare('SELECT id FROM vehicles WHERE vin=?').get('WDB9630051L917317').id;
+  db.prepare(`UPDATE odometer_readings SET measured_at=?, id=CASE WHEN km=20000 THEN 'zzzz-1' ELSE 'aaaa-2' END WHERE vehicle_id=? AND km IN (20000,20500)`).run(`${pm}-03T12:00:00.000Z`, v2id);
+  const rv = (await F.get(`/api/reports/costs?from=${pm}&to=${pm}`)).data.vehicles.find((x) => x.vehicle_id === v2id);
+  ok(rv, 'Fahrzeug im Bericht'); eq(rv.km, 10500); ok(rv.km_status !== 'decrease');
+  // 11. ruhendes Fahrzeug: kein Befund „Kosten unvollständig bewertet“ (Kostenbericht nimmt es ebenfalls aus)
+  const { e: e2, U: W, cmd: cmd2, toRepair: tr2, V1: VV } = await freshWorld();
+  const r2 = await tr2();
+  eq((await cmd2(W.ws, r2, 'add_part', { name: 'Teil ohne Preis', quantity: 1 })).status, 200);
+  eq((await cmd2(W.ws, r2, 'record_work', { hours: 1, description: 'getauscht' })).status, 200);
+  const items = (await W.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await W.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: r2, request_key: rk(), items })).status, 201);
+  eq((await cmd2(W.ws, r2, 'request_quality_check', {}, 'fertig')).status, 200);
+  eq((await cmd2(W.fleet, r2, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  await W.fleet.post('/api/agent/run', {});
+  ok(e2.DB.db.prepare(`SELECT 1 FROM agent_findings WHERE finding_code='COSTS_UNVALUED' AND case_id=? AND status='offen'`).get(r2), 'vorher Kostenbefund');
+  eq((await W.fleet.post(`/api/vehicles/${encodeURIComponent(VV)}/evaluation`, { excluded: true, reason: 'abgestellt' })).status, 200);
+  await W.fleet.post('/api/agent/run', {});
+  ok(!e2.DB.db.prepare(`SELECT 1 FROM agent_findings WHERE finding_code='COSTS_UNVALUED' AND case_id=? AND status='offen'`).get(r2), 'kein offener Kostenbefund');
+  // 12. Arbeitszeit: höchstens 24 h je Person und Arbeitstag über alle Vorgänge (auch gleichzeitig gebucht)
+  const y = addMonths(BERLIN_TODAY, 0); const ra = await toRepair(); const rb = await toRepair();
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 20, description: 'Motor', work_date: y })).status, 200);
+  const over = await cmd(U.ws, rb, 'record_work', { hours: 5, description: 'Bremse', work_date: y });
+  eq(over.status, 400); ok(/^Höchstens 24 Stunden je Person und Arbeitstag – am \d{2}\.\d{2}\.\d{4} sind bereits 20 h erfasst\.$/.test(over.data.message), over.data.message);
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(/20 h are already recorded/.test(translateValidation('en', over.data.message)), 'EN'); ok(/вже внесено 20 год/.test(translateValidation('uk', over.data.message)), 'UK');
+  eq((await cmd(U.ws, rb, 'record_work', { hours: 4, description: 'Bremse', work_date: y })).status, 200, 'bis 24 h');
+  const yd = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const v1 = (await F.get(`/api/cases/${ra}`)).data.case.version; const v2 = (await F.get(`/api/cases/${rb}`)).data.case.version;
+  const par = await Promise.all([U.ws.post(`/api/cases/${ra}/commands`, { action: 'record_work', command_id: rk(), expected_version: v1, payload: { hours: 13, description: 'A', work_date: yd } }),
+    U.ws.post(`/api/cases/${rb}/commands`, { action: 'record_work', command_id: rk(), expected_version: v2, payload: { hours: 13, description: 'B', work_date: yd } })]);
+  eq(par.map((r) => r.status).sort().join(), '200,400', 'gleichzeitig nur eine');
+  eq(db.prepare('SELECT SUM(hours) h FROM work_entries WHERE user_id=? AND work_date=?').get(U.ws.id, yd).h, 13);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

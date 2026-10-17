@@ -1,7 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, conflict, laterIso, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
+  bad, forbidden, conflict, laterIso, HttpError, str, oneOf, flag, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
 import { notifyUsers, nt } from './notify.js';
 
@@ -430,12 +430,13 @@ export async function updateUser(env, actor, userId, body) {
     if (body.role && !FLEET_MAY_CREATE.includes(body.role)) throw forbidden();
     if (body.environment && body.environment !== actor.environment) throw forbidden();
   } else if (actor.role !== 'owner') throw forbidden();
-  if (target.id === actor.id && (body.active === false || (body.role && body.role !== actor.role))) {
+  const activeIn = body.active === undefined ? undefined : flag(body.active, 'Aktiv', !!target.active);
+  if (target.id === actor.id && (activeIn === false || (body.role && body.role !== actor.role))) {
     throw bad('validation', 'Eigene Rolle/Aktivierung kann nicht selbst geändert werden.');
   }
   const role = body.role ? oneOf(body.role, ROLES, 'Rolle') : target.role;
   const environment = body.environment ? oneOf(body.environment, ENVS, 'Umgebung') : target.environment;
-  const active = body.active === undefined ? target.active : (body.active ? 1 : 0);
+  const active = activeIn === undefined ? target.active : (activeIn ? 1 : 0);
   const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
   const site = role === 'workshop' ? (body.workshop_site !== undefined && body.workshop_site !== null ? str(body.workshop_site, { max: 20, field: 'Werkstatt' }) : target.workshop_site) : null;
   if (role === 'workshop' && !site) throw bad('validation', 'Werkstatt ist für Rolle Werkstatt erforderlich.');

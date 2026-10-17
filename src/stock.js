@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -113,7 +113,7 @@ export async function updateItem(env, user, envName, id, body) {
     min_qty: body.min_qty !== undefined ? num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true }) : it.min_qty,
     location: body.location !== undefined ? str(body.location, { max: 80 }) : it.location,
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }) : it.unit_price_net,
-    active: body.active === undefined ? it.active : (body.active ? 1 : 0),
+    active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
   };
   // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
   const changed = Object.keys(fields).filter((k) => fields[k] !== it[k]);

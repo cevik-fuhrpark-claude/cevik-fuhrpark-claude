@@ -122,6 +122,15 @@ export function str(v, { max = 2000, required = false, field = 'Feld' } = {}) {
   return s;
 }
 
+// Ja/Nein-Felder: nur true/false (bzw. 1/0, "true"/"false"); Text wie "false"/"nein" galt vorher als „ja“ (17.10.2026:
+// Fahrer still reaktiviert, interner Hinweis für Fahrer sichtbar, Restarbeit sicherheitsrelevant). Fehlt der Wert → def.
+export function flag(v, field, def = false) {
+  if (v === undefined || v === null) return def;
+  if (v === true || v === 1 || v === '1' || v === 'true') return true;
+  if (v === false || v === 0 || v === '0' || v === 'false' || v === '') return false;
+  throw bad('validation', `${field}: ungültiger Wert.`);
+}
+
 export function oneOf(v, allowed, field) {
   if (!allowed.includes(v)) throw bad('validation', `${field}: ungültiger Wert.`);
   return v;

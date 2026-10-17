@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -195,7 +195,7 @@ export async function setTireSpec(env, user, vehicleId, body) {
   if (!canWrite(user)) throw forbidden();
   const axle = oneOf(body.axle, AXLES, 'Achse');
   const size = str(body.size, { required: true, max: 40, field: 'Reifengröße' });
-  const verified = body.verified ? 1 : 0;
+  const verified = flag(body.verified, 'Geprüft') ? 1 : 0;
   // unbekanntes Fahrzeug → 404 (vorher Fremdschlüssel-Fehler = „Interner Fehler“, Fuzz 15.10.2026)
   if (!(await env.DB.prepare('SELECT 1 FROM vehicles WHERE id=?').bind(vehicleId).first())) throw notFound();
   const now = nowIso();

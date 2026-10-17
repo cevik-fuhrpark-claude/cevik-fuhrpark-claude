@@ -398,9 +398,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Ruhende Fahrzeuge (Inhaberentscheidung): keine fahrzeugbezogenen Bewertungsbefunde; vorgangsbezogene Sicherheitsbefunde bleiben
+    // Kostenbewertung ist eine Auswertung (Kostenbericht nimmt ruhende Fahrzeuge aus) – deren Befund trotz Vorgangsbezug ebenfalls (17.10.2026)
+    const EXCLUDED_CASE_CODES = ['COSTS_UNVALUED'];
     const excludedVeh = new Set(base.excluded);
     // Behördenfristen (Bußgelder) bleiben – sie hängen nicht an der Bewertung des Fahrzeugs (17.10.2026)
-    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && !findings[i].case_id && !String(findings[i].code).startsWith('FINE_') && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
+    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && (!findings[i].case_id || EXCLUDED_CASE_CODES.includes(findings[i].code)) && !String(findings[i].code).startsWith('FINE_') && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
 
     // ---- Befunde persistieren (Sammel-Upsert), Erledigtes schließen, Übergaben an Master ----
     const now = nowIso();

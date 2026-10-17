@@ -119,7 +119,8 @@ export async function claimOverview(env, user, envName, query = {}) {
       (SELECT COALESCE(SUM(p.quantity*p.unit_price_net),0) FROM parts p WHERE p.case_id=c.id AND p.valuation='actual' AND p.unit_price_net IS NOT NULL) AS parts_net,
       (SELECT COALESCE(SUM(e.amount_net),0) FROM external_costs e WHERE e.case_id=c.id AND e.valuation='actual' AND e.amount_net IS NOT NULL) AS ext_net,
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS ext_not_actual,
-      (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS covered
+      (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS covered,
+      (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) + (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id) + (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id) AS items
     FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE ic.environment=? ORDER BY ic.reported_on DESC`).bind(envName).all()).results;
   const today = berlinDate();
   const r2 = (x) => Math.round(x * 100) / 100;
@@ -129,9 +130,10 @@ export async function claimOverview(env, user, envName, query = {}) {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
     const workNet = r.covered ? 0 : rate === null ? (r.hours ? null : 0) : r.hours * rate;
     // ersetzt eine Fremdleistung eigene Arbeit/Teile, zählen nur die Fremdleistungen – auch deren Bewertung (vorher: unbewertete Fremdrechnung → „0 €“, 17.10.2026)
-    const complete = workNet !== null && (r.covered ? r.ext_not_actual === 0 : r.not_actual === 0);
+    // ohne jede Kostenposition: „–“ statt 0 € (wie die Vorgangsansicht; vorher Saldo = −Erstattung, 17.10.2026)
+    const complete = r.items > 0 && workNet !== null && (r.covered ? r.ext_not_actual === 0 : r.not_actual === 0);
     const cost = complete ? r2(workNet + (r.covered ? 0 : r.parts_net) + r.ext_net) : null;
-    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, ...rest } = r;
+    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, items, ...rest } = r;
     const sh = shape(rest, today);
     return { ...sh, followup_due: followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
   });

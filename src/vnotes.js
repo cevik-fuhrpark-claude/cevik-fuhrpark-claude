@@ -1,5 +1,5 @@
 // [CLAUDE] Hinweise zum Fahrzeug: kurze Notizen je Fahrzeug/Umgebung, optional für zugeordnete Fahrer sichtbar; Archiv statt Löschen
-import { nowIso, uuid, bad, forbidden, notFound, str, hideDriverName, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, flag, hideDriverName, berlinDate, isCalendarDate } from './util.js';
 
 // aktiv = nicht archiviert und nicht abgelaufen („gültig bis“ heute einschließlich, Berliner Datum); Platzhalter ? = berlinDate()
 export const noteActiveSql = (a = '') => `${a}archived_at IS NULL AND (${a}valid_until IS NULL OR ${a}valid_until >= ?)`;
@@ -48,9 +48,9 @@ export async function addNote(env, user, envName, vehicleId, body) {
   // Höchstzahl in derselben Anweisung (parallele Anlagen überschritten sie vorher, 17.10.2026)
   const r = await env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until) SELECT ?1,?2,?3,?4,?5,?6,?7,?8
     WHERE (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?3 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?9)) < ?10`)
-    .bind(id, envName, vehicleId, text, body.for_driver ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE).run();
+    .bind(id, envName, vehicleId, text, flag(body.for_driver, 'Für Fahrer sichtbar') ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE).run();
   if (!(r.meta && r.meta.changes)) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
-  await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: !!body.for_driver, valid_until: validUntil });
+  await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: flag(body.for_driver, 'Für Fahrer sichtbar'), valid_until: validUntil });
   return { id };
 }
 

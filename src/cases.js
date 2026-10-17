@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -117,7 +117,7 @@ export async function listCases(env, user, envName, query, meta = null) {
     if (own) args.push(user.workshop_site);
   }
   // Filter „Wiedervorlage“ (nur Inhaber/Fuhrparkleitung/Lesende): offene Vorgänge mit Wiedervorlage, fällige zuerst (Sortierung in der Oberfläche)
-  if (query.followup && !['driver', 'workshop'].includes(user.role)) where.push('c.followup_on IS NOT NULL');
+  if (query.followup && !['driver', 'workshop'].includes(user.role)) where.push(`c.followup_on IS NOT NULL AND c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')})`);
   else if (query.followup) where.push('0');
   // Filter „Ohne Bewegung“ (nur wenn eingestellt; sonst leere Liste statt einer erfundenen Frist)
   if (fullMeta || query.stale) {
@@ -255,11 +255,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const tireWinter = c.tire_order === 'winter' ? await caseWinter(env, c, vehicle?.kind) : null;
   // Verlauf: Beträge/Stunden nur für Rollen, die sie auch in der Akte sehen (Kosten: Leitung; Arbeiten/Teile: Leitung + ausführende Werkstatt)
   const seesWork = user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch' && (user.role !== 'workshop' || access === 'full');
+  // Vermerke zu Kosten-Aktionen enthalten oft Beträge („Freigabe bis 1.450 €“) – ohne Kostenrecht ausgeblendet (17.10.2026)
+  const hiddenNotes = canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'approve_costs', 'add_external_cost'];
   const hiddenPayloads = [...(canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'approve_costs', 'add_external_cost']), ...(seesWork ? [] : ['add_part', 'record_work'])];
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
-    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null } : e)),
+    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null, ...(hiddenNotes.includes(e.action) && e.note ? { note: null, note_hidden: true } : {}) } : e)),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
     tire_winter: tireWinter,
@@ -781,6 +783,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const set = {};
   let toStatus = c.status;
   let payload = {};
+  let workGuard = null; // Arbeitszeit-Tagesgrenze im Stapel geprüft
   let stockGuardItem = null; // Lagerentnahme mit Bestandsprüfung im Stapel (Fehlerbild unterscheiden)
   const extra = []; // zusätzliche Statements in derselben Transaktion
   let notifyKind = null;
@@ -815,7 +818,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     case 'lift_safety_lock': {
       requireNote('Bitte fachliche Begründung für die Aufhebung angeben.');
-      if (!p.confirm) throw bad('confirm_required', 'Aufhebung muss ausdrücklich bestätigt werden.');
+      if (!flag(p.confirm, 'Bestätigung')) throw bad('confirm_required', 'Aufhebung muss ausdrücklich bestätigt werden.');
       const safetyOpen = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (safetyOpen.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
       set.safety_lock = 0; set.safety_lock_reason = null;
@@ -928,9 +931,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Tippfehler im Jahr (2062/1926) fielen sonst aus dem Monats-Kostenbericht: nicht in der Zukunft, höchstens 1 Jahr vor der Meldung
       const earliest = addMonths(berlinDate(c.created_at), -12);
       if (date > berlinDate() || date < earliest) throw bad('validation', `Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`);
+      // höchstens 24 Stunden je Person und Arbeitstag über alle Vorgänge (vorher 3 × 24 h am selben Tag möglich, 17.10.2026) – Vorprüfung
+      // für die verständliche Meldung, Prüfung im Stapel gegen gleichzeitige Buchungen
+      const dayH = await workHoursOn(env, user.id, date);
+      if (dayH + hours > 24 + 1e-9) throw bad('validation', workDayMsg(date, dayH));
       const wid = uuid();
       extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at) VALUES (?,?,?,?,?,?,?)')
-        .bind(wid, c.id, user.id, date, hours, desc, now));
+        .bind(wid, c.id, user.id, date, hours, desc, now),
+        env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN COALESCE(SUM(hours),0) <= 24.000000001 THEN 1 ELSE 0 END FROM work_entries WHERE user_id=? AND work_date=?').bind(user.id, date),
+        env.DB.prepare('DELETE FROM cmd_guard'));
+      workGuard = { date, hours };
       payload = { work_entry_id: wid, hours, work_date: date, description: desc };
       break;
     }
@@ -959,8 +969,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const desc = str(p.description, { required: true, max: 2000, field: 'Restarbeit' });
       const oid = uuid();
       extra.push(env.DB.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at) VALUES (?,?,?,?,'offen',?,?)`)
-        .bind(oid, c.id, desc, p.safety_relevant ? 1 : 0, user.id, now));
-      payload = { open_item_id: oid, description: desc, safety_relevant: !!p.safety_relevant };
+        .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant') ? 1 : 0, user.id, now));
+      payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant') };
       notifyKind = p.safety_relevant ? 'open_item_safety' : null;
       break;
     }
@@ -980,7 +990,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);
       extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, p.covers_work_and_parts ? 1 : 0, note, now, warranty));
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty));
       payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}) };
       break;
     }
@@ -1008,7 +1018,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Winterreifen-Auftrag: Winterlage laut Reifenerfassung noch nicht erfüllt → nur mit ausdrücklicher Bestätigung (keine Sperre, Grund steht im Vermerk)
       if (c.tire_order === 'winter') {
         const w = await caseWinter(env, c);
-        if (w.status !== 'erfuellt' && !p.confirm_winter_open) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
+        if (w.status !== 'erfuellt' && !flag(p.confirm_winter_open, 'Bestätigung')) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
         payload = { winter_status: w.status, ...(w.status !== 'erfuellt' ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
       }
       toStatus = 'abschlusskontrolle';
@@ -1022,7 +1032,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     case 'technical_release': {
       requireNote('Bitte Kontrollnachweis eintragen.');
-      if (!p.confirm) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
+      if (!flag(p.confirm, 'Bestätigung')) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
       if (c.cost_over_limit_at) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten – keine Freigabe möglich.');
@@ -1040,6 +1050,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   }
 
   const newVersion = c.version + 1;
+  // abgeschlossen/abgelehnt: Wiedervorlage endet (blieb sonst in API/CSV stehen und war nicht mehr entfernbar, 17.10.2026)
+  if (!OPEN_STATUSES.includes(toStatus) && (c.followup_on || c.followup_note)) { set.followup_on = null; set.followup_note = null; }
   set.status = toStatus; set.version = newVersion; set.updated_at = now;
   const cols = Object.keys(set);
   const upd = env.DB.prepare(`UPDATE cases SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`)
@@ -1057,6 +1069,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     if (String(e && e.message).includes('CHECK') && stockGuardItem && (await onHand(env, stockGuardItem.id)) < stockGuardItem.qty) {
       throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, stockGuardItem.id)} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
     }
+    if (String(e && e.message).includes('CHECK') && workGuard) {
+      const dayH = await workHoursOn(env, user.id, workGuard.date);
+      if (dayH + workGuard.hours > 24 + 1e-9) throw bad('validation', workDayMsg(workGuard.date, dayH));
+    }
     if (String(e && e.message).includes('CHECK')) {
       throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
     }
@@ -1072,6 +1088,13 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
   return { ok: true, version: newVersion, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}) };
 }
+
+// gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)
+async function workHoursOn(env, userId, date) {
+  const r = await env.DB.prepare('SELECT COALESCE(SUM(hours),0) AS h FROM work_entries WHERE user_id=? AND work_date=?').bind(userId, date).first();
+  return Math.round((r ? r.h : 0) * 100) / 100;
+}
+const workDayMsg = (date, h) => `Höchstens 24 Stunden je Person und Arbeitstag – am ${date.split('-').reverse().join('.')} sind bereits ${String(h).replace('.', ',')} h erfasst.`;
 
 // ---------- Fahrzeugkontrolle nach Reparatur / Abfahrtskontrolle ----------
 
@@ -1122,7 +1145,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
     const result = oneOf(it.result, ['ok', 'mangel', 'na'], 'Prüfergebnis');
     const note = str(it.note, { max: 1000 });
     if (result === 'mangel' && (!note || note.length < 3)) throw bad('validation', 'Jeder Mangel braucht eine kurze Beschreibung.');
-    byKey.set(it.key, { key: it.key, result, note, safety_relevant: !!it.safety_relevant, followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null });
+    byKey.set(it.key, { key: it.key, result, note, safety_relevant: flag(it.safety_relevant, 'Sicherheitsrelevant'), followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null });
   }
   if (byKey.size !== keys.size) throw bad('incomplete', 'Bitte alle Prüfpunkte bewerten (OK / Mangel / entfällt).');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));

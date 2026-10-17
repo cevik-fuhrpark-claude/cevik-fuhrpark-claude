@@ -128,8 +128,11 @@ export async function updateContact(env, user, envName, id, body) {
   const changed = Object.keys(f).filter((k) => (f[k] ?? null) !== (ex[k] ?? null));
   if (!changed.length) return { ok: true, changed: [] };
   // atomar: nicht archiviert und unverändert seit dem Lesen (gleichzeitiges Archivieren/Ändern)
-  const r = await env.DB.prepare('UPDATE emergency_contacts SET kind=?, label=?, phone=?, note=?, site=?, vehicle_id=?, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL AND updated_at=?')
-    .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, laterIso(ex.updated_at), id, ex.updated_at).run();
+  // dieselbe Dublettenregel wie beim Anlegen (Ändern erzeugte vorher die Dublette, die die Anlage abweist, 17.10.2026)
+  const r = await env.DB.prepare(`UPDATE emergency_contacts SET kind=?1, label=?2, phone=?3, note=?4, site=?5, vehicle_id=?6, updated_by=?7, updated_at=?8 WHERE id=?9 AND archived_at IS NULL AND updated_at=?10
+      AND NOT EXISTS (SELECT 1 FROM emergency_contacts d WHERE d.environment=?11 AND d.archived_at IS NULL AND d.id<>?9 AND d.phone=?3 AND d.kind=?1 AND d.site IS ?5 AND d.vehicle_id IS ?6)`)
+    .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, laterIso(ex.updated_at), id, ex.updated_at, envName).run();
+  if ((!r.meta || r.meta.changes !== 1) && await env.DB.prepare('SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND id<>? AND phone=? AND kind=? AND site IS ? AND vehicle_id IS ?').bind(envName, id, f.phone, f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
   if (!r.meta || r.meta.changes !== 1) throw conflict('version_conflict', 'Rufnummer wurde zwischenzeitlich geändert oder archiviert. Bitte neu laden.');
   await audit(env, user.id, 'emergency.update', id, Object.fromEntries(changed.map((k) => [k, { from: ex[k] ?? null, to: f[k] ?? null }])));
   return { ok: true, changed };

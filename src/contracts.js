@@ -150,9 +150,21 @@ export async function updateContract(env, user, id, body, envName) {
   if (!changed.length) return { id, changed: [] };
   // nur auf dem gelesenen Stand und solange nicht beendet (vorher: parallele Änderungen überschrieben sich gegenseitig, beendete Verträge
   // wurden trotzdem geändert – 17.10.2026)
-  const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?,partner=?,contract_no=?,start_date=?,end_date=?,notice_months=?,km_allowance=?,start_km=?,monthly_rate_net=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?`)
-    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, laterIso(c.updated_at), id, c.updated_at).run();
-  if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
+  // dieselbe Dublettenregel wie beim Anlegen (Ändern der Vertragsnummer erzeugte vorher die Dublette, Raten doppelt) und kein Wechsel weg von
+  // „Versicherung“, solange ein Versicherungsfall auf den Vertrag verweist (der Fall war danach nicht mehr speicherbar) – 17.10.2026
+  const DUP = `EXISTS (SELECT 1 FROM vehicle_contracts d WHERE d.vehicle_id=?16 AND d.id<>?14 AND d.kind=?1 AND (CASE WHEN COALESCE(?3,'')<>''
+      THEN LOWER(COALESCE(d.contract_no,''))=LOWER(?3)
+      ELSE COALESCE(d.contract_no,'')='' AND LOWER(COALESCE(d.partner,''))=LOWER(COALESCE(?2,'')) AND COALESCE(d.start_date,'')=COALESCE(?4,'') END))`;
+  const CLAIM = `(?1<>'versicherung' AND EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.contract_id=?14))`;
+  const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?1,partner=?2,contract_no=?3,start_date=?4,end_date=?5,notice_months=?6,km_allowance=?7,start_km=?8,monthly_rate_net=?9,evidence=?10,note=?11,file_id=?12,updated_at=?13
+      WHERE id=?14 AND ended_on IS NULL AND updated_at=?15 AND NOT ${DUP} AND NOT ${CLAIM}`)
+    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, laterIso(c.updated_at), id, c.updated_at, c.vehicle_id).run();
+  if (!(r.meta && r.meta.changes)) {
+    const why = await env.DB.prepare(`SELECT ${DUP} AS dup, ${CLAIM} AS claim`).bind(f.kind, f.partner, f.contract_no, f.start_date, null, null, null, null, null, null, null, null, null, id, null, c.vehicle_id).first();
+    if (why && why.claim) throw conflict('contract_in_claim', 'Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.');
+    if (why && why.dup) throw conflict('duplicate_contract', 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).');
+    throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
+  }
   await audit(env, user.id, 'contract.update', id, { vehicle: c.plate, changed: Object.fromEntries(changed.map((k) => [k, { from: c[k], to: f[k] }])) });
   return { id, changed };
 }
@@ -289,7 +301,8 @@ export function parseDay(raw) {
 export function parseDeNum(raw) {
   let t = String(raw || '').replace(/[€\s ]|EUR|km/gi, '');
   if (!t) return null;
-  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  // Komma nur im deutschen Muster (1.234,50 bzw. 1234,5) – „1,234.50“ ergab vorher still 1,2345 (17.10.2026)
+  if (t.includes(',')) { if (!/^\d{1,3}(\.\d{3})*,\d+$|^\d+,\d+$/.test(t)) return NaN; t = t.replace(/\./g, '').replace(',', '.'); }
   else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
   return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
 }

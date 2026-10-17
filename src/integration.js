@@ -277,10 +277,15 @@ export async function integrationRouter(request, env, ctx, url) {
       .bind(provider, now, JSON.stringify([...unmatched.values()])));
     // zugeordnet (FIN/Mapping): früheren Prüffall derselben Geräte-ID bereinigen – wie beim Bestätigen in der App (vorher blieb er stehen)
     if (matchedExt.size) stmts.push(env.DB.prepare('DELETE FROM telematics_unmatched WHERE provider=? AND external_id IN (SELECT value FROM json_each(?))').bind(provider, JSON.stringify([...matchedExt])));
+    // gleichzeitige Lieferungen: älterer Stand überschreibt nie den neueren (Prüfung oben las den Stand vor dem Stapel, 17.10.2026)
+    const latePos = stmts.length;
+    if (latestRows.size) stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?2) j JOIN telematics_latest t ON t.vehicle_id=json_extract(j.value,'$.v') AND t.provider=?1
+      WHERE t.gps_time IS NOT NULL AND (json_extract(j.value,'$.gps') IS NULL OR json_extract(j.value,'$.gps') < t.gps_time)`).bind(provider, JSON.stringify([...latestRows.values()])));
     if (latestRows.size) stmts.push(env.DB.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,source_plate,gps_time,received_at,lat,lon,km,speed,ignition)
       SELECT ${X('v')}, ?1, ${X('ext')}, ${X('basis')}, ${X('sp')}, ${X('gps')}, ?2, ${X('lat')}, ${X('lon')}, ${X('km')}, ${X('speed')}, ${X('ign')} FROM json_each(?3) WHERE 1
       ON CONFLICT(vehicle_id,provider) DO UPDATE SET external_id=excluded.external_id, match_basis=excluded.match_basis, source_plate=excluded.source_plate, gps_time=excluded.gps_time, received_at=excluded.received_at,
-        lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition`)
+        lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition
+      WHERE telematics_latest.gps_time IS NULL OR (excluded.gps_time IS NOT NULL AND excluded.gps_time >= telematics_latest.gps_time)`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)
     const NEXT_SMALLER = `COALESCE((SELECT o.km < ${X('km')} AND (o.note IS NULL OR trim(o.note) = '') FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at > ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at ASC LIMIT 1), 0)`;
@@ -304,6 +309,7 @@ export async function integrationRouter(request, env, ctx, url) {
       ON CONFLICT DO NOTHING`).bind(`telematik:${provider}`, now, JSON.stringify([...odo.values()])));
     if (stmts.length) {
       const out = await env.DB.batch(stmts);
+      if (latestRows.size) { const late = (out[latePos] && out[latePos].results && out[latePos].results[0] && out[latePos].results[0].n) || 0; res.rejected += late; res.matched -= late; }
       if (odo.size) {
         res.odometer_written = (out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0;
         res.odometer_rejected = (out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].n) || 0;
