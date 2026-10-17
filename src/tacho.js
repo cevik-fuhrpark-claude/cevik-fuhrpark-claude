@@ -149,6 +149,11 @@ function parseDay(raw) {
   const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
   if (ISO.test(t)) return iso(t);
   if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s.*)?$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  // Zeitstempel mit Zeitzone (Z oder ±hh:mm): Berliner Kalendertag (22:30Z am 31.03. = 01.04. in Berlin); ohne Zone der Datumsteil
+  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})$/i)) && iso(m[1])) {
+    const d = new Date(t.replace(' ', 'T').replace(/\s+/g, '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+    return Number.isNaN(d.getTime()) ? null : berlinDate(d.toISOString());
+  }
   if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]/))) return iso(m[1]);
   return null;
 }

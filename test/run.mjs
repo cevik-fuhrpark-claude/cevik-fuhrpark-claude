@@ -9680,6 +9680,83 @@ await test('Management-Panel: gesperrt/in Werkstatt ohne ruhende Fahrzeuge (glei
   eq(m.vehicles_total, 1); eq(m.vehicles_locked, 1, 'gesperrt:'); eq(m.vehicles_in_workshop, 1, 'in Werkstatt:');
 });
 
+await test('Lager: gleichzeitige Entnahmen/Umlagerungen/Vorgangsentnahmen nie ins Minus, gleichzeitige Inventur bucht nur einmal', async () => {
+  const mk = async (name, q) => { const r = await users.ws.post('/api/stock', { name, unit_price_net: 5, initial_qty: q }); eq(r.status, 201, name + ':'); return r.data.id; };
+  const onh = async (id) => (await users.ws.get(`/api/stock/${id}`)).data.item.on_hand;
+  // zwei Entnahmen gleichzeitig bei Bestand 1
+  const a = await mk('Parallel-Entnahme', 1);
+  const rs = await Promise.all([1, 2].map(() => users.ws.post(`/api/stock/${a}/movements`, { type: 'entnahme', qty: 1 })));
+  eq(rs.map((r) => r.status).sort().join(','), '201,400', 'eine Entnahme abgewiesen:'); eq(rs.find((r) => r.status === 400).data.error, 'insufficient_stock');
+  eq(await onh(a), 0, 'Bestand nicht negativ:');
+  // Umlagerung + Entnahme gleichzeitig
+  const b = await mk('Parallel-Umlagerung', 1);
+  const rb = await Promise.all([users.ws.post(`/api/stock/${b}/transfer`, { to_site: 'MUENCHEN', qty: 1 }), users.ws.post(`/api/stock/${b}/movements`, { type: 'entnahme', qty: 1 })]);
+  eq(rb.filter((r) => r.status === 201).length, 1, 'nur eine Buchung:'); eq(await onh(b), 0);
+  // zwei Vorgänge entnehmen gleichzeitig denselben Artikel
+  const cId = await mk('Parallel-Vorgang', 1);
+  const prep = async () => {
+    const c = await users.fleet.post('/api/cases', { vehicle_id: V2, description: 'Parallel-Lager Test', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+    let v = (await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: 1, payload: { workshop_site: 'DORTMUND' }, note: 'Test' })).data.version;
+    v = (await users.ws.post(`/api/cases/${c.data.id}/commands`, { action: 'start_repair', command_id: rk(), expected_version: v })).data.version;
+    return [c.data.id, v];
+  };
+  const [c1, c2] = [await prep(), await prep()];
+  const rc = await Promise.all([c1, c2].map(([id, v]) => users.ws.post(`/api/cases/${id}/commands`, { action: 'add_part', command_id: rk(), expected_version: v, payload: { stock_item_id: cId, quantity: 1 } })));
+  eq(rc.map((r) => r.status).sort().join(','), '200,400', 'ein Vorgang abgewiesen:'); eq(rc.find((r) => r.status === 400).data.error, 'insufficient_stock', 'Fehlerbild Bestand (nicht „Vorgang geändert“):');
+  eq(await onh(cId), 0);
+  // gleiche Inventur zweimal gleichzeitig (Doppelklick / zwei Geräte): Bestand 10, gezählt 7
+  const d = await mk('Parallel-Inventur', 10);
+  const body = { site: 'DORTMUND', counts: [{ item_id: d, counted: 7 }], preview: [{ item_id: d, book: 10, counted: 7 }] };
+  const ri = await Promise.all([1, 2].map(() => users.ws.post('/api/stock/inventory', body)));
+  eq(ri.map((r) => r.status).sort().join(','), '200,409', 'zweite Inventur abgewiesen:');
+  eq(await onh(d), 7, 'Bestand = Zählmenge:');
+});
+
+await test('Lager (Funktionsebene, verzahnt): Bestandsprüfung und Inventur atomar im Stapel', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const stock = await import('../src/stock.js');
+  const e = makeEnv(); await ensureSchema(e); const now = new Date().toISOString();
+  e.DB.db.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,created_at,updated_at) VALUES ('u1','own','Own','owner','test',1,?,?)`).run(now, now);
+  e.DB.db.prepare(`INSERT INTO workshops(code,name,active) VALUES ('W1','W1',1),('W2','W2',1)`).run();
+  const u = { id: 'u1', role: 'owner' };
+  const settle = async (ps) => (await Promise.allSettled(ps)).map((x) => (x.status === 'fulfilled' ? 'ok' : x.reason.code || x.reason.message)).sort().join(',');
+  const { id: a } = await stock.createItem(e, u, 'test', { site: 'W1', name: 'Filter', unit_price_net: 10, initial_qty: 1 });
+  eq(await settle([1, 2].map(() => stock.addMovement(e, u, 'test', a, { type: 'entnahme', qty: 1 }))), 'insufficient_stock,ok', 'Entnahmen:'); eq(await stock.onHand(e, a), 0);
+  const { id: b } = await stock.createItem(e, u, 'test', { site: 'W1', name: 'Lampe', initial_qty: 1 });
+  eq(await settle([stock.transfer(e, u, 'test', b, { to_site: 'W2', qty: 1 }), stock.transfer(e, u, 'test', b, { to_site: 'W2', qty: 1 })]), 'insufficient_stock,ok', 'Umlagerungen:'); eq(await stock.onHand(e, b), 0);
+  const { id: c } = await stock.createItem(e, u, 'test', { site: 'W1', name: 'Birne', initial_qty: 10 });
+  const body = { site: 'W1', counts: [{ item_id: c, counted: 7 }], preview: [{ item_id: c, book: 10, counted: 7 }] };
+  eq(await settle([stock.inventory(e, u, 'test', body), stock.inventory(e, u, 'test', body)]), 'inventory_changed,ok', 'Inventuren:'); eq(await stock.onHand(e, c), 7);
+});
+
+await test('Lager: manuelle Entnahme mit hinterlegtem Artikelpreis bewertet; „unter Mindestbestand“ nach gerundetem Bestand', async () => {
+  const r = await users.ws.post('/api/stock', { name: 'Hydrauliköl Test', unit: 'l', min_qty: 0.1, unit_price_net: 5, initial_qty: 1 }); eq(r.status, 201);
+  const id = r.data.id;
+  eq((await users.ws.post(`/api/stock/${id}/movements`, { type: 'entnahme', qty: 0.9 })).status, 201);
+  const item = (await users.ws.get(`/api/stock/${id}`)).data;
+  const out = (item.movements || item.history || []).find((m) => m.type === 'entnahme');
+  ok(out, 'Entnahme im Verlauf'); eq(out.unit_price_net, 5, 'Artikelpreis übernommen:');
+  eq((await users.ws.post(`/api/stock/${id}/movements`, { type: 'entnahme', qty: 0.01, unit_price_net: 99 })).status, 201);
+  const out2 = ((await users.ws.get(`/api/stock/${id}`)).data.movements || []).find((m) => m.type === 'entnahme' && Math.abs(m.qty + 0.01) < 1e-9);
+  if (out2) eq(out2.unit_price_net, 5, 'eingegebener Preis ersetzt den Artikelpreis nicht:');
+  eq((await users.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 0.01 })).status, 201);
+  const row = (await users.ws.get('/api/stock')).data.items.find((x) => x.id === id);
+  eq(row.on_hand, 0.1); eq(row.below_min, false, 'Bestand 0,1 = Mindestbestand 0,1:');
+  ok(!(await users.ws.get('/api/stock?reorder=1')).data.items.some((x) => x.id === id), 'kein Bestellvorschlag mit Fehlmenge 0');
+});
+
+await test('Auslesungen-Import: Zeitstempel mit Zeitzone ergibt den Berliner Kalendertag', async () => {
+  const d = new Date(Date.now() - 5 * 86400000); const utcDay = d.toISOString().slice(0, 10);
+  const ts = `${utcDay}T23:30:00Z`; // in Berlin (UTC+1/+2) bereits der Folgetag
+  const next = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(ts));
+  ok(next !== utcDay, 'Testannahme');
+  const csv = ['Art;Kennzeichen;FIN;Datum;Datei', `Massenspeicher;;${V2.slice(4)};${ts};M_tz.ddd`, `Massenspeicher;;${V2.slice(4)};${utcDay}T10:00:00+02:00;M_tz2.ddd`].join('\n');
+  const dry = await users.fleet.req('POST', '/api/tacho/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(dry.status, 200, JSON.stringify(dry.data));
+  eq(dry.data.rows.map((x) => x.downloaded_on).join(','), [next, utcDay].join(','), 'Berliner Tag:');
+  const plain = await users.fleet.req('POST', '/api/tacho/import?dry_run=1', `Art;FIN;Datum;Datei\nMassenspeicher;${V2.slice(4)};${utcDay} 23:30;M_tz3.ddd`, { 'content-type': 'text/csv' });
+  eq(plain.data.rows.map((x) => x.downloaded_on).join(','), utcDay, 'ohne Zone: Datumsteil:');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

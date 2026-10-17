@@ -3,7 +3,7 @@ import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
 import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
-import { prepareCaseWithdrawal } from './stock.js';
+import { prepareCaseWithdrawal, onHand } from './stock.js';
 import { canReadFineFile } from './fines.js';
 import { siteSelection } from './reports.js';
 import { winterMarks, winterStatus } from './tires.js';
@@ -763,6 +763,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const set = {};
   let toStatus = c.status;
   let payload = {};
+  let stockGuardItem = null; // Lagerentnahme mit Bestandsprüfung im Stapel (Fehlerbild unterscheiden)
   const extra = []; // zusätzliche Statements in derselben Transaktion
   let notifyKind = null;
 
@@ -908,7 +909,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (p.stock_item_id) {
         const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid);
         stockItem = w.item;
-        extra.push(w.stmt);
+        extra.push(w.stmt, ...w.guard); stockGuardItem = { id: w.item.id, qty, unit: w.item.unit };
       }
       const name = stockItem ? stockItem.name : str(p.name, { required: true, max: 200, field: 'Teil' });
       const rawPrice = p.unit_price_net === undefined || p.unit_price_net === '' || p.unit_price_net === null ? (stockItem ? stockItem.unit_price_net : null) : p.unit_price_net;
@@ -1020,6 +1021,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   try {
     await env.DB.batch([upd, guard, cleanup, ev, ...extra]);
   } catch (e) {
+    // Lagerentnahme im selben Stapel: parallel anderweitig entnommen → Bestand reicht nicht (statt „Vorgang geändert“)
+    if (String(e && e.message).includes('CHECK') && stockGuardItem && (await onHand(env, stockGuardItem.id)) < stockGuardItem.qty) {
+      throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, stockGuardItem.id)} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
+    }
     if (String(e && e.message).includes('CHECK')) {
       throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
     }
