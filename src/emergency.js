@@ -2,7 +2,7 @@
 // in der Oberfläche). Geltung: alle Fahrzeuge, ein Standort (laut Fahrzeugstamm, Schreibweisen zusammengefasst) oder ein Fahrzeug.
 // Je Umgebung getrennt (Test/Betrieb). Archiv statt Löschen. Lesen: alle angemeldeten Rollen (Fahrer brauchen die Nummern unterwegs);
 // gepflegt von Inhaber, Fuhrparkleitung und Disposition.
-import { nowIso, uuid, bad, forbidden, notFound, str, normPlate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, normPlate, conflict, laterIso } from './util.js';
 import { audit } from './auth.js';
 import { siteKey, siteLabels } from './reports.js';
 
@@ -116,11 +116,16 @@ export async function updateContact(env, user, envName, id, body) {
   if (!WRITE.includes(user.role)) throw forbidden();
   const ex = await env.DB.prepare('SELECT * FROM emergency_contacts WHERE id=? AND environment=? AND archived_at IS NULL').bind(id, envName).first();
   if (!ex) throw notFound('Rufnummer nicht gefunden oder archiviert.');
+  // Formular aus älterer Ansicht (sendet alle Felder): nur auf dem gelesenen Stand speichern – sonst setzte es eine inzwischen
+  // korrigierte Nummer still zurück (17.10.2026)
+  if (body && body.expected_updated_at && String(body.expected_updated_at) !== ex.updated_at) throw conflict('version_conflict', 'Rufnummer wurde zwischenzeitlich geändert. Bitte neu laden.');
   const f = await readBody(env, body || {}, ex);
   const changed = Object.keys(f).filter((k) => (f[k] ?? null) !== (ex[k] ?? null));
   if (!changed.length) return { ok: true, changed: [] };
-  await env.DB.prepare('UPDATE emergency_contacts SET kind=?, label=?, phone=?, note=?, site=?, vehicle_id=?, updated_by=?, updated_at=? WHERE id=?')
-    .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, nowIso(), id).run();
+  // atomar: nicht archiviert und unverändert seit dem Lesen (gleichzeitiges Archivieren/Ändern)
+  const r = await env.DB.prepare('UPDATE emergency_contacts SET kind=?, label=?, phone=?, note=?, site=?, vehicle_id=?, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL AND updated_at=?')
+    .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, laterIso(ex.updated_at), id, ex.updated_at).run();
+  if (!r.meta || r.meta.changes !== 1) throw conflict('version_conflict', 'Rufnummer wurde zwischenzeitlich geändert oder archiviert. Bitte neu laden.');
   await audit(env, user.id, 'emergency.update', id, Object.fromEntries(changed.map((k) => [k, { from: ex[k] ?? null, to: f[k] ?? null }])));
   return { ok: true, changed };
 }

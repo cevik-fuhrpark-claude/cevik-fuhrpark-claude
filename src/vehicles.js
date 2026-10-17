@@ -589,8 +589,10 @@ export async function myVehicles(env, user, envName) {
 }
 
 // Historie: jede Durchführung als eigener Eintrag (gleiche Regel + gleiches Datum nur einmal)
-export function maintEventStmt(env, e) {
-  return env.DB.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,done_km,evidence,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)
+// ifRule: nur, wenn die Regel existiert (Import legt sie im selben Stapel ggf. nicht an – gleichzeitiger Import)
+export function maintEventStmt(env, e, { ifRule = false } = {}) {
+  return env.DB.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,done_km,evidence,source,recorded_by,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10
+    WHERE ${ifRule ? 'EXISTS (SELECT 1 FROM maintenance_rules WHERE id=?2)' : '1'}
     ON CONFLICT(rule_id, done_date) DO UPDATE SET done_km=COALESCE(excluded.done_km, maintenance_events.done_km), evidence=excluded.evidence`)
     .bind(uuid(), e.rule_id, e.vehicle_id, e.kind, e.done_date, e.done_km ?? null, e.evidence, e.source, e.user_id ?? null, nowIso());
 }
@@ -729,6 +731,8 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   }
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10 });
+  // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
+  if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   // einmalige Aktion (Rückruf): nur einmal durchführbar, keine Folgefrist (sonst stünde sie nie auf „erledigt“)
   const oneTime = ONE_TIME_KINDS.includes(r.kind);
   if (oneTime && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');

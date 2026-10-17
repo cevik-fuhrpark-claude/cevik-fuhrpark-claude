@@ -107,6 +107,8 @@ export async function createFine(env, user, envName, body) {
   const offenseRaw = berlinLocalToIso(str(body.offense_at, { required: true, max: 30, field: 'Tatzeit' }));
   if (!offenseRaw || Number.isNaN(Date.parse(offenseRaw))) throw bad('validation', 'Tatzeit ungültig.');
   const offenseAt = new Date(offenseRaw).toISOString();
+  // Tippfehler im Jahr (2062): Fahrerermittlung „zum Tatzeitpunkt“ lieferte sonst die heutige Zuordnung (17.10.2026); 5 Min. Uhrenspiel
+  if (Date.parse(offenseAt) > Date.now() + 5 * 60000) throw bad('validation', 'Tatzeit liegt in der Zukunft.');
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10 });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
@@ -211,14 +213,23 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   // atomarer Versions-Guard wie bei Vorgängen (cmd_guard): zwei gleichzeitige Befehle auf denselben Stand → einer gewinnt, der andere 409
   // (vorher meldeten beide „ok“, die erste Fahrerbestätigung ging still verloren – 17.10.2026)
   try {
+    // geändertes Aktenzeichen: Dublettenprüfung im selben Stapel (zwei gleichzeitige Änderungen auf „Z9“ ergaben sonst zwei Vorgänge)
+    const refGuard = set.reference && set.reference !== f.reference
+      ? [env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?) THEN 0 ELSE 1 END').bind(envName, set.reference, f.authority, id), env.DB.prepare('DELETE FROM cmd_guard')]
+      : [];
     await env.DB.batch([
+      ...refGuard,
       env.DB.prepare(`UPDATE fines SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`).bind(...cols.map((k) => set[k]), id, f.version),
       env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
       env.DB.prepare('DELETE FROM cmd_guard'),
       env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) VALUES (?,?,?,?,?,?,?)').bind(uuid(), id, user.id, action, note, JSON.stringify(payload), now),
     ]);
   } catch (e) {
-    if (String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
+    if (String(e && e.message).includes('CHECK')) {
+      const dup = set.reference && set.reference !== f.reference ? await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?').bind(envName, set.reference, f.authority, id).first() : null;
+      if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
+      throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
+    }
     throw e;
   }
   if (action === 'inform_driver') {
@@ -252,8 +263,16 @@ export async function uploadFineFile(env, user, envName, id, request) {
   // Dateiname vor dem Speichern ermitteln; ungültige %-Folge → Ersatzname (vorher 500 und verwaiste Datei im Speicher, 17.10.2026)
   const name = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'schreiben'); } catch { return 'schreiben'; } })().replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'schreiben';
   await env.FILES.put(key, buf, { metadata: { type, fine_id: id } });
-  await env.DB.prepare(`INSERT INTO files(id,case_id,fine_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?)`)
-    .bind(fid, id, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
+  // Höchstzahl und Dublette im Einfügen selbst geprüft – 25 gleichzeitige Uploads ergaben vorher 25 Dateien (17.10.2026)
+  const ins = await env.DB.prepare(`INSERT INTO files(id,case_id,fine_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
+    SELECT ?1,NULL,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE (SELECT COUNT(*) FROM files WHERE fine_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE fine_id=?2 AND sha256=?8)`)
+    .bind(fid, id, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_FINE_FILES).run();
+  if (!ins.meta || ins.meta.changes !== 1) {
+    await env.FILES.delete(key).catch(() => {});
+    const d2 = await env.DB.prepare('SELECT id FROM files WHERE fine_id=? AND sha256=?').bind(id, sha).first();
+    if (d2) return { id: d2.id, duplicate: true };
+    throw bad('too_many', `Maximal ${MAX_FINE_FILES} Dateien je Bußgeldvorgang.`);
+  }
   return { id: fid, duplicate: false };
 }
 

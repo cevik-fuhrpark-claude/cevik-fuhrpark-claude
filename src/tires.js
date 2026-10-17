@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -111,7 +111,14 @@ export async function tireOverview(env, user, envName, vehicleId) {
     env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
   ]);
   const historyTruncated = histRows.results.length > TIRE_HIST_MAX;
-  const history = histRows.results.slice(0, TIRE_HIST_MAX).map((e) => hideDriverName(user, e, 'recorded_by_name', 'recorded_by_role'));
+  // Fahrer sehen Namen anderer Fahrer nicht (wie im Vorgang; vorher z. B. Vorgänger am Fahrzeug sichtbar, 17.10.2026) – nur den eigenen
+  const history = histRows.results.slice(0, TIRE_HIST_MAX).map((e) => {
+    const otherDriver = user.role === 'driver' && e.recorded_by_role === 'driver' && e.recorded_by !== user.id;
+    hideDriverName(user, e, 'recorded_by_name', 'recorded_by_role');
+    if (user.role === 'driver' && e.recorded_by !== user.id) delete e.recorded_by;
+    if (otherDriver) { e.recorded_by_name = null; e.recorded_by_name_hidden = true; }
+    return e;
+  });
   const allEv = all.results;
   const latest = {};
   for (const e of allEv) {
@@ -176,9 +183,12 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter)));
   const id = ids[0];
-  const warnings = [];
-  if (tread !== null && tread < LEGAL_MIN_TREAD_MM) warnings.push(`Profiltiefe ${tread} mm liegt unter dem gesetzlichen Minimum von ${LEGAL_MIN_TREAD_MM} mm.`);
-  return { id, ids, positions, warnings };
+  const warnings = []; const warningItems = [];
+  if (tread !== null && tread < LEGAL_MIN_TREAD_MM) {
+    warnings.push(`Profiltiefe ${tread} mm liegt unter dem gesetzlichen Minimum von ${LEGAL_MIN_TREAD_MM} mm.`);
+    warningItems.push({ code: 'tread_below_min', tread_mm: tread, min_mm: LEGAL_MIN_TREAD_MM }); // App zeigt den Text in der Oberflächensprache
+  }
+  return { id, ids, positions, warnings, warning_items: warningItems };
 }
 
 export async function setTireSpec(env, user, vehicleId, body) {
@@ -189,10 +199,17 @@ export async function setTireSpec(env, user, vehicleId, body) {
   // unbekanntes Fahrzeug → 404 (vorher Fremdschlüssel-Fehler = „Interner Fehler“, Fuzz 15.10.2026)
   if (!(await env.DB.prepare('SELECT 1 FROM vehicles WHERE id=?').bind(vehicleId).first())) throw notFound();
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,verified_by,verified_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
-    ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, verified=excluded.verified, verified_by=excluded.verified_by, verified_at=excluded.verified_at, updated_at=excluded.updated_at`)
+  // Ein am Fahrzeug geprüfter Wert wird nur durch eine neue Prüfung ersetzt (wie beim Import); jede Änderung im Protokoll (17.10.2026)
+  const prev = await env.DB.prepare('SELECT size, verified FROM tire_specs WHERE vehicle_id=? AND axle=?').bind(vehicleId, axle).first();
+  if (prev && prev.verified && !verified && prev.size !== size) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
+  if (prev && prev.size === size && (!verified || prev.verified)) return { ok: true, unchanged: true };
+  const r = await env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,verified_by,verified_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
+    ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, verified=excluded.verified, verified_by=excluded.verified_by, verified_at=excluded.verified_at, updated_at=excluded.updated_at
+    WHERE excluded.verified=1 OR tire_specs.verified=0`)
     .bind(vehicleId, axle, size, str(body.source, { max: 200 }) || (verified ? `am Fahrzeug geprüft (${user.username})` : `manuell (${user.username})`),
       verified, verified ? user.id : null, verified ? now : null, now).run();
+  if (!r.meta || r.meta.changes !== 1) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
+  await audit(env, user.id, 'tires.spec', vehicleId, { axle, from: prev ? prev.size : null, to: size, verified: !!verified });
   return { ok: true };
 }
 

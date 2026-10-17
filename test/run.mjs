@@ -1995,7 +1995,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -10418,21 +10418,22 @@ await test('Gespann-Sperre erreicht Fahrer der Zugmaschine, Werkstattwechsel inf
   const up = await F.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=2026-01-31`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'vers.pdf' });
   eq(up.status, 201);
   const P = `/api/vehicles/${V1}/documents/${up.data.id}`;
-  eq((await U.driver.req('PATCH', P, { valid_until: '2027-01-31' })).status, 403, 'Fahrer');
-  eq((await U.viewer.req('PATCH', P, { valid_until: '2027-01-31' })).status, 403, 'Lesen');
+  const FUT = `${new Date().getUTCFullYear() + 3}-01-31`; // fern genug, dass keine Vorwarnung greift (Zeitreise 31.12.)
+  eq((await U.driver.req('PATCH', P, { valid_until: FUT })).status, 403, 'Fahrer');
+  eq((await U.viewer.req('PATCH', P, { valid_until: FUT })).status, 403, 'Lesen');
   eq((await F.req('PATCH', P, { valid_until: '31.01.2027' })).status, 400, 'Format');
   eq((await F.req('PATCH', P, { kind: 'ausweis' })).status, 400, 'Art');
-  eq((await F.req('PATCH', `/api/vehicles/${V2}/documents/${up.data.id}`, { valid_until: '2027-01-31' })).status, 404, 'falsches Fahrzeug');
+  eq((await F.req('PATCH', `/api/vehicles/${V2}/documents/${up.data.id}`, { valid_until: FUT })).status, 404, 'falsches Fahrzeug');
   await F.post('/api/agent/run');
   const docF = () => db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE vehicle_id=? AND finding_code LIKE 'DOCUMENT%' AND status<>'erledigt'`).get(vid).n;
   ok(docF() >= 1, 'abgelaufen gemeldet');
   const stale = { kind: 'versicherung', note: null, valid_until: '2025-12-31' };
-  eq((await F.req('PATCH', P, { valid_until: '2027-01-31', expected: stale })).status, 409, 'veralteter Stand');
-  const ok1 = await U.ws.req('PATCH', P, { valid_until: '2027-01-31', note: 'Verlängert', expected: { kind: 'versicherung', note: null, valid_until: '2026-01-31' } });
+  eq((await F.req('PATCH', P, { valid_until: FUT, expected: stale })).status, 409, 'veralteter Stand');
+  const ok1 = await U.ws.req('PATCH', P, { valid_until: FUT, note: 'Verlängert', expected: { kind: 'versicherung', note: null, valid_until: '2026-01-31' } });
   eq(ok1.status, 200, JSON.stringify(ok1.data));
   const doc = (await F.get(`/api/vehicles/${V1}`)).data.documents.find((x) => x.id === up.data.id);
-  eq(doc.doc_valid_until, '2027-01-31'); eq(doc.doc_note, 'Verlängert'); eq(doc.doc_kind, 'versicherung');
-  eq((await F.req('PATCH', P, { valid_until: '2027-01-31', note: 'Verlängert' })).data.unchanged, true);
+  eq(doc.doc_valid_until, FUT); eq(doc.doc_note, 'Verlängert'); eq(doc.doc_kind, 'versicherung');
+  eq((await F.req('PATCH', P, { valid_until: FUT, note: 'Verlängert' })).data.unchanged, true);
   ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.document_update' AND target=?`).get(vid).n === 1, 'Protokoll');
   await F.post('/api/agent/run'); eq(docF(), 0, 'Befund erledigt');
   eq((await U.own.req('PATCH', P, { valid_until: '' }, { 'x-cfp-env': 'test' })).status, 200, 'Datum entfernen'); eq(db.prepare('SELECT doc_valid_until v FROM files WHERE id=?').get(up.data.id).v, null);
@@ -10539,6 +10540,89 @@ await test('Offline gespeicherte Abfahrtskontrolle mit Durchführungszeitpunkt (
   ok(/failedNow\.set\(/.test(app) && !/done\.add\(item\.body\.request_key\); photosDel/.test(app), 'abgewiesene bleiben');
   ok(/performed_at: item\.saved_at/.test(app), 'Durchführungszeitpunkt wird mitgesendet');
   for (const k of ['outbox_failed_n', 'outbox_failed_hint', 'outbox_retry', 'outbox_discard', 'outbox_discard_confirm', 'km_not_taken_next']) ok(app.includes(`'${k}'`), k);
+});
+
+await test('Fehlersuche Prüftermine/Bußgelder/Reifen/Notfall/Versicherung: CSV-Rundreise „Sonstiges“, gleichzeitige Prüftermin-/Rückrufimporte, Fälligkeit beim Erledigen geprüft, Tatzeit nicht in der Zukunft, Bußgeld-Dateien parallel begrenzt, Aktenzeichen beim Ändern atomar, Rufnummer nur auf gelesenem Stand, Reifenverlauf ohne fremde Fahrernamen, Reifengröße geprüft/protokolliert, Versicherer beim Vertragswechsel, Auslesungen-Vorschau vollständig', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet; U.own.envHeader = 'test';
+  const csvH = { 'content-type': 'text/csv' };
+  // 1. zwei „Sonstiges“-Prüftermine: Export unverändert wieder importieren → beide bleiben
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Sonstiges', next_due_date: '2027-01-31', evidence: 'Kranprüfung Bericht 1' })).status, 201);
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Sonstiges', next_due_date: '2027-06-30', evidence: 'Tankprüfung Bericht 2' })).status, 201);
+  const exp = new TextDecoder().decode((await F.get('/api/maintenance?format=csv')).data).replace(/^﻿/, '');
+  const im = await F.req('POST', '/api/maintenance/import', exp, csvH);
+  eq(im.status, 200, JSON.stringify(im.data));
+  ok(im.data.skipped.some((x) => /Mehrere Prüftermine „Sonstiges“/.test(x.reason)), 'Hinweis statt Überschreiben');
+  eq(db.prepare(`SELECT group_concat(next_due_date || ' ' || evidence, ' | ') g FROM (SELECT * FROM maintenance_rules WHERE kind='Sonstiges' ORDER BY created_at)`).get().g, '2027-01-31 Kranprüfung Bericht 1 | 2027-06-30 Tankprüfung Bericht 2');
+  // 2. gleichzeitige Prüftermin- und Rückrufimporte → je eine Regel
+  addLatency(e);
+  const c1 = 'Kennzeichen;Art;Nächster Termin;Nachweis\nSZ-YC 5513;UVV;2027-03-31;Bericht.pdf';
+  const [a, b] = await Promise.all([F.req('POST', '/api/maintenance/import', c1, csvH), U.own.req('POST', '/api/maintenance/import', c1, csvH)]);
+  eq(a.status, 200); eq(b.status, 200); eq(a.data.created + b.data.created, 1, 'einmal neu');
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_rules WHERE kind='UVV'`).get().n, 1);
+  const c2 = 'Kennzeichen;Referenz;Frist\nSZ-YC 5513;KBA-4711;2027-05-31';
+  const [ra, rb] = await Promise.all([F.req('POST', '/api/maintenance/recalls/import', c2, csvH), U.own.req('POST', '/api/maintenance/recalls/import', c2, csvH)]);
+  eq(ra.status, 200, JSON.stringify(ra.data)); eq(rb.status, 200);
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_rules WHERE kind='Rückruf'`).get().n, 1, 'ein Rückruf');
+  // 3. „erledigt“ mit ungültiger Folgefrist → 400
+  const uvv = db.prepare(`SELECT id FROM maintenance_rules WHERE kind='UVV'`).get().id;
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
+  for (const nd of ['31.12.2027', '2027-02-30']) eq((await U.ws.post(`/api/maintenance/${uvv}/complete`, { done_date: today, evidence: 'Bericht', next_due_date: nd })).status, 400, nd);
+  // 4. Bußgeld: Tatzeit in der Zukunft
+  const fineB = (ref, at = '2026-10-01T08:30') => ({ kind: 'anhoerung', offense_type: 'parken', offense_at: at, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X', reference: ref });
+  const fz = await F.post('/api/fines', fineB('Z0', '2062-10-01T08:30')); eq(fz.status, 400); eq(fz.data.message, 'Tatzeit liegt in der Zukunft.');
+  // 5. 25 parallele Dateien → höchstens 20; gleiche Datei parallel → eine
+  const fa = (await F.post('/api/fines', fineB('A1'))).data.id; const fb = (await F.post('/api/fines', fineB('B1'))).data.id;
+  const pdf = (i) => new Uint8Array([0x25, 0x50, 0x44, 0x46, ...new TextEncoder().encode('-1.4 ' + i)]);
+  const ups = await Promise.all(Array.from({ length: 25 }, (_, i) => F.req('POST', `/api/fines/${fa}/files`, pdf(i), { 'content-type': 'application/pdf', 'x-filename': 'a.pdf' })));
+  eq(ups.filter((x) => x.status === 201 || x.status === 200).length, 20, ups.map((x) => x.status).join());
+  eq(db.prepare('SELECT COUNT(*) n FROM files WHERE fine_id=?').get(fa).n, 20);
+  await Promise.all([0, 1].map(() => F.req('POST', `/api/fines/${fb}/files`, pdf('same'), { 'content-type': 'application/pdf' })));
+  eq(db.prepare('SELECT COUNT(*) n FROM files WHERE fine_id=?').get(fb).n, 1, 'gleiche Datei einmal');
+  // 6. zwei gleichzeitige Änderungen auf dasselbe Aktenzeichen → eine 409 duplicate_fine
+  const [x1, x2] = await Promise.all([F.post(`/api/fines/${fa}/commands`, { action: 'update', payload: { reference: 'Z9' } }), U.own.post(`/api/fines/${fb}/commands`, { action: 'update', payload: { reference: 'Z9' } })]);
+  eq([x1.status, x2.status].sort().join(), '200,409'); ok([x1, x2].some((x) => x.data.error === 'duplicate_fine'));
+  eq(db.prepare(`SELECT COUNT(*) n FROM fines WHERE reference='Z9'`).get().n, 1);
+  // 7. Rufnummer: veraltetes Formular → 409; gleichzeitiges Archivieren und Ändern → nur eins
+  const ct = (await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst', phone: '0800 111' })).data.id;
+  const formA = (await F.get('/api/emergency/contacts')).data.contacts.find((x) => x.id === ct);
+  eq((await U.own.patch(`/api/emergency/contacts/${ct}`, { phone: '0800 222' })).status, 200);
+  const old = await F.patch(`/api/emergency/contacts/${ct}`, { kind: formA.kind, label: 'Pannendienst Schutzbrief', phone: formA.phone, expected_updated_at: formA.updated_at });
+  eq(old.status, 409); eq(db.prepare('SELECT phone FROM emergency_contacts WHERE id=?').get(ct).phone, '0800 222', 'Korrektur bleibt');
+  const [pa, ar] = await Promise.all([F.patch(`/api/emergency/contacts/${ct}`, { phone: '0800 999' }), U.own.post(`/api/emergency/contacts/${ct}/archive`)]);
+  const row = db.prepare('SELECT phone, archived_at FROM emergency_contacts WHERE id=?').get(ct);
+  ok(!(row.archived_at && pa.status === 200 && row.phone !== '0800 999'), 'Änderung nicht still verloren');
+  // 8. Reifenverlauf: Fahrer sieht Namen anderer Fahrer nicht; Warnung mit Kennung
+  const x = await U.own.post('/api/users', { username: 'w.fahrer2', display_name: 'Max Muster', role: 'driver', environment: 'test' });
+  const D2 = new Client(worker, e, 'w.fahrer2'); await D2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); D2.id = x.data.id;
+  const as1 = await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }); eq(as1.status, 201);
+  const tw = await U.driver.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 1.2 });
+  eq(tw.status, 201); eq(tw.data.warning_items[0].code, 'tread_below_min'); eq(tw.data.warning_items[0].tread_mm, 1.2);
+  eq((await F.req('DELETE', `/api/assignments/${as1.data.id}`)).status, 200);
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: D2.id })).status, 201);
+  await D2.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-R', tread_mm: 8 });
+  const h = (await D2.get(`/api/vehicles/${V1}/tires`)).data.history;
+  ok(!h.some((r) => r.recorded_by_name === 'Fahrer W' || r.recorded_by === U.driver.id), 'kein fremder Fahrername');
+  ok(h.some((r) => r.recorded_by_name === 'Max Muster'), 'eigener Name bleibt');
+  ok(h.some((r) => r.recorded_by_name_hidden), 'als ausgeblendet markiert');
+  ok((await F.get(`/api/vehicles/${V1}/tires`)).data.history.some((r) => r.recorded_by_name === 'Fahrer W'), 'Leitung sieht Namen');
+  // 9. Reifengröße: geprüfter Wert nicht ungeprüft überschreibbar, Änderungen protokolliert
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true })).status, 200);
+  const sp = await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5' });
+  eq(sp.status, 409); eq(sp.data.error, 'spec_verified');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: true })).status, 200, 'neue Prüfung ersetzt');
+  eq(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='tires.spec'`).get().n, 2, 'protokolliert');
+  // 10. Versicherungsfall: Vertragswechsel zieht den Versicherer nach, wenn er unverändert mitgesendet wird
+  const kA = (await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Allianz', evidence: 'Police A' })).data.id;
+  const kB = (await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'HDI', evidence: 'Police B' })).data.id;
+  const cs = (await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Spiegel abgefahren', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  eq((await F.put(`/api/cases/${cs}/claim`, { contract_id: kA, reported_on: today, evidence: 'Meldung' })).status, 200);
+  const cl = (await F.get(`/api/cases/${cs}`)).data.claim; eq(cl.insurer, 'Allianz');
+  eq((await F.put(`/api/cases/${cs}/claim`, { contract_id: kB, insurer: 'Allianz', reported_on: today, evidence: 'Meldung', expected_updated_at: cl.updated_at })).status, 200);
+  eq((await F.get(`/api/cases/${cs}`)).data.claim.insurer, 'HDI', 'Versicherer des neuen Vertrags');
+  // 11. Auslesungen-Vorschau: alle übersprungenen Zeilen (vorher nach 300 gekürzt)
+  const tcsv = 'Art;Personalnummer;Datum;Datei\n' + Array.from({ length: 450 }, (_, i) => `Fahrerkarte;P-X${i};01.10.2026;C_${i}.ddd`).join('\n');
+  const tp = await F.req('POST', '/api/tacho/import?dry_run=1', tcsv, csvH);
+  eq(tp.status, 200, JSON.stringify(tp.data).slice(0, 200)); eq(tp.data.skipped.length, tp.data.counts.uebersprungen); eq(tp.data.skipped.length, 450);
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

@@ -4,7 +4,7 @@ import { icsLang } from '../public/ics-texts.js';
 import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
-import { MAINT_KINDS, ONE_TIME_KINDS, maintEventStmt } from './vehicles.js';
+import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt } from './vehicles.js';
 import { siteSelection } from './reports.js';
 import { CASE_STATUS_DE } from './cases.js';
 import { maintenanceWarnDays } from './settings.js';
@@ -322,13 +322,16 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (ci.kind < 0 || ci.evidence < 0) throw bad('validation', 'Spalten Art und Nachweis erforderlich.');
   if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
 
-  const vehicles = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1').all()).results;
+  const vehicles = (await env.DB.prepare('SELECT id, plate, eval_excluded FROM vehicles WHERE active=1').all()).results;
   const byId = new Map(vehicles.map((v) => [v.id, v]));
-  const byPlate = new Map();
-  for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
+  const byPlate = plateIndex(vehicles);
   const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source FROM maintenance_rules ORDER BY created_at').all()).results;
-  const ruleOf = new Map();
-  for (const r of existing) if (!ruleOf.has(`${r.vehicle_id}|${r.kind}`)) ruleOf.set(`${r.vehicle_id}|${r.kind}`, r);
+  const ruleOf = new Map(); const ruleCount = new Map();
+  for (const r of existing) { const k = `${r.vehicle_id}|${r.kind}`; if (!ruleOf.has(k)) ruleOf.set(k, r); ruleCount.set(k, (ruleCount.get(k) || 0) + 1); }
+  // „Sonstiges“ darf es je Fahrzeug mehrfach geben (Kran-, Tankprüfung …): der Import kennt nur eine Zeile je Fahrzeug+Art und schrieb
+  // beim unveränderten Wiedereinlesen des eigenen Exports den zweiten Termin auf den ersten (17.10.2026) – dann nur einzeln in der Akte
+  const MULTI_SKIP = 'Mehrere Prüftermine „Sonstiges“ an diesem Fahrzeug – einzeln in der Fahrzeugakte pflegen';
+  const multiLines = new Map();
 
   const result = { dry_run: !!dryRun, created: 0, updated: 0, unchanged: 0, skipped: [], rows: [] };
   const planned = new Map(); // je Fahrzeug+Art gilt der späteste belegte Termin der Datei
@@ -388,6 +391,15 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (next && last.date && last.date > next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
     const ev = due.month_only ? `${evidence} (Plakette ${get(cells, ci.due)}: fällig bis Monatsende)` : evidence;
     const key = `${v.id}|${kind}`;
+    if (MULTI_RULE_KINDS.includes(kind)) {
+      if ((ruleCount.get(key) || 0) > 1) return skip(MULTI_SKIP);
+      const firstLine = multiLines.get(key);
+      if (firstLine !== undefined) { // zweite Zeile derselben Art in der Datei: beide nicht übernehmen
+        if (firstLine !== null) { const pr = planned.get(key); planned.delete(key); result.skipped.push({ line: pr.line, plate: pr.plate, reason: MULTI_SKIP }); multiLines.set(key, null); }
+        return skip(MULTI_SKIP);
+      }
+      multiLines.set(key, line);
+    }
     const sortKey = next || last.date || '';
     const sortKm = dueKm ?? lastKm ?? -1;
     const prev = planned.get(key);
@@ -397,7 +409,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   });
 
   const now = nowIso();
-  const stmts = [];
+  const stmts = []; const creates = [];
   for (const p of [...planned.values()].sort((a, b) => a.line - b.line)) {
     const cur = ruleOf.get(`${p.vehicle_id}|${p.kind}`);
     const skipRow = (reason) => result.skipped.push({ line: p.line, plate: p.plate, reason });
@@ -440,9 +452,12 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (action === 'neu') {
       result.created++;
       const ruleId = uuid();
+      // nur, wenn es die Prüfart am Fahrzeug noch nicht gibt (zwei gleichzeitige Importe legten sonst jede Regel doppelt an, 17.10.2026)
+      creates.push(stmts.length);
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ruleId, p.vehicle_id, p.kind, p.interval, km.interval, last, km.last, km.due, next, p.evidence, user.id, now, now, p.dueSource, now));
-      if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
+        SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15 WHERE NOT EXISTS (SELECT 1 FROM maintenance_rules WHERE vehicle_id=?2 AND kind=?3)`)
+        .bind(ruleId, p.vehicle_id, p.kind, p.interval, km.interval, last, km.last, km.due, next, p.evidence, user.id, now, now, p.dueSource, now));
+      if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }, { ifRule: true }));
     } else if (action === 'aktualisiert') {
       result.updated++;
       stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=? WHERE id=?`)
@@ -454,12 +469,36 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   }
   result.skipped.sort((a, b) => a.line - b.line);
   if (!dryRun) {
-    for (let i = 0; i < stmts.length; i += 200) await env.DB.batch(stmts.slice(i, i + 200));
+    const missed = await runBatchesCounting(env, stmts, creates);
+    if (missed) { result.created -= missed; result.unchanged += missed; result.concurrent = missed; }
     await audit(env, user.id, 'maintenance.import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
     const hv = [...new Set(result.rows.filter((r) => r.kind === 'HU' || r.kind === 'SP').map((r) => r.vehicle_id))];
     if (hv.length) result.husp_recalc = (await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: hv })).changed;
   }
   return result;
+}
+
+// Kennzeichen → Fahrzeug; doppeltes Kennzeichen wegen ruhendem Doppel (Fall SZ-YC 5539) → das bewertete Fahrzeug, wie beim
+// Auslesungen-Import und bei Bußgeldern (17.10.2026); sonst „mehrdeutig“
+function plateIndex(vehicles) {
+  const byPlate = new Map(); const evalOnly = new Map();
+  for (const v of vehicles) {
+    const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v);
+    if (!v.eval_excluded) evalOnly.set(k, evalOnly.has(k) ? 'mehrdeutig' : v);
+  }
+  for (const [k, v] of byPlate) if (v === 'mehrdeutig' && evalOnly.get(k) && evalOnly.get(k) !== 'mehrdeutig') byPlate.set(k, evalOnly.get(k));
+  return byPlate;
+}
+
+// Anweisungen in Stapeln zu 200 ausführen; zählt, wie viele der Anlage-Anweisungen (Indizes `creates`) nichts eingefügt haben
+// (inzwischen von einem gleichzeitigen Import angelegt)
+async function runBatchesCounting(env, stmts, creates) {
+  const idx = new Set(creates); let missed = 0;
+  for (let i = 0; i < stmts.length; i += 200) {
+    const res = await env.DB.batch(stmts.slice(i, i + 200));
+    res.forEach((r, n) => { if (idx.has(i + n) && !(r && r.meta && r.meta.changes > 0)) missed++; });
+  }
+  return missed;
 }
 
 // Rückruf-Import (z. B. Hersteller-/KBA-Liste je FIN): je Zeile ein einmaliger Rückruf (Prüfart „Rückruf“) mit Referenz als Nachweis.
@@ -476,10 +515,9 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
     due: col(['frist', 'fällig', 'faellig', 'nächster', 'naechster', 'termin']), note: col(['bemerkung', 'beschreibung', 'maßnahme', 'massnahme']) };
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
   if (ci.ref < 0) throw bad('validation', 'Spalte „Referenz“ (Rückrufnummer laut Schreiben) erforderlich.');
-  const vehicles = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1').all()).results;
+  const vehicles = (await env.DB.prepare('SELECT id, plate, eval_excluded FROM vehicles WHERE active=1').all()).results;
   const byId = new Map(vehicles.map((v) => [v.id, v]));
-  const byPlate = new Map();
-  for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
+  const byPlate = plateIndex(vehicles);
   // vorhandene Rückrufe: Nachweis = Referenz (offen) bzw. „Referenz · Durchführung: …“ (erledigt)
   const existing = (await env.DB.prepare(`SELECT id, vehicle_id, next_due_date, last_done_date, evidence FROM maintenance_rules WHERE kind='Rückruf'`).all()).results;
   // Referenz = Text vor „ – Bemerkung“ bzw. „ · Durchführung: …“ (Groß-/Kleinschreibung egal)
@@ -487,7 +525,7 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
   const known = new Map(existing.map((x) => [`${x.vehicle_id}|${refOf(x.evidence)}`, x]));
   const result = { dry_run: !!dryRun, created: 0, updated: 0, unchanged: 0, skipped: [], rows: [] };
   const seen = new Set();
-  const stmts = []; const now = nowIso();
+  const stmts = []; const creates = []; const now = nowIso();
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
   table.slice(1).forEach((cells, idx) => {
     const line = cells.line || idx + 2;
@@ -521,8 +559,13 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
     let action; const row = { line, plate: v.plate, vehicle_id: v.id, reference: ref, next_due_date: due.date, matched_by: matchedBy };
     if (!cur) {
       action = 'neu'; result.created++;
+      // gleiche Referenz am Fahrzeug nur einmal – auch bei zwei gleichzeitigen Importen (17.10.2026)
+      const r = refOf(ref);
+      creates.push(stmts.length);
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
-        VALUES (?,?,'Rückruf',NULL,NULL,NULL,NULL,NULL,?,?,?,?,?,?)`).bind(uuid(), v.id, due.date, evidence, user.id, now, now, due.date ? 'nachweis' : null));
+        SELECT ?1,?2,'Rückruf',NULL,NULL,NULL,NULL,NULL,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS (SELECT 1 FROM maintenance_rules WHERE vehicle_id=?2 AND kind='Rückruf'
+          AND (lower(evidence)=?9 OR instr(lower(evidence), ?9 || ' – ')=1 OR instr(lower(evidence), ?9 || ' · durchführung: ')=1))`)
+        .bind(uuid(), v.id, due.date, evidence, user.id, now, now, due.date ? 'nachweis' : null, r));
     } else if (cur.last_done_date) {
       action = 'erledigt'; result.unchanged++; // bereits durchgeführt – bleibt unverändert row.done_on = cur.last_done_date;
     } else if (due.date && !cur.next_due_date) {
@@ -536,7 +579,8 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
   });
   result.skipped.sort((a, b) => a.line - b.line);
   if (!dryRun) {
-    for (let i = 0; i < stmts.length; i += 200) await env.DB.batch(stmts.slice(i, i + 200));
+    const missed = await runBatchesCounting(env, stmts, creates);
+    if (missed) { result.created -= missed; result.unchanged += missed; result.concurrent = missed; }
     await audit(env, user.id, 'maintenance.recall_import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
   }
   return result;

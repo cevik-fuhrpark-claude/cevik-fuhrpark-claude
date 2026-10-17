@@ -230,7 +230,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     rows.push({ line, kind, target_id: target.id, label, downloaded_on: day, evidence, status: existing.has(key) ? 'vorhanden' : 'neu' });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
-  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows: rows.slice(0, 300), skipped: skipped.slice(0, 300) };
+  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows, skipped }; // alle Zeilen (höchstens MAX_IMPORT) – vorher nach 300 ohne Hinweis gekürzt (17.10.2026)
   if (dryRun || !fresh.length) return result;
   const now = nowIso();
   const items = fresh.map((r) => ({ id: uuid(), kind: r.kind, d: r.kind === 'fahrerkarte' ? r.target_id : null, v: r.kind === 'massenspeicher' ? r.target_id : null, on: r.downloaded_on, ev: r.evidence }));

@@ -56,7 +56,8 @@ export async function saveClaim(env, user, envName, caseId, body) {
   if (f.contract_id) {
     const k = await env.DB.prepare(`SELECT id, partner FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();
     if (!k) throw bad('validation', 'Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.');
-    if (!f.insurer) f.insurer = k.partner;
+    // Vertrag gewechselt, Versicherer unverändert mitgesendet (Formular füllt ihn vor) → Partner des neuen Vertrags (17.10.2026)
+    if (!f.insurer || (ex && ex.contract_id !== f.contract_id && f.insurer === ex.insurer)) f.insurer = k.partner;
   }
   if (!f.insurer) throw bad('validation', 'Versicherer angeben (oder Versicherungsvertrag wählen).');
   // Schreiben/Abrechnung als Datei desselben Vorgangs verknüpfen (Feld weglassen = unverändert, leer/null = Verknüpfung aufheben)

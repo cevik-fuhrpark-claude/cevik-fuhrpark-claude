@@ -1896,7 +1896,7 @@ async function renderTires(id, el) {
     const fd = new FormData(tf); const b = Object.fromEntries(fd);
     for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
     b.positions = fd.getAll('positions'); if (!b.positions.length) delete b.positions;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); (r.warnings || []).forEach((w) => toast(w, true)); if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.join(', ') : '✓'); renderTires(id, el); }
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (w.code === 'tread_below_min' ? t('tread_below_min').replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : '')).filter(Boolean) : r.warnings || []).forEach((w) => toast(w, true)); if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.join(', ') : '✓'); renderTires(id, el); }
     catch (err) { toast(err.message, true); }
   };
   if ($('#woform', el)) $('#woform', el).onsubmit = async (e) => { e.preventDefault(); const fm = e.target; const b = Object.fromEntries(new FormData(fm)); if (!b.planned_date) delete b.planned_date; fm.querySelector('button').disabled = true;
@@ -2410,7 +2410,7 @@ async function viewEmergencyEdit() {
   const e = edit || { kind: 'dispo', scope: 'all' };
   const opt = (v, cur, label) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
   const emFull = !edit && d.contacts.length >= d.max_active; // voll: nur Bearbeiten/Archivieren, kein neues Formular (Server lehnt ab)
-  const form = showArch ? '' : emFull ? `<p class="panel small" id="emfull" role="note">${esc(t('em_full').replace('{m}', d.max_active))}</p>` : `<section class="panel"><h2 style="margin-top:0">${esc(t(edit ? 'em_edit' : 'em_add'))}</h2><form id="emf">
+  const form = showArch ? '' : emFull ? `<p class="panel small" id="emfull" role="note">${esc(t('em_full').replace('{m}', d.max_active))}</p>` : `<section class="panel"><h2 style="margin-top:0">${esc(t(edit ? 'em_edit' : 'em_add'))}</h2><form id="emf">${edit ? `<input type="hidden" name="expected_updated_at" value="${esc(edit.updated_at || '')}">` : ''}
     <label>${esc(t('em_kind'))}</label><select name="kind">${d.kinds.map((k) => opt(k, e.kind, t('em_kind_' + k))).join('')}</select>
     <label>${esc(t('em_label'))}</label><input name="label" maxlength="60" required value="${esc(e.label || '')}">
     <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="30" required value="${esc(e.phone || '')}">
