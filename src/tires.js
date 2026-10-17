@@ -252,8 +252,13 @@ export async function tireFindings(env, environment, settings = null) {
   // Einstellungen vom Agenten durchgereicht (Abfragebudget), sonst einzeln laden
   const warnRow = settings ? { value: settings.get('tire_warn_tread_mm') ?? null } : await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_warn_tread_mm'`).first();
   const warn = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
-  const rows = (await env.DB.prepare(`SELECT t.vehicle_id, t.position, t.tread_mm, t.created_at, v.plate FROM tire_events t JOIN vehicles v ON v.id=t.vehicle_id
-    WHERE t.environment=? AND t.created_at = (SELECT MAX(t2.created_at) FROM tire_events t2 WHERE t2.environment=t.environment AND t2.vehicle_id=t.vehicle_id AND t2.position=t.position)`)
+  // Gleiche Regel wie Fahrzeugakte/Flottenübersicht: letzter MESSWERT je Position (Sichtprüfung/Luftdruck ohne Profil verdrängt ihn nicht;
+  // ein Wechsel ohne Messung setzt ihn zurück). Vorher zählte nur das neueste Ereignis – eine Sichtprüfung nach 1,2 mm ließ den
+  // kritischen Befund verschwinden, während Akte und Übersicht „unter Minimum“ zeigten (17.10.2026). Nur aktive Fahrzeuge wie die Übersicht.
+  const rows = (await env.DB.prepare(`SELECT x.vehicle_id, x.position, x.tread_mm, x.created_at, v.plate FROM (
+      SELECT t.vehicle_id, t.position, t.tread_mm, t.created_at, ROW_NUMBER() OVER (PARTITION BY t.vehicle_id, t.position ORDER BY t.created_at DESC, t.id DESC) AS rn
+      FROM tire_events t WHERE t.environment=? AND (t.tread_mm IS NOT NULL OR t.event_type='wechsel')) x
+    JOIN vehicles v ON v.id=x.vehicle_id WHERE x.rn=1 AND v.active=1`)
     .bind(environment).all()).results;
   const out = [];
   for (const r of rows) {

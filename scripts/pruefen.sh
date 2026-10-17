@@ -47,6 +47,7 @@ UI-Kalender in der App-Sprache|ui-kalender-sprache.py|/tmp/cfp-kalender.log
 UI-Restarbeiten in der App-Sprache|ui-restarbeiten-sprache.py|/tmp/cfp-restarbeiten.log
 UI-Datensicherung im Protokoll|ui-sicherung-protokoll.py|/tmp/cfp-sicherung-protokoll.log
 UI-Reifenalter/Zahlformen|ui-reifenalter.py|/tmp/cfp-reifenalter.log
+UI-Fahrernachweis abgelöst|ui-fahrernachweis-abgeloest.py|/tmp/cfp-fahrernachweis.log
 UI-Einstellungen Werteprüfung|ui-einstellungen-pruefung.py|/tmp/cfp-einstellungen.log
 UI-Einstellungen Altwerte|ui-einstellungen-altwerte.py|/tmp/cfp-einstellungen-altwerte.log
 UI-Einstellungen Vorwarnung|ui-einstellungen-vorwarnung.py|/tmp/cfp-einstellungen-vorwarnung.log

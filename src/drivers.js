@@ -37,10 +37,23 @@ function addMonthsIso(d, m) {
   return new Date(Date.UTC(y, mo - 1 + m, Math.min(da, last))).toISOString().slice(0, 10);
 }
 
+export const GROUPED_KINDS = ['unterweisung', 'sonstiges'];
 // Status je Fahrer aus aktuellen Nachweisen und letzter Führerscheinkontrolle
 export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) {
   const items = [];
+  // Unterweisung/Sonstiges ersetzen ältere Nachweise beim Erfassen nicht (mehrere Themen nebeneinander). Bewertet wird je Art + Titel
+  // (Groß-/Kleinschreibung, Leerzeichen egal) nur der Nachweis mit dem spätesten „gültig bis“; ältere derselben Gruppe gelten als
+  // durch den neueren abgelöst (`replaced`). Vorher blieb eine abgelaufene Unterweisung trotz neuer gültiger dauerhaft „kritisch“ (17.10.2026).
+  const groupKey = (x) => `${x.kind}|${String(x.title || '').trim().replace(/\s+/g, ' ').toLowerCase()}`;
+  const newest = new Map();
+  for (const x of docs) {
+    if (x.superseded || !x.valid_until || !GROUPED_KINDS.includes(x.kind)) continue;
+    const k = groupKey(x); const cur = newest.get(k);
+    if (!cur || x.valid_until > cur.valid_until) newest.set(k, x);
+  }
+  const replaced = [];
   for (const d of docs.filter((x) => !x.superseded && x.valid_until)) {
+    if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until }); continue; } }
     const left = days(today, d.valid_until);
     items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok' });
   }
@@ -54,7 +67,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   const hasLicense = docs.some((x) => !x.superseded && x.kind === 'fuehrerschein');
   const worst = items.some((i) => i.status === 'abgelaufen') || check.status === 'mangel' ? 'kritisch'
     : items.some((i) => i.status === 'laeuft_ab') || ['faellig', 'fehlt'].includes(check.status) || !hasLicense ? 'hinweis' : 'ok';
-  return { items, check, has_license: hasLicense, overall: worst };
+  return { items, replaced, check, has_license: hasLicense, overall: worst };
 }
 
 async function loadDriver(env, user, envName, id) {
@@ -72,7 +85,7 @@ export async function listDrivers(env, user, envName, query = {}, settings = nul
   }
   const active = query.inactive === '1' ? 0 : 1;
   const drivers = (await env.DB.prepare(`SELECT d.*, u.username FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, active).all()).results;
-  const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.valid_until, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
+  const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.valid_until, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.driver_id, c.checked_on, c.result FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id
     WHERE d.environment=? AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id)`).bind(envName).all()).results;
   const c = cfg(settings || await settingsMap(env)); const today = berlinDate();

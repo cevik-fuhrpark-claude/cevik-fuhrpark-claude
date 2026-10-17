@@ -9383,6 +9383,78 @@ await test('Alle API-Antworten der Testsuite: Sicherheitsheader, kein öffentlic
   console.log(`     ${R.length} API-Antworten geprüft, davon ${cookies.length} mit Sitzungscookie`);
 });
 
+// 17.10.2026: Reifenbefund des Agenten nach derselben Regel wie Akte/Flottenübersicht (letzter Messwert je Position, nur aktive Fahrzeuge)
+await test('Fuhrparkagent Reifen: Sichtprüfung ohne Profil verdrängt keinen Messwert unter Minimum; Wechsel setzt zurück; außer Betrieb kein Befund', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { tireFindings, tireOverview, fleetTires } = await import('../src/tires.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const E = 'production'; const now = new Date().toISOString(); const run = (sql, ...a) => db.prepare(sql).run(...a);
+  run(`INSERT INTO users(id,username,display_name,role,environment,created_at,updated_at) VALUES('u1','own','Own','owner',?,?,?)`, E, now, now);
+  for (const [id, plate, active] of [['v1', 'T-RF 1', 1], ['v2', 'T-RF 2', 1], ['v3', 'T-RF 3', 0]]) run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES(?,?,?,'lkw',?,0,?,?)`, id, `WDB0000000000000${id.slice(1)}`, plate, active, now, now);
+  const ev = (id, v, pos, type, mm, at) => run(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,recorded_by,created_at) VALUES(?,?,?,?,?,?,'u1',?)`, id, E, v, pos, type, mm, at);
+  ev('a1', 'v1', 'VA-L', 'messung', 1.2, '2026-10-16T08:00:00.000Z'); ev('a2', 'v1', 'VA-L', 'sichtpruefung', null, '2026-10-17T06:00:00.000Z');
+  ev('b1', 'v2', 'VA-L', 'messung', 1.0, '2026-10-15T08:00:00.000Z'); ev('b2', 'v2', 'VA-L', 'wechsel', null, '2026-10-16T08:00:00.000Z'); ev('b3', 'v2', 'VA-L', 'sichtpruefung', null, '2026-10-17T08:00:00.000Z');
+  ev('c1', 'v3', 'VA-L', 'messung', 1.3, '2026-10-16T08:00:00.000Z');
+  const f = await tireFindings(e, E, new Map());
+  eq(JSON.stringify(f.map((x) => [x.plate, x.position, x.tread_mm, x.severity])), JSON.stringify([['T-RF 1', 'VA-L', 1.2, 'kritisch']]), 'Agentenbefunde:');
+  // gleiche Aussage wie Fahrzeugakte und Flottenübersicht
+  const o = { id: 'u1', role: 'owner' };
+  eq((await tireOverview(e, o, E, 'v1')).positions.find((p) => p.position === 'VA-L').status, 'unter_minimum', 'Akte T-RF 1:');
+  const fl = await fleetTires(e, o, E, {});
+  eq(fl.rows.find((r) => r.plate === 'T-RF 1').status, 'unter_minimum', 'Übersicht T-RF 1:');
+  eq(fl.rows.find((r) => r.plate === 'T-RF 2').status, 'unbekannt', 'Übersicht T-RF 2 nach Wechsel:');
+  ok(!fl.rows.some((r) => r.plate === 'T-RF 3'), 'außer Betrieb nicht in der Übersicht');
+});
+
+// 17.10.2026: Versicherungsfälle – unbewertete Fremdleistung, die eigene Arbeit/Teile ersetzt, ergab „0 €“ und einen erfundenen Saldo
+await test('Versicherungsfälle: Fremdleistung „ersetzt eigene Arbeit“ unbewertet/geschätzt → Kosten und Saldo unbewertet, wie im Vorgang', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { claimOverview } = await import('../src/claims.js'); const { caseCosts } = await import('../src/cases.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const E = 'production'; const now = new Date().toISOString(); const run = (sql, ...a) => db.prepare(sql).run(...a);
+  run(`INSERT INTO users(id,username,display_name,role,environment,created_at,updated_at) VALUES('u1','own','Own','owner',?,?,?)`, E, now, now);
+  run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('v1','WDB00000000000001','T-VS 1','lkw',1,0,?,?)`, now, now);
+  const mk = (n, amount, valuation) => {
+    run(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at) VALUES(?,?,?,'v1','u1','Unfall','mittel','mittel','fahrbereit','in_reparatur',?,'h',?,?)`, 'c' + n, 'V-' + n, E, 'rk' + n, now, now);
+    run(`INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at) VALUES(?,?,'u1','2026-10-16',3,'eigene Arbeit',?)`, 'w' + n, 'c' + n, now);
+    run(`INSERT INTO external_costs(id,case_id,user_id,supplier,amount_net,valuation,covers_work_and_parts,created_at) VALUES(?,?,'u1','Karosseriebau',?,?,1,?)`, 'e' + n, 'c' + n, amount, valuation, now);
+    run(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,insurer,reported_on,status,reimbursed_net,reimbursed_on,evidence,created_by,created_at,updated_at) VALUES(?,?,?,'v1','Versicherer','2026-09-01','reguliert',2500,'2026-10-01','Schreiben','u1',?,?)`, 'ic' + n, 'c' + n, E, now, now);
+  };
+  mk(1, null, 'unvalued'); mk(2, 1800, 'estimate'); mk(3, 2000, 'actual');
+  const co = await claimOverview(e, { id: 'u1', role: 'owner' }, E, { filter: 'alle' });
+  const by = (no) => co.claims.find((c) => c.case_no === no);
+  eq(JSON.stringify([by('V-1').case_cost_net, by('V-1').balance_net]), '[null,null]', 'unbewertet:');
+  eq(JSON.stringify([by('V-2').case_cost_net, by('V-2').balance_net]), '[null,null]', 'geschätzt:');
+  eq(JSON.stringify([by('V-3').case_cost_net, by('V-3').balance_net]), '[2000,-500]', 'Ist-Rechnung (eigene Stunden ohne Stundensatz zählen nicht):');
+  eq((await caseCosts(e, 'c1')).complete, false, 'Vorgang c1 unvollständig wie Versicherungsfall');
+});
+
+// 17.10.2026: Unterweisung/Sonstiges – neuerer Nachweis gleicher Art und gleichen Titels löst den älteren ab (vorher dauerhaft „kritisch“)
+await test('Fahrerakte: abgelaufene Unterweisung durch neuere gleichen Titels abgelöst; anderer Titel bleibt eigenständig; Agent ohne Altbefund', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { driverStatus, driverDetail, driverFindings } = await import('../src/drivers.js');
+  const cfg = { warnDays: 30, checkMonths: null };
+  const doc = (id, kind, title, vu) => ({ id, kind, title, valid_until: vu, superseded: 0 });
+  const lic = doc('L', 'fuehrerschein', null, '2099-01-01');
+  let s = driverStatus([lic, doc('a', 'unterweisung', 'Ladungssicherung', '2026-09-30'), doc('b', 'unterweisung', ' ladungssicherung ', '2027-09-30')], null, '2026-10-17', cfg);
+  eq(s.items.filter((i) => i.kind === 'unterweisung').map((i) => i.id).join(), 'b', 'nur neuere bewertet:');
+  eq(JSON.stringify(s.replaced), JSON.stringify([{ id: 'a', by: 'b', by_valid_until: '2027-09-30' }]), 'abgelöst:');
+  ok(s.overall !== 'kritisch', 'nicht mehr kritisch');
+  s = driverStatus([lic, doc('a', 'unterweisung', 'Ladungssicherung', '2026-09-30'), doc('c', 'unterweisung', 'Gefahrgut', '2027-09-30')], null, '2026-10-17', cfg);
+  eq(s.overall, 'kritisch', 'anderes Thema ersetzt nicht:'); eq(s.replaced.length, 0, 'keine Ablösung über Themen:');
+  // Führerschein/Fahrerkarte/Code 95 unverändert (Ersetzen beim Erfassen über superseded)
+  s = driverStatus([doc('f1', 'fahrerkarte', null, '2026-09-30'), doc('f2', 'fahrerkarte', null, '2030-01-01'), lic], null, '2026-10-17', cfg);
+  eq(s.overall, 'kritisch', 'Fahrerkarte ohne superseded weiter einzeln:');
+  // Ende-zu-Ende: Liste (Agent) und Akte gleich
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const E = 'production'; const now = new Date().toISOString();
+  db.prepare(`INSERT INTO users(id,username,display_name,role,environment,created_at,updated_at) VALUES('u1','own','Own','owner',?,?,?)`).run(E, now, now);
+  db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at) VALUES('d1',?,'Testfahrer',1,'u1',?,?)`).run(E, now, now);
+  const ins = db.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,valid_until,evidence,superseded,created_by,created_at) VALUES(?,'d1',?,?,?,'Nachweis',0,'u1',?)`);
+  ins.run('L', 'fuehrerschein', null, '2099-01-01', now); ins.run('a', 'unterweisung', 'UVV', '2000-01-31', now); ins.run('b', 'unterweisung', 'uvv', '2099-12-31', now);
+  const dd = await driverDetail(e, { id: 'u1', role: 'owner' }, E, 'd1');
+  eq(dd.status.replaced.map((r) => r.id).join(), 'a', 'Akte abgelöst:');
+  ok(!(await driverFindings(e, E)).some((f) => f.code === 'DRIVER_DOC_EXPIRED'), 'kein Befund „abgelaufen“');
+  const { readFileSync } = await import('node:fs'); const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  eq((i18n.match(/ddoc_replaced: '[^']*\{date\}/g) || []).length, 3, 'Text „abgelöst“ DE/UK/EN:');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
