@@ -456,7 +456,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
 
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=?`).bind(str(body.user_id, { required: true, max: 40 }), envName).first();
+  const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40 }), envName).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();

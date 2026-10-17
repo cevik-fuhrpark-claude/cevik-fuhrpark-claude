@@ -721,6 +721,12 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     results[i] = { id, case_no: caseNo, duplicate: false, safety_lock: !!safetyLock };
   });
   const v = (key) => `json_extract(value,'$.${key}')`;
+  // Aufträge aus Prüftermin/Prüfmangel/Winterreifen: „höchstens ein offener“ im selben Stapel geprüft (Muster cmd_guard) – zwei gleichzeitige
+  // Klicks verschiedener Personen legten sonst zwei freigegebene Aufträge an (Vorabprüfung per SELECT, 17.10.2026)
+  const oneOpen = internal.tire_order ? ["tire_order='winter' AND vehicle_id=?2", rows[0] && rows[0].vehicle_id] : internal.maintenance_rule_id ? ['maintenance_rule_id=?2', internal.maintenance_rule_id]
+    : internal.maintenance_event_id ? ['maintenance_event_id=?2', internal.maintenance_event_id] : null;
+  const openSql = oneOpen ? `FROM cases WHERE environment=?1 AND ${oneOpen[0]} AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')` : '';
+  const guard = oneOpen ? [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*) <= 1 THEN 1 ELSE 0 END ${openSql}`).bind(envName, oneOpen[1]), env.DB.prepare('DELETE FROM cmd_guard')] : [];
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
@@ -731,8 +737,13 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
       env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         SELECT ${v('id')}, ${v('case_id')}, ?1, ?2, ?3, 'create', NULL, 'gemeldet', NULL, 1, NULL, ${v('payload')}, ?4 FROM json_each(?5)`)
         .bind(envName, user.id, user.role, now, JSON.stringify(events)),
+      ...guard,
     ]);
   } catch (e) {
+    if (oneOpen && String(e && e.message).includes('CHECK')) {
+      const o = await env.DB.prepare(`SELECT id, case_no ${openSql} ORDER BY created_at LIMIT 1`).bind(envName, oneOpen[1]).first();
+      throw conflict('order_exists', `Es gibt bereits den offenen Auftrag ${o ? o.case_no : ''}.`, o ? { case_id: o.id, case_no: o.case_no } : undefined);
+    }
     // Paralleler Doppelklick: eindeutiger request_key greift (Batch ist atomar – entweder alle oder keine angelegt)
     const again = await byKey();
     if (specs.every((x) => again.get(x.requestKey)?.content_hash === x.contentHash)) return specs.map((x) => ({ id: again.get(x.requestKey).id, case_no: again.get(x.requestKey).case_no, duplicate: true }));

@@ -49,6 +49,9 @@ export async function saveClaim(env, user, envName, caseId, body) {
   const c = await env.DB.prepare('SELECT id, case_no, vehicle_id FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
   if (!c) throw notFound('Vorgang nicht gefunden.');
   const ex = await env.DB.prepare('SELECT * FROM insurance_claims WHERE case_id=?').bind(c.id).first();
+  // Stand beim Öffnen des Formulars (die App sendet ihn; leer = damals noch kein Versicherungsfall) – sonst überschrieb ein veraltetes Formular
+  // z. B. Erstattung und Status „reguliert“ (17.10.2026); ohne Feld (ältere Aufrufer) wie bisher
+  if (body.expected_updated_at !== undefined && (body.expected_updated_at || null) !== (ex ? ex.updated_at : null)) throw conflict('version_conflict', ex ? 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.' : 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.');
   const f = readBody(body, ex || {});
   if (f.contract_id) {
     const k = await env.DB.prepare(`SELECT id, partner FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();

@@ -5988,7 +5988,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
   { const ce = d.events.find((e) => e.action === 'create'); const pl = typeof ce.payload === 'string' ? JSON.parse(ce.payload) : ce.payload;
     eq(pl.origin, 'wartung', 'Anlage-Ereignis nennt Herkunft Wartung (Verknüpfung im selben Batch)'); }
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 25), 'Auftrag aus Prüftermin ≤ 25 Abfragen');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 27), 'Auftrag aus Prüftermin ≤ 27 Abfragen'); // +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
   { // Anfragedaten können Herkunft/Verknüpfung nicht setzen
     const fake = await users.fleet.post('/api/cases', { vehicle_id: rule.data.vehicle_id || V1, description: 'Test Herkunft fremd gesetzt', origin: 'wartung', maintenance_rule_id: rule.data.id, request_key: rk() });
     eq(fake.status, 201); const fc = (await users.fleet.get(`/api/cases/${fake.data.id}`)).data;
@@ -6075,7 +6075,7 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.priority, 'kritisch'); eq(o.data.driveability, 'nicht_fahrbereit');
   const c = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
   eq(c.case.origin, 'wartung'); eq(c.case.maintenance_event_id, evBad.id, 'Verknüpfung gespeichert');
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 27), 'Auftrag aus Prüfung ≤ 27 Abfragen');
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 29), 'Auftrag aus Prüfung ≤ 29 Abfragen'); // +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
   console.log('     Auftrag aus Prüftermin/Prüfung max. ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').map((w) => w.n)) + ' / ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').map((w) => w.n)) + ' Abfragen');
   ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
   eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
@@ -10175,6 +10175,65 @@ await test('Lager/Auslesungen/Datenqualität: Bestellvermerk nicht überschriebe
   eq(qi.filter((x) => x.check === 'assignment_inactive_user').length, 0, 'kein Befund für außer Betrieb genommenes Fahrzeug');
   db.prepare(`UPDATE vehicles SET active=1 WHERE id='alt'`).run();
   eq((await U.fleet.get('/api/admin/data-quality')).data.items.filter((x) => x.check === 'assignment_inactive_user').length, 1, 'aktives Fahrzeug: Befund bleibt');
+});
+
+await test('Fahrerakte/Konten/Aufträge/Verträge: älterer Nachweis löst nicht ab, erneute Unterweisung ohne „gültig bis“, Umgebungswechsel beendet Zuordnungen, ein offener Winterreifen-Auftrag, veraltetes Formular 409, Zähler je Vertragsart, km-Grundlage bestätigen', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774';
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  // 1. nachgetragene alte Fahrerkarte löst die neue nicht ab
+  const d = (await F.post('/api/drivers', { display_name: 'Max Muster', user_id: U.driver.id })).data.id;
+  eq((await F.post(`/api/drivers/${d}/documents`, { kind: 'fahrerkarte', evidence: 'neue Karte', issued_on: '2025-03-01', valid_until: '2030-03-01' })).status, 201);
+  const old = await F.post(`/api/drivers/${d}/documents`, { kind: 'fahrerkarte', evidence: 'alte Karte (Nachtrag)', issued_on: '2021-03-01', valid_until: '2026-03-01' });
+  eq(`${old.status} ${old.data.older_than_current}`, '201 true', 'als Verlauf gespeichert');
+  const docsActive = () => db.prepare(`SELECT valid_until FROM driver_documents WHERE driver_id=? AND kind='fahrerkarte' AND superseded=0`).all(d).map((r) => r.valid_until).join();
+  eq(docsActive(), '2030-03-01', 'neue Karte bleibt aktuell');
+  eq((await F.post(`/api/drivers/${d}/documents`, { kind: 'fahrerkarte', evidence: 'Folgekarte', issued_on: '2026-10-01', valid_until: '2031-10-01' })).data.older_than_current, undefined);
+  eq(docsActive(), '2031-10-01', 'neuere Karte löst ab');
+  // 2. erneute Unterweisung nur mit Ausstellungsdatum löst die abgelaufene ab
+  await F.post(`/api/drivers/${d}/documents`, { kind: 'unterweisung', title: 'Ladungssicherung', evidence: 'U 2025', issued_on: '2025-09-01', valid_until: '2026-09-01' });
+  ok((await F.get(`/api/drivers/${d}`)).data.status.items.some((i) => i.kind === 'unterweisung' && i.status === 'abgelaufen'), 'zunächst abgelaufen');
+  await F.post(`/api/drivers/${d}/documents`, { kind: 'unterweisung', title: 'ladungssicherung ', evidence: 'U 2026', issued_on: '2026-10-10' });
+  const st = (await F.get(`/api/drivers/${d}`)).data.status;
+  ok(!st.items.some((i) => i.kind === 'unterweisung'), 'keine abgelaufene Unterweisung mehr'); eq(st.replaced[0].by_issued_on, '2026-10-10');
+  // 3. Konto in andere Umgebung: Zuordnung beendet, Fahrerakte der alten Umgebung gibt Konto frei; deaktiviertes Konto nicht zuordenbar
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  eq((await U.own.req('PATCH', `/api/users/${U.driver.id}`, { environment: 'production' })).status, 200);
+  eq(db.prepare(`SELECT COUNT(*) n FROM driver_vehicles WHERE user_id=? AND valid_to IS NULL`).get(U.driver.id).n, 0, 'Zuordnung beendet');
+  eq(db.prepare('SELECT user_id FROM drivers WHERE id=?').get(d).user_id, null, 'Akte der Test-Umgebung gibt Konto frei');
+  eq((await U.own.req('PATCH', `/api/users/${U.driver.id}`, { environment: 'test', active: false })).status, 200);
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 400, 'deaktiviertes Konto');
+  // 4. zwei Personen beauftragen gleichzeitig Winterreifen → ein Auftrag
+  const r = await U.own.post('/api/users', { username: 'w.fuhrpark2', display_name: 'Leitung 2', role: 'fleet', environment: 'test' });
+  const F2 = new Client(worker, e, 'w.fuhrpark2'); await F2.post('/api/invite/accept', { token: r.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const res = await Promise.all([F, F2].map((c) => c.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() })));
+  eq(res.map((x) => x.status).sort().join(), '201,409', 'ein Auftrag, einmal 409: ' + JSON.stringify(res.map((x) => x.data)));
+  eq(db.prepare(`SELECT COUNT(*) n FROM cases WHERE tire_order='winter' AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).get().n, 1);
+  // 5. veraltetes Formular (Vertrag, Versicherungsfall) → 409
+  const c = (await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'LeaseCo', evidence: 'L-1', start_date: '2026-01-01', end_date: '2028-12-31', km_allowance: 100000, start_km: 50000 })).data.id;
+  const form = (await F.get(`/api/vehicles/${V1}`)).data.contracts.find((x) => x.id === c);
+  eq((await F2.req('PATCH', `/api/contracts/${c}`, { monthly_rate_net: 1180 })).status, 200);
+  eq((await F.req('PATCH', `/api/contracts/${c}`, { note: 'x', expected_updated_at: form.updated_at })).status, 409, 'veraltetes Vertragsformular');
+  const fresh = (await F.get(`/api/vehicles/${V1}`)).data.contracts.find((x) => x.id === c);
+  eq((await F.req('PATCH', `/api/contracts/${c}`, { note: 'x', expected_updated_at: fresh.updated_at })).status, 200, 'aktueller Stand');
+  const cs = ((await F.post('/api/cases', { vehicle_id: V1, description: 'Unfallschaden Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id);
+  eq((await F.req('PUT', `/api/cases/${cs}/claim`, { insurer: 'Allianz', reported_on: '2026-10-01', evidence: 'Meldung', expected_updated_at: null })).status, 200);
+  const cl = (await F.get(`/api/cases/${cs}`)).data.claim;
+  eq((await F2.req('PUT', `/api/cases/${cs}/claim`, { status: 'reguliert', reimbursed_net: 2500, reimbursed_on: '2026-10-15' })).status, 200);
+  eq((await F.req('PUT', `/api/cases/${cs}/claim`, { claim_no: 'S-1', expected_updated_at: cl.updated_at })).status, 409, 'veraltetes Versicherungsformular');
+  eq((await F.req('PUT', `/api/cases/${cs}/claim`, { insurer: 'X', reported_on: '2026-10-01', evidence: 'y', expected_updated_at: null })).status, 409, 'Formular „anlegen“, inzwischen angelegt');
+  // 6. Zähler passen zur gewählten Vertragsart
+  await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Allianz', evidence: 'V', start_date: '2026-01-01', end_date: '2027-12-31' });
+  const ov = (await F.get('/api/contracts?kind=versicherung')).data; eq(`${ov.counts.alle}/${ov.counts.aktiv}/${ov.contracts.length}`, '1/1/1', 'Zähler je Art');
+  // 7. km-Rücksprung (Tippfehler korrigiert): „nicht berechenbar“, bis der Vertrag mit geprüfter Grundlage gespeichert ist; dann Überschreitung erkannt
+  const t0 = Date.now(); const iso = (min) => new Date(t0 - min * 60000).toISOString();
+  const odo = (km, min, note = null) => db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES(?,?,?,?,'manuell',?,?,?)`).run(crypto.randomUUID(), vid, km, iso(min), U.fleet.id, new Date().toISOString(), note);
+  await new Promise((r) => setTimeout(r, 3)); odo(700000, 30); odo(70000, 20, 'Tippfehler korrigiert'); odo(160000, 10); await new Promise((r) => setTimeout(r, 3)); // Erfassungszeit eindeutig nach/vor dem Vertragsstand
+  const km = async () => (await F.get('/api/contracts')).data.contracts.find((x) => x.id === c).status.km.status;
+  eq(await km(), 'zaehler');
+  const cur = (await F.get(`/api/vehicles/${V1}`)).data.contracts.find((x) => x.id === c);
+  const conf = await F.req('PATCH', `/api/contracts/${c}`, { expected_updated_at: cur.updated_at, confirm_km_basis: '1' });
+  eq(`${conf.status} ${conf.data.km_basis_confirmed}`, '200 true', JSON.stringify(conf.data));
+  eq(await km(), 'ueber', '110 000 km gefahren > 100 000');
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

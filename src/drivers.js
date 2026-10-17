@@ -45,15 +45,24 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   // (Groß-/Kleinschreibung, Leerzeichen egal) nur der Nachweis mit dem spätesten „gültig bis“; ältere derselben Gruppe gelten als
   // durch den neueren abgelöst (`replaced`). Vorher blieb eine abgelaufene Unterweisung trotz neuer gültiger dauerhaft „kritisch“ (17.10.2026).
   const groupKey = (x) => `${x.kind}|${String(x.title || '').trim().replace(/\s+/g, ' ').toLowerCase()}`;
+  // Neuester je Gruppe: beide mit „gültig bis“ → spätestes; sonst nach Ausstellungsdatum (ohne: Erfassungstag) – eine erneute Unterweisung
+  // ohne „gültig bis“ löst die abgelaufene ab (17.10.2026), ein nachgetragener älterer Nachweis nicht
+  const newer = (a, b) => {
+    if (a.valid_until && b.valid_until && a.valid_until !== b.valid_until) return a.valid_until > b.valid_until;
+    const da = a.issued_on || String(a.created_at || '').slice(0, 10); const db = b.issued_on || String(b.created_at || '').slice(0, 10);
+    if (da !== db) return da > db;
+    if (!!a.valid_until !== !!b.valid_until) return !!a.valid_until;
+    return String(a.created_at || '') > String(b.created_at || '');
+  };
   const newest = new Map();
   for (const x of docs) {
-    if (x.superseded || !x.valid_until || !GROUPED_KINDS.includes(x.kind)) continue;
+    if (x.superseded || !GROUPED_KINDS.includes(x.kind)) continue;
     const k = groupKey(x); const cur = newest.get(k);
-    if (!cur || x.valid_until > cur.valid_until) newest.set(k, x);
+    if (!cur || newer(x, cur)) newest.set(k, x);
   }
   const replaced = [];
   for (const d of docs.filter((x) => !x.superseded && x.valid_until)) {
-    if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until }); continue; } }
+    if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until || null, ...(n.valid_until ? {} : { by_issued_on: n.issued_on || String(n.created_at || '').slice(0, 10) || null }) }); continue; } }
     const left = days(today, d.valid_until);
     const topic = GROUPED_KINDS.includes(d.kind) ? groupKey(d).slice(d.kind.length + 1) : '';
     items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic } : {}) });
@@ -86,7 +95,7 @@ export async function listDrivers(env, user, envName, query = {}, settings = nul
   }
   const active = query.inactive === '1' ? 0 : 1;
   const drivers = (await env.DB.prepare(`SELECT d.*, u.username FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, active).all()).results;
-  const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.valid_until, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
+  const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.valid_until, x.issued_on, x.created_at, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.driver_id, c.checked_on, c.result FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id
     WHERE d.environment=? AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id)`).bind(envName).all()).results;
   const c = cfg(settings || await settingsMap(env)); const today = berlinDate();
@@ -162,13 +171,22 @@ export async function addDriverDocument(env, user, envName, id, body) {
   if (['fahrerkarte', 'code95'].includes(kind) && !valid) throw bad('validation', 'Gültig bis laut Dokument angeben.');
   const docId = uuid(); const now = nowIso();
   const stmts = [];
-  // Neuer Nachweis gleicher Art (außer Unterweisung/Sonstiges) ersetzt den bisherigen – Historie bleibt erhalten
-  if (['fuehrerschein', 'fahrerkarte', 'code95'].includes(kind)) stmts.push(env.DB.prepare('UPDATE driver_documents SET superseded=1 WHERE driver_id=? AND kind=? AND superseded=0').bind(id, kind));
-  stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,0,?,?)`)
+  // Neuer Nachweis gleicher Art (außer Unterweisung/Sonstiges) ersetzt den bisherigen – Historie bleibt erhalten. Ein nachgetragener **älterer**
+  // Nachweis (früheres „gültig bis“ bzw. – ohne – früheres Ausstellungsdatum als ein aktueller) wird nur als Verlauf gespeichert (17.10.2026;
+  // vorher löste die alte Karte die neue ab → Akte „abgelaufen“, Agent „Nicht einsetzen“). Prüfung und Schreiben in einem Stapel.
+  const single = ['fuehrerschein', 'fahrerkarte', 'code95'].includes(kind);
+  const newerExists = `EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=?2 AND x.kind=?3 AND x.superseded=0 AND (
+      (x.valid_until IS NOT NULL AND ?8 IS NOT NULL AND x.valid_until > ?8)
+      OR ((x.valid_until IS NULL OR ?8 IS NULL) AND x.issued_on IS NOT NULL AND ?7 IS NOT NULL AND x.issued_on > ?7)))`;
+  stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
+      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11)`)
     .bind(docId, id, kind, str(body.title, { max: 120 }), str(body.number, { max: 40 }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60 }) : null, issued, valid, evidence, user.id, now));
+  if (single) stmts.push(env.DB.prepare(`UPDATE driver_documents SET superseded=1 WHERE driver_id=?1 AND kind=?2 AND superseded=0 AND id<>?3
+      AND (SELECT superseded FROM driver_documents WHERE id=?3)=0`).bind(id, kind, docId));
   await env.DB.batch(stmts);
-  await audit(env, user.id, 'driver.document', id, { kind, valid_until: valid });
-  return { id: docId };
+  const older = single && (await env.DB.prepare('SELECT superseded FROM driver_documents WHERE id=?').bind(docId).first()).superseded === 1;
+  await audit(env, user.id, 'driver.document', id, { kind, valid_until: valid, ...(older ? { history_only: true } : {}) });
+  return { id: docId, ...(older ? { older_than_current: true } : {}) };
 }
 
 export async function addLicenseCheck(env, user, envName, id, body) {

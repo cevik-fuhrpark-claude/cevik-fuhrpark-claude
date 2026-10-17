@@ -50,7 +50,9 @@ export function contractStatus(c, latest, today, warnDays) {
   if (c.km_allowance) {
     if (c.start_km === null || c.start_km === undefined) km = { status: 'ohne_start', allowance: c.km_allowance };
     // km-Zähler nach Vertragsbeginn gesunken (Tachotausch o. Ä.): gefahrene km gegen das Kontingent nicht berechenbar – nie schätzen
-    else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date)) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
+    // Gilt nur, bis der Vertrag danach gespeichert wurde (km bei Übernahme geprüft) – wie `km_basis_at` bei Prüfterminen; vorher blieb ein
+    // korrigierter Tippfehler für immer „nicht berechenbar“ und eine echte Überschreitung unbemerkt (17.10.2026)
+    else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !(c.updated_at && c.updated_at > (latest.drop_rec || latest.drop_at))) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
     else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date) || latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
     else {
       const driven = latest.km - c.start_km;
@@ -124,10 +126,20 @@ export async function updateContract(env, user, id, body, envName) {
   if (!isMgr(user)) throw forbidden();
   const c = await loadContract(env, id);
   if (c.ended_on) throw bad('contract_ended', 'Beendete Verträge werden nicht mehr geändert (Nachweis bleibt erhalten).');
+  // Stand beim Öffnen des Formulars (die App sendet ihn): ein länger offenes Formular überschrieb sonst inzwischen gespeicherte Änderungen
+  if (body.expected_updated_at && String(body.expected_updated_at) !== c.updated_at) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   const f = readBody(body, c);
   // Vertragsdokument nur ändern, wenn das Feld mitgeschickt wird (Import/ältere Oberflächen lassen es unverändert)
   f.file_id = body.file_id !== undefined ? await checkFile(env, c.vehicle_id, envName, body.file_id) : c.file_id;
   const changed = Object.keys(f).filter((k) => f[k] !== c[k]);
+  // km-Grundlage nach Zähler-Rücksprung geprüft (Formular sendet `confirm_km_basis`, wenn das Kontingent „nicht berechenbar“ ist): Speichern ohne
+  // Änderung zählt als Bestätigung – ab jetzt wird wieder gerechnet (Stand des Vertrags = Grundlage, siehe contractStatus)
+  if (!changed.length && body.confirm_km_basis && c.km_allowance) {
+    const t = await env.DB.prepare('UPDATE vehicle_contracts SET updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(laterIso(c.updated_at), id, c.updated_at).run();
+    if (!(t.meta && t.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
+    await audit(env, user.id, 'contract.update', id, { vehicle: c.plate, km_basis_confirmed: true });
+    return { id, changed: [], km_basis_confirmed: true };
+  }
   if (!changed.length) return { id, changed: [] };
   // nur auf dem gelesenen Stand und solange nicht beendet (vorher: parallele Änderungen überschrieben sich gegenseitig, beendete Verträge
   // wurden trotzdem geändert – 17.10.2026)
@@ -177,10 +189,10 @@ export async function contractOverview(env, user, query = {}) {
   const today = berlinDate(); const w = warnDaysOf(settings);
   // Filter „Fahrzeug-Standort“ (Standort laut Fahrzeugstamm, Schreibweisen zusammengefasst) – vor den Zählern, damit diese zum Standort passen
   const sel = siteSelection(rows.results.map((r) => ({ site: r.vehicle_site })), query.site);
-  let list = rows.results.filter((c) => !sel.site || sel.match(c.vehicle_site)).map((c) => ({ ...c, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
+  // Vertragsart ebenfalls vor den Zählern (vorher „Handlungsbedarf (2)“ bei leerer Liste der gewählten Art, 17.10.2026)
+  let list = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind)).map((c) => ({ ...c, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
   for (const c of list) { if (c.ended_on) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
-  if (kind) list = list.filter((c) => c.kind === kind);
   if (filter === 'aktiv') list = list.filter((c) => !c.ended_on);
   else if (filter === 'aktion') list = list.filter((c) => !c.ended_on && c.status.overall !== 'ok');
   else if (filter === 'beendet') list = list.filter((c) => c.ended_on);

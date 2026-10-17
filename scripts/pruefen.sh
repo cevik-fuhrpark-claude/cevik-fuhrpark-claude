@@ -65,6 +65,7 @@ UI-Gewährleistungen (Hinweis bei Kappung)|ui-gewaehrleistung.py|/tmp/cfp-gewaeh
 UI-Nacharbeit/Kostenfreigabe (Hinweise im Aktionsformular)|ui-nacharbeit-freigabe.py|/tmp/cfp-nacharbeit-freigabe.log
 UI-Lager Entnahme mit Artikelpreis|ui-lager-entnahmepreis.py|/tmp/cfp-lager-entnahmepreis.log
 UI-Restarbeit nach Freigabe, Arbeitsdatum-Grenzen|ui-restarbeit-freigabe.py|/tmp/cfp-restarbeit-freigabe.log
+UI-Fahrerakte Nachtrag, Vertragsformular-Stand|ui-fahrerakte-nachtrag.py|/tmp/cfp-fahrerakte-nachtrag.log
 UI-Konflikt-Meldungen in der Sprache|ui-konfliktsprache.py|/tmp/cfp-konfliktsprache.log
 UI-Artikel-Stammdaten bearbeiten|ui-artikel-bearbeiten.py|/tmp/cfp-artikel-bearbeiten.log
 UI-Dokumentsprache (html lang)|ui-html-lang.py|/tmp/cfp-htmllang.log
