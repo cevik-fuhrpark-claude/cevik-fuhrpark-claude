@@ -52,7 +52,7 @@ export function contractStatus(c, latest, today, warnDays) {
     // km-Zähler nach Vertragsbeginn gesunken (Tachotausch o. Ä.): gefahrene km gegen das Kontingent nicht berechenbar – nie schätzen
     // Gilt nur, bis der Vertrag danach gespeichert wurde (km bei Übernahme geprüft) – wie `km_basis_at` bei Prüfterminen; vorher blieb ein
     // korrigierter Tippfehler für immer „nicht berechenbar“ und eine echte Überschreitung unbemerkt (17.10.2026)
-    else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !(c.updated_at && c.updated_at > (latest.drop_rec || latest.drop_at))) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
+    else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !((c.km_basis_at || c.updated_at) && (c.km_basis_at || c.updated_at) > (latest.drop_rec || latest.drop_at))) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
     else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date) || latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
     else {
       const driven = latest.km - c.start_km;
@@ -112,8 +112,8 @@ export async function createContract(env, user, vehicleId, body, envName) {
   const id = uuid(); const now = nowIso();
   // derselbe Vertrag (Schlüssel wie beim Import: Fahrzeug + Art + Vertragsnummer, ohne Nummer Partner + Beginn) nur einmal – Doppelklick/parallel
   // legte ihn sonst mehrfach an, Monatsraten zählten doppelt (17.10.2026)
-  const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at)
-    SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17
+  const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at,km_basis_at)
+    SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?17
     WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=?2 AND c.kind=?3 AND (CASE WHEN COALESCE(?5,'')<>''
       THEN LOWER(COALESCE(c.contract_no,''))=LOWER(?5)
       ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(?4,'')) AND COALESCE(c.start_date,'')=COALESCE(?6,'') END))`)
@@ -142,7 +142,8 @@ export async function updateContract(env, user, id, body, envName) {
   // km-Grundlage nach Zähler-Rücksprung geprüft (Formular sendet `confirm_km_basis`, wenn das Kontingent „nicht berechenbar“ ist): Speichern ohne
   // Änderung zählt als Bestätigung – ab jetzt wird wieder gerechnet (Stand des Vertrags = Grundlage, siehe contractStatus)
   if (!changed.length && body.confirm_km_basis && c.km_allowance) {
-    const t = await env.DB.prepare('UPDATE vehicle_contracts SET updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(laterIso(c.updated_at), id, c.updated_at).run();
+    const nt = laterIso(c.updated_at);
+    const t = await env.DB.prepare('UPDATE vehicle_contracts SET updated_at=?, km_basis_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(nt, nt, id, c.updated_at).run();
     if (!(t.meta && t.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
     await audit(env, user.id, 'contract.update', id, { vehicle: c.plate, km_basis_confirmed: true });
     return { id, changed: [], km_basis_confirmed: true };
@@ -156,9 +157,12 @@ export async function updateContract(env, user, id, body, envName) {
       THEN LOWER(COALESCE(d.contract_no,''))=LOWER(?3)
       ELSE COALESCE(d.contract_no,'')='' AND LOWER(COALESCE(d.partner,''))=LOWER(COALESCE(?2,'')) AND COALESCE(d.start_date,'')=COALESCE(?4,'') END))`;
   const CLAIM = `(?1<>'versicherung' AND EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.contract_id=?14))`;
-  const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?1,partner=?2,contract_no=?3,start_date=?4,end_date=?5,notice_months=?6,km_allowance=?7,start_km=?8,monthly_rate_net=?9,evidence=?10,note=?11,file_id=?12,updated_at=?13
+  const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?1,partner=?2,contract_no=?3,start_date=?4,end_date=?5,notice_months=?6,km_allowance=?7,start_km=?8,monthly_rate_net=?9,evidence=?10,note=?11,file_id=?12,updated_at=?13,
+      km_basis_at=CASE WHEN ?17 THEN ?13 ELSE km_basis_at END
       WHERE id=?14 AND ended_on IS NULL AND updated_at=?15 AND NOT ${DUP} AND NOT ${CLAIM}`)
-    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, laterIso(c.updated_at), id, c.updated_at, c.vehicle_id).run();
+    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, laterIso(c.updated_at), id, c.updated_at, c.vehicle_id,
+      // km-Grundlage nur neu, wenn sie sich ändert oder ausdrücklich bestätigt wird (Bemerkung/Rate klärten sonst einen Tachotausch, 17.10.2026)
+      ['start_km', 'km_allowance', 'start_date'].some((k) => changed.includes(k)) || flagLike(body.confirm_km_basis) ? 1 : 0).run();
   if (!(r.meta && r.meta.changes)) {
     const why = await env.DB.prepare(`SELECT ${DUP} AS dup, ${CLAIM} AS claim`).bind(f.kind, f.partner, f.contract_no, f.start_date, null, null, null, null, null, null, null, null, null, id, null, c.vehicle_id).first();
     if (why && why.claim) throw conflict('contract_in_claim', 'Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.');
@@ -288,6 +292,7 @@ export async function contractFindings(env, settings) {
 // Nur eindeutige Fahrzeuge (FIN, sonst eindeutiges Kennzeichen); vorhandene Verträge (gleiches Fahrzeug, Art und Vertragsnummer
 // bzw. ohne Nummer gleicher Partner und Beginn) bleiben unverändert – der Import überschreibt nie.
 const MAX_IMPORT = 500;
+const flagLike = (v) => v === true || v === 1 || v === '1' || v === 'true';
 const normVin = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const KIND_ALIASES = { leasing: 'leasing', leasingvertrag: 'leasing', miete: 'miete', mietvertrag: 'miete', vermietung: 'miete', rental: 'miete', finanzierung: 'finanzierung', kredit: 'finanzierung', darlehen: 'finanzierung',
   versicherung: 'versicherung', 'kfz-versicherung': 'versicherung', haftpflicht: 'versicherung', vollkasko: 'versicherung', teilkasko: 'versicherung', wartung: 'wartung', wartungsvertrag: 'wartung', service: 'wartung', 'full-service': 'wartung', sonstiges: 'sonstiges', sonstige: 'sonstiges', vertrag: 'sonstiges' };
@@ -385,8 +390,8 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const items = fresh.map((r) => ({ id: uuid(), v: r.vehicle_id, kind: r.kind, partner: r.partner, no: r.contract_no, sd: r.start_date, ed: r.end_date, nm: r.notice_months, ka: r.km_allowance, sk: r.start_km, rate: r.monthly_rate_net, ev: r.evidence, note: r.note }));
   const J = (k) => `json_extract(value,'$.${k}')`;
   // Vorhanden-Prüfung im Einfügen selbst (gleicher Schlüssel wie keyOf): zwei gleichzeitige Importe derselben Datei legten sonst jeden Vertrag doppelt an (17.10.2026)
-  const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at)
-    SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2 FROM json_each(?3)
+  const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at,km_basis_at)
+    SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2, ?2 FROM json_each(?3)
     WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=${J('v')} AND c.kind=${J('kind')} AND (CASE WHEN COALESCE(${J('no')},'')<>''
       THEN LOWER(COALESCE(c.contract_no,''))=LOWER(${J('no')})
       ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(${J('partner')},'')) AND COALESCE(c.start_date,'')=COALESCE(${J('sd')},'') END))`)

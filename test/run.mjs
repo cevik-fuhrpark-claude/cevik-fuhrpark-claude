@@ -11274,6 +11274,18 @@ await test('Fehlersuche 17.10. (9): Vertragsimport (bewertetes Fahrzeug, Laufzei
     const dq = (await G.get('/api/admin/data-quality')).data.items;
     ok(dq.some((i) => i.check === 'contract_km_below_start' && i.vehicle_id === w.V1), 'km unter Übernahme');
     ok(dq.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === V2W && / > 100200 km$/.test(i.detail)), JSON.stringify(dq.filter((i) => i.check === 'km_inspection_rejected'))); }
+  // 10. Vertrag nach Tachotausch: Bemerkung ändern klärt die km-Grundlage nicht (Migration 0058 km_basis_at), Bestätigung bzw. km bei Übernahme schon
+  { const w = await freshWorld(); const G = w.U.fleet; const wdb = w.e.DB.db;
+    const cid = (await G.post(`/api/vehicles/${w.V1}/contracts`, { kind: 'leasing', partner: 'KB', evidence: 'v', km_allowance: 100000, start_km: 50000 })).data.id;
+    const t0 = Date.now(); const iso = (min) => new Date(t0 + min * 60000).toISOString();
+    wdb.prepare('UPDATE vehicle_contracts SET created_at=?, updated_at=?, km_basis_at=? WHERE id=?').run(iso(-20), iso(-20), iso(-20), cid);
+    for (const [km, min, note] of [[90000, -10, null], [1000, -5, 'Tachotausch']]) wdb.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES(?,?,?,?,'manuell',?,?,?)`).run(crypto.randomUUID(), w.V1, km, iso(min), G.id, iso(min), note);
+    const st = async () => (await G.get('/api/contracts')).data.contracts.find((x) => x.id === cid);
+    eq((await st()).status.km.status, 'zaehler');
+    const c1 = await st(); eq((await G.req('PATCH', `/api/contracts/${cid}`, { note: 'Rate geprüft', expected_updated_at: c1.updated_at })).status, 200);
+    eq((await st()).status.km.status, 'zaehler', 'Bemerkung klärt nichts');
+    const c2 = await st(); eq((await G.req('PATCH', `/api/contracts/${cid}`, { start_km: 500, expected_updated_at: c2.updated_at })).status, 200);
+    eq((await st()).status.km.status, 'ok', 'neue km bei Übernahme = geprüft'); }
   // 8. Master-Eingang: zweiter offener Eintrag zum selben Befund zählt nicht doppelt
   { const before = (await F.get('/api/master')).data; const src = db.prepare(`SELECT m.* FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE m.environment='test' AND f.status='offen' AND m.decision_status='offen' LIMIT 1`).get();
     ok(src, 'Vorlage'); const cols = Object.keys(src);
