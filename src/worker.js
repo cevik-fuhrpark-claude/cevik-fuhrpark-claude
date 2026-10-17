@@ -254,6 +254,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/evaluation$/)) && m === 'POST') return json(await veh.setVehicleEvaluation(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/active$/)) && m === 'POST') return json(await veh.setVehicleActive(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/documents$/)) && m === 'POST') { await rateLimit(env, 'upload', user.id); return json(await veh.uploadVehicleDocument(env, user, envName, mm[1], request, Object.fromEntries(url.searchParams)), 201); }
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/documents\/([\w-]+)$/)) && m === 'PATCH') return json(await veh.updateVehicleDocument(env, user, envName, mm[1], mm[2], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/drivers$/)) && m === 'POST') return json(await veh.assignDriver(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/assignments\/([\w-]+)$/)) && m === 'DELETE') return json(await veh.endAssignment(env, user, envName, mm[1]));
   // Fahrzeugverträge (Leasing/Miete/Finanzierung/Versicherung/Wartung) – nur Inhaber/Fuhrparkleitung

@@ -18,6 +18,8 @@ const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Rückruf: einmalige Hersteller-/Werkstattaktion (Schreiben bzw. KBA-Referenz als Nachweis), Frist nur laut Schreiben, kein Intervall
 export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Feuerlöscher', 'Verbandkasten', 'Ladungssicherung', 'Rückruf', 'Sonstiges'];
 export const ONE_TIME_KINDS = ['Rückruf'];
+// Arten, die je Fahrzeug mehrfach vorkommen dürfen (mehrere Rückrufe, verschiedene sonstige Prüfungen)
+export const MULTI_RULE_KINDS = ['Rückruf', 'Sonstiges'];
 
 export async function listVehicles(env, user, envName, query = {}) {
   const active = query.inactive === '1' && isManager(user) ? 0 : 1;
@@ -390,12 +392,16 @@ export function normalizeVehicleKind(raw) {
 
 // Sammel-Upsert über json_each: eine Anweisung je 400 Fahrzeuge (Abfragebudget je Aufruf)
 // keepExisting (Import): leere/fehlende Felder überschreiben vorhandene Werte nicht – ein Import löscht nie Stammdaten
-async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false } = {}) {
+// Wechsel der Fahrzeugart (Lkw ↔ Anhänger): die Gewichtsklasse gehört zur alten Art (andere Klassen/SP-Pflicht) – sie wird aus der
+// belegten Gesamtmasse neu bestimmt bzw. ohne Masse „unbekannt“ (SP-Frist dann „ungeklärt“ statt still entfallen), HU/SP neu berechnet (17.10.2026)
+async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false, actorId = null } = {}) {
   const now = nowIso();
-  if (rows.some((r) => !r.kind)) {
-    const known = new Map((await env.DB.prepare('SELECT id, kind FROM vehicles').all()).results.map((v) => [v.id, v.kind]));
-    for (const r of rows) if (!r.kind) r.kind = known.get(r.id) || 'lkw';
-  }
+  const known = new Map((await env.DB.prepare('SELECT id, kind, zgm_class, zgm_kg FROM vehicles WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(rows.map((r) => r.id))).all()).results.map((v) => [v.id, v]));
+  for (const r of rows) if (!r.kind) r.kind = known.get(r.id)?.kind || 'lkw';
+  const kindChanged = rows.filter((r) => known.has(r.id) && known.get(r.id).kind !== r.kind).map((r) => {
+    const b = known.get(r.id);
+    return { id: r.id, plate: r.plate, from_kind: b.kind, to_kind: r.kind, from: b.zgm_class, to: zgmClassFromKg(r.kind, b.zgm_kg) };
+  });
   const J = (k) => `json_extract(value,'$.${k}')`;
   const stmts = [];
   for (let i = 0; i < rows.length; i += 400) {
@@ -406,7 +412,13 @@ async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive =
         .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=${keepExisting || keepActive ? 'vehicles.active' : '1'}, updated_at=excluded.updated_at`)
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
+  if (kindChanged.length) stmts.push(env.DB.prepare(`UPDATE vehicles SET zgm_class=json_extract(value,'$.to') FROM json_each(?) WHERE vehicles.id=json_extract(value,'$.id')`).bind(JSON.stringify(kindChanged)));
   if (stmts.length) await env.DB.batch(stmts);
+  if (kindChanged.length) {
+    for (const k of kindChanged) if (k.from !== k.to) await audit(env, actorId, 'vehicle.spec', k.id, { plate: k.plate, vehicle_kind: { from: k.from_kind, to: k.to_kind }, zgm_class: { from: k.from, to: k.to } });
+    await syncHuSpDues(env, { today: berlinDate(), actorId, vehicleIds: kindChanged.map((k) => k.id) });
+  }
+  return kindChanged;
 }
 
 export async function upsertVehicle(env, user, body) {
@@ -415,7 +427,7 @@ export async function upsertVehicle(env, user, body) {
   // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
   // in Betrieb – dann mit Protokoll `vehicle.activate` (vorher still, 17.10.2026)
   const before = await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(row.id).first();
-  await upsertVehicleRows(env, [row], { keepActive: !!body.keep_active });
+  await upsertVehicleRows(env, [row], { keepActive: !!body.keep_active, actorId: user.id });
   if (before && !before.active && !body.keep_active) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
   // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
   // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.
@@ -609,10 +621,19 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const id = uuid();
   const now = nowIso();
+  // Je Fahrzeug höchstens ein Prüftermin derselben Art (außer Rückruf/Sonstiges): ein zweiter HU-/UVV-Eintrag ergab zwei Fälligkeiten,
+  // von denen eine nie erledigt wurde (Dauerbefund). Prüfung im selben Stapel (Muster cmd_guard) – auch bei zwei gleichzeitigen Klicks (17.10.2026)
+  const single = !MULTI_RULE_KINDS.includes(kind);
+  const ruleExists = async () => {
+    const r = await env.DB.prepare('SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind=? AND id<>? ORDER BY created_at LIMIT 1').bind(vehicleId, kind, id).first();
+    return conflict('rule_exists', 'Für dieses Fahrzeug gibt es bereits einen Prüftermin dieser Art – bitte den vorhandenen bearbeiten bzw. „erledigt“ erfassen.', r ? { rule_id: r.id } : undefined);
+  };
+  if (single && await env.DB.prepare('SELECT 1 FROM maintenance_rules WHERE vehicle_id=? AND kind=? LIMIT 1').bind(vehicleId, kind).first()) throw await ruleExists();
   const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource, now)];
+  if (single) stmts.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*) <= 1 THEN 1 ELSE 0 END FROM maintenance_rules WHERE vehicle_id=? AND kind=?`).bind(vehicleId, kind), env.DB.prepare('DELETE FROM cmd_guard'));
   if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
-  await env.DB.batch(stmts);
+  try { await env.DB.batch(stmts); } catch (e) { if (single && String(e && e.message).includes('CHECK')) throw await ruleExists(); throw e; }
   if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
   return { id, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(id).first()).next_due_date : nextDue };
 }
@@ -858,7 +879,7 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   result.counts = { neu: result.preview.filter((p) => p.action === 'neu').length, geaendert: result.preview.filter((p) => p.action === 'geändert').length, unveraendert: result.preview.filter((p) => p.action === 'unverändert').length, plate_conflict: result.preview.filter((p) => p.plate_conflict).length };
   if (dryRun) return result;
   for (const r of rows.values()) delete r._line;
-  await upsertVehicleRows(env, [...rows.values()], { keepExisting: true });
+  await upsertVehicleRows(env, [...rows.values()], { keepExisting: true, actorId: user.id });
   result.imported = rows.size;
   await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length, ...result.counts });
   return result;
@@ -908,6 +929,29 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
     .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
   await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length, valid_until: validUntil });
   return { id, duplicate: false };
+}
+
+// Angaben eines Fahrzeugdokuments korrigieren (Art, Bemerkung, „gültig bis“) – vorher nur durch Löschen/neu Hochladen möglich, und das
+// erneute Hochladen derselben Datei wurde als Dublette erkannt (falsches „gültig bis“ blieb, Agent meldete Ablauf falsch – 17.10.2026).
+// Nur auf gelesenem Stand (expected: bisherige Werte) → 409 doc_changed; Änderung im Protokoll (vorher/nachher).
+export async function updateVehicleDocument(env, user, envName, vehicleId, fileId, body) {
+  if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
+  const f = await env.DB.prepare('SELECT id, filename, doc_kind, doc_note, doc_valid_until FROM files WHERE id=? AND vehicle_id=? AND case_id IS NULL AND environment=?').bind(fileId, vehicleId, envName).first();
+  if (!f) throw notFound();
+  const kind = 'kind' in body ? oneOf(body.kind || 'sonstiges', DOC_KINDS, 'Dokumentart') : (f.doc_kind || 'sonstiges');
+  const note = 'note' in body ? str(body.note || null, { max: 200, field: 'Bemerkung' }) : f.doc_note;
+  const validUntil = 'valid_until' in body ? str(body.valid_until || null, { max: 10 }) : f.doc_valid_until;
+  if (validUntil && !isCalendarDate(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
+  const before = { kind: f.doc_kind || 'sonstiges', note: f.doc_note ?? null, valid_until: f.doc_valid_until ?? null };
+  const after = { kind, note: note ?? null, valid_until: validUntil ?? null };
+  if (JSON.stringify(before) === JSON.stringify(after)) return { ok: true, unchanged: true };
+  const exp = body.expected && typeof body.expected === 'object' ? body.expected : before;
+  const r = await env.DB.prepare(`UPDATE files SET doc_kind=?, doc_note=?, doc_valid_until=? WHERE id=? AND COALESCE(doc_kind,'sonstiges')=? AND doc_note IS ? AND doc_valid_until IS ?`)
+    .bind(kind, after.note, after.valid_until, f.id, String(exp.kind || 'sonstiges'), exp.note ?? null, exp.valid_until ?? null).run();
+  if (!r.meta || r.meta.changes !== 1) throw conflict('doc_changed', 'Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.');
+  const diff = {}; for (const [k, dk] of [['kind', 'doc_kind'], ['valid_until', 'valid_until'], ['note', 'note']]) if (before[k] !== after[k]) diff[dk] = { from: before[k], to: after[k] };
+  await audit(env, user.id, 'vehicle.document_update', vehicleId, { filename: f.filename, ...diff });
+  return { ok: true };
 }
 
 // Für den Fuhrparkagenten: je Fahrzeug und Dokumentart zählt das späteste Gültig-bis-Datum (neueres Dokument ersetzt älteres)

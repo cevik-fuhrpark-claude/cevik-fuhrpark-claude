@@ -6820,7 +6820,7 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
   const cases = (await db.prepare(`SELECT * FROM cases ORDER BY created_at LIMIT 40`).all()).results;
   ok(cases.length >= 10, 'genügend Vorgänge');
   const kinds = ['created', 'received', 'priority_changed', 'approved', 'rework', 'acknowledged', 'waiting_parts', 'cost_limit', 'cost_approved', 'released', 'safety_lock', 'comment'];
-  let compared = 0; let withDrivers = 0;
+  let compared = 0; let withDrivers = 0; let withCoupled = 0;
   for (const c of cases) {
     const site = c.workshop_site || c.suggested_workshop_site;
     const reporter = (await db.prepare('SELECT id FROM users WHERE id=? AND active=1 AND environment=? AND password_hash IS NOT NULL').bind(c.reporter_id, c.environment).all()).results.map((r) => r.id); // Melder nur in derselben Umgebung (17.10.2026)
@@ -6828,11 +6828,18 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
     const lead = await byRole(c.environment, ['fleet', 'owner']); const dispo = await byRole(c.environment, ['dispatch']);
     const drv = (await db.prepare(`SELECT u.id FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`).bind(c.vehicle_id, new Date().toISOString(), c.environment, c.reporter_id).all()).results.map((r) => r.id);
     const urgent = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
+    // Gespann (17.10.2026): Sperre/Freigabe erreicht auch Fahrer des fest gekoppelten Fahrzeugs (Regel wie „Mein Fahrzeug“)
+    const np = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+    const vs = (await db.prepare('SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1').all()).results; const cv = vs.find((x) => x.id === c.vehicle_id);
+    const cpl = !cv ? [] : cv.kind === 'anhaenger' ? vs.filter((x) => x.kind === 'lkw' && np(x.trailer_plate) && np(x.trailer_plate) === np(cv.plate)) : np(cv.trailer_plate) ? vs.filter((x) => x.kind === 'anhaenger' && np(x.plate) === np(cv.trailer_plate)) : [];
+    const drvC = [...drv];
+    for (const x of cpl) for (const r of (await db.prepare(`SELECT u.id FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`).bind(x.id, new Date().toISOString(), c.environment, c.reporter_id).all()).results) drvC.push(r.id);
+    if (drvC.length > drv.length) withCoupled++;
     const expect = {
-      created: [...lead, ...(urgent ? [...dispo, ...ws] : []), ...(c.safety_lock ? drv : [])],
+      created: [...lead, ...(urgent ? [...dispo, ...ws] : []), ...(c.safety_lock ? drvC : [])],
       received: reporter, priority_changed: [...reporter, ...(c.status !== 'gemeldet' ? ws : [])],
       approved: [...ws, ...reporter], rework: ws, acknowledged: lead, waiting_parts: [...lead, ...dispo], cost_limit: lead, cost_approved: ws,
-      released: [...reporter, ...dispo, ...lead, ...ws, ...drv], safety_lock: [...reporter, ...dispo, ...lead, ...ws, ...drv],
+      released: [...reporter, ...dispo, ...lead, ...ws, ...drvC], safety_lock: [...reporter, ...dispo, ...lead, ...ws, ...drvC],
       comment: [...reporter, ...lead, ...(!['gemeldet', 'abgelehnt'].includes(c.status) ? ws : [])],
     };
     if (drv.length) withDrivers++;
@@ -6841,12 +6848,13 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
       const { list } = await recipientsFor(env, c, k, {});
       eq(QSTAT.n - q0, 1, `${k}: genau eine Abfrage`);
       eq([...new Set(list.map((u) => u.id))].sort().join(','), [...new Set(expect[k])].sort().join(','), `${c.case_no} ${k}: gleiche Empfänger`);
-      for (const u of list) eq(!!u.assigned, drv.includes(u.id) && !reporter.includes(u.id) && !lead.includes(u.id), `${k}: assigned nur für zugeordnete Fahrer`);
+      const dk = ['released', 'safety_lock'].includes(k) || (k === 'created' && c.safety_lock) ? drvC : drv;
+      for (const u of list) eq(!!u.assigned, dk.includes(u.id) && !reporter.includes(u.id) && !lead.includes(u.id), `${k}: assigned nur für zugeordnete Fahrer`);
       ok(list.every((u) => Object.keys(u).every((x) => ['id', 'language', 'role', 'assigned'].includes(x))), 'nur id/Sprache/Rolle');
       compared++;
     }
   }
-  console.log(`     ${compared} Vergleiche, ${withDrivers} Vorgänge mit zugeordneten Fahrern`);
+  console.log(`     ${compared} Vergleiche, ${withDrivers} Vorgänge mit zugeordneten Fahrern, ${withCoupled} mit Gespann-Fahrern`);
 });
 
 await test('Vorgangsdetail: Kosten aus geladenen Positionen = eigenständige Kostenberechnung (alle Testvorgänge)', async () => {
@@ -10351,6 +10359,83 @@ await test('Hinweise/Agent/Fahrzeuge: Melder nur in seiner Umgebung, Kommentar a
   const { computeHuSp } = await import('../src/inspection_rules.js');
   eq(computeHuSp({ kind: 'anhaenger', zgm_class: 'bis_3_5' }, [{ kind: 'HU', done_date: '2025-11-05', evidence: 'x' }], { today: '2026-12-10', warnDays: 30 }).hu.due, '2027-11-30');
   eq(computeHuSp({ kind: 'anhaenger', zgm_class: 'ueber_10' }, [{ kind: 'HU', done_date: '2025-11-05', evidence: 'x' }], { today: '2026-12-10', warnDays: 30 }).hu.due, '2026-11-30');
+});
+
+await test('Gespann-Sperre erreicht Fahrer der Zugmaschine, Werkstattwechsel informiert bisherige Werkstatt (Melder nicht doppelt), Artwechsel setzt Gewichtsklasse neu, Prüftermin je Art nur einmal, Dokumentangaben korrigierbar', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const notes = (uid) => db.prepare('SELECT kind, case_id, title FROM notifications WHERE user_id=? ORDER BY created_at, rowid').all(uid);
+  // (a) Sperre am gekoppelten Anhänger → Fahrer der Zugmaschine wird informiert (ohne Vorgangslink), ebenso Aufhebung
+  ok([200, 201].includes((await U.own.post('/api/vehicles', { plate: 'SZ-AH 200', vin: 'WSM00000000000200', site: 'Dortmund', kind: 'anhaenger' })).status), 'Auflieger');
+  db.prepare(`UPDATE vehicles SET trailer_plate='sz-ah 200' WHERE id=?`).run(vid); // Schreibweise egal
+  const TV = 'VIN:WSM00000000000200';
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  const tc = await newCase({ vehicle_id: TV, description: 'Plane gerissen' }, F);
+  const n0 = notes(U.driver.id).length;
+  eq((await cmd(F, tc, 'set_safety_lock', {}, 'Achse lose')).status, 200);
+  const nl = notes(U.driver.id).slice(n0);
+  eq(nl.map((n) => n.kind).join(), 'safety_lock', 'Fahrer der Zugmaschine informiert'); eq(nl[0].case_id, null, 'ohne Vorgangslink');
+  eq((await cmd(F, tc, 'lift_safety_lock', { confirm: true }, 'Achse fest')).status, 200);
+  ok(notes(U.driver.id).slice(n0).some((n) => n.kind === 'safety_lock_lifted'), 'Aufhebung erreicht Fahrer der Zugmaschine');
+  // umgekehrt: Sperre an der Zugmaschine erreicht Fahrer, die nur dem Anhänger zugeordnet sind
+  const d2 = await (async () => { const x = await U.own.post('/api/users', { username: 'w.fahrer2', display_name: 'Fahrer Zwei', role: 'driver', environment: 'test' }); const { Client } = await import('./harness.mjs'); const c = new Client(worker, e, 'w.fahrer2'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; })();
+  eq((await F.post(`/api/vehicles/${TV}/drivers`, { user_id: d2.id, evidence: 'Test' })).status, 201);
+  const lc = await newCase({ description: 'Bremse zieht' }, F);
+  eq((await cmd(F, lc, 'set_safety_lock', {}, 'Bremse')).status, 200);
+  ok(notes(d2.id).some((n) => n.kind === 'safety_lock'), 'Anhänger-Fahrer informiert');
+  // (b) Werkstattwechsel: neue Werkstatt „Neuer Werkstattauftrag“, bisherige „übergeben“ ohne Link, Melder nicht erneut
+  const rc = await newCase();
+  eq((await cmd(F, rc, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Dortmund')).status, 200);
+  const rep0 = notes(U.driver.id).filter((n) => n.kind === 'approved').length;
+  eq((await cmd(F, rc, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'ausgelastet')).status, 200);
+  eq(notes(U.driver.id).filter((n) => n.kind === 'approved').length, rep0, 'Melder nicht doppelt');
+  const away = notes(U.ws.id).at(-1); eq(away.kind, 'reassigned_away'); eq(away.case_id, null); eq(away.title, 'Auftrag an andere Werkstatt übergeben');
+  const nw = notes(U.wsMuc.id).at(-1); eq(nw.kind, 'approved'); eq(nw.case_id, rc);
+  ok((await U.ws.get('/api/me/notify-prefs')).data.kinds.includes('reassigned_away'), 'abschaltbar');
+  // (c) Artwechsel Lkw → Anhänger: Gewichtsklasse aus belegter Masse neu, ohne Masse unbekannt; HU/SP neu berechnet, Protokoll
+  const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.own.post(`/api/vehicles/${V2}/spec`, { zgm_kg: 18000, spec_source: 'Fahrzeugschein' })).status, 200);
+  eq(db.prepare(`SELECT zgm_class FROM vehicles WHERE id=?`).get(V2).zgm_class, 'ueber_12');
+  eq((await U.own.post('/api/vehicles', { vin: 'WDB9630051L917317', plate: 'SZ-KC 5515', site: 'Dortmund', kind: 'anhaenger', keep_active: true })).status, 201);
+  eq(db.prepare(`SELECT zgm_class FROM vehicles WHERE id=?`).get(V2).zgm_class, 'ueber_10', 'Klasse aus Masse für Anhänger');
+  ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.spec' AND target=? AND detail LIKE '%vehicle_kind%'`).get(V2).n === 1, 'Protokoll');
+  db.prepare(`UPDATE vehicles SET zgm_kg=NULL WHERE id=?`).run(V2);
+  eq((await U.own.post('/api/vehicles', { vin: 'WDB9630051L917317', plate: 'SZ-KC 5515', site: 'Dortmund', kind: 'lkw', keep_active: true })).status, 201);
+  eq(db.prepare(`SELECT zgm_class FROM vehicles WHERE id=?`).get(V2).zgm_class, null, 'ohne Masse: unbekannt statt alter Klasse');
+  eq((await U.own.post('/api/vehicles', { vin: 'WDB9630051L917317', plate: 'SZ-KC 5515', site: 'Dortmund-Hafen', keep_active: true })).status, 201, 'ohne Art: unverändert');
+  eq(db.prepare(`SELECT kind FROM vehicles WHERE id=?`).get(V2).kind, 'lkw');
+  // (d) Prüftermin derselben Art nur einmal (Rückruf/Sonstiges mehrfach), auch bei gleichzeitiger Anlage
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: '2026-01-10', interval_months: 12, evidence: 'Plakette' })).status, 201);
+  const dup = await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: '2026-02-10', interval_months: 12, evidence: 'Plakette 2' });
+  eq(dup.status, 409); eq(dup.data.error, 'rule_exists'); ok(dup.data.rule_id, 'vorhandener Eintrag genannt');
+  const par = await Promise.all([1, 2].map(() => F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Feuerlöscher', last_done_date: '2026-01-10', interval_months: 24, evidence: 'Plakette' })));
+  eq(par.map((r) => r.status).sort().join(), '201,409', 'parallel nur einer');
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_rules WHERE vehicle_id=? AND kind='Feuerlöscher'`).get(vid).n, 1);
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_events WHERE vehicle_id=? AND kind='Feuerlöscher'`).get(vid).n, 1, 'keine verwaiste Durchführung');
+  for (const k of ['Sonstiges', 'Sonstiges', 'Rückruf', 'Rückruf']) eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: k, evidence: 'Herstellerschreiben ' + rk().slice(0, 4) })).status, 201, k);
+  // (e) Dokumentangaben korrigieren: nur Berechtigte, gelesener Stand, Protokoll, Agent rechnet mit neuem Datum
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Versicherung\n%%EOF');
+  const up = await F.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=2026-01-31`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'vers.pdf' });
+  eq(up.status, 201);
+  const P = `/api/vehicles/${V1}/documents/${up.data.id}`;
+  eq((await U.driver.req('PATCH', P, { valid_until: '2027-01-31' })).status, 403, 'Fahrer');
+  eq((await U.viewer.req('PATCH', P, { valid_until: '2027-01-31' })).status, 403, 'Lesen');
+  eq((await F.req('PATCH', P, { valid_until: '31.01.2027' })).status, 400, 'Format');
+  eq((await F.req('PATCH', P, { kind: 'ausweis' })).status, 400, 'Art');
+  eq((await F.req('PATCH', `/api/vehicles/${V2}/documents/${up.data.id}`, { valid_until: '2027-01-31' })).status, 404, 'falsches Fahrzeug');
+  await F.post('/api/agent/run');
+  const docF = () => db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE vehicle_id=? AND finding_code LIKE 'DOCUMENT%' AND status<>'erledigt'`).get(vid).n;
+  ok(docF() >= 1, 'abgelaufen gemeldet');
+  const stale = { kind: 'versicherung', note: null, valid_until: '2025-12-31' };
+  eq((await F.req('PATCH', P, { valid_until: '2027-01-31', expected: stale })).status, 409, 'veralteter Stand');
+  const ok1 = await U.ws.req('PATCH', P, { valid_until: '2027-01-31', note: 'Verlängert', expected: { kind: 'versicherung', note: null, valid_until: '2026-01-31' } });
+  eq(ok1.status, 200, JSON.stringify(ok1.data));
+  const doc = (await F.get(`/api/vehicles/${V1}`)).data.documents.find((x) => x.id === up.data.id);
+  eq(doc.doc_valid_until, '2027-01-31'); eq(doc.doc_note, 'Verlängert'); eq(doc.doc_kind, 'versicherung');
+  eq((await F.req('PATCH', P, { valid_until: '2027-01-31', note: 'Verlängert' })).data.unchanged, true);
+  ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.document_update' AND target=?`).get(vid).n === 1, 'Protokoll');
+  await F.post('/api/agent/run'); eq(docF(), 0, 'Befund erledigt');
+  eq((await U.own.req('PATCH', P, { valid_until: '' }, { 'x-cfp-env': 'test' })).status, 200, 'Datum entfernen'); eq(db.prepare('SELECT doc_valid_until v FROM files WHERE id=?').get(up.data.id).v, null);
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

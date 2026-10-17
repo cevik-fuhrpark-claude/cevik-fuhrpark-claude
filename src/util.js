@@ -401,6 +401,8 @@ export function hideDriverName(user, row, nameKey, roleKey) {
 
 // Kennzeichen-Vergleichsschlüssel: Groß-/Kleinschreibung, Leerzeichen und Bindestriche egal, Umlaute (TÜ, LÖ, MÜ …) bleiben erhalten.
 // In SQL ist UPPER() nur für A–Z wirksam – Kennzeichen daher in JS vergleichen, nicht per UPPER() in der Abfrage.
+// SQL-Gegenstück zu normPlate für übliche Schreibweisen (Leerzeichen, Bindestrich, Punkt, Schrägstrich, Unterstrich; ä/ö/ü → Ä/Ö/Ü)
+export const PLATE_KEY_SQL = (x) => `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(${x},'')),' ',''),'-',''),'.',''),'/',''),'_',''),'ä','Ä'),'ö','Ö'),'ü','Ü')`;
 export const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Fahrzeug zu einem Kennzeichen aus einem Schreiben/Gerät: zuerst aktive bewertete, dann ruhende (eval_excluded), dann außer Betrieb.
 // Mehrere Treffer in derselben Stufe = mehrdeutig → kein Fahrzeug (lieber manuell klären als falscher Fahrer/falsche Position).

@@ -1,6 +1,6 @@
 // [CLAUDE] Benachrichtigungen: Ereignis -> Empfänger (nur bestätigte Benutzerkonten) -> In-App + Push
 // Zustände getrennt: gespeichert -> Push vom Dienst angenommen -> am Gerät empfangen -> geöffnet -> übernommen
-import { nowIso, uuid, quietHoldUntil, dateLang } from './util.js';
+import { nowIso, uuid, quietHoldUntil, dateLang, PLATE_KEY_SQL } from './util.js';
 import { sendPush } from './push.js';
 import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 
@@ -13,7 +13,7 @@ const T = {
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
     safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit',
-    agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben', inspection_defect: 'Prüfung mit gefährlichen Mängeln', fine: 'Neues Schreiben einer Behörde', test: 'Testbenachrichtigung', test_body: 'Push funktioniert auf diesem Gerät.',
+    agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben', reassigned_away: 'Auftrag an andere Werkstatt übergeben', inspection_defect: 'Prüfung mit gefährlichen Mängeln', fine: 'Neues Schreiben einer Behörde', test: 'Testbenachrichtigung', test_body: 'Push funktioniert auf diesem Gerät.',
     new_login: 'Neue Anmeldung auf einem anderen Gerät', new_login_body: '{d} · {t}. Waren Sie das nicht? Mehr → Mein Konto: unter „Meine Anmeldungen (Geräte)“ das Gerät abmelden und das Passwort ändern.', unknown_device: 'Unbekanntes Gerät',
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
@@ -23,7 +23,7 @@ const T = {
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
     safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)',
-    agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено', inspection_defect: 'Огляд із небезпечними дефектами', fine: 'Новий лист від органу влади', test: 'Тестове сповіщення', test_body: 'Push працює на цьому пристрої.',
+    agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено', reassigned_away: 'Замовлення передано іншій майстерні', inspection_defect: 'Огляд із небезпечними дефектами', fine: 'Новий лист від органу влади', test: 'Тестове сповіщення', test_body: 'Push працює на цьому пристрої.',
     new_login: 'Новий вхід на іншому пристрої', new_login_body: '{d} · {t}. Це були не ви? Ще → Мій акаунт: у «Мої входи (пристрої)» вийдіть на цьому пристрої та змініть пароль.', unknown_device: 'Невідомий пристрій',
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
@@ -33,7 +33,7 @@ const T = {
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
     safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', comment: 'New comment', open_item_safety: 'Safety-relevant open item',
-    agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved', inspection_defect: 'Inspection with dangerous defects', fine: 'New letter from an authority', test: 'Test notification', test_body: 'Push works on this device.',
+    agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved', reassigned_away: 'Order handed over to another workshop', inspection_defect: 'Inspection with dangerous defects', fine: 'New letter from an authority', test: 'Test notification', test_body: 'Push works on this device.',
     new_login: 'New sign-in on another device', new_login_body: '{d} · {t}. Not you? More → My account: under “My sign-ins (devices)” sign out that device and change your password.', unknown_device: 'Unknown device',
     res_gefaehrliche_maengel: 'dangerous defects', res_verkehrsunsicher: 'unroadworthy', do_not_plan: 'do not schedule',
   },
@@ -44,7 +44,7 @@ export const nt = (lang, key) => (T[lang] && T[lang][key]) || T.de[key];
 
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
 export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'acknowledged', 'started', 'waiting_parts', 'resumed',
-  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved'];
+  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away'];
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
   const L = T[lang] ? lang : 'de';
@@ -112,15 +112,24 @@ export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Ar
 // Alle möglichen Empfänger eines Vorgangs in EINER Abfrage (Abfragebudget je Aufruf): Melder (nur aktiv), Leitung/Inhaber/Dispo
 // der Umgebung, Werkstatt des Standorts und Fahrer mit aktueller Zuordnung zum Fahrzeug. Auswahl je Ereignis danach im Speicher.
 // Fahrer sehen fremde Vorgänge nicht – ihr Hinweis verlinkt daher nicht auf den Vorgang (assigned), sondern erscheint in „Hinweise“/„Mein Fahrzeug“.
-async function candidateUsers(env, c, site) {
+// Gespann (17.10.2026): mit withCoupled zählen auch Fahrer des fest gekoppelten Fahrzeugs laut Stammliste (Lkw ↔ Anhänger, Regel wie
+// „Mein Fahrzeug“) – eine Sperre/Freigabe am Anhänger betrifft den Fahrer der Zugmaschine und umgekehrt. In derselben Abfrage
+// (Abfragebudget); Kennzeichen-Vergleich ohne Leer-/Trennzeichen wie normPlate (PLATE_KEY_SQL).
+async function candidateUsers(env, c, site, withCoupled, oldSite) {
+  const own = `d.vehicle_id=?4`;
+  const coupled = withCoupled ? ` OR d.vehicle_id IN (SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?4 WHERE x.active=1 AND x.id<>v.id AND (
+      (v.kind='anhaenger' AND x.kind='lkw' AND ${PLATE_KEY_SQL('x.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.trailer_plate')}=${PLATE_KEY_SQL('v.plate')})
+      OR (v.kind='lkw' AND x.kind='anhaenger' AND ${PLATE_KEY_SQL('v.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.plate')}=${PLATE_KEY_SQL('v.trailer_plate')})))` : '';
+  const assigned = `EXISTS (SELECT 1 FROM driver_vehicles d WHERE d.user_id=u.id AND (${own}${coupled}) AND (d.valid_to IS NULL OR d.valid_to > ?5))`;
   return (await env.DB.prepare(`SELECT u.id, u.language, u.role, (u.id=?1) AS is_reporter,
       (u.password_hash IS NOT NULL AND u.environment=?2) AS qualified,
       (u.role='workshop' AND u.workshop_site IS ?3) AS at_site,
-      (u.role='driver' AND EXISTS (SELECT 1 FROM driver_vehicles d WHERE d.user_id=u.id AND d.vehicle_id=?4 AND (d.valid_to IS NULL OR d.valid_to > ?5))) AS is_assigned
+      (u.role='workshop' AND ?6 IS NOT NULL AND u.workshop_site IS ?6) AS at_old_site,
+      (u.role='driver' AND ${assigned}) AS is_assigned
     FROM users u WHERE u.active=1 AND (u.id=?1 OR (u.password_hash IS NOT NULL AND u.environment=?2 AND (u.role IN ('fleet','owner','dispatch')
-      OR (u.role='workshop' AND u.workshop_site IS ?3)
-      OR (u.role='driver' AND EXISTS (SELECT 1 FROM driver_vehicles d WHERE d.user_id=u.id AND d.vehicle_id=?4 AND (d.valid_to IS NULL OR d.valid_to > ?5))))))`)
-    .bind(c.reporter_id ?? null, c.environment, site || null, c.vehicle_id ?? null, nowIso()).all()).results;
+      OR (u.role='workshop' AND (u.workshop_site IS ?3 OR (?6 IS NOT NULL AND u.workshop_site IS ?6)))
+      OR (u.role='driver' AND ${assigned}))))`)
+    .bind(c.reporter_id ?? null, c.environment, site || null, c.vehicle_id ?? null, nowIso(), oldSite || null).all()).results;
 }
 
 export async function recipientsFor(env, c, kind, ctxData = {}) {
@@ -128,7 +137,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
   const list = [];
   const add = (rows) => { for (const r of rows) if (!list.find((x) => x.id === r.id)) list.push(r); };
   const site = c.workshop_site || c.suggested_workshop_site;
-  const pool = await candidateUsers(env, c, site);
+  const oldSite = kind === 'reassigned' && ctxData.previous?.workshop_site !== site ? ctxData.previous?.workshop_site : null;
+  const pool = await candidateUsers(env, c, site, ['released', 'safety_lock', 'safety_lock_lifted'].includes(kind) || (kind === 'created' && !!c.safety_lock), oldSite);
   const pick = (u, extra = {}) => ({ id: u.id, language: u.language, role: u.role, ...extra });
   // Melder nur in derselben Umgebung (nach einem Umgebungswechsel kamen sonst Hinweise/Pushs aus der alten Umgebung, unsichtbar in der Liste – 17.10.2026)
   const reporter = pool.filter((u) => u.is_reporter && u.qualified).map((u) => pick(u));
@@ -158,6 +168,12 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       break;
     case 'cost_approved':
       add(workshopUsers);
+      break;
+    case 'reassigned':
+      // Werkstattwechsel (17.10.2026): neue Werkstatt bekommt „Neuer Werkstattauftrag“, die bisherige erfährt die Abgabe
+      // (ohne Link – sie hat danach keinen Zugriff mehr); Melder nicht erneut (er bekam die Freigabe schon)
+      add(workshopUsers.map((u) => ({ ...u, kind: 'approved' })));
+      add(pool.filter((u) => u.qualified && u.at_old_site && !u.at_site).map((u) => pick(u, { kind: 'reassigned_away', away: 1 })));
       break;
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(usersByRole(['dispatch', 'fleet', 'owner'])); add(workshopUsers);
@@ -202,12 +218,13 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
   const rows = [];
   for (const u of list) {
     const lang = T[u.language] ? u.language : 'de';
-    const title = kind === 'created' && urgent ? T[lang].created_urgent : T[lang][kind] || kind;
+    const k = u.kind || kind;
+    const title = k === 'created' && urgent ? T[lang].created_urgent : T[lang][k] || k;
     // Sperrbildschirm: nur Vorgangsnummer, Kennzeichen, Priorität – keine Schadensbeschreibung
     const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
-    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned ? null : c.id, event_key: eventKey, kind, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
+    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind, lang: r.lang, created_at: r.created_at }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;

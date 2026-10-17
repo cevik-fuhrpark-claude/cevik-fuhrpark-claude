@@ -858,7 +858,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null;
       payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}) };
-      notifyKind = 'approved';
+      notifyKind = 'reassigned';
       break;
     }
     case 'reject':
