@@ -450,13 +450,15 @@ export async function updateUser(env, actor, userId, body) {
     .bind(role, environment, active, display, site, laterIso(target.updated_at), userId, target.updated_at),
   env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard')];
   // Rollen-/Umgebungswechsel oder Deaktivierung entwertet Sitzungen und Push-Geräte
-  if (role !== target.role || environment !== target.environment || !active) {
+  // Werkstatt-Standortwechsel wie Rollenwechsel: alte Hinweise/Pushs betrafen Vorgänge des bisherigen Standorts (17.10.2026)
+  const siteChanged = role === 'workshop' && target.role === 'workshop' && (site || null) !== (target.workshop_site || null);
+  if (role !== target.role || environment !== target.environment || !active || siteChanged) {
     stmts.push(env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId));
     stmts.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').bind(now, userId));
   }
   // Rollen-/Umgebungswechsel: Hinweise der bisherigen Rolle ausblenden (nicht löschen) – sonst sah z. B. ein neuer Fahrer kritische
   // Leitungs-Hinweise samt Vorgang und bekam fehlgeschlagene Pushs nachgereicht (17.10.2026, Migration 0056)
-  if (role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare('UPDATE notifications SET hidden_at=? WHERE user_id=? AND hidden_at IS NULL').bind(now, userId));
+  if (role !== target.role || environment !== target.environment || siteChanged) stmts.push(env.DB.prepare('UPDATE notifications SET hidden_at=? WHERE user_id=? AND hidden_at IS NULL').bind(now, userId));
   // … sowie laufende Fahrzeugzuordnungen beenden (Verlauf bleibt): sonst galt das Konto in der neuen Umgebung als „zugeordnet“ (Fahrzeugakte,
   // Hinweise, Reifendaten), ein deaktiviertes Konto blieb Fahrer des Fahrzeugs; Fahrerakte der alten Umgebung gibt das Konto frei (17.10.2026)
   if (role !== target.role || environment !== target.environment || !active) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, userId, now));
@@ -470,7 +472,7 @@ export async function updateUser(env, actor, userId, body) {
   const changed = {};
   for (const [k, a, b] of [['role', target.role, role], ['environment', target.environment, environment], ['active', !!target.active, !!active], ['display_name', target.display_name, display], ['workshop_site', target.workshop_site || null, site || null]]) if (a !== b) changed[k] = { from: a, to: b };
   await audit(env, actor.id, 'user.update', userId, { role, environment, active, ...(Object.keys(changed).length ? { changed } : {}) });
-  return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active };
+  return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged };
 }
 
 export async function resetInvite(env, actor, userId) {

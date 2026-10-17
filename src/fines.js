@@ -105,7 +105,8 @@ export async function createFine(env, user, envName, body) {
   const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß');
   // Tatzeit wie im Schreiben (Berliner Ortszeit, ohne Zeitzone) → UTC; Angaben mit Zeitzone werden nur vereinheitlicht
   const offenseRaw = berlinLocalToIso(str(body.offense_at, { required: true, max: 30, field: 'Tatzeit' }));
-  if (!offenseRaw || Number.isNaN(Date.parse(offenseRaw))) throw bad('validation', 'Tatzeit ungültig.');
+  // nur ISO-Schreibweisen (ohne Zone = Berlin, sonst mit Z/±hh:mm) – freies Datumsformat („10/01/2026 14:30“) wäre als UTC gelesen worden
+  if (!offenseRaw || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})$/i.test(offenseRaw) || Number.isNaN(Date.parse(offenseRaw))) throw bad('validation', 'Tatzeit ungültig.');
   const offenseAt = new Date(offenseRaw).toISOString();
   // Tippfehler im Jahr (2062): Fahrerermittlung „zum Tatzeitpunkt“ lieferte sonst die heutige Zuordnung (17.10.2026); 5 Min. Uhrenspiel
   if (Date.parse(offenseAt) > Date.now() + 5 * 60000) throw bad('validation', 'Tatzeit liegt in der Zukunft.');

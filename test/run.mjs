@@ -10875,7 +10875,8 @@ await test('Fehlersuche 17.10. (5): Telematik älter nie über neuer, Rufnummer-
       integ({ provider: 'webfleet', items: [{ external_id: 'D1', vin, gps_time: older, lat: 48.1, lon: 11.5 }] })]);
     eq(a.status, 200); eq(b.status, 200);
     eq(db.prepare('SELECT gps_time FROM telematics_latest WHERE vehicle_id=?').get(vid).gps_time, newer, 'neuerer Stand bleibt');
-    eq(a.data.rejected + b.data.rejected, 1, 'genau eine Lieferung verworfen'); eq(a.data.matched + b.data.matched, 1);
+    ok(a.data.rejected + b.data.rejected <= 1, 'höchstens die ältere verworfen'); eq(a.data.matched + b.data.matched + a.data.rejected + b.data.rejected, 2);
+    if (i > 0) eq(a.data.rejected + b.data.rejected, 1, 'ältere als gespeicherter Stand verworfen');
   }
   // 2. Notfall-Rufnummer: Ändern auf eine vorhandene Nummer gleicher Art/Geltung → 409
   const ca = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst A', phone: '0800 123456' });
@@ -10978,6 +10979,75 @@ await test('Fehlersuche 17.10. (5): Telematik älter nie über neuer, Rufnummer-
     U.ws.post(`/api/cases/${rb}/commands`, { action: 'record_work', command_id: rk(), expected_version: v2, payload: { hours: 13, description: 'B', work_date: yd } })]);
   eq(par.map((r) => r.status).sort().join(), '200,400', 'gleichzeitig nur eine');
   eq(db.prepare('SELECT SUM(hours) h FROM work_entries WHERE user_id=? AND work_date=?').get(U.ws.id, yd).h, 13);
+});
+
+await test('Fehlersuche 17.10. (6): Werkstatt-Standortwechsel beendet alte Hinweise/Pushs, Bußgeld-Tatzeit in jeder ISO-Schreibweise Berlin, Werkstattplan-Kalender mit fester UID, Lager (3 Nachkommastellen, deaktiviert, request_key), Fahrzeug-CSV-Rundreise mit Formelschutz, Baujahr nicht erkannt, Reifengröße zu lang, Zeitleiste mit Archivierung', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const csvP = (path, text) => U.own.req('POST', path, text, { 'content-type': 'text/csv' });
+  // 1. Werkstatt wechselt den Standort: Hinweise des alten Standorts ausgeblendet, Push-Geräte abgemeldet, Sitzungen beendet
+  const rid = await toRepair();
+  ok(db.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND hidden_at IS NULL').get(U.ws.id).n > 0, 'vorher Hinweise');
+  db.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,created_at) VALUES ('ps1',?,'https://push.example/x','p','a',?)`).run(U.ws.id, new Date().toISOString());
+  const ch = await U.own.patch(`/api/users/${U.ws.id}`, { workshop_site: 'MUENCHEN' }); eq(ch.status, 200); eq(ch.data.sessions_ended, true);
+  eq(db.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND hidden_at IS NULL').get(U.ws.id).n, 0, 'alte Hinweise ausgeblendet');
+  ok(db.prepare(`SELECT revoked_at FROM push_subscriptions WHERE id='ps1'`).get().revoked_at, 'Push-Gerät abgemeldet');
+  eq((await U.ws.get('/api/me')).status, 401, 'Sitzung beendet');
+  eq((await U.own.patch(`/api/users/${U.wsMuc.id}`, { display_name: 'WS München' })).data.sessions_ended, false, 'ohne Standortwechsel nicht');
+  // 2. Bußgeld-Tatzeit: ohne Zone = Berliner Zeit, auch mit Leerzeichen/Sekundenbruchteilen; freie Formate → 400
+  const fine = (offense_at, reference) => F.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Dortmund', reference });
+  for (const [v, r] of [['2026-10-01T14:30', 'A1'], ['2026-10-01 14:30', 'A2'], ['2026-10-01T14:30:00.000', 'A3'], ['2026-10-01T12:30:00Z', 'A4'], ['2026-10-01T14:30+02:00', 'A5']]) {
+    const x = await fine(v, r); eq(x.status, 201, v); eq(db.prepare('SELECT offense_at FROM fines WHERE id=?').get(x.data.id).offense_at, '2026-10-01T12:30:00.000Z', v);
+  }
+  for (const v of ['10/01/2026 14:30', '01.10.2026 14:30', 'Oct 1 2026 14:30']) eq((await fine(v, 'B-' + v)).status, 400, v);
+  // 3. Werkstattplan-Kalender: verschobener Termin behält die UID (kein zweiter Kalendereintrag)
+  const plus = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const uids = async () => [...new TextDecoder().decode((await F.req('GET', '/api/workshop/plan?format=ics')).data).matchAll(/UID:(\S+)/g)].map((m) => m[1]);
+  eq((await cmd(F, rid, 'set_planned_date', { planned_date: plus(2) })).status, 200); const u1 = await uids();
+  eq((await cmd(F, rid, 'set_planned_date', { planned_date: plus(5) })).status, 200); const u2 = await uids();
+  ok(u1.length && u1.some((u) => u.startsWith(`plan-case-${rid}@`)), JSON.stringify(u1)); eq(JSON.stringify(u1), JSON.stringify(u2), 'gleiche UID');
+  // 4. Lager: Mengen auf 3 Nachkommastellen, deaktivierte Artikel ohne Buchung, request_key gegen Doppelbuchung (auch gleichzeitig)
+  const W2 = U.wsMuc;
+  const it = (await W2.post('/api/stock', { site: 'MUENCHEN', name: 'Kupplung', unit: 'Stk', unit_price_net: '1000' })).data.id;
+  eq((await W2.post(`/api/stock/${it}/movements`, { type: 'zugang', qty: '0,9996', unit_price_net: '1000' })).data.on_hand, 1);
+  eq(db.prepare('SELECT SUM(qty) q FROM stock_movements WHERE item_id=?').get(it).q, 1, 'gespeichert 1');
+  eq((await W2.post(`/api/stock/${it}/movements`, { type: 'zugang', qty: '0,0004' })).status, 400, 'gerundet 0');
+  addRandomLatency(e);
+  const kz = { type: 'zugang', qty: '5', document_ref: 'LS-4711', request_key: 'k-zug-1' };
+  const zz = await Promise.all([W2.post(`/api/stock/${it}/movements`, kz), W2.post(`/api/stock/${it}/movements`, kz)]);
+  eq(zz.map((r) => r.status).join(), '201,201'); ok(zz.some((r) => r.data.duplicate), 'Wiederholung erkannt');
+  eq(db.prepare('SELECT SUM(qty) q FROM stock_movements WHERE item_id=?').get(it).q, 6, 'nur einmal gebucht');
+  const tb = { to_site: 'DORTMUND', qty: '2', request_key: 'k-uml-1' };
+  const tt = await Promise.all([W2.post(`/api/stock/${it}/transfer`, tb), W2.post(`/api/stock/${it}/transfer`, tb)]);
+  eq(tt.map((r) => r.status).join(), '201,201'); eq(tt[0].data.transfer_id, tt[1].data.transfer_id, 'dieselbe Umlagerung');
+  eq(db.prepare('SELECT SUM(qty) q FROM stock_movements WHERE item_id=?').get(it).q, 4, 'einmal umgelagert');
+  eq((await W2.post(`/api/stock/${it}/movements`, { type: 'zugang', qty: '1', request_key: 'a b' })).status, 400, 'Schlüssel geprüft');
+  eq((await W2.post(`/api/stock/${it}/movements`, { type: 'entnahme', qty: '4' })).status, 201);
+  eq((await W2.patch(`/api/stock/${it}`, { active: false })).status, 200);
+  for (const b of [{ type: 'zugang', qty: '5', unit_price_net: '1' }, { type: 'korrektur', qty: '1', note: 'gefunden' }]) eq((await W2.post(`/api/stock/${it}/movements`, b)).status, 400, 'deaktiviert');
+  eq(db.prepare('SELECT unit_price_net p FROM stock_items WHERE id=?').get(it).p, 1000, 'Preis unverändert');
+  // 5. Fahrzeug-CSV: eigener Export wieder importierbar (Formelschutz zurückgenommen), Baujahr nicht erkannt → Fahrzeug übernommen + Hinweis
+  eq((await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund', model: '-', master_status: '+ Reserve', keep_active: true })).status, 201);
+  const ex = new TextDecoder().decode((await U.own.get('/api/vehicles?format=csv')).data).replace(/^﻿/, '');
+  ok(ex.includes(";'-;") && ex.includes("'+ Reserve"), 'Export mit Formelschutz');
+  const re = await csvP('/api/vehicles/import?dry_run=1', ex); eq(re.status, 200);
+  eq(re.data.preview.find((p) => p.plate === 'SZ-YC 5513').action, 'unverändert', 'Rundreise ohne Änderung');
+  const by = await csvP('/api/vehicles/import', 'Kennzeichen;FIN;Baujahr\nSZ-AB 1;WDB9630051L900001;EZ 2016\nSZ-AB 2;WDB9630051L900002;1949\nSZ-AB 3;WDB9630051L900003;2018');
+  eq(by.status, 200); eq(by.data.skipped.length, 0, 'keine Zeile verworfen'); eq(by.data.counts.year_unrecognized, 2);
+  eq(by.data.preview.find((p) => p.plate === 'SZ-AB 2').year_unrecognized, '1949');
+  eq(db.prepare(`SELECT build_year FROM vehicles WHERE vin='WDB9630051L900002'`).get().build_year, null);
+  eq(db.prepare(`SELECT build_year FROM vehicles WHERE vin='WDB9630051L900003'`).get().build_year, 2018);
+  // 6. Reifengrößen-Import: zu lange Größe → Zeile gemeldet statt still gekürzt (Text DE/UK/EN)
+  const long = '315/80 R22.5 156/150L M+S 3PMSF XYZ Variante B';
+  const ti = await csvP('/api/tires/import', `Quelle;Kennzeichen;FIN;Reifen Lenkachse\nX;SZ-YC 5513;WMA15SZZ2HM722774;${long}`);
+  eq(ti.status, 200); eq(ti.data.imported, 0); ok(/^Reifengröße zu lang/.test(ti.data.skipped[0].reason));
+  const { translateImportReason } = await import('../public/i18n.js');
+  ok(/^Tyre size too long/.test(translateImportReason('en', ti.data.skipped[0].reason)) && /^Розмір шини/.test(translateImportReason('uk', ti.data.skipped[0].reason)));
+  // 7. Zeitleiste: Archivierung eines älteren Hinweises ist das jüngste Ereignis
+  const nids = []; for (let i = 0; i < 3; i++) { nids.push((await F.post(`/api/vehicles/${encodeURIComponent(V1)}/notes`, { text: 'Hinweis Nr ' + i })).data.id); await new Promise((r) => setTimeout(r, 5)); }
+  await new Promise((r) => setTimeout(r, 5));
+  eq((await F.post(`/api/vehicles/${encodeURIComponent(V1)}/notes/${nids[0]}/archive`)).status, 200);
+  const tl = (await F.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=note&limit=1`)).data;
+  eq(tl.items[0].note_event, 'archive'); eq(tl.items[0].text, 'Hinweis Nr 0');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

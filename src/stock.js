@@ -32,6 +32,13 @@ export async function onHand(env, itemId) {
 }
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
+// Idempotenzschlüssel einer Buchung (App sendet ihn je Formular): Wiederholung → dieselbe Buchung, keine zweite
+function requestKey(body) {
+  const k = body && body.request_key;
+  if (k === undefined || k === null || k === '') return null;
+  if (typeof k !== 'string' || k.length > 80 || !/^[\w-]+$/.test(k)) throw bad('validation', 'request_key: ungültiger Wert.');
+  return 'stock:' + k;
+}
 export async function listStock(env, user, envName, query) {
   const site = siteScope(user, query.site);
   // Verbrauch = Entnahmen der letzten 90 Tage ohne Umlagerungen (nur Information für den Bestellvorschlag)
@@ -142,8 +149,14 @@ export async function updateItem(env, user, envName, id, body) {
 
 export async function addMovement(env, user, envName, id, body) {
   const it = await loadItem(env, user, envName, id);
+  // deaktivierte Artikel: keine Buchungen (Bestand wäre unsichtbar, wie Umlagerung/Entnahme im Vorgang – 17.10.2026)
+  if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
   const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
-  let qty = num(body.qty, { min: -1e6, max: 1e6, field: 'Menge' });
+  // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
+  let qty = r3(num(body.qty, { min: -1e6, max: 1e6, field: 'Menge' }));
+  const rkey = requestKey(body);
+  const dup = rkey ? await env.DB.prepare('SELECT 1 AS x FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  if (dup) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
   if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
   if (type === 'korrektur' && !str(body.note, { max: 500 })) throw bad('validation', 'Korrektur braucht einen Grund.');
@@ -152,14 +165,15 @@ export async function addMovement(env, user, envName, id, body) {
   const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true });
   // Entnahme: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
   const price = type === 'entnahme' && it.unit_price_net !== null ? it.unit_price_net : entered;
-  const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
-    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120 }), str(body.document_ref, { max: 200 }),
-    str(body.note, { max: 500 }), user.id, nowIso())];
+  const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
+    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120 }), str(body.document_ref, { max: 200 }),
+    str(body.note, { max: 500 }), user.id, nowIso(), rkey)];
   if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
   // Lieferung eingegangen: Bestellvermerk endet (Teillieferung → neu vermerken, falls noch offen)
   if (type === 'zugang' && it.ordered_on) stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id));
   if (qty < 0) stmts.push(...stockGuardNonNegative(env, id));
   try { await env.DB.batch(stmts); } catch (e) {
+    if (rkey && String(e && e.message).includes('UNIQUE')) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
     if (isCheck(e)) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, id)} ${it.unit}).`);
     throw e;
   }
@@ -205,6 +219,9 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.');
   const qty = r3(num(body.qty, { min: 0, max: 1e6, field: 'Menge' }));
   if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  const rkey = requestKey(body);
+  const prevT = rkey ? await env.DB.prepare('SELECT transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, on_hand: await onHand(env, id) };
   const avail = await onHand(env, id);
   if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}).`);
   const note = str(body.note, { max: 300 });
@@ -221,12 +238,16 @@ export async function transfer(env, user, envName, id, body, retried = false) {
     if (target.unit !== it.unit) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`);
     if (!target.active || (target.unit_price_net === null && it.unit_price_net !== null)) stmts.push(env.DB.prepare('UPDATE stock_items SET active=1, unit_price_net=COALESCE(unit_price_net, ?), updated_at=? WHERE id=?').bind(it.unit_price_net, now, target.id));
   }
-  const ins = `INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,transfer_id,transfer_site) VALUES (?,?,?,?,?,NULL,?,NULL,?,?,?,?,?,?)`;
+  const ins = `INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,transfer_id,transfer_site,request_key) VALUES (?,?,?,?,?,NULL,?,NULL,?,?,?,?,?,?,?)`;
   const ref = 'UML-' + tid.slice(0, 8).toUpperCase();
-  stmts.push(env.DB.prepare(ins).bind(uuid(), envName, it.id, 'entnahme', -qty, it.unit_price_net, ref, `Umlagerung nach ${toSite}${note ? ' – ' + note : ''}`, user.id, now, tid, toSite));
-  stmts.push(env.DB.prepare(ins).bind(uuid(), envName, target.id, 'zugang', qty, it.unit_price_net, ref, `Umlagerung von ${it.site}${note ? ' – ' + note : ''}`, user.id, now, tid, it.site));
+  stmts.push(env.DB.prepare(ins).bind(uuid(), envName, it.id, 'entnahme', -qty, it.unit_price_net, ref, `Umlagerung nach ${toSite}${note ? ' – ' + note : ''}`, user.id, now, tid, toSite, rkey));
+  stmts.push(env.DB.prepare(ins).bind(uuid(), envName, target.id, 'zugang', qty, it.unit_price_net, ref, `Umlagerung von ${it.site}${note ? ' – ' + note : ''}`, user.id, now, tid, it.site, null));
   stmts.push(...stockGuardNonNegative(env, it.id));
   try { await env.DB.batch(stmts); } catch (e) {
+    if (rkey && String(e && e.message).includes('request_key')) {
+      const p2 = await env.DB.prepare('SELECT transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first();
+      if (p2) return { ok: true, duplicate: true, transfer_id: p2.transfer_id, on_hand: await onHand(env, id) };
+    }
     if (isCheck(e)) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, id)} ${it.unit}).`);
     // gleichzeitig angelegter Zielartikel (eindeutiger Index): einmal neu – dann wird er gefunden (vorher „Interner Fehler“)
     if (created && !retried && String(e && e.message).includes('UNIQUE')) return transfer(env, user, envName, id, body, true);

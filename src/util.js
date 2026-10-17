@@ -244,7 +244,8 @@ export function berlinDayStartIso(dateStr) {
 // Unabhängig von der Zeitzone des Geräts bzw. des Servers. Angaben mit Zeitzone (Z, +02:00) bleiben unverändert;
 // ungültiges Kalenderdatum/Uhrzeit (30.02., 24:00) → null. Zeitumstellung: Uhrzeit in der übersprungenen Stunde (02:30 im März)
 // wird wie 03:30 Sommerzeit gelesen, die doppelte Stunde im Oktober als Winterzeit (zweites Auftreten).
-const NAIVE_LOCAL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+// auch mit Leerzeichen statt „T“ und Sekundenbruchteilen (wurden vorher als UTC gelesen – Tatzeit 2 h verschoben, 17.10.2026)
+const NAIVE_LOCAL = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?$/;
 export function berlinLocalToIso(v) {
   const s = String(v ?? '').trim();
   const m = NAIVE_LOCAL.exec(s);

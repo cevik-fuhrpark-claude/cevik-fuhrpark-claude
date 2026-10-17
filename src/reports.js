@@ -684,9 +684,9 @@ export function workshopPlanIcs(plan, envName, lang = 'de') {
   const ev = [];
   for (const d of plan.days) for (const i of d.items) {
     ev.push(i.type === 'case'
-      ? { uid: `plan-case-${i.id}-${d.date}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
+      ? { uid: `plan-case-${i.id}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
         description: I.tx('plan_status', { status: I.status(i.status) }) + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') }
-      : { uid: `plan-maint-${i.id}-${d.date}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '' });
+      : { uid: `plan-maint-${i.id}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '' });
   }
   return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site }) : ''}`, ev);
 }

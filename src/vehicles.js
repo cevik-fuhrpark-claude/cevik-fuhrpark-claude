@@ -313,8 +313,10 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: t.case_id });
     // Hinweise zum Fahrzeug: angelegt und archiviert (nur wenn der Bereich gewünscht ist – spart sonst die Abfrage)
     if (!want.size || want.has('note')) {
-      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at, valid_until FROM vehicle_notes WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results;
       const today = berlinDate();
+      // nach dem jüngsten Ereignis je Hinweis (Anlage, Archivierung, Ablauf) – eine Archivierung eines älteren Hinweises fehlte sonst (17.10.2026)
+      const notes = (await env.DB.prepare(`SELECT text, for_driver, created_at, archived_at, valid_until FROM vehicle_notes WHERE vehicle_id=? AND environment=?
+        ORDER BY MAX(created_at, COALESCE(archived_at, ''), CASE WHEN valid_until < ?4 THEN valid_until ELSE '' END) DESC LIMIT ?3`).bind(vehicleId, envName, cap, today).all()).results;
       for (const n of notes) {
         add('note', n.created_at, { note_event: 'add', text: n.text, for_driver: !!n.for_driver, valid_until: n.valid_until || null });
         // Abgelaufen („gültig bis“ überschritten), sofern nicht schon vorher archiviert – Datum laut Eintrag, nichts geschätzt
@@ -869,19 +871,26 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   const result = { imported: 0, skipped: [], dry_run: dryRun, preview: [] };
   const rows = new Map();
   const cell = (cells, i) => (i >= 0 && cells[i] !== undefined && cells[i] !== '' ? cells[i] : null);
-  table.slice(1).forEach((cells, idx) => {
-    const line = cells.line || idx + 2;
+  table.slice(1).forEach((raw, idx) => {
+    const line = raw.line || idx + 2;
+    // Formelschutz des eigenen Exports zurücknehmen ('- → -, '+ Reserve → + Reserve), sonst änderte die Rundreise die Stammdaten (17.10.2026)
+    const cells = raw.map((x) => (typeof x === 'string' ? x.replace(/^'(?=[=+\-@\t\r])/, '') : x));
     const vin = normalizeVin(cells[ci.vin]);
     if (!isValidVin(vin)) { result.skipped.push({ line, plate: cells[ci.plate], reason: 'FIN ungültig/fehlt' }); return; }
     try {
       const yearRaw = cell(cells, ci.year);
+      // Baujahr nicht erkannt (Text, außerhalb 1950–2100): Fahrzeug trotzdem übernehmen, Baujahr leer lassen und in der Vorschau nennen
+      // (vorher still leer bzw. ganze Zeile übersprungen, 17.10.2026)
+      const yNum = yearRaw && /^\d{4}(\.0+)?$/.test(String(yearRaw).trim()) ? parseInt(yearRaw, 10) : null;
+      const yearOk = yNum !== null && yNum >= 1950 && yNum <= 2100;
       const row = vehicleRow(user, {
         vin, plate: cells[ci.plate], site: cell(cells, ci.site), master_status: cell(cells, ci.status),
-        manufacturer: cell(cells, ci.man), model: cell(cells, ci.model), build_year: yearRaw && /^\d{4}(\.0+)?$/.test(yearRaw) ? parseInt(yearRaw, 10) : null,
+        manufacturer: cell(cells, ci.man), model: cell(cells, ci.model), build_year: yearOk ? yNum : null,
         trailer_plate: cell(cells, ci.trailer), kind: cell(cells, ci.kind),
         source: ci.src >= 0 && cell(cells, ci.src) ? `CSV-Import: ${cell(cells, ci.src).slice(0, 180)}` : 'CSV-Import Fuhrpark Stammliste',
       });
       row._line = line;
+      if (yearRaw && !yearOk) row._yearBad = String(yearRaw).slice(0, 40);
       // doppelte FIN: letzte Zeile gilt – die frühere wird als übersprungen gemeldet (vorher still verworfen, 17.10.2026)
       const prev = rows.get(row.id);
       if (prev) result.skipped.push({ line: prev._line, plate: prev.plate, reason: `FIN doppelt in der Datei (Zeile ${line} gilt)` });
@@ -900,6 +909,7 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
     // eine alte Stammliste verkaufte Lkw still wieder in Betrieb – 17.10.2026)
     result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: changes.length ? 'geändert' : 'unverändert', changes, ...(ex.active ? {} : { inactive_kept: true }) });
   }
+  for (const pv of result.preview) { const r = rows.get('VIN:' + pv.vin); if (r && r._yearBad) pv.year_unrecognized = r._yearBad; }
   result.preview.sort((a, b) => a.line - b.line); result.skipped.sort((a, b) => a.line - b.line);
   result.inactive_kept = result.preview.filter((p) => p.inactive_kept).map((p) => p.plate);
   // Hinweis (keine Sperre): Kennzeichen nach dem Import an mehreren Fahrzeugen (Schreibweise egal) – meist Tippfehler in der FIN
@@ -912,9 +922,9 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
     const others = (byKey.get(normPlate(pv.plate)) || []).filter((id) => id !== 'VIN:' + pv.vin);
     if (others.length) pv.plate_conflict = others.map((id) => id.replace(/^VIN:/, ''));
   }
-  result.counts = { neu: result.preview.filter((p) => p.action === 'neu').length, geaendert: result.preview.filter((p) => p.action === 'geändert').length, unveraendert: result.preview.filter((p) => p.action === 'unverändert').length, plate_conflict: result.preview.filter((p) => p.plate_conflict).length };
+  result.counts = { neu: result.preview.filter((p) => p.action === 'neu').length, geaendert: result.preview.filter((p) => p.action === 'geändert').length, unveraendert: result.preview.filter((p) => p.action === 'unverändert').length, plate_conflict: result.preview.filter((p) => p.plate_conflict).length, year_unrecognized: result.preview.filter((p) => p.year_unrecognized).length };
   if (dryRun) return result;
-  for (const r of rows.values()) delete r._line;
+  for (const r of rows.values()) { delete r._line; delete r._yearBad; }
   await upsertVehicleRows(env, [...rows.values()], { keepExisting: true, actorId: user.id });
   result.imported = rows.size;
   await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length, ...result.counts });

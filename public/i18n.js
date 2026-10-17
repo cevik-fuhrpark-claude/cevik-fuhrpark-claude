@@ -908,6 +908,7 @@ const IMPORT_TPL = [
   [/^Fahrer nicht gefunden: (.{0,200})$/, 'Водія не знайдено: $1', 'Driver not found: $1'],
   [/^Frist in der Liste \((\d{4}-\d{2}-\d{2})\) weicht ab – vorhandene Frist (\d{4}-\d{2}-\d{2}) bleibt; in der Fahrzeugakte prüfen$/, 'Строк у списку ($1) відрізняється – наявний строк $2 залишається; перевірте в картці транспорту', 'Deadline in the list ($1) differs – existing deadline $2 is kept; check in the vehicle file'],
   [/^Anhänger ohne Fahrtenschreiber: (.{0,200})$/, 'Причіп без тахографа: $1', 'Trailer without tachograph: $1'],
+  [/^Reifengröße zu lang \(max\. 40 Zeichen\): (.{0,200})$/, 'Розмір шини задовгий (макс. 40 символів): $1', 'Tyre size too long (max. 40 characters): $1'],
 ];
 export const IMPORT_REASONS_FIXED = IMPORT_FIXED.map(([de]) => de);
 export const IMPORT_REASONS_TPL = IMPORT_TPL.map(([re]) => re);
@@ -1045,6 +1046,9 @@ Object.assign(STRINGS.en, { dup_plate_warn: 'Note: plate {p} is also assigned to
 Object.assign(STRINGS.de, { imp_inactive_kept: 'Außer Betrieb, bleibt außer Betrieb (Wieder-in-Betrieb-Nahme in der Fahrzeugakte): {n}', imp_plate_conflict: '{n} Zeile(n): Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich' });
 Object.assign(STRINGS.uk, { imp_inactive_kept: 'Виведено з експлуатації, залишається виведеним (повернення – у картці транспорту): {n}', imp_plate_conflict: 'Рядків: {n} – номер після імпорту буде й в іншого транспортного засобу. Перевірте VIN (помилка чи дубль?). Імпорт усе одно можливий' });
 Object.assign(STRINGS.en, { imp_inactive_kept: 'Out of service, stays out of service (return to service in the vehicle file): {n}', imp_plate_conflict: '{n} row(s): plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible' });
+Object.assign(STRINGS.de, { imp_year_unrecognized: 'Baujahr nicht erkannt („{v}“) – bleibt leer' });
+Object.assign(STRINGS.uk, { imp_year_unrecognized: 'Рік випуску не розпізнано («{v}») – залишиться порожнім' });
+Object.assign(STRINGS.en, { imp_year_unrecognized: 'Year of manufacture not recognised (“{v}”) – left empty' });
 Object.assign(STRINGS.de, { fine_vehicle_ambiguous: 'Kennzeichen steht an mehreren aktiven Fahrzeugen – nicht zugeordnet, damit kein falscher Fahrer ermittelt wird. Bitte Fahrzeugstamm prüfen (Datenqualität).' });
 Object.assign(STRINGS.uk, { fine_vehicle_ambiguous: 'Цей номер має кілька активних транспортних засобів – не призначено, щоб не визначити не того водія. Перевірте дані транспорту («Якість даних»).' });
 Object.assign(STRINGS.en, { fine_vehicle_ambiguous: 'This plate is on several active vehicles – not assigned, so that no wrong driver is identified. Please check the vehicle master data (data quality).' });
@@ -1318,6 +1322,7 @@ const AUDIT_DETAIL_KEYS = {
   part: ['Teil', 'Частина', 'Part'], type: ['Typ', 'Тип', 'Type'], neu: ['neu', 'нові', 'new'], geaendert: ['geändert', 'змінено', 'changed'],
   unveraendert: ['unverändert', 'без змін', 'unchanged'], vorhanden: ['vorhanden', 'вже є', 'existing'], uebersprungen: ['übersprungen', 'пропущено', 'skipped'],
   plate_conflict: ['Kennzeichen-Konflikt', 'Конфлікт номерного знака', 'plate conflict'],
+  year_unrecognized: ['Baujahr nicht erkannt', 'Рік випуску не розпізнано', 'year not recognised'],
   zgm_class: ['zGM-Klasse', 'Клас повної маси', 'GVW class'], doc_kind: ['Dokumentart', 'Тип документа', 'Document type'], vehicle_kind: ['Fahrzeugart', 'Вид транспорту', 'Vehicle type'], zgm_kg: ['zGM (kg)', 'Повна маса (кг)', 'GVW (kg)'],
   first_registration: ['Erstzulassung', 'Перша реєстрація', 'First registration'], duplicate_plate_of: ['Kennzeichen auch bei', 'Номерний знак також у', 'Plate also on'],
   display_name: ['Anzeigename', 'Відображуване ім’я', 'Display name'], workshop_site: ['Werkstatt', 'Майстерня', 'Workshop'],

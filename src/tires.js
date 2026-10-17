@@ -243,7 +243,9 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
       const size = ci[k] >= 0 ? c[ci[k]] : '';
       if (!size || !/\d/.test(size)) continue;
       if (verified.has(`${vid}|${axle}`)) { res.kept_verified++; continue; }
-      rows.set(`${vid}|${axle}`, { v: vid, a: axle, s: size.slice(0, 40), src: `Quelldatei Fuhrpark ${ci.src >= 0 ? c[ci.src] : ''} (ungeprüft)`.trim() });
+      // zu lange Größe: Zeile melden statt still kürzen (17.10.2026; Einzelerfassung weist sie ebenfalls ab)
+      if (size.trim().length > 40) { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: `Reifengröße zu lang (max. 40 Zeichen): ${size.trim().slice(0, 60)}` }); continue; }
+      rows.set(`${vid}|${axle}`, { v: vid, a: axle, s: size.trim(), src: `Quelldatei Fuhrpark ${ci.src >= 0 ? c[ci.src] : ''} (ungeprüft)`.trim() });
     }
   }
   const list = [...rows.values()];
