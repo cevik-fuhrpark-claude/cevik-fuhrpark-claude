@@ -132,7 +132,9 @@ export async function dataQuality(env, user, envName, query = {}) {
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
     // außerdem: Stände außer Betrieb genommener Fahrzeuge mit dem letzten Zeitpunkt „außer Betrieb genommen“ laut Protokoll (ohne Protokolleintrag kein Befund)
+    // sowie der nächste spätere unbegründete km-Stand (nachgereichter Telematikwert größer → ebenfalls nicht übernommen, 17.10.2026)
     env.DB.prepare(`SELECT t.vehicle_id, t.provider, t.external_id, t.source_plate, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at,
+      (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > t.gps_time ORDER BY o.measured_at ASC LIMIT 1) AS next_json,
       v.active AS v_active, v.plate AS v_plate,
       CASE WHEN v.active=0 THEN (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=t.vehicle_id AND a.action='vehicle.deactivate') END AS deact_at
       FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
@@ -225,6 +227,10 @@ export async function dataQuality(env, user, envName, query = {}) {
     const v = vById.get(r.vehicle_id); if (!v) continue;
     if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
     if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`);
+    else if (r.km !== null && r.gps_time && r.next_json) {
+      const n = JSON.parse(r.next_json);
+      if (n.km < Math.round(r.km) && !(n.note && String(n.note).trim())) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) > ${n.km} km (${berlinDate(n.at)})`);
+    }
   }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
   for (const d of drv.results) {

@@ -10,6 +10,7 @@ Authentifizierung: `Authorization: Bearer <Token>` (Cloudflare-Secrets; ohne Sec
 - optional `INTEGRATION_TOKEN_READ` – nur lesen (schreibende Aufrufe → 403 `read_only_token`).
 Tokens müssen mindestens 16 Zeichen haben. Ungültige Tokens: 401 `invalid_token`; nach 30 ungültigen Versuchen in 15 Min. von derselben Netzadresse 429 `rate_limited` für diese Adresse (auch mit gültigem Token, bis das Fenster abläuft), Protokoll `integration.token_limited`.
 Parameter `environment=production|test` (Standard: production).
+Kein Header `x-cfp` nötig: Der CSRF-Schutz der App-API (§ 2) gilt hier nicht, weil nur das Token zählt (keine Cookies; bis 17.10.2026 lehnte er `POST /v1/telematics` ohne `x-cfp: 1` mit 403 ab).
 
 | Methode & Pfad | Zweck |
 |---|---|
@@ -33,7 +34,7 @@ Parameter `environment=production|test` (Standard: production).
     "gps_time": "2026-10-10T08:20:00Z", "lat": 51.52, "lon": 7.42, "km": 456789, "speed": 0, "ignition": false } ] }
 ```
 Regeln: Der Anfragekörper muss ein JSON-Objekt sein (sonst 400 `invalid_json`); Einträge in `items`, die kein Objekt sind, zählen als `rejected`. Zuordnung nur über FIN oder bestätigtes Mapping (`telematics_mappings`). Nur Kennzeichen → Prüffall in
-`telematics_unmatched`, keine Zuordnung; der Prüffall nennt einen Kennzeichen-**Vorschlag** (`candidate_vehicle_id`) nur, wenn das Kennzeichen eindeutig ist (Vergleich ohne Leerzeichen/Bindestriche, Groß-/Kleinschreibung auch bei Umlauten egal; zuerst aktive, dann ruhende, dann außer Betrieb genommene Fahrzeuge – zwei gleiche in derselben Stufe = kein Vorschlag). Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen.
+`telematics_unmatched`, keine Zuordnung; der Prüffall nennt einen Kennzeichen-**Vorschlag** (`candidate_vehicle_id`) nur, wenn das Kennzeichen eindeutig ist (Vergleich ohne Leerzeichen/Bindestriche, Groß-/Kleinschreibung auch bei Umlauten egal; zuerst aktive, dann ruhende, dann außer Betrieb genommene Fahrzeuge – zwei gleiche in derselben Stufe = kein Vorschlag). Ältere GPS-Zeit überschreibt keinen neueren Stand. (0,0)-Positionen werden verworfen. Zahlenfelder (`lat`, `lon`, `km`, `speed`) gelten bei `null`, leerem Text, `true`/`false` oder Unsinn als **nicht geliefert** (nicht als 0); `km` außerhalb 0–5 000 000 ebenso (gleiche Spanne wie die Erfassung in der App); Position nur, wenn `lat` und `lon` beide gültig sind. Wird ein Gerät über FIN oder Mapping zugeordnet, verschwindet ein früherer Prüffall derselben Geräte-ID (wie beim Bestätigen in der App).
 Das vom Gerät gemeldete `plate` wird beim letzten Stand mitgespeichert (`telematics_latest.source_plate`, Migration 0043); weicht es vom Kennzeichen des zugeordneten Fahrzeugs ab (Schreibweise egal), meldet die Datenqualität `telematics_plate_mismatch` (fehler, Detail „Anbieter Geräte-ID → gemeldetes Kennzeichen“) – keine automatische Korrektur.
 Beispiel-Eintrag in `GET /api/integration/v1/data-quality` → `items[]`:
 `{"check":"telematics_plate_mismatch","severity":"fehler","vehicle_id":"VIN:WDB…","plate":"SZ-YC 5523","event_id":null,"case_id":null,"detail":"YellowFox 4711 → SZ-YC 5531"}` (Werte erfunden; maßgeblich sind die Felder).
@@ -41,7 +42,7 @@ Liefert ein Gerät einen km-Stand **kleiner** als der zuvor erfasste km-Stand (b
 Liefert ein Gerät für ein **außer Betrieb genommenes** Fahrzeug einen Stand mit GPS-Zeit nach dem Zeitpunkt „außer Betrieb genommen“ (letzter Protokolleintrag `vehicle.deactivate`; ohne Protokolleintrag kein Befund), meldet die Datenqualität `telematics_vehicle_inactive` (hinweis, Detail „Anbieter Geräte-ID: GPS-Zeit · außer Betrieb seit Datum“) – verkauft/abgemeldet? Gerät ausbauen oder Zuordnung lösen. Die Daten werden weiterhin angenommen (keine automatische Änderung).
 Dieselbe Abweichung steht in der Telematik-Übersicht (`plate_mismatches[]`) und in der Fahrzeugakte (`GET /api/vehicles/:id` → `telematics[].reported_plate`, sonst `null`; nur Inhaber/Fuhrparkleitung/Disposition).
 `gps_time` bitte mit Zeitzone (`Z` oder `+02:00`); ohne Zeitzone wird sie als UTC gelesen. Einträge ohne gültige `gps_time` (oder älter als der gespeicherte Stand, oder > 10 Min. in der Zukunft) zählen als `rejected` und überschreiben keinen vorhandenen Stand. Der Tages-km-Stand (höchstens einer je Fahrzeug und Tag) gilt je Berliner Kalendertag.
-Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben – **je Fahrzeug und Tag ein Wert** (der jüngste) und nur, wenn er nicht kleiner ist als der zuvor erfasste km-Stand (`odometer_written` zählt neue/aktualisierte Tageswerte, `odometer_rejected` die Tageswerte, die kleiner als der zuvor erfasste Stand waren und deshalb nicht übernommen wurden – gleicher Zustand wie Datenqualität `telematics_km_rejected`). GPS-Zeiten mehr als 10 Minuten in der Zukunft werden verworfen (`rejected`). Max. 500 Einträge je Aufruf; die Verarbeitung braucht unabhängig von der Menge ≤ 10 Datenbankanweisungen.
+Kilometerstände werden mit Quelle `telematik:<provider>` in die Fahrzeugakte geschrieben – **je Fahrzeug und Tag ein Wert** (der jüngste) und nur, wenn er nicht kleiner ist als der zuvor erfasste km-Stand und nicht größer als der nächste **spätere** Stand (nachgereichte Werte; außer dieser ist begründet, z. B. Tachotausch – gleiche Regel wie die Erfassung in der App, die sonst eine Begründung verlangt) (`odometer_written` zählt neue/aktualisierte Tageswerte, `odometer_rejected` die Tageswerte, die kleiner als der zuvor erfasste bzw. größer als ein späterer unbegründeter Stand waren und deshalb nicht übernommen wurden – gleicher Zustand wie Datenqualität `telematics_km_rejected`). GPS-Zeiten mehr als 10 Minuten in der Zukunft werden verworfen (`rejected`). Max. 500 Einträge je Aufruf; die Verarbeitung braucht unabhängig von der Menge ≤ 10 Datenbankanweisungen.
 
 ### Agenten-Übergabe (Fuhrparkagent → Master)
 Jede Übergabe ist ein Ereignis mit `schema_version 1.0`, eindeutiger `event_id` (SHA-256 aus Befund, Fingerprint, Erstauftreten),
@@ -97,7 +98,7 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 | `inspection_no_result` | `hinweis` | Pflichtprüfung ohne Prüfergebnis (in der App erfasst, ≤ 180 Tage) |
 | `km_rule_no_base` | `luecke` | Wartung nach km ohne Ausgangs-km |
 | `telematics_plate_mismatch` | `fehler` | Telematik-Gerät meldet anderes Kennzeichen |
-| `telematics_km_rejected` | `hinweis` | Telematik-km-Stand kleiner als in der Akte (nicht übernommen) |
+| `telematics_km_rejected` | `hinweis` | Telematik-km-Stand passt nicht zu den erfassten Ständen (nicht übernommen): kleiner als der Stand davor (Detail „… < …“) oder – nachgereicht – größer als der nächste spätere unbegründete Stand (Detail „… > …“) |
 | `telematics_vehicle_inactive` | `hinweis` | Telematik sendet für außer Betrieb genommenes Fahrzeug |
 
 ## 2. App-API (Sitzungscookie)

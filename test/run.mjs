@@ -651,6 +651,9 @@ await test('Dokumentablage je Fahrzeug: Rechte, Dateityp, Dubletten, Download, U
 });
 await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pflicht', async () => {
   const H = { authorization: 'Bearer integration-token-xyz' };
+  // Testdaten: frühere Tests erfassten heute km-Stände (Kontrolle) unter den festen Oktober-Werten unten – als begründet markieren,
+  // sonst lehnt die Regel „nicht größer als ein späterer unbegründeter Stand“ die nachgereichten Werte (zu Recht) ab
+  env.DB.db.prepare(`UPDATE odometer_readings SET note='Testdaten' WHERE vehicle_id='VIN:WMA15SZZ2HM722774' AND (note IS NULL OR note='')`).run();
   eq((await anon.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer falsch' })).status, 401);
   const r = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [
     { external_id: 'WF-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-10T08:00:00Z', lat: 51.5, lon: 7.4, km: 812500 },
@@ -9811,6 +9814,69 @@ await test('Sitzungen: nach Leerlauf abgemeldete zählen nicht als aktiv und wer
   const old = new Date(Date.now() - 40 * 864e5).toISOString();
   eq(isUnusedUser({ has_password: 1, active: 1, created_at: old, last_login: old, last_seen: now }, 14), false, 'täglich genutzt:');
   eq(isUnusedUser({ has_password: 1, active: 1, created_at: old, last_login: old, last_seen: null }, 14), true, 'nicht genutzt:');
+});
+
+await test('Integrations-API: Telematik-POST ohne x-cfp (nur Token); null/""/Unsinn ist kein 0-km-Stand; Prüffall verschwindet nach FIN-Zuordnung', async () => {
+  const { ensureSchema } = await import('../src/worker.js');
+  const e = makeEnv(); await ensureSchema(e); e.INTEGRATION_TOKEN = 'x'.repeat(32); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:WDB1234567890ABCD','WDB1234567890ABCD','T-TM 1','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  const send = async (items, headers = {}) => { const res = await worker.fetch(new Request('https://h/api/integration/v1/telematics', { method: 'POST', headers: { authorization: 'Bearer ' + e.INTEGRATION_TOKEN, 'content-type': 'application/json', ...headers }, body: JSON.stringify({ provider: 'webfleet', items }) }), e, { waitUntil() {}, passThroughOnException() {} });
+    return { status: res.status, data: await res.json() }; };
+  const t = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  // Prüffall nur mit Kennzeichen, ohne x-cfp und mit fremder Herkunft (Server-zu-Server) – vorher 403 CSRF
+  let r = await send([{ external_id: 'D9', plate: 'T-TM 1', gps_time: t(5) }], { origin: 'https://n8n.example' });
+  eq(r.status, 200, 'ohne x-cfp: ' + JSON.stringify(r.data)); eq(r.data.unmatched, 1);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM telematics_unmatched').get().n, 1);
+  // gleiche Geräte-ID liefert später die FIN: zugeordnet, Prüffall weg; km null/""/true/Ausreißer = nicht geliefert, Position nur mit beiden Werten
+  for (const [i, extra] of [[4, { km: null, lat: null, lon: 13.4 }], [3, { km: '', lat: '', lon: '' }], [2, { km: true, speed: null }], [1.5, { km: 99999999 }]].entries()) {
+    r = await send([{ external_id: 'D9', vin: 'WDB1234567890ABCD', gps_time: t(extra === undefined ? 0 : [4, 3, 2, 1.5][i]), ...extra }]);
+    eq(r.data.matched, 1); eq(r.data.odometer_written, 0, `kein km-Stand bei ${JSON.stringify(extra)}:`); eq(r.data.odometer_rejected, 0);
+  }
+  eq(db.prepare('SELECT COUNT(*) AS n FROM telematics_unmatched').get().n, 0, 'Prüffall nach FIN-Zuordnung bereinigt:');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM odometer_readings').get().n, 0, 'keine 0-km-Zeile:');
+  let row = db.prepare('SELECT lat, lon, km, speed FROM telematics_latest').get();
+  eq(JSON.stringify(row), JSON.stringify({ lat: null, lon: null, km: null, speed: null }), 'keine erfundenen Nullen:');
+  // echter Stand danach wird übernommen (vorher blockierte ein Ausreißer jeden späteren Wert)
+  r = await send([{ external_id: 'D9', vin: 'WDB1234567890ABCD', gps_time: t(1), km: '200100', lat: 52.5, lon: 13.4 }]);
+  eq(r.data.odometer_written, 1); row = db.prepare('SELECT lat, lon, km FROM telematics_latest').get(); eq(row.km, 200100); eq(row.lat, 52.5);
+});
+
+await test('Integrations-API: nachgereichter Telematik-km größer als späterer unbegründeter Stand wird abgewiesen (begründeter Tachotausch nicht)', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { integrationRouter } = await import('../src/integration.js');
+  const e = makeEnv(); await ensureSchema(e); e.INTEGRATION_TOKEN = 'x'.repeat(32); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:WDB1234567890ABCD','WDB1234567890ABCD','T-TM 1','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  const d = (days) => new Date(Date.now() - days * 864e5).toISOString();
+  const ins = db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at,note) VALUES (?,?,?,?,'manuell:fleet',?,?)`);
+  ins.run('o1', 'VIN:WDB1234567890ABCD', 190000, d(5), now, null); ins.run('o2', 'VIN:WDB1234567890ABCD', 200000, d(1), now, null);
+  const send = async (items) => { const url = new URL('https://h/api/integration/v1/telematics');
+    const req = new Request(url, { method: 'POST', headers: { authorization: 'Bearer ' + e.INTEGRATION_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'yellowfox', items }) });
+    return (await integrationRouter(req, e, { waitUntil() {} }, url)).json(); };
+  let r = await send([{ external_id: 'Y1', vin: 'WDB1234567890ABCD', gps_time: d(2), km: 250000 }]);
+  eq(r.odometer_written, 0, 'größer als späterer Stand:'); eq(r.odometer_rejected, 1);
+  { const { dataQuality } = await import('../src/quality.js'); const q = await dataQuality(e, { role: 'owner' }, 'production', {});
+    ok(q.items.some((i) => i.check === 'telematics_km_rejected' && / > 200000 km/.test(i.detail)), 'Datenqualität zeigt die Abweichung: ' + JSON.stringify(q.items.map((i) => i.check))); }
+  r = await send([{ external_id: 'Y1', vin: 'WDB1234567890ABCD', gps_time: d(1.5), km: 195000 }]);
+  eq(r.odometer_written, 1, 'passt zwischen die Stände:');
+  // späterer Stand mit Begründung (Tachotausch): früherer größerer Wert ist plausibel
+  db.prepare(`UPDATE odometer_readings SET km=1000, note='Tachotausch' WHERE id='o2'`).run();
+  r = await send([{ external_id: 'Y1', vin: 'WDB1234567890ABCD', gps_time: d(1.2), km: 196000 }]);
+  eq(r.odometer_written, 1, 'vor begründetem Rücksprung:'); eq(r.odometer_rejected, 0);
+});
+
+await test('Integrations-API: Master-Eingang schwärzt den Fahrernamen auch nach Umbenennung', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { integrationRouter } = await import('../src/integration.js');
+  const e = makeEnv(); await ensureSchema(e); e.INTEGRATION_TOKEN = 'x'.repeat(32); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at) VALUES ('dr1','production','Anna Neuname',1,'x',?,?)`).run(now, now);
+  const args = { name: 'Anna Altname', ddoc: 'fuehrerschein', date: '2026-01-01' };
+  db.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,severity,message,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen,message_args)
+    VALUES ('f1','production','DRIVER_DOC_EXPIRED','dr1|fuehrerschein','kritisch','Fahrer Anna Altname: Führerschein abgelaufen','Nicht einsetzen','fleet',1,'offen','fp',?,?,?)`).run(now, now, JSON.stringify(args));
+  db.prepare(`INSERT INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,finding_id,severity,payload,received_at,decision_status)
+    VALUES ('ev1','1.0','production','fuhrparkagent','finding','f1','kritisch',?,?,'offen')`).run(JSON.stringify({ finding_code: 'DRIVER_DOC_EXPIRED', message: 'Fahrer Anna Altname: Führerschein abgelaufen', next_action: 'Nicht einsetzen', message_args: args }), now);
+  const url = new URL('https://h/api/integration/v1/master');
+  const out = await (await integrationRouter(new Request(url, { headers: { authorization: 'Bearer ' + e.INTEGRATION_TOKEN } }), e, { waitUntil() {} }, url)).json();
+  const txt = JSON.stringify([out.inbox, out.findings]);
+  ok(!/Altname|Neuname/.test(txt), 'kein Name: ' + txt.slice(0, 400));
+  ok(out.inbox.some((x) => x.person_redacted), 'als geschwärzt markiert');
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

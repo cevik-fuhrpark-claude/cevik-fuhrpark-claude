@@ -48,25 +48,35 @@ async function personNames(env, environment) {
     WHERE f.environment=? AND f.finding_code IN (SELECT value FROM json_each(?))`).bind(environment, JSON.stringify(PERSON_FINDINGS)).all()).results;
   return new Map(rows.map((r) => [r.id, r.name]));
 }
+// name: ein Name oder eine Liste (aktueller Name + Name zum Zeitpunkt des Befunds aus message_args – nach einer Umbenennung
+// stand sonst der alte Name ungeschwärzt im Master-Eingang, 17.10.2026)
 function redactText(text, name) {
   if (text == null) return text;
   let t = String(text);
-  if (name) t = t.split(`Fahrer ${name}`).join(REDACTED).split(name).join(REDACTED);
+  for (const n of [...new Set([].concat(name || []).filter((x) => typeof x === 'string' && x.trim()))].sort((a, b) => b.length - a.length)) {
+    t = t.split(`Fahrer ${n}`).join(REDACTED).split(n).join(REDACTED);
+  }
   return t;
+}
+function argName(args) {
+  let a = args;
+  if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
+  return a && typeof a === 'object' && typeof a.name === 'string' ? a.name : null;
 }
 // `message_args` (Vorlagenwerte für die Oberflächensprache, public/finding-messages.js) bleibt in der App – die Schnittstelle liefert
 // den deutschen Text `message` wie bisher (Datensparsamkeit: keine zusätzlichen Einzelwerte, Schwärzung greift nur auf `message`).
 function redactFinding(row, names) {
   const { message_args, ...f } = row;
   if (!PERSON_FINDINGS.includes(f.finding_code)) return f;
-  return { ...f, message: redactText(f.message, names.get(f.id)), next_action: redactText(f.next_action, names.get(f.id)), person_redacted: true };
+  const n = [names.get(f.id), argName(message_args)];
+  return { ...f, message: redactText(f.message, n), next_action: redactText(f.next_action, n), person_redacted: true };
 }
 function redactInbox(row, names) {
   const { message_args, ...payload } = row.payload || {};
   const m = row.payload ? { ...row, payload } : row;
   const code = m.payload && m.payload.finding_code;
   if (!PERSON_FINDINGS.includes(code)) return m;
-  const n = names.get(m.finding_id);
+  const n = [names.get(m.finding_id), argName((row.payload || {}).message_args)];
   return { ...m, decision_note: redactText(m.decision_note, n), payload: { ...m.payload, message: redactText(m.payload.message, n), next_action: redactText(m.payload.next_action, n) }, person_redacted: true };
 }
 
@@ -196,6 +206,9 @@ export async function integrationRouter(request, env, ctx, url) {
     // Abfragebudget: Zuordnungen, Fahrzeuge und letzte Stände gesammelt laden, Schreibzugriffe gesammelt ausführen
     // (vorher bis zu 4 Abfragen je Eintrag – bei 500 Einträgen weit über der Grenze je Aufruf).
     // Einträge, die kein Objekt sind (null, Zahl, Text, Liste), werden wie leere Einträge abgewiesen statt die ganze Lieferung mit „Interner Fehler“ zu beenden
+    // Zahlenwerte: null, "", Wahrheitswerte und Unsinn gelten als „nicht geliefert“ (Number(null) = 0 schrieb vorher 0 km bzw. Breite 0
+    // in Akte und Position, 17.10.2026); km nur im Bereich der App-Erfassung (0–5 000 000), sonst blockierte ein Ausreißer alle späteren Stände
+    const numOf = (x) => (typeof x === 'number' ? (Number.isFinite(x) ? x : null) : typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x)) ? Number(x) : null);
     const rows = items.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})).map((it) => {
       const ext = String(it.external_id || '').slice(0, 80);
       return { it, ext, vin: it.vin ? normalizeVin(it.vin) : null, plate: it.plate ? String(it.plate).trim().toUpperCase().slice(0, 20) : null };
@@ -214,7 +227,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const plateCandidate = (p) => { const r = p ? pickVehicleByPlate(plates.results, p) : null; return r && r.vehicle ? r.vehicle.id : null; };
     const lastGps = new Map(latest.results.map((r) => [r.vehicle_id, r.gps_time]));
     // Gesammelte Schreibzugriffe: je Tabelle EINE Anweisung über json_each (jede Anweisung zählt zum Abfragebudget)
-    const unmatched = new Map(); const latestRows = new Map(); const odo = new Map();
+    const unmatched = new Map(); const matchedExt = new Set(); const latestRows = new Map(); const odo = new Map();
     for (const { it, ext, vin, plate } of rows) {
       if (!ext) { res.rejected++; continue; }
       let vehicleId = null; let basis = null;
@@ -223,8 +236,8 @@ export async function integrationRouter(request, env, ctx, url) {
       // GPS-Zeit ohne Zeitzone wird ausdrücklich als UTC gelesen (vorher abhängig von der Laufzeitumgebung) – Quellen senden mit „Z“/Versatz
       const gt = typeof it.gps_time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(it.gps_time) ? it.gps_time + 'Z' : it.gps_time;
       const gps = gt && !Number.isNaN(Date.parse(gt)) ? new Date(gt).toISOString() : null;
-      const lat = Number.isFinite(Number(it.lat)) && Math.abs(Number(it.lat)) <= 90 ? Number(it.lat) : null;
-      const lon = Number.isFinite(Number(it.lon)) && Math.abs(Number(it.lon)) <= 180 ? Number(it.lon) : null;
+      const lat = numOf(it.lat) !== null && Math.abs(numOf(it.lat)) <= 90 ? numOf(it.lat) : null;
+      const lon = numOf(it.lon) !== null && Math.abs(numOf(it.lon)) <= 180 ? numOf(it.lon) : null;
       const validPos = lat !== null && lon !== null && !(lat === 0 && lon === 0);
       if (!vehicleId) {
         unmatched.set(ext, { ext, plate, vin, cand: plateCandidate(plate) });
@@ -239,15 +252,16 @@ export async function integrationRouter(request, env, ctx, url) {
       // ohne gültige GPS-Zeit keinen vorhandenen Stand überschreiben (vorher: Position/km gelöscht, Fahrzeug „ohne Daten“, 17.10.2026)
       if (!gps && prev) { res.rejected++; continue; }
       if (gps) lastGps.set(vehicleId, gps);
-      const km = Number.isFinite(Number(it.km)) && Number(it.km) >= 0 ? Number(it.km) : null;
+      const km = numOf(it.km) !== null && numOf(it.km) >= 0 && numOf(it.km) <= 5000000 ? numOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
-        speed: Number.isFinite(Number(it.speed)) ? Number(it.speed) : null, ign: it.ignition === undefined || it.ignition === null ? null : (it.ignition ? 1 : 0) });
+        speed: numOf(it.speed), ign: it.ignition === undefined || it.ignition === null ? null : (it.ignition ? 1 : 0) });
       if (km !== null && gps) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)
         const day = berlinDate(gps); const key = `${vehicleId}|${day}`; const cur = odo.get(key);
         if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps });
       }
+      matchedExt.add(ext);
       res.matched++;
     }
     const X = (k) => `json_extract(value,'$.${k}')`;
@@ -256,23 +270,30 @@ export async function integrationRouter(request, env, ctx, url) {
       SELECT ?1, ${X('ext')}, ${X('plate')}, ${X('vin')}, ${X('cand')}, ?2 FROM json_each(?3) WHERE 1
       ON CONFLICT(provider,external_id) DO UPDATE SET source_plate=excluded.source_plate, source_vin=excluded.source_vin, candidate_vehicle_id=excluded.candidate_vehicle_id, last_seen=excluded.last_seen`)
       .bind(provider, now, JSON.stringify([...unmatched.values()])));
+    // zugeordnet (FIN/Mapping): früheren Prüffall derselben Geräte-ID bereinigen – wie beim Bestätigen in der App (vorher blieb er stehen)
+    if (matchedExt.size) stmts.push(env.DB.prepare('DELETE FROM telematics_unmatched WHERE provider=? AND external_id IN (SELECT value FROM json_each(?))').bind(provider, JSON.stringify([...matchedExt])));
     if (latestRows.size) stmts.push(env.DB.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,source_plate,gps_time,received_at,lat,lon,km,speed,ignition)
       SELECT ${X('v')}, ?1, ${X('ext')}, ${X('basis')}, ${X('sp')}, ${X('gps')}, ?2, ${X('lat')}, ${X('lon')}, ${X('km')}, ${X('speed')}, ${X('ign')} FROM json_each(?3) WHERE 1
       ON CONFLICT(vehicle_id,provider) DO UPDATE SET external_id=excluded.external_id, match_basis=excluded.match_basis, source_plate=excluded.source_plate, gps_time=excluded.gps_time, received_at=excluded.received_at,
         lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)
+    const NEXT_SMALLER = `COALESCE((SELECT o.km < ${X('km')} AND (o.note IS NULL OR trim(o.note) = '') FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at > ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at ASC LIMIT 1), 0)`;
     const rejPos = stmts.length;
     if (odo.size) stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?1)
       WHERE ${X('km')} < (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1)
+        OR ${NEXT_SMALLER}
         OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at < ${X('t')} AND d.km > ${X('km')})`)
       .bind(JSON.stringify([...odo.values()])));
     const odoPos = stmts.length;
-    // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage);
-    // der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
+    // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage) und – wie bei der
+    // Erfassung in der App – nie größer als der nächste spätere Stand, außer dieser ist begründet (z. B. Tachotausch); sonst würde ein
+    // nachgereichter Telematikwert den späteren manuellen Stand zum „Rücksprung ohne Begründung“ machen (17.10.2026).
+    // Der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
     if (odo.size) stmts.push(env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
       SELECT ${X('id')}, ${X('v')}, ${X('km')}, ${X('t')}, ?1, NULL, ?2 FROM json_each(?3)
       WHERE ${X('km')} >= COALESCE((SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1), 0)
+        AND NOT ${NEXT_SMALLER}
       ON CONFLICT(id) DO UPDATE SET km=excluded.km, measured_at=excluded.measured_at, created_at=excluded.created_at
         WHERE excluded.measured_at > odometer_readings.measured_at AND excluded.km >= odometer_readings.km
       ON CONFLICT DO NOTHING`).bind(`telematik:${provider}`, now, JSON.stringify([...odo.values()])));

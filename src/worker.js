@@ -97,7 +97,8 @@ async function handleApi(request, env, ctx, url) {
   let path = url.pathname;
   try { path = decodeURIComponent(url.pathname); } catch { throw new HttpError(400, "bad_path", "Ungültiger Pfad."); }
   const m = request.method;
-  checkCsrf(request);
+  // Integrations-API: nur Bearer-Token, keine Cookies – CSRF-Schutz entfällt dort (vorher lehnte er Aufrufe nach API.md ohne x-cfp mit 403 ab)
+  if (!path.startsWith('/api/integration/')) checkCsrf(request);
 
   // schema = Nummer der letzten angewandten Migration (ensureSchema lief vorher) – zum Prüfen eines Deployments ohne Anmeldung
   if (path === '/api/health') return json({ ok: true, time: nowIso(), schema: MIGRATIONS[MIGRATIONS.length - 1].id.slice(0, 4) });
