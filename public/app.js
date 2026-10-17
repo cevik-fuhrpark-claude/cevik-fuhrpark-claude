@@ -879,28 +879,38 @@ async function uploadCasePhotos(caseId, list) {
   return failed;
 }
 let flushing = false;
+// Postausgang senden (17.10.2026): nur erfolgreich gesendete bzw. vom Server abgewiesene Einträge entfernen – während des Sendens neu
+// gespeicherte Meldungen bleiben (vorher überschrieb das Ende des Sendens die Liste); Netzabbruch, 429 und 5xx bleiben zur Wiederholung.
+// Fotos einer Abfahrtskontrolle gehören an den ersten eigenen Folgeauftrag (nicht an die Kontrolle; Wiederholungsvermerk = fremder Vorgang).
+const photoTarget = (item, r) => (item.path === '/api/inspections' ? ((r.followups || []).find((f) => f && f.id && !f.repeat) || {}).id : r.id);
 async function flushOutbox() {
   if (!S.me || flushing) return;
   const list = outboxGet(); if (!list.length) return;
   flushing = true;
-  const rest = [];
+  const done = new Set(); let kept = 0;
   try {
     for (const item of list) {
       try {
         const r = await api('POST', item.path || '/api/cases', item.body);
+        done.add(item.body.request_key);
         let failed = 0;
         if (item.photos) {
-          const list = await photosGet(item.body.request_key).catch(() => null);
-          const target = r.id || (r.followups && r.followups[0] && r.followups[0].id); // Meldung bzw. Folgeauftrag der Abfahrtskontrolle
-          if (list && list.length && target) failed = await uploadCasePhotos(target, list);
+          const ph = await photosGet(item.body.request_key).catch(() => null);
+          const target = photoTarget(item, r);
+          if (ph && ph.length) failed = target ? await uploadCasePhotos(target, ph) : ph.length;
           await photosDel(item.body.request_key).catch(() => {});
         }
         toast(item.path === '/api/inspections' ? `${t('check_saved')}${failed ? ' · ' + tn('photos_failed', failed) : ''}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed);
       }
-      catch (err) { if (err.offline) { rest.push(item); continue; } toast(`${t('outbox_failed')}: ${err.message}`, true); }
+      catch (err) {
+        if (err.offline || err.status === 429 || err.status >= 500) { kept++; continue; }
+        done.add(item.body.request_key); photosDel(item.body.request_key).catch(() => {});
+        toast(`${t('outbox_failed')}: ${err.message}`, true);
+      }
     }
-  } finally { outboxSet(rest); flushing = false; }
-  const b = document.getElementById('outbox'); if (b && !rest.length) b.remove();
+  } finally { try { outboxSet(outboxGet().filter((x) => !done.has(x.body.request_key))); } catch {} flushing = false; }
+  const b = document.getElementById('outbox'); if (b && !(S.me && outboxGet().length)) b.remove();
+  if (kept && !S.outboxRetry) S.outboxRetry = setTimeout(() => { S.outboxRetry = null; if (navigator.onLine) flushOutbox(); }, 60000);
 }
 window.addEventListener('online', () => flushOutbox());
 function outboxBanner() {
@@ -1337,12 +1347,14 @@ async function viewDepartureCheck(preId) {
       const r = await api('POST', '/api/inspections', body);
       // Fotos gehören zum Mangel: an den (ersten) Folgeauftrag hängen; ohne Mangel wird nichts hochgeladen
       let failed = 0;
-      if (files.length && r.followups.length) for (const [i, file] of files.entries()) {
+      // Ziel: erster eigener Folgeauftrag; ein Wiederholungsvermerk an einem fremden Vorgang ist für Fahrer nicht sichtbar (17.10.2026)
+      const fTarget = (r.followups.find((f) => f && f.id && !f.repeat) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
+      if (files.length && fTarget) for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(r.followups[0].id, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
+        try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
       }
-      toast(`${t('check_saved')}${files.length && !r.followups.length ? ' · ' + t('check_photos_skipped') : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
-      location.hash = r.followups.length ? '#/cases/' + r.followups[0].id : '#/';
+      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + t('check_photos_skipped') : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
+      location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       $('#sb').disabled = false;
       if (err.offline) {

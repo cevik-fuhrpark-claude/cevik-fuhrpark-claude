@@ -293,12 +293,22 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   if (table.length - 1 > MAX_IMPORT) throw bad('validation', `Maximal ${MAX_IMPORT} Zeilen je Import.`);
   const head = table[0].map((h) => h.toLowerCase().trim());
-  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin']), kind: col(['vertragsart', 'art', 'typ']),
+  // Spalten nach Vorrang der Suchwörter (nicht nach Spaltenreihenfolge); kurze Suchwörter nur bei genauer Übereinstimmung –
+  // „Ratenanzahl“ oder „Nr.“ (laufende Nummer) vor der richtigen Spalte ergaben sonst falsche Raten/Vertragsnummern (17.10.2026)
+  const EXACT = new Set(['art', 'typ', 'nr', 'rate', 'fin', 'vin']);
+  const bare = (h) => h.replace(/[.:]+$/, '').trim();
+  const col = (names, exclude = []) => {
+    for (const n of names) {
+      const i = head.findIndex((h) => !exclude.some((x) => h.includes(x)) && (EXACT.has(n) ? bare(h) === n : h.startsWith(n)));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin', 'fin ']), kind: col(['vertragsart', 'art', 'typ']),
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'nummer', 'nr']),
     start: col(['vertragsbeginn', 'beginn', 'start']), end: col(['vertragsende', 'ende', 'laufzeitende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
     allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung']), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
-    rate: col(['monatsrate', 'rate']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
+    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'monatsrate', 'rate'], ['brutto', 'anzahl']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
   const fallbackEv = str(source, { max: 300, field: 'Quelle' });
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
   if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');
@@ -349,9 +359,15 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const now = nowIso();
   const items = fresh.map((r) => ({ id: uuid(), v: r.vehicle_id, kind: r.kind, partner: r.partner, no: r.contract_no, sd: r.start_date, ed: r.end_date, nm: r.notice_months, ka: r.km_allowance, sk: r.start_km, rate: r.monthly_rate_net, ev: r.evidence, note: r.note }));
   const J = (k) => `json_extract(value,'$.${k}')`;
-  await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at)
-    SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2 FROM json_each(?3)`)
+  // Vorhanden-Prüfung im Einfügen selbst (gleicher Schlüssel wie keyOf): zwei gleichzeitige Importe derselben Datei legten sonst jeden Vertrag doppelt an (17.10.2026)
+  const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at)
+    SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2 FROM json_each(?3)
+    WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=${J('v')} AND c.kind=${J('kind')} AND (CASE WHEN COALESCE(${J('no')},'')<>''
+      THEN LOWER(COALESCE(c.contract_no,''))=LOWER(${J('no')})
+      ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(${J('partner')},'')) AND COALESCE(c.start_date,'')=COALESCE(${J('sd')},'') END))`)
     .bind(user.id, now, JSON.stringify(items)).run();
+  const inserted = r.meta && typeof r.meta.changes === 'number' ? r.meta.changes : fresh.length;
+  if (inserted < fresh.length) { result.counts.vorhanden += fresh.length - inserted; result.counts.neu = inserted; result.concurrent = true; }
   await audit(env, user.id, 'contract.import', null, result.counts);
   return result;
 }

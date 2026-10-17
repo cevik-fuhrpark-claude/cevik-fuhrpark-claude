@@ -145,8 +145,9 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
     if (!a) throw forbidden('Nur für zugeordnete Fahrzeuge.');
   }
-  const v = await env.DB.prepare('SELECT id, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, kind, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
+  if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.'); // wie Kontrolle/Meldung (17.10.2026)
   const position = oneOf(body.position, POSITIONS, 'Position');
   // Sammel-Erfassung (z. B. Umrüstung auf Winterreifen): gleiche Angaben für weitere Positionen, atomar in einem Batch
   const extra = Array.isArray(body.positions) ? body.positions.map((p) => oneOf(p, POSITIONS, 'Position')) : [];

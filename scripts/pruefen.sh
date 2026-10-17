@@ -67,6 +67,7 @@ UI-Lager Entnahme mit Artikelpreis|ui-lager-entnahmepreis.py|/tmp/cfp-lager-entn
 UI-Restarbeit nach Freigabe, Arbeitsdatum-Grenzen|ui-restarbeit-freigabe.py|/tmp/cfp-restarbeit-freigabe.log
 UI-Fahrerakte Nachtrag, Vertragsformular-Stand|ui-fahrerakte-nachtrag.py|/tmp/cfp-fahrerakte-nachtrag.log
 UI-Dokumentangaben korrigieren|ui-dokument-korrigieren.py|/tmp/cfp-dokument-korrigieren.log
+UI-Offline-Postausgang (Fotos, Wiederholung, keine Verluste)|ui-postausgang.py|/tmp/cfp-postausgang.log
 UI-Konflikt-Meldungen in der Sprache|ui-konfliktsprache.py|/tmp/cfp-konfliktsprache.log
 UI-Artikel-Stammdaten bearbeiten|ui-artikel-bearbeiten.py|/tmp/cfp-artikel-bearbeiten.log
 UI-Dokumentsprache (html lang)|ui-html-lang.py|/tmp/cfp-htmllang.log

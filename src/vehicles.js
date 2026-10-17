@@ -5,7 +5,7 @@ import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, norm
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
-import { sha256Hex, berlinDateTime, hideDriverName, dateLang, berlinDaySql } from './util.js';
+import { sha256Hex, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter } from './maintenance.js';
@@ -809,10 +809,27 @@ export async function addOdometer(env, user, vehicleId, body) {
   if (problems.length && !note) {
     throw conflict('km_not_plausible', `Kilometerstand ${km} km ist ${problems.join(' und ')}. Bitte prüfen oder Begründung angeben (z. B. Tachotausch).`, { previous: prev, next });
   }
+  // Gleicher Stand derselben Person am selben Berliner Tag (doppelt gesendet) → keine zweite Zeile (17.10.2026)
+  const day = berlinDate(measuredAt);
+  if (await env.DB.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND recorded_by=? AND km=? AND ${berlinDaySql('measured_at')}=? LIMIT 1`).bind(vehicleId, user.id, km, day).first()) {
+    return { ok: true, duplicate: true, measured_at: measuredAt, warning: null };
+  }
   try {
-    await env.DB.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES (?,?,?,?,?,?,?,?)')
-      .bind(uuid(), vehicleId, km, measuredAt, `manuell:${user.role}`, user.id, now, note).run();
+    // Plausibilität und Dublette im Einfügen selbst geprüft: zwei gleichzeitige Erfassungen (100 000 und 90 000 km) umgingen sonst
+    // die Prüfung und erzeugten einen unbegründeten Rücksprung bzw. doppelte Zeilen (17.10.2026)
+    const r = await env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS (SELECT 1 FROM odometer_readings WHERE vehicle_id=?2 AND recorded_by=?6 AND km=?3 AND ${berlinDaySql('measured_at')}=?9)
+        AND (?8 IS NOT NULL OR (COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at <= ?4 ORDER BY measured_at DESC LIMIT 1), -1) <= ?3
+          AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at > ?4 ORDER BY measured_at ASC LIMIT 1), 9999999999) >= ?3))`)
+      .bind(uuid(), vehicleId, km, measuredAt, `manuell:${user.role}`, user.id, now, note, day).run();
+    if (!r.meta || r.meta.changes !== 1) {
+      if (await env.DB.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND recorded_by=? AND km=? AND ${berlinDaySql('measured_at')}=? LIMIT 1`).bind(vehicleId, user.id, km, day).first()) {
+        return { ok: true, duplicate: true, measured_at: measuredAt, warning: null };
+      }
+      throw conflict('km_changed', 'Inzwischen wurde ein anderer Kilometerstand erfasst. Bitte neu laden und prüfen.');
+    }
   } catch (e) {
+    if (e instanceof HttpError) throw e;
     if (/UNIQUE/i.test(String(e && e.message))) throw conflict('km_duplicate', 'Für diesen Tag ist bereits ein Kilometerstand von dieser Rolle erfasst.');
     throw e;
   }

@@ -655,6 +655,8 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  ['Inzwischen wurde ein anderer Kilometerstand erfasst. Bitte neu laden und prüfen.', 'Тим часом внесено інший пробіг. Оновіть сторінку та перевірте.', 'Another odometer reading has been recorded in the meantime. Please reload and check.'],
+  ['since: Zeitpunkt nach ISO 8601 (z. B. 2026-10-17T08:00:00Z).', 'since: момент часу за ISO 8601 (напр. 2026-10-17T08:00:00Z).', 'since: point in time in ISO 8601 (e.g. 2026-10-17T08:00:00Z).'],
   ['Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.', 'Дані документа тим часом змінено. Оновіть сторінку.', 'The document details have been changed in the meantime. Please reload.'],
   ['Für dieses Fahrzeug gibt es bereits einen Prüftermin dieser Art – bitte den vorhandenen bearbeiten bzw. „erledigt“ erfassen.', 'Для цього транспорту вже є строк огляду цього виду – відредагуйте наявний або внесіть «виконано».', 'This vehicle already has an inspection date of this type – please edit the existing one or record it as “done”.'],
   ['Gerät nicht gefunden.', 'Пристрій не знайдено.', 'Device not found.'],

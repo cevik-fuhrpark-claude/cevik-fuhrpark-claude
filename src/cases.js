@@ -1124,8 +1124,14 @@ export async function submitInspection(env, ctx, user, envName, body) {
   const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
   const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
   const now = nowIso();
-  const already = await env.DB.prepare('SELECT id, result FROM inspections WHERE id=?').bind(id).first();
-  if (already) return { id, result: already.result, followups: [], duplicate: true };
+  const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
+  // Wiederholung (Antwort ging verloren, Postausgang sendet erneut): dieselben Folgeaufträge wie beim ersten Senden zurückgeben –
+  // sonst ließen sich die Fotos nicht mehr anhängen (17.10.2026)
+  if (already) {
+    let its = []; try { its = JSON.parse(already.items || '[]') || []; } catch { its = []; }
+    const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}) }));
+    return { id, result: already.result, followups: fu, duplicate: true };
+  }
 
   // Folgeaufträge für jeden Mangel (eigener Vorgang, mit Bezug) – gesammelt angelegt (Abfragezahl unabhängig von der Mängelzahl)
   const followups = [];

@@ -10438,6 +10438,69 @@ await test('Gespann-Sperre erreicht Fahrer der Zugmaschine, Werkstattwechsel inf
   eq((await U.own.req('PATCH', P, { valid_until: '' }, { 'x-cfp-env': 'test' })).status, 200, 'Datum entfernen'); eq(db.prepare('SELECT doc_valid_until v FROM files WHERE id=?').get(up.data.id).v, null);
 });
 
+// D1-Latenz nachbilden (jede Anweisung wartet einen Timer-Tick wie echte Netzzugriffe; je Anweisung/Batch weiter atomar) – ohne sie
+// laufen gleichzeitige Anfragen im Test praktisch nacheinander und Wettläufe bleiben unsichtbar (17.10.2026)
+function addLatency(e) {
+  const db = e.DB; const sleep = () => new Promise((r) => setTimeout(r, 1));
+  const wrap = (st) => new Proxy(st, { get(t, k) {
+    if (k === 'bind') return (...a) => wrap(t.bind(...a));
+    if (k === 'first' || k === 'all' || k === 'run') return async (...a) => { await sleep(); return t[k](...a); };
+    const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+  const p0 = db.prepare.bind(db); const b0 = db.batch.bind(db);
+  db.prepare = (sql) => wrap(p0(sql)); db.batch = async (st) => { await sleep(); return b0(st); };
+}
+await test('Wettläufe und Importe: Vertragsimport parallel ohne Dubletten, Spaltenvorrang (Rate netto, Vertragsnummer), km-Erfassung parallel geprüft und ohne Doppelzeilen, Integrations-since mit Zeitzone, wiederholte Abfahrtskontrolle mit Folgeaufträgen, Reifen nur an Fahrzeugen in Betrieb', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet; addLatency(e);
+  // 1. zwei gleichzeitige Vertragsimporte derselben Datei → ein Vertrag
+  const csv = 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Nachweis\nSZ-YC 5513;Leasing;MAN Financial;L-4711;01.01.2025;31.12.2027;Leasingvertrag.pdf';
+  const imp = () => F.req('POST', '/api/contracts/import', csv, { 'content-type': 'text/csv' });
+  const [a, b] = await Promise.all([imp(), imp()]);
+  eq(a.status, 200); eq(b.status, 200);
+  eq(a.data.counts.neu + b.data.counts.neu, 1, 'genau einmal neu');
+  eq(db.prepare(`SELECT COUNT(*) n FROM vehicle_contracts WHERE contract_no='L-4711'`).get().n, 1, 'keine Dublette');
+  // 2. Spaltenvorrang: Ratenanzahl/brutto/laufende Nr. nicht verwechseln
+  for (const [head, row, k, want] of [
+    ['Kennzeichen;Vertragsart;Vertragspartner;Ratenanzahl;Monatsrate netto;Nachweis', 'SZ-YC 5513;Leasing;X;36;1.190,00;n', 'monthly_rate_net', 1190],
+    ['Kennzeichen;Vertragsart;Vertragspartner;Monatsrate brutto;Monatsrate netto;Nachweis', 'SZ-YC 5513;Leasing;X;1.416,10;1.190,00;n', 'monthly_rate_net', 1190],
+    ['Nr.;Kennzeichen;Art;Vertragspartner;Vertragsnummer;Nachweis', '1;SZ-YC 5513;Versicherung;Allianz;KH-998877;n', 'contract_no', 'KH-998877'],
+  ]) {
+    const r = await F.req('POST', '/api/contracts/import?dry_run=1', `${head}\n${row}`, { 'content-type': 'text/csv' });
+    eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.rows[0][k], want, head);
+  }
+  // 3. km: gleichzeitig 100 000 (Fahrer) und 90 000 (Werkstatt) ohne Begründung → nur einer; Doppelklick → eine Zeile
+  const [k1, k2] = await Promise.all([U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100000 }), U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 90000 })]);
+  eq([k1.status, k2.status].sort().join(), '201,409', 'zweite abgewiesen');
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  eq(db.prepare('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=?').get(vid).n, 1, 'kein unbegründeter Rücksprung');
+  const [d1, d2] = await Promise.all([U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100500 }), U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100500 })]);
+  eq(d1.status, 201); eq(d2.status, 201); ok(d1.data.duplicate || d2.data.duplicate, 'Wiederholung erkannt');
+  eq(db.prepare('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=? AND km=100500').get(vid).n, 1, 'eine Zeile');
+  eq((await U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100700 })).status, 201, 'neuer Stand weiter möglich');
+  // 4. Integrations-API: since mit Zeitzone = gleicher Zeitpunkt; Unsinn → 400
+  const tok = 'tok-' + rk(); e.INTEGRATION_TOKEN = tok;
+  const cid = await newCase();
+  const upd = db.prepare('SELECT updated_at u FROM cases WHERE id=?').get(cid).u;
+  const hourBefore = new Date(Date.parse(upd) - 3600000);
+  const off = (d) => { const z = new Date(d.getTime() + 2 * 3600000).toISOString().slice(0, 19); return z + '+02:00'; };
+  const I = async (q) => worker.fetch(new Request(`https://x/api/integration/v1/cases?environment=test&${q}`, { headers: { authorization: `Bearer ${tok}` } }), e, { waitUntil() {} });
+  const r1 = await (await I('since=' + encodeURIComponent(hourBefore.toISOString()))).json();
+  const r2 = await (await I('since=' + encodeURIComponent(off(hourBefore)))).json();
+  ok(r1.cases.some((c) => c.id === cid), 'UTC'); ok(r2.cases.some((c) => c.id === cid), 'mit +02:00');
+  eq((await I('since=gestern')).status, 400, 'ungültig');
+  // 5. wiederholte Abfahrtskontrolle (gleicher request_key) liefert dieselben Folgeaufträge
+  const items = (await U.driver.get('/api/meta')).data.checklist.map((i, n) => ({ key: i.key, result: n === 0 ? 'mangel' : 'ok', note: n === 0 ? 'Glas gesprungen' : undefined }));
+  const key = rk();
+  const i1 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items });
+  eq(i1.status, 201, JSON.stringify(i1.data));
+  const i2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items });
+  eq(i2.data.duplicate, true); eq(i2.data.followups.map((f) => f.id).join(), i1.data.followups.map((f) => f.id).join(), 'gleiche Folgeaufträge');
+  // 6. Reifen nur an Fahrzeugen in Betrieb
+  db.prepare(`UPDATE vehicles SET active=0 WHERE vin='WDB9630051L917317'`).run();
+  const tr = await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/tires/events', { position: 'VA-L', event_type: 'messung', tread_mm: 8 });
+  eq(tr.data.message, 'Fahrzeug ist außer Betrieb.');
+  eq(tr.status, 400, JSON.stringify(tr.data));
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

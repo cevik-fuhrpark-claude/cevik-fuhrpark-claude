@@ -95,7 +95,11 @@ export async function integrationRouter(request, env, ctx, url) {
   }
   if (p === '/v1/cases' && m === 'GET') {
     const pageSize = Math.min(Math.max(Math.round(Number(url.searchParams.get('limit')) || 1000), 1), 1000);
-    const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
+    // since als Zeitpunkt lesen (auch mit Zeitzone, z. B. +02:00) und in UTC vergleichen – Textvergleich ließ Vorgänge stumm aus (17.10.2026)
+    const sinceRaw = url.searchParams.get('since');
+    const sinceMs = sinceRaw ? Date.parse(sinceRaw) : 0;
+    if (!Number.isFinite(sinceMs) || (sinceRaw && !/^\d{4}-\d{2}-\d{2}/.test(sinceRaw))) throw bad('validation', 'since: Zeitpunkt nach ISO 8601 (z. B. 2026-10-17T08:00:00Z).');
+    const since = new Date(sinceMs).toISOString();
     const rows = (await env.DB.prepare(`SELECT c.id, c.case_no, c.environment, c.vehicle_id, c.status, c.priority, c.reported_priority, c.reported_driveability, c.safety_lock,
       c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version,
       c.planned_date, c.parts_expected_date, c.maintenance_rule_id, c.maintenance_event_id, CASE WHEN c.cost_over_limit_at IS NOT NULL AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END AS cost_approval_pending
