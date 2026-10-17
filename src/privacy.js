@@ -53,6 +53,9 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     driver_documents: q('SELECT * FROM driver_documents WHERE driver_id=? ORDER BY created_at', did),
     license_checks: q('SELECT * FROM driver_license_checks WHERE driver_id=? ORDER BY checked_on', did),
     card_downloads: q('SELECT kind, downloaded_on, evidence, created_at FROM tacho_downloads WHERE driver_id=? ORDER BY downloaded_on', did),
+    // Agentenbefunde zur Fahrerakte (Schlüssel „<Fahrer-ID>|…“, Text mit Name und Nachweisstand) und ihre Einträge im Master-Eingang (17.10.2026 ergänzt)
+    agent_findings: q("SELECT environment, finding_code, severity, message, status, first_seen, last_seen, resolved_at FROM agent_findings WHERE substr(subject_key, 1, length(?1) + 1) = ?1 || '|' ORDER BY first_seen", did || ''),
+    master_inbox: q("SELECT m.environment, m.received_at, m.decision_status, m.decision_note, m.decided_at FROM master_inbox m WHERE m.finding_id IN (SELECT id FROM agent_findings WHERE substr(subject_key, 1, length(?1) + 1) = ?1 || '|') ORDER BY m.received_at", did || ''),
   };
   const names = Object.keys(stmts);
   const res = await env.DB.batch(names.map((n) => stmts[n]));

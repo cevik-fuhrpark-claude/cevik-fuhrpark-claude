@@ -105,9 +105,14 @@ export async function addContact(env, user, envName, body) {
   const id = uuid(); const now = nowIso();
   // Höchstzahl in derselben Anweisung (parallele Anlagen überschritten sie vorher, 17.10.2026)
   const r = await env.DB.prepare(`INSERT INTO emergency_contacts(id,environment,kind,label,phone,note,site,vehicle_id,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11
-    WHERE (SELECT COUNT(*) FROM emergency_contacts WHERE environment=?2 AND archived_at IS NULL) < ?12`)
+    WHERE (SELECT COUNT(*) FROM emergency_contacts WHERE environment=?2 AND archived_at IS NULL) < ?12
+      AND NOT EXISTS (SELECT 1 FROM emergency_contacts WHERE environment=?2 AND archived_at IS NULL AND phone=?5 AND kind=?3 AND site IS ?7 AND vehicle_id IS ?8)`)
     .bind(id, envName, f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, now, now, EMERGENCY_MAX_ACTIVE).run();
-  if (!(r.meta && r.meta.changes)) throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
+  if (!(r.meta && r.meta.changes)) {
+    // dieselbe Rufnummer mit derselben Art und Geltung ist bereits aktiv (Doppelklick/parallel ergab sonst zwei gleiche Einträge, 17.10.2026)
+    if (await env.DB.prepare('SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND phone=? AND kind=? AND site IS ? AND vehicle_id IS ?').bind(envName, f.phone, f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
+    throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
+  }
   await audit(env, user.id, 'emergency.add', id, { environment: envName, ...f });
   return { id };
 }

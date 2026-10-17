@@ -10779,6 +10779,60 @@ await test('Fehlersuche 17.10. (2): Push-Abo mit kaputtem Schlüssel blockiert n
   eq(im.status, 200); const imj = await im.json(); ok(imj.cases.length >= 1, 'Fälle vorhanden'); ok(imj.cases.every((c) => !('description' in c)), 'keine Beschreibung');
 });
 
+await test('Fehlersuche 17.10. (3): Kontrolle (Prüfpunkt null, Vermerk vor Folgeaufträgen, doppelt gesendet ohne Doppel-km), Wiedervorlage-Vermerk nicht gekürzt, Dubletten-Kette parallel, Fahrer ohne fremde Folgeaufträge, Rückruf-Referenz vollständig, Verträge/Rufnummern ohne Dubletten, Datenauskunft mit Agentenbefunden', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const { CHECKLIST } = await import('../src/cases.js');
+  const okItems = () => CHECKLIST.map((i) => ({ key: i.key, result: 'ok' }));
+  // 1. null als Prüfpunkt → 400; 2. zu langer Vermerk → 400 und kein (gesperrter) Folgeauftrag
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: [null, ...okItems()] })).status, 400);
+  const n0 = db.prepare('SELECT COUNT(*) n FROM cases').get().n;
+  const bad = okItems(); bad[0] = { key: bad[0].key, result: 'mangel', note: 'Bremse zieht', safety_relevant: true };
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: bad, note: 'x'.repeat(2001) })).status, 400);
+  eq(db.prepare('SELECT COUNT(*) n FROM cases').get().n, n0, 'kein Folgeauftrag ohne Kontrolle');
+  // 7. dieselbe Kontrolle gleichzeitig zweimal → ein Verlaufseintrag, ein km-Stand
+  const rid = await toRepair(); addRandomLatency(e); const key = rk();
+  const two = await Promise.all([1, 2].map(() => U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: rid, request_key: key, items: okItems(), odometer_km: 123456 })));
+  ok(two.every((r) => r.status === 201), two.map((r) => r.status).join());
+  eq(db.prepare("SELECT COUNT(*) n FROM case_events WHERE case_id=? AND action='inspection'").get(rid).n, 1);
+  eq(db.prepare('SELECT COUNT(*) n FROM odometer_readings WHERE km=123456').get().n, 1);
+  // 3. Wiedervorlage-Vermerk > 300 → 400 statt still gekürzt
+  const fc = await newCase();
+  eq((await cmd(U.fleet, fc, 'set_followup', { followup_on: BERLIN_TODAY }, 'y'.repeat(301))).status, 400);
+  // 4. Dubletten-Kette: während A→B geprüft wird, wird B Dublette von C → A 409
+  const A = await newCase(); const B = await newCase(); const C = await newCase();
+  const verB = (await U.fleet.get(`/api/cases/${B}`)).data.case.version; let hook = true; const p0 = e.DB.prepare.bind(e.DB);
+  e.DB.prepare = (sql) => { const st = p0(sql); if (!sql.startsWith('SELECT id, case_no, vehicle_id, duplicate_of FROM cases')) return st;
+    const w = (x) => new Proxy(x, { get(t, k) { if (k === 'bind') return (...a) => w(t.bind(...a));
+      if (k === 'first') return async () => { const r = await t.first(); if (hook) { hook = false; eq((await U.fleet.post(`/api/cases/${B}/commands`, { action: 'reject', command_id: rk(), expected_version: verB, payload: { duplicate_of: C }, note: 'doppelt' })).status, 200); } return r; };
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+    return w(st); };
+  eq((await cmd(U.fleet, A, 'reject', { duplicate_of: B }, 'doppelt')).status, 409, 'keine Kette');
+  e.DB.prepare = p0;
+  // 5. Fahrer sieht keine fremden Folgeaufträge der Werkstatt
+  const items = okItems(); items[0] = { key: items[0].key, result: 'mangel', note: 'Bremsscheibe verschlissen' };
+  const rid2 = await toRepair(); eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: rid2, request_key: rk(), items })).status, 201);
+  eq((await U.driver.get(`/api/cases/${rid2}`)).data.followups.length, 0, 'Fahrer');
+  eq((await U.fleet.get(`/api/cases/${rid2}`)).data.followups.length, 1, 'Leitung');
+  // 6. Rückruf-Referenz vollständig im Auftrag
+  const ref = 'KBA-Referenz ' + 'A'.repeat(260) + ' Aktionscode 4711XY';
+  const rr = (await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Rückruf', evidence: ref })).data.id;
+  const ord = await U.fleet.post(`/api/maintenance/${rr}/order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(ord.status, 201, JSON.stringify(ord.data));
+  ok(db.prepare('SELECT description FROM cases WHERE id=?').get(ord.data.id || ord.data.case_id).description.includes('Aktionscode 4711XY'), 'Aktionscode');
+  // 8. Vertrag doppelt → 409; Rufnummer doppelt → 409
+  const ct = { kind: 'leasing', contract_no: 'L-4711', partner: 'Bank', monthly_rate_net: 1500, evidence: 'Vertrag' };
+  const cr = await Promise.all([U.fleet.post(`/api/vehicles/${V1}/contracts`, ct), U.fleet.post(`/api/vehicles/${V1}/contracts`, ct)]);
+  eq(cr.map((r) => r.status).sort().join(), '201,409'); eq(cr.find((r) => r.status === 409).data.error, 'duplicate_contract');
+  const ec = { kind: 'dispo', label: 'Dispo', phone: '+49 231 123456', scope: 'all' };
+  const er = await Promise.all([U.fleet.post('/api/emergency/contacts', ec), U.fleet.post('/api/emergency/contacts', ec)]);
+  eq(er.map((r) => r.status).sort().join(), '201,409', JSON.stringify(er.map((r) => r.data)));
+  // 9. Datenauskunft enthält Agentenbefunde zur Fahrerakte
+  const d = (await U.fleet.post('/api/drivers', { display_name: 'Max Auskunft', user_id: U.driver.id })).data.id;
+  eq((await U.fleet.post(`/api/drivers/${d}/documents`, { kind: 'fuehrerschein', evidence: 'Kopie', issued_on: '2010-01-01', valid_until: '2026-01-01' })).status, 201);
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const x = (await U.own.get(`/api/drivers/${d}/data-export`)).data;
+  ok(x.agent_findings.some((f) => f.finding_code === 'DRIVER_DOC_EXPIRED'), 'Befund in der Auskunft'); ok(Array.isArray(x.master_inbox), 'Abschnitt Master-Eingang');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

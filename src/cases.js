@@ -237,7 +237,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
     .map((i) => hideDriverName(user, { ...i, items: JSON.parse(i.items) }, 'performed_by_name', 'performed_by_role'));
   // Folgeaufträge und als Dublette geschlossene Meldungen zu diesem Vorgang in einer Abfrage
-  const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, description, created_at, parent_case_id FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results;
+  // nur Vorgänge, die die Person selbst öffnen darf (17.10.2026: Fahrer sah Beschreibung fremder Folgeaufträge der Werkstatt, Link → 404)
+  const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, description, created_at, parent_case_id, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results
+    .filter((x) => caseAccess(user, x)).map(({ reporter_id, workshop_site, suggested_workshop_site, environment, ...x }) => x);
   const followups = linked.filter((x) => x.parent_case_id === c.id).map(({ created_at, parent_case_id, ...x }) => x);
   const duplicates = linked.filter((x) => x.parent_case_id !== c.id).map((x) => ({ id: x.id, case_no: x.case_no, created_at: x.created_at }));
   const duplicateOf = c.duplicate_of ? await env.DB.prepare('SELECT id, case_no, status FROM cases WHERE id=?').bind(c.duplicate_of).first() : null;
@@ -544,7 +546,7 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
   const note = str(body.note, { max: 1000 });
   // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
-  const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '').slice(0, 200)})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
+  const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '')})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
   // Verknüpfung mit dem Prüftermin im selben atomaren Batch wie die Meldung (vorher eigenes UPDATE danach)
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
@@ -846,7 +848,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const d = p.followup_on ? followupDate(p.followup_on) : null;
       const fnote = d ? (note || null) : null;
       if (d === (c.followup_on || null) && fnote === (c.followup_note || null)) throw bad('validation', 'Wiedervorlage ist unverändert.');
-      set.followup_on = d; set.followup_note = fnote ? fnote.slice(0, 300) : null; payload = { from: c.followup_on || null, to: d };
+      if (fnote && fnote.length > 300) throw bad('validation', 'Vermerk der Wiedervorlage ist zu lang (max. 300 Zeichen).'); // vorher still gekürzt
+      set.followup_on = d; set.followup_note = fnote || null; payload = { from: c.followup_on || null, to: d };
       break;
     }
     case 'reassign_workshop': {
@@ -869,6 +872,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         if (o.vehicle_id !== c.vehicle_id) throw bad('validation', 'Dublette nur zu einem Vorgang desselben Fahrzeugs.');
         if (o.duplicate_of) throw bad('validation', `Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`);
         set.duplicate_of = o.id; payload.duplicate_of = o.id; payload.duplicate_of_no = o.case_no;
+        // im selben Stapel prüfen, dass das Original weiterhin keine Dublette ist (gleichzeitiges Ablehnen ergab sonst Kette/Ring, 17.10.2026)
+        extra.push(env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN duplicate_of IS NULL THEN 1 ELSE 0 END FROM cases WHERE id=?').bind(o.id), env.DB.prepare('DELETE FROM cmd_guard'));
         // Dubletten, die bisher auf diesen Vorgang zeigten, auf das neue Original umhängen (keine Kette Dublette → Dublette)
         const moved = (await env.DB.prepare('SELECT case_no FROM cases WHERE duplicate_of=? AND environment=? ORDER BY created_at').bind(c.id, envName).all()).results.map((x) => x.case_no);
         if (moved.length) {
@@ -1112,6 +1117,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
   const items = Array.isArray(body.items) ? body.items : [];
   const byKey = new Map();
   for (const it of items) {
+    if (!it || typeof it !== 'object') throw bad('validation', 'Ungültiger Prüfpunkt.'); // null/Zahl → 400 statt 500 (17.10.2026)
     if (!keys.has(it.key)) throw bad('validation', `Unbekannter Prüfpunkt ${it.key}.`);
     const result = oneOf(it.result, ['ok', 'mangel', 'na'], 'Prüfergebnis');
     const note = str(it.note, { max: 1000 });
@@ -1122,6 +1128,8 @@ export async function submitInspection(env, ctx, user, envName, body) {
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
   const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
+  // Vermerk vor dem Anlegen der Folgeaufträge prüfen (17.10.2026: zu langer Vermerk → 400 erst nach dem Anlegen; gesperrter Folgeauftrag ohne Kontrolle)
+  const inspNote = str(body.note, { max: 2000 });
   const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
   const now = nowIso();
   // Offline gespeicherte Abfahrtskontrolle (17.10.2026): Postausgang sendet den Zeitpunkt der Durchführung mit (`performed_at`).
@@ -1136,14 +1144,15 @@ export async function submitInspection(env, ctx, user, envName, body) {
     if (ms < nowMs - 7 * 86400000) throw bad('validation', 'Die Kontrolle liegt mehr als 7 Tage zurück und wird nicht mehr übernommen. Bitte neu durchführen.');
     if (ms < nowMs) performedAt = new Date(ms).toISOString();
   }
-  const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
   // Wiederholung (Antwort ging verloren, Postausgang sendet erneut): dieselben Folgeaufträge wie beim ersten Senden zurückgeben –
   // sonst ließen sich die Fotos nicht mehr anhängen (17.10.2026)
-  if (already) {
+  const asDuplicate = (already) => {
     let its = []; try { its = JSON.parse(already.items || '[]') || []; } catch { its = []; }
     const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}) }));
     return { id, result: already.result, followups: fu, duplicate: true };
-  }
+  };
+  const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
+  if (already) return asDuplicate(already);
 
   // Folgeaufträge für jeden Mangel (eigener Vorgang, mit Bezug) – gesammelt angelegt (Abfragezahl unabhängig von der Mängelzahl)
   const followups = [];
@@ -1206,9 +1215,10 @@ export async function submitInspection(env, ctx, user, envName, body) {
   // Testumgebung mit „Stammdaten nur lesen“: km bleibt an der Kontrolle, nicht in der gemeinsamen Fahrzeugakte
   const kmTestOnly = odo !== null && !kmRejected && envName === 'test' && user.role !== 'owner' && await testMasterReadonly(env);
   {
-    const stmts = [env.DB.prepare(`INSERT OR IGNORE INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
+    // ohne OR IGNORE (17.10.2026): gleichzeitig zweimal gesendet → zweiter Stapel rollt vollständig zurück (vorher doppelte km-Stände/Verlaufseinträge)
+    const stmts = [env.DB.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
-      defects.length ? 'maengel' : 'ok', str(body.note, { max: 2000 }), performedAt)];
+      defects.length ? 'maengel' : 'ok', inspNote, performedAt)];
     if (odo !== null && !kmRejected && !kmTestOnly) {
       stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)`)
         .bind(uuid(), vehicleId, odo, performedAt, `kontrolle:${kind}`, user.id, now));
@@ -1227,7 +1237,10 @@ export async function submitInspection(env, ctx, user, envName, body) {
         .bind(envName, user.id, user.role, JSON.stringify({ inspection_id: id }), now, JSON.stringify(rep)));
       stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify(rep.map((r) => r.case_id))));
     }
-    await env.DB.batch(stmts);
+    try { await env.DB.batch(stmts); } catch (e) {
+      if (String(e && e.message).includes('UNIQUE')) { const a2 = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first(); if (a2) return asDuplicate(a2); }
+      throw e;
+    }
   }
   return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt };
 }

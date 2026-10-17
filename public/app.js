@@ -3562,6 +3562,9 @@ async function viewSettings() {
   // Werte unverändert senden (Server versteht „12,5“, „1.234,50“, „2000“ und weist Mehrdeutiges/außerhalb des Bereichs ab – nichts wird halb gespeichert)
   $('#sf').onsubmit = async (e) => {
     e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k].trim() === '' ? null : b[k].trim(); b.test_master_readonly = $('#tmr').checked ? '1' : null;
+    // nur geänderte Felder senden (17.10.2026): ein länger geöffnetes Formular setzte sonst zwischenzeitlich anderswo gespeicherte Einstellungen still zurück
+    const was = (k) => { const x = k === 'test_master_readonly' ? (v[k] === '1' ? '1' : null) : String(shown(v[k]) ?? '').trim(); return x === '' ? null : x; };
+    for (const k of Object.keys(b)) if (b[k] === was(k)) delete b[k];
     $$('#sf [aria-invalid]').forEach((x) => x.removeAttribute('aria-invalid'));
     try { await api('PUT', '/api/settings', b); toast('✓'); viewSettings(); } catch (err) {
       const d = err.code === 'setting_invalid' && err.data; const inp = d && d.setting ? $(`#sf [name="${d.setting}"]`) : null;

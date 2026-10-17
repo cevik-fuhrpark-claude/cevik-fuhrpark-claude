@@ -110,8 +110,15 @@ export async function createContract(env, user, vehicleId, body, envName) {
   const f = readBody(body);
   const fileId = await checkFile(env, v.id, envName, body.file_id);
   const id = uuid(); const now = nowIso();
-  await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, v.id, f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, fileId, user.id, now, now).run();
+  // derselbe Vertrag (Schlüssel wie beim Import: Fahrzeug + Art + Vertragsnummer, ohne Nummer Partner + Beginn) nur einmal – Doppelklick/parallel
+  // legte ihn sonst mehrfach an, Monatsraten zählten doppelt (17.10.2026)
+  const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at)
+    SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17
+    WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=?2 AND c.kind=?3 AND (CASE WHEN COALESCE(?5,'')<>''
+      THEN LOWER(COALESCE(c.contract_no,''))=LOWER(?5)
+      ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(?4,'')) AND COALESCE(c.start_date,'')=COALESCE(?6,'') END))`)
+    .bind(id, v.id, f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, fileId, user.id, now, now).run();
+  if (!r.meta || !r.meta.changes) throw conflict('duplicate_contract', 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).');
   await audit(env, user.id, 'contract.create', id, { vehicle: v.plate, kind: f.kind, partner: f.partner, file: fileId || undefined });
   return { id };
 }
