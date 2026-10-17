@@ -6823,7 +6823,7 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
   let compared = 0; let withDrivers = 0;
   for (const c of cases) {
     const site = c.workshop_site || c.suggested_workshop_site;
-    const reporter = (await db.prepare('SELECT id FROM users WHERE id=? AND active=1').bind(c.reporter_id).all()).results.map((r) => r.id);
+    const reporter = (await db.prepare('SELECT id FROM users WHERE id=? AND active=1 AND environment=? AND password_hash IS NOT NULL').bind(c.reporter_id, c.environment).all()).results.map((r) => r.id); // Melder nur in derselben Umgebung (17.10.2026)
     const ws = site ? await byRole(c.environment, ['workshop'], 'AND workshop_site=?', [site]) : [];
     const lead = await byRole(c.environment, ['fleet', 'owner']); const dispo = await byRole(c.environment, ['dispatch']);
     const drv = (await db.prepare(`SELECT u.id FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`).bind(c.vehicle_id, new Date().toISOString(), c.environment, c.reporter_id).all()).results.map((r) => r.id);
@@ -6833,7 +6833,7 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
       received: reporter, priority_changed: [...reporter, ...(c.status !== 'gemeldet' ? ws : [])],
       approved: [...ws, ...reporter], rework: ws, acknowledged: lead, waiting_parts: [...lead, ...dispo], cost_limit: lead, cost_approved: ws,
       released: [...reporter, ...dispo, ...lead, ...ws, ...drv], safety_lock: [...reporter, ...dispo, ...lead, ...ws, ...drv],
-      comment: [...reporter, ...lead, ...(c.status !== 'gemeldet' ? ws : [])],
+      comment: [...reporter, ...lead, ...(!['gemeldet', 'abgelehnt'].includes(c.status) ? ws : [])],
     };
     if (drv.length) withDrivers++;
     for (const k of kinds) {
@@ -10293,6 +10293,64 @@ await test('Bußgelder/Fahrer-Hinweise/Notfall/Import/Auskunft: Fahrzeug außer 
   await U.own.req('POST', '/api/notifications/read-all', {}, { 'x-cfp-env': 'test' });
   eq(db.prepare(`SELECT opened_at FROM notifications WHERE id='n-p'`).get().opened_at, null, 'Betriebs-Hinweis bleibt ungelesen');
   ok(db.prepare(`SELECT opened_at FROM notifications WHERE id='n-t'`).get().opened_at, 'Test-Hinweis gelesen');
+});
+
+await test('Hinweise/Agent/Fahrzeuge: Melder nur in seiner Umgebung, Kommentar an abgelehnter Meldung ohne Werkstatt, Restarbeit-Befund bei „wartet auf Teile“, Bußgeldbefund bei ruhendem Fahrzeug, Restarbeiten verkaufter Fahrzeuge, Bearbeiten nimmt nicht wieder in Betrieb, außer Betrieb beendet Zuordnungen, HU kleiner Anhänger 24 Monate', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const notes = (uid) => db.prepare('SELECT kind, environment FROM notifications WHERE user_id=? ORDER BY created_at').all(uid).map((r) => `${r.kind}/${r.environment}`);
+  // 1. Melder wechselt in den Betrieb → kein Test-Hinweis mehr
+  const c1 = await newCase();
+  eq((await U.own.req('PATCH', `/api/users/${U.driver.id}`, { environment: 'production' })).status, 200);
+  const n0 = notes(U.driver.id).length;
+  eq((await cmd(F, c1, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Dortmund')).status, 200);
+  eq(notes(U.driver.id).length, n0, 'kein Hinweis aus der alten Umgebung');
+  eq((await U.own.req('PATCH', `/api/users/${U.driver.id}`, { environment: 'test' })).status, 200);
+  eq((await U.driver.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200, 'neu anmelden');
+  // 2. Kommentar an abgelehnter Meldung: Vorschlags-Werkstatt bekommt nichts
+  const c2 = await newCase({}, F);
+  eq((await cmd(F, c2, 'reject', {}, 'kein Mangel')).status, 200);
+  const w0 = notes(U.ws.id).length;
+  eq((await cmd(F, c2, 'comment', {}, 'Nachtrag zur Ablehnung')).status, 200);
+  eq(notes(U.ws.id).length, w0, 'Werkstatt ohne Zugriff nicht benachrichtigt');
+  // 3. sicherheitsrelevante Restarbeit: Befund bleibt bei „wartet auf Teile“, eine Übergabe
+  const c3 = await toRepair();
+  eq((await cmd(U.ws, c3, 'add_open_item', { description: 'Bremsleitung', safety_relevant: true })).status, 200);
+  const so = async () => { await F.post('/api/agent/run'); return db.prepare(`SELECT status FROM agent_findings WHERE finding_code='SAFETY_OPEN_ITEMS' AND case_id=?`).get(c3)?.status; };
+  eq(await so(), 'offen');
+  eq((await cmd(U.ws, c3, 'wait_parts', {}, 'Leitung bestellt')).status, 200); eq(await so(), 'offen', 'bei „wartet auf Teile“');
+  eq((await cmd(U.ws, c3, 'resume_repair')).status, 200); eq(await so(), 'offen');
+  eq(db.prepare(`SELECT COUNT(*) n FROM master_inbox WHERE case_id=? AND payload LIKE '%SAFETY_OPEN_ITEMS%'`).get(c3).n, 1, 'eine Übergabe');
+  // 4. Bußgeldfrist bleibt bei ruhendem Fahrzeug
+  const fi = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-09-01T09:00', plate_in_letter: 'SZ-KC 5515', authority: 'Stadt Dortmund', response_due: '2026-09-20' });
+  eq(fi.status, 201); db.prepare(`UPDATE vehicles SET eval_excluded=1 WHERE vin='WDB9630051L917317'`).run();
+  await F.post('/api/agent/run');
+  ok(db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE finding_code LIKE 'FINE_%' AND status<>'erledigt'`).get().n >= 1, 'Bußgeldbefund bleibt');
+  // 5. Restarbeit an verkauftem Fahrzeug: kein Dauerbefund; Zuordnung endet beim Außer-Betrieb-Nehmen
+  const c5 = await toRepair();
+  eq((await cmd(U.ws, c5, 'add_open_item', { description: 'Halter lose' })).status, 200);
+  eq((await cmd(U.ws, c5, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: c5, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, c5, 'request_quality_check', {}, 'fertig')).status, 200);
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=? WHERE id IN (?, ?)`).run(new Date().toISOString(), c1, c3);
+  { const x = await cmd(F, c5, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(x.status, 200, JSON.stringify(x.data)); }
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  eq((await U.own.req('POST', `/api/vehicles/${V1}/active`, { active: false, reason: 'verkauft' }, { 'x-cfp-env': 'test' })).status, 200);
+  eq(db.prepare('SELECT COUNT(*) n FROM driver_vehicles WHERE vehicle_id=? AND valid_to IS NULL').get(vid).n, 0, 'Zuordnung beendet');
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 400, 'keine Zuordnung zu außer Betrieb');
+  await F.post('/api/agent/run');
+  eq(db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE finding_code='RELEASED_WITH_OPEN_ITEMS' AND status<>'erledigt'`).get().n, 0, 'kein Dauerbefund');
+  // 6. Stammdaten bearbeiten lässt außer Betrieb; erneutes Anlegen nimmt in Betrieb – mit Protokoll
+  eq((await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund-Hafen', keep_active: true })).status, 201);
+  eq(db.prepare('SELECT active FROM vehicles WHERE id=?').get(vid).active, 0, 'Bearbeiten nimmt nicht in Betrieb');
+  eq((await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund' })).status, 201);
+  eq(db.prepare('SELECT active FROM vehicles WHERE id=?').get(vid).active, 1);
+  ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.activate' AND target=?`).get(vid).n >= 1, 'Protokoll');
+  // 7. HU kleiner Anhänger (bis 3,5 t): 24 Monate
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  eq(computeHuSp({ kind: 'anhaenger', zgm_class: 'bis_3_5' }, [{ kind: 'HU', done_date: '2025-11-05', evidence: 'x' }], { today: '2026-12-10', warnDays: 30 }).hu.due, '2027-11-30');
+  eq(computeHuSp({ kind: 'anhaenger', zgm_class: 'ueber_10' }, [{ kind: 'HU', done_date: '2025-11-05', evidence: 'x' }], { today: '2026-12-10', warnDays: 30 }).hu.due, '2026-11-30');
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

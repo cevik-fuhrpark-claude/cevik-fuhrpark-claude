@@ -80,8 +80,9 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
     due: null, due_basis: null, status: 'ungeklaert', notes: [], note_codes: [], planned_date: planned.HU || null, interval_months: null };
   const huApplicableKnown = cls !== null;
   if (cls === 'bis_3_5' && kind === 'lkw') note(hu, 'hu_small_lkw', 'Lkw bis 3,5 t: HU-Intervall hängt von weiteren Merkmalen ab – nicht automatisch berechnet.');
-  else if (huApplicableKnown) hu.interval_months = 12;
-  const huCalc = lastHu && hu.interval_months ? dueMonthEnd(lastHu.done_date, 12) : null;
+  // Anhänger bis 3,5 t zGM: 24 Monate (Anl. VIII Nr. 2.1.5.1/2.1.5.2), sonst 12 (17.10.2026; vorher pauschal 12)
+  else if (huApplicableKnown) hu.interval_months = cls === 'bis_3_5' && kind === 'anhaenger' ? 24 : 12;
+  const huCalc = lastHu && hu.interval_months ? dueMonthEnd(lastHu.done_date, hu.interval_months) : null;
   const huDoc = documented.HU && documented.HU.due ? documented.HU.due : null;
   if (huDoc && huCalc && huDoc.slice(0, 7) !== huCalc.slice(0, 7)) {
     note(hu, 'hu_conflict', `Widerspruch: Nachweis nennt ${fmtMonth(huDoc)}, Berechnung aus letzter HU ergibt ${fmtMonth(huCalc)}.`, { doc: fmtMonth(huDoc), calc: fmtMonth(huCalc) });

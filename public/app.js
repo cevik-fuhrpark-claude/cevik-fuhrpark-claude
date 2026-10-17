@@ -1382,9 +1382,10 @@ function vehicleForm(v = {}) {
     ${f('trailer_plate', t('trailer') + ' (' + t('plate_label') + ')', v.trailer_plate, 'maxlength="20" autocapitalize="characters"')}${f('master_status', t('master_status'), v.master_status)}
     ${f('source', t('evidence'), v.vin ? '' : '', 'maxlength="200"')}`;
 }
-async function saveVehicleForm(form) {
+async function saveVehicleForm(form, edit = false) {
   const b = Object.fromEntries(new FormData(form));
   for (const k in b) if (b[k] === '') delete b[k];
+  if (edit) b.keep_active = true; // Stammdaten bearbeiten nimmt ein außer Betrieb genommenes Fahrzeug nicht wieder in Betrieb
   const r = await api('POST', '/api/vehicles', b);
   // Hinweis, wenn dasselbe Kennzeichen schon an einem anderen Fahrzeug steht (gespeichert wird trotzdem – Mensch entscheidet)
   const d = r && r.duplicate_plates;
@@ -1665,7 +1666,7 @@ async function viewVehicle(id, focusEv = null) {
     e.preventDefault(); const file = docf.file.files[0]; if (!file) return;
     try { const blob = file.type === 'application/pdf' ? file : await prepareUpload(file); const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/documents?kind=${encodeURIComponent(docf.kind.value)}&note=${encodeURIComponent(docf.note.value)}${docf.valid_until.value ? '&valid_until=' + docf.valid_until.value : ''}`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); toast(r.duplicate ? t('doc_duplicate') : '✓'); viewVehicle(id); } catch (err) { toast(err.message, true); }
   };
-  const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf, true); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   // Sprung von der Startseite „Prüfergebnis fehlt“ bzw. Knopf in der Akte: Prüfhistorie und Formular „Ergebnis nachtragen“ der Durchführung öffnen
   const openResAdd = (evId, smooth) => { const rf = document.querySelector(`[data-resadd="${CSS.escape(evId)}"]`); const mh = $('#mhist'); if (rf && mh) { mh.open = true; const dt = rf.closest('details'); dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }); const sel = rf.querySelector('select'); if (sel) sel.focus({ preventScroll: true }); } };
   if (focusEv) openResAdd(focusEv, false);

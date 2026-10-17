@@ -390,7 +390,7 @@ export function normalizeVehicleKind(raw) {
 
 // Sammel-Upsert über json_each: eine Anweisung je 400 Fahrzeuge (Abfragebudget je Aufruf)
 // keepExisting (Import): leere/fehlende Felder überschreiben vorhandene Werte nicht – ein Import löscht nie Stammdaten
-async function upsertVehicleRows(env, rows, { keepExisting = false } = {}) {
+async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false } = {}) {
   const now = nowIso();
   if (rows.some((r) => !r.kind)) {
     const known = new Map((await env.DB.prepare('SELECT id, kind FROM vehicles').all()).results.map((v) => [v.id, v.kind]));
@@ -403,7 +403,7 @@ async function upsertVehicleRows(env, rows, { keepExisting = false } = {}) {
       SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, ${J('kind')}, 1, ?1, ?1
       FROM json_each(?2) WHERE 1
       ON CONFLICT(id) DO UPDATE SET ${['plate', 'site', 'manufacturer', 'model', 'build_year', 'trailer_plate', 'trailer_vin', 'master_status', 'source', 'kind']
-        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=${keepExisting ? 'vehicles.active' : '1'}, updated_at=excluded.updated_at`)
+        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=${keepExisting || keepActive ? 'vehicles.active' : '1'}, updated_at=excluded.updated_at`)
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
   if (stmts.length) await env.DB.batch(stmts);
@@ -412,7 +412,11 @@ async function upsertVehicleRows(env, rows, { keepExisting = false } = {}) {
 export async function upsertVehicle(env, user, body) {
   if (!isManager(user)) throw forbidden();
   const row = vehicleRow(user, body);
-  await upsertVehicleRows(env, [row]);
+  // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
+  // in Betrieb – dann mit Protokoll `vehicle.activate` (vorher still, 17.10.2026)
+  const before = await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(row.id).first();
+  await upsertVehicleRows(env, [row], { keepActive: !!body.keep_active });
+  if (before && !before.active && !body.keep_active) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
   // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
   // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.
   const k = normPlate(row.plate);
@@ -445,7 +449,11 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
     const open = await env.DB.prepare(`SELECT COUNT(*) AS n FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(vehicleId).first();
     if (open.n) throw conflict('open_cases', `Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`);
   }
-  await env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, nowIso(), vehicleId).run();
+  const now = nowIso();
+  // Außer Betrieb nehmen beendet laufende Fahrerzuordnungen (Verlauf bleibt) – sonst galt der Fahrer weiter als zugeordnet und die
+  // Zuordnung lebte bei Wieder-in-Betrieb-Nahme auf (17.10.2026)
+  await env.DB.batch([env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, now, vehicleId),
+    ...(active ? [] : [env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, vehicleId, now)])]);
   await audit(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason });
   // Hinweis: laufende Verträge (Leasing/Miete/Versicherung …) bleiben bestehen – Rückgabe/Kündigung separat klären
   const running = active ? 0 : (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicle_contracts WHERE vehicle_id=? AND ended_on IS NULL').bind(vehicleId).first()).n;
@@ -458,8 +466,9 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40 }), envName).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
-  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
+  if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   const now = nowIso();
   const open = (await env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?)`)
     .bind(driver.id, now).all()).results;

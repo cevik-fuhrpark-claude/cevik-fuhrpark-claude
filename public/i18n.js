@@ -1251,6 +1251,7 @@ export function auditActionLabel(lang, code) {
 // übersetzt werden nur Ja/Nein, Umgebung (test/production) und Rolle; {from,to} wird „alt → neu“, Listen mit Komma.
 // Unbekannte Schlüssel erscheinen roh (künftige Details, Einstellungsschlüssel). CSV und Suche nutzen weiter den Rohtext.
 const AUDIT_DETAIL_KEYS = {
+  recreated: ['durch erneutes Anlegen', 'через повторне створення', 'by creating again'],
   km_basis_confirmed: ['km-Grundlage geprüft', 'Базу км перевірено', 'Mileage basis checked'],
   ordered_on: ['bestellt am', 'замовлено', 'ordered on'], order_cleared: ['Bestellvermerk beendet', 'Позначку замовлення знято', 'Order note ended'],
   environment: ['Umgebung', 'Середовище', 'Environment'], kind: ['Art', 'Вид', 'Kind'], site: ['Standort', 'Локація', 'Site'],

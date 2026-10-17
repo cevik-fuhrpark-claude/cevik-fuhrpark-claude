@@ -130,7 +130,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
   const site = c.workshop_site || c.suggested_workshop_site;
   const pool = await candidateUsers(env, c, site);
   const pick = (u, extra = {}) => ({ id: u.id, language: u.language, role: u.role, ...extra });
-  const reporter = pool.filter((u) => u.is_reporter).map((u) => pick(u));
+  // Melder nur in derselben Umgebung (nach einem Umgebungswechsel kamen sonst Hinweise/Pushs aus der alten Umgebung, unsichtbar in der Liste – 17.10.2026)
+  const reporter = pool.filter((u) => u.is_reporter && u.qualified).map((u) => pick(u));
   const usersByRole = (roles) => pool.filter((u) => u.qualified && roles.includes(u.role)).map((u) => pick(u));
   const workshopUsers = site ? pool.filter((u) => u.qualified && u.at_site).map((u) => pick(u)) : [];
   const assignedDrivers = () => pool.filter((u) => u.qualified && u.is_assigned && u.id !== c.reporter_id).map((u) => pick(u, { assigned: 1 }));
@@ -167,7 +168,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       const want = Array.isArray(ctxData.payload?.notify) && ctxData.payload.notify.length ? new Set(ctxData.payload.notify) : null;
       if (!want || want.has('reporter')) add(reporter);
       if (!want || want.has('fleet')) add(usersByRole(['fleet', 'owner']));
-      if ((!want || want.has('workshop')) && c.status !== 'gemeldet') add(workshopUsers);
+      // Werkstatt nur mit Zugriff (abgelehnte Meldung: Vorschlags-Werkstatt sah den Vorgang nicht – Hinweis führte ins Leere)
+      if ((!want || want.has('workshop')) && !['gemeldet', 'abgelehnt'].includes(c.status)) add(workshopUsers);
       break;
     }
   }

@@ -101,11 +101,11 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('id', id, 'role', role, 'workshop_site', workshop_site, 'language', language)) FROM users
      WHERE environment=?1 AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL) AS users,
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
-     WHERE c.environment=?1 AND c.status='in_reparatur' AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id)) AS safety_open,
+     WHERE c.environment=?1 AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id)) AS safety_open,
   (SELECT json_group_array(json_object('id', c.id, 'case_no', c.case_no, 'vehicle_id', c.vehicle_id, 'plate', v.plate, 'safety_lock_reason', c.safety_lock_reason))
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=?1 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
-     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN open_items o ON o.case_id=c.id AND o.status='offen'
+     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(*) AS n FROM notifications n
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
@@ -223,7 +223,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
           ...fm('QC_PENDING', { label }),
           next_action: 'Kontrolle durchführen: freigeben oder Nacharbeit anfordern.' });
       }
-      if (c.status === 'in_reparatur') {
+      // alle Werkstattzustände – bei „wartet auf Teile“ erledigte sich der Befund sonst und wurde nach „fortgesetzt“ erneut übergeben (17.10.2026)
+      if (['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(c.status)) {
         const oi = { n: safetyOpen.get(c.id) || 0 };
         if (oi.n > 0) add({ code: 'SAFETY_OPEN_ITEMS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'workshop',
           ...fm('SAFETY_OPEN_ITEMS', { label, n: oi.n }), next_action: 'Restarbeiten erledigen oder Teile beschaffen.' });
@@ -397,7 +398,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Ruhende Fahrzeuge (Inhaberentscheidung): keine fahrzeugbezogenen Bewertungsbefunde; vorgangsbezogene Sicherheitsbefunde bleiben
     const excludedVeh = new Set(base.excluded);
-    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && !findings[i].case_id && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
+    // Behördenfristen (Bußgelder) bleiben – sie hängen nicht an der Bewertung des Fahrzeugs (17.10.2026)
+    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && !findings[i].case_id && !String(findings[i].code).startsWith('FINE_') && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
 
     // ---- Befunde persistieren (Sammel-Upsert), Erledigtes schließen, Übergaben an Master ----
     const now = nowIso();
