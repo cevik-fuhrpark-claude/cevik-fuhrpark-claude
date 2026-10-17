@@ -8601,7 +8601,7 @@ await test('Oberfläche: Neuaufbau derselben Seite nach einer Aktion behält fre
   main = mkMain([sel2]); K.keepRestore(); eq(sel2.options.map((o) => o.selected).join(), 'false,true', 'Auswahl wiederhergestellt');
   // Einbindung: render() nutzt die Bausteine nur beim Neuaufbau derselben Seite; Sperren melden die auslösende Aktion
   ok(/if \(same\) keepCapture\(\); else \{ S\.keep = null; S\.actSince = \[\]; \}/.test(app), 'render: Erfassen nur bei derselben Seite');
-  ok(app.includes('if (same && interim) return;') && app.includes('if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);'), 'render: Ladehinweis überspringen, sonst wiederherstellen');
+  ok(app.includes('if (same && interim) return;') && app.includes('if (same && S.keep) { if (defer) S.pendingRestore = true; else keepRestore(); } else window.scrollTo(0, 0);'), 'render: Ladehinweis überspringen, sonst wiederherstellen (ggf. nach dem Aufbau dynamischer Teile, finishRender)');
   eq((app.match(/typeof noteAction === 'function'\) noteAction\(/g) || []).length, 2, 'Formular- und Klick-Sperre melden die Aktion');
   ok(app.includes('await viewEmergencyEdit(); window.scrollTo(0, 0);'), 'Rufnummer bearbeiten springt weiter nach oben zum Formular');
   // Hilfe „Kein Netz?“ (alle Rollen) erklärt gedimmten Knopf und erhaltene Eingaben – in allen drei Sprachen gleich viele Absätze
@@ -9270,7 +9270,7 @@ await test('km-Zähler gesunken + Datum bald fällig: Werkstattplan „Fällig �
 
 await test('Oberfläche: Dokumentsprache (<html lang>) und Fenstertitel werden bei jedem Seitenaufbau gesetzt (Vorlesefunktion, Silbentrennung, PDF-Dateiname)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const body = app.slice(app.indexOf('function render(html, active) {'), app.indexOf('\n}\n', app.indexOf('function render(html, active) {')));
+  const body = app.slice(app.indexOf('function render(html, active'), app.indexOf('\n}\n', app.indexOf('function render(html, active')));
   ok(/document\.documentElement\.lang = S\.lang/.test(body), 'render() setzt lang');
   ok(['de', 'uk', 'en'].every((l) => app.includes(`<option value="${l}" lang="${l}"`)), 'Sprachnamen in der Auswahl mit eigener Sprache ausgezeichnet (Vorlesefunktion)');
   ok(/\n  pageTitle\(\);\n/.test(body) && /function pageTitle\(\) \{[\s\S]{0,900}document\.title = title/.test(app), 'render() setzt den Fenstertitel (Seitenüberschrift – App-Name, auch PDF-Dateiname)');

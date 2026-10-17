@@ -151,7 +151,7 @@ function frame(content, active) {
   <main id="main" tabindex="-1">${content}</main>`;
 }
 
-function render(html, active) {
+function render(html, active, { defer = false } = {}) {
   // Dieselbe Seite wird neu aufgebaut (z. B. km-Stand in der Fahrzeugakte gespeichert): Eingaben in anderen Formularen, aufgeklappte
   // Bereiche und die Scrollposition bleiben erhalten. Ladehinweis zwischendurch („Lädt …“) zählt nicht als fertiger Aufbau.
   const same = !!(S.me && S.lastHash && (location.hash || '#/').replace(/%3A/gi, ':') === S.lastHash);
@@ -168,8 +168,11 @@ function render(html, active) {
   bindOutbox();
   if (same && interim) return;
   pageTitle();
-  if (same && S.keep) keepRestore(); else window.scrollTo(0, 0);
+  S.renderSame = same;
+  // defer: Seite baut nach render() noch dynamische Teile auf (z. B. offenes Aktionsformular im Vorgang) – Wiederherstellen dann per finishRender()
+  if (same && S.keep) { if (defer) S.pendingRestore = true; else keepRestore(); } else window.scrollTo(0, 0);
 }
+function finishRender() { if (S.pendingRestore) { S.pendingRestore = false; if (S.keep) keepRestore(); } }
 
 // Fenstertitel = Seitenüberschrift + App-Name (z. B. „Fahrzeuge – CEVIK Fuhrpark“): Browser-Reiter, Verlauf, Vorlesefunktion beim Seitenwechsel
 // und Dateiname bei „Drucken / PDF“ (vorher hieß jede PDF „CEVIK Fuhrpark.pdf“). Ladehinweis ändert den Titel nicht.
@@ -1144,16 +1147,21 @@ async function viewCase(id) {
   // Verlauf + Kommentar
   html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap">${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t('cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : e.payload && e.payload.from && e.payload.to ? `<div class="small muted">${esc(e.payload.from)} → ${esc(e.payload.to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
   if (A.includes('comment')) html += `<form id="cf"><label for="ct">${esc(t('act_comment'))}</label><textarea id="ct" required></textarea>${S.me.role !== 'driver' ? `<fieldset style="border:0;padding:0;margin:8px 0"><legend class="small muted">${esc(t('notify_only'))}</legend><div style="display:flex;gap:14px;flex-wrap:wrap">${[['fleet', t('role_fleet')], ['workshop', t('role_workshop')], ['reporter', t('reported_by')]].map(([k, l]) => `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-nt="${k}"> ${esc(l)}</label>`).join('')}</div></fieldset>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>`;
-  render(html, 'cases');
+  render(html, 'cases', { defer: true });
   $('#cprt').onclick = () => window.print();
 
   const cmd = async (action, note, payload = {}) => {
-    try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: uid(), expected_version: c.version, note, payload }); toast('✓'); viewCase(c.id); }
+    try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: uid(), expected_version: c.version, note, payload }); toast('✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     catch (err) { toast(err.message, true); if (err.code === 'version_conflict') { S.actSince = []; viewCase(c.id); } }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
+  // Neuaufbau derselben Seite (z. B. nach einem Kommentar): ein offenes, nicht abgeschicktes Aktionsformular bleibt offen samt Eingaben
+  // (17.10.2026: „Teil erfassen“ halb ausgefüllt war danach weg); nur solange die Aktion noch erlaubt ist
+  if (S.openAct && (S.openAct.caseId !== c.id || !S.renderSame || !A.includes(S.openAct.action))) S.openAct = null;
+  if (S.openAct) actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true });
+  finishRender();
   const clf = $('#clf'); if (clf) clf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(clf)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; try { await api('PUT', `/api/cases/${c.id}/claim`, b); toast('✓'); viewCase(c.id); } catch (err) { toast(err.message, true); } };
   const cf = $('#cf'); if (cf) cf.onsubmit = (e) => { e.preventDefault(); const notify = $$('[data-nt]', cf).filter((x) => x.checked).map((x) => x.dataset.nt); cmd('comment', $('#ct').value, notify.length ? { notify } : {}); };
   // Mehr gewählt als noch frei: nur die ersten freien hochladen, der Rest wird vorher genannt (kein Serverfehler je Datei);
@@ -1258,8 +1266,9 @@ async function loadDupOptions(c) {
   } catch { if (hint()) hint().textContent = t('dup_more_fail'); }
 }
 
-function actionForm(action, c, cmd, preset = {}, d = null) {
+function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } = {}) {
   const box = $('#actform');
+  S.openAct = { caseId: c.id, action, preset };
   const f = [];
   const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'reject', 'wait_parts', 'resolve_open_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs'];
   const wsOpts = S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${(c.workshop_site || c.suggested_workshop_site) === w.code ? ' selected' : ''}>${esc(w.name)}</option>`).join('');
@@ -1305,8 +1314,8 @@ function actionForm(action, c, cmd, preset = {}, d = null) {
   }).catch(() => {});
   if (action === 'record_work') api('GET', '/api/work-suggestions').then((r) => { const dl = $('#worksugg'); if (dl) dl.innerHTML = r.suggestions.map((x) => `<option value="${esc(x)}">`).join(''); }).catch(() => {});
   box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
-  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  $('#ac').onclick = () => (box.innerHTML = '');
+  if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; };
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   if (action === 'add_part') loadStockSelect(c);
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
