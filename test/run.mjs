@@ -11293,6 +11293,35 @@ await test('Fehlersuche 17.10. (9): Vertragsimport (bewertetes Fahrzeug, Laufzei
     const after = (await F.get('/api/master')).data; eq(after.decisions_open, before.decisions_open, 'je Befund eine');
     ok(after.inbox.find((m) => m.event_id === src.event_id).superseded, 'ältere als abgelöst markiert'); }
 });
+await test('Fehlersuche 17.10. (10): Datensicherung (ein Stand, Kommazahlen genau, updated_by), Probe mit älterer Sicherung, Einladung gleichzeitig nur einmal gültig, Notfall-Rufnummer nach Ziffern', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  // Kommazahl mit 17 Stellen bleibt exakt; Einstellung mit updated_by
+  db.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,gps_time,received_at,lat,lon) VALUES ('VIN:WMA15SZZ2HM722774','webfleet','WF-X','vin',?,?,51.51384916666667,7.465298333333333)`).run(new Date().toISOString(), new Date().toISOString());
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1000' })).status, 200);
+  const b = (await U.own.get('/api/admin/backup')).data;
+  const tl = b.data.telematics_latest.find((x) => x.external_id === 'WF-X'); eq(tl.lat, 51.51384916666667); eq(tl.lon, 7.465298333333333);
+  ok(b.data.settings.find((x) => x.key === 'repair_cost_limit_net').updated_by, 'updated_by gesichert');
+  // ein Stand: Sicherung liest alles in einem Stapel (Hinweise nie ohne ihren Vorgang)
+  { const p0 = e.DB.batch.bind(e.DB); let seen = 0; e.DB.batch = async (st) => { if (st.length > 4 && /UNION ALL/.test(st[0].sql)) seen++; return p0(st); };
+    await U.own.get('/api/admin/backup'); e.DB.batch = p0; eq(seen, 1, 'Sicherung als ein Stapel'); }
+  // Probe mit älterer Sicherung (weniger Migrationen) gilt als vollständig
+  { const { restoreInto } = await import('../scripts/sicherung-probe.mjs'); const { ensureSchema } = await import('../src/worker.js');
+    const old = JSON.parse(JSON.stringify(b)); old.data._migrations = old.data._migrations.slice(0, -1);
+    const fresh = makeEnv(); await ensureSchema(fresh); const rr = restoreInto(fresh.DB.db, old);
+    eq(rr.tables.filter((x) => !x.ok).map((x) => `${x.table} ${x.restored}/${x.expected}`).join(', '), '', 'ältere Sicherung vollständig'); }
+  // Einladung gleichzeitig zweimal neu ausgestellt: genau ein Link gilt
+  for (let i = 0; i < 6; i++) {
+    const w = await freshWorld(); addRandomLatency(w.e); const u = w.U.driver.id;
+    w.e.DB.db.prepare('UPDATE users SET password_hash=NULL WHERE id=?').run(u);
+    const r = await Promise.all([w.U.own.post(`/api/users/${u}/invite`), w.U.fleet.post(`/api/users/${u}/invite`)]);
+    eq(r.map((x) => x.status).join(','), '200,200', JSON.stringify(r.map((x) => x.data)));
+    eq(w.e.DB.db.prepare('SELECT COUNT(*) n FROM invites WHERE user_id=? AND used_at IS NULL').get(u).n, 1, 'eine offene Einladung, Lauf ' + i); }
+  // Notfall-Rufnummer: andere Schreibweise derselben Ziffern ist eine Dublette (Anlegen und Ändern)
+  const F = U.fleet; eq((await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst', phone: '0231 123456' })).status, 201);
+  for (const ph of ['0231/123456', '0231-123456', '0231123456', '(0231) 123456']) { const r = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst', phone: ph }); eq(r.status, 409, ph); eq(r.data.error, 'duplicate_contact'); }
+  const other = (await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Andere', phone: '0231 999999' })).data.id;
+  const ch = await F.patch(`/api/emergency/contacts/${other}`, { phone: '0231-123456' }); eq(ch.status, 409); eq(ch.data.error, 'duplicate_contact');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

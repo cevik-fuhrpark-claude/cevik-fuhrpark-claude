@@ -24,7 +24,8 @@ export function restoreInto(db, backup) {
         db.prepare(`INSERT OR REPLACE INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...keys.map((k) => row[k]));
       }
       const n = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
-      report.push({ table, expected: rows.length, restored: Number(n), ok: Number(n) === rows.length });
+      // _migrations: die aktuelle Datenbank kennt ggf. neuere Migrationen als eine ältere Sicherung – ok, wenn alle gesicherten enthalten sind
+      report.push({ table, expected: rows.length, restored: Number(n), ok: table === '_migrations' ? Number(n) >= rows.length : Number(n) === rows.length });
     }
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; } finally { db.exec('PRAGMA foreign_keys = ON'); }

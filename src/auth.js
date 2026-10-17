@@ -237,9 +237,13 @@ export async function createInvite(env, userId, createdBy) {
   const token = randomToken(24);
   const h = await sha256Hex(token);
   const now = nowIso();
-  await env.DB.prepare('UPDATE invites SET used_at = ? WHERE user_id = ? AND used_at IS NULL').bind(now, userId).run();
-  await env.DB.prepare('INSERT INTO invites(token_hash,user_id,created_by,created_at,expires_at) VALUES (?,?,?,?,?)')
-    .bind(h, userId, createdBy, now, new Date(Date.now() + INVITE_DAYS * 86400000).toISOString()).run();
+  // in einem Stapel: neue Einladung anlegen, alle anderen offenen entwerten – zwei gleichzeitige „Neue Einladung“ ergaben sonst zwei gültige
+  // Links (17.10.2026); der zuletzt ausgeführte Stapel gilt
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO invites(token_hash,user_id,created_by,created_at,expires_at) VALUES (?,?,?,?,?)')
+      .bind(h, userId, createdBy, now, new Date(Date.now() + INVITE_DAYS * 86400000).toISOString()),
+    env.DB.prepare('UPDATE invites SET used_at = ? WHERE user_id = ? AND used_at IS NULL AND token_hash <> ?').bind(now, userId, h),
+  ]);
   return token;
 }
 
