@@ -11175,6 +11175,43 @@ await test('Fehlersuche 17.10. (7): Restarbeit-Push nach geprüftem Wert, Tatzei
   { const realNow = Date.now; try { Date.now = () => Date.parse('2026-10-25T22:30:00Z'); // 25.10. 23:30 Berlin (Tag mit 25 h)
       const u = await U.own.get('/api/admin/usage?days=2'); eq(u.status, 200); eq(u.data.from, '2026-10-24'); } finally { Date.now = realNow; } }
 });
+await test('Fehlersuche 17.10. (8): Schalter-Filter nur bei 1, Ruhezeit aus → zurückgehaltene Pushs sofort, Bußgeld zum Anhänger bietet Fahrer der Zugmaschine an, Fahrer sieht keine fremden Namen bei Restarbeiten/Kontrollen', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const { b64urlEncode: b64 } = await import('../src/util.js');
+  // 1. ?warranty=0 / followup=0 / stale=0 schalten den Filter nicht ein
+  const all = (await F.get('/api/cases?status=all')).data.cases.length; await newCase(); const n1 = all + 1;
+  for (const q of ['warranty', 'followup', 'stale']) {
+    eq((await F.get(`/api/cases?status=all&${q}=0`)).data.cases.length, n1, q + '=0');
+    eq((await F.get(`/api/cases?status=all&${q}=false`)).data.cases.length, n1, q + '=false');
+    eq((await F.get(`/api/cases?status=all&${q}=1`)).data.cases.length, 0, q + '=1 (keine Treffer)'); }
+  // 2. Ruhezeit ausschalten: zurückgehaltene Pushs gehen sofort raus (vorher erst zum alten Ende)
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  eq((await F.post('/api/push/subscribe', { endpoint: 'https://push.example/fl8', keys: { p256dh: b64(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))), auth: b64(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  const hm = (ms) => new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+  const now = Date.now(); eq((await F.put('/api/me/notify-prefs', { quiet: { from: hm(now - 60000), to: hm(now - 120000) } })).status, 200); // fast 24 h Ruhezeit
+  const qid = await newCase(); await new Promise((r) => setTimeout(r, 10));
+  const st = () => db.prepare(`SELECT push_status FROM notifications WHERE user_id=? AND case_id=? AND kind='created'`).get(F.id, qid).push_status;
+  eq(st(), 'pending', 'zurückgehalten');
+  const b0 = e.pushLog.length; eq((await F.put('/api/me/notify-prefs', { quiet: null })).status, 200);
+  eq(st(), 'accepted', 'sofort zugestellt'); eq(e.pushLog.length - b0, 1, 'ein Push');
+  // 3. Bußgeld zum Anhänger-Kennzeichen: Fahrer der fest gekoppelten Zugmaschine als Kandidat, bestätigbar
+  eq((await U.own.post('/api/vehicles', { plate: 'FT-ZM 1', vin: 'WDB96340310998001', trailer_plate: 'FT-AH 1' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'FT-AH 1', vin: 'WDB96340310998002', kind: 'anhaenger' })).status, 201);
+  const zm = db.prepare(`SELECT id FROM vehicles WHERE plate='FT-ZM 1'`).get().id;
+  eq((await F.post(`/api/vehicles/${zm}/drivers`, { user_id: U.driver.id, evidence: 'Dienstplan' })).status, 201);
+  db.prepare(`UPDATE driver_vehicles SET valid_from='2026-09-01T06:00:00.000Z' WHERE vehicle_id=?`).run(zm);
+  const fid = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: '2026-09-15T10:00', plate_in_letter: 'FT-AH 1', authority: 'Stadt Hamm', reference: 'AH-1' })).data.id;
+  const fd = (await F.get(`/api/fines/${fid}`)).data; const c = fd.candidates.find((x) => x.user_id === U.driver.id);
+  ok(c, 'Kandidat über Zugmaschine'); eq(c.via_plate, 'FT-ZM 1'); ok(/Zugmaschine FT-ZM 1/.test(c.evidence), c.evidence);
+  eq((await F.post(`/api/fines/${fid}/commands`, { action: 'confirm_driver', expected_version: fd.fine.version, payload: { driver_id: c.user_id, basis: c.basis, evidence: c.evidence } })).status, 200);
+  // 4. Fahrer sieht bei Restarbeiten/Kontrollen nur die Rolle anderer Personen, eigenen Namen weiter
+  const rid = await toRepair();
+  eq((await cmd(U.ws, rid, 'add_open_item', { description: 'Spiegel nachstellen' })).status, 200);
+  const dd = (await U.driver.get(`/api/cases/${rid}`)).data;
+  eq(dd.open_items[0].created_by_name, null, 'kein Werkstattname'); eq(dd.open_items[0].created_by_name_role, 'workshop');
+  ok((await F.get(`/api/cases/${rid}`)).data.open_items[0].created_by_name, 'Leitung sieht Namen');
+  ok(!JSON.stringify(dd).includes('WS DO'), 'Name der Werkstatt nirgends');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -400,10 +400,10 @@ export async function retryFailedPush(env) {
 
 // Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
-export async function releaseQuietPush(env, now = env.__nowMs || Date.now()) {
+export async function releaseQuietPush(env, now = env.__nowMs || Date.now(), userId = null) {
   const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ?
-    ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
+    WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ? AND (?3 IS NULL OR n.user_id=?3)
+    ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString(), userId).all()).results;
   if (rows.length) await deliverPush(env, rows.map(forDelivery), { collapse: true });
   return rows.length;
 }

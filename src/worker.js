@@ -11,7 +11,7 @@ import * as vnotes from './vnotes.js';
 import * as emergency from './emergency.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, notifyUsers, MUTABLE_KINDS, parseMuted, currentLangText, nt } from './notify.js';
+import { retryFailedPush, releaseQuietPush, notifyUsers, MUTABLE_KINDS, parseMuted, currentLangText, nt } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -192,7 +192,14 @@ async function handleApi(request, env, ctx, url) {
     if ('muted' in b) { set.push('push_muted=?'); vals.push(muted.length ? JSON.stringify(muted) : null); }
     if ('quiet' in b) { set.push('push_quiet_from=?', 'push_quiet_to=?'); vals.push(qf, qt); }
     const after = set.length ? await env.DB.prepare(`UPDATE users SET ${set.join(', ')}, updated_at=? WHERE id=? RETURNING push_muted, push_quiet_from, push_quiet_to`).bind(...vals, nowIso(), user.id).first() : row;
-    if ('quiet' in b && (qf !== (row && row.push_quiet_from) || qt !== (row && row.push_quiet_to))) await auth.audit(env, user.id, 'user.push_quiet', user.id, { from: qf, to: qt });
+    if ('quiet' in b && (qf !== (row && row.push_quiet_from) || qt !== (row && row.push_quiet_to))) {
+      await auth.audit(env, user.id, 'user.push_quiet', user.id, { from: qf, to: qt });
+      // Ruhezeit aus-/umgestellt: zurückgehaltene Pushs nicht bis zum alten Ende warten lassen (17.10.2026) – jetzt freigeben;
+      // liegt „jetzt“ in der neuen Ruhezeit, hält die Zustellung sie bis zu deren Ende zurück
+      const nowMs = env.__nowMs || Date.now(); const ni = new Date(nowMs).toISOString();
+      const r = await env.DB.prepare(`UPDATE notifications SET push_hold_until=? WHERE user_id=? AND push_status='pending' AND push_hold_until > ?`).bind(ni, user.id, ni).run();
+      if (r.meta && r.meta.changes) { const job = releaseQuietPush(env, nowMs, user.id); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }
+    }
     return json({ kinds: MUTABLE_KINDS, muted: parseMuted(after && after.push_muted), quiet: after && after.push_quiet_from ? { from: after.push_quiet_from, to: after.push_quiet_to } : null });
   }
   if (path === '/api/me/inspections-without-result' && m === 'GET') return json(await myInspectionsWithoutResult(env, user));

@@ -107,9 +107,12 @@ export async function listCases(env, user, envName, query, meta = null) {
     where.push(`EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding' AND e.created_at > ?)`);
     args.push(new Date(Date.now() - d * 86400000).toISOString());
   }
+  // Schalter-Filter nur bei „1“/„true“/„ja“ (17.10.2026: ?warranty=0 schaltete den Filter EIN, weil nur der Rohwert geprüft wurde)
+  const on = (v) => typeof v === 'string' && /^(1|true|ja|yes)$/i.test(v.trim());
+  const qWarranty = on(query.warranty); const qFollowup = on(query.followup); const qStale = on(query.stale);
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
   // noch lief (Meldetag = Berliner Kalendertag wie im Vorgang angezeigt); Werkstatt nur eigener Standort
-  if (query.warranty && user.role !== 'driver') {
+  if (qWarranty && user.role !== 'driver') {
     const own = user.role === 'workshop' ? ' AND x.workshop_site = ?' : '';
     where.push(`EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
       AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})
@@ -117,13 +120,13 @@ export async function listCases(env, user, envName, query, meta = null) {
     if (own) args.push(user.workshop_site);
   }
   // Filter „Wiedervorlage“ (nur Inhaber/Fuhrparkleitung/Lesende): offene Vorgänge mit Wiedervorlage, fällige zuerst (Sortierung in der Oberfläche)
-  if (query.followup && !['driver', 'workshop'].includes(user.role)) where.push(`c.followup_on IS NOT NULL AND c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')})`);
-  else if (query.followup) where.push('0');
+  if (qFollowup && !['driver', 'workshop'].includes(user.role)) where.push(`c.followup_on IS NOT NULL AND c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')})`);
+  else if (qFollowup) where.push('0');
   // Filter „Ohne Bewegung“ (nur wenn eingestellt; sonst leere Liste statt einer erfundenen Frist)
-  if (fullMeta || query.stale) {
+  if (fullMeta || qStale) {
     const days = user.role === 'driver' ? null : Number((await env.DB.prepare(`SELECT value FROM settings WHERE key='case_stale_days'`).first())?.value) || null;
     if (fullMeta && user.role !== 'driver') meta.stale_days = days;
-    if (query.stale && user.role !== 'driver') {
+    if (qStale && user.role !== 'driver') {
       const before = staleBefore(days);
       if (!before) where.push('0'); else { where.push(STALE_SQL, 'c.updated_at < ?'); args.push(before); }
     }
@@ -232,10 +235,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
     .filter((e) => e.action !== 'set_followup' || !['driver', 'workshop'].includes(user.role)); // Wiedervorlage nur für Leitung/Lesende
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at, uploaded_by FROM files WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
+  // Fahrer sehen wie im Verlauf keine Namen anderer Personen, nur deren Rolle (17.10.2026: Restarbeiten/Kontrollen zeigten Namen von Werkstatt/Leitung)
+  const ownName = (o, by, nameK) => (user.role === 'driver' && o[by] !== user.id ? { ...o, [nameK]: null, [nameK + '_role']: o[nameK.replace('_name', '_role')] } : o);
   const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, u.role AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
-    .map((o) => hideDriverName(user, o, 'created_by_name', 'created_by_role'));
-  const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
-    .map((i) => hideDriverName(user, { ...i, items: JSON.parse(i.items) }, 'performed_by_name', 'performed_by_role'));
+    .map((o) => hideDriverName(user, ownName(o, 'created_by', 'created_by_name'), 'created_by_name', 'created_by_role'));
+  const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, i.performed_by, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
+    .map(({ performed_by, ...i }) => hideDriverName(user, ownName({ ...i, items: JSON.parse(i.items), performed_by }, 'performed_by', 'performed_by_name'), 'performed_by_name', 'performed_by_role'))
+    .map(({ performed_by, ...i }) => i);
   // Folgeaufträge und als Dublette geschlossene Meldungen zu diesem Vorgang in einer Abfrage
   // nur Vorgänge, die die Person selbst öffnen darf (17.10.2026: Fahrer sah Beschreibung fremder Folgeaufträge der Werkstatt, Link → 404)
   const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, description, created_at, parent_case_id, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results

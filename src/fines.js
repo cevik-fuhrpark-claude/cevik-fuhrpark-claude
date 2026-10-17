@@ -1,7 +1,7 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, PLATE_KEY_SQL } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -58,15 +58,23 @@ async function loadFine(env, user, envName, id) {
 }
 
 // Mögliche Fahrer zum Tatzeitpunkt – nur aus belegten Quellen, keine Automatik-Zuordnung
+// Schreiben zum Anhänger-Kennzeichen (Blitzer von hinten): Fahrer werden der fest gekoppelten Zugmaschine zugeordnet (Entscheidung 10.10.2026:
+// Kopplung laut Stammliste maßgeblich) – Kandidaten auch von dort (17.10.2026: vorher keiner angeboten)
+export const fineVehiclesSql = (vid) => `SELECT ${vid} UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=${vid} WHERE v.kind='anhaenger' AND x.kind='lkw' AND x.id<>v.id
+  AND ${PLATE_KEY_SQL('x.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.trailer_plate')}=${PLATE_KEY_SQL('v.plate')}`;
 export async function driverCandidates(env, envName, f) {
   if (!f.vehicle_id) return [];
   const out = [];
-  const assigned = (await env.DB.prepare(`SELECT d.user_id, u.display_name, d.valid_from, d.valid_to, d.evidence FROM driver_vehicles d JOIN users u ON u.id=d.user_id
-    WHERE d.vehicle_id=? AND u.environment=? AND d.valid_from <= ? AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(f.vehicle_id, envName, f.offense_at, f.offense_at).all()).results;
-  for (const a of assigned) out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDate(a.valid_from)}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null });
+  const assigned = (await env.DB.prepare(`SELECT d.user_id, u.display_name, d.valid_from, d.valid_to, d.evidence, d.vehicle_id, vv.plate FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles vv ON vv.id=d.vehicle_id
+    WHERE d.vehicle_id IN (${fineVehiclesSql('?1')}) AND u.environment=?2 AND d.valid_from <= ?3 AND (d.valid_to IS NULL OR d.valid_to > ?3)`).bind(f.vehicle_id, envName, f.offense_at).all()).results;
+  for (const a of assigned) {
+    const via = a.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${a.plate}` : '';
+    if (out.some((o) => o.user_id === a.user_id && o.basis === 'zuordnung')) continue;
+    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDate(a.valid_from)}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
+  }
   const day = berlinDate(f.offense_at);
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at FROM inspections i JOIN users u ON u.id=i.performed_by
-    WHERE i.vehicle_id=? AND i.environment=? AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ? AND ?`)
+    WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4`)
     .bind(f.vehicle_id, envName, new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(), new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString()).all()).results;
   for (const c of checks) {
     if (berlinDate(c.created_at) !== day) continue;
@@ -170,8 +178,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         if (did) {
           // ausgeschiedener (deaktivierter) Fahrer nur, wenn er zur Tatzeit zugeordnet war – genau so wird er als Kandidat angeboten (17.10.2026: Angebot ließ sich nicht bestätigen)
           const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=? AND role='driver' AND environment=? AND (active=1
-            OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.vehicle_id=? AND dv.valid_from <= ? AND (dv.valid_to IS NULL OR dv.valid_to > ?)))`)
-            .bind(did, envName, f.vehicle_id, f.offense_at, f.offense_at).first();
+            OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.vehicle_id IN (${fineVehiclesSql('?3')}) AND dv.valid_from <= ?4 AND (dv.valid_to IS NULL OR dv.valid_to > ?4)))`)
+            .bind(did, envName, f.vehicle_id, f.offense_at).first();
           if (!d) throw bad('validation', 'Fahrer nicht gefunden.');
           set.driver_id = d.id; set.driver_name_note = null;
         } else {
