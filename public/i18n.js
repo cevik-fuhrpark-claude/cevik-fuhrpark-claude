@@ -656,6 +656,9 @@ const VALIDATION_TEXTS = {
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
   ['Gerät nicht gefunden.', 'Пристрій не знайдено.', 'Device not found.'],
+  ['Eintrag nicht gefunden.', 'Запис не знайдено.', 'Entry not found.'],
+  ['Der Fuhrparkagent läuft gerade – bitte in einer Minute erneut versuchen.', 'Агент автопарку саме працює – спробуйте ще раз за хвилину.', 'The fleet agent is running right now – please try again in a minute.'],
+  ['Eintrag wurde zwischenzeitlich weiter bearbeitet. Bitte neu laden.', 'Запис тим часом оброблено далі. Оновіть сторінку.', 'The entry has been processed further in the meantime. Please reload.'],
   ['Unbekannte Werkstatt.', 'Невідома майстерня.', 'Unknown workshop.'],
   ['Eigene Zwei-Faktor-Anmeldung bitte unter „Mein Konto“ ausschalten.', 'Власний двофакторний вхід вимикайте в «Мій акаунт».', 'Please turn off your own two-factor sign-in under “My account”.'],
   ['Datum im Format JJJJ-MM-TT.', 'Дата у форматі РРРР-ММ-ДД.', 'Date in format YYYY-MM-DD.'],

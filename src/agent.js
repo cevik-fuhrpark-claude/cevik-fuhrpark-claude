@@ -1,6 +1,6 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
-import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate, oneOf, str, notFound, conflict } from './util.js';
 import { notifyUsers } from './notify.js';
 import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
@@ -122,7 +122,14 @@ export async function agentBasics(env, environment) {
 export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
   const runId = uuid();
   const started = nowIso();
-  await env.DB.prepare('INSERT INTO agent_runs(id,environment,trigger,started_at) VALUES (?,?,?,?)').bind(runId, environment, trigger, started).run();
+  // Lauf-Sperre je Umgebung (Backlog 86): läuft schon ein Lauf (jünger als 10 Min., nicht beendet), startet kein zweiter – sonst doppelte
+  // Übergaben und Sammel-Pushs bei gleichzeitigem Cron und „Agent ausführen“. Abgebrochene Läufe (> 10 Min. ohne Ende) sperren nicht.
+  const ins = await env.DB.prepare(`INSERT INTO agent_runs(id,environment,trigger,started_at) SELECT ?1,?2,?3,?4
+    WHERE NOT EXISTS (SELECT 1 FROM agent_runs WHERE environment=?2 AND finished_at IS NULL AND started_at > ?5)`).bind(runId, environment, trigger, started, new Date(Date.parse(started) - 600000).toISOString()).run();
+  if (!(ins.meta && ins.meta.changes)) {
+    if (trigger === 'cron') return { skipped: true, running: true };
+    throw conflict('agent_running', 'Der Fuhrparkagent läuft gerade – bitte in einer Minute erneut versuchen.');
+  }
   try {
     // Kleine Ausgangslisten in EINER D1-Abfrage (Abfragebudget je Aufruf, siehe Backlog 74)
     const base = await agentBasics(env, environment);
@@ -421,7 +428,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (changed || ROW_FIELDS.some((k) => (existing[k] ?? null) !== row[k])) rows.push(row);
       if (changed && f.severity !== 'kritisch' && REMINDER_CODES.has(f.code)) newReminders.push(f);
       if (changed && SEV_RANK[f.severity] >= SEV_RANK.handeln) {
-        candidates.push({ eventInput: `${findingId}|${fingerprint}|${existing ? existing.first_seen : now}`, findingId, fingerprint, f });
+        // erledigter Befund, der wieder auftritt = neue Episode (das Upsert setzt first_seen neu) → neue Übergabe/Push (vorher alte event_id, nichts kam an, 17.10.2026)
+        candidates.push({ eventInput: `${findingId}|${fingerprint}|${existing && existing.status !== 'erledigt' ? existing.first_seen : now}`, findingId, fingerprint, f });
       }
     }
     const eventIds = await Promise.all(candidates.map((c) => sha256Hex(c.eventInput)));
@@ -543,10 +551,15 @@ export async function masterPanel(env, environment) {
 }
 
 export async function decideMasterItem(env, user, environment, eventId, body) {
-  const st = body.decision_status;
-  if (!['gesehen', 'entschieden', 'erledigt'].includes(st)) throw new Error('invalid');
-  const note = String(body.note || '').slice(0, 2000) || null;
-  const r = await env.DB.prepare(`UPDATE master_inbox SET decision_status=?, decided_by=?, decision_note=?, decided_at=? WHERE event_id=? AND environment=?`)
-    .bind(st, user.id, note, nowIso(), eventId, environment).run();
-  return { ok: r.meta.changes === 1 };
+  // Werteprüfung (vorher 500 bei unbekanntem Status, Objekt als „[object Object]“) und keine Rückstufung: eine gleichzeitige oder spätere
+  // „gesehen“-Markierung überschrieb sonst „erledigt“ samt Vermerk (17.10.2026). Gleiche Stufe erneut: Vermerk bleibt, wenn keiner mitkommt.
+  const st = oneOf(body.decision_status, ['gesehen', 'entschieden', 'erledigt'], 'Entscheidung');
+  const note = str(body.note, { max: 2000, field: 'Vermerk' }) || null;
+  const RANK = { offen: 0, gesehen: 1, entschieden: 2, erledigt: 3 };
+  const r = await env.DB.prepare(`UPDATE master_inbox SET decision_status=?1, decided_by=?2, decision_note=COALESCE(?3, decision_note), decided_at=?4 WHERE event_id=?5 AND environment=?6
+    AND (CASE decision_status WHEN 'offen' THEN 0 WHEN 'gesehen' THEN 1 WHEN 'entschieden' THEN 2 ELSE 3 END) <= ?7`)
+    .bind(st, user.id, note, nowIso(), String(eventId), environment, RANK[st]).run();
+  if (r.meta.changes === 1) return { ok: true };
+  if (!(await env.DB.prepare('SELECT 1 FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first())) throw notFound('Eintrag nicht gefunden.');
+  throw conflict('version_conflict', 'Eintrag wurde zwischenzeitlich weiter bearbeitet. Bitte neu laden.');
 }

@@ -55,7 +55,8 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   for (const d of docs.filter((x) => !x.superseded && x.valid_until)) {
     if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until }); continue; } }
     const left = days(today, d.valid_until);
-    items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok' });
+    const topic = GROUPED_KINDS.includes(d.kind) ? groupKey(d).slice(d.kind.length + 1) : '';
+    items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic } : {}) });
   }
   let check = { last: lastCheck ? lastCheck.checked_on : null, result: lastCheck ? lastCheck.result : null, due: null, status: lastCheck ? 'ok' : 'fehlt' };
   if (lastCheck && lastCheck.result !== 'in_ordnung') check.status = 'mangel';
@@ -190,9 +191,11 @@ export async function driverFindings(env, environment, settings = null) {
   const L = { fuehrerschein: 'Führerschein', fahrerkarte: 'Fahrerkarte', code95: 'Code 95 / Weiterbildung', unterweisung: 'Unterweisung', sonstiges: 'Nachweis' };
   for (const d of list) {
     for (const i of d.status.items) {
-      if (i.status === 'abgelaufen') out.push({ code: 'DRIVER_DOC_EXPIRED', subject: `${d.id}|${i.kind}`, severity: i.kind === 'fuehrerschein' || i.kind === 'fahrerkarte' ? 'kritisch' : 'handeln', requires_decision: 1,
+      // je Thema ein Befund (Unterweisung/Sonstiges mit Titel; vorher fasste der Schlüssel Fahrer|Art mehrere abgelaufene Themen zu einem zusammen, 17.10.2026)
+      const subject = `${d.id}|${i.kind}${i.topic ? '|' + i.topic.slice(0, 80) : ''}`;
+      if (i.status === 'abgelaufen') out.push({ code: 'DRIVER_DOC_EXPIRED', subject, severity: i.kind === 'fuehrerschein' || i.kind === 'fahrerkarte' ? 'kritisch' : 'handeln', requires_decision: 1,
         ...fm('DRIVER_DOC_EXPIRED', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', date: i.valid_until }), next_action: 'Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.' });
-      else if (i.status === 'laeuft_ab') out.push({ code: 'DRIVER_DOC_EXPIRES_SOON', subject: `${d.id}|${i.kind}`, severity: 'hinweis', requires_decision: 0,
+      else if (i.status === 'laeuft_ab') out.push({ code: 'DRIVER_DOC_EXPIRES_SOON', subject, severity: 'hinweis', requires_decision: 0,
         ...fm('DRIVER_DOC_EXPIRES_SOON', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', date: i.valid_until, days: i.days }), next_action: 'Verlängerung rechtzeitig veranlassen.' });
     }
     if (d.status.check.status === 'faellig') out.push({ code: 'LICENSE_CHECK_DUE', subject: `${d.id}|fs_kontrolle`, severity: 'handeln', requires_decision: 0,

@@ -428,6 +428,9 @@ export async function updateUser(env, actor, userId, body) {
     stmts.push(env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId));
     stmts.push(env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').bind(now, userId));
   }
+  // Rollen-/Umgebungswechsel: Hinweise der bisherigen Rolle ausblenden (nicht löschen) – sonst sah z. B. ein neuer Fahrer kritische
+  // Leitungs-Hinweise samt Vorgang und bekam fehlgeschlagene Pushs nachgereicht (17.10.2026, Migration 0056)
+  if (role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare('UPDATE notifications SET hidden_at=? WHERE user_id=? AND hidden_at IS NULL').bind(now, userId));
   await env.DB.batch(stmts);
   // geänderte Felder als alt → neu (Protokoll-Ansicht zeigt „geändert: Rolle Fahrer → Werkstatt“); Grundfelder bleiben wie bisher
   const changed = {};

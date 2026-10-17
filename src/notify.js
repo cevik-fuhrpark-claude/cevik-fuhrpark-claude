@@ -365,7 +365,7 @@ export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
   const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.acknowledged_at IS NULL AND n.created_at > ? AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND n.push_hold_until IS NULL AND n.created_at < ?))
+    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ? AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND n.push_hold_until IS NULL AND n.created_at < ?))
     ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
     .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString()).all()).results;
@@ -377,7 +377,7 @@ export async function retryFailedPush(env) {
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now()) {
   const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.created_at > ?
+    WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ?
     ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString()).all()).results;
   if (rows.length) await deliverPush(env, rows.map(forDelivery), { collapse: true });
   return rows.length;

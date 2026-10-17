@@ -9990,6 +9990,67 @@ await test('Prüftermine/Fahrerzuordnung: älterer Bericht verschiebt keine Fäl
   ok(!(await mt.defectsWithoutCaseQuery(e, 'production').all()).results.some((x) => x.id === 'ev7'), 'Liste nach Berliner Tag');
 });
 
+await test('Agent/Hinweise/Berichte: wiederkehrender Befund neu übergeben, Master-Entscheidung ohne Rückstufung, gelesene/ausgeblendete Hinweise nicht nachgepusht, Rollenwechsel blendet Hinweise aus, Unterweisungen je Thema, Kennzahlen-Jahr begrenzt', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const ag = await import('../src/agent.js'); const { retryFailedPush } = await import('../src/notify.js');
+  const rep = await import('../src/reports.js'); const auth = await import('../src/auth.js'); const drv = await import('../src/drivers.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const E = 'production'; const run = (q, ...a) => db.prepare(q).run(...a);
+  const now = () => new Date().toISOString(); const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  run(`INSERT INTO users(id,username,display_name,role,environment,password_hash,active,created_at,updated_at) VALUES('u1','own','Own','owner',?,'x',1,?,?),('u2','flt','Flt','fleet',?,'x',1,?,?)`, E, now(), now(), E, now(), now());
+  run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('v1','WDB00000000000001','T-RF 1','lkw',1,0,?,?)`, now(), now());
+  // 1. Reifen unter Minimum → erledigt → Wechsel → wieder unter Minimum: neue Übergabe
+  const ev = (id, type, mm) => run(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,size,recorded_by,created_at) VALUES(?,?,?,?,?,?,'315/80','u1',?)`, id, E, 'v1', 'VA-L', type, mm, now());
+  ev('a', 'messung', 1.0); await ag.runFleetAgent(e, null, E);
+  run(`UPDATE master_inbox SET decision_status='erledigt'`);
+  await sleep(5); ev('b', 'wechsel', null); await ag.runFleetAgent(e, null, E);
+  await sleep(5); ev('c', 'messung', 1.1); const r3 = await ag.runFleetAgent(e, null, E);
+  ok(r3.handoffs >= 1, 'erneut übergeben: ' + r3.handoffs);
+  ok(db.prepare(`SELECT COUNT(*) n FROM master_inbox WHERE decision_status='offen'`).get().n >= 1, 'offener Eingang');
+  // 2. Master-Entscheidung: Werteprüfung, keine Rückstufung, unbekannt 404
+  const evId = db.prepare(`SELECT event_id FROM master_inbox WHERE decision_status='offen' LIMIT 1`).get().event_id;
+  const st = (p) => p.then(() => 'ok', (x) => x.status || 500);
+  eq(await st(ag.decideMasterItem(e, { id: 'u1' }, E, evId, { decision_status: 'xyz' })), 400, 'ungültiger Status:');
+  eq(await st(ag.decideMasterItem(e, { id: 'u1' }, E, evId, { decision_status: 'erledigt', note: { x: 1 } })), 400, 'Objekt als Vermerk:');
+  eq(await st(ag.decideMasterItem(e, { id: 'u1' }, E, evId, { decision_status: 'erledigt', note: 'geklärt' })), 'ok');
+  eq(await st(ag.decideMasterItem(e, { id: 'u2' }, E, evId, { decision_status: 'gesehen' })), 409, 'keine Rückstufung:');
+  const mi = db.prepare('SELECT decision_status, decision_note, decided_by FROM master_inbox WHERE event_id=?').get(evId);
+  eq(JSON.stringify([mi.decision_status, mi.decision_note, mi.decided_by]), JSON.stringify(['erledigt', 'geklärt', 'u1']));
+  eq(await st(ag.decideMasterItem(e, { id: 'u1' }, E, 'gibtsnicht', { decision_status: 'gesehen' })), 404);
+  // 3. Push-Wiederholung: gelesene und ausgeblendete nicht; Rollenwechsel blendet aus
+  run(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,created_at) VALUES('s1','u2','https://push.example/ok','BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM','tBHItJI5svbpez7KI4CCXg',?)`, now());
+  const t = new Date(Date.now() - 30 * 60000).toISOString();
+  run(`INSERT INTO notifications(id,environment,user_id,event_key,kind,urgent,title,body,created_at,push_status,push_attempts,opened_at) VALUES('n1',?,'u2','k1','comment',0,'K','V-1',?,'failed',1,?)`, E, t, now());
+  const before = e.pushLog.length; await retryFailedPush(e); eq(e.pushLog.length - before, 0, 'gelesener Hinweis nicht nachgepusht:');
+  run(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status,push_attempts) VALUES('n2',?,'u2','c-x','k2','created',1,'KRITISCH','V-2 · kritisch',?,'failed',1)`, E, t);
+  await auth.updateUser(e, { id: 'u1', role: 'owner' }, 'u2', { role: 'driver' });
+  eq(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE user_id='u2' AND hidden_at IS NULL`).get().n, 0, 'nach Rollenwechsel ausgeblendet:');
+  run(`UPDATE push_subscriptions SET revoked_at=NULL`); const b2 = e.pushLog.length; await retryFailedPush(e); eq(e.pushLog.length - b2, 0, 'kein Nachpush an das neue Fahrergerät:');
+  // 4. zwei abgelaufene Unterweisungen verschiedener Themen → zwei Befunde
+  run(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at) VALUES('d1',?,'Max',1,'u1',?,?)`, E, now(), now());
+  for (const [id, title, until] of [['x1', 'Ladungssicherung', '2026-09-30'], ['x2', 'Gefahrgut ADR', '2026-08-31'], ['x3', 'ladungssicherung ', '2026-07-31']]) run(`INSERT INTO driver_documents(id,driver_id,kind,title,valid_until,evidence,created_by,created_at) VALUES(?,'d1','unterweisung',?,?,'Nachweis','u1',?)`, id, title, until, now());
+  const fs = (await drv.driverFindings(e, E)).filter((f) => f.code === 'DRIVER_DOC_EXPIRED');
+  eq(fs.length, 2, 'je Thema ein Befund (gleiches Thema anders geschrieben zählt einmal): ' + JSON.stringify(fs.map((f) => f.subject)));
+  // 5. Kennzahlen: Grenzjahre → 400 statt 500
+  for (const q of [{ from: '9999-01', to: '9999-12' }, { from: '0000-01', to: '0000-12' }]) eq(await st(rep.kpiReport(e, { role: 'owner' }, E, q)), 400, 'Zeitraum ' + q.from + ':');
+});
+
+await test('Fuhrparkagent: Lauf-Sperre je Umgebung – gleichzeitiger Cron und „Agent ausführen“ übergeben nicht doppelt', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { runFleetAgent } = await import('../src/agent.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const E = 'production'; const now = new Date().toISOString(); const run = (q, ...a) => db.prepare(q).run(...a);
+  run(`INSERT INTO users(id,username,display_name,role,environment,password_hash,active,created_at,updated_at) VALUES('u1','own','Own','owner',?,'x',1,?,?)`, E, now, now);
+  run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('v1','WDB00000000000001','T-RF 1','lkw',1,0,?,?)`, now, now);
+  for (const [i, p] of [['a', 'VA-L'], ['b', 'VA-R']]) run(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,recorded_by,created_at) VALUES(?,?,?,?,'messung',1.0,'u1',?)`, i, E, 'v1', p, now);
+  const r = await Promise.allSettled([runFleetAgent(e, null, E, 'cron'), runFleetAgent(e, null, E, 'manuell:own')]);
+  eq(db.prepare('SELECT COUNT(*) n FROM master_inbox').get().n, 2, 'Eingang nicht doppelt: ' + JSON.stringify(r.map((x) => x.status === 'fulfilled' ? x.value : x.reason.code)));
+  eq(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE kind='agent'`).get().n, 1, 'ein Sammel-Hinweis:');
+  // abgebrochener Lauf (> 10 Min. ohne Ende) sperrt nicht; Test-Umgebung unabhängig
+  run(`INSERT INTO agent_runs(id,environment,trigger,started_at) VALUES('alt',?,'cron',?)`, E, new Date(Date.now() - 11 * 60000).toISOString());
+  ok(!(await runFleetAgent(e, null, E, 'cron')).skipped, 'abgebrochener Lauf sperrt nicht');
+  run(`INSERT INTO agent_runs(id,environment,trigger,started_at) VALUES('laeuft',?,'cron',?)`, E, new Date().toISOString());
+  eq((await runFleetAgent(e, null, E, 'cron')).skipped, true, 'laufender Lauf: Cron überspringt');
+  eq(await runFleetAgent(e, null, E, 'manuell:own').then(() => 'ok', (x) => x.status), 409, 'manuell: 409');
+  ok(!(await runFleetAgent(e, null, 'test', 'cron')).skipped, 'andere Umgebung läuft');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

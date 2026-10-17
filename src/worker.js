@@ -545,14 +545,15 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/notifications' && m === 'GET') {
     // Zähler immer über ALLE Hinweise der Person (nicht nur die angezeigten) – sonst fehlt im Zähler/Reiter, was älter als die neuesten NOTIF_MAX ist.
     // ?filter=unread|urgent filtert serverseitig (ältere ungelesene erscheinen so auch bei vielen Hinweisen); ?count=1 nur die Zähler (Kennzahl am Menü).
+    // nur Hinweise der aktuellen Umgebung der Person (nach Wechsel Test→Betrieb erschienen sonst Test-Hinweise, 17.10.2026)
     const UNREAD = 'n.opened_at IS NULL AND n.acknowledged_at IS NULL';
     const c = await env.DB.prepare(`SELECT COUNT(*) AS all_n, COALESCE(SUM(CASE WHEN ${UNREAD} THEN 1 ELSE 0 END), 0) AS unread_n, COALESCE(SUM(CASE WHEN n.urgent=1 THEN 1 ELSE 0 END), 0) AS urgent_n
-      FROM notifications n WHERE n.user_id=?`).bind(user.id).first();
+      FROM notifications n WHERE n.user_id=? AND n.environment=? AND n.hidden_at IS NULL`).bind(user.id, envName).first();
     const counts = { all: c.all_n, unread: c.unread_n, urgent: c.urgent_n };
     if (url.searchParams.get('count') === '1') return json({ unread: counts.unread, counts });
     const filter = { unread: UNREAD, urgent: 'n.urgent=1' }[url.searchParams.get('filter') || ''] || null;
     const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, n.ref, u.language AS lang
-      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, NOTIF_MAX + 1).all()).results;
+      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? AND n.environment=? AND n.hidden_at IS NULL ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, envName, NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
     for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();

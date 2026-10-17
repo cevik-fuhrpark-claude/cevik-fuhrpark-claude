@@ -33,6 +33,8 @@ function monthRange(q) {
   const to = q.to || now;
   const from = q.from || `${Number(to.slice(0, 4)) - 1}-${to.slice(5, 7)}`;
   if (!MONTH.test(from) || !MONTH.test(to)) throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.');
+  // Jahr begrenzen (9999-12 ergab beim Monatsende „10000-01-01“ → 500 im Kennzahlenbericht, 17.10.2026)
+  if (from < '2000-01' || to > '2100-12') throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.');
   if (from > to) throw bad('validation', '„Von“ liegt nach „Bis“.');
   const months = (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7)) + 1;
   if (months > 36) throw bad('validation', 'Maximal 36 Monate je Abfrage.');
