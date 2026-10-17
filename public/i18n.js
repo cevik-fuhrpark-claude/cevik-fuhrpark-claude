@@ -1064,6 +1064,7 @@ const NEXT_ACTIONS = [
   ['Werkstatttermin für Restarbeiten planen.', 'Заплануйте візит до майстерні для залишкових робіт.', 'Schedule a workshop appointment for the remaining work.'],
   ['Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.', 'Повідомте одержувачів телефоном; увімкніть push на їхніх пристроях.', 'Inform recipients by phone; enable push on their devices.'],
   ['Stundensatz festlegen bzw. Teilepreise nachtragen.', 'Встановіть погодинну ставку або внесіть ціни запчастин.', 'Set the hourly rate or add the parts prices.'],
+  ['Rechnungsbeträge der Fremdleistungen nachtragen bzw. Stundensatz/Teilepreise ergänzen.', 'Внесіть суми рахунків за сторонні роботи або доповніть погодинну ставку/ціни запчастин.', 'Add the invoice amounts of the external services or complete the hourly rate/parts prices.'],
   ['Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.', 'Домовтеся про дату; фахово перевірте придатність до експлуатації.', 'Arrange an appointment; have roadworthiness checked by an expert.'],
   ['Werkstatttermin einplanen.', 'Заплануйте візит до майстерні.', 'Schedule a workshop appointment.'],
   ['Durchführung mit km-Stand des neuen Zählers erfassen oder km-Fälligkeit mit Nachweis neu eintragen.', 'Внесіть виконання з пробігом нового лічильника або заново внесіть строк за пробігом із підтвердженням.', 'Record the service with the new odometer reading or re-enter the mileage due with evidence.'],

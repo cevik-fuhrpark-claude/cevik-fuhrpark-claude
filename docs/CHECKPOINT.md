@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 309 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 311 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026

@@ -9523,6 +9523,48 @@ await test('Datenqualität: Anhänger laut Stammliste auch ruhend gefunden (kein
   ok(!q.items.some((i) => i.plate === 'T-AH 9'), 'ruhender Anhänger selbst ohne Prüfpunkte');
 });
 
+// 17.10.2026 (Fehlersuche Runde 3): Kostenbefund bei Fremdleistung ohne Betrag, Positionen im Kostenbericht wie Akte, Werkstattauslastung Berliner Montag
+await test('Kosten: Fremdleistung ohne Betrag → Agentenbefund COSTS_UNVALUED (auch „ersetzt eigene Arbeit“); Kostenbericht zählt Positionen wie die Akte', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { runFleetAgent } = await import('../src/agent.js'); const { costReport } = await import('../src/reports.js'); const { vehicleCosts } = await import('../src/cases.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:K','K','T-KO 1','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  const mk = (id, covers) => {
+    db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at,closed_at) VALUES (?,?,'production','VIN:K','u','x','mittel','mittel','unbekannt','fahrzeug_freigegeben',?,'h',?,?,?)`).run(id, 'S-' + id, id, now, now, now);
+    db.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,amount_net,valuation,covers_work_and_parts,created_at) VALUES (?,?,'u','Dekra',NULL,'unvalued',?,?)`).run('E' + id, id, covers, now);
+  };
+  mk('c1', 0); mk('c2', 1);
+  const today = BERLIN_TODAY; for (const [i, c] of [[1, 'c1'], [2, 'c1'], [3, 'c1']]) db.prepare(`INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at) VALUES (?,?,'u',?,1.5,'a',?)`).run('W' + i, c, today, now);
+  db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('workshop_hourly_rate_net','80',?)`).run(now);
+  await runFleetAgent(e, { waitUntil() {} }, 'production', 'test');
+  const f = db.prepare(`SELECT case_id, message FROM agent_findings WHERE finding_code='COSTS_UNVALUED' AND status='offen' ORDER BY case_id`).all();
+  eq(JSON.stringify(f.map((x) => x.case_id)), '["c1","c2"]', 'Befunde je Vorgang:');
+  ok(f.every((x) => /1 Fremdleistung ohne Betrag/.test(x.message)), `Text: ${f.map((x) => x.message).join(' | ')}`);
+  db.prepare(`DELETE FROM settings WHERE key='workshop_hourly_rate_net'`).run();
+  await runFleetAgent(e, { waitUntil() {} }, 'production', 'test');
+  ok(/2 Positionen ohne Betrag bzw\. Stundensatz/.test(db.prepare(`SELECT message FROM agent_findings WHERE finding_code='COSTS_UNVALUED' AND case_id='c1'`).get().message), 'gemischt: Positionen gesamt');
+  // Kostenbericht = Akte (3 Zeiteinträge = 1 Position Arbeitszeit)
+  for (const rate of [null, '80']) {
+    if (rate) db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('workshop_hourly_rate_net',?,?)`).run(rate, now);
+    const ym = today.slice(0, 7); const rep = await costReport(e, { role: 'owner' }, 'production', { from: ym, to: ym });
+    const row = rep.rows.find((r) => r.vehicle_id === 'VIN:K'); const a = await vehicleCosts(e, 'production', 'VIN:K');
+    eq(`${row.unvalued_items}/${row.valued_items}`, `${a.unvalued_items}/${a.valued_items}`, `Positionen Bericht = Akte (Satz ${rate}):`);
+  }
+});
+
+await test('Werkstattauslastung: Übernahme/Freigabe am Montag 00:30 Berliner Zeit zählt in der ersten Woche', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { workshopLoad } = await import('../src/reports.js'); const { berlinDayStartIso, berlinDate } = await import('../src/util.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT OR IGNORE INTO workshops(code,name,active) VALUES ('W1','Werkstatt 1',1)`).run();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:W','W','T-WA 1','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  const d = new Date(BERLIN_TODAY + 'T00:00:00Z'); const mon = new Date(d - ((d.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
+  const at = new Date(Date.parse(berlinDayStartIso(mon)) + 30 * 60000).toISOString(); eq(berlinDate(at), mon, 'Testzeit Berliner Montag:');
+  if (at > now) return; // Montag kurz nach Mitternacht: Zeitpunkt liegt noch in der Zukunft – nichts zu prüfen
+  db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at,closed_at,workshop_ack_at,workshop_site) VALUES ('w1','S-1','production','VIN:W','u','x','mittel','mittel','unbekannt','fahrzeug_freigegeben','rk','h',?,?,?,?,'W1')`).run(at, at, at, at);
+  const r = await workshopLoad(e, { role: 'owner' }, 'production', { weeks: '1' });
+  const w = r.sites.find((s) => s.site === 'W1').weeks[0];
+  eq(`${w.acknowledged}/${w.released}`, '1/1', 'übernommen/freigegeben:');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

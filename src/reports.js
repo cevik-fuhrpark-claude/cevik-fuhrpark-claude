@@ -70,11 +70,17 @@ export async function costReport(env, user, envName, query = {}) {
   const inRange = (m) => m >= from && m <= to;
   const monthOf = (d) => (d.length === 10 ? d.slice(0, 7) : berlinDate(d).slice(0, 7));
   for (const c of caseMonths) { const m = monthOf(c.d); if (inRange(m)) row(c.vehicle_id, m).cases_opened++; }
+  // Arbeitszeit zählt je Vorgang und Monat als EINE Position (wie computeCosts in Akte/Vorgang) – vorher je Zeiteintrag (17.10.2026)
+  const workItem = new Set();
   for (const w of work) {
     if (covered.has(w.case_id)) continue;
     const m = monthOf(w.d); if (!inRange(m)) continue;
     const r = row(w.vehicle_id, m); r.hours += w.hours;
-    if (rate === null) r.unvalued_items++; else { r.work_net += w.hours * rate; r.valued_items++; }
+    if (rate !== null) r.work_net += w.hours * rate;
+    const k = `${w.case_id}|${m}`;
+    if (!(w.hours > 0) || workItem.has(k)) continue;
+    workItem.add(k);
+    if (rate === null) r.unvalued_items++; else r.valued_items++;
   }
   for (const p of parts) {
     if (covered.has(p.case_id)) continue;
@@ -525,8 +531,9 @@ export async function workshopLoad(env, user, envName, query = {}) {
   const [hours, acks, closed, open, sites] = await Promise.all([
     env.DB.prepare(`SELECT c.workshop_site AS site, w.work_date AS d, SUM(w.hours) AS h FROM work_entries w JOIN cases c ON c.id=w.case_id
       WHERE c.environment=? AND w.work_date >= ?${sf} GROUP BY c.workshop_site, w.work_date`).bind(...args(startDate)).all(),
-    env.DB.prepare(`SELECT c.workshop_site AS site, c.workshop_ack_at AS t FROM cases c WHERE c.environment=? AND c.workshop_ack_at >= ?${sf}`).bind(...args(startDate)).all(),
-    env.DB.prepare(`SELECT c.workshop_site AS site, c.closed_at AS t FROM cases c WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at >= ?${sf} AND c.workshop_site IS NOT NULL`).bind(...args(startDate)).all(),
+    // Zeitpunkte (UTC) ab Beginn des Berliner Montags – vorher fehlten Übernahmen/Freigaben Mo 00:00–02:00 der ersten Woche (17.10.2026)
+    env.DB.prepare(`SELECT c.workshop_site AS site, c.workshop_ack_at AS t FROM cases c WHERE c.environment=? AND c.workshop_ack_at >= ?${sf}`).bind(...args(berlinDayStartIso(startDate))).all(),
+    env.DB.prepare(`SELECT c.workshop_site AS site, c.closed_at AS t FROM cases c WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at >= ?${sf} AND c.workshop_site IS NOT NULL`).bind(...args(berlinDayStartIso(startDate))).all(),
     env.DB.prepare(`SELECT c.workshop_site AS site, c.status, COUNT(*) AS n FROM cases c WHERE c.environment=? AND c.status IN (${OPEN_WS.map(() => '?').join(',')})${sf} GROUP BY c.workshop_site, c.status`)
       .bind(envName, ...OPEN_WS, ...(siteFilter ? [siteFilter] : [])).all(),
     env.DB.prepare('SELECT code, name FROM workshops WHERE active=1').all(),

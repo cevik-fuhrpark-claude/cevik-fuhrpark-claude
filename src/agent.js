@@ -250,13 +250,20 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const rate = rateRaw === undefined || rateRaw === null || rateRaw === '' ? null : rateRaw;
     const closed = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate,
         (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) AS hours_n,
-        (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND p.valuation='unvalued') AS unv_n,
-        (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS ext_n
+        (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation='unvalued')) AS unv_n,
+        (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS ext_n,
+        (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation='unvalued')) AS ext_unv_n
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at > ?`)
       .bind(environment, new Date(Date.now() - 90 * 86400000).toISOString()).all()).results;
     for (const c of closed) {
       const hasHours = { n: c.hours_n }; const unvParts = { n: c.unv_n }; const ext = { n: c.ext_n };
-      if (!ext.n && ((hasHours.n > 0 && rate === null) || unvParts.n > 0)) {
+      // gleiche Regel wie computeCosts (Akte/Vorgang): auch Fremdleistungen ohne Betrag – auch wenn sie eigene Arbeit/Teile ersetzen (vorher kein Befund, 17.10.2026)
+      if (c.ext_unv_n > 0) {
+        const own = ext.n ? 0 : (hasHours.n > 0 && rate === null ? 1 : 0) + unvParts.n;
+        add({ code: 'COSTS_UNVALUED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'owner',
+          ...fm(own ? 'COSTS_UNVALUED_ITEMS' : 'COSTS_UNVALUED_EXT', { label: `${c.case_no} (${c.plate})`, n: own + c.ext_unv_n }),
+          next_action: 'Rechnungsbeträge der Fremdleistungen nachtragen bzw. Stundensatz/Teilepreise ergänzen.' });
+      } else if (!ext.n && ((hasHours.n > 0 && rate === null) || unvParts.n > 0)) {
         add({ code: 'COSTS_UNVALUED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'owner',
           ...fm(rate === null && hasHours.n ? (unvParts.n ? 'COSTS_UNVALUED_BOTH' : 'COSTS_UNVALUED_RATE') : 'COSTS_UNVALUED_PARTS', { label: `${c.case_no} (${c.plate})`, n: unvParts.n || null }),
           next_action: 'Stundensatz festlegen bzw. Teilepreise nachtragen.' });
