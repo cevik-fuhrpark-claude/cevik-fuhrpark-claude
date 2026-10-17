@@ -375,7 +375,9 @@ function vehicleRow(user, body) {
   return {
     id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60 }), manufacturer: str(body.manufacturer, { max: 60 }), model: str(body.model, { max: 60 }),
     build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
-    trailer_plate: str(body.trailer_plate, { max: 20 }), trailer_vin: body.trailer_vin ? normalizeVin(body.trailer_vin) : null,
+    trailer_plate: str(body.trailer_plate, { max: 20 }), trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
+      const t = str(body.trailer_vin, { max: 30, field: 'Anhänger-FIN' }); if (!t) return null;
+      const n = normalizeVin(t); if (!isValidVin(n)) throw bad('validation', 'Anhänger-FIN muss 17 Zeichen haben (ohne I, O, Q).'); return n; })(),
     master_status: str(body.master_status, { max: 40 }), source: str(body.source, { max: 200 }) || `manuell durch ${user.username}`,
     kind: normalizeVehicleKind(body.kind),
   };
@@ -620,6 +622,8 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   // erst prüfen, dann rechnen (ungültiges Datum wie „0000-00-00“ ließ addMonths mit „Invalid time value“ abbrechen – Fuzz 15.10.2026)
   for (const d of [lastDate, nextDue]) if (d && !isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
+  // wie beim Import (17.10.2026): nächster Termin nicht vor der letzten Durchführung
+  if (nextDue && lastDate && nextDue < lastDate) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
   if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const id = uuid();
   const now = nowIso();
@@ -733,6 +737,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const docNext = str(body.next_due_date, { max: 10 });
   // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
   if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (docNext && docNext < date) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
   // einmalige Aktion (Rückruf): nur einmal durchführbar, keine Folgefrist (sonst stünde sie nie auf „erledigt“)
   const oneTime = ONE_TIME_KINDS.includes(r.kind);
   if (oneTime && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
@@ -754,7 +759,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
     ...(result ? guard('SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM maintenance_events WHERE rule_id=? AND done_date=? AND result IS NOT NULL AND result<>?', ruleId, date, result) : []),
     env.DB.prepare(`UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL
       WHERE id=? AND ${oneTime ? 'last_done_date IS NULL' : '(last_done_date IS NULL OR last_done_date <= ?)'}`)
-      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}`.slice(0, 300) : evidence, nowIso(), nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId, ...(oneTime ? [] : [date])),
+      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}` : evidence, nowIso(), nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId, ...(oneTime ? [] : [date])),
     ...(oneTime ? guard('SELECT changes()') : []),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
     ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=? AND result IS NULL').bind(result, ruleId, date)] : []),
@@ -956,8 +961,18 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
   const key = `${envName}/vehicles/${vehicleId}/${id}`;
   await env.FILES.put(key, buf, { metadata: { type, vehicle_id: vehicleId, env: envName } });
   const name = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'dokument'); } catch { return 'dokument'; } })().replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'dokument';
-  await env.DB.prepare(`INSERT INTO files(id,case_id,vehicle_id,doc_kind,doc_note,doc_valid_until,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
+  // Höchstzahl und Dublette im Einfügen geprüft (17.10.2026: parallele Uploads ergaben Dubletten und mehr als 30 Dokumente)
+  const ins = await env.DB.prepare(`INSERT INTO files(id,case_id,vehicle_id,doc_kind,doc_note,doc_valid_until,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
+    SELECT ?1,NULL,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
+    WHERE (SELECT COUNT(*) FROM files WHERE vehicle_id=?2 AND case_id IS NULL AND environment=?6) < ?14
+      AND NOT EXISTS (SELECT 1 FROM files WHERE vehicle_id=?2 AND case_id IS NULL AND environment=?6 AND sha256=?11)`)
+    .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_VEHICLE_DOCS).run();
+  if (!ins.meta || !ins.meta.changes) {
+    await env.FILES.delete(key);
+    const d2 = await env.DB.prepare('SELECT id FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
+    if (d2) return { id: d2.id, duplicate: true };
+    throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
+  }
   await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length, valid_until: validUntil });
   return { id, duplicate: false };
 }
@@ -977,6 +992,8 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
   const after = { kind, note: note ?? null, valid_until: validUntil ?? null };
   if (JSON.stringify(before) === JSON.stringify(after)) return { ok: true, unchanged: true };
   const exp = body.expected && typeof body.expected === 'object' ? body.expected : before;
+  // erwartete Werte nur Text oder leer (Objekt/Liste → 400 statt 500, 17.10.2026)
+  for (const k of ['kind', 'note', 'valid_until']) if (exp[k] !== undefined && exp[k] !== null && typeof exp[k] !== 'string') throw bad('validation', 'expected: ungültiger Wert.');
   const r = await env.DB.prepare(`UPDATE files SET doc_kind=?, doc_note=?, doc_valid_until=? WHERE id=? AND COALESCE(doc_kind,'sonstiges')=? AND doc_note IS ? AND doc_valid_until IS ?`)
     .bind(kind, after.note, after.valid_until, f.id, String(exp.kind || 'sonstiges'), exp.note ?? null, exp.valid_until ?? null).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('doc_changed', 'Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.');

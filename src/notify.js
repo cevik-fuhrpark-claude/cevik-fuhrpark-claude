@@ -328,9 +328,10 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     for (const s of subs) {
       sends++;
       // lang: Sprache des Textes, damit das Gerät die Mitteilung richtig vorliest/trennt (fehlt bei nicht übersetzten Freitexten)
+      // ein einzelnes unbrauchbares Abo (Schlüssel) darf die Zustellung an die übrigen Empfänger nicht abbrechen (17.10.2026)
       const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(n.ref ? { ref: n.ref } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
         // ts: Zeitpunkt des Ereignisses (ms) – nachgeholte Pushs (Wiederholung, Ende der Ruhezeit) zeigen am Gerät die echte Uhrzeit, nicht die Zustellzeit
-        ...(Date.parse(n.created_at) ? { ts: Date.parse(n.created_at) } : {}) }, { urgent: n.urgent });
+        ...(Date.parse(n.created_at) ? { ts: Date.parse(n.created_at) } : {}) }, { urgent: n.urgent }).catch((e) => ({ status: 'failed', http: 0, error: String(e && e.name || 'Fehler') }));
       if (res.status === 'accepted') {
         accepted = true;
         okSubs.add(s.id);

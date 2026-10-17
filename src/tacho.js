@@ -207,8 +207,9 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     const day = parseDay(get(cells, ci.day));
     if (!day) return skip(`Datum nicht erkannt: ${get(cells, ci.day) || '–'}`);
     if (day > today) return skip('Datum liegt in der Zukunft');
-    const evidence = (get(cells, ci.ev) || fallbackEv).slice(0, 300);
+    const evidence = get(cells, ci.ev) || fallbackEv;
     if (!evidence) return skip('Nachweis/Quelle fehlt');
+    if (evidence.length > 300) return skip('Nachweis zu lang (max. 300 Zeichen)'); // vorher still gekürzt (17.10.2026)
     let target; let label;
     if (kind === 'fahrerkarte') {
       const pno = get(cells, ci.pno).toLowerCase(); const nm = normName(get(cells, ci.name));

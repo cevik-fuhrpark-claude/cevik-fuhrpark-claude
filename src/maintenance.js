@@ -409,7 +409,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   });
 
   const now = nowIso();
-  const stmts = []; const creates = [];
+  const stmts = []; const creates = []; const updates = []; const rowOf = new Map(); // Anweisung → Zeile der Vorschau (gleichzeitig geändert)
   for (const p of [...planned.values()].sort((a, b) => a.line - b.line)) {
     const cur = ruleOf.get(`${p.vehicle_id}|${p.kind}`);
     const skipRow = (reason) => result.skipped.push({ line: p.line, plate: p.plate, reason });
@@ -453,24 +453,30 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       result.created++;
       const ruleId = uuid();
       // nur, wenn es die Prüfart am Fahrzeug noch nicht gibt (zwei gleichzeitige Importe legten sonst jede Regel doppelt an, 17.10.2026)
-      creates.push(stmts.length);
+      creates.push(stmts.length); rowOf.set(stmts.length, result.rows.length - 1);
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
         SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15 WHERE NOT EXISTS (SELECT 1 FROM maintenance_rules WHERE vehicle_id=?2 AND kind=?3)`)
         .bind(ruleId, p.vehicle_id, p.kind, p.interval, km.interval, last, km.last, km.due, next, p.evidence, user.id, now, now, p.dueSource, now));
       if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }, { ifRule: true }));
     } else if (action === 'aktualisiert') {
       result.updated++;
-      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=? WHERE id=?`)
+      // nur auf dem gelesenen Stand (17.10.2026): eine gleichzeitig erfasste Durchführung („erledigt“) wurde sonst mit den alten Werten überschrieben
+      updates.push(stmts.length); rowOf.set(stmts.length, result.rows.length - 1);
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=? WHERE id=?
+        AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
         .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, p.evidence, now,
-          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp ? 'berechnet' : cur.due_source || null), cur.id));
+          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp ? 'berechnet' : cur.due_source || null), cur.id,
+          cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));
       if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;
   }
   result.skipped.sort((a, b) => a.line - b.line);
   if (!dryRun) {
-    const missed = await runBatchesCounting(env, stmts, creates);
+    const { missed, missedUpd, missedIdx } = await runBatchesCounting(env, stmts, creates, updates);
+    for (const i of missedIdx) if (rowOf.has(i)) result.rows[rowOf.get(i)].action = 'unverändert'; // Zeilenliste wie die Zähler
     if (missed) { result.created -= missed; result.unchanged += missed; result.concurrent = missed; }
+    if (missedUpd) { result.updated -= missedUpd; result.unchanged += missedUpd; result.concurrent = (result.concurrent || 0) + missedUpd; }
     await audit(env, user.id, 'maintenance.import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
     const hv = [...new Set(result.rows.filter((r) => r.kind === 'HU' || r.kind === 'SP').map((r) => r.vehicle_id))];
     if (hv.length) result.husp_recalc = (await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: hv })).changed;
@@ -492,13 +498,13 @@ function plateIndex(vehicles) {
 
 // Anweisungen in Stapeln zu 200 ausführen; zählt, wie viele der Anlage-Anweisungen (Indizes `creates`) nichts eingefügt haben
 // (inzwischen von einem gleichzeitigen Import angelegt)
-async function runBatchesCounting(env, stmts, creates) {
-  const idx = new Set(creates); let missed = 0;
+async function runBatchesCounting(env, stmts, creates, updates = []) {
+  const idx = new Set(creates); const uidx = new Set(updates); let missed = 0; let missedUpd = 0; const missedIdx = [];
   for (let i = 0; i < stmts.length; i += 200) {
     const res = await env.DB.batch(stmts.slice(i, i + 200));
-    res.forEach((r, n) => { if (idx.has(i + n) && !(r && r.meta && r.meta.changes > 0)) missed++; });
+    res.forEach((r, n) => { const hit = r && r.meta && r.meta.changes > 0; if (idx.has(i + n) && !hit) { missed++; missedIdx.push(i + n); } if (uidx.has(i + n) && !hit) { missedUpd++; missedIdx.push(i + n); } });
   }
-  return missed;
+  return { missed, missedUpd, missedIdx };
 }
 
 // Rückruf-Import (z. B. Hersteller-/KBA-Liste je FIN): je Zeile ein einmaliger Rückruf (Prüfart „Rückruf“) mit Referenz als Nachweis.
@@ -579,7 +585,7 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
   });
   result.skipped.sort((a, b) => a.line - b.line);
   if (!dryRun) {
-    const missed = await runBatchesCounting(env, stmts, creates);
+    const { missed } = await runBatchesCounting(env, stmts, creates);
     if (missed) { result.created -= missed; result.unchanged += missed; result.concurrent = missed; }
     await audit(env, user.id, 'maintenance.recall_import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
   }

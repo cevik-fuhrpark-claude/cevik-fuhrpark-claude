@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix } from './util.js';
+import { b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -46,10 +46,16 @@ export async function ensureSchema(env) {
   const done = new Set((await env.DB.prepare('SELECT id FROM _migrations').all()).results.map((r) => r.id));
   for (const m of MIGRATIONS) {
     if (done.has(m.id)) continue;
-    await env.DB.batch([
-      ...m.statements.map((s) => env.DB.prepare(s)),
-      env.DB.prepare('INSERT INTO _migrations(id, applied_at) VALUES (?, ?)').bind(m.id, nowIso()),
-    ]);
+    try {
+      await env.DB.batch([
+        ...m.statements.map((s) => env.DB.prepare(s)),
+        env.DB.prepare('INSERT INTO _migrations(id, applied_at) VALUES (?, ?)').bind(m.id, nowIso()),
+      ]);
+    } catch (e) {
+      // gleichzeitig hat eine andere Instanz dieselbe Migration eingespielt (Stapel ist atomar; hier z. B. „duplicate column“ oder
+      // UNIQUE _migrations.id) – dann weiter statt 500 für diesen Aufruf (17.10.2026); sonst echter Fehler
+      if (!(await env.DB.prepare('SELECT 1 AS x FROM _migrations WHERE id=?').bind(m.id).first())) throw e;
+    }
   }
   migratedDbs.add(env.DB);
 }
@@ -113,7 +119,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/setup' && m === 'POST') return json(await auth.setupFirstOwner(env, await readJson(request)));
   if (path.startsWith('/api/invite/') && m === 'GET') {
-    const { row } = await auth.inviteInfo(env, decodeURIComponent(path.split('/')[3]));
+    const { row } = await auth.inviteInfo(env, path.split('/')[3]); // path ist bereits dekodiert (zweites decodeURIComponent → 500 bei „%“)
     return json({ username: row.username, display_name: row.display_name, role: row.role, environment: row.environment });
   }
   if (path === '/api/invite/accept' && m === 'POST') {
@@ -139,7 +145,7 @@ async function handleApi(request, env, ctx, url) {
   await guardSharedWrite(env, user, path, m);
   const { _session, ...me } = user;
 
-  if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user) });
+  if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user, await readJson(request).catch(() => ({}))) });
   if (path === '/api/me' && m === 'GET') {
     const row = await env.DB.prepare('SELECT language, home_site, totp_enabled_at FROM users WHERE id=?').bind(user.id).first();
     return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null, totp_enabled: !!row.totp_enabled_at }, active_environment: envName });
@@ -179,9 +185,14 @@ async function handleApi(request, env, ctx, url) {
         qf = q.from; qt = q.to;
       }
     }
-    await env.DB.prepare('UPDATE users SET push_muted=?, push_quiet_from=?, push_quiet_to=?, updated_at=? WHERE id=?').bind(muted.length ? JSON.stringify(muted) : null, qf, qt, nowIso(), user.id).run();
+    // nur die mitgesendeten Spalten schreiben (17.10.2026): die App sendet Häkchen und Ruhezeit getrennt – gleichzeitig gesendet ging sonst eine
+    // Änderung verloren (beide Spalten aus dem gelesenen Stand zurückgeschrieben)
+    const set = []; const vals = [];
+    if ('muted' in b) { set.push('push_muted=?'); vals.push(muted.length ? JSON.stringify(muted) : null); }
+    if ('quiet' in b) { set.push('push_quiet_from=?', 'push_quiet_to=?'); vals.push(qf, qt); }
+    const after = set.length ? await env.DB.prepare(`UPDATE users SET ${set.join(', ')}, updated_at=? WHERE id=? RETURNING push_muted, push_quiet_from, push_quiet_to`).bind(...vals, nowIso(), user.id).first() : row;
     if ('quiet' in b && (qf !== (row && row.push_quiet_from) || qt !== (row && row.push_quiet_to))) await auth.audit(env, user.id, 'user.push_quiet', user.id, { from: qf, to: qt });
-    return json({ kinds: MUTABLE_KINDS, muted, quiet: qf ? { from: qf, to: qt } : null });
+    return json({ kinds: MUTABLE_KINDS, muted: parseMuted(after && after.push_muted), quiet: after && after.push_quiet_from ? { from: after.push_quiet_from, to: after.push_quiet_to } : null });
   }
   if (path === '/api/me/inspections-without-result' && m === 'GET') return json(await myInspectionsWithoutResult(env, user));
   if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
@@ -418,7 +429,7 @@ async function handleApi(request, env, ctx, url) {
     const rep = await stock.journal(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'stock.journal.export', null, { from: rep.from, to: rep.to, site: rep.site, type: rep.type, ...(rep.item ? { item: rep.item.id } : {}), rows: rep.movements.length, environment: envName });
-      return new Response(rep.type === 'inventur' ? stock.inventoryDiffCsv(rep, maint.csvCell) : stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-${rep.type === 'inventur' ? 'inventurdifferenzen' : 'lagerjournal'}_${envName}_${rep.from}_${rep.to}${siteSuffix(rep.site)}${rep.item ? '_' + String(rep.item.part_number || 'artikel').replace(/[^\w-]/g, '').slice(0, 40) : ''}.csv"` } });
+      return new Response(rep.type === 'inventur' ? stock.inventoryDiffCsv(rep, maint.csvCell) : stock.journalCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(stock.JOURNAL_MAX) } : {}), 'content-disposition': `attachment; filename="fuhrpark-${rep.type === 'inventur' ? 'inventurdifferenzen' : 'lagerjournal'}_${envName}_${rep.from}_${rep.to}${siteSuffix(rep.site)}${rep.item ? '_' + String(rep.item.part_number || 'artikel').replace(/[^\w-]/g, '').slice(0, 40) : ''}.csv"` } });
     }
     return json(rep);
   }
@@ -579,6 +590,10 @@ async function handleApi(request, env, ctx, url) {
     if (!/^https:\/\//.test(endpoint)) throw new HttpError(400, 'validation', 'Ungültiger Push-Endpunkt.');
     const p256dh = str(b.keys?.p256dh, { required: true, max: 200 });
     const authKey = str(b.keys?.auth, { required: true, max: 100 });
+    // Schlüssel prüfen (17.10.2026): ein unbrauchbares Abo ließ die Verschlüsselung werfen und brach die Zustellung an alle Empfänger ab
+    const keyLen = (v) => { try { return b64urlDecode(v); } catch { return null; } };
+    const pk = keyLen(p256dh); const ak = keyLen(authKey);
+    if (!pk || pk.length !== 65 || pk[0] !== 4 || !ak || ak.length !== 16) throw new HttpError(400, 'validation', 'Ungültige Push-Schlüssel.');
     const now = nowIso();
     await env.DB.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,device_label,created_at) VALUES (?,?,?,?,?,?,?)
       ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth, device_label=excluded.device_label, revoked_at=NULL`)

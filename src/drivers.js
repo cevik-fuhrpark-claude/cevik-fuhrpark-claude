@@ -153,8 +153,10 @@ export async function updateDriver(env, user, envName, id, body) {
     note: body.note !== undefined ? str(body.note, { max: 1000 }) : d.note,
   };
   try {
-    await env.DB.prepare('UPDATE drivers SET display_name=?, personnel_no=?, site=?, user_id=?, active=?, note=?, updated_at=? WHERE id=?')
-      .bind(f.display_name, f.personnel_no, f.site, f.user_id, f.active, f.note, nowIso(), id).run();
+    // nur mitgesendete Felder schreiben (17.10.2026: gleichzeitige Änderungen verschiedener Felder gingen sonst verloren)
+    const cols = Object.keys(f).filter((k) => body[k] !== undefined);
+    if (cols.length) await env.DB.prepare(`UPDATE drivers SET ${cols.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?`)
+      .bind(...cols.map((k) => f[k]), nowIso(), id).run();
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
   await audit(env, user.id, 'driver.update', id, { changed: Object.keys(body) });
   return { ok: true };

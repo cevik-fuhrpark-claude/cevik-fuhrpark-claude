@@ -164,8 +164,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
       case 'confirm_driver': {
         const basis = oneOf(p.basis, BASES, 'Grundlage');
         const evidence = str(p.evidence, { required: true, max: 500, field: 'Nachweis' });
-        if (p.driver_id) {
-          const d = await env.DB.prepare(`SELECT id FROM users WHERE id=? AND role='driver' AND environment=?`).bind(p.driver_id, envName).first();
+        const did = str(p.driver_id, { max: 64, field: 'Fahrer' }); // Liste/Objekt → 400 statt 500 (17.10.2026)
+        if (did) {
+          const d = await env.DB.prepare(`SELECT id FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(did, envName).first();
           if (!d) throw bad('validation', 'Fahrer nicht gefunden.');
           set.driver_id = d.id; set.driver_name_note = null;
         } else {
@@ -179,9 +180,14 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         payload = { basis, driver_id: set.driver_id, driver_name_note: set.driver_name_note };
         break;
       }
-      case 'inform_driver':
+      case 'inform_driver': {
+        // Fahrer seit der Ermittlung in andere Umgebung/Rolle gewechselt oder deaktiviert: nicht informieren (Push ginge an ein Gerät, auf dem
+        // der Vorgang nicht sichtbar ist) – Fahrer neu ermitteln (17.10.2026)
+        const d = await env.DB.prepare(`SELECT 1 AS x FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(f.driver_id, envName).first();
+        if (!d) throw conflict('driver_changed', 'Der ermittelte Fahrer ist in dieser Umgebung nicht mehr als Fahrer aktiv. Bitte Fahrer neu ermitteln.');
         set.driver_informed_at = now; set.status = 'fahrer_informiert';
         break;
+      }
       case 'set_status': {
         const st = oneOf(p.status, FINE_STATUSES, 'Status');
         if (['fahrer_ermittelt', 'fahrer_informiert'].includes(st)) throw bad('validation', 'Dieser Status entsteht über die Fahrerermittlung.');

@@ -1,7 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import {
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
+  bad, forbidden, conflict, laterIso, HttpError, str, oneOf, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
 import { notifyUsers, nt } from './notify.js';
 
@@ -57,13 +57,18 @@ function cookieHeader(token, maxAgeSec) {
   return `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSec}`;
 }
 
-async function createSession(env, userId, request) {
+// Sitzung nur anlegen, wenn das geprüfte Passwort (pwHash) noch gilt und das Konto aktiv ist (17.10.2026): vorher konnte eine
+// Anmeldung mit dem alten Passwort, deren Prüfung (PBKDF2) während eines Passwortwechsels lief, nach dessen „andere Sitzungen beenden“
+// eine gültige Sitzung anlegen; ebenso nach Deaktivierung.
+async function createSession(env, userId, request, pwHash) {
   const token = randomToken(32);
   const h = await sha256Hex(token);
   const now = new Date();
   const exp = new Date(now.getTime() + SESSION_DAYS * 86400000).toISOString();
-  await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,created_at,expires_at,last_seen,user_agent) VALUES (?,?,?,?,?,?)')
-    .bind(h, userId, now.toISOString(), exp, now.toISOString(), (request.headers.get('user-agent') || '').slice(0, 200)).run();
+  const r = await env.DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at,last_seen,user_agent) SELECT ?,?,?,?,?,?
+    WHERE EXISTS (SELECT 1 FROM users WHERE id=? AND active=1 AND password_hash=?)`)
+    .bind(h, userId, now.toISOString(), exp, now.toISOString(), (request.headers.get('user-agent') || '').slice(0, 200), userId, pwHash || '').run();
+  if (!r.meta || !r.meta.changes) throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   return cookieHeader(token, SESSION_DAYS * 86400);
 }
 
@@ -113,10 +118,10 @@ export async function login(env, request, body, ctx = null) {
   // Zwei-Faktor-Anmeldung eingeschaltet: noch keine Sitzung, nur ein kurzlebiger Anmeldevorgang für den Code.
   // Fehlversuche bleiben stehen, bis der Code stimmt (falsche Codes zählen zur selben Sperre wie falsche Passwörter).
   if (user.totp_enabled_at) {
-    return { second_factor: 'totp', challenge: await createChallenge(env, user.id) };
+    return { second_factor: 'totp', challenge: await createChallenge(env, user.id, user.password_hash) };
   }
   await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(username).run();
-  const cookie = await createSession(env, user.id, request);
+  const cookie = await createSession(env, user.id, request, user.password_hash);
   await audit(env, user.id, 'login', user.id, null);
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
@@ -177,14 +182,17 @@ export async function loginSecondFactor(env, request, body, ctx = null) {
   const att = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE key = ?').bind(row.username).first();
   if (att && att.locked_until && att.locked_until > nowIso()) throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
   await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(row.username).run();
-  const cookie = await createSession(env, row.id, request);
+  const cookie = await createSession(env, row.id, request, row.password_hash);
   await audit(env, row.id, 'login', row.id, { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) });
   await noteLoginDevice(env, ctx, row, request, body.device_id);
   return { user: publicUser(row), cookie, recovery_left: factor.kind === 'recovery' ? factor.left : undefined };
 }
 
-export async function logout(env, user) {
+export async function logout(env, user, body = {}) {
   if (user?._session) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(user._session).run();
+  // Push-Gerät dieses Browsers mit abmelden (die App sendet den Endpunkt mit) – 17.10.2026
+  const ep = body && typeof body.push_endpoint === 'string' ? body.push_endpoint.slice(0, 1000) : '';
+  if (user && ep) await env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE endpoint=? AND user_id=? AND revoked_at IS NULL').bind(nowIso(), ep, user.id).run();
   return cookieHeader('', 0);
 }
 
@@ -250,17 +258,27 @@ export async function acceptInvite(env, request, body, ctx = null) {
   validatePassword(body.password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.password);
   const now = nowIso();
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, now, row.user_id),
-    env.DB.prepare('UPDATE invites SET used_at=? WHERE token_hash=?').bind(now, hash),
-    env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(row.user_id),
+  // Einladung zuerst und nur, wenn noch unbenutzt, einlösen (Muster cmd_guard): zwei gleichzeitige Einlösungen setzten vorher beide ein
+  // Passwort und bekamen beide eine Sitzung (17.10.2026)
+  try {
+    await env.DB.batch([
+      env.DB.prepare('UPDATE invites SET used_at=? WHERE token_hash=? AND used_at IS NULL').bind(now, hash),
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
+      env.DB.prepare('DELETE FROM cmd_guard'),
+      env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, now, row.user_id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(row.user_id),
+      env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(row.user_id),
     // neues Passwort gesetzt: eine bestehende Fehlversuch-Sperre aufheben
-    env.DB.prepare('DELETE FROM login_attempts WHERE key=(SELECT username FROM users WHERE id=?)').bind(row.user_id),
-  ]);
+      env.DB.prepare('DELETE FROM login_attempts WHERE key=(SELECT username FROM users WHERE id=?)').bind(row.user_id),
+    ]);
+  } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw new HttpError(410, 'invite_invalid', 'Einladung ungültig oder abgelaufen.');
+    throw e;
+  }
   const user = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(row.user_id).first();
   // Neues Passwort ersetzt nicht den zweiten Faktor: mit eingeschalteter Zwei-Faktor-Anmeldung erst nach dem Code anmelden
-  if (user.totp_enabled_at) return { second_factor: 'totp', challenge: await createChallenge(env, user.id) };
-  const cookie = await createSession(env, row.user_id, request);
+  if (user.totp_enabled_at) return { second_factor: 'totp', challenge: await createChallenge(env, user.id, ph) };
+  const cookie = await createSession(env, row.user_id, request, ph);
   await audit(env, user.id, 'invite.accept', user.id, null); // zählt als Anmeldung (Benutzerliste „Letzte Anmeldung“)
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
@@ -275,6 +293,8 @@ export async function changePassword(env, user, body) {
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, nowIso(), user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
+    // begonnene Anmeldungen mit dem alten Passwort (Zwei-Faktor-Schritt offen) verfallen ebenfalls
+    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
   ]);
   await audit(env, user.id, 'password.change', user.id, null);
   return { ok: true };
@@ -393,8 +413,10 @@ export async function createUser(env, actor, body) {
   if (exists) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const id = uuid();
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,workshop_site,employee_number,active,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,1,?,?,?)`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30 }), actor.id, now, now).run();
+  // gleichzeitiges Anlegen desselben Namens: 409 statt 500 (UNIQUE) – 17.10.2026
+  const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,workshop_site,employee_number,active,created_by,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,1,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30 }), actor.id, now, now).run();
+  if (!ins.meta || !ins.meta.changes) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const token = await createInvite(env, id, actor.id);
   await audit(env, actor.id, 'user.create', id, { role, environment, username });
   return { id, username, invite_token: token };
@@ -421,8 +443,11 @@ export async function updateUser(env, actor, userId, body) {
   if (role === 'workshop' && (site !== target.workshop_site || target.role !== 'workshop')
     && !(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
   const now = nowIso();
-  const stmts = [env.DB.prepare('UPDATE users SET role=?, environment=?, active=?, display_name=?, workshop_site=?, updated_at=? WHERE id=?')
-    .bind(role, environment, active, display, site, now, userId)];
+  // nur auf dem gelesenen Stand schreiben (Muster cmd_guard): vorher machte eine gleichzeitige Namensänderung eine Deaktivierung oder einen
+  // Rollenwechsel still rückgängig (alle Felder absolut aus dem alten Stand zurückgeschrieben) – 17.10.2026
+  const stmts = [env.DB.prepare('UPDATE users SET role=?, environment=?, active=?, display_name=?, workshop_site=?, updated_at=? WHERE id=? AND updated_at=?')
+    .bind(role, environment, active, display, site, laterIso(target.updated_at), userId, target.updated_at),
+  env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard')];
   // Rollen-/Umgebungswechsel oder Deaktivierung entwertet Sitzungen und Push-Geräte
   if (role !== target.role || environment !== target.environment || !active) {
     stmts.push(env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId));
@@ -435,7 +460,11 @@ export async function updateUser(env, actor, userId, body) {
   // Hinweise, Reifendaten), ein deaktiviertes Konto blieb Fahrer des Fahrzeugs; Fahrerakte der alten Umgebung gibt das Konto frei (17.10.2026)
   if (role !== target.role || environment !== target.environment || !active) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, userId, now));
   if (role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE drivers SET user_id=NULL, updated_at=? WHERE user_id=? AND (environment<>? OR ?<>'driver')`).bind(now, userId, environment, role));
-  await env.DB.batch(stmts);
+  if (!active) stmts.push(env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(userId));
+  try { await env.DB.batch(stmts); } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Der Benutzer wurde zwischenzeitlich geändert. Bitte neu laden.');
+    throw e;
+  }
   // geänderte Felder als alt → neu (Protokoll-Ansicht zeigt „geändert: Rolle Fahrer → Werkstatt“); Grundfelder bleiben wie bisher
   const changed = {};
   for (const [k, a, b] of [['role', target.role, role], ['environment', target.environment, environment], ['active', !!target.active, !!active], ['display_name', target.display_name, display], ['workshop_site', target.workshop_site || null, site || null]]) if (a !== b) changed[k] = { from: a, to: b };
@@ -508,8 +537,11 @@ export async function setupFirstOwner(env, body) {
   if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw bad('validation', 'Ungültiger Benutzername.');
   const id = uuid();
   const now = nowIso();
-  await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)`)
+  // nur wenn weiterhin kein Benutzer existiert (17.10.2026: zwei gleichzeitige Einrichtungen ergaben zwei Inhaberkonten)
+  const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,created_at,updated_at) SELECT ?,?,?,?,?,1,?,?
+    WHERE NOT EXISTS (SELECT 1 FROM users) ON CONFLICT(username) DO NOTHING`)
     .bind(id, username, str(body.display_name, { required: true, max: 120, field: 'Name' }), 'owner', 'production', now, now).run();
+  if (!ins.meta || !ins.meta.changes) throw new HttpError(410, 'setup_done', 'Einrichtung bereits abgeschlossen.');
   const token = await createInvite(env, id, null);
   await audit(env, null, 'setup.owner', id, { username });
   return { invite_token: token };

@@ -1,6 +1,6 @@
 // [CLAUDE] Automatisierte Abnahmetests (Node >= 22, ohne Fremdpakete): node --experimental-sqlite test/run.mjs
 import worker from '../src/worker.js';
-import { makeEnv, Client, QSTAT, HSTAT } from './harness.mjs';
+import { makeEnv, makeCtx, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { dotDate, ageMonths } from '../src/tires.js';
 import { b64urlEncode, b64urlDecode, concatBytes, dateLang, berlinDateTimeLang } from '../src/util.js';
@@ -10623,6 +10623,160 @@ await test('Fehlersuche Prüftermine/Bußgelder/Reifen/Notfall/Versicherung: CSV
   const tcsv = 'Art;Personalnummer;Datum;Datei\n' + Array.from({ length: 450 }, (_, i) => `Fahrerkarte;P-X${i};01.10.2026;C_${i}.ddd`).join('\n');
   const tp = await F.req('POST', '/api/tacho/import?dry_run=1', tcsv, csvH);
   eq(tp.status, 200, JSON.stringify(tp.data).slice(0, 200)); eq(tp.data.skipped.length, tp.data.counts.uebersprungen); eq(tp.data.skipped.length, 450);
+});
+
+// zufällige D1-Latenz (1–max ms): Wettläufe mit gleich vielen Abfragen auf beiden Seiten werden erst so sichtbar (17.10.2026)
+function addRandomLatency(e, max = 4) {
+  const db = e.DB; const sleep = () => new Promise((r) => setTimeout(r, 1 + Math.floor(Math.random() * max)));
+  const wrap = (st) => new Proxy(st, { get(t, k) {
+    if (k === 'bind') return (...a) => wrap(t.bind(...a));
+    if (k === 'first' || k === 'all' || k === 'run') return async (...a) => { await sleep(); return t[k](...a); };
+    const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+  const p0 = db.prepare.bind(db); const b0 = db.batch.bind(db);
+  db.prepare = (sql) => wrap(p0(sql)); db.batch = async (st) => { await sleep(); return b0(st); };
+}
+await test('Wettläufe Konten & Lager: Benutzer-Bearbeiten auf gelesenem Stand, Einladung nur einmal, Sitzung nur mit gültigem Passwort, 2FA einschalten/Ersatzcodes einmal, Benutzername/Ersteinrichtung parallel, Selbstmigration parallel, Lagerartikel (Anfangsbestand, Teil-Änderungen, Bestellvermerk), Lagerjournal exakt, Inventur-Zeile null', async () => {
+  const PW = 'Sicheres-Passwort-2026';
+  // 1. Deaktivierung + gleichzeitige Namensänderung: Deaktivierung bleibt (vorher still rückgängig), zweiter Aufruf 409
+  { const { e, U } = await freshWorld(); addLatency(e);
+    const [a, b] = await Promise.all([U.own.patch(`/api/users/${U.driver.id}`, { active: false }), U.fleet.patch(`/api/users/${U.driver.id}`, { display_name: 'Fahrer Neu' })]);
+    eq(a.status, 200); eq(b.status, 409); eq(b.data.error, 'version_conflict');
+    eq(e.DB.db.prepare('SELECT active FROM users WHERE id=?').get(U.driver.id).active, 0, 'bleibt deaktiviert');
+    eq((await new Client(worker, e, 'x').post('/api/login', { username: 'w.fahrer', password: PW })).status, 401);
+    eq((await U.fleet.patch(`/api/users/${U.driver.id}`, { display_name: 'Fahrer Neu' })).status, 200, 'danach normal'); }
+  // 2. Einladung zweimal gleichzeitig eingelöst → einmal 200, einmal 410, eine Sitzung
+  { const { e, U } = await freshWorld();
+    const x = await U.own.post('/api/users', { username: 'neu.fahrer', display_name: 'Neu', role: 'driver', environment: 'test' }); addLatency(e);
+    const a = new Client(worker, e, 'a'); const b = new Client(worker, e, 'b');
+    const r = await Promise.all([a.post('/api/invite/accept', { token: x.data.invite_token, password: 'Grüne-Tanne-48' }), b.post('/api/invite/accept', { token: x.data.invite_token, password: 'Kx9#pQ2mZ7xx' })]);
+    eq(r.map((y) => y.status).sort().join(','), '200,410');
+    eq(e.DB.db.prepare('SELECT COUNT(*) n FROM sessions WHERE user_id=?').get(x.data.id).n, 1);
+    // 3. Sitzung nur, wenn das geprüfte Passwort noch gilt: Passwort wechselt genau zwischen Prüfung und Sitzungsanlage
+    const db = e.DB; const p0 = db.prepare.bind(db); let hit = 0;
+    db.prepare = (sql) => { if (!hit && /^INSERT INTO sessions/.test(sql)) { hit = 1; e.DB.db.prepare("UPDATE users SET password_hash='geaendert' WHERE username='w.fahrer'").run(); } return p0(sql); };
+    const l = await new Client(worker, e, 'y').post('/api/login', { username: 'w.fahrer', password: PW });
+    eq(hit, 1); eq(l.status, 401, 'altes Passwort nach Wechsel'); db.prepare = p0;
+    ok(!l.headers.get('set-cookie'), 'kein Sitzungscookie'); }
+  // 4. 2FA doppelt einschalten: ein Satz Ersatzcodes, und der gilt; neue Ersatzcodes mit demselben Code nur einmal
+  { const { e, U } = await freshWorld(); const T = await import('../src/totp.js');
+    const su = await U.viewer.post('/api/me/totp/setup', { password: PW }); const code = await T.totpAt(su.data.secret); addLatency(e);
+    const r = await Promise.all([U.viewer.post('/api/me/totp/enable', { code }), U.viewer.post('/api/me/totp/enable', { code })]);
+    eq(r.map((y) => y.status).sort().join(','), '200,400'); const okR = r.find((y) => y.status === 200);
+    eq(r.find((y) => y.status === 400).data.error, 'totp_already');
+    const c = new Client(worker, e, 'z'); const l = await c.post('/api/login', { username: 'w.lesen', password: PW });
+    eq((await c.post('/api/login/totp', { challenge: l.data.challenge, code: okR.data.recovery_codes[0] })).status, 200, 'angezeigte Ersatzcodes gelten');
+    const n2 = await T.totpAt(su.data.secret, Date.now() + T.STEP_SEC * 1000);
+    const q = await Promise.all([U.viewer.post('/api/me/totp/recovery-codes', { code: n2 }), U.viewer.post('/api/me/totp/recovery-codes', { code: n2 })]);
+    eq(q.map((y) => y.status).sort().join(','), '200,400', 'Code nur einmal'); }
+  // 5. gleicher Benutzername parallel → 201/409/409 statt 500; 6. Ersteinrichtung parallel → ein Inhaber
+  { const { e, U } = await freshWorld(); addLatency(e);
+    const r = await Promise.all([1, 2, 3].map(() => U.own.post('/api/users', { username: 'dup.user', display_name: 'D', role: 'driver', environment: 'test' })));
+    eq(r.map((y) => y.status).sort().join(','), '201,409,409'); }
+  { const e = makeEnv(); await new Client(worker, e, 'w').get('/api/setup/status'); addLatency(e);
+    const r = await Promise.all([new Client(worker, e, 'a').post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Y' }), new Client(worker, e, 'b').post('/api/setup', { setup_code: 'test-setup-code-123', username: 'inhaber2', display_name: 'Y2' })]);
+    eq(r.map((y) => y.status).sort().join(','), '200,410'); eq(e.DB.db.prepare("SELECT COUNT(*) n FROM users WHERE role='owner'").get().n, 1); }
+  // 7. Selbstmigration: gleichzeitige erste Anfragen auf frischer Datenbank (vorher 500 UNIQUE _migrations.id)
+  { const e = makeEnv(); addLatency(e);
+    const r = await Promise.all([1, 2, 3].map((i) => new Client(worker, e, 'm' + i).get('/api/setup/status')));
+    eq(r.map((y) => y.status).join(','), '200,200,200'); }
+  // 8. Lager: ungültiger Anfangsbestand legt keinen Artikel an
+  const { e, U } = await freshWorld();
+  eq((await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Bremsbelag', initial_qty: '-5' })).status, 400);
+  eq((await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Bremsbelag', initial_qty: '5' })).status, 201, 'nicht schon angelegt');
+  // 9. Teil-Änderungen und Zugangspreis gehen bei gleichzeitigen Änderungen nicht verloren; Deaktivieren beendet parallel gesetzten Bestellvermerk
+  for (let i = 0; i < 8; i++) {
+    const { e: e2, U: U2 } = await freshWorld();
+    const id = (await U2.ws.post('/api/stock', { site: 'DORTMUND', name: 'Teil', initial_qty: 1, unit_price_net: 10, min_qty: 2 })).data.id; addRandomLatency(e2);
+    await Promise.all([U2.fleet.patch(`/api/stock/${id}`, { min_qty: 8 }), U2.ws.patch(`/api/stock/${id}`, { location: 'Regal 4' })]);
+    await Promise.all([U2.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 5, unit_price_net: 12.5 }), U2.fleet.patch(`/api/stock/${id}`, { location: 'Regal 9' })]);
+    const row = e2.DB.db.prepare('SELECT min_qty, location, unit_price_net FROM stock_items WHERE id=?').get(id);
+    eq(`${row.min_qty}/${row.unit_price_net}/${row.location}`, '8/12.5/Regal 9', 'Lauf ' + i);
+    await Promise.all([U2.fleet.patch(`/api/stock/${id}`, { active: false }), U2.ws.put(`/api/stock/${id}/order`, { qty: 4 })]);
+    const o = e2.DB.db.prepare('SELECT active, ordered_on FROM stock_items WHERE id=?').get(id);
+    ok(o.active || !o.ordered_on, 'kein Bestellvermerk am inaktiven Artikel');
+  }
+  // 10. Lagerjournal: viele Buchungen am Vortag verdrängen nichts; CSV meldet Kürzung im Header
+  const db = e.DB.db; const sid = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Schraube', initial_qty: 1 })).data.id;
+  const ins = db.prepare('INSERT INTO stock_movements(id,environment,item_id,type,qty,unit_price_net,user_id,created_at,document_ref) VALUES (?,?,?,?,?,?,?,?,?)');
+  db.exec('BEGIN');
+  for (let i = 0; i < 600; i++) ins.run(crypto.randomUUID(), 'test', sid, 'korrektur', 1, null, U.ws.id, `2026-08-31T10:${String(Math.floor(i / 60) % 60).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`, 'Inventur 2026-08-31');
+  for (let i = 0; i < 4800; i++) ins.run(crypto.randomUUID(), 'test', sid, 'zugang', 1, 2, U.ws.id, `2026-09-${String(1 + (i % 29)).padStart(2, '0')}T09:00:${String(i % 60).padStart(2, '0')}.${String(i).padStart(3, '0').slice(-3)}Z`, null);
+  db.exec('COMMIT');
+  const j = await U.ws.get('/api/stock/journal?from=2026-09-01&to=2026-09-30');
+  eq(j.data.movements.length, 4800); eq(j.data.truncated, false); eq(j.data.summary.zugang.value_net, 9600);
+  db.exec('BEGIN'); for (let i = 0; i < 300; i++) ins.run(crypto.randomUUID(), 'test', sid, 'zugang', 1, 2, U.ws.id, `2026-09-15T12:00:00.${String(i).padStart(3, '0')}Z`, null); db.exec('COMMIT');
+  const jc = await U.ws.get('/api/stock/journal?from=2026-09-01&to=2026-09-30&format=csv');
+  eq(jc.headers.get('x-cfp-truncated'), '5000', 'CSV meldet Kürzung');
+  // 11. Inventur: null als Zählzeile → 400 statt 500
+  eq((await U.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [null] })).status, 400);
+});
+
+await test('Fehlersuche 17.10. (2): Push-Abo mit kaputtem Schlüssel blockiert niemanden, Abmelden meldet Push-Gerät ab, Bußgeld-Information nur an aktiven Fahrer der Umgebung, Push-Einstellungen/Fahrerakte/Prüftermin-Import ohne verlorene Änderungen, Master-Entscheidung einmal + Protokoll, Telematik parallel, Fahrzeugdokumente parallel, Eingabeprüfungen', async () => {
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const auth16 = () => b64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  // 1. unbrauchbare Schlüssel → 400; ein trotzdem gespeichertes kaputtes Abo bricht die Zustellung an andere nicht ab
+  eq((await U.viewer.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/dispo', keys: { p256dh: 'kaputt', auth: 'x' } })).status, 400);
+  eq((await U.fleet.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/fleet', keys: { p256dh: await key(), auth: auth16() } })).status, 200);
+  db.prepare("INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,created_at) VALUES (?,?,?,?,?,?)").run(crypto.randomUUID(), U.fleet.id, 'https://push.example/ok/kaputt', 'kaputt', 'x', new Date(Date.now() - 1000).toISOString());
+  await newCase({ priority: 'kritisch', driveability: 'nicht_fahrbereit' });
+  const st = Object.fromEntries(db.prepare("SELECT u.username, n.push_status FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.kind='created'").all().map((r) => [r.username, r.push_status]));
+  eq(st['w.fuhrpark'], 'accepted', 'gültiges Gerät trotz kaputtem zweiten Abo ' + JSON.stringify(st));
+  // 2. Abmelden mit Endpunkt meldet das Push-Gerät ab
+  eq((await U.fleet.post('/api/logout', { push_endpoint: 'https://push.example/ok/fleet' })).status, 200);
+  ok(db.prepare("SELECT revoked_at FROM push_subscriptions WHERE endpoint='https://push.example/ok/fleet'").get().revoked_at, 'Gerät abgemeldet');
+  eq((await U.fleet.post('/api/login', { username: 'w.fuhrpark', password: 'Sicheres-Passwort-2026' })).status, 200);
+  // 3. Bußgeld: Fahrer inzwischen in anderer Umgebung → 409 driver_changed, kein Hinweis; Liste als driver_id → 400
+  const fid = (await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-01T10:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt' })).data.id;
+  eq((await U.fleet.post(`/api/fines/${fid}/commands`, { action: 'confirm_driver', payload: { basis: 'manuell', evidence: 'E', driver_id: [null] } })).status, 400);
+  eq((await U.fleet.post(`/api/fines/${fid}/commands`, { action: 'confirm_driver', payload: { basis: 'manuell', evidence: 'Tourenplan', driver_id: U.driver.id } })).status, 200);
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { environment: 'production' })).status, 200);
+  const inf = await U.fleet.post(`/api/fines/${fid}/commands`, { action: 'inform_driver' });
+  eq(inf.status, 409); eq(inf.data.error, 'driver_changed');
+  eq(db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id=? AND kind='fine'").get(U.driver.id).n, 0);
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { environment: 'test' })).status, 200);
+  // 4. Master-Entscheidung: zweite Person mit altem Stand → 409, Protokoll master.decision
+  const tmp = await freshWorld(); const Fx = tmp.U.fleet;
+  await tmp.newCase({ priority: 'kritisch' });
+  eq((await Fx.post('/api/agent/run')).status, 200);
+  const x2 = await tmp.U.own.post('/api/users', { username: 'w.fuhrpark2', display_name: 'Leitung 2', role: 'fleet', environment: 'test' });
+  const F2 = new Client(worker, tmp.e, 'f2'); eq((await F2.post('/api/invite/accept', { token: x2.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const item = (await Fx.get('/api/master')).data.inbox[0]; ok(item, 'Eintrag im Master-Eingang'); eq(item.decision_status, 'offen');
+  eq((await Fx.post(`/api/master/${item.event_id}/decision`, { decision_status: 'entschieden', note: 'A', expected_status: 'offen' })).status, 200);
+  eq((await F2.post(`/api/master/${item.event_id}/decision`, { decision_status: 'entschieden', note: 'B', expected_status: 'offen' })).status, 409);
+  eq((await F2.post(`/api/master/${item.event_id}/decision`, { decision_status: 'entschieden', note: 'B' })).status, 409, 'gleiche Stufe nur dieselbe Person');
+  eq((await Fx.post(`/api/master/${item.event_id}/decision`, { decision_status: 'entschieden', note: 'A2' })).status, 200, 'dieselbe Person darf ergänzen');
+  eq(tmp.e.DB.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='master.decision'").get().n, 2);
+  // 5. Push-Einstellungen parallel: beide Änderungen bleiben
+  for (let i = 0; i < 5; i++) {
+    const w = await freshWorld(); addRandomLatency(w.e);
+    await Promise.all([w.U.driver.put('/api/me/notify-prefs', { muted: ['comment'] }), w.U.driver.put('/api/me/notify-prefs', { quiet: { from: '22:00', to: '06:00' } })]);
+    const r = w.e.DB.db.prepare('SELECT push_muted, push_quiet_from FROM users WHERE id=?').get(w.U.driver.id);
+    eq(`${r.push_muted}|${r.push_quiet_from}`, '["comment"]|22:00', 'Lauf ' + i);
+  }
+  // 6. Fahrerakte parallel: verschiedene Felder bleiben
+  const dId = (await U.fleet.post('/api/drivers', { display_name: 'Parallel Fahrer', personnel_no: 'P-1' })).data.id;
+  addRandomLatency(e);
+  await Promise.all([U.fleet.patch(`/api/drivers/${dId}`, { personnel_no: 'P-2' }), U.fleet.patch(`/api/drivers/${dId}`, { note: 'Fahrerkarte bestellt' })]);
+  const dr = db.prepare('SELECT personnel_no, note FROM drivers WHERE id=?').get(dId); eq(`${dr.personnel_no}|${dr.note}`, 'P-2|Fahrerkarte bestellt');
+  // 7. Telematik-Zuordnung parallel: 201/409 statt 500
+  const tm = await Promise.all([U.own.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'DEV-P', vehicle_id: V1, evidence: 'Liste' }), U.fleet.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'DEV-P', vehicle_id: V1, evidence: 'Liste' })]);
+  ok(tm.every((r) => r.status < 500), tm.map((r) => r.status).join(',')); eq(tm.filter((r) => r.status === 409).length, 1);
+  // 8. Fahrzeugdokumente parallel: keine Dublette
+  const pdf = new TextEncoder().encode('%PDF-1.4 parallel ' + crypto.randomUUID());
+  const up = await Promise.all([1, 2, 3].map(() => U.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=rechnung`, pdf, { 'content-type': 'application/pdf' })));
+  eq(up.filter((r) => r.data && r.data.duplicate === false).length, 1, up.map((r) => r.status + ':' + JSON.stringify(r.data)).join(' '));
+  // 9. Eingabeprüfungen: Anhänger-FIN, expected-Werte, Termin vor Durchführung, Einladung mit „%“
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB9630051L917399', plate: 'TEST-1', trailer_vin: { a: 1 } })).status, 400);
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB9630051L917399', plate: 'TEST-1', trailer_vin: 'abc' })).status, 400);
+  const docId = up.find((r) => r.data && r.data.duplicate === false).data.id;
+  eq((await U.fleet.patch(`/api/vehicles/${V1}/documents/${docId}`, { note: 'neu', expected: { kind: 'rechnung', note: { a: 1 }, valid_until: null } })).status, 400);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', evidence: 'Bericht', last_done_date: '2026-10-01', next_due_date: '2025-10-01' })).status, 400);
+  eq((await new Client(worker, e, 'anon').get('/api/invite/%25')).status, 410);
+  // 10. Integrations-API /v1/master: Fälle ohne Freitext-Beschreibung (wie /v1/cases)
+  tmp.e.INTEGRATION_TOKEN = 'x'.repeat(32);
+  const im = await worker.fetch(new Request('https://app.test/api/integration/v1/master?environment=test', { headers: { authorization: 'Bearer ' + 'x'.repeat(32) } }), tmp.e, makeCtx());
+  eq(im.status, 200); const imj = await im.json(); ok(imj.cases.length >= 1, 'Fälle vorhanden'); ok(imj.cases.every((c) => !('description' in c)), 'keine Beschreibung');
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

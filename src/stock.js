@@ -87,6 +87,9 @@ export async function createItem(env, user, envName, body) {
   if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.');
   const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
   if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  // Anfangsbestand VOR dem Anlegen prüfen (17.10.2026): vorher war der Artikel bei ungültigem Anfangsbestand („1.000“, -5) trotz 400
+  // schon angelegt – erneutes Senden ergab „existiert bereits“
+  const initial = num(body.initial_qty, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true });
   const id = uuid();
   const now = nowIso();
   try {
@@ -98,7 +101,6 @@ export async function createItem(env, user, envName, body) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
     throw e;
   }
-  const initial = num(body.initial_qty, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true });
   if (initial) await addMovement(env, user, envName, id, { type: 'zugang', qty: initial, note: 'Anfangsbestand', unit_price_net: body.unit_price_net });
   return { id };
 }
@@ -118,12 +120,16 @@ export async function updateItem(env, user, envName, id, body) {
   if (!changed.length) return { ok: true, changed: [] };
   try {
     // Deaktivieren beendet einen offenen Bestellvermerk (sonst lebte er nach einer Reaktivierung wieder auf: Vorschlag 0, „Bestellung überfällig“)
-    const clearOrder = !fields.active && it.active && it.ordered_on ? 1 : 0;
-    await env.DB.prepare(`UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=?,
-        ordered_qty=CASE WHEN ?8 THEN NULL ELSE ordered_qty END, ordered_on=CASE WHEN ?8 THEN NULL ELSE ordered_on END, ordered_eta=CASE WHEN ?8 THEN NULL ELSE ordered_eta END,
-        ordered_note=CASE WHEN ?8 THEN NULL ELSE ordered_note END, ordered_by=CASE WHEN ?8 THEN NULL ELSE ordered_by END WHERE id=?9`)
-      .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), clearOrder, id).run();
-    if (clearOrder) changed.push('order_cleared');
+    // Nur die geänderten Spalten schreiben (17.10.2026): vorher schrieb jede Änderung alle Stammfelder aus dem gelesenen Stand zurück –
+    // gleichzeitige Änderungen anderer Felder (Mindestbestand, Lagerort, Einkaufspreis aus einem Zugang) gingen still verloren.
+    // Bestellvermerk beim Deaktivieren in SQL nach dem aktuellen Stand beenden (parallel gesetzter Vermerk blieb sonst am inaktiven Artikel).
+    const cols = changed.filter((k) => k !== 'active');
+    const deact = changed.includes('active') && !fields.active ? 1 : 0;
+    const set = [...cols.map((k) => `${k}=?`), ...(changed.includes('active') ? ['active=?'] : []), 'updated_at=?',
+      ...(deact ? ['ordered_qty=NULL', 'ordered_on=NULL', 'ordered_eta=NULL', 'ordered_note=NULL', 'ordered_by=NULL'] : [])];
+    const [before] = await env.DB.batch([env.DB.prepare('SELECT ordered_on FROM stock_items WHERE id=?').bind(id),
+      env.DB.prepare(`UPDATE stock_items SET ${set.join(', ')} WHERE id=?`).bind(...cols.map((k) => fields[k]), ...(changed.includes('active') ? [fields.active] : []), nowIso(), id)]);
+    if (deact && before.results[0] && before.results[0].ordered_on) changed.push('order_cleared');
   } catch (e) {
     // Umbenennen auf Bezeichnung/Teilenummer eines anderen Artikels im selben Lager (eindeutiger Index) – vorher „Interner Fehler“
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
@@ -277,6 +283,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   const seen = new Set();
   const countedList = [];
   for (const c of body.counts) {
+    if (!c || typeof c !== 'object') throw bad('validation', 'Artikel gehört nicht zu diesem Lager.'); // null/Zahl als Zählzeile → 400 statt 500
     const it = items.get(String(c.item_id || ''));
     if (!it) throw bad('validation', 'Artikel gehört nicht zu diesem Lager.');
     if (seen.has(it.id)) throw bad('validation', `Artikel doppelt gezählt: ${it.name}`);
@@ -351,9 +358,10 @@ export async function journal(env, user, envName, query = {}) {
   // optional: nur ein Artikel (Verweis aus der Artikelakte); gleiche Sichtprüfung wie die Artikelakte (Umgebung, Werkstatt nur eigenes Lager)
   const item = query.item ? await loadItem(env, user, envName, String(query.item).slice(0, 64)) : null;
   const inv = type === 'inventur'; // Inventurdifferenzen = Korrekturen aus „Inventur buchen“ (Beleg „Inventur JJJJ-MM-TT“)
-  // UTC-Spanne mit einem Tag Rand, danach exakt nach Berliner Datum filtern
-  const lo = new Date(Date.parse(from) - 86400000).toISOString();
-  const hi = new Date(Date.parse(to) + 2 * 86400000).toISOString();
+  // exakte Berliner Tagesgrenzen (17.10.2026): vorher UTC-Spanne mit einem Tag Rand und Grenze erst nach dem Filtern – mehr als 400 Buchungen
+  // am Vortag (z. B. Inventur am Monatsletzten) verdrängten Buchungen des Zeitraums, ohne Hinweis „gekürzt“
+  const lo = berlinDayStartIso(from);
+  const hi = berlinDayStartIso(new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10));
   const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : inv ? "AND m.type='korrektur' AND m.transfer_id IS NULL AND substr(m.document_ref,1,9)='Inventur '" : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
   // Inventur: Buchbestand unmittelbar vor der Korrektur (Summe aller früheren Buchungen des Artikels) und heutiger Artikelpreis
   const invSql = inv ? ', (SELECT COALESCE(SUM(p.qty),0) FROM stock_movements p WHERE p.item_id=m.item_id AND p.created_at < m.created_at) AS book_before, i.unit_price_net AS item_price_net' : '';
@@ -361,7 +369,7 @@ export async function journal(env, user, envName, query = {}) {
       i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate${invSql}
     FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
     WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${item ? 'AND m.item_id=?' : ''} ${typeSql}
-    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 400]).all()).results;
+    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 1]).all()).results;
   const r2 = (x) => Math.round(x * 100) / 100;
   let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
     .filter((r) => r.date >= from && r.date <= to);

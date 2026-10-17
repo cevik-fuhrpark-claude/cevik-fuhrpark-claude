@@ -2,6 +2,7 @@
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
 import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate, oneOf, str, notFound, conflict } from './util.js';
 import { notifyUsers } from './notify.js';
+import { audit } from './auth.js';
 import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
 import { fineFindings } from './fines.js';
@@ -558,10 +559,19 @@ export async function decideMasterItem(env, user, environment, eventId, body) {
   const st = oneOf(body.decision_status, ['gesehen', 'entschieden', 'erledigt'], 'Entscheidung');
   const note = str(body.note, { max: 2000, field: 'Vermerk' }) || null;
   const RANK = { offen: 0, gesehen: 1, entschieden: 2, erledigt: 3 };
+  // Gleiche Stufe erneut nur „gesehen“ oder durch dieselbe Person (17.10.2026: zwei Leitungen entschieden gleichzeitig mit verschiedenen
+  // Vermerken – der zweite überschrieb den ersten still); optional expected_status = gelesener Stand (die App sendet ihn). Protokoll master.decision.
+  const exp = body.expected_status === undefined || body.expected_status === null ? null : oneOf(body.expected_status, ['offen', 'gesehen', 'entschieden', 'erledigt'], 'Stand');
+  const before = await env.DB.prepare('SELECT decision_status, decided_by, decision_note FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first();
+  if (!before) throw notFound('Eintrag nicht gefunden.');
   const r = await env.DB.prepare(`UPDATE master_inbox SET decision_status=?1, decided_by=?2, decision_note=COALESCE(?3, decision_note), decided_at=?4 WHERE event_id=?5 AND environment=?6
-    AND (CASE decision_status WHEN 'offen' THEN 0 WHEN 'gesehen' THEN 1 WHEN 'entschieden' THEN 2 ELSE 3 END) <= ?7`)
-    .bind(st, user.id, note, nowIso(), String(eventId), environment, RANK[st]).run();
-  if (r.meta.changes === 1) return { ok: true };
+    AND ((CASE decision_status WHEN 'offen' THEN 0 WHEN 'gesehen' THEN 1 WHEN 'entschieden' THEN 2 ELSE 3 END) < ?7 OR (decision_status=?1 AND (?1='gesehen' OR decided_by=?2)))
+    AND (?8 IS NULL OR decision_status=?8)`)
+    .bind(st, user.id, note, nowIso(), String(eventId), environment, RANK[st], exp).run();
+  if (r.meta.changes === 1) {
+    if (st !== 'gesehen' || before.decision_status === 'offen') await audit(env, user.id, 'master.decision', String(eventId), { environment, from: before.decision_status, to: st, ...(note ? { note } : {}), ...(before.decision_note && note && before.decision_note !== note ? { note_before: before.decision_note } : {}) });
+    return { ok: true };
+  }
   if (!(await env.DB.prepare('SELECT 1 FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first())) throw notFound('Eintrag nicht gefunden.');
   throw conflict('version_conflict', 'Eintrag wurde zwischenzeitlich weiter bearbeitet. Bitte neu laden.');
 }

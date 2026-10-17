@@ -375,7 +375,7 @@ async function checkIdle() {
   idleWarn(left > 0 && left <= 60000 && !idleBusy ? left : null);
   if (!ms || idleBusy || left > 0) return;
   idleBusy = true;
-  try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout').catch(() => {}); } catch {}
+  try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }).catch(() => {}); } catch {}
   clearOfflineData(); resetUserState(); idleBusy = false;
   location.hash = '#/login'; toast(t('idle_signed_out'));
 }
@@ -2108,7 +2108,7 @@ async function viewStockJournal() {
   $('#jf').onsubmit = (e) => { e.preventDefault(); ss('cfp_sj_from', $('#jfrom').value); ss('cfp_sj_to', $('#jto').value); if ($('#jsite')) ss('cfp_sj_site', $('#jsite').value); ss('cfp_sj_type', $('#jtype').value); viewStockJournal(); };
   $('#jprt').onclick = () => window.print();
   if ($('#jitemclr')) $('#jitemclr').onclick = () => { ss('cfp_sj_item', ''); viewStockJournal(); };
-  $('#jcsv').onclick = async () => { try { download(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#jcsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 async function viewStockItem(id) {
@@ -2649,7 +2649,7 @@ async function viewMaster(q) {
     <div class="stats"><div><b>${p.vehicles_total}</b>${esc(t('total'))}</div><div><b style="color:var(--stop)">${p.vehicles_locked}</b>${esc(t('locked_vehicles'))}</div><div><b>${p.vehicles_in_workshop}</b>${esc(t('in_workshop'))}</div></div>
     <div class="actions"><button class="btn secondary" id="ra">${esc(t('run_agent'))}</button><a class="btn secondary" href="#/vehicles">${esc(t('vehicles'))}</a>${p.findings.length ? `<button class="btn secondary noprint" id="afcsv">${esc(t('export_csv'))}</button>` : ''}<button type="button" class="btn secondary noprint" id="mprt">${esc(t('print'))}</button></div>
     ${printHead([t(p.environment === 'test' ? 'env_testname' : 'env_prod'), `${t('findings')}: ${p.findings.length}`, ...(afSev !== 'all' || (S.afQ || '').trim() ? [`${t('af_filter')}: ${afSev !== 'all' ? t('asev_' + afSev) : ''}${(S.afQ || '').trim() ? ` „${S.afQ.trim()}“` : ''}`] : []), `${t('decisions')}: ${p.decisions_open}`])}
-    <h2>${esc(t('decisions'))}</h2><div class="list">${p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status)).map((m) => `<div class="row ${m.severity === 'kritisch' ? 'p-kritisch' : 'p-mittel'}"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span>${m.case_id ? `<a href="#/cases/${esc(m.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, m.payload.next_action))}${!m.case_id && m.vehicle_id ? ` · <a href="#/vehicles/${esc(m.vehicle_id)}">${esc(t('vehicle_file'))}</a>` : ''} · ${fmtDT(m.received_at)}${m.finding_status === 'erledigt' ? ' · ✓ ' + esc(t('resolved')) : ''} · <a href="#" data-dec="${esc(m.event_id)}" data-st="gesehen">${esc(t('seen'))}</a> · <a href="#" data-dec="${esc(m.event_id)}" data-st="erledigt">${esc(t('resolved'))}</a></span></div>`).join('') || `<p class="muted">–</p>`}</div>
+    <h2>${esc(t('decisions'))}</h2><div class="list">${p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status)).map((m) => `<div class="row ${m.severity === 'kritisch' ? 'p-kritisch' : 'p-mittel'}"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span>${m.case_id ? `<a href="#/cases/${esc(m.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, m.payload.next_action))}${!m.case_id && m.vehicle_id ? ` · <a href="#/vehicles/${esc(m.vehicle_id)}">${esc(t('vehicle_file'))}</a>` : ''} · ${fmtDT(m.received_at)}${m.finding_status === 'erledigt' ? ' · ✓ ' + esc(t('resolved')) : ''} · <a href="#" data-dec="${esc(m.event_id)}" data-st="gesehen" data-was="${esc(m.decision_status)}">${esc(t('seen'))}</a> · <a href="#" data-dec="${esc(m.event_id)}" data-st="erledigt" data-was="${esc(m.decision_status)}">${esc(t('resolved'))}</a></span></div>`).join('') || `<p class="muted">–</p>`}</div>
     <h2>${esc(t('findings'))}</h2>${p.findings.length > 1 ? `<div class="actions noprint" style="flex-wrap:wrap;margin-top:0">${[['all', t('filter_all'), p.findings.length], ...['kritisch', 'handeln', 'hinweis', 'info'].map((k) => [k, t('asev_' + k), p.findings.filter((f) => f.severity === k).length]).filter(([k, , n]) => n || afSev === k)].map(([k, l, n]) => `<button type="button" class="btn ${afSev === k ? '' : 'secondary'}" data-afsev="${k}">${esc(l)} (${n})</button>`).join('')}</div><input id="afq" class="noprint" placeholder="${esc(t('search_label'))}" aria-label="${esc(t('search_label'))}" style="margin-bottom:8px" value="${esc(S.afQ || '')}"><p class="small muted noprint" id="afcnt" aria-live="polite"></p>` : ''}<div class="list" id="afl">${p.findings.map((f, i) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}" data-afi="${i}" data-sev="${esc(f.severity)}"><span class="chip ${sev[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${f.case_id ? `<a href="#/cases/${esc(f.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))}${!f.case_id && f.vehicle_id ? ` · <a href="#/vehicles/${esc(f.vehicle_id)}" data-afv>${esc(t('vehicle_file'))}</a>` : ''} · ${esc(t('role_' + f.owner_role))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('') || `<p class="muted">–</p>`}</div>
     <h2>${esc(t('nav_cases'))}</h2><div class="scroll"><table class="stack mtab"><thead><tr><th></th><th>${esc(t('case_no'))}</th><th>${esc(t('urgency'))}</th><th>${esc(t('status_label'))}</th><th>${esc(t('workshop'))}</th><th>${esc(t('received'))}</th><th>${esc(t('workshop_ack'))}</th><th>${esc(t('open_items'))}</th></tr></thead><tbody>
     ${p.cases.map((c) => `<tr><td>${plate(c.plate, { locked: c.safety_lock })}</td><td><a href="#/cases/${esc(c.id)}" style="white-space:nowrap">${esc(c.case_no)}</a><div class="small muted">${esc(cDesc(c.description).slice(0, 60))}</div></td><td><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span></td><td>${esc(t('st_' + c.status))}</td><td>${esc(wsName(c.workshop_site))}</td><td>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : '–'}</td><td>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : '–'}</td><td>${c.open_items || ''}</td></tr>`).join('')}</tbody></table></div>${p.cases_truncated ? `<p class="small muted" id="mctrunc">${esc(t('master_cases_truncated').replace('{n}', p.cases.length))} <a href="#/cases">${esc(t('nav_cases'))} ›</a></p>` : ''}`;
@@ -2669,7 +2669,7 @@ async function viewMaster(q) {
   $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${t('findings')}: ${fmtNum(r.findings_open)}`); viewMaster(); } catch (err) { toast(err.message, true); } };
   // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
   $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
-    try { await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st }); await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
+    try { await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }); await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
 }
 
 // ---------- Prüftermine (Fuhrpark gesamt) ----------
@@ -2677,6 +2677,16 @@ async function viewMaster(q) {
 const PRINT_OPEN = '#mhist, #vaf, #ddhist, #dthist, #dlchist';
 window.addEventListener('beforeprint', () => { for (const d of document.querySelectorAll(PRINT_OPEN)) if (!d.open) { d.open = true; d.dataset.printOpened = '1'; } });
 window.addEventListener('afterprint', () => { for (const d of document.querySelectorAll(PRINT_OPEN)) if (d.dataset.printOpened) { d.open = false; delete d.dataset.printOpened; } });
+// Abmelden: Push-Abo dieses Browsers beenden (Server: Gerät abmelden; Browser: Abo löschen) – sonst kamen Pushs der abgemeldeten Person
+// weiter auf dem Gerät an (geteilte Werkstatt-Tablets), und die nächste Person sah „Push an“ ohne eigenes Abo (17.10.2026)
+async function pushOffForLogout() {
+  try {
+    if (!('serviceWorker' in navigator)) return null;
+    const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+    if (!sub) return null;
+    const ep = sub.endpoint; sub.unsubscribe().catch(() => {}); return ep;
+  } catch { return null; }
+}
 // Download mit Hinweis, wenn der Server die Datei begrenzt hat (Header x-cfp-truncated)
 function downloadChecked(blob, name) { download(blob, name); if (blob.cfpTruncated) toast(t('export_truncated').replace('{n}', blob.cfpTruncated), true); }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
@@ -2858,7 +2868,7 @@ async function viewAudit(more, uArg, vArg) {
   if (r.vehicle) S.auditVehName = r.vehicle.plate || r.vehicle.id;
   S.auditRows = more ? [...(S.auditRows || []), ...r.entries] : r.entries;
   S.auditBefore = r.entries.length ? r.entries[r.entries.length - 1].created_at : null;
-  const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.', t('export_csv')], ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')], ['invite.,password.,session.,totp.,setup.,integration.', t('au_access')], ['tires.', t('tires')], ['telematics.', t('telematics')], ['emergency.', t('em_title')]];
+  const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.', t('export_csv')], ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')], ['invite.,password.,session.,totp.,setup.,integration.', t('au_access')], ['tires.', t('tires')], ['telematics.', t('telematics')], ['emergency.', t('em_title')], ['master.', t('nav_master')]];
   const det = (d, refs) => auditDetailText(S.lang, d, refs); // Schlüssel in der Oberflächensprache, Werte unverändert (Rohtext in CSV/Suche)
   const gl = (groups.find(([k]) => k === f) || [])[1];
   // Betrifft: anderes Konto → Protokoll dieser Person, Fahrzeug → Fahrzeugakte (Ausdruck zeigt den Namen ohne Link)
@@ -3380,7 +3390,7 @@ function viewMore(open) {
   const tfa = $('#tfa');
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
-  $('#lo').onclick = async () => { try { await api('POST', '/api/logout'); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
+  $('#lo').onclick = async () => { try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
 }
 

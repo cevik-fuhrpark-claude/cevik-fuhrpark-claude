@@ -180,7 +180,8 @@ export async function integrationRouter(request, env, ctx, url) {
     const [mp, names] = await Promise.all([masterPanel(env, envParam(url)), personNames(env, envParam(url))]);
     // Auslöser eines manuellen Agentenlaufs („manuell:<Benutzername>“) ohne Person – Datensparsamkeit (16.10.2026: Benutzername kam durch)
     const run = mp.last_agent_run ? { ...mp.last_agent_run, trigger: String(mp.last_agent_run.trigger || '').startsWith('manuell:') ? 'manuell' : mp.last_agent_run.trigger } : mp.last_agent_run;
-    return json({ schema_version: '1.0', ...mp, last_agent_run: run, findings: mp.findings.map((f) => redactFinding(f, names)), inbox: mp.inbox.map((x) => redactInbox(x, names)) });
+    // Fälle ohne freie Schadensbeschreibung (wie /v1/cases: Freitext kann Namen/Gesundheitsangaben enthalten – Datensparsamkeit, 17.10.2026)
+    return json({ schema_version: '1.0', ...mp, cases: mp.cases.map(({ description, ...c }) => c), last_agent_run: run, findings: mp.findings.map((f) => redactFinding(f, names)), inbox: mp.inbox.map((x) => redactInbox(x, names)) });
   }
 
   // Telematik-Zustand für die Überwachung der Einspeisung (z. B. n8n): nur Zähler und Zeitpunkte je Anbieter –

@@ -107,11 +107,21 @@ export async function totpEnable(env, user, body, auditFn) {
   if (step === null) throw bad('totp_invalid', 'Code falsch oder abgelaufen. Bitte den aktuellen Code aus der App eingeben (Uhrzeit des Handys prüfen).');
   const { codes, hashes } = await makeRecovery();
   const now = nowIso();
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET totp_secret=totp_pending, totp_pending=NULL, totp_enabled_at=?, totp_last_step=?, totp_recovery=?, updated_at=? WHERE id=?')
-      .bind(now, step, JSON.stringify(hashes), now, user.id),
-    env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
-  ]);
+  // nur einschalten, wenn noch aus und dasselbe Geheimnis vorliegt (Muster cmd_guard): zwei gleichzeitige Aufrufe (Doppelklick, zwei Tabs)
+  // lieferten vorher beide Ersatzcodes – gültig blieb nur der zweite Satz (17.10.2026)
+  try {
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET totp_secret=totp_pending, totp_pending=NULL, totp_enabled_at=?, totp_last_step=?, totp_recovery=?, updated_at=? WHERE id=? AND totp_enabled_at IS NULL AND totp_pending=?')
+        .bind(now, step, JSON.stringify(hashes), now, user.id, row.totp_pending),
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
+      env.DB.prepare('DELETE FROM cmd_guard'),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
+      env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+    ]);
+  } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw bad('totp_already', 'Zwei-Faktor-Anmeldung ist bereits eingeschaltet.');
+    throw e;
+  }
   await auditFn(env, user.id, 'totp.enable', user.id, null);
   return { ok: true, recovery_codes: codes };
 }
@@ -135,7 +145,10 @@ export async function totpNewRecovery(env, user, body, auditFn) {
   const step = await verifyTotp(row.totp_secret, body.code, row.totp_last_step);
   if (step === null) throw bad('totp_invalid', 'Code falsch oder abgelaufen.');
   const { codes, hashes } = await makeRecovery();
-  await env.DB.prepare('UPDATE users SET totp_last_step=?, totp_recovery=?, updated_at=? WHERE id=?').bind(step, JSON.stringify(hashes), nowIso(), user.id).run();
+  // Code nur einmal verbrauchen (wie bei der Anmeldung): parallel mit demselben Code lieferten vorher beide neue Ersatzcodes (17.10.2026)
+  const u = await env.DB.prepare('UPDATE users SET totp_last_step=?, totp_recovery=?, updated_at=? WHERE id=? AND totp_enabled_at IS NOT NULL AND (totp_last_step IS NULL OR totp_last_step < ?)')
+    .bind(step, JSON.stringify(hashes), nowIso(), user.id, step).run();
+  if (!u.meta || !u.meta.changes) throw bad('totp_invalid', 'Code falsch oder abgelaufen.');
   await auditFn(env, user.id, 'totp.recovery_renewed', user.id, null);
   return { ok: true, recovery_codes: codes };
 }
@@ -161,11 +174,14 @@ export async function checkSecondFactor(env, row, code) {
 }
 
 // ---- Anmeldung, zweiter Schritt ----
-export async function createChallenge(env, userId) {
+// pwHash: das eben geprüfte Passwort – Anmeldevorgang nur, wenn es noch gilt (gleichzeitiger Passwortwechsel, 17.10.2026)
+export async function createChallenge(env, userId, pwHash) {
   const token = randomToken(24);
   const now = Date.now();
-  await env.DB.prepare('INSERT INTO login_challenges(token_hash,user_id,created_at,expires_at,attempts) VALUES (?,?,?,?,0)')
-    .bind(await sha256Hex(token), userId, new Date(now).toISOString(), new Date(now + CHALLENGE_MIN * 60000).toISOString()).run();
+  const r = await env.DB.prepare(`INSERT INTO login_challenges(token_hash,user_id,created_at,expires_at,attempts) SELECT ?,?,?,?,0
+    WHERE EXISTS (SELECT 1 FROM users WHERE id=? AND active=1 AND password_hash=?)`)
+    .bind(await sha256Hex(token), userId, new Date(now).toISOString(), new Date(now + CHALLENGE_MIN * 60000).toISOString(), userId, pwHash || '').run();
+  if (!r.meta || !r.meta.changes) throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   return token;
 }
 // Liefert die Benutzerzeile bei Erfolg; sonst HttpError. Fehlversuche zählen je Anmeldevorgang (höchstens 5, dann neu mit Passwort).

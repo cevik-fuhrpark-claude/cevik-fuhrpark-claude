@@ -79,10 +79,12 @@ export async function confirmMapping(env, user, body) {
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
   const exists = await env.DB.prepare('SELECT vehicle_id FROM telematics_mappings WHERE provider=? AND external_id=?').bind(provider, ext).first();
   if (exists) throw conflict('mapping_exists', 'Für dieses Gerät gibt es bereits eine bestätigte Zuordnung – zuerst aufheben.');
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO telematics_mappings(provider,external_id,vehicle_id,evidence,confirmed_by,confirmed_at) VALUES (?,?,?,?,?,?)').bind(provider, ext, v.id, evidence, user.id, nowIso()),
-    env.DB.prepare('DELETE FROM telematics_unmatched WHERE provider=? AND external_id=?').bind(provider, ext),
+  // gleichzeitig bestätigt: 409 statt 500 (Primärschlüssel) – 17.10.2026
+  const [ins] = await env.DB.batch([
+    env.DB.prepare('INSERT INTO telematics_mappings(provider,external_id,vehicle_id,evidence,confirmed_by,confirmed_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING').bind(provider, ext, v.id, evidence, user.id, nowIso()),
+    env.DB.prepare('DELETE FROM telematics_unmatched WHERE provider=? AND external_id=? AND changes()=1').bind(provider, ext),
   ]);
+  if (!ins.meta.changes) throw conflict('mapping_exists', 'Für dieses Gerät gibt es bereits eine bestätigte Zuordnung – zuerst aufheben.');
   await audit(env, user.id, 'telematics.map', v.id, { provider, external_id: ext, plate: v.plate });
   return { ok: true };
 }
