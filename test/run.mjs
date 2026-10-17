@@ -11050,6 +11050,131 @@ await test('Fehlersuche 17.10. (6): Werkstatt-Standortwechsel beendet alte Hinwe
   eq(tl.items[0].note_event, 'archive'); eq(tl.items[0].text, 'Hinweis Nr 0');
 });
 
+await test('Fehlersuche 17.10. (7): Restarbeit-Push nach geprüftem Wert, Tatzeit mit Zone und unmöglichem Tag, ausgeschiedener Fahrer bestätigbar, Sammelpush ohne stummen Träger, Fahrer-/Werkstattwechsel blendet alte Hinweise aus, Quittung doppelt, Lager-Anfangsbestand winzig, Prüftermin-Import (Termin, Intervall, Nachweis, Jahr), Reifenquelle, langer request_key, Fahrerakte veraltet, Dublette fremd, Reifenbefund ruhend, Nutzung Kalendertage', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const { releaseQuietPush } = await import('../src/notify.js'); const { b64urlEncode: b64 } = await import('../src/util.js');
+  const sub = async (c, ep) => { const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    eq((await c.post('/api/push/subscribe', { endpoint: 'https://push.example/' + ep, keys: { p256dh: b64(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))), auth: b64(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200); };
+  const hm = (ms) => new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+  // Zeitumstellung innerhalb der halben Stunde (wiederholte Stunde): Ende so legen, dass das Fenster nicht fast einen Tag umfasst
+  const off = (ms) => new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Berlin', timeZoneName: 'shortOffset' }).format(new Date(ms)).split(' ').pop();
+  const quiet = async (c, now) => eq((await c.put('/api/me/notify-prefs', { quiet: { from: hm(now - 60000), to: hm(now + (off(now) === off(now + 30 * 60000) ? 30 : 90) * 60000) } })).status, 200);
+  // Ende der Ruhezeit: nach dem gespeicherten Zurückhalten freigeben (feste +32 Min. scheiterten am Tag der Zeitumstellung, Fenster über Mitternacht)
+  const release = async (w) => { const h = w.DB.db.prepare('SELECT MAX(push_hold_until) h FROM notifications').get().h; w.__nowMs = (h ? Date.parse(h) : Date.now()) + 60000; await releaseQuietPush(w, w.__nowMs); delete w.__nowMs; };
+  const csvP = (path, text, c = F) => c.req('POST', path, text, { 'content-type': 'text/csv' });
+  // 1. Restarbeit „false“/„0“: nicht sicherheitsrelevant gespeichert UND kein Sicherheits-Hinweis
+  const rid = await toRepair();
+  for (const v of ['false', '0']) eq((await cmd(U.ws, rid, 'add_open_item', { description: 'Halter locker ' + v, safety_relevant: v })).status, 200);
+  eq(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE kind='open_item_safety'`).get().n, 0, 'kein Sicherheits-Hinweis');
+  eq((await cmd(U.ws, rid, 'add_open_item', { description: 'Bremse', safety_relevant: true })).status, 200);
+  ok(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE kind='open_item_safety'`).get().n > 0, 'echter Sicherheits-Hinweis');
+  // 2. Tatzeit mit Zone und unmöglichem Tag → 400 (rollte sonst still in den Folgemonat)
+  for (const t of ['2026-02-30T10:00Z', '2026-02-31T10:00:00+01:00', '2026-04-31T08:15+02:00']) {
+    const r = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: t, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X', reference: 'T-' + t });
+    eq(r.status, 400, t); }
+  // 3. ausgeschiedener Fahrer, der zur Tatzeit zugeordnet war: angeboten und bestätigbar; nicht zugeordneter deaktivierter nicht
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Dienstplan' })).status, 201);
+  db.prepare(`UPDATE driver_vehicles SET valid_from='2026-09-01T06:00:00.000Z' WHERE user_id=?`).run(U.driver.id);
+  const D2 = await (async () => { const x = await U.own.post('/api/users', { username: 'w.fahrer2', display_name: 'Fahrer Z', role: 'driver', environment: 'test' }); const c = new Client(worker, e, 'w.fahrer2'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; })();
+  const D3id = (await U.own.post('/api/users', { username: 'w.fahrer3', display_name: 'Fahrer Q', role: 'driver', environment: 'test' })).data.id;
+  eq((await U.own.patch(`/api/users/${D3id}`, { active: false })).status, 200);
+  const fA = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: '2026-09-15T10:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Dortmund', reference: 'AZ-1' })).data.id;
+  eq((await F.patch(`/api/users/${U.driver.id}`, { active: false })).status, 200);
+  const fd = (await F.get(`/api/fines/${fA}`)).data; const cand = fd.candidates.find((c) => c.user_id === U.driver.id); ok(cand, 'Kandidat');
+  eq((await F.post(`/api/fines/${fA}/commands`, { action: 'confirm_driver', expected_version: fd.fine.version, payload: { driver_id: D3id, basis: 'zuordnung', evidence: 'x' } })).status, 400, 'nicht zugeordnet + deaktiviert');
+  eq((await F.post(`/api/fines/${fA}/commands`, { action: 'confirm_driver', expected_version: fd.fine.version, payload: { driver_id: cand.user_id, basis: cand.basis, evidence: cand.evidence } })).status, 200, 'Kandidat bestätigbar');
+  const inf = await F.post(`/api/fines/${fA}/commands`, { action: 'inform_driver', expected_version: fd.fine.version + 1 }); eq(inf.status, 409, 'informieren nur aktive'); eq(inf.data.error, 'driver_changed');
+  // 4. Bußgeld: Fahrer neu ermittelt → Hinweis + zurückgehaltener Push des bisherigen Fahrers weg; 7. Quittung doppelt → duplicate
+  const now = Date.now(); await sub(D2, 'd2'); await quiet(D2, now);
+  const fB = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-10T09:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Dortmund', reference: 'AZ-9' })).data.id;
+  const fv = async () => (await F.get(`/api/fines/${fB}`)).data.fine.version;
+  const fc = async (action, payload = {}, note) => F.post(`/api/fines/${fB}/commands`, { action, expected_version: await fv(), payload, ...(note ? { note } : {}) });
+  eq((await fc('confirm_driver', { driver_id: D2.id, basis: 'tourenplan', evidence: 'Tour 12' })).status, 200); eq((await fc('inform_driver')).status, 200);
+  addLatency(e);
+  const ack = await Promise.all([1, 2].map(() => D2.post(`/api/fines/${fB}/commands`, { action: 'driver_ack' })));
+  eq(ack.map((x) => x.status).join(','), '200,200', 'Quittung doppelt'); ok(ack.some((x) => x.data.duplicate), 'zweite als duplicate');
+  eq((await fc('set_status', { status: 'eingegangen' }, 'Irrtum')).status, 200);
+  eq((await fc('confirm_driver', { driver_name_note: 'Aushilfe Meier', basis: 'fahrerangabe', evidence: 'Angabe Halter' })).status, 200);
+  eq((await D2.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'fine').length, 0, 'Hinweis ausgeblendet');
+  ok(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE user_id=? AND kind='fine' AND push_status='pending'`).get(D2.id).n > 0, 'Push war zurückgehalten');
+  let before = e.pushLog.length; await release(e);
+  eq(e.pushLog.length - before, 0, 'kein nachgereichter Push an bisherigen Fahrer');
+  // 5. Werkstattwechsel: „Neuer Werkstattauftrag“ der bisherigen Werkstatt ausgeblendet, kein nachgereichter Push dazu
+  await sub(U.ws, 'ws'); await quiet(U.ws, now);
+  const wid = await newCase({}, D2);
+  eq((await cmd(F, wid, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(F, wid, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'ausgelastet')).status, 200);
+  const wn = (await U.ws.get('/api/notifications')).data.notifications.filter((n) => n.case_id === wid || n.kind === 'reassigned_away');
+  ok(wn.length && wn.every((n) => n.kind === 'reassigned_away'), 'nur „übergeben“: ' + JSON.stringify(wn.map((n) => n.kind)));
+  before = e.pushLog.length; await release(e);
+  ok(!db.prepare(`SELECT 1 FROM notifications WHERE user_id=? AND case_id=? AND kind='approved' AND push_status='accepted'`).get(U.ws.id, wid), 'kein Push „Neuer Werkstattauftrag“');
+  // 6. Sammelpush nach der Ruhezeit: stummer erster Hinweis nimmt die übrigen nicht mit
+  { const w = await freshWorld(); const n0 = Date.now(); await sub(w.U.fleet, 'fl'); await quiet(w.U.fleet, n0);
+    const id = await w.newCase(); eq((await w.cmd(w.U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+    eq((await w.cmd(w.U.ws, id, 'acknowledge')).status, 200); await new Promise((r) => setTimeout(r, 5)); eq((await w.cmd(w.U.ws, id, 'start_repair')).status, 200);
+    eq((await w.U.fleet.put('/api/me/notify-prefs', { muted: ['created', 'acknowledged'] })).status, 200);
+    const b0 = w.e.pushLog.length; await release(w.e);
+    const st = Object.fromEntries(w.e.DB.db.prepare(`SELECT kind, push_status FROM notifications WHERE user_id=? AND kind IN ('created','acknowledged','started')`).all(w.U.fleet.id).map((x) => [x.kind, x.push_status]));
+    eq(st.started, 'accepted', JSON.stringify(st)); eq(st.created, 'disabled'); eq(w.e.pushLog.length - b0, 1, 'ein Push'); }
+  // 8. Lager: Anfangsbestand rundet auf 0 → 400 und kein Artikel
+  eq((await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Ölfilter', initial_qty: 0.0004 })).status, 400);
+  eq((await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Ölfilter', initial_qty: 1 })).status, 201, 'nicht schon angelegt');
+  // 9. Prüftermin-Import
+  { const w = await freshWorld(); const G = w.U.fleet; const wdb = w.e.DB.db; const imp = (t, q = '') => G.req('POST', '/api/maintenance/import' + q, t, { 'content-type': 'text/csv' });
+    const V2W = 'VIN:WDB9630051L917317'; const rule = (k) => wdb.prepare('SELECT * FROM maintenance_rules WHERE kind=?').get(k);
+    // a) gleiche letzte Prüfung: belegter späterer Termin bleibt
+    eq((await G.post(`/api/vehicles/${w.V1}/maintenance`, { kind: 'UVV', evidence: 'UVV-Bericht 4711', interval_months: 12, last_done_date: '2026-01-10', next_due_date: '2027-03-31' })).status, 201);
+    const a = await imp('Kennzeichen;Prüfart;Letzte Prüfung;Nachweis\nSZ-YC 5513;UVV;10.01.2026;UVV-Bericht 4711');
+    eq(a.data.rows[0].action, 'unverändert'); eq(rule('UVV').next_due_date, '2027-03-31');
+    // b) neuere letzte Prüfung ohne Termin: berechnet, Quelle „berechnet“
+    const b = await imp('Kennzeichen;Prüfart;Letzte Prüfung;Nachweis\nSZ-YC 5513;UVV;10.03.2026;UVV 2');
+    eq(b.data.rows[0].action, 'aktualisiert'); eq(rule('UVV').next_due_date, '2027-03-10'); eq(rule('UVV').due_source, 'berechnet');
+    // c) Termin vor der gespeicherten letzten Prüfung → übersprungen
+    eq((await G.post(`/api/vehicles/${w.V1}/maintenance`, { kind: 'Bremsen', evidence: 'Bericht Mai', last_done_date: '2026-05-04' })).status, 201);
+    const c = await imp('Kennzeichen;Prüfart;Nächster Termin;Nachweis\nSZ-YC 5513;Bremsen;01.03.2026;alte Plakette');
+    eq(c.data.rows.length, 0); ok(/liegt nach dem Termin/.test(c.data.skipped[0].reason), c.data.skipped[0].reason); eq(rule('Bremsen').next_due_date, null);
+    // d) Intervall aus der Datei bei sonst gleichen Daten
+    eq((await G.post(`/api/vehicles/${V2W}/maintenance`, { kind: 'UVV', evidence: 'UVV 1', last_done_date: '2026-01-10', next_due_date: '2027-01-10' })).status, 201);
+    const d = await imp('Kennzeichen;Prüfart;Letzte Prüfung;Nächster Termin;Intervall (Monate);Nachweis\nSZ-KC 5515;UVV;10.01.2026;10.01.2027;12;UVV 1');
+    eq(d.data.rows[0].action, 'aktualisiert'); eq(wdb.prepare(`SELECT interval_months FROM maintenance_rules WHERE vehicle_id=? AND kind='UVV'`).get(V2W).interval_months, 12);
+    // e) Import ersetzt den Nachweis einer erfassten Durchführung nicht
+    const tid = (await G.post(`/api/vehicles/${V2W}/maintenance`, { kind: 'Tachograph', evidence: 'Alt', interval_months: 24, last_done_date: '2025-01-10' })).data.id;
+    eq((await G.post(`/api/maintenance/${tid}/complete`, { done_date: '2026-01-10', evidence: 'DEKRA-Prüfbericht 4711', result: 'ohne_maengel' })).status, 200);
+    eq((await imp('Kennzeichen;Prüfart;Letzte Prüfung;Nächster Termin;Nachweis\nSZ-KC 5515;Tachograph;10.01.2026;31.03.2028;Liste Prüfdienst')).status, 200);
+    eq(wdb.prepare(`SELECT evidence FROM maintenance_events WHERE rule_id=? AND done_date='2026-01-10'`).get(tid).evidence, 'DEKRA-Prüfbericht 4711');
+    // f) Jahre außerhalb 1900–2199 → Zeile übersprungen
+    const f = await imp('Kennzeichen;Prüfart;Letzte Prüfung;Nächster Termin;Nachweis\nSZ-YC 5513;Sonstiges;01.01.0001;31.12.9999;Liste\nSZ-KC 5515;Bremsen;;12/9999;Plakette');
+    eq(f.data.rows.length, 0); eq(f.data.skipped.length, 2); ok(f.data.skipped.every((s) => /^Datum ungültig/.test(s.reason))); }
+  // 10. Reifengrößen-Import: kurze Zeile → Quelle ohne „undefined“
+  { const w = await freshWorld(); eq((await csvP('/api/tires/import', 'FIN;Reifen Lenkachse;Quelle\nWMA15SZZ2HM722774;315/70 R22.5\n', w.U.own)).status, 200);
+    eq(w.e.DB.db.prepare('SELECT source FROM tire_specs').get().source, 'Quelldatei Fuhrpark (ungeprüft)'); }
+  // 11. Kontrolle mit langem (erlaubtem) request_key und Mangel → 201, Wiederholung idempotent
+  { const w = await freshWorld(); const items = (await w.U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: i.key === 'ladungssicherung_auffahrten' ? 'mangel' : 'ok', note: i.key === 'ladungssicherung_auffahrten' ? 'Auffahrt verbogen' : undefined }));
+    const body = { kind: 'abfahrt', vehicle_id: w.V1, request_key: 'k'.repeat(64), items };
+    eq((await w.U.driver.post('/api/inspections', body)).status, 201); await w.U.driver.post('/api/inspections', body);
+    eq(w.e.DB.db.prepare(`SELECT COUNT(*) n FROM cases WHERE origin='kontrolle'`).get().n, 1, 'ein Folgeauftrag'); }
+  // 12. Fahrerakte: Formular auf altem Stand → 409, Deaktivierung bleibt
+  { const did = (await F.post('/api/drivers', { display_name: 'Fahrer Alt', personnel_no: 'P-77' })).data.id;
+    const old = (await F.get(`/api/drivers/${did}`)).data.driver;
+    await new Promise((r) => setTimeout(r, 2));
+    eq((await F.patch(`/api/drivers/${did}`, { active: false, expected_updated_at: old.updated_at })).status, 200);
+    const st = await F.patch(`/api/drivers/${did}`, { site: 'Bochum', expected_updated_at: old.updated_at }); eq(st.status, 409); eq(st.data.error, 'version_conflict');
+    eq(db.prepare('SELECT active FROM drivers WHERE id=?').get(did).active, 0, 'bleibt deaktiviert'); }
+  // 13. Dublette der Meldung eines anderen Fahrers: nur Nummer, keine Kennung/Status
+  { const orig = await newCase({ description: 'Rückleuchte links' }, D2); const dup = await newCase({ description: 'Rückleuchte' }, U.wsMuc);
+    eq((await cmd(F, dup, 'reject', { duplicate_of: orig })).status, 200);
+    const x = (await U.wsMuc.get(`/api/cases/${dup}`)).data.duplicate_of; eq(JSON.stringify(Object.keys(x)), '["case_no"]', JSON.stringify(x));
+    eq((await F.get(`/api/cases/${dup}`)).data.duplicate_of.id, orig, 'Leitung mit Kennung'); }
+  // 14. Reifenbefund des Agenten ohne ruhende Fahrzeuge (wie Flottenübersicht)
+  { const { tireFindings } = await import('../src/tires.js'); const w = await freshWorld();
+    ok((await w.U.fleet.post(`/api/vehicles/${w.V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 0.8 })).status < 300, 'Messung');
+    const n1 = (await tireFindings(w.e, 'test')).length; ok(n1 > 0, 'aktiv: Befund');
+    w.e.DB.db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(w.V1);
+    eq((await tireFindings(w.e, 'test')).length, 0, 'ruhend: kein Befund'); }
+  // 15. Nutzungsstatistik: „letzte 2 Tage“ nach Berliner Kalendertagen (Zeitumstellung)
+  { const realNow = Date.now; try { Date.now = () => Date.parse('2026-10-25T22:30:00Z'); // 25.10. 23:30 Berlin (Tag mit 25 h)
+      const u = await U.own.get('/api/admin/usage?days=2'); eq(u.status, 200); eq(u.data.from, '2026-10-24'); } finally { Date.now = realNow; } }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

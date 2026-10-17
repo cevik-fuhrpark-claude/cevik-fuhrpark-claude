@@ -1088,7 +1088,7 @@ async function viewCase(id) {
       ${c.status !== 'gemeldet' ? `<dt>${esc(t('workshop_ack'))}</dt><dd>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : esc(t('not_yet'))}</dd>` : ''}
       ${c.location_note ? `<dt>${esc(t('location'))}</dt><dd>${esc(c.location_note)}</dd>` : ''}
       ${d.parent ? `<dt>${esc(t('parent'))}</dt><dd><a href="#/cases/${esc(d.parent.id)}">${esc(d.parent.case_no)}</a></dd>` : ''}
-      ${d.duplicate_of ? `<dt>${esc(t('dup_of'))}</dt><dd>${S.me.role === 'driver' ? esc(d.duplicate_of.case_no) : `<a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>`}</dd>` : ''}${d.duplicates && d.duplicates.length ? `<dt>${esc(t('duplicates'))}</dt><dd>${d.duplicates.map((x) => `<a href="#/cases/${esc(x.id)}">${esc(x.case_no)}</a>`).join(', ')}</dd>` : ''}
+      ${d.duplicate_of ? `<dt>${esc(t('dup_of'))}</dt><dd>${S.me.role === 'driver' || !d.duplicate_of.id ? esc(d.duplicate_of.case_no) : `<a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>`}</dd>` : ''}${d.duplicates && d.duplicates.length ? `<dt>${esc(t('duplicates'))}</dt><dd>${d.duplicates.map((x) => `<a href="#/cases/${esc(x.id)}">${esc(x.case_no)}</a>`).join(', ')}</dd>` : ''}
       ${!['driver'].includes(S.me.role) ? `<dt>${esc(t('vehicle_file'))}</dt><dd><a href="#/vehicles/${esc(d.vehicle.id)}">${esc(d.vehicle.plate)}</a></dd>` : ''}
     </dl>${vehInfo(d.vehicle_info, c)}</section>`;
 
@@ -1143,7 +1143,8 @@ async function viewCase(id) {
 
   const cmd = async (action, note, payload = {}) => {
     try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: uid(), expected_version: c.version, note, payload }); toast('✓'); viewCase(c.id); }
-    catch (err) { toast(err.message, true); if (err.code === 'version_conflict') viewCase(c.id); }
+    // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
+    catch (err) { toast(err.message, true); if (err.code === 'version_conflict') { S.actSince = []; viewCase(c.id); } }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
@@ -2341,7 +2342,11 @@ async function viewDriver(id) {
   const ddf = $('#ddf'); if (ddf) ddf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/documents`, Object.fromEntries(new FormData(ddf))); };
   const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
-  const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(edf)); b.active = !!edf.active.checked; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+  const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
+    // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
+    const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active };
+    const b = Object.fromEntries(Object.entries(all).filter(([k, v]) => v !== was[k])); if (!Object.keys(b).length) { toast('✓'); return; }
+    if (d.updated_at) b.expected_updated_at = d.updated_at; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
 }
 
 // Gewährleistung an Teil/Fremdleistung: „Gewährleistung bis …“ (abgelaufen gedämpft)

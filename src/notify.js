@@ -283,9 +283,30 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   notifications = [...notifications].sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
   const all = notifications;
   const followers = new Map(); // Träger-ID -> weitere Hinweise derselben Person
+  // Abfragebudget: höchstens 3 Schreibanweisungen je Zustellung, unabhängig von Empfänger- und Gerätezahl
+  // (vorher 1 je Hinweis + 1 je Gerät – ein kritischer Fall an viele Konten mit mehreren Geräten konnte die Grenze von 50 sprengen)
+  const states = []; // { id, s: Status, a: 1 = Zustellversuch (zählt Versuche, setzt Fehler/Annahmezeit), e, t }
+  const okSubs = new Set();
+  const revoked = new Set();
+  const mutedByUser = new Map();
+  const holdByUser = new Map(); // Person in ihrer Ruhezeit → Ende der Ruhezeit (ISO); nicht dringende Pushs warten bis dahin
+  let sends = 0; const deferred = new Set();
+  // Stumm-/Ruhezeit-Einstellungen VOR dem Sammeln laden: ein stumm geschalteter Träger nahm sonst die übrigen Hinweise mit (kein Push, 17.10.2026)
+  if (all.some((n) => !n.urgent)) {
+    const nowMs = env.__nowMs || Date.now();
+    for (const u of (await env.DB.prepare('SELECT id, push_muted, push_quiet_from, push_quiet_to FROM users WHERE (push_muted IS NOT NULL OR push_quiet_from IS NOT NULL) AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify([...new Set(all.map((n) => n.user_id))])).all()).results) {
+      if (u.push_muted) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
+      const h = quietHoldUntil(u.push_quiet_from, u.push_quiet_to, nowMs);
+      if (h) holdByUser.set(u.id, h);
+    }
+  }
+  const isMuted = (n) => !n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind);
   if (collapse) {
     const byUser = new Map();
-    for (const n of notifications) { if (!byUser.has(n.user_id)) byUser.set(n.user_id, []); byUser.get(n.user_id).push(n); }
+    for (const n of notifications) {
+      if (isMuted(n)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; } // nie Träger, zählt nicht in „+N“
+      if (!byUser.has(n.user_id)) byUser.set(n.user_id, []); byUser.get(n.user_id).push(n);
+    }
     const carriers = [];
     for (const list of byUser.values()) {
       const carrier = list.find((n) => n.urgent) || list[0];
@@ -295,31 +316,15 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     }
     notifications = carriers;
   }
-  // Abfragebudget: Geräte aller Empfänger in einer Abfrage laden, Statusänderungen gesammelt schreiben
+  // Geräte aller Empfänger in einer Abfrage laden
   const userIds = [...new Set(notifications.map((n) => n.user_id))];
   const subsByUser = new Map();
-  for (const s of (await env.DB.prepare('SELECT * FROM push_subscriptions WHERE revoked_at IS NULL AND user_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) {
+  if (userIds.length) for (const s of (await env.DB.prepare('SELECT * FROM push_subscriptions WHERE revoked_at IS NULL AND user_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) {
     if (!subsByUser.has(s.user_id)) subsByUser.set(s.user_id, []);
     subsByUser.get(s.user_id).push(s);
   }
-  // Abfragebudget: höchstens 3 Schreibanweisungen je Zustellung, unabhängig von Empfänger- und Gerätezahl
-  // (vorher 1 je Hinweis + 1 je Gerät – ein kritischer Fall an viele Konten mit mehreren Geräten konnte die Grenze von 50 sprengen)
-  const states = []; // { id, s: Status, a: 1 = Zustellversuch (zählt Versuche, setzt Fehler/Annahmezeit), e, t }
-  const okSubs = new Set();
-  const revoked = new Set();
-  const mutedByUser = new Map();
-  const holdByUser = new Map(); // Person in ihrer Ruhezeit → Ende der Ruhezeit (ISO); nicht dringende Pushs warten bis dahin
-  let sends = 0; const deferred = new Set();
-  if (all.some((n) => !n.urgent)) {
-    const nowMs = env.__nowMs || Date.now();
-    for (const u of (await env.DB.prepare('SELECT id, push_muted, push_quiet_from, push_quiet_to FROM users WHERE (push_muted IS NOT NULL OR push_quiet_from IS NOT NULL) AND id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(userIds)).all()).results) {
-      if (u.push_muted) mutedByUser.set(u.id, new Set(parseMuted(u.push_muted)));
-      const h = quietHoldUntil(u.push_quiet_from, u.push_quiet_to, nowMs);
-      if (h) holdByUser.set(u.id, h);
-    }
-  }
   for (const n of notifications) {
-    if (!n.urgent && n.kind && mutedByUser.get(n.user_id)?.has(n.kind)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
+    if (isMuted(n)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
     if (!n.urgent && holdByUser.has(n.user_id)) { states.push({ id: n.id, s: 'pending', a: 0, h: holdByUser.get(n.user_id) }); continue; }
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
     if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
@@ -348,7 +353,7 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   for (const st of [...states]) for (const f of followers.get(st.id) || []) {
     // Stumm geschaltete Art gilt je Hinweis; sonst teilt der Hinweis das Ergebnis des gesammelten Pushs
     // Ruhezeit: ein dringender Träger nimmt nicht dringende Folgehinweise mit (ein Push je Person) – sie gelten damit als zugestellt
-    states.push(!f.urgent && f.kind && mutedByUser.get(f.user_id)?.has(f.kind) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id });
+    states.push(isMuted(f) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id });
   }
   const now = nowIso();
   const writes = [];

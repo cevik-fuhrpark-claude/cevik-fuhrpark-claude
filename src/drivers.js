@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -150,6 +150,9 @@ async function validLinkedUser(env, envName, raw) {
 export async function updateDriver(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   const d = await loadDriver(env, user, envName, id);
+  // Formular aus älterer Ansicht: nur auf dem gelesenen Stand speichern (17.10.2026: machte eine zwischenzeitliche Deaktivierung still rückgängig)
+  const expected = body.expected_updated_at !== undefined && body.expected_updated_at !== null && body.expected_updated_at !== '' ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
+  if (expected && expected !== d.updated_at) throw conflict('version_conflict', 'Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.');
   const f = {
     display_name: body.display_name !== undefined ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : d.display_name,
     personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { max: 40 }) : d.personnel_no,
@@ -160,7 +163,7 @@ export async function updateDriver(env, user, envName, id, body) {
   };
   try {
     // nur mitgesendete Felder schreiben (17.10.2026: gleichzeitige Änderungen verschiedener Felder gingen sonst verloren)
-    const cols = Object.keys(f).filter((k) => body[k] !== undefined);
+    const cols = Object.keys(f).filter((k) => body[k] !== undefined && k !== 'expected_updated_at');
     // Personalnummer bleibt unter aktiven Fahrern eindeutig (auch beim Wieder-Aktivieren), Prüfung in derselben Anweisung
     const pnoCheck = cols.includes('personnel_no') || cols.includes('active');
     if (cols.length) {
@@ -168,9 +171,13 @@ export async function updateDriver(env, user, envName, id, body) {
       const nAct = cols.includes('active') ? String(f.active) : 'drivers.active';
       const nPno = cols.includes('personnel_no') ? '?' : 'drivers.personnel_no';
       const pBind = cols.includes('personnel_no') ? [f.personnel_no, f.personnel_no] : [];
-      const r = await env.DB.prepare(`UPDATE drivers SET ${cols.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?
+      const r = await env.DB.prepare(`UPDATE drivers SET ${cols.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=? ${expected ? 'AND updated_at=?' : ''}
         ${pnoCheck ? `AND NOT (${nAct}=1 AND ${nPno} IS NOT NULL AND EXISTS (SELECT 1 FROM drivers x WHERE x.environment=drivers.environment AND x.active=1 AND x.id<>drivers.id AND lower(trim(x.personnel_no))=lower(trim(${nPno}))))` : ''}`)
-        .bind(...cols.map((k) => f[k]), nowIso(), id, ...pBind).run();
+        .bind(...cols.map((k) => f[k]), laterIso(d.updated_at), id, ...(expected ? [d.updated_at] : []), ...pBind).run();
+      if (expected && (!r.meta || r.meta.changes !== 1)) {
+        const now2 = await env.DB.prepare('SELECT updated_at FROM drivers WHERE id=?').bind(id).first();
+        if (!now2 || now2.updated_at !== d.updated_at) throw conflict('version_conflict', 'Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.');
+      }
       if (pnoCheck && (!r.meta || r.meta.changes !== 1)) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
     }
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }

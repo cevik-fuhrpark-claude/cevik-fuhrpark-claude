@@ -245,7 +245,7 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
       if (verified.has(`${vid}|${axle}`)) { res.kept_verified++; continue; }
       // zu lange Größe: Zeile melden statt still kürzen (17.10.2026; Einzelerfassung weist sie ebenfalls ab)
       if (size.trim().length > 40) { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: `Reifengröße zu lang (max. 40 Zeichen): ${size.trim().slice(0, 60)}` }); continue; }
-      rows.set(`${vid}|${axle}`, { v: vid, a: axle, s: size.trim(), src: `Quelldatei Fuhrpark ${ci.src >= 0 ? c[ci.src] : ''} (ungeprüft)`.trim() });
+      rows.set(`${vid}|${axle}`, { v: vid, a: axle, s: size.trim(), src: ['Quelldatei Fuhrpark', ci.src >= 0 ? String(c[ci.src] ?? '').trim() : '', '(ungeprüft)'].filter(Boolean).join(' ') }); // kurze Zeile: nie „undefined“
     }
   }
   const list = [...rows.values()];
@@ -278,7 +278,7 @@ export async function tireFindings(env, environment, settings = null) {
   const rows = (await env.DB.prepare(`SELECT x.vehicle_id, x.position, x.tread_mm, x.created_at, v.plate FROM (
       SELECT t.vehicle_id, t.position, t.tread_mm, t.created_at, ROW_NUMBER() OVER (PARTITION BY t.vehicle_id, t.position ORDER BY t.created_at DESC, t.id DESC) AS rn
       FROM tire_events t WHERE t.environment=? AND (t.tread_mm IS NOT NULL OR t.event_type='wechsel')) x
-    JOIN vehicles v ON v.id=x.vehicle_id WHERE x.rn=1 AND v.active=1`)
+    JOIN vehicles v ON v.id=x.vehicle_id WHERE x.rn=1 AND v.active=1 AND v.eval_excluded=0`) // ruhende Fahrzeuge aus allen Bewertungen ausgenommen (Entscheidung 10.10.2026), wie die Flottenübersicht
     .bind(environment).all()).results;
   const out = [];
   for (const r of rows) {

@@ -26,7 +26,8 @@ export function recordUsage(env, ctx, environment, method, path, status, action)
 export async function usageReport(env, user, environment, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht die Nutzungsstatistik.');
   const days = intParam(query.days, 30, 1, 366);
-  const from = berlinDate(new Date(Date.now() - (days - 1) * 86400000).toISOString());
+  // Berliner Kalendertage zurückrechnen (24-h-Schritte lagen in der Stunde nach einer Zeitumstellung einen Tag daneben, 17.10.2026)
+  const from = new Date(Date.parse(berlinDate(new Date(Date.now()).toISOString()) + 'T00:00:00Z') - (days - 1) * 86400000).toISOString().slice(0, 10);
   const rows = (await env.DB.prepare(`SELECT day, feature, calls, errors FROM usage_daily WHERE environment=? AND day >= ? ORDER BY day`).bind(environment, from).all()).results;
   const byFeature = new Map(); const byDay = new Map(); const byArea = new Map();
   for (const r of rows) {

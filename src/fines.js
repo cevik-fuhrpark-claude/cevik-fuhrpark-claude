@@ -106,7 +106,8 @@ export async function createFine(env, user, envName, body) {
   // Tatzeit wie im Schreiben (Berliner Ortszeit, ohne Zeitzone) → UTC; Angaben mit Zeitzone werden nur vereinheitlicht
   const offenseRaw = berlinLocalToIso(str(body.offense_at, { required: true, max: 30, field: 'Tatzeit' }));
   // nur ISO-Schreibweisen (ohne Zone = Berlin, sonst mit Z/±hh:mm) – freies Datumsformat („10/01/2026 14:30“) wäre als UTC gelesen worden
-  if (!offenseRaw || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})$/i.test(offenseRaw) || Number.isNaN(Date.parse(offenseRaw))) throw bad('validation', 'Tatzeit ungültig.');
+  if (!offenseRaw || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})$/i.test(offenseRaw) || Number.isNaN(Date.parse(offenseRaw))
+    || !isCalendarDate(offenseRaw.slice(0, 10))) throw bad('validation', 'Tatzeit ungültig.'); // 2026-02-30T10:00Z rollte sonst still auf den 02.03.
   const offenseAt = new Date(offenseRaw).toISOString();
   // Tippfehler im Jahr (2062): Fahrerermittlung „zum Tatzeitpunkt“ lieferte sonst die heutige Zuordnung (17.10.2026); 5 Min. Uhrenspiel
   if (Date.parse(offenseAt) > Date.now() + 5 * 60000) throw bad('validation', 'Tatzeit liegt in der Zukunft.');
@@ -167,7 +168,10 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         const evidence = str(p.evidence, { required: true, max: 500, field: 'Nachweis' });
         const did = str(p.driver_id, { max: 64, field: 'Fahrer' }); // Liste/Objekt → 400 statt 500 (17.10.2026)
         if (did) {
-          const d = await env.DB.prepare(`SELECT id FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(did, envName).first();
+          // ausgeschiedener (deaktivierter) Fahrer nur, wenn er zur Tatzeit zugeordnet war – genau so wird er als Kandidat angeboten (17.10.2026: Angebot ließ sich nicht bestätigen)
+          const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=? AND role='driver' AND environment=? AND (active=1
+            OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.vehicle_id=? AND dv.valid_from <= ? AND (dv.valid_to IS NULL OR dv.valid_to > ?)))`)
+            .bind(did, envName, f.vehicle_id, f.offense_at, f.offense_at).first();
           if (!d) throw bad('validation', 'Fahrer nicht gefunden.');
           set.driver_id = d.id; set.driver_name_note = null;
         } else {
@@ -226,6 +230,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
       : [];
     await env.DB.batch([
       ...refGuard,
+      // Fahrer neu ermittelt: Hinweise des bisherigen Fahrers ausblenden (Link führte auf 404, zurückgehaltener Push ging noch raus – 17.10.2026)
+      ...(action === 'confirm_driver' && f.driver_id ? [env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE user_id=? AND ref=? AND hidden_at IS NULL
+        AND EXISTS (SELECT 1 FROM fines WHERE id=? AND version=?)`).bind(now, f.driver_id, `fine:${id}`, id, f.version)] : []),
       env.DB.prepare(`UPDATE fines SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`).bind(...cols.map((k) => set[k]), id, f.version),
       env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
       env.DB.prepare('DELETE FROM cmd_guard'),
@@ -233,6 +240,11 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     ]);
   } catch (e) {
     if (String(e && e.message).includes('CHECK')) {
+      // gleichzeitig doppelt quittiert (Doppelklick/Netzwiederholung): wie die spätere Wiederholung „duplicate“ statt 409
+      if (action === 'driver_ack') {
+        const cur = await env.DB.prepare('SELECT version, driver_ack_at, driver_id FROM fines WHERE id=?').bind(id).first();
+        if (cur && cur.driver_ack_at && cur.driver_id === user.id) return { ok: true, version: cur.version, duplicate: true };
+      }
       const dup = set.reference && set.reference !== f.reference ? await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?').bind(envName, set.reference, f.authority, id).first() : null;
       if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
       throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');

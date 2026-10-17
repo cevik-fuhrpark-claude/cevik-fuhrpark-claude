@@ -242,7 +242,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
     .filter((x) => caseAccess(user, x)).map(({ reporter_id, workshop_site, suggested_workshop_site, environment, ...x }) => x);
   const followups = linked.filter((x) => x.parent_case_id === c.id).map(({ created_at, parent_case_id, ...x }) => x);
   const duplicates = linked.filter((x) => x.parent_case_id !== c.id).map((x) => ({ id: x.id, case_no: x.case_no, created_at: x.created_at }));
-  const duplicateOf = c.duplicate_of ? await env.DB.prepare('SELECT id, case_no, status FROM cases WHERE id=?').bind(c.duplicate_of).first() : null;
+  // Original ohne Zugriff (z. B. Meldung eines anderen Fahrers): nur die Nummer, weder Kennung noch Status (17.10.2026, wie Folgeaufträge)
+  const dupRow = c.duplicate_of ? await env.DB.prepare('SELECT id, case_no, status, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE id=?').bind(c.duplicate_of).first() : null;
+  const duplicateOf = dupRow ? (caseAccess(user, dupRow) ? { id: dupRow.id, case_no: dupRow.case_no, status: dupRow.status } : { case_no: dupRow.case_no }) : null;
   const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=? AND environment=?').bind(c.parent_case_id, c.environment).first() : null;
   // Prüfung des Mängelauftrags + jüngste spätere Durchführung derselben Prüfart am Fahrzeug (= eingetragene Nachprüfung)
   const mevent = c.maintenance_event_id ? await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result,
@@ -864,6 +866,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null;
       payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}) };
+      // bisherige Werkstatt: alte Hinweise zum Auftrag ausblenden (Link → 404, zurückgehaltener Push ging nach der Ruhezeit noch raus – 17.10.2026);
+      // der Hinweis „an andere Werkstatt übergeben“ entsteht danach neu
+      if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL
+        AND user_id IN (SELECT id FROM users WHERE role='workshop' AND workshop_site=?)`).bind(now, c.id, c.workshop_site));
       notifyKind = 'reassigned';
       break;
     }
@@ -971,7 +977,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       extra.push(env.DB.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at) VALUES (?,?,?,?,'offen',?,?)`)
         .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant') ? 1 : 0, user.id, now));
       payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant') };
-      notifyKind = p.safety_relevant ? 'open_item_safety' : null;
+      // Hinweis nach dem geprüften Wert (17.10.2026: „false“/„0“ wurden als nicht sicherheitsrelevant gespeichert, lösten aber den Sicherheits-Push aus)
+      notifyKind = payload.safety_relevant ? 'open_item_safety' : null;
       break;
     }
     case 'resolve_open_item': {
@@ -1209,7 +1216,9 @@ export async function submitInspection(env, ctx, user, envName, body) {
       priority: prio,
       driveability: d.safety_relevant ? 'nicht_fahrbereit' : 'unbekannt',
       workshop_site: c?.workshop_site || user.workshop_site || null,
-      request_key: `${requestKey}:${d.key}`,
+      // abgeleiteter Schlüssel ≤ 64 Zeichen: lange (erlaubte) request_keys ließen sonst die ganze Kontrolle mit 400 scheitern (17.10.2026);
+      // kurze Schlüssel unverändert wie bisher, lange deterministisch gehasht (Wiederholung bleibt idempotent)
+      request_key: `${requestKey}:${d.key}`.length <= 64 ? `${requestKey}:${d.key}` : 'kf-' + (await sha256Hex(`${requestKey}:${d.key}`)).slice(0, 48),
       origin: 'kontrolle',
       check_item: d.key,
       parent_case_id: c?.id || null,

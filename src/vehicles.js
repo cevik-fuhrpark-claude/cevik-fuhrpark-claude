@@ -597,7 +597,10 @@ export async function myVehicles(env, user, envName) {
 export function maintEventStmt(env, e, { ifRule = false } = {}) {
   return env.DB.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,done_km,evidence,source,recorded_by,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10
     WHERE ${ifRule ? 'EXISTS (SELECT 1 FROM maintenance_rules WHERE id=?2)' : '1'}
-    ON CONFLICT(rule_id, done_date) DO UPDATE SET done_km=COALESCE(excluded.done_km, maintenance_events.done_km), evidence=excluded.evidence`)
+    ON CONFLICT(rule_id, done_date) DO UPDATE SET
+      done_km=CASE WHEN excluded.source='import' AND maintenance_events.source<>'import' THEN COALESCE(maintenance_events.done_km, excluded.done_km) ELSE COALESCE(excluded.done_km, maintenance_events.done_km) END,
+      evidence=CASE WHEN excluded.source='import' AND maintenance_events.source<>'import' AND COALESCE(maintenance_events.evidence,'')<>'' THEN maintenance_events.evidence ELSE excluded.evidence END`)
+    // Import ersetzt nie den Nachweis/km-Stand einer erfassten Durchführung am selben Tag (17.10.2026: „DEKRA-Prüfbericht 4711“ → Listentext)
     .bind(uuid(), e.rule_id, e.vehicle_id, e.kind, e.done_date, e.done_km ?? null, e.evidence, e.source, e.user_id ?? null, nowIso());
 }
 

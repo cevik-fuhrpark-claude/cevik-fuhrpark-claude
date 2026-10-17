@@ -35,6 +35,7 @@ export function normalizeKind(raw) {
 
 function validIso(d) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  if (d < '1900-01-01' || d > '2199-12-31') return false; // wie isCalendarDate: 9999-12-31 ergab ungültige Kalenderdateien (17.10.2026)
   const x = new Date(d + 'T00:00:00Z');
   return !Number.isNaN(x.getTime()) && x.toISOString().slice(0, 10) === d;
 }
@@ -52,6 +53,7 @@ export function parseDueDate(raw) {
   if ((m = s.match(/^(\d{1,2})[./](\d{4})$/))) {
     const mo = Number(m[1]);
     if (mo < 1 || mo > 12) return { error: `Monat ungültig: ${s}` };
+    if (Number(m[2]) < 1900 || Number(m[2]) > 2199) return { error: `Datum ungültig: ${s}` };
     const last = new Date(Date.UTC(Number(m[2]), mo, 0)).toISOString().slice(0, 10);
     return { date: last, month_only: true };
   }
@@ -418,6 +420,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     else if (!p.next && !p.last) { next = cur.next_due_date; last = cur.last_done_date; action = 'unverändert'; } // nur km-Angaben
     else if (p.next) {
       if (cur.next_due_date && cur.next_due_date > p.next) { skipRow(`Vorhandener Termin ${cur.next_due_date} ist neuer – nicht überschrieben`); continue; }
+      // gespeicherte letzte Durchführung nach dem belegten Termin: alte Plakette (Einzelerfassung lehnt das ab, 17.10.2026)
+      if (cur.last_done_date && cur.last_done_date > p.next) { skipRow(`Vorhandene letzte Prüfung ${cur.last_done_date} liegt nach dem Termin – nicht überschrieben`); continue; }
       if (cur.last_done_date && p.last && cur.last_done_date > p.last) last = cur.last_done_date;
       action = cur.next_due_date === p.next && (!p.last || cur.last_done_date === last) ? 'unverändert' : 'aktualisiert';
     } else {
@@ -425,8 +429,12 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       if (cur.last_done_date && cur.last_done_date > p.last) { skipRow(`Vorhandene letzte Prüfung ${cur.last_done_date} ist neuer – nicht überschrieben`); continue; }
       const iv = p.husp ? null : (p.interval || cur.interval_months);
       next = iv ? addMonths(p.last, iv) : p.husp ? null : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
+      // dieselbe Durchführung wie gespeichert: deren Termin bleibt (ein späterer Termin laut Nachweis wurde sonst durch „letzte + Intervall“ ersetzt, 17.10.2026)
+      if (cur.last_done_date === p.last && cur.next_due_date && !(p.interval && !p.husp && p.interval !== cur.interval_months)) next = cur.next_due_date;
       action = cur.last_done_date === p.last && cur.next_due_date === next ? 'unverändert' : 'aktualisiert';
     }
+    // geändertes Intervall (Monate) aus der Datei gilt auch ohne geänderte Daten (ging sonst als „unverändert“ still verloren, 17.10.2026)
+    if (cur && action === 'unverändert' && !p.husp && p.interval && p.interval !== cur.interval_months) action = 'aktualisiert';
     // km-Teil: nie einen höheren vorhandenen km-Stand/eine spätere km-Fälligkeit überschreiben; belegter Wert nur, wenn er von „letzte + Intervall“ abweicht
     const km = { last: cur ? cur.last_done_km : null, interval: cur ? cur.interval_km : null, due: cur ? cur.due_km : null };
     if (!p.husp && (p.dueKm !== null || p.lastKm !== null || p.intervalKm !== null)) {
@@ -466,7 +474,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
         .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, p.evidence, now,
-          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp ? 'berechnet' : cur.due_source || null), cur.id,
+          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null), cur.id,
           cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));
       if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;

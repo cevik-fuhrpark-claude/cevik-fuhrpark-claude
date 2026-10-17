@@ -97,6 +97,8 @@ export async function createItem(env, user, envName, body) {
   // Anfangsbestand VOR dem Anlegen prüfen (17.10.2026): vorher war der Artikel bei ungültigem Anfangsbestand („1.000“, -5) trotz 400
   // schon angelegt – erneutes Senden ergab „existiert bereits“
   const initial = num(body.initial_qty, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true });
+  // 0,0004 rundet beim Buchen auf 0 → Buchung abgelehnt, Artikel aber schon angelegt (17.10.2026) – vorher prüfen
+  if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   const id = uuid();
   const now = nowIso();
   try {
