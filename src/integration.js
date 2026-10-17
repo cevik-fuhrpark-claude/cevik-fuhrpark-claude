@@ -236,6 +236,8 @@ export async function integrationRouter(request, env, ctx, url) {
       if (gps && Date.parse(gps) > Date.now() + 600000) { res.rejected++; continue; }
       const prev = lastGps.get(vehicleId);
       if (prev && gps && gps < prev) { res.rejected++; continue; }
+      // ohne gültige GPS-Zeit keinen vorhandenen Stand überschreiben (vorher: Position/km gelöscht, Fahrzeug „ohne Daten“, 17.10.2026)
+      if (!gps && prev) { res.rejected++; continue; }
       if (gps) lastGps.set(vehicleId, gps);
       const km = Number.isFinite(Number(it.km)) && Number(it.km) >= 0 ? Number(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,

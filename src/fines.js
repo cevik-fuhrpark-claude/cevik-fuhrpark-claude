@@ -120,7 +120,7 @@ export async function createFine(env, user, envName, body) {
     const dup = await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=?').bind(envName, reference, authority).first();
     if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
   }
-  const year = new Date().getUTCFullYear();
+  const year = Number(berlinDate().slice(0, 4)); // Berliner Kalenderjahr wie alle Tagesangaben
   const c = await env.DB.prepare(`INSERT INTO fine_counters(environment, year, last_no) VALUES (?, ?, 1) ON CONFLICT(environment, year) DO UPDATE SET last_no = last_no + 1 RETURNING last_no`).bind(envName, year).first();
   const fineNo = `${envName === 'test' ? 'TB' : 'B'}-${year}-${String(c.last_no).padStart(4, '0')}`;
   const id = uuid();

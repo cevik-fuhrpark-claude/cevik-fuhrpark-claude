@@ -472,7 +472,9 @@ export function allowedActions(user, c, access) {
   const ws = user.role === 'workshop' && c.workshop_site === user.workshop_site;
   a.push('comment', 'upload');
   if (mgr) {
-    a.push('set_safety_lock');
+    // Sperre nur an offenen Vorgängen – an abgeschlossenen/abgelehnten wirkte sie nirgends (Fahrzeugliste, Disposition, Agent zählen nur offene),
+    // obwohl dringende Pushs „gesperrt“ verschickt wurden (17.10.2026). Neue Sperre: neuen Vorgang melden.
+    if (OPEN_STATUSES.includes(c.status)) a.push('set_safety_lock');
     if (c.safety_lock) a.push('lift_safety_lock');
     if (OPEN_STATUSES.includes(c.status)) a.push('change_priority', 'set_followup');
   }
@@ -676,7 +678,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   if (!fresh.length) return results;
 
   // Sicherheitsrelevant: kritisch oder nicht fahrbereit -> Sperre bis menschliche Fachbewertung
-  const year = new Date().getUTCFullYear();
+  const year = Number(berlinDate().slice(0, 4)); // Berliner Kalenderjahr (Silvester 23:30 UTC = Neujahr in Berlin)
   const k = fresh.length;
   const counter = await env.DB.prepare(`INSERT INTO case_counters(environment, year, last_no) VALUES (?, ?, ?)
     ON CONFLICT(environment, year) DO UPDATE SET last_no = last_no + ? RETURNING last_no`).bind(envName, year, k, k).first();

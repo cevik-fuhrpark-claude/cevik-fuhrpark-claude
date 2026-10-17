@@ -9565,6 +9565,37 @@ await test('Werkstattauslastung: Übernahme/Freigabe am Montag 00:30 Berliner Ze
   eq(`${w.acknowledged}/${w.released}`, '1/1', 'übernommen/freigegeben:');
 });
 
+// 17.10.2026 (Fehlersuche Runde 4): Sperre nur an offenen Vorgängen, Telematik ohne GPS-Zeit überschreibt keinen Stand
+await test('Sicherheitssperre: an abgeschlossenen/abgelehnten Vorgängen nicht angeboten und abgewiesen; Aufheben einer bestehenden Sperre bleibt möglich', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { runCommand, allowedActions } = await import('../src/cases.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO users(id,username,display_name,role,environment,password_hash,password_salt,active,created_at,updated_at) VALUES ('F1','f1','F1','fleet','production','h','s',1,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:S','S','T-SP 1','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  const mk = (id, status, lock) => db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at,closed_at,safety_lock,version) VALUES (?,?,'production','VIN:S','F1','x','mittel','mittel','unbekannt',?,?,'h',?,?,?,?,3)`).run(id, 'S-' + id, status, id, now, now, now, lock);
+  mk('a', 'fahrzeug_freigegeben', 0); mk('b', 'abgelehnt', 0); mk('c', 'gemeldet', 0); mk('d', 'fahrzeug_freigegeben', 1);
+  const u = { id: 'F1', role: 'fleet', environment: 'production' }; const get = (id) => db.prepare('SELECT * FROM cases WHERE id=?').get(id);
+  ok(!allowedActions(u, get('a'), {}).includes('set_safety_lock') && !allowedActions(u, get('b'), {}).includes('set_safety_lock'), 'abgeschlossen/abgelehnt: kein Sperren');
+  ok(allowedActions(u, get('c'), {}).includes('set_safety_lock'), 'offen: Sperren möglich');
+  ok(allowedActions(u, get('d'), {}).includes('lift_safety_lock'), 'Altbestand: Aufheben möglich');
+  let err = null; try { await runCommand(e, { waitUntil() {} }, u, 'production', 'a', { action: 'set_safety_lock', command_id: rk(), expected_version: 3, note: 'Bremse defekt' }); } catch (x) { err = x; }
+  ok(err, 'Befehl auf abgeschlossenem Vorgang abgewiesen'); eq(get('a').safety_lock, 0, 'keine Sperre gespeichert:');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM notifications`).get().n, 0, 'keine Push „gesperrt“:');
+});
+
+await test('Telematik: Meldung ohne (gültige) GPS-Zeit überschreibt keine gespeicherte Position/km', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { integrationRouter } = await import('../src/integration.js');
+  const e = makeEnv(); await ensureSchema(e); e.INTEGRATION_TOKEN = 'x'.repeat(32); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:WDB1234567890ABCD','WDB1234567890ABCD','T-TM 1','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  const send = async (items) => { const url = new URL('https://h/api/integration/v1/telematics');
+    const req = new Request(url, { method: 'POST', headers: { authorization: 'Bearer ' + e.INTEGRATION_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'webfleet', items }) });
+    return (await integrationRouter(req, e, { waitUntil() {} }, url)).json(); };
+  const t = new Date(Date.now() - 3600000).toISOString();
+  eq((await send([{ external_id: 'D1', vin: 'WDB1234567890ABCD', gps_time: t, lat: 52.5, lon: 13.4, km: 100000 }])).matched, 1);
+  for (const extra of [{}, { gps_time: 'kaputt' }]) eq((await send([{ external_id: 'D1', vin: 'WDB1234567890ABCD', speed: 0, ...extra }])).rejected, 1, `ohne gültige Zeit ${JSON.stringify(extra)}:`);
+  const row = db.prepare('SELECT gps_time, lat, lon, km FROM telematics_latest').get();
+  eq(JSON.stringify([row.gps_time, row.lat, row.lon, row.km]), JSON.stringify([t, 52.5, 13.4, 100000]), 'Stand unverändert:');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
