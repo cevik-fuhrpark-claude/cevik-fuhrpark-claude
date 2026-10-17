@@ -117,14 +117,20 @@ export async function updateItem(env, user, envName, id, body) {
   const changed = Object.keys(fields).filter((k) => fields[k] !== it[k]);
   if (!changed.length) return { ok: true, changed: [] };
   try {
-    await env.DB.prepare('UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=? WHERE id=?')
-      .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), id).run();
+    // Deaktivieren beendet einen offenen Bestellvermerk (sonst lebte er nach einer Reaktivierung wieder auf: Vorschlag 0, „Bestellung überfällig“)
+    const clearOrder = !fields.active && it.active && it.ordered_on ? 1 : 0;
+    await env.DB.prepare(`UPDATE stock_items SET name=?, part_number=?, min_qty=?, location=?, unit_price_net=?, active=?, updated_at=?,
+        ordered_qty=CASE WHEN ?8 THEN NULL ELSE ordered_qty END, ordered_on=CASE WHEN ?8 THEN NULL ELSE ordered_on END, ordered_eta=CASE WHEN ?8 THEN NULL ELSE ordered_eta END,
+        ordered_note=CASE WHEN ?8 THEN NULL ELSE ordered_note END, ordered_by=CASE WHEN ?8 THEN NULL ELSE ordered_by END WHERE id=?9`)
+      .bind(fields.name, fields.part_number, fields.min_qty, fields.location, fields.unit_price_net, fields.active, nowIso(), clearOrder, id).run();
+    if (clearOrder) changed.push('order_cleared');
   } catch (e) {
     // Umbenennen auf Bezeichnung/Teilenummer eines anderen Artikels im selben Lager (eindeutiger Index) – vorher „Interner Fehler“
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
     throw e;
   }
-  await audit(env, user.id, 'stock.update', null, { item: id, name: fields.name, site: it.site, changed: Object.fromEntries(changed.map((k) => [k, { from: it[k], to: fields[k] }])) });
+  await audit(env, user.id, 'stock.update', null, { item: id, name: fields.name, site: it.site, changed: Object.fromEntries(changed.filter((k) => k !== 'order_cleared').map((k) => [k, { from: it[k], to: fields[k] }])),
+    ...(changed.includes('order_cleared') ? { order_cleared: { qty: it.ordered_qty, ordered_on: it.ordered_on } } : {}) });
   return { ok: true, changed };
 }
 
@@ -155,11 +161,16 @@ export async function addMovement(env, user, envName, id, body) {
 }
 
 // Bestellvermerk setzen/aufheben (nur Vermerk, es wird nichts bestellt oder versendet)
-export async function setOrder(env, user, envName, id, body) {
+// Gleichzeitige Vermerke/Aufheben: nur auf dem gelesenen Stand (Setzen nur ohne Vermerk; Aufheben mit `expected` = „Bestelldatum|Person“ aus der Ansicht)
+export async function setOrder(env, user, envName, id, body, expected = null) {
   const it = await loadItem(env, user, envName, id);
   if (body === null) {
-    await env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id).run();
-    await audit(env, user.id, 'stock.order_clear', null, { item: id });
+    if (!it.ordered_on) return { ok: true, unchanged: true };
+    const exp = expected ? String(expected).slice(0, 120).split('|') : null;
+    const r = await env.DB.prepare(`UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=?
+      WHERE id=? AND ordered_on IS NOT NULL AND (?3 IS NULL OR (ordered_on=?3 AND COALESCE(ordered_by,'')=?4))`).bind(nowIso(), id, exp ? exp[0] : null, exp ? exp[1] || '' : '').run();
+    if (!(r.meta && r.meta.changes)) throw conflict('order_changed', 'Der Bestellvermerk wurde zwischenzeitlich geändert. Bitte neu laden.');
+    await audit(env, user.id, 'stock.order_clear', null, { item: id, qty: it.ordered_qty, ordered_on: it.ordered_on });
     return { ok: true };
   }
   if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
@@ -170,8 +181,9 @@ export async function setOrder(env, user, envName, id, body) {
   if (!isCalendarDate(on) || on > today) throw bad('validation', 'Bestelldatum: gültiges Datum, nicht in der Zukunft.');
   const eta = body.eta ? String(body.eta) : null;
   if (eta && (!isCalendarDate(eta) || eta < on)) throw bad('validation', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.');
-  await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=?')
+  const r = await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=? AND ordered_on IS NULL AND active=1')
     .bind(qty, on, eta, str(body.note, { max: 200 }), user.id, nowIso(), id).run();
+  if (!(r.meta && r.meta.changes)) throw conflict('stock_order_exists', 'Für diesen Artikel ist bereits eine Bestellung vermerkt. Bitte neu laden.');
   await audit(env, user.id, 'stock.order_mark', null, { item: id, qty, eta });
   return { ok: true };
 }

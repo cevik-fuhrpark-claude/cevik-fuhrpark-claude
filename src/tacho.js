@@ -171,9 +171,12 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   if (table.length - 1 > MAX_IMPORT) throw bad('validation', `Maximal ${MAX_IMPORT} Zeilen je Import.`);
   const head = table[0].map((h) => h.toLowerCase());
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: col(['fahrer', 'name']),
+  // Namensspalte: „Name“/„Fahrername“ vor „Fahrer…“; „Fahrerkartennummer“, „Fahrer-Nr.“ o. Ä. sind keine Namen
+  const nameCol = (hd) => { const notName = (h) => /karte|nr|nummer|kennung|id\b/.test(h); const exact = hd.findIndex((h) => ['name', 'fahrername', 'fahrer', 'name fahrer', 'fahrer name'].includes(h.trim()));
+    return exact >= 0 ? exact : hd.findIndex((h) => (h.startsWith('fahrer') || h.startsWith('name')) && !notName(h)); };
+  const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: nameCol(head),
     plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: col(['datum', 'auslesedatum', 'ausgelesen']), ev: col(['nachweis', 'datei', 'beleg']) };
-  const fallbackEv = str(source, { max: 200 });
+  const fallbackEv = str(source, { max: 200 }) || ''; // keine Quelle angegeben: leer statt null (leere Nachweis-Zelle ergab sonst 500)
   if (ci.kind < 0) throw bad('validation', 'Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.');
   // Eigene Übersicht der App (Export „Auslesungen“: Letzte Auslesung/Spätestens fällig) ist kein Beleg einer Auslesung
   if (ci.day < 0 && head.some((h) => h.startsWith('letzte auslesung') || h.startsWith('spätestens fällig'))) throw bad('wrong_file_tacho', 'Das ist die Fristen-Übersicht dieser App, kein Export der Auslesesoftware. Bitte die Datei der Auslesesoftware mit Spalte „Datum“ hochladen.');
@@ -182,13 +185,16 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   if (ci.pno < 0 && ci.name < 0 && ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Personalnummer/Fahrer oder Kennzeichen/FIN erforderlich.');
 
   const drivers = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
-  const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind FROM vehicles WHERE active=1`).all()).results;
+  const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded FROM vehicles WHERE active=1`).all()).results;
   const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results.map((r) => r.k));
   const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
   const byPno = uniq(drivers, (d) => (d.personnel_no ? d.personnel_no.trim().toLowerCase() : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));
   const byVin = new Map(vehicles.map((v) => [v.vin, v]));
+  // Kennzeichen doppelt, aber nur eines bewertet (ruhendes Doppel, z. B. Tippfehler-FIN): das bewertete Fahrzeug – wie die Fristen-Übersicht
   const byPlate = uniq(vehicles, (v) => normPlate(v.plate));
+  const byPlateEval = uniq(vehicles.filter((v) => !v.eval_excluded), (v) => normPlate(v.plate));
+  for (const [k, v] of byPlate) if (v === 'mehrdeutig' && byPlateEval.get(k) && byPlateEval.get(k) !== 'mehrdeutig') byPlate.set(k, byPlateEval.get(k));
   const today = berlinDate();
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
   const rows = []; const skipped = []; const seen = new Set();
@@ -202,6 +208,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     if (!day) return skip(`Datum nicht erkannt: ${get(cells, ci.day) || '–'}`);
     if (day > today) return skip('Datum liegt in der Zukunft');
     const evidence = (get(cells, ci.ev) || fallbackEv).slice(0, 300);
+    if (!evidence) return skip('Nachweis/Quelle fehlt');
     let target; let label;
     if (kind === 'fahrerkarte') {
       const pno = get(cells, ci.pno).toLowerCase(); const nm = normName(get(cells, ci.name));

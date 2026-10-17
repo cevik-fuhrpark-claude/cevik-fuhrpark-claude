@@ -251,10 +251,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
   // Auftrag „Winterreifen“: aktuelle Winterlage laut Reifenerfassung (erledigt erst mit Erfassung inkl. Winterkennzeichnung)
   const tireWinter = c.tire_order === 'winter' ? await caseWinter(env, c, vehicle?.kind) : null;
+  // Verlauf: Beträge/Stunden nur für Rollen, die sie auch in der Akte sehen (Kosten: Leitung; Arbeiten/Teile: Leitung + ausführende Werkstatt)
+  const seesWork = user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch' && (user.role !== 'workshop' || access === 'full');
+  const hiddenPayloads = [...(canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'approve_costs', 'add_external_cost']), ...(seesWork ? [] : ['add_part', 'record_work'])];
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
-    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => !canSeeCosts(user) && ['cost_limit_exceeded', 'approve_costs'].includes(e.action) ? { ...e, payload: null } : e),
+    events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null } : e)),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
     tire_winter: tireWinter,
@@ -305,7 +308,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     }
     detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
   }
-  if (user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch') {
+  if (seesWork) {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;
     detail.parts = (await env.DB.prepare('SELECT * FROM parts WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
   }
@@ -509,6 +512,8 @@ export function allowedActions(user, c, access) {
       break;
   }
   if (WORK_STATUSES.includes(c.status) && (ws || mgr)) a.push('record_work', 'add_part', 'add_open_item', 'resolve_open_item');
+  // Nicht sicherheitsrelevante Restarbeiten nach der Freigabe noch erledigen (sonst blieben sie und der Agentenbefund „Restarbeiten planen“ für immer offen)
+  if (c.status === 'fahrzeug_freigegeben' && (ws || mgr)) a.push('resolve_open_item');
   if (WORK_STATUSES.includes(c.status) && mgr) a.push('add_external_cost');
   if (mgr && c.cost_over_limit_at && OPEN_STATUSES.includes(c.status)) a.push('approve_costs');
   return a;
@@ -545,7 +550,7 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
     { origin: 'wartung', maintenance_rule_id: rule.id, site_checked: true });
   const planned = rule.planned_date && rule.planned_date >= berlinDate() ? rule.planned_date : null;
-  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'mo-' + requestKey, expected_version: 1,
+  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: ('mo-' + requestKey).slice(0, 64), expected_version: 1,
     note: `Auftrag aus Prüftermin ${rule.kind}${note ? ': ' + note : ''}`, payload: { workshop_site: site, ...(planned ? { planned_date: planned } : {}) } });
   return { id: created.id, case_no: created.case_no, status: r.status, planned_date: planned };
 }
@@ -578,7 +583,7 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: ev.vehicle_id, description, priority, driveability, workshop_site: site, request_key: requestKey }],
     { origin: 'wartung', maintenance_event_id: ev.id, site_checked: true });
-  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'md-' + requestKey, expected_version: 1,
+  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: ('md-' + requestKey).slice(0, 64), expected_version: 1,
     note: `Mängelbeseitigung aus ${ev.kind} vom ${date}${note ? ': ' + note : ''}`, payload: { workshop_site: site, priority } });
   return { id: created.id, case_no: created.case_no, status: r.status, priority, driveability };
 }
@@ -620,7 +625,7 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: vehicleId, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
     { origin: 'wartung', tire_order: 'winter', site_checked: true });
   if (created.duplicate) return { id: created.id, case_no: created.case_no, duplicate: true };
-  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: 'mw-' + requestKey, expected_version: 1,
+  const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: ('mw-' + requestKey).slice(0, 64), expected_version: 1,
     note: `Auftrag Winterreifen${note ? ': ' + note : ''}`, payload: { workshop_site: site, ...(planned ? { planned_date: planned } : {}) } });
   return { id: created.id, case_no: created.case_no, status: r.status, winter: w.status };
 }
@@ -838,8 +843,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
       if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
       requireNote('Bitte Grund für den Werkstattwechsel angeben.');
-      set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null;
-      payload = { from: c.workshop_site, to: site };
+      if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.');
+      // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
+      set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null;
+      payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}) };
       notifyKind = 'approved';
       break;
     }
@@ -851,6 +858,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         if (o.vehicle_id !== c.vehicle_id) throw bad('validation', 'Dublette nur zu einem Vorgang desselben Fahrzeugs.');
         if (o.duplicate_of) throw bad('validation', `Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`);
         set.duplicate_of = o.id; payload.duplicate_of = o.id; payload.duplicate_of_no = o.case_no;
+        // Dubletten, die bisher auf diesen Vorgang zeigten, auf das neue Original umhängen (keine Kette Dublette → Dublette)
+        const moved = (await env.DB.prepare('SELECT case_no FROM cases WHERE duplicate_of=? AND environment=? ORDER BY created_at').bind(c.id, envName).all()).results.map((x) => x.case_no);
+        if (moved.length) {
+          payload.moved_duplicates = moved;
+          extra.push(env.DB.prepare('UPDATE cases SET duplicate_of=?, updated_at=? WHERE duplicate_of=? AND environment=?').bind(o.id, now, c.id, envName));
+        }
         if (!note || note.length < 3) note = `Dublette von ${o.case_no}`;
       }
       requireNote('Bitte Ablehnungsgrund angeben.');
@@ -896,6 +909,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
       const date = str(p.work_date, { max: 10 }) || berlinDate();
       if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
+      // Tippfehler im Jahr (2062/1926) fielen sonst aus dem Monats-Kostenbericht: nicht in der Zukunft, höchstens 1 Jahr vor der Meldung
+      const earliest = addMonths(berlinDate(c.created_at), -12);
+      if (date > berlinDate() || date < earliest) throw bad('validation', `Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`);
       const wid = uuid();
       extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at) VALUES (?,?,?,?,?,?,?)')
         .bind(wid, c.id, user.id, date, hours, desc, now));
@@ -1216,9 +1232,18 @@ export async function uploadFile(env, user, envName, caseId, request) {
   const key = `${envName}/${c.id}/${id}`;
   await env.FILES.put(key, buf, { metadata: { type, case_id: c.id, env: envName } });
   try {
-    await env.DB.prepare(`INSERT INTO files(id,case_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-      .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso()).run();
+    // Höchstzahl und Dublette in derselben Anweisung geprüft – parallele Uploads (zwei Geräte, Offline-Postausgang) überschritten sonst die 10
+    const ins = await env.DB.prepare(`INSERT INTO files(id,case_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE (SELECT COUNT(*) FROM files WHERE case_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE case_id=?2 AND sha256=?8)`)
+      .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso(), MAX_FILES).run();
+    if (!(ins.meta && ins.meta.changes)) {
+      await env.FILES.delete(key);
+      const d2 = await env.DB.prepare('SELECT id FROM files WHERE case_id=? AND sha256=?').bind(c.id, sha).first();
+      if (d2) return { id: d2.id, duplicate: true };
+      throw bad('too_many', 'Maximal 10 Dateien pro Vorgang.');
+    }
   } catch (e) {
+    if (e && e.status) throw e;
     await env.FILES.delete(key);
     throw e;
   }

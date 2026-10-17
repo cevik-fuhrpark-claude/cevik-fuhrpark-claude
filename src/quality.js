@@ -89,7 +89,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL OR kind IN ('HU','SP')
       OR (interval_km IS NOT NULL AND last_done_km IS NULL AND due_km IS NULL AND kind NOT IN ('HU','SP'))`).all(),
     env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, u.display_name, u.active FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles v ON v.id=d.vehicle_id
-      WHERE u.environment=? AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(envName, nowIso()).all(),
+      WHERE u.environment=? AND v.active=1 AND v.eval_excluded=0 AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(envName, nowIso()).all(),
     env.DB.prepare(`SELECT u.id, u.display_name, u.role, MAX(i.expires_at) AS expires_at FROM users u JOIN invites i ON i.user_id=u.id
       WHERE u.environment=? AND u.active=1 AND u.password_hash IS NULL GROUP BY u.id`).bind(envName).all(),
     env.DB.prepare(`SELECT d.id, d.display_name, d.user_id, u.active AS u_active,
@@ -192,10 +192,13 @@ export async function dataQuality(env, user, envName, query = {}) {
   }
   const vAct = new Map(vs.map((v) => [v.id, v]));
   for (const r of rules.results) if (r.interval_km && r.last_done_km === null && r.due_km === null && !['HU', 'SP'].includes(r.kind) && vAct.has(r.vehicle_id)) add('km_rule_no_base', vAct.get(r.vehicle_id), `${r.kind} · ${r.interval_km} km`);
+  // Anhänger eines ruhenden Lkw ist gekoppelt (Akte zeigt die Kopplung) – kein „keinem Lkw zugeordnet“; Mehrfach-Kopplung zählt nur bewertete
+  const pulledByResting = new Set();
+  for (const v of veh.results) if (v.eval_excluded && v.kind === 'lkw' && v.trailer_plate) for (const x of byPlateAll.get(normPlate(v.trailer_plate)) || []) if (x.kind === 'anhaenger') pulledByResting.add(x.id);
   for (const v of vs.filter((x) => x.kind === 'anhaenger')) {
     const trucks = pulledBy.get(v.id) || [];
     if (trucks.length > 1) add('trailer_multi', v, trucks.join(', '));
-    if (!trucks.length) add('trailer_without_truck', v);
+    if (!trucks.length && !pulledByResting.has(v.id)) add('trailer_without_truck', v);
   }
   const vById = new Map(vs.map((v) => [v.id, v]));
   for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km`); }

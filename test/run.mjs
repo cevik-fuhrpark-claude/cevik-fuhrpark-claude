@@ -1495,6 +1495,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`', 'Einheit im Ziellager abweichend (l statt Stk) – bitte dort prüfen.', 'Одиниця на цільовому складі інша (l замість Stk) – перевірте там.', 'Different unit in the target store (l instead of Stk) – please check there.'],
     ['`Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`', 'Vorgang V-2026-0007 ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.', 'Заявка V-2026-0007 сама є дублікатом – виберіть початкову заявку.', 'Case V-2026-0007 is itself a duplicate – please choose the original case.'],
     ['`Unbekannter Prüfpunkt ${it.key}.`', 'Unbekannter Prüfpunkt xyz.', 'Невідомий пункт перевірки xyz.', 'Unknown check item xyz.'],
+    ["`Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`", 'Arbeitsdatum: nicht in der Zukunft und nicht vor dem 17.10.2025.', 'Дата роботи: не в майбутньому і не раніше 17.10.2025.', 'Work date: not in the future and not before 17.10.2025.'],
   ];
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
   eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
@@ -3164,16 +3165,18 @@ await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, end
   eq((await users.driver.put(`/api/stock/${id}/order`, { qty: 5 })).status, 403, 'Fahrer');
   eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 5, note: 'Tel. Händler' })).status, 200);
   r = await ro(); eq(r.ordered_qty, 5); eq(r.ordered_on, today); eq(r.open_after_order, 3, 'Fehlmenge minus bestellt'); eq(r.ordered_eta, null, 'kein Liefertermin erfunden');
+  { const x = await users.ws.put(`/api/stock/${id}/order`, { qty: 20 }); eq(`${x.status} ${x.data.error}`, '409 stock_order_exists', 'zweiter Vermerk überschreibt den ersten nicht'); }
+  eq((await users.ws.req('DELETE', `/api/stock/${id}/order`)).status, 200, 'Vermerk aufheben');
   eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200); eq((await ro()).open_after_order, 0, 'nie negativ');
   // Fuhrparkagent: vollständig bestellt → kein „unter Mindestbestand“; Liefertermin überschritten → eigener Hinweis
   const mine = async () => { await users.fleet.post('/api/agent/run'); return (await users.fleet.get('/api/master')).data.findings.filter((f) => String(f.message).includes('Bestellvermerk-Teil')).map((f) => f.finding_code); };
   eq((await mine()).join(), '', 'vollständig bestellt, ohne Liefertermin: kein Befund');
   const dd = (n) => new Date(Date.parse(today) + n * 86400000).toISOString().slice(0, 10);
-  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20, ordered_on: dd(-10), eta: dd(-1) })).status, 200);
+  await users.ws.req('DELETE', `/api/stock/${id}/order`); eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20, ordered_on: dd(-10), eta: dd(-1) })).status, 200);
   eq((await mine()).join(), 'STOCK_ORDER_OVERDUE', 'Liefertermin überschritten');
-  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 2, ordered_on: dd(-10), eta: dd(-1) })).status, 200);
+  await users.ws.req('DELETE', `/api/stock/${id}/order`); eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 2, ordered_on: dd(-10), eta: dd(-1) })).status, 200);
   eq((await mine()).join(), 'STOCK_BELOW_MIN', 'teilweise bestellt: weiter unter Mindestbestand');
-  eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200);
+  await users.ws.req('DELETE', `/api/stock/${id}/order`); eq((await users.ws.put(`/api/stock/${id}/order`, { qty: 20 })).status, 200);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.ws.get('/api/stock?reorder=1&format=csv')).data);
   ok(csv.split('\r\n')[0].endsWith(';Bestellt Menge;Bestellt am;Liefertermin laut Lieferant;Noch zu bestellen'), 'CSV-Kopf');
   ok(csv.includes(`Bestellvermerk-Teil;Stk;;2;10;8;0;5;40;;${deD(today)};20;${deD(today)};;0`), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Bestellvermerk')));
@@ -10049,6 +10052,129 @@ await test('Fuhrparkagent: Lauf-Sperre je Umgebung – gleichzeitiger Cron und �
   eq((await runFleetAgent(e, null, E, 'cron')).skipped, true, 'laufender Lauf: Cron überspringt');
   eq(await runFleetAgent(e, null, E, 'manuell:own').then(() => 'ok', (x) => x.status), 409, 'manuell: 409');
   ok(!(await runFleetAgent(e, null, 'test', 'cron')).skipped, 'andere Umgebung läuft');
+});
+
+// Eigene Umgebung mit Konten (Inhaber, Leitung, zwei Werkstätten, Fahrer, Lesezugriff) und zwei Fahrzeugen – für Prüfungen, die frische Daten brauchen
+async function freshWorld() {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const U = { own, fleet: await inv({ username: 'w.fuhrpark', display_name: 'Leitung', role: 'fleet', environment: 'test' }),
+    ws: await inv({ username: 'w.werkstatt', display_name: 'WS DO', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' }),
+    wsMuc: await inv({ username: 'w.werkstatt.muc', display_name: 'WS MUC', role: 'workshop', environment: 'test', workshop_site: 'MUENCHEN' }),
+    driver: await inv({ username: 'w.fahrer', display_name: 'Fahrer W', role: 'driver', environment: 'test' }),
+    viewer: await inv({ username: 'w.lesen', display_name: 'Lesen', role: 'viewer', environment: 'test' }) };
+  const csv = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nSZ-YC 5513;Dortmund;in Betrieb;MAN;2016;WMA15SZZ2HM722774;\nSZ-KC 5515;Dortmund;in Betrieb;DAIMLER;2015;WDB9630051L917317;';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const ver = async (id) => (await U.fleet.get(`/api/cases/${id}`)).data.case.version;
+  const cmd = async (c, id, action, payload = {}, note) => c.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: await ver(id), payload, ...(note ? { note } : {}) });
+  const newCase = async (extra = {}, by = U.driver) => { const x = await by.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM722774', description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk(), ...extra }); eq(x.status, 201, 'Meldung ' + JSON.stringify(x.data)); return x.data.id; };
+  const toRepair = async (extra) => { const id = await newCase(extra); eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200); return id; };
+  return { e, U, cmd, newCase, toRepair, V1: 'VIN:WMA15SZZ2HM722774' };
+}
+
+await test('Vorgang-Nebenwege: Beträge/Stunden im Verlauf nur mit Recht, fremde Werkstatt ohne Arbeiten/Teile, Arbeitsdatum begrenzt, Restarbeit nach Freigabe, Werkstattwechsel ohne alten Termin, Dubletten umgehängt, langer request_key, parallele Uploads', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld();
+  const today = BERLIN_TODAY;
+  // 1./2. Kosten im Verlauf; Meldung durch Werkstatt München, Reparatur in Dortmund
+  const id = await newCase({}, U.wsMuc);
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Dortmund')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Bremsscheibe', quantity: 2, unit_price_net: 189.9 })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 2.5, description: 'getauscht' })).status, 200);
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'Bosch-Dienst Meier', amount_net: 1450 })).status, 200);
+  const pl = (d) => Object.fromEntries(d.events.filter((x) => ['add_part', 'record_work', 'add_external_cost'].includes(x.action)).map((x) => [x.action, x.payload]));
+  const dF = (await U.fleet.get(`/api/cases/${id}`)).data; eq(pl(dF).add_external_cost.amount_net, 1450, 'Leitung sieht Betrag'); eq(pl(dF).record_work.hours, 2.5);
+  const dW = (await U.ws.get(`/api/cases/${id}`)).data; eq(pl(dW).add_external_cost, null, 'Werkstatt: kein Fremdleistungsbetrag im Verlauf'); eq(pl(dW).add_part.unit_price_net, 189.9, 'ausführende Werkstatt sieht eigene Teile'); ok(dW.work && dW.parts, 'Werkstatt: Arbeiten/Teile');
+  for (const [n, c] of [['Lesen', U.viewer], ['München', U.wsMuc]]) {
+    const d = (await c.get(`/api/cases/${id}`)).data; eq(d.access, 'read', n);
+    eq(JSON.stringify(pl(d)), JSON.stringify({ add_part: null, record_work: null, add_external_cost: null }), `${n}: keine Beträge/Stunden im Verlauf`);
+    ok(!('work' in d) && !('parts' in d), `${n}: keine Arbeiten/Teile`);
+  }
+  // 3. Arbeitsdatum: Zukunft / mehr als 1 Jahr vor der Meldung abgewiesen
+  for (const wd of ['2062-10-17', '1926-01-01', new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10)]) eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'x', work_date: wd })).status, 400, wd);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'gestern', work_date: new Date(Date.parse(today) - 86400000).toISOString().slice(0, 10) })).status, 200, 'gestern erlaubt');
+  // 4. Restarbeit nach technischer Freigabe noch erledigen; Agentenbefund verschwindet
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Halter lose' })).status, 200);
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  const rel = await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(rel.data.status, 'fahrzeug_freigegeben', JSON.stringify(rel.data));
+  await U.fleet.post('/api/agent/run');
+  const rwo = async () => (await U.fleet.get('/api/master')).data.findings.filter((x) => x.finding_code === 'RELEASED_WITH_OPEN_ITEMS' && x.status !== 'erledigt').length;
+  eq(await rwo(), 1, 'Befund Restarbeiten');
+  const dR = (await U.ws.get(`/api/cases/${id}`)).data; ok(dR.allowed_actions.includes('resolve_open_item'), 'nach Freigabe erledigbar');
+  ok(!(await U.wsMuc.get(`/api/cases/${id}`)).data.allowed_actions.includes('resolve_open_item'), 'nicht für fremde Werkstatt');
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: dR.open_items[0].id }, 'nachgezogen')).status, 200);
+  await U.fleet.post('/api/agent/run'); eq(await rwo(), 0, 'Befund erledigt');
+  // 5. Werkstattwechsel: Termin der alten Werkstatt entfällt (im Verlauf), gleiche Werkstatt abgewiesen
+  const c5 = await newCase(); { const x = await cmd(U.fleet, c5, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Dortmund'); eq(x.status, 200, JSON.stringify(x.data)); }
+  const plan = new Date(Date.parse(today) + 7 * 86400000).toISOString().slice(0, 10);
+  eq((await cmd(U.ws, c5, 'acknowledge', { planned_date: plan })).status, 200);
+  eq((await cmd(U.fleet, c5, 'reassign_workshop', { workshop_site: 'DORTMUND' }, 'gleich')).status, 400, 'unverändert');
+  eq((await cmd(U.fleet, c5, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'ausgelastet')).status, 200);
+  const d5 = (await U.wsMuc.get(`/api/cases/${c5}`)).data; eq(d5.case.planned_date, null, 'kein fremder Termin');
+  eq(d5.events.find((x) => x.action === 'reassign_workshop').payload.planned_date_before, plan, 'alter Termin im Verlauf');
+  // 6. Dubletten: A (hat Dublette B) wird Dublette von C → B zeigt auf C
+  const C = await newCase(); const A = await newCase({ description: 'Rücklicht geht nicht' }); const B = await newCase({ description: 'Licht hinten aus' });
+  eq((await cmd(U.fleet, B, 'reject', { duplicate_of: A })).status, 200);
+  const rA = await cmd(U.fleet, A, 'reject', { duplicate_of: C }); eq(rA.status, 200);
+  eq((await U.fleet.get(`/api/cases/${B}`)).data.duplicate_of.id, C, 'B auf neues Original umgehängt');
+  eq((await U.fleet.get(`/api/cases/${C}`)).data.duplicates.length, 2, 'C zeigt beide Dubletten');
+  ok((await U.fleet.get(`/api/cases/${A}`)).data.events.find((x) => x.action === 'reject').payload.moved_duplicates.length === 1, 'Umhängen im Verlauf');
+  // 7. request_key mit 64 Zeichen: Auftrag aus Prüftermin vollständig angelegt und freigegeben
+  const rule = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: `${Number(today.slice(0, 4)) - 1}-01-15`, interval_months: 12, evidence: 'UVV-Protokoll (Test)' });
+  eq(rule.status, 201, JSON.stringify(rule.data));
+  const o = await U.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: 'n8n-' + 'x'.repeat(60) });
+  eq(`${o.status} ${o.data.status}`, '201 werkstatt_freigegeben', JSON.stringify(o.data));
+  // 8. parallele Uploads: höchstens 10 Dateien
+  const c8 = await newCase();
+  const png = () => { const b = new Uint8Array(400); b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); crypto.getRandomValues(b.subarray(8)); return b; };
+  const same = png();
+  const res = await Promise.all([same, same, ...Array.from({ length: 12 }, png)].map((b, i) => U.driver.req('POST', `/api/cases/${c8}/files`, b, { 'content-type': 'image/png', 'x-filename': `foto${i}.png` })));
+  eq(e.DB.db.prepare('SELECT COUNT(*) n FROM files WHERE case_id=?').get(c8).n, 10, 'höchstens 10');
+  eq(res.filter((x) => x.status === 400 && x.data.error === 'too_many').length, 3, 'Überzählige mit too_many: ' + res.map((x) => x.status).join());
+  ok(res.slice(0, 2).every((x) => x.status === 201 || x.status === 400), 'gleiche Datei');
+  eq(e.DB.db.prepare('SELECT COUNT(DISTINCT sha256) n FROM files WHERE case_id=?').get(c8).n, 10, 'keine Dublette gespeichert');
+});
+
+await test('Lager/Auslesungen/Datenqualität: Bestellvermerk nicht überschrieben, Aufheben nur auf gelesenem Stand, Deaktivieren beendet Vermerk; Import ohne Nachweis/„Fahrerkarten-Nr.“/ruhendes Kennzeichen-Doppel; Anhänger ruhender Lkw, Zuordnung außer Betrieb', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  // Lager
+  const id = (await U.ws.post('/api/stock', { name: 'Filter W', min_qty: 10, initial_qty: 2, unit_price_net: 5 })).data.id;
+  const [a, b] = await Promise.all([U.ws.put(`/api/stock/${id}/order`, { qty: 8, note: 'A' }), U.fleet.put(`/api/stock/${id}/order`, { qty: 8, note: 'B' })]);
+  eq([a.status, b.status].sort().join(), '200,409', 'zweiter gleichzeitiger Vermerk 409');
+  const it = (await U.ws.get(`/api/stock/${id}`)).data.item;
+  eq((await U.ws.req('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent('2000-01-01|x')}`)).status, 409, 'veraltete Ansicht');
+  eq((await U.ws.req('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent(it.ordered_on + '|' + it.ordered_by)}`)).status, 200, 'gelesener Stand');
+  eq((await U.ws.put(`/api/stock/${id}/order`, { qty: 8 })).status, 200);
+  eq((await U.ws.req('PATCH', `/api/stock/${id}`, { active: false })).status, 200);
+  eq(db.prepare('SELECT ordered_on FROM stock_items WHERE id=?').get(id).ordered_on, null, 'Deaktivieren beendet Vermerk');
+  eq((await U.ws.req('PATCH', `/api/stock/${id}`, { active: true })).status, 200);
+  eq((await U.ws.get('/api/stock?reorder=1')).data.items.find((i) => i.id === id).open_after_order, 8, 'nach Reaktivierung wieder zu bestellen');
+  // Auslesungen: leere Nachweis-Zelle ohne Quelle → Zeile übersprungen (vorher 500)
+  const imp = (csv, q = '') => U.fleet.req('POST', `/api/tacho/import?dry_run=1${q}`, csv, { 'content-type': 'text/csv' });
+  const t1 = await imp(`Art;Kennzeichen;Datum;Datei\nMassenspeicher;SZ-YC 5513;${BERLIN_TODAY};\nMassenspeicher;SZ-KC 5515;${BERLIN_TODAY};ddd-1`);
+  eq(t1.status, 200, JSON.stringify(t1.data)); eq(t1.data.skipped.map((x) => x.reason).join(), 'Nachweis/Quelle fehlt');
+  // Namensspalte „Fahrerkartennummer“ vor „Name“
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Max Muster' })).status, 201);
+  const t3 = await imp(`Art;Fahrerkartennummer;Name;Datum;Datei\nFahrerkarte;DF000012345678;Max Muster;${BERLIN_TODAY};ddd-2`);
+  eq(t3.data.skipped.length, 0, JSON.stringify(t3.data.skipped));
+  // Kennzeichen doppelt, eines ruhend → das bewertete
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('ruh','WDB96300510318431','SZ-YC 5513','lkw',1,1,?,?)`).run(new Date().toISOString(), new Date().toISOString());
+  const t4 = await imp(`Art;Kennzeichen;Datum;Datei\nMassenspeicher;SZ-YC 5513;${BERLIN_TODAY};ddd-3`);
+  eq(t4.data.skipped.length, 0, JSON.stringify(t4.data.skipped));
+  // Datenqualität: Anhänger eines ruhenden Lkw; Zuordnung deaktivierter Person an außer Betrieb genommenem Fahrzeug
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,trailer_plate,created_at,updated_at) VALUES('ruh2','WDB96300510318499','SZ-YC 5599','lkw',1,1,'SZ-YC 5598',?,?)`).run(now, now);
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('anh','WSM00000000005598','SZ-YC 5598','anhaenger',1,0,?,?),('alt','WDB96300510318400','SZ-YC 5500','lkw',0,0,?,?)`).run(now, now, now, now);
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at) VALUES('dv1',?,'alt',?,?,?)`).run(U.driver.id, now, U.driver.id, now);
+  db.prepare('UPDATE users SET active=0 WHERE id=?').run(U.driver.id);
+  const qi = (await U.fleet.get('/api/admin/data-quality')).data.items;
+  eq(qi.filter((x) => x.check === 'trailer_without_truck' && x.vehicle_id === 'anh').length, 0, 'Anhänger des ruhenden Lkw nicht „ohne Lkw“');
+  eq(qi.filter((x) => x.check === 'assignment_inactive_user').length, 0, 'kein Befund für außer Betrieb genommenes Fahrzeug');
+  db.prepare(`UPDATE vehicles SET active=1 WHERE id='alt'`).run();
+  eq((await U.fleet.get('/api/admin/data-quality')).data.items.filter((x) => x.check === 'assignment_inactive_user').length, 1, 'aktives Fahrzeug: Befund bleibt');
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
