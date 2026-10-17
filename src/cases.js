@@ -200,7 +200,7 @@ export function casesCsv(rows, csvCell, fmt, claims = null) {
     lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, CASE_STATUS_DE[c.status] || csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       csvCell(c.reported_driveability), csvCell(c.workshop_site), csvCell(caseDescText(c.description, 'de')), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
-      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), csvCell(k ? k.claim_no : ''), c.cost_over_limit_at ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : ''].join(';'));
+      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), csvCell(k ? k.claim_no : ''), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : ''].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -210,6 +210,8 @@ function shapeCase(c, user) {
   delete out.request_key;
   delete out.content_hash;
   if (!canSeeCosts(user)) delete out.cost_approved_net;
+  // Kostenfreigabe „ausstehend“ nur an offenen Vorgängen (abgelehnt/abgeschlossen: Verlauf behält cost_limit_exceeded)
+  if ('cost_over_limit_at' in out && !OPEN_STATUSES.includes(out.status)) out.cost_over_limit_at = null;
   if (user.role === 'driver') delete out.cost_over_limit_at;
   if (user.role === 'viewer') delete out.reporter_name_note; // freier Namensvermerk – Datensparsamkeit Lesezugriff
   if (user.role === 'driver' || user.role === 'workshop') { delete out.followup_on; delete out.followup_note; } // Wiedervorlage = Arbeitsmittel der Leitung
@@ -239,7 +241,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const followups = linked.filter((x) => x.parent_case_id === c.id).map(({ created_at, parent_case_id, ...x }) => x);
   const duplicates = linked.filter((x) => x.parent_case_id !== c.id).map((x) => ({ id: x.id, case_no: x.case_no, created_at: x.created_at }));
   const duplicateOf = c.duplicate_of ? await env.DB.prepare('SELECT id, case_no, status FROM cases WHERE id=?').bind(c.duplicate_of).first() : null;
-  const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=?').bind(c.parent_case_id).first() : null;
+  const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=? AND environment=?').bind(c.parent_case_id, c.environment).first() : null;
   // Prüfung des Mängelauftrags + jüngste spätere Durchführung derselben Prüfart am Fahrzeug (= eingetragene Nachprüfung)
   const mevent = c.maintenance_event_id ? await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result,
       (SELECT json_object('done_date', n.done_date, 'result', n.result, 'evidence', n.evidence) FROM maintenance_events n WHERE n.vehicle_id=e.vehicle_id AND n.kind=e.kind AND n.id<>e.id
@@ -315,7 +317,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     detail.costs = detail.work && detail.parts ? computeCosts(rate, detail.work, detail.parts, detail.external_costs) : await caseCosts(env, c.id);
     const limRaw = sets.has('repair_cost_limit_net') && sets.get('repair_cost_limit_net') !== '' ? Number(sets.get('repair_cost_limit_net')) : null;
     const lim = Number.isFinite(limRaw) && limRaw > 0 ? limRaw : null;
-    if (lim !== null || c.cost_approved_net !== null || c.cost_over_limit_at) detail.cost_limit = { limit_net: lim, approved_net: c.cost_approved_net ?? null, over_since: c.cost_over_limit_at || null };
+    const overSince = c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? c.cost_over_limit_at : null;
+    if (lim !== null || c.cost_approved_net !== null || overSince) detail.cost_limit = { limit_net: lim, approved_net: c.cost_approved_net ?? null, over_since: overSince };
   }
   return detail;
 }
@@ -339,6 +342,14 @@ export function warrantyDate(v) {
 // Nach einer Kostenbuchung: übersteigen die bewerteten Kosten (Ist + Schätzung; unbewertete Positionen zählen nicht) die Grenze bzw.
 // den zuletzt freigegebenen Betrag, wird der Auftrag einmalig markiert, im Verlauf vermerkt und die Fuhrparkleitung informiert.
 // Kein Statuswechsel, keine Sperre – die Werkstatt sieht „Kostenfreigabe ausstehend“ (ohne Beträge).
+// Kontrolle nach Reparatur: jüngste überhaupt (latest) und ob sie nach der letzten Rückgabe zur Nacharbeit erfasst wurde (current).
+// Nach „Nacharbeit“ wurde erneut am Fahrzeug gearbeitet – die alte Kontrolle belegt diesen Stand nicht mehr.
+async function repairInspection(env, caseId) {
+  const r = await env.DB.prepare(`SELECT
+      (SELECT MAX(created_at) FROM inspections WHERE case_id=?1 AND kind='nach_reparatur') AS latest,
+      (SELECT MAX(created_at) FROM case_events WHERE case_id=?1 AND action='return_for_rework') AS rework`).bind(caseId).first();
+  return { latest: r.latest || null, current: !!r.latest && (!r.rework || r.latest > r.rework) };
+}
 async function checkCostLimit(env, ctx, user, envName, c) {
   if (c.cost_over_limit_at) return false;
   const limit = await costLimit(env);
@@ -653,6 +664,12 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   const J = (a) => JSON.stringify([...new Set(a)]);
   const vehicles = new Map((await env.DB.prepare('SELECT * FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).all()).results.map((v) => [v.id, v]));
   if (specs.some((x) => !vehicles.has(x.vehicleId))) throw bad('validation', 'Fahrzeug unbekannt.');
+  // Ursprungsvorgang (Folgeauftrag): muss in derselben Umgebung zum selben Fahrzeug existieren – sonst würde die Akte fremde Vorgangsnummern zeigen
+  const parentIds = specs.map((x) => x.parentId).filter(Boolean);
+  if (parentIds.length) {
+    const parents = new Map((await env.DB.prepare('SELECT id, vehicle_id FROM cases WHERE environment=? AND id IN (SELECT value FROM json_each(?))').bind(envName, J(parentIds)).all()).results.map((r) => [r.id, r.vehicle_id]));
+    if (specs.some((x) => x.parentId && parents.get(x.parentId) !== x.vehicleId)) throw bad('validation', 'Ursprünglicher Vorgang nicht gefunden.');
+  }
   const sites = specs.map((x) => x.suggested).filter(Boolean);
   if (sites.length && !internal.site_checked) {
     const ok = new Set((await env.DB.prepare('SELECT code FROM workshops WHERE active=1 AND code IN (SELECT value FROM json_each(?))').bind(J(sites)).all()).results.map((r) => r.code));
@@ -949,8 +966,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const w = await env.DB.prepare('SELECT COUNT(*) AS n FROM work_entries WHERE case_id=?').bind(c.id).first();
       const x = await env.DB.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').bind(c.id).first();
       if (w.n + x.n === 0) throw bad('work_missing', 'Bitte zuerst durchgeführte Arbeiten (Stunden) oder eine Fremdleistung dokumentieren.');
-      const insp = await env.DB.prepare(`SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1`).bind(c.id).first();
-      if (!insp) throw bad('inspection_missing', 'Bitte zuerst die Fahrzeugkontrolle nach der Reparatur durchführen.');
+      const insp = await repairInspection(env, c.id);
+      if (!insp.latest) throw bad('inspection_missing', 'Bitte zuerst die Fahrzeugkontrolle nach der Reparatur durchführen.');
+      if (!insp.current) throw bad('inspection_after_rework_missing', 'Nach der Nacharbeit ist eine neue Fahrzeugkontrolle nach der Reparatur nötig.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten verhindern die Abschlusskontrolle.');
       requireNote('Bitte kurz zusammenfassen, was repariert wurde.');
@@ -972,10 +990,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'technical_release': {
       requireNote('Bitte Kontrollnachweis eintragen.');
       if (!p.confirm) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
+      if (c.cost_over_limit_at) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten – keine Freigabe möglich.');
-      const insp = await env.DB.prepare(`SELECT result FROM inspections WHERE case_id=? AND kind='nach_reparatur' ORDER BY created_at DESC LIMIT 1`).bind(c.id).first();
-      if (!insp) throw bad('inspection_missing', 'Fahrzeugkontrolle nach Reparatur fehlt.');
+      const insp = await repairInspection(env, c.id);
+      if (!insp.latest) throw bad('inspection_missing', 'Fahrzeugkontrolle nach Reparatur fehlt.');
+      if (!insp.current) throw bad('inspection_after_rework_missing', 'Nach der Nacharbeit ist eine neue Fahrzeugkontrolle nach der Reparatur nötig.');
       toStatus = 'fahrzeug_freigegeben'; set.closed_at = now; set.safety_lock = 0; set.safety_lock_reason = null;
       const nonSafety = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
       payload = { remaining_open_items: nonSafety.n };

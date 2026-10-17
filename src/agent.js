@@ -528,8 +528,11 @@ export async function masterPanel(env, environment) {
   const counts = {};
   for (const r of countRows.results) counts[r.status] = r.n;
   const vehicles = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND eval_excluded=0').first()).n;
-  const lockedVehicles = (await env.DB.prepare(`SELECT COUNT(DISTINCT vehicle_id) AS n FROM cases WHERE environment=? AND safety_lock=1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).first()).n;
-  const inWorkshop = (await env.DB.prepare(`SELECT COUNT(DISTINCT vehicle_id) AS n FROM cases WHERE environment=? AND status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).first()).n;
+  // Gesperrt/in Werkstatt nach derselben Grundmenge wie vehicles_total (aktiv, nicht ruhend) – sonst „3 von 38“ mit ruhenden Fahrzeugen
+  const lockedVehicles = (await env.DB.prepare(`SELECT COUNT(DISTINCT c.vehicle_id) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 AND v.eval_excluded=0
+    WHERE c.environment=? AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).first()).n;
+  const inWorkshop = (await env.DB.prepare(`SELECT COUNT(DISTINCT c.vehicle_id) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 AND v.eval_excluded=0
+    WHERE c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).first()).n;
   const decisionsOpen = inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen').length;
   return {
     environment, generated_at: nowIso(), vehicles_total: vehicles, vehicles_locked: lockedVehicles, vehicles_in_workshop: inWorkshop,

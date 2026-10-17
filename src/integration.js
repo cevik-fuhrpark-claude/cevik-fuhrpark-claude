@@ -88,7 +88,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
     const rows = (await env.DB.prepare(`SELECT c.id, c.case_no, c.environment, c.vehicle_id, c.status, c.priority, c.reported_priority, c.reported_driveability, c.safety_lock,
       c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version,
-      c.planned_date, c.parts_expected_date, c.maintenance_rule_id, c.maintenance_event_id, CASE WHEN c.cost_over_limit_at IS NOT NULL THEN 1 ELSE 0 END AS cost_approval_pending
+      c.planned_date, c.parts_expected_date, c.maintenance_rule_id, c.maintenance_event_id, CASE WHEN c.cost_over_limit_at IS NOT NULL AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END AS cost_approval_pending
       FROM cases c WHERE c.environment=?1 AND (c.updated_at > ?2 OR (?3 IS NOT NULL AND c.updated_at = ?2 AND c.id > ?3)) ORDER BY c.updated_at, c.id LIMIT ?4`)
       .bind(envParam(url), since, url.searchParams.get('after_id') ? String(url.searchParams.get('after_id')).slice(0, 64) : null, pageSize + 1).all()).results;
     // Blättern ohne Lücken: gleiche updated_at (Sammeländerungen) über after_id = id der letzten Zeile; additiv (ohne after_id wie bisher)

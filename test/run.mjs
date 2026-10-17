@@ -9596,6 +9596,90 @@ await test('Telematik: Meldung ohne (gültige) GPS-Zeit überschreibt keine gesp
   eq(JSON.stringify([row.gps_time, row.lat, row.lon, row.km]), JSON.stringify([t, 52.5, 13.4, 100000]), 'Stand unverändert:');
 });
 
+await test('Kostenfreigabe: technische Freigabe erst nach „Kosten freigeben“; an abgeschlossenen Vorgängen nie „ausstehend“ (Akte, Liste, CSV, Integrations-API)', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const c = await users.fleet.post('/api/cases', { vehicle_id: VM, description: 'Freigabesperre-Kosten: Bremse', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(c.status, 201); const id = c.data.id;
+  const cmd = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case;
+    return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  try {
+    eq((await owner.put('/api/settings', { repair_cost_limit_net: 100 })).status, 200);
+    eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Bremse prüfen')).status, 200);
+    eq((await cmd(users.ws, 'start_repair')).status, 200);
+    eq((await cmd(users.ws, 'record_work', { hours: 1, description: 'Bremse geprüft' })).status, 200);
+    eq((await cmd(users.ws, 'add_part', { name: 'Bremsbelag', quantity: 1, unit_price_net: 250 })).data.cost_limit_exceeded, true);
+    const items = (await users.ws.get('/api/meta')).data.checklist.map((x) => ({ key: x.key, result: 'ok' }));
+    eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(users.ws, 'request_quality_check', {}, 'Beläge neu')).status, 200);
+    const r = await cmd(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok');
+    eq(r.status, 400, 'Freigabe trotz offener Kostenfreigabe:'); eq(r.data.error, 'cost_approval_open');
+    eq((await users.fleet.get(`/api/cases/${id}`)).data.case.status, 'abschlusskontrolle', 'Status unverändert:');
+    eq((await cmd(users.fleet, 'approve_costs', {}, 'Rücksprache ok')).status, 200);
+    eq((await cmd(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'nach Kostenfreigabe:');
+    // Altbestand: abgeschlossener Vorgang mit stehengebliebener Markierung → nirgends „ausstehend“
+    await env.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id=?').bind(new Date().toISOString(), id).run();
+    const d = (await users.fleet.get(`/api/cases/${id}`)).data;
+    eq(d.case.cost_over_limit_at, null, 'Akte:'); eq(d.cost_limit.over_since, null, 'Kostenblock:'); ok(!d.allowed_actions.includes('approve_costs'));
+    eq((await users.ws.get(`/api/cases/${id}`)).data.case.cost_over_limit_at, null, 'Werkstatt-Ansicht:');
+    eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === id).cost_over_limit_at, null, 'Liste:');
+    const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Freigabesperre-Kosten')).data);
+    const [head, row] = csv.trim().split('\r\n'); const hi = head.split(';').indexOf('Kostenfreigabe ausstehend');
+    if (hi >= 0) eq(row.split(';')[hi], '', 'CSV:');
+    eq((await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.cases.find((x) => x.id === id).cost_approval_pending, 0, 'Integrations-API:');
+  } finally { await owner.put('/api/settings', { repair_cost_limit_net: '' }); }
+});
+
+await test('Nacharbeit: Abschlusskontrolle erst nach neuer Fahrzeugkontrolle nach Reparatur (alte Kontrolle belegt den Stand vor der Nacharbeit)', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const c = await users.fleet.post('/api/cases', { vehicle_id: VM, description: 'Nacharbeit-Kontrolle: Licht', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(c.status, 201); const id = c.data.id;
+  const cmd = async (u, action, payload = {}, note = null) => {
+    const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case;
+    return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload, note });
+  };
+  const items = (await users.ws.get('/api/meta')).data.checklist.map((x) => ({ key: x.key, result: 'ok' }));
+  const inspect = async () => eq((await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Licht')).status, 200);
+  eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 0.5, description: 'Lampe getauscht' })).status, 200);
+  await inspect();
+  eq((await cmd(users.ws, 'request_quality_check', {}, 'Lampe neu')).status, 200);
+  eq((await cmd(users.fleet, 'return_for_rework', {}, 'Blinker links ohne Funktion')).status, 200);
+  const r = await cmd(users.ws, 'request_quality_check', {}, 'Blinker repariert');
+  eq(r.status, 400, 'alte Kontrolle zählt nicht:'); eq(r.data.error, 'inspection_after_rework_missing');
+  await new Promise((res) => setTimeout(res, 5));
+  await inspect();
+  eq((await cmd(users.ws, 'request_quality_check', {}, 'Blinker repariert')).status, 200, 'mit neuer Kontrolle:');
+  { const rr = await cmd(users.fleet, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(rr.status, 200, JSON.stringify(rr.data)); }
+});
+
+await test('Folgeauftrag: parent_case_id nur zu einem Vorgang derselben Umgebung und desselben Fahrzeugs', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const p = await users.fleet.post('/api/cases', { vehicle_id: VM, description: 'Ursprung-Test: Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(p.status, 201);
+  const other = env.DB.db.prepare(`SELECT id FROM vehicles WHERE active=1 AND id<>? LIMIT 1`).get(VM).id;
+  const prodCase = env.DB.db.prepare(`SELECT id FROM cases WHERE environment='production' LIMIT 1`).get();
+  for (const [vid, parent, why] of [[VM, 'gibt-es-nicht', 'unbekannt'], [other, p.data.id, 'anderes Fahrzeug'], ...(prodCase ? [[VM, prodCase.id, 'andere Umgebung']] : [])]) {
+    const r = await users.fleet.post('/api/cases', { vehicle_id: vid, description: 'Folgeauftrag-Test ' + why, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk(), parent_case_id: parent });
+    eq(r.status, 400, why + ':');
+  }
+  const ok1 = await users.fleet.post('/api/cases', { vehicle_id: VM, description: 'Folgeauftrag-Test gültig', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk(), parent_case_id: p.data.id });
+  eq(ok1.status, 201);
+  eq((await users.fleet.get(`/api/cases/${ok1.data.id}`)).data.parent.id, p.data.id, 'Ursprung angezeigt:');
+});
+
+await test('Management-Panel: gesperrt/in Werkstatt ohne ruhende Fahrzeuge (gleiche Grundmenge wie Fahrzeuge gesamt)', async () => {
+  const { masterPanel } = await import('../src/agent.js'); const { ensureSchema } = await import('../src/worker.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  for (const [id, ex] of [['VIN:A', 0], ['VIN:B', 1]]) db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES (?,?,?,'Dortmund','lkw',1,?,?,?)`).run(id, id.slice(4), 'T-' + id.slice(4), ex, now, now);
+  let n = 0; for (const vid of ['VIN:A', 'VIN:B']) db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,safety_lock,status,origin,request_key,content_hash,version,created_at,updated_at)
+    VALUES (?,?,'test',?,'u','Bremse defekt','kritisch','kritisch','nicht_fahrbereit',1,'in_reparatur','meldung',?,'h',1,?,?)`).run('c' + (++n), 'T-' + n, vid, 'rk' + n, now, now);
+  const m = await masterPanel(e, 'test');
+  eq(m.vehicles_total, 1); eq(m.vehicles_locked, 1, 'gesperrt:'); eq(m.vehicles_in_workshop, 1, 'in Werkstatt:');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
