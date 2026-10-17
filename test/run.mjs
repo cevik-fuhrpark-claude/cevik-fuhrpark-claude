@@ -9455,6 +9455,74 @@ await test('Fahrerakte: abgelaufene Unterweisung durch neuere gleichen Titels ab
   eq((i18n.match(/ddoc_replaced: '[^']*\{date\}/g) || []).length, 3, 'Text „abgelöst“ DE/UK/EN:');
 });
 
+// 17.10.2026 (Fehlersuche Runde 2): Bußgeld-Vorwarnung, HU/SP ohne km, Datenqualität-Lücken wie Übersicht, ruhender Anhänger
+await test('Fuhrparkagent Bußgelder: Vorwarnung nicht gesetzt → kein „Frist läuft ab“; gesetzt 0 → am Fristtag (Agenten- und Einzelpfad gleich)', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { fineFindings } = await import('../src/fines.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); db.exec(`DELETE FROM settings WHERE key='fine_warn_days'`);
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,active,created_at,updated_at) VALUES ('VIN:A','A','T-BG 1',1,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,offense_type,offense_at,plate_in_letter,vehicle_id,response_due,status,created_by,created_at,updated_at) VALUES ('f1','B-2026-0001','production','anhoerung','Stadt','geschwindigkeit',?,'T-BG 1','VIN:A',?,'fahrer_informiert','u',?,?)`).run(now, BERLIN_TODAY, now, now);
+  const map = () => new Map(db.prepare('SELECT key,value FROM settings').all().map((r) => [r.key, r.value]));
+  eq((await fineFindings(e, 'production', map())).length, 0, 'Agentenpfad ohne Einstellung:');
+  eq((await fineFindings(e, 'production')).length, 0, 'Einzelpfad ohne Einstellung:');
+  db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('fine_warn_days','',?)`).run(now);
+  eq((await fineFindings(e, 'production', map())).length, 0, 'leer:');
+  db.prepare(`UPDATE settings SET value='0' WHERE key='fine_warn_days'`).run();
+  eq((await fineFindings(e, 'production', map())).map((x) => x.code).join(), 'FINE_DUE_SOON', '0 = am Fristtag (Agent):');
+  eq((await fineFindings(e, 'production')).map((x) => x.code).join(), 'FINE_DUE_SOON', '0 = am Fristtag (einzeln):');
+});
+
+await test('HU/SP nur nach Zeit: altes km-Intervall an der HU ergibt keinen km-Befund; neues km-Intervall für HU/SP abgewiesen', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { maintenanceOverview, ruleDueKm } = await import('../src/maintenance.js'); const { runFleetAgent } = await import('../src/agent.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,build_year,kind,zgm_class,active,created_at,updated_at) VALUES ('VIN:A','A','T-HU 1','Dortmund','MAN',2020,'lkw','ueber_12',1,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_km,last_done_date,last_done_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at) VALUES ('r1','VIN:A','HU',50000,'2026-03-10',100000,'2027-03-31','Beleg','u',?,?,'nachweis',?)`).run(now, now, now);
+  db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at) VALUES ('o1','VIN:A',160000,?,'manuell',?)`).run(now, now);
+  eq(ruleDueKm({ kind: 'HU', interval_km: 50000, last_done_km: 100000 }), null, 'ruleDueKm HU:');
+  eq(ruleDueKm({ kind: 'UVV', interval_km: 50000, last_done_km: 100000 }), 150000, 'ruleDueKm UVV:');
+  await runFleetAgent(e, { waitUntil() {} }, 'production', 'test');
+  const f = db.prepare(`SELECT subject_key, message FROM agent_findings WHERE status='offen' AND finding_code LIKE 'MAINTENANCE%'`).all();
+  ok(!f.some((x) => x.subject_key === 'r1|km'), `kein km-Befund zur HU: ${JSON.stringify(f)}`);
+  const ov = await maintenanceOverview(e, { role: 'owner' }, 'production');
+  eq(ov.rows.find((r) => r.kind === 'HU').next_due_km, null, 'Übersicht HU ohne km:');
+  // API: HU/SP mit km-Intervall abgewiesen, UVV erlaubt
+  const v = await owner.post('/api/vehicles', { vin: 'WDB96340310777001', plate: 'T-HU 2', site: 'Dortmund', kind: 'lkw' });
+  const vid = v.data && v.data.id ? v.data.id : 'VIN:WDB96340310777001';
+  const r1 = await owner.post(`/api/vehicles/${vid}/maintenance`, { kind: 'HU', interval_km: '50000', last_done_date: '2026-03-10', evidence: 'Prüfbericht' });
+  eq(r1.status, 400, 'HU mit km-Intervall:');
+  const r2 = await owner.post(`/api/vehicles/${vid}/maintenance`, { kind: 'UVV', interval_km: '50000', last_done_km: '100000', last_done_date: '2026-03-10', evidence: 'Prüfbericht' });
+  ok(r2.status === 200 || r2.status === 201, `UVV mit km-Intervall: ${r2.status}`);
+});
+
+await test('Datenqualität: Prüfungslücken nach derselben Regel wie die Prüftermin-Übersicht (nicht SP-pflichtig, SP künftig/HU ungeklärt = vorhanden)', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { maintenanceOverview } = await import('../src/maintenance.js'); const { dataQuality } = await import('../src/quality.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  const veh = (id, plate, cls, kg) => db.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,build_year,kind,zgm_class,zgm_kg,active,created_at,updated_at) VALUES (?,?,?,'Dortmund','MAN',2020,'lkw',?,?,1,?,?)`).run(id, id.slice(4), plate, cls, kg, now, now);
+  veh('VIN:A', 'T-DQ 1', '3_5_7_5', null); veh('VIN:B', 'T-DQ 2', null, 7000); veh('VIN:C', 'T-DQ 3', 'ueber_12', null); veh('VIN:D', 'T-DQ 4', null, null);
+  const rule = (id, vid, kind, next) => db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,last_done_date,next_due_date,evidence,created_by,created_at,updated_at,due_source) VALUES (?,?,?,'2026-03-10',?,'Beleg','u',?,?,'nachweis')`).run(id, vid, kind, next, now, now);
+  for (const vid of ['VIN:A', 'VIN:B', 'VIN:C', 'VIN:D']) { rule(vid + 'u', vid, 'UVV', '2027-03-10'); rule(vid + 't', vid, 'Tachograph', '2028-03-10'); }
+  for (const vid of ['VIN:A', 'VIN:B', 'VIN:D']) rule(vid + 'h', vid, 'HU', '2027-03-31');
+  rule('VIN:Ch', 'VIN:C', 'HU', null); rule('VIN:Cs', 'VIN:C', 'SP', null); // Frist ungeklärt bzw. ohne Datum – Eintrag vorhanden
+  const ov = await maintenanceOverview(e, { role: 'owner' }, 'production');
+  const q = await dataQuality(e, { role: 'owner' }, 'production');
+  const gapsQ = q.items.filter((i) => i.check === 'missing_inspection').map((i) => `${i.plate}:${i.detail}`).sort();
+  const gapsO = ov.gaps.map((g) => `${g.plate}:${(g.missing || []).join(', ')}`).sort();
+  eq(JSON.stringify(gapsQ), JSON.stringify(['T-DQ 4:SP']), 'Datenqualität Lücken:');
+  eq(JSON.stringify(gapsO), JSON.stringify(gapsQ), 'Übersicht = Datenqualität:');
+});
+
+await test('Datenqualität: Anhänger laut Stammliste auch ruhend gefunden (kein „Anhänger unbekannt“), ruhender nicht doppelt geprüft', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { dataQuality } = await import('../src/quality.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,trailer_plate,active,eval_excluded,created_at,updated_at) VALUES ('VIN:A','A','T-AH 1','Dortmund','lkw','T-AH 9',1,0,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,trailer_plate,active,eval_excluded,created_at,updated_at) VALUES ('VIN:B','B','T-AH 2','Dortmund','lkw','T-AH 8',1,0,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:T','T','T-AH 9','Dortmund','anhaenger',1,1,?,?)`).run(now, now);
+  const q = await dataQuality(e, { role: 'owner' }, 'production');
+  const tu = q.items.filter((i) => i.check === 'trailer_unknown').map((i) => `${i.plate}:${i.detail}`);
+  eq(JSON.stringify(tu), JSON.stringify(['T-AH 2:T-AH 8']), 'nur wirklich unbekannter Anhänger:');
+  ok(!q.items.some((i) => i.plate === 'T-AH 9'), 'ruhender Anhänger selbst ohne Prüfpunkte');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

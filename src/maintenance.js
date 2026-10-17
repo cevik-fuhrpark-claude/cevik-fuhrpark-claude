@@ -109,6 +109,8 @@ export function kmForecastDate(remaining, rate, latestAt) {
 // km-Fälligkeit: belegter Wert (due_km) vor „km bei letzter Durchführung + Intervall km“; sonst keine
 export function ruleDueKm(rule) {
   if (!rule) return null;
+  // HU/SP richten sich nur nach der Zeit (StVZO Anl. VIII) – auch ein altes km-Intervall ergibt keine km-Fälligkeit (vorher: Agent meldete „HU bei … km fällig“, 17.10.2026)
+  if (rule.kind === 'HU' || rule.kind === 'SP') return null;
   if (rule.due_km !== null && rule.due_km !== undefined) return rule.due_km;
   if (!rule.interval_km || rule.last_done_km === null || rule.last_done_km === undefined) return null;
   return rule.last_done_km + rule.interval_km;

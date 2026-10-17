@@ -7,6 +7,7 @@ import { forbidden, nowIso, berlinDate, berlinDateTime, berlinDaySql, normPlate,
 const ACC_CYR = [...new Set(['аварі', 'дтп'].flatMap(caseVariants))];
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
+import { spRequired } from './inspection_rules.js';
 
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
@@ -76,7 +77,8 @@ export async function dataQuality(env, user, envName, query = {}) {
   const staleDays = intParam(query.stale_days, 90, 7, 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
   const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates] = await Promise.all([
-    env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate FROM vehicles WHERE active=1 AND eval_excluded=0').all(),
+    // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
+    env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded FROM vehicles WHERE active=1').all(),
     // letzter km-Stand je Fahrzeug; dazu der späteste Rücksprung OHNE Begründung (Ablesung kleiner als die unmittelbar vorherige, z. B. aus
     // „Prüfung erledigt“ oder Import – die Akte verlangt sonst eine Begründung) mit Anzahl – eine Abfrage (Abfragebudget)
     env.DB.prepare(`WITH w AS (SELECT vehicle_id, km, measured_at, source, note, LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) AS prev_km FROM odometer_readings),
@@ -84,7 +86,7 @@ export async function dataQuality(env, user, envName, query = {}) {
         FROM w WHERE km < prev_km AND (note IS NULL OR trim(note) = ''))
       SELECT k.vehicle_id, k.last, u.km AS drop_km, u.prev_km AS drop_prev_km, u.measured_at AS drop_at, u.source AS drop_source, u.n AS drop_n
       FROM (SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id) k LEFT JOIN u ON u.vehicle_id = k.vehicle_id AND u.rn = 1`).all(),
-    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL
+    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL OR kind IN ('HU','SP')
       OR (interval_km IS NOT NULL AND last_done_km IS NULL AND due_km IS NULL AND kind NOT IN ('HU','SP'))`).all(),
     env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, u.display_name, u.active FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles v ON v.id=d.vehicle_id
       WHERE u.environment=? AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(envName, nowIso()).all(),
@@ -141,7 +143,10 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult]]) {
     if (res.results.length > DQ_MAX) { truncatedChecks.push(check); res.results = res.results.slice(0, DQ_MAX); }
   }
-  const vs = veh.results;
+  const vs = veh.results.filter((v) => !v.eval_excluded);
+  // Anhänger laut Stammliste auch unter ruhenden Fahrzeugen suchen (wie die Kopplung in der Fahrzeugakte) – vorher „Anhänger unbekannt“ (17.10.2026)
+  const byPlateAll = new Map();
+  for (const v of veh.results) { const k = normPlate(v.plate); byPlateAll.set(k, [...(byPlateAll.get(k) || []), v]); }
   const items = [];
   const add = (check, v, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: v && v.id || null, plate: v && v.plate || null, detail });
   const addA = (check, v, detail, detail_args) => items.push({ check, severity: CHECKS[check], vehicle_id: v && v.id || null, plate: v && v.plate || null, detail, detail_args });
@@ -155,7 +160,10 @@ export async function dataQuality(env, user, envName, query = {}) {
     const v = r.drop_at ? vs.find((x) => x.id === r.vehicle_id) : null;
     if (v) add('km_drop_unexplained', v, `${berlinDate(r.drop_at)}: ${r.drop_prev_km} → ${r.drop_km} km · ${r.drop_source}${r.drop_n > 1 ? ` · ${r.drop_n}×` : ''}`);
   }
-  const hasRule = new Set(rules.results.filter((r) => r.next_due_date).map((r) => `${r.vehicle_id}|${r.kind}`));
+  // gleiche Lückenregel wie die Prüftermin-Übersicht: HU/SP-Eintrag zählt auch ohne Datum (Frist ungeklärt bzw. erste SP künftig),
+  // nicht SP-pflichtige Fahrzeuge brauchen keine SP (vorher „SP fehlt“ bei Lkw bis 7,5 t, 17.10.2026)
+  const hasRule = new Set(rules.results.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP').map((r) => `${r.vehicle_id}|${r.kind}`));
+  for (const v of vs) if (spRequired(v) === false) hasRule.add(`${v.id}|SP`);
   const pulledBy = new Map();
   const siteLabel = siteLabels(vs);
   for (const v of vs) {
@@ -168,8 +176,9 @@ export async function dataQuality(env, user, envName, query = {}) {
       if (!km) add('no_km', v); else if (km < staleBefore) add('km_stale', v, berlinDate(km));
       if (v.trailer_plate) {
         const t = (byPlate.get(normPlate(v.trailer_plate)) || []).find((x) => x.kind === 'anhaenger');
-        if (!t) add('trailer_unknown', v, v.trailer_plate);
-        else {
+        const tAny = t || (byPlateAll.get(normPlate(v.trailer_plate)) || []).find((x) => x.kind === 'anhaenger');
+        if (!tAny) add('trailer_unknown', v, v.trailer_plate);
+        else if (t) {
           pulledBy.set(t.id, [...(pulledBy.get(t.id) || []), v.plate]);
           if (v.site && t.site && v.site.trim().toLowerCase() !== t.site.trim().toLowerCase()) add('coupled_site_mismatch', v, `${v.site} · ${t.plate}: ${t.site}`);
         }

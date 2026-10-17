@@ -51,7 +51,7 @@ Meldungstexte (`message`) sind immer Deutsch. Intern speichert der Agent zusätz
 
 Befundcodes: `CRITICAL_UNTRIAGED`, `TRIAGE_OVERDUE`, `TRIAGE_OPEN`, `WORKSHOP_ACK_MISSING`, `WORKSHOP_ACK_PENDING`,
 `NO_FLEET_RECIPIENT`, `NO_WORKSHOP_RECIPIENT`, `WAITING_PARTS`, `COST_APPROVAL_PENDING`, `INSPECTION_DEFECTS_NO_CASE`, `REINSPECTION_PENDING`, `INSPECTION_RESULT_MISSING` (hinweis, ohne Push: Pflichtprüfung ohne Ergebnis wie Datenqualität `inspection_no_result`), `QC_PENDING`, `SAFETY_OPEN_ITEMS`, `VEHICLE_LOCKED`,
-`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE`, `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN` (letzter Profil-Messwert je Position wie Fahrzeugakte/Reifen-Flotte – Sichtprüfung/Luftdruck ohne Profil verdrängt ihn nicht, Wechsel ohne Messung setzt zurück; nur aktive Fahrzeuge),  `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON`, `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`, `CONTRACT_ENDED`, `CONTRACT_ENDS_SOON`, `CONTRACT_NOTICE_DUE`, `CONTRACT_KM_OVER`, `CONTRACT_KM_FORECAST`, `CLAIM_OPEN_LONG`, `CASE_FOLLOWUP_DUE` (hinweis: selbst gesetzte Wiedervorlage erreicht), `CASE_STALE` (hinweis, nur mit Einstellung `case_stale_days`: bewerteter/übernommener/in Reparatur befindlicher Vorgang ohne Änderung seit so vielen Tagen; Text nennt das Datum der letzten Änderung)
+`RELEASED_WITH_OPEN_ITEMS`, `URGENT_NOT_DELIVERED`, `COSTS_UNVALUED`, `MAINTENANCE_DUE`, `MAINTENANCE_OVERDUE` (km-Fälligkeiten nie für HU/SP – zeitabhängig; neue HU/SP-Einträge mit km-Intervall werden abgewiesen),  `DOCUMENT_EXPIRES_SOON`, `DOCUMENT_EXPIRED`, `TIRE_BELOW_MINIMUM`, `TIRE_WARN` (letzter Profil-Messwert je Position wie Fahrzeugakte/Reifen-Flotte – Sichtprüfung/Luftdruck ohne Profil verdrängt ihn nicht, Wechsel ohne Messung setzt zurück; nur aktive Fahrzeuge),  `STOCK_BELOW_MIN`, `FINE_OVERDUE`, `FINE_DUE_SOON` (nur mit Einstellung `fine_warn_days`; leer/nicht gesetzt = keine Vorwarnung, 0 = am Fristtag),  `FINE_VEHICLE_UNKNOWN`, `FINE_DRIVER_OPEN`, `CONTRACT_ENDED`, `CONTRACT_ENDS_SOON`, `CONTRACT_NOTICE_DUE`, `CONTRACT_KM_OVER`, `CONTRACT_KM_FORECAST`, `CLAIM_OPEN_LONG`, `CASE_FOLLOWUP_DUE` (hinweis: selbst gesetzte Wiedervorlage erreicht), `CASE_STALE` (hinweis, nur mit Einstellung `case_stale_days`: bewerteter/übernommener/in Reparatur befindlicher Vorgang ohne Änderung seit so vielen Tagen; Text nennt das Datum der letzten Änderung)
 
 Weitere Befundcodes (Ergänzung 14.10.2026, vorher nur in der App sichtbar):
 `INSPECTION_UNCLEAR` (hinweis: HU/SP-Frist ungeklärt, Grundlage fehlt – siehe Fahrzeugakte), `STOCK_ORDER_OVERDUE` (hinweis, Werkstatt: Liefertermin einer Lagerbestellung laut Lieferant überschritten),
@@ -67,13 +67,13 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 |---|---|---|
 | `duplicate_plate` | `fehler` | Kennzeichen mehrfach vergeben |
 | `vin_similar` | `fehler` | FIN fast gleich wie bei einem anderen Fahrzeug (Tippfehler oder Doppelanlage?) |
-| `trailer_unknown` | `fehler` | Anhängerkennzeichen ohne Anhänger im Bestand |
+| `trailer_unknown` | `fehler` | Anhängerkennzeichen ohne Anhänger im Bestand (gesucht unter allen aktiven Fahrzeugen inkl. ruhender, wie die Kopplung der Fahrzeugakte) |
 | `trailer_multi` | `fehler` | Anhänger mehreren Lkw zugeordnet |
 | `assignment_inactive_user` | `fehler` | Zuordnung zu deaktiviertem Fahrer |
 | `missing_site` | `luecke` | Standort fehlt |
 | `no_km` | `luecke` | Noch kein Kilometerstand |
 | `km_stale` | `hinweis` | Kilometerstand veraltet (letzte Ablesung) |
-| `missing_inspection` | `luecke` | Pflichtprüfung ohne Termin |
+| `missing_inspection` | `luecke` | Pflichtprüfung ohne Termin – gleiche Regel wie die Lückenliste der Prüftermin-Übersicht: HU/SP-Eintrag zählt auch ohne Datum, nicht SP-pflichtige Fahrzeuge (zGM) brauchen keine SP |
 | `km_inspection_rejected` | `hinweis` | Kontrolle mit km-Stand kleiner als in der Akte (nicht übernommen) |
 | `km_drop_unexplained` | `hinweis` | km-Stand kleiner als der unmittelbar vorherige, **ohne Begründung** gespeichert (z. B. „Prüfung erledigt“ mit Tippfehler, Import); Detail: Datum, vorher → nachher, Quelle, Anzahl. Folge: km-Fälligkeiten „ungeklärt“ (siehe Prüfungen nach km) |
 | `missing_manufacturer` | `hinweis` | Hersteller fehlt |

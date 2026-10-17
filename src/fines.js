@@ -258,8 +258,9 @@ export function finesIcs(rows, warnDays, icsCalendar, site = null, lang = 'de') 
 }
 
 export async function fineFindings(env, environment, settings = null) {
-  const warnRow = settings ? { value: settings.get('fine_warn_days') ?? null } : await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
-  const warnDays = warnRow && warnRow.value !== '' ? Number(warnRow.value) : null;
+  // leer/nicht gesetzt = keine Vorwarnung (wie Kalender); vorher wurde ein fehlender Schlüssel über die Agenten-Einstellungen zu 0 → „Frist läuft ab (in 0 Tagen)“ (17.10.2026)
+  const raw = settings ? settings.get('fine_warn_days') : (await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first())?.value;
+  const warnDays = raw === undefined || raw === null || raw === '' || !Number.isFinite(Number(raw)) ? null : Number(raw);
   const rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
   const today = berlinDate();
   const out = [];

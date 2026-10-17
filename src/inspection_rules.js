@@ -26,6 +26,14 @@ export function zgmClassFromKg(kind, kg) {
   return k <= 3500 ? 'bis_3_5' : k <= 7500 ? '3_5_7_5' : k <= 12000 ? '7_5_12' : 'ueber_12';
 }
 
+// SP-Pflicht nach zGM-Klasse (gleiche Grenze wie computeHuSp): true/false, null = Klasse unbekannt
+export function spRequired(vehicle) {
+  const kind = vehicle.kind === 'anhaenger' ? 'anhaenger' : 'lkw';
+  const cls = vehicle.zgm_class || zgmClassFromKg(kind, vehicle.zgm_kg);
+  if (!cls) return null;
+  return (kind === 'lkw' && (cls === '7_5_12' || cls === 'ueber_12')) || (kind === 'anhaenger' && cls === 'ueber_10');
+}
+
 // ---- Kalendermonate ----
 const ym = (d) => [Number(d.slice(0, 4)), Number(d.slice(5, 7))];
 export function monthEnd(y, m) { // m 1..12, beliebig überlaufend
@@ -96,7 +104,7 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
     note(sp, 'sp_no_class', 'Zulässige Gesamtmasse fehlt – SP-Pflicht nicht bestimmbar.');
     return { hu, sp, rule_version: RULE_VERSION };
   }
-  const spRequiredClass = (kind === 'lkw' && (cls === '7_5_12' || cls === 'ueber_12')) || (kind === 'anhaenger' && cls === 'ueber_10');
+  const spRequiredClass = spRequired({ kind, zgm_class: cls });
   if (!spRequiredClass) {
     sp.status = 'nicht_sp_pflichtig'; sp.sp_required = false;
     if (kind === 'lkw') note(sp, 'sp_not_req_lkw', 'Lkw bis 7,5 t zGM: keine Sicherheitsprüfung.');
