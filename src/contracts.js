@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -212,12 +212,15 @@ export async function contractOverview(env, user, query = {}) {
   let list = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind)).map((c) => ({ ...c, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
   for (const c of list) { if (c.ended_on) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
+  // laufend = nicht beendet und heute innerhalb der Laufzeit, unabhängig vom Listenfilter (17.10.2026: abgelaufene Verträge und der Filter
+  // „Handlungsbedarf“ verfälschten die Summe gegenüber dem Kostenbericht)
+  const running = list.filter((c) => !c.ended_on && (!c.end_date || c.end_date >= today) && (!c.start_date || c.start_date <= today));
   if (filter === 'aktiv') list = list.filter((c) => !c.ended_on);
   else if (filter === 'aktion') list = list.filter((c) => !c.ended_on && c.status.overall !== 'ok');
   else if (filter === 'beendet') list = list.filter((c) => c.ended_on);
   list.sort((a, b) => ORDER[a.status.overall] - ORDER[b.status.overall] || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')) || a.plate.localeCompare(b.plate));
   // Summe der Monatsraten nur über aktive Verträge mit hinterlegter Rate (fehlende Rate = unbewertet, nie 0 €)
-  const active = list.filter((c) => !c.ended_on);
+  const active = running;
   const rated = active.filter((c) => c.monthly_rate_net !== null);
   return { today, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
 }
@@ -324,9 +327,10 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     }
     return -1;
   };
+  // Beginn auch „Laufzeitbeginn“/„Leasingbeginn“ (wurde still ignoriert, 17.10.2026)
   const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin', 'fin ']), kind: col(['vertragsart', 'art', 'typ']),
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'nummer', 'nr']),
-    start: col(['vertragsbeginn', 'beginn', 'start']), end: col(['vertragsende', 'ende', 'laufzeitende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
+    start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'beginn', 'start']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'ende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
     allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung']), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
     rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'monatsrate', 'rate'], ['brutto', 'anzahl']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
   const fallbackEv = str(source, { max: 300, field: 'Quelle' });
@@ -336,12 +340,13 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
 
   const [vehRes, exRes] = await Promise.all([
-    env.DB.prepare('SELECT id, vin, plate FROM vehicles').all(),
+    env.DB.prepare('SELECT id, vin, plate, active, eval_excluded FROM vehicles').all(),
     env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date FROM vehicle_contracts').all(),
   ]);
   const vehicles = vehRes.results;
   const byVin = new Map(vehicles.map((v) => [normVin(v.vin), v]));
-  const byPlate = new Map(); for (const v of vehicles) { const k = normPlate(v.plate); byPlate.set(k, byPlate.has(k) ? 'mehrdeutig' : v); }
+  // Kennzeichen doppelt (ruhendes/außer Betrieb genommenes Doppel): das bewertete aktive Fahrzeug wie bei den anderen Importen (17.10.2026)
+  const byPlate = { get: (raw) => { const r = pickVehicleByPlate(vehicles, raw); return r.vehicle || (r.ambiguous ? 'mehrdeutig' : undefined); } };
   const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${no.toLowerCase()}` : `${vid}|${kind}|${String(partner || '').toLowerCase()}|${start || ''}`);
   const existing = new Set(exRes.results.map((c) => keyOf(c.vehicle_id, c.kind, c.contract_no, c.partner, c.start_date)));
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
@@ -350,7 +355,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     const line = cells.line || idx + 2;
     const skip = (reason) => skipped.push({ line, reason });
     const vin = normVin(get(cells, ci.vin));
-    const v = vin ? byVin.get(vin) : get(cells, ci.plate) ? byPlate.get(normPlate(get(cells, ci.plate))) : undefined;
+    const v = vin ? byVin.get(vin) : get(cells, ci.plate) ? byPlate.get(get(cells, ci.plate)) : undefined;
     if (v === 'mehrdeutig') return skip(`Kennzeichen nicht eindeutig: ${get(cells, ci.plate)}`);
     if (!v) return skip(`Fahrzeug nicht gefunden: ${get(cells, ci.vin) || get(cells, ci.plate) || '–'}`);
     const kind = contractKindOf(get(cells, ci.kind));
@@ -374,7 +379,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status: existing.has(key) ? 'vorhanden' : 'neu' });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
-  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows: rows.slice(0, 300), skipped: skipped.slice(0, 300) };
+  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows, skipped }; // höchstens 500 Zeilen – vorher still auf 300 gekürzt (17.10.2026)
   if (dryRun || !fresh.length) return result;
   const now = nowIso();
   const items = fresh.map((r) => ({ id: uuid(), v: r.vehicle_id, kind: r.kind, partner: r.partner, no: r.contract_no, sd: r.start_date, ed: r.end_date, nm: r.notice_months, ka: r.km_allowance, sk: r.start_km, rate: r.monthly_rate_net, ev: r.evidence, note: r.note }));

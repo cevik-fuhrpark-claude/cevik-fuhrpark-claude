@@ -8,6 +8,7 @@ import { listVehicles } from './vehicles.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { dataQuality, CHECKS } from './quality.js';
 import { telematicsOverview } from './telematics.js';
+import { renderFindingMessage } from '../public/finding-messages.js';
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
 // und INTEGRATION_TOKEN_READ (nur lesen, z. B. für Auswertungen). Ergebnis: 'write' oder 'read'.
@@ -58,6 +59,12 @@ function redactText(text, name) {
   }
   return t;
 }
+// Zündung: nur eindeutige Werte – Text „false“/„0“ galt vorher als „an“ (17.10.2026); Unbekanntes = nicht geliefert
+function ignOf(v) {
+  if (v === true || v === 1) return 1; if (v === false || v === 0) return 0;
+  if (typeof v === 'string') { const x = v.trim().toLowerCase(); if (['true', '1', 'an', 'on', 'ein'].includes(x)) return 1; if (['false', '0', 'aus', 'off'].includes(x)) return 0; }
+  return null;
+}
 function argName(args) {
   let a = args;
   if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
@@ -65,16 +72,24 @@ function argName(args) {
 }
 // `message_args` (Vorlagenwerte für die Oberflächensprache, public/finding-messages.js) bleibt in der App – die Schnittstelle liefert
 // den deutschen Text `message` wie bisher (Datensparsamkeit: keine zusätzlichen Einzelwerte, Schwärzung greift nur auf `message`).
+// Wiedervorlage-Vermerk (Freitext der Leitung) bleibt in der App – wie /v1/cases (Backlog 76, 17.10.2026: ging über Befunde/Master-Eingang hinaus)
+function withoutFollowupNote(code, message, args) {
+  if (code !== 'CASE_FOLLOWUP_DUE') return message;
+  let a = args; if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
+  return a && a.a && a.a.note ? renderFindingMessage(a.k || code, { ...a.a, note: null }, 'de') : message;
+}
 function redactFinding(row, names) {
   const { message_args, ...f } = row;
+  f.message = withoutFollowupNote(f.finding_code, f.message, message_args);
   if (!PERSON_FINDINGS.includes(f.finding_code)) return f;
   const n = [names.get(f.id), argName(message_args)];
   return { ...f, message: redactText(f.message, n), next_action: redactText(f.next_action, n), person_redacted: true };
 }
 function redactInbox(row, names) {
   const { message_args, ...payload } = row.payload || {};
+  const code = payload && payload.finding_code;
+  if (row.payload) payload.message = withoutFollowupNote(code, payload.message, (row.payload || {}).message_args);
   const m = row.payload ? { ...row, payload } : row;
-  const code = m.payload && m.payload.finding_code;
   if (!PERSON_FINDINGS.includes(code)) return m;
   const n = [names.get(m.finding_id), argName((row.payload || {}).message_args)];
   return { ...m, decision_note: redactText(m.decision_note, n), payload: { ...m.payload, message: redactText(m.payload.message, n), next_action: redactText(m.payload.next_action, n) }, person_redacted: true };
@@ -259,7 +274,7 @@ export async function integrationRouter(request, env, ctx, url) {
       if (gps) lastGps.set(vehicleId, gps);
       const km = numOf(it.km) !== null && numOf(it.km) >= 0 && numOf(it.km) <= 5000000 ? numOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
-        speed: numOf(it.speed), ign: it.ignition === undefined || it.ignition === null ? null : (it.ignition ? 1 : 0) });
+        speed: numOf(it.speed), ign: ignOf(it.ignition) });
       if (km !== null && gps) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)

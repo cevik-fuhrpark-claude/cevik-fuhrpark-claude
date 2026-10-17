@@ -8621,7 +8621,11 @@ await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nic
   try {
     db.exec('BEGIN');
     // 120 alte offene + 150 neuere entschiedene → früher LIMIT 100 über beide: Zähler höchstens 100, Rest der offenen fehlte
-    for (let i = 0; i < 120; i++) ins.run(...cols.map((c) => (c === 'event_id' ? 'mix-o' + i : c === 'received_at' ? iso(i) : c === 'decision_status' ? 'offen' : c === 'decided_at' || c === 'decided_by' ? null : src[c])));
+    // je offenem Eintrag ein eigener offener Befund (seit 17.10.2026 zählt je Befund nur eine offene Entscheidung)
+    const fsrc = db.prepare('SELECT * FROM agent_findings WHERE id=?').get(src.finding_id); const fcols = Object.keys(fsrc);
+    const fins = db.prepare(`INSERT INTO agent_findings(${fcols.join(',')}) VALUES (${fcols.map(() => '?').join(',')})`);
+    for (let i = 0; i < 120; i++) fins.run(...fcols.map((c) => (c === 'id' ? 'mix-f' + i : c === 'fingerprint' ? 'mix-fp' + i : c === 'subject_key' ? 'mix-s' + i : fsrc[c])));
+    for (let i = 0; i < 120; i++) ins.run(...cols.map((c) => (c === 'event_id' ? 'mix-o' + i : c === 'finding_id' ? 'mix-f' + i : c === 'received_at' ? iso(i) : c === 'decision_status' ? 'offen' : c === 'decided_at' || c === 'decided_by' ? null : src[c])));
     for (let i = 0; i < 150; i++) ins.run(...cols.map((c) => (c === 'event_id' ? 'mix-d' + i : c === 'received_at' ? iso(1000 + i) : c === 'decision_status' ? 'erledigt' : src[c])));
     db.exec('COMMIT');
     const p = (await users.fleet.get('/api/master')).data;
@@ -8630,7 +8634,7 @@ await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nic
     const done = p.inbox.filter((m) => !['offen', 'gesehen'].includes(m.decision_status));
     ok(done.length <= 100, `entschiedene höchstens 100 (${done.length})`);
     ok(p.inbox.findIndex((m) => !['offen', 'gesehen'].includes(m.decision_status)) >= p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status)).length, 'offene zuerst');
-  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM master_inbox WHERE event_id LIKE 'mix-%'`).run(); }
+  } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM master_inbox WHERE event_id LIKE 'mix-%'`).run(); db.prepare(`DELETE FROM agent_findings WHERE id LIKE 'mix-f%'`).run(); }
 });
 
 await test('Netz wieder da nach Offline-Start: Seite nur ohne Eingaben neu aufbauen (Eingaben im Funkloch bleiben erhalten)', async () => {
@@ -11211,6 +11215,71 @@ await test('Fehlersuche 17.10. (8): Schalter-Filter nur bei 1, Ruhezeit aus → 
   eq(dd.open_items[0].created_by_name, null, 'kein Werkstattname'); eq(dd.open_items[0].created_by_name_role, 'workshop');
   ok((await F.get(`/api/cases/${rid}`)).data.open_items[0].created_by_name, 'Leitung sieht Namen');
   ok(!JSON.stringify(dd).includes('WS DO'), 'Name der Werkstatt nirgends');
+});
+await test('Fehlersuche 17.10. (9): Vertragsimport (bewertetes Fahrzeug, Laufzeitbeginn, ohne Kürzung), Ratensumme laufend, Wiedervorlage-Vermerk nicht in der Schnittstelle, Zündung als Text, Zuordnung aufheben entfernt Gerätestand, Auslesungen-Import parallel, Übernahmefrist ab Freigabe, Master-Entscheidung je Befund einmal', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db; const today = BERLIN_TODAY;
+  const anonW = new Client(worker, e, 'anon9'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const csvP = (path, text, c = F) => c.req('POST', path, text, { 'content-type': 'text/csv' });
+  // 1. Vertragsimport: ruhendes Doppel desselben Kennzeichens → bewertetes Fahrzeug; „Laufzeitbeginn“ erkannt; > 300 Zeilen ohne Kürzung
+  eq((await U.own.post('/api/vehicles', { plate: 'SZ-YC 5513', vin: 'WDB96340310997001' })).status, 201);
+  db.prepare(`UPDATE vehicles SET eval_excluded=1 WHERE vin='WDB96340310997001'`).run();
+  const c1 = await csvP('/api/contracts/import?dry_run=1', 'Kennzeichen;Vertragsart;Vertragspartner;Laufzeitbeginn;Laufzeitende;Nachweis\nSZ-YC 5513;Leasing;L-Bank;01.01.2026;31.12.2028;Vertrag 1\n');
+  eq(c1.status, 200); eq(c1.data.counts.neu, 1, JSON.stringify(c1.data.skipped)); eq(c1.data.rows[0].vehicle_id, V1); eq(c1.data.rows[0].start_date, '2026-01-01');
+  const big = 'Kennzeichen;Vertragsart;Vertragspartner;Nachweis\n' + Array.from({ length: 400 }, (_, i) => `XX-NO ${i};Leasing;P;N`).join('\n');
+  const c2 = await csvP('/api/contracts/import?dry_run=1', big); eq(c2.data.skipped.length, 400, 'alle übersprungenen Zeilen');
+  // 2. Ratensumme „laufend“: abgelaufener (nicht beendeter) Vertrag zählt nicht, unabhängig vom Filter
+  const past = new Date(Date.parse(today + 'T00:00:00Z') - 40 * 86400000).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'M', evidence: 'x', end_date: past, monthly_rate_net: 500 })).status, 201);
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'L', evidence: 'y', monthly_rate_net: 800 })).status, 201);
+  for (const f of ['aktiv', 'aktion', 'alle']) eq((await F.get('/api/contracts?filter=' + f)).data.monthly_rate_sum_net, 800, f);
+  // 3. Wiedervorlage-Vermerk bleibt in der App (Befunde/Master-Eingang der Schnittstelle ohne Vermerk)
+  const fid = await newCase();
+  eq((await cmd(F, fid, 'set_followup', { followup_on: today }, 'Fahrer Müller krank, Anwalt einschalten')).status, 200);
+  eq((await F.post('/api/agent/run')).status, 200);
+  const app = (await F.get('/api/master')).data; ok(JSON.stringify(app).includes('Anwalt einschalten'), 'App zeigt Vermerk');
+  for (const pth of ['/v1/findings', '/v1/master']) { const r = await anonW.req('GET', `/api/integration${pth}?environment=test`, undefined, H); eq(r.status, 200, pth); ok(!JSON.stringify(r.data).includes('Anwalt'), pth + ' ohne Vermerk'); ok(JSON.stringify(r.data).includes('CASE_FOLLOWUP_DUE'), pth + ' mit Befund'); }
+  // 4. Zündung als Text; 5. Zuordnung aufheben entfernt den Gerätestand am falschen Fahrzeug
+  const V2 = 'VIN:WDB9630051L917317';
+  eq((await F.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-9', vehicle_id: V1, evidence: 'falsch' })).status, 201);
+  let gi = 0; const g0 = Date.now() - 60000; const tel = async (ign) => anonW.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-9', gps_time: new Date(g0 + (gi++) * 1000).toISOString(), lat: 51.5, lon: 7.4, km: 1000, ignition: ign }] }, H);
+  for (const [v, x] of [['false', 0], ['0', 0], ['an', 1], ['vielleicht', null]]) { eq((await tel(v)).status, 200); eq(db.prepare(`SELECT ignition FROM telematics_latest WHERE external_id='WF-9'`).get().ignition, x, 'Zündung ' + v); await new Promise((r) => setTimeout(r, 3)); }
+  eq((await F.req('DELETE', '/api/telematics/mappings?provider=webfleet&external_id=WF-9')).status, 200);
+  eq(db.prepare(`SELECT COUNT(*) n FROM telematics_latest WHERE external_id='WF-9'`).get().n, 0, 'Gerätestand entfernt');
+  eq((await F.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-9', vehicle_id: V2, evidence: 'richtig' })).status, 201);
+  // 6. Auslesungen-Import doppelt gleichzeitig: zusammen genau die neuen Zeilen
+  { const w = await freshWorld(); for (const p of ['P-1', 'P-2']) eq((await w.U.fleet.post('/api/drivers', { display_name: 'D ' + p, personnel_no: p })).status, 201);
+    const d1 = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+    const t = `Art;Personalnummer;Datum;Datei\nFahrerkarte;P-1;${d1};a.ddd\nFahrerkarte;P-2;${d1};b.ddd`; addRandomLatency(w.e);
+    const r = await Promise.all([1, 2].map(() => w.U.fleet.req('POST', '/api/tacho/import', t, { 'content-type': 'text/csv' })));
+    eq(r.map((x) => x.status).join(','), '200,200'); eq(r[0].data.counts.neu + r[1].data.counts.neu, 2, 'zusammen 2 neu');
+    eq(w.e.DB.db.prepare('SELECT COUNT(*) n FROM tacho_downloads').get().n, 2); }
+  // 7. Übernahmefrist der Werkstatt ab Freigabe: Kommentar startet sie nicht neu
+  { const w = await freshWorld(); w.e.DB.db.prepare(`INSERT OR REPLACE INTO settings(key,value,updated_at) VALUES ('sla_test_ack_niedrig_min','60',?)`).run(new Date().toISOString());
+    const id = await w.newCase(); eq((await w.cmd(w.U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+    const ago = new Date(Date.now() - 3 * 3600000).toISOString();
+    w.e.DB.db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND to_status='werkstatt_freigegeben'`).run(ago, id); w.e.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(ago, id);
+    eq((await w.cmd(w.U.fleet, id, 'comment', {}, 'Bitte heute noch')).status, 200);
+    eq((await w.U.fleet.post('/api/agent/run')).status, 200);
+    const codes = w.e.DB.db.prepare(`SELECT finding_code FROM agent_findings WHERE case_id=? AND status='offen'`).all(id).map((x) => x.finding_code);
+    ok(codes.includes('WORKSHOP_ACK_MISSING') && !codes.includes('WORKSHOP_ACK_PENDING'), JSON.stringify(codes)); }
+  // 9. Datenqualität: km-Stand unter „km bei Übernahme“; Kontroll-km größer als später erfasster Stand
+  { const w = await freshWorld(); const G = w.U.fleet;
+    eq((await G.post(`/api/vehicles/${w.V1}/contracts`, { kind: 'leasing', partner: 'LB', evidence: 'v', km_allowance: 300000, start_km: 250000 })).status, 201);
+    eq((await G.post(`/api/vehicles/${w.V1}/odometer`, { km: 240000 })).status < 300, true);
+    const V2W = 'VIN:WDB9630051L917317';
+    eq((await G.post(`/api/vehicles/${V2W}/odometer`, { km: 100200 })).status < 300, true);
+    const items = (await w.U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+    const ins = await w.U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V2W, request_key: rk(), items, odometer_km: 150500, performed_at: new Date(Date.now() - 3600000).toISOString() });
+    eq(ins.status, 201, JSON.stringify(ins.data)); ok(ins.data.km_rejected, 'km abgewiesen');
+    const dq = (await G.get('/api/admin/data-quality')).data.items;
+    ok(dq.some((i) => i.check === 'contract_km_below_start' && i.vehicle_id === w.V1), 'km unter Übernahme');
+    ok(dq.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === V2W && / > 100200 km$/.test(i.detail)), JSON.stringify(dq.filter((i) => i.check === 'km_inspection_rejected'))); }
+  // 8. Master-Eingang: zweiter offener Eintrag zum selben Befund zählt nicht doppelt
+  { const before = (await F.get('/api/master')).data; const src = db.prepare(`SELECT m.* FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE m.environment='test' AND f.status='offen' AND m.decision_status='offen' LIMIT 1`).get();
+    ok(src, 'Vorlage'); const cols = Object.keys(src);
+    db.prepare(`INSERT INTO master_inbox(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map((c) => (c === 'event_id' ? 'dup-ev-1' : c === 'received_at' ? new Date().toISOString() : src[c])));
+    const after = (await F.get('/api/master')).data; eq(after.decisions_open, before.decisions_open, 'je Befund eine');
+    ok(after.inbox.find((m) => m.event_id === src.event_id).superseded, 'ältere als abgelöst markiert'); }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

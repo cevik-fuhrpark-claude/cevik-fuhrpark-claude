@@ -241,7 +241,14 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO tacho_downloads(id,environment,kind,driver_id,vehicle_id,downloaded_on,evidence,note,created_by,created_at)
       SELECT ${J('id')}, ?1, ${J('kind')}, ${J('d')}, ${J('v')}, ${J('on')}, ${J('ev')}, 'Import', ?2, ?3 FROM json_each(?4)`).bind(envName, user.id, now, JSON.stringify(items.slice(i, i + 1000))));
   }
-  await env.DB.batch(stmts);
+  const res = await env.DB.batch(stmts);
+  // tatsächlich geschrieben (gleichzeitiger zweiter Import meldete sonst ebenfalls „neu“, 17.10.2026) – Rest gilt als „vorhanden“
+  const written = res.reduce((n, r) => n + ((r && r.meta && r.meta.changes) || 0), 0);
+  if (written < result.counts.neu) {
+    const missed = result.counts.neu - written; result.counts.neu = written; result.counts.vorhanden += missed; result.concurrent = missed;
+    const have = new Set((await env.DB.prepare(`SELECT kind, COALESCE(driver_id, vehicle_id) AS t, downloaded_on FROM tacho_downloads WHERE environment=? AND created_at=? AND created_by=?`).bind(envName, now, user.id).all()).results.map((x) => `${x.t}|${x.downloaded_on}`));
+    for (const r of fresh) if (!have.has(`${r.target_id}|${r.downloaded_on}`)) r.status = 'vorhanden';
+  }
   await audit(env, user.id, 'tacho.import', null, { ...result.counts, environment: envName });
   return result;
 }

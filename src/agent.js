@@ -147,7 +147,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         next_action: 'Fuhrparkleitung als Benutzer anlegen und Einladung annehmen lassen.' });
     }
 
-    const open = (await env.DB.prepare(`SELECT c.*, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
+    // status_since: Eintritt in den aktuellen Status (Werkstattfreigabe/-umleitung, Teilewarten) – Kommentar/Wiedervorlage ändern updated_at
+    // und starteten die Übernahmefrist sonst neu (17.10.2026); in derselben Abfrage (Abfragebudget)
+    const open = (await env.DB.prepare(`SELECT c.*, v.plate, COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status
+        AND (e.from_status IS NOT e.to_status OR e.action='reassign_workshop')), c.updated_at) AS status_since FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).all()).results;
 
     const sitesWithUsers = new Set(activeUsers.filter((u) => u.role === 'workshop').map((r) => r.workshop_site));
@@ -195,7 +198,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       }
       if (c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at) {
         const sla = slaMinutes(settings, environment, 'ack', c.priority);
-        const age = ageMin(c.updated_at);
+        const age = ageMin(c.status_since);
         const noUser = c.workshop_site && !sitesWithUsers.has(c.workshop_site);
         if (noUser) {
           add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
@@ -203,16 +206,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
             next_action: 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
         } else if (c.priority === 'kritisch' || (sla !== null && age > sla)) {
           add({ code: 'WORKSHOP_ACK_MISSING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: c.priority === 'kritisch' ? 1 : 0,
-            ...fm('WORKSHOP_ACK_MISSING', { label, at: berlinDateTime(c.updated_at), site: c.workshop_site }),
+            ...fm('WORKSHOP_ACK_MISSING', { label, at: berlinDateTime(c.status_since), site: c.workshop_site }),
             next_action: 'Werkstatt direkt kontaktieren oder Auftrag umleiten.' });
         } else {
           add({ code: 'WORKSHOP_ACK_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'workshop',
-            ...fm(sla === null ? 'WORKSHOP_ACK_PENDING_NOSLA' : 'WORKSHOP_ACK_PENDING', { label, site: c.workshop_site, at: berlinDateTime(c.updated_at) }), next_action: 'Auftrag übernehmen.' });
+            ...fm(sla === null ? 'WORKSHOP_ACK_PENDING_NOSLA' : 'WORKSHOP_ACK_PENDING', { label, site: c.workshop_site, at: berlinDateTime(c.status_since) }), next_action: 'Auftrag übernehmen.' });
         }
       }
       if (c.status === 'wartet_teile') {
         add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',
-          ...fm('WAITING_PARTS', { label, at: berlinDateTime(c.updated_at) }), next_action: 'Teilelieferung klären, Dispo informieren.' });
+          ...fm('WAITING_PARTS', { label, at: berlinDateTime(c.status_since) }), next_action: 'Teilelieferung klären, Dispo informieren.' });
       }
       // Kostenfreigabe ausstehend (Grenze überschritten): Zustand, keine Frist – ohne Beträge im Text
       if (c.cost_over_limit_at) {
@@ -546,7 +549,11 @@ export async function masterPanel(env, environment) {
     WHERE c.environment=? AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).first()).n;
   const inWorkshop = (await env.DB.prepare(`SELECT COUNT(DISTINCT c.vehicle_id) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 AND v.eval_excluded=0
     WHERE c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).first()).n;
-  const decisionsOpen = inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen').length;
+  // je Befund eine offene Entscheidung: wiederkehrender Befund (neue Übergabe) zählte den alten, nie entschiedenen Eintrag mit (17.10.2026);
+  // ältere Einträge desselben Befunds sind als `superseded` markiert (neuester steht zuerst)
+  const openIds = new Set();
+  for (const m of inbox) if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && m.finding_id) { if (openIds.has(m.finding_id)) m.superseded = true; else openIds.add(m.finding_id); }
+  const decisionsOpen = openIds.size + inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && !m.finding_id).length;
   return {
     environment, generated_at: nowIso(), vehicles_total: vehicles, vehicles_locked: lockedVehicles, vehicles_in_workshop: inWorkshop,
     status_counts: counts, decisions_open: decisionsOpen,

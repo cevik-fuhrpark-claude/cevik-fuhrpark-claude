@@ -937,16 +937,16 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
 // KI-gestützte Fehleranalyse (Cloudflare Workers AI). Ergebnis ist ein Vorschlag, keine Diagnose/Freigabe.
 export async function aiAnalysis(env, user, envName, vehicleId) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
-  if (!env.AI) return { available: false, message: 'KI-Analyse ist in dieser Umgebung nicht aktiviert.' };
+  if (!env.AI) return { available: false, code: 'ai_disabled', message: 'KI-Analyse ist in dieser Umgebung nicht aktiviert.' }; // code: Text in der Oberflächensprache (17.10.2026)
   const d = await vehicleDetail(env, user, envName, vehicleId);
   const history = d.cases.slice(0, 30).map((c) => `${berlinDate(c.created_at)} [${c.priority}/${c.status}] ${caseDescText(c.description, 'de').slice(0, 300)}`).join('\n');
-  if (!history) return { available: true, suggestion: null, message: 'Keine Vorgänge zu diesem Fahrzeug.' };
+  if (!history) return { available: true, suggestion: null, code: 'ai_no_cases', message: 'Keine Vorgänge zu diesem Fahrzeug.' };
   const prompt = `Du unterstützt eine Lkw-Werkstatt (Autotransporter). Analysiere die Schadenshistorie des Fahrzeugs ${d.vehicle.plate} (${d.vehicle.manufacturer || 'Hersteller unbekannt'}, Baujahr ${d.vehicle.build_year || 'unbekannt'}).
 Nenne: 1) wiederkehrende Muster, 2) mögliche gemeinsame Ursachen, 3) konkrete Prüfempfehlungen für die nächste Inspektion.
-Erfinde keine Daten, Fristen oder Kosten. Kennzeichne Unsicherheit. Antworte knapp auf Deutsch in Stichpunkten.
+Erfinde keine Daten, Fristen oder Kosten. Kennzeichne Unsicherheit. Antworte knapp ${({ uk: 'auf Ukrainisch', en: 'auf Englisch' })[user.language] || 'auf Deutsch'} in Stichpunkten.
 Historie:\n${history}`;
   const res = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', { messages: [{ role: 'user', content: prompt }], max_tokens: 600 });
-  return { available: true, suggestion: res.response || null, disclaimer: 'KI-Vorschlag – keine technische Diagnose und keine Freigabe. Bitte fachlich prüfen.' };
+  return { available: true, suggestion: res.response || null, disclaimer: 'KI-Vorschlag – keine technische Diagnose und keine Freigabe. Bitte fachlich prüfen.', disclaimer_code: 'ai_disclaimer' };
 }
 
 // Dokumentablage je Fahrzeug: PDF/JPG/PNG/WEBP bis 5 MB, max. 30 je Fahrzeug und Umgebung, Dubletten (SHA-256) werden erkannt

@@ -93,7 +93,12 @@ export async function removeMapping(env, user, query) {
   if (!canManage(user)) throw forbidden();
   const provider = oneOf(String(query.provider || '').toLowerCase(), PROVIDERS, 'Anbieter');
   const ext = str(query.external_id, { required: true, max: 80, field: 'Geräte-ID' });
-  const r = await env.DB.prepare('DELETE FROM telematics_mappings WHERE provider=? AND external_id=?').bind(provider, ext).run();
+  // Gerätestand aus der aufgehobenen (falschen) Zuordnung mit entfernen – blieb sonst als Position/km beim falschen Fahrzeug stehen und zählte
+  // doppelt in der Übersicht (17.10.2026); km-Ablesungen bleiben als Beleg in der Akte
+  const [r] = await env.DB.batch([
+    env.DB.prepare('DELETE FROM telematics_mappings WHERE provider=? AND external_id=?').bind(provider, ext),
+    env.DB.prepare(`DELETE FROM telematics_latest WHERE provider=? AND external_id=? AND match_basis='confirmed_mapping' AND NOT EXISTS (SELECT 1 FROM telematics_mappings WHERE provider=? AND external_id=?)`).bind(provider, ext, provider, ext),
+  ]);
   if (!r.meta.changes) throw notFound('Zuordnung nicht gefunden.');
   await audit(env, user.id, 'telematics.unmap', null, { provider, external_id: ext });
   return { ok: true };

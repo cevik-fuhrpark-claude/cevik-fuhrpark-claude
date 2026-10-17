@@ -21,7 +21,7 @@ export function dqDetailText(i, t, fmtD) {
   if (i.check === 'km_stale') return fmtD(i.detail);
   if (i.check === 'telematics_vehicle_inactive') return i.detail.replace('außer Betrieb seit', t('inactive_since'));
   if (!a) return i.detail.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d));
-  if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}`;
+  if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}${a.start_km !== undefined ? ` · ${a.km} km < ${a.start_km} km` : ''}`;
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
   if (a.result) return `${a.kind} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
   return i.detail;

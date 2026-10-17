@@ -23,7 +23,9 @@ export const CHECKS = {
   // Fahrerakte & Auslesungen
   driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
   // Fahrzeugverträge
-  contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke', leasing_doc_no_contract: 'hinweis', contract_no_document: 'hinweis',
+  contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke',
+  // letzter km-Stand unter „km bei Übernahme“ (Tippfehler im Vertrag oder Zähler) – Kontingent wird sonst nie überwacht (17.10.2026)
+  contract_km_below_start: 'fehler', leasing_doc_no_contract: 'hinweis', contract_no_document: 'hinweis',
   // Versicherungsfälle
   accident_no_claim: 'hinweis',
   // Prüfergebnis mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, aber kein Vorgang zum Fahrzeug seit der Prüfung
@@ -99,15 +101,20 @@ export async function dataQuality(env, user, envName, query = {}) {
       FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=1`).bind(envName).all(),
     env.DB.prepare(`SELECT u.id, u.display_name FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id)`).bind(envName).all(),
     env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL`).bind(envName).all(),
-    // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung
+    // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung;
+    // seit 17.10.2026 auch größer als ein später erfasster Stand (nachgereichte Offline-Kontrolle), sofern nicht übernommen
     env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,
-      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km
-      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?) WHERE prev_km IS NOT NULL AND odometer_km < prev_km ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore).all(),
+      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
+      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at > i.created_at ORDER BY o.measured_at ASC LIMIT 1) AS next_km,
+      EXISTS (SELECT 1 FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.km=i.odometer_km AND o.source LIKE 'kontrolle:%') AS taken
+      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?)
+      WHERE (prev_km IS NOT NULL AND odometer_km < prev_km) OR (next_km IS NOT NULL AND odometer_km > next_km AND NOT taken) ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore).all(),
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
-    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.km_allowance, c.start_date, c.file_id, v.plate, v.active,
-      (SELECT MAX(o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id) AS last_km_at
+    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.km_allowance, c.start_date, c.start_km, c.file_id, v.plate, v.active,
+      (SELECT MAX(o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id) AS last_km_at,
+      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.created_at DESC LIMIT 1) AS last_km
       FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND v.eval_excluded=0`).all(),
     // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
     env.DB.prepare(`SELECT DISTINCT f.vehicle_id FROM files f WHERE f.environment=? AND f.case_id IS NULL AND f.doc_kind='leasing'
@@ -201,7 +208,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!trucks.length && !pulledByResting.has(v.id)) add('trailer_without_truck', v);
   }
   const vById = new Map(vs.map((v) => [v.id, v]));
-  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km`); }
+  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, k.prev_km !== null && k.odometer_km < k.prev_km ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`); }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
   const withVu = new Set(vu.results.map((r) => r.vehicle_id));
   for (const v of vs) if (v.kind === 'lkw' && !withVu.has(v.id)) add('vu_no_download', v);
@@ -212,6 +219,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     const ca = { contract_kind: c.kind, partner: c.partner };
     if (!c.active) addA('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
     else if (c.km_allowance && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) addA('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
+    else if (c.km_allowance && c.start_km !== null && c.last_km !== null && c.last_km < c.start_km) addA('contract_km_below_start', v, `${CK_DE[c.kind]} · ${c.partner} · ${c.last_km} km < ${c.start_km} km`, { ...ca, km: c.last_km, start_km: c.start_km });
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
     if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) addA('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
   }

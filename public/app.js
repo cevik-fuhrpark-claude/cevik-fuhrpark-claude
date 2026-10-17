@@ -888,21 +888,26 @@ async function flushOutbox() {
   if (!S.me || flushing) return;
   const list = outboxGet().filter((x) => !x.failed); if (!list.length) return;
   flushing = true;
-  const done = new Set(); const failedNow = new Map(); let kept = 0;
+  const done = new Set(); const failedNow = new Map(); const photoPending = new Map(); let kept = 0;
   try {
     for (const item of list) {
       try {
+        // Meldung/Kontrolle schon angekommen, nur die Fotos fehlen noch (Netz brach beim Hochladen ab): nur Fotos nachreichen
+        let r = item.photo_target ? { id: item.photo_target, followups: [{ id: item.photo_target }], case_no: item.case_no } : null;
         // Abfahrtskontrolle mit dem Zeitpunkt der Durchführung (nicht des Sendens) – km-Stand wird zeitlich richtig eingeordnet
         const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at } : item.body;
-        const r = await api('POST', item.path || '/api/cases', sendBody);
-        done.add(item.body.request_key);
+        if (!r) r = await api('POST', item.path || '/api/cases', sendBody);
         let failed = 0;
         if (item.photos) {
           const ph = await photosGet(item.body.request_key).catch(() => null);
           const target = photoTarget(item, r);
-          if (ph && ph.length) failed = target ? await uploadCasePhotos(target, ph) : ph.length;
+          // Netzabbruch beim Foto-Upload: Eintrag behalten und Fotos später nachreichen (vorher gingen sie verloren, 17.10.2026);
+          // der Server erkennt bereits hochgeladene Fotos am Inhalt (keine Dubletten)
+          try { if (ph && ph.length) failed = target ? await uploadCasePhotos(target, ph) : ph.length; }
+          catch (err) { if (err.offline) { photoPending.set(item.body.request_key, { target, case_no: r.case_no }); kept++; continue; } throw err; }
           await photosDel(item.body.request_key).catch(() => {});
         }
+        done.add(item.body.request_key);
         toast(item.path === '/api/inspections' ? `${t('check_saved')}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed || !!r.km_rejected);
       }
       catch (err) {
@@ -914,7 +919,8 @@ async function flushOutbox() {
       }
     }
   } finally {
-    try { outboxSet(outboxGet().filter((x) => !done.has(x.body.request_key)).map((x) => (failedNow.has(x.body.request_key) ? { ...x, failed: failedNow.get(x.body.request_key) } : x))); } catch {}
+    try { outboxSet(outboxGet().filter((x) => !done.has(x.body.request_key)).map((x) => (failedNow.has(x.body.request_key) ? { ...x, failed: failedNow.get(x.body.request_key) }
+      : photoPending.has(x.body.request_key) ? { ...x, photo_target: photoPending.get(x.body.request_key).target || null, case_no: photoPending.get(x.body.request_key).case_no || null } : x))); } catch {}
     flushing = false;
   }
   if (failedNow.size || done.size) refreshOutbox();
@@ -1136,7 +1142,7 @@ async function viewCase(id) {
     if (Object.keys(sum).length > 1 || closed) html += `<h2>${esc(t('time_per_status'))}</h2><dl class="kv">${Object.entries(sum).map(([st, ms]) => `<dt>${esc(t('st_' + st))}${!closed && st === cur ? ` (${esc(t('current'))})` : ''}</dt><dd>${dur(ms)}</dd>`).join('')}</dl>`;
   }
   // Verlauf + Kommentar
-  html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap">${esc(e.note)}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t('cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : e.payload && e.payload.from && e.payload.to ? `<div class="small muted">${esc(e.payload.from)} → ${esc(e.payload.to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
+  html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap">${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t('cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : e.payload && e.payload.from && e.payload.to ? `<div class="small muted">${esc(e.payload.from)} → ${esc(e.payload.to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
   if (A.includes('comment')) html += `<form id="cf"><label for="ct">${esc(t('act_comment'))}</label><textarea id="ct" required></textarea>${S.me.role !== 'driver' ? `<fieldset style="border:0;padding:0;margin:8px 0"><legend class="small muted">${esc(t('notify_only'))}</legend><div style="display:flex;gap:14px;flex-wrap:wrap">${[['fleet', t('role_fleet')], ['workshop', t('role_workshop')], ['reporter', t('reported_by')]].map(([k, l]) => `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-nt="${k}"> ${esc(l)}</label>`).join('')}</div></fieldset>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>`;
   render(html, 'cases');
   $('#cprt').onclick = () => window.print();
@@ -1413,7 +1419,7 @@ async function viewDepartureCheck(preId) {
         if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/inspections', body, stored);
         const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
-        render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
+        render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}${files.length && !hasDefect ? `<p class="small">${esc(t('check_photos_skipped'))}</p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
         return;
       }
       toast(err.message, true);
@@ -1717,7 +1723,8 @@ async function viewVehicle(id, focusEv = null) {
     const ml = d.mileage; const last = ml.months.find((x) => x.to_km !== undefined);
     html += `<section class="panel" id="vmile"><h3>${esc(t('vm_title').replace('{n}', ml.max_months))}</h3><dl class="kv">${last ? `<dt>${esc(t('vm_last'))}</dt><dd>${esc(fmtNum(last.to_km))} km <span class="muted">· ${fmtD(last.to_at)}</span></dd>` : ''}${ml.months.filter((x) => x.status !== 'no_reading').map((x) => `<dt>${esc(fmtMonth(x.month))}</dt><dd data-vm="${esc(x.status)}">${x.status === 'ok' ? `${esc(fmtNum(x.km))} km${x.spans ? ` <span class="muted">· ${esc(t('vm_since').replace('{d}', fmtD(x.from_at)))}</span>` : ''}` : x.status === 'decrease' ? `<span class="muted">${esc(t('vm_decrease'))}</span>` : `<span class="muted">${esc(t('vm_first'))}: ${esc(fmtNum(x.to_km))} km</span>`}</dd>`).join('')}${ml.total_km !== null ? `<dt><b>${esc(t('vm_total'))}</b></dt><dd><b>${esc(fmtNum(ml.total_km))} km</b></dd>` : ''}</dl><p class="small muted">${esc(t('vm_rule'))}</p></section>`;
   }
-  html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${bDate()}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
+  // km erfassen nur mit Recht (Lesezugriff bekam 403, 17.10.2026)
+  if (S.me.role !== 'viewer') html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${bDate()}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (canMaint) html += `<section class="panel noprint"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
   render(html, isMgr() ? 'master' : 'vehicles');
   if ($('#vnotes')) loadVehicleNotes(v.id);
@@ -1782,7 +1789,7 @@ async function viewVehicle(id, focusEv = null) {
   $$('[data-end]').forEach((b) => (b.onclick = async () => { if (!confirm(t('end_assign_confirm').replace('{name}', b.dataset.name).replace('{plate}', d.vehicle.plate))) return; try { await api('DELETE', '/api/assignments/' + b.dataset.end); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   const aib = $('#aib'); if (aib) aib.onclick = async () => {
     aib.disabled = true; $('#ai').innerHTML = `<p class="muted">${esc(t('loading'))}</p>`;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/ai`); $('#ai').innerHTML = r.suggestion ? `<p style="white-space:pre-wrap">${esc(r.suggestion)}</p><p class="small muted">${esc(r.disclaimer)}</p>` : `<p class="muted">${esc(r.message || '–')}</p>`; }
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/ai`); $('#ai').innerHTML = r.suggestion ? `<p style="white-space:pre-wrap">${esc(r.suggestion)}</p><p class="small muted">${esc(r.disclaimer_code ? t(r.disclaimer_code) : r.disclaimer)}</p>` : `<p class="muted">${esc(r.code ? t(r.code) : r.message || '–')}</p>`; }
     catch (err) { $('#ai').innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
     aib.disabled = false;
   };
@@ -1880,7 +1887,7 @@ async function renderTires(id, el) {
   el.innerHTML = `<section class="panel"><h3>${esc(t('tire_sizes'))}</h3>${d.specs.length ? d.specs.map((s) => `<div class="specrow"><div><span class="muted">${esc(t('axle_' + s.axle))}</span> <b>${esc(s.size)}</b></div><div>${s.verified ? `<span class="chip ok">${esc(t('verified'))}</span>` : `<span class="chip mittel">${esc(t('source_unverified'))}</span>`}${canWrite && !s.verified ? ` <button class="btn secondary small" data-ver="${esc(s.axle)}" data-size="${esc(s.size)}">${esc(t('mark_verified'))}</button>` : ''}</div></div>`).join('') : '<p class="muted">–</p>'}</section>
     ${d.winter && d.winter.status !== 'nicht_pflichtig' ? `<section class="panel" id="twinter"><h3>${esc(t('winter_title'))} <span class="chip ${wCls[d.winter.status]}">${esc(t('ws_' + d.winter.status))}</span></h3>${d.winter.noncompliant.length ? `<p><b>${esc(t('winter_bad').replace('{p}', d.winter.noncompliant.join(', ')))}</b></p>` : ''}${d.winter.missing.length ? `<p>${esc(t('winter_missing').replace('{p}', d.winter.missing.join(', ')))}</p>` : ''}<p class="small muted">${esc(t('winter_rule'))}</p>${winterOrderHtml(d)}</section>` : ''}
     <section class="panel"><h3>${esc(t('positions'))}</h3>${d.positions.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('position'))}</th><th>${esc(t('tread'))}</th><th></th></tr></thead><tbody>${d.positions.map((p) => `<tr><td><b>${esc(p.position)}</b><div class="small muted">${esc(t('te_' + p.last_event))} · ${fmtD(p.last_event_at)}</div>${p.dot ? `<div class="small${p.age_warn ? '' : ' muted'}">DOT ${esc(p.dot)} · ${esc(t('tire_age'))} ${esc(tireAge(p.age_months))}${p.age_warn ? ` <span class="chip mittel">${esc(tn('tire_age_warn', d.warn_age_years))}</span>` : ''}</div>` : ''}</td><td>${p.tread_mm === null ? '–' : esc(fmtNum(p.tread_mm))}</td><td><span class="chip ${stCls[p.status]}">${esc(t('ts_' + p.status))}</span>${p.winter_mark ? `<div style="margin-top:4px"><span class="chip ${p.winter_mark === '3pmsf' ? 'ok' : 'kritisch'}" style="white-space:normal" title="${esc(t('winter_mark'))}">❄ ${esc(t('wm_' + p.winter_mark))}</span></div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}
-    <details><summary>${esc(t('record_tire'))}</summary><form id="tf">
+    ${canWrite || S.me.role === 'driver' ? `<details><summary>${esc(t('record_tire'))}</summary><form id="tf">
       <label>${esc(t('kind'))}</label><select name="event_type">${S.meta.tire_events.filter((e) => canWrite || ['messung', 'sichtpruefung'].includes(e)).map((e) => `<option value="${e}">${esc(t('te_' + e))}</option>`).join('')}</select>
       <label>${esc(t('position'))}</label><select name="position">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<option>${esc(p)}</option>`).join('')}</select>
       <details id="tfmore"><summary class="small">${esc(t('tire_more_pos'))}</summary><p class="small muted">${esc(t('tire_more_pos_hint'))}</p><div class="tfpos">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<label class="check"><input type="checkbox" name="positions" value="${esc(p)}"> ${esc(p)}</label>`).join('')}</div></details>
@@ -1888,11 +1895,11 @@ async function renderTires(id, el) {
       <label>${esc(t('tire_sizes'))}</label><input name="size" placeholder="315/70 R22.5"><label>${esc(t('brand'))}</label><input name="brand"><label>${esc(t('dot'))}</label><input name="dot" inputmode="numeric">
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
       <label>${esc(t('km'))}</label><input name="odometer_km" inputmode="numeric"><label>${esc(t('note'))}</label><input name="note">
-      <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details></section>
+      <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
     ${d.history.length ? `<details class="panel"><summary>${esc(t('history'))} (${d.history.length}${d.history_truncated ? '+' : ''})</summary>${d.history_truncated ? `<p class="small muted" id="tiretrunc">${esc(t('tire_hist_truncated').replace('{n}', d.history.length))} <a href="${tlHash(id, 'tire')}">${esc(t('timeline'))}</a></p>` : ''}<table>${d.history.map((h) => `<tr><td class="small">${fmtDT(h.created_at)}</td><td>${esc(h.position)}</td><td>${esc(t('te_' + h.event_type))}${h.tread_mm !== null ? ' · ' + esc(fmtNum(h.tread_mm)) + ' mm' : ''}${h.pressure_bar !== null ? ' · ' + esc(fmtNum(h.pressure_bar)) + ' bar' : ''}${h.size ? ' · ' + esc(h.size) : ''}${h.brand ? ' · ' + esc(h.brand) : ''}${h.winter_mark ? ' · ' + esc(t('wm_' + h.winter_mark)) : ''}${h.note ? '<br><span class="small muted">' + esc(h.note) + '</span>' : ''}</td><td class="small">${esc(pnm(h.recorded_by_name, h.recorded_by_name_hidden))}</td></tr>`).join('')}</table></details>` : ''}`;
   stackTables(el);
   const tf = $('#tf', el);
-  tf.onsubmit = async (e) => {
+  if (tf) tf.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(tf); const b = Object.fromEntries(fd);
     for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
@@ -2349,6 +2356,18 @@ async function viewDriver(id) {
     if (d.updated_at) b.expected_updated_at = d.updated_at; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
 }
 
+// Vom Server erzeugte Verlaufsvermerke (Kontrolle, erneut festgestellt) in der Oberflächensprache (17.10.2026: blieben deutsch);
+// Freitext unverändert. Muster wie in src/cases.js (createInspection).
+function evNote(e) {
+  const n = String(e.note || '');
+  if (e.action === 'repeat_finding') return n.replace(/^Erneut festgestellt \(Abfahrtskontrolle\): /, '');
+  if (e.action !== 'inspection') return n;
+  const m = n.match(/^(?:(\d+) Mangel\/Mängel festgestellt|Kontrolle ohne Mängel)(?: · km-Stand (\d+) (?:größer als später erfasst \((\d+)\)|kleiner als zuletzt erfasst \((\d+)\)) – nicht in die Fahrzeugakte übernommen)?$/);
+  if (!m) return n;
+  const head = m[1] ? tn('ev_defects', Number(m[1])) : t('ev_no_defects');
+  const km = m[2] ? ' · ' + (m[3] ? t('ev_km_greater').replace('{km}', fmtNum(Number(m[2]))).replace('{next}', fmtNum(Number(m[3]))) : t('ev_km_smaller').replace('{km}', fmtNum(Number(m[2]))).replace('{prev}', fmtNum(Number(m[4])))) : '';
+  return head + km;
+}
 // Gewährleistung an Teil/Fremdleistung: „Gewährleistung bis …“ (abgelaufen gedämpft)
 function warrChip(d) { return d ? ` <span class="chip${d >= bDate() ? ' ok' : ''}">${esc(t('warranty_until_d').replace('{d}', fmtD(d)))}</span>` : ''; }
 // Kurzinfo zum Fahrzeug im Vorgang: weitere offene Vorgänge, bald fällige Prüfungen, letzter km-Stand (nur gespeicherte Daten)
@@ -2621,7 +2640,7 @@ async function pushPanel(el) {
     } catch (err) { toast(err.message, true); }
   };
   const pt = $('#pt', el);
-  if (pt) pt.onclick = async () => { pt.disabled = true; try { const r = await api('POST', '/api/push/test'); toast(`Push: ${r.push_status}${r.error ? ' – ' + r.error : ''}`, r.push_status !== 'accepted'); } catch (err) { toast(err.message, true); } finally { pt.disabled = false; } };
+  if (pt) pt.onclick = async () => { pt.disabled = true; try { const r = await api('POST', '/api/push/test'); toast(`Push: ${t('pst_' + r.push_status) === 'pst_' + r.push_status ? r.push_status : t('pst_' + r.push_status)}${r.error ? ' – ' + r.error : ''}`, r.push_status !== 'accepted'); } catch (err) { toast(err.message, true); } finally { pt.disabled = false; } };
 }
 const deviceLabel = () => (/Android/.test(navigator.userAgent) ? 'Android' : /iPhone/.test(navigator.userAgent) ? 'iPhone' : /iPad/.test(navigator.userAgent) ? 'iPad' : /Windows/.test(navigator.userAgent) ? 'Windows-PC' : /Mac/.test(navigator.userAgent) ? 'Mac' : t('device'));
 
