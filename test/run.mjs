@@ -9757,6 +9757,62 @@ await test('Auslesungen-Import: Zeitstempel mit Zeitzone ergibt den Berliner Kal
   eq(plain.data.rows.map((x) => x.downloaded_on).join(','), utcDay, 'ohne Zone: Datumsteil:');
 });
 
+await test('Anmeldung: parallele Fehlversuche (Passwort, Zwei-Faktor-Code) zählen atomar – Sperre und Grenze je Anmeldevorgang greifen', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const auth = await import('../src/auth.js'); const totp = await import('../src/totp.js'); const { hashPassword } = await import('../src/util.js');
+  const e = makeEnv(); await ensureSchema(e); const now = new Date().toISOString(); const { hash, salt } = await hashPassword('Geheimnis42xy');
+  e.DB.db.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,password_hash,password_salt,created_at,updated_at) VALUES ('u1','fahrer1','F','driver','test',1,?,?,?,?)`).run(hash, salt, now, now);
+  const req = (ip) => new Request('https://x/api/login', { headers: { 'cf-connecting-ip': ip, 'user-agent': 'x' } });
+  await Promise.allSettled(Array.from({ length: 12 }, (_, i) => auth.login(e, req('9.9.9.' + i), { username: 'fahrer1', password: 'falsch' + i })));
+  const la = e.DB.db.prepare('SELECT * FROM login_attempts').get();
+  ok(la && la.locked_until > now, 'Konto gesperrt nach 12 parallelen Fehlversuchen: ' + JSON.stringify(la));
+  let st = await auth.login(e, req('2.2.2.2'), { username: 'fahrer1', password: 'Geheimnis42xy' }).then(() => 200, (x) => x.status);
+  eq(st, 429, 'richtiges Passwort während der Sperre:');
+  // Zwei-Faktor: 20 Codes gleichzeitig auf einen Anmeldevorgang → höchstens 5 geprüft, Rest „abgelaufen“; IP-Fenster zählt mit
+  e.DB.db.exec('DELETE FROM login_attempts; DELETE FROM rate_limits');
+  e.DB.db.prepare(`UPDATE users SET totp_secret=?, totp_enabled_at=? WHERE id='u1'`).run(totp.newSecret(), now);
+  const c = await auth.login(e, req('3.3.3.3'), { username: 'fahrer1', password: 'Geheimnis42xy' });
+  const r = await Promise.allSettled(Array.from({ length: 20 }, (_, i) => auth.loginSecondFactor(e, req('3.3.3.3'), { challenge: c.challenge, code: String(100000 + i) })));
+  const codes = r.map((x) => (x.status === 'fulfilled' ? 'ok' : x.reason.code));
+  ok(codes.filter((x) => x === 'totp_invalid').length <= 4 && !codes.includes('ok'), 'höchstens 5 Prüfungen je Anmeldevorgang: ' + codes.join(','));
+  ok((e.DB.db.prepare('SELECT count FROM rate_limits').get() || {}).count >= 1, 'falsche Codes zählen im IP-Fenster');
+  // IP-Fenster voll → zweiter Faktor ebenfalls gesperrt
+  e.DB.db.exec('DELETE FROM login_attempts'); e.DB.db.exec(`UPDATE rate_limits SET count=${auth.IP_FAIL_LIMIT.max}`);
+  st = await auth.loginSecondFactor(e, req('3.3.3.3'), { challenge: 'x', code: '123456' }).then(() => 200, (x) => x.status);
+  eq(st, 429, 'IP-Grenze beim Code:');
+});
+
+await test('Benutzer: Einladung eines deaktivierten Kontos nicht einlösbar; Werkstatt beim Bearbeiten geprüft', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const auth = await import('../src/auth.js');
+  const e = makeEnv(); await ensureSchema(e); const now = new Date().toISOString();
+  e.DB.db.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,created_at,updated_at) VALUES ('f1','flotte1','Flo','fleet','test',1,?,?)`).run(now, now);
+  e.DB.db.prepare(`INSERT INTO workshops(code,name,active) VALUES ('W1','W1',1)`).run();
+  const fleet = { id: 'f1', role: 'fleet', environment: 'test' }; const req = new Request('https://x/', { headers: { 'cf-connecting-ip': '1.1.1.1', 'user-agent': 'x' } });
+  const u = await auth.createUser(e, fleet, { role: 'driver', username: 'neu1', display_name: 'Neu Eins' });
+  await auth.updateUser(e, fleet, u.id, { active: false });
+  const acc = await auth.acceptInvite(e, req, { token: u.invite_token, password: 'Zitronenbaum7Q' }).then(() => 'ok', (x) => x.code);
+  eq(acc, 'invite_invalid', 'deaktiviert:'); eq(e.DB.db.prepare('SELECT password_hash FROM users WHERE id=?').get(u.id).password_hash, null, 'kein Passwort gesetzt:');
+  const d = await auth.createUser(e, fleet, { role: 'driver', username: 'fahrer2', display_name: 'Fahrer Zwei' });
+  for (const site of ['GIBTSNICHT', { a: 1 }]) eq(await auth.updateUser(e, fleet, d.id, { role: 'workshop', workshop_site: site }).then(() => 'ok', (x) => x.status), 400, `Werkstatt ${JSON.stringify(site)}:`);
+  eq(await auth.updateUser(e, fleet, d.id, { role: 'workshop', workshop_site: 'W1' }).then(() => 'ok', (x) => x.message), 'ok');
+  eq(await auth.updateUser(e, fleet, d.id, { display_name: 'Fahrer 2' }).then(() => 'ok', (x) => x.message), 'ok', 'unveränderte Werkstatt:');
+});
+
+await test('Sitzungen: nach Leerlauf abgemeldete zählen nicht als aktiv und werden aufgeräumt; „lange nicht angemeldet“ berücksichtigt Nutzung', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const auth = await import('../src/auth.js'); const { sha256Hex } = await import('../src/util.js'); const { isUnusedUser } = await import('../public/csv.js');
+  const e = makeEnv(); await ensureSchema(e); const now = new Date().toISOString(), hourAgo = new Date(Date.now() - 3600e3).toISOString(), exp = new Date(Date.now() + 20 * 864e5).toISOString();
+  e.DB.db.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,password_hash,created_at,updated_at) VALUES ('w1','ws','W','workshop','test',1,'x',?,?),('d1','dr','D','driver','test',1,'x',?,?)`).run(now, now, now, now);
+  e.DB.db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('idle_logout_workshop_min','15','x')`).run();
+  for (const [t, uid] of [['tok', 'w1'], ['tok2', 'd1']]) e.DB.db.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at,last_seen) VALUES (?,?,?,?,?)`).run(await sha256Hex(t), uid, hourAgo, exp, hourAgo);
+  const byId = async () => Object.fromEntries((await auth.listUsers(e, { role: 'owner' })).map((x) => [x.id, x.sessions]));
+  let s = await byId(); eq(s.w1, 0, 'Werkstatt nach 60 min Leerlauf (Grenze 15):'); eq(s.d1, 1, 'Fahrer ohne Leerlaufgrenze:');
+  eq((await auth.listOwnSessions(e, { id: 'w1', role: 'workshop', _session: '' })).length, 0, 'Meine Geräte:');
+  await auth.cleanupShortLived(e);
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM sessions WHERE user_id='w1'`).get().n, 0, 'aufgeräumt:'); eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM sessions WHERE user_id='d1'`).get().n, 1);
+  const old = new Date(Date.now() - 40 * 864e5).toISOString();
+  eq(isUnusedUser({ has_password: 1, active: 1, created_at: old, last_login: old, last_seen: now }, 14), false, 'täglich genutzt:');
+  eq(isUnusedUser({ has_password: 1, active: 1, created_at: old, last_login: old, last_seen: null }, 14), true, 'nicht genutzt:');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

@@ -102,11 +102,8 @@ export async function login(env, request, body, ctx = null) {
     await hashPassword(password); // gleiche Laufzeit, keine Benutzer-Enumeration
   }
   if (!ok) {
-    const locked = await recordFailure(env, username, att);
-    const ipc = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
-      ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
-      RETURNING count`).bind(ik, win).first();
-    if (ipc && ipc.count === IP_FAIL_LIMIT.max) await audit(env, null, 'login.ip_limited', null, { failures: ipc.count, minutes: IP_FAIL_LIMIT.windowSec / 60 });
+    const locked = await recordFailure(env, username);
+    await recordIpFailure(env, ik, win);
     if (locked) {
       if (user) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id).run();
       await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
@@ -126,24 +123,48 @@ export async function login(env, request, body, ctx = null) {
 }
 
 // Fehlversuch zählen (Passwort oder Code); ab LOCK_AFTER Sperre für LOCK_MINUTES. Liefert den Sperrzeitpunkt oder null.
-async function recordFailure(env, username, att) {
-  const failures = (att?.failures || 0) + 1;
-  const locked = failures >= LOCK_AFTER ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null;
-  await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?,?,?,?)
-    ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, updated_at=excluded.updated_at`)
-    .bind(username, locked ? 0 : failures, locked, nowIso()).run();
-  return locked;
+// Atomar in der Datenbank gezählt (17.10.2026): vorher Lesen → +1 → Schreiben; parallele Fehlversuche (lange Passwort-Prüfung)
+// lasen alle denselben Stand – 30 gleichzeitige falsche Passwörter ergaben 1 Fehlversuch, keine Sperre. Eine gesetzte Sperre
+// wird nie mit NULL überschrieben.
+async function recordFailure(env, username) {
+  const now = nowIso();
+  const r = await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?1,1,NULL,?2)
+    ON CONFLICT(key) DO UPDATE SET failures=login_attempts.failures+1, updated_at=?2 RETURNING failures`).bind(username, now).first();
+  if (!r || r.failures < LOCK_AFTER) return null;
+  const locked = new Date(Date.now() + LOCK_MINUTES * 60000).toISOString();
+  const u = await env.DB.prepare('UPDATE login_attempts SET locked_until=?1, failures=0, updated_at=?2 WHERE key=?3 AND failures>=?4')
+    .bind(locked, now, username, LOCK_AFTER).run();
+  return u.meta && u.meta.changes ? locked : null;
+}
+// IP-Fehlversuchsfenster (gilt für Passwort und Zwei-Faktor-Code)
+async function ipFailWindow(env, request) {
+  const ik = await ipKey(request);
+  const win = Math.floor(Date.now() / 1000 / IP_FAIL_LIMIT.windowSec) * IP_FAIL_LIMIT.windowSec;
+  return { ik, win };
+}
+async function ipLimited(env, ik, win) {
+  const ipRow = await env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(ik, win).first();
+  return !!(ipRow && ipRow.count >= IP_FAIL_LIMIT.max);
+}
+async function recordIpFailure(env, ik, win) {
+  const ipc = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
+    ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
+    RETURNING count`).bind(ik, win).first();
+  if (ipc && ipc.count === IP_FAIL_LIMIT.max) await audit(env, null, 'login.ip_limited', null, { failures: ipc.count, minutes: IP_FAIL_LIMIT.windowSec / 60 });
 }
 
 // Zweiter Schritt der Anmeldung: Code aus der Authenticator-App oder ein Ersatzcode
 export async function loginSecondFactor(env, request, body, ctx = null) {
+  // IP-Begrenzung wie bei der Passwort-Anmeldung (fehlte beim Code – 17.10.2026)
+  const { ik, win } = await ipFailWindow(env, request);
+  if (await ipLimited(env, ik, win)) throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
   let res;
   try { res = await redeemChallenge(env, body); }
   catch (e) {
-    // falscher Code: zählt zur Fehlversuch-Sperre des Kontos (Anmeldevorgang verrät den Benutzer nur serverseitig)
+    // falscher Code: zählt zur Fehlversuch-Sperre des Kontos (Anmeldevorgang verrät den Benutzer nur serverseitig) und zum IP-Fenster
     if (e instanceof HttpError && e.userRow) {
-      const att = await env.DB.prepare('SELECT * FROM login_attempts WHERE key = ?').bind(e.userRow.username).first();
-      const locked = await recordFailure(env, e.userRow.username, att);
+      await recordIpFailure(env, ik, win);
+      const locked = await recordFailure(env, e.userRow.username);
       if (locked) {
         await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(e.userRow.id).run();
         await audit(env, null, 'login.locked', e.userRow.id, { username: e.userRow.username, minutes: LOCK_MINUTES, by: 'totp' });
@@ -217,9 +238,10 @@ export async function createInvite(env, userId, createdBy) {
 export async function inviteInfo(env, token) {
   const h = await sha256Hex(String(token || ''));
   const row = await env.DB.prepare(
-    'SELECT i.*, u.username, u.display_name, u.role, u.environment FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?'
+    'SELECT i.*, u.username, u.display_name, u.role, u.environment, u.active FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?'
   ).bind(h).first();
-  if (!row || row.used_at || row.expires_at < nowIso()) throw new HttpError(410, 'invite_invalid', 'Einladung ungültig oder abgelaufen.');
+  // deaktiviertes Konto: Einladung nicht einlösbar (vorher Passwort gesetzt + „Letzte Anmeldung“ trotz Deaktivierung)
+  if (!row || row.used_at || row.expires_at < nowIso() || !row.active) throw new HttpError(410, 'invite_invalid', 'Einladung ungültig oder abgelaufen.');
   return { row, hash: h };
 }
 
@@ -295,10 +317,17 @@ async function noteLoginDevice(env, ctx, userRow, request, deviceId) {
   await audit(env, userRow.id, 'login.new_device', userRow.id, { device: label, device_id: h ? 'neu' : 'fehlt' });
   return true;
 }
+// Sitzung lebt (gleiche Regel wie getSessionUser): nicht abgelaufen und – bei eingestellter Leerlauf-Abmeldung je Rolle,
+// mindestens 5 Minuten – zuletzt innerhalb dieser Zeit genutzt. s = sessions, u = users, now = Platzhalter für die aktuelle Zeit (ISO).
+// Vorher zählten Benutzerliste/„Meine Geräte“ nach Leerlauf abgemeldete Sitzungen bis zu 30 Tage als aktiv (17.10.2026).
+export function sessionAliveSql(now) {
+  return `(s.expires_at > ${now} AND NOT EXISTS (SELECT 1 FROM settings st WHERE st.key = CASE WHEN u.role='workshop' THEN 'idle_logout_workshop_min' ELSE 'idle_logout_other_min' END
+    AND CAST(st.value AS REAL) > 0 AND s.last_seen < strftime('%Y-%m-%dT%H:%M:%fZ', ${now}, '-' || (MAX(CAST(st.value AS REAL), 5) * 60) || ' seconds')))`;
+}
 const SID_LEN = 16; // Kurzkennung = Anfang des Token-Hashes (aus ihr lässt sich kein Token ableiten)
 export async function listOwnSessions(env, user) {
-  const rows = (await env.DB.prepare('SELECT token_hash, created_at, last_seen, expires_at, user_agent FROM sessions WHERE user_id=? AND expires_at > ? ORDER BY last_seen DESC')
-    .bind(user.id, nowIso()).all()).results;
+  const rows = (await env.DB.prepare(`SELECT s.token_hash, s.created_at, s.last_seen, s.expires_at, s.user_agent FROM sessions s JOIN users u ON u.id=s.user_id
+    WHERE s.user_id=?1 AND ${sessionAliveSql('?2')} ORDER BY s.last_seen DESC`).bind(user.id, nowIso()).all()).results;
   return rows.map((r) => ({ id: r.token_hash.slice(0, SID_LEN), device: deviceFromUa(r.user_agent || ''), created_at: r.created_at, last_seen: r.last_seen,
     expires_at: r.expires_at, current: r.token_hash === user._session }));
 }
@@ -386,8 +415,11 @@ export async function updateUser(env, actor, userId, body) {
   const environment = body.environment ? oneOf(body.environment, ENVS, 'Umgebung') : target.environment;
   const active = body.active === undefined ? target.active : (body.active ? 1 : 0);
   const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
-  const site = role === 'workshop' ? (body.workshop_site ?? target.workshop_site) : null;
+  const site = role === 'workshop' ? (body.workshop_site !== undefined && body.workshop_site !== null ? str(body.workshop_site, { max: 20, field: 'Werkstatt' }) : target.workshop_site) : null;
   if (role === 'workshop' && !site) throw bad('validation', 'Werkstatt ist für Rolle Werkstatt erforderlich.');
+  // neue/geänderte Werkstatt wie beim Anlegen prüfen (vorher beliebiger Code gespeichert → Werkstattkonto sah keine Aufträge)
+  if (role === 'workshop' && (site !== target.workshop_site || target.role !== 'workshop')
+    && !(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
   const now = nowIso();
   const stmts = [env.DB.prepare('UPDATE users SET role=?, environment=?, active=?, display_name=?, workshop_site=?, updated_at=? WHERE id=?')
     .bind(role, environment, active, display, site, now, userId)];
@@ -419,7 +451,7 @@ export async function listUsers(env, actor) {
   const kdSince = new Date(Date.now() - KNOWN_DEVICE_DAYS * 86400000).toISOString();
   const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password, (u.totp_enabled_at IS NOT NULL) AS has_totp,
     CASE WHEN la.locked_until > ?1 THEN la.locked_until END AS locked_until,
-    (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS sessions, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id=u.id AND s.expires_at > ?1) AS last_seen,
+    (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND ${sessionAliveSql('?1')}) AS sessions, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id=u.id) AS last_seen,
     (SELECT COUNT(*) FROM push_subscriptions p WHERE p.user_id=u.id AND p.revoked_at IS NULL) AS push_devices,
     (SELECT COUNT(*) FROM known_devices k WHERE k.user_id=u.id AND k.last_seen >= ?3) AS known_devices,
     (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=u.id AND a.action IN ('login', 'invite.accept')) AS last_login,
@@ -632,6 +664,8 @@ export async function cleanupShortLived(env) {
   const dayAgo = new Date(Date.now() - 86400000).toISOString();
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
+    // nach Leerlauf abgemeldete Sitzungen (sonst erst nach 30 Tagen weg)
+    env.DB.prepare(`DELETE FROM sessions WHERE token_hash IN (SELECT s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE NOT ${sessionAliveSql('?1')})`).bind(now),
     env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(Math.floor(Date.now() / 1000) - 2 * 86400),
     env.DB.prepare('DELETE FROM login_attempts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until < ?)').bind(dayAgo, now),
     env.DB.prepare('DELETE FROM login_challenges WHERE expires_at < ?').bind(now),

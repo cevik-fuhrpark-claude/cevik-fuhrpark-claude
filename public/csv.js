@@ -48,11 +48,13 @@ export function sortUsers(us, mode) {
 }
 
 // „Lange nicht angemeldet“ (Einstellung user_unused_days, leer/0 = aus → nie): nur aktive Konten mit Passwort; Bezug = letzte
-// protokollierte Anmeldung, ohne protokollierte Anmeldung der Anlagezeitpunkt (frisch angelegte Konten zählen nicht sofort).
+// protokollierte Anmeldung oder letzte Nutzung einer Sitzung (last_seen; Sitzungen laufen 30 Tage – wer täglich arbeitet, gibt
+// das Passwort selten ein, 17.10.2026), ohne beides der Anlagezeitpunkt (frisch angelegte Konten zählen nicht sofort).
 export function isUnusedUser(u, days, nowMs = Date.now()) {
   const d = Math.floor(Number(days));
   if (!(d > 0) || !u.has_password || !u.active) return false;
-  const ref = Date.parse(u.last_login || u.created_at || '');
+  const last = [u.last_login, u.last_seen].filter(Boolean).sort().pop();
+  const ref = Date.parse(last || u.created_at || '');
   return Number.isFinite(ref) && ref < nowMs - d * 86400000;
 }
 

@@ -176,11 +176,17 @@ export async function redeemChallenge(env, body) {
     if (ch) await env.DB.prepare('DELETE FROM login_challenges WHERE token_hash=?').bind(h).run();
     throw new HttpError(401, 'totp_expired', 'Anmeldung abgelaufen. Bitte Benutzername und Passwort erneut eingeben.');
   }
+  // Versuch VOR der Prüfung atomar reservieren (17.10.2026): vorher gelesen und nach der Prüfung absolut geschrieben –
+  // parallel gesendete Codes wurden alle geprüft, die Grenze von CHALLENGE_TRIES je Anmeldevorgang griff nicht.
+  const slot = await env.DB.prepare('UPDATE login_challenges SET attempts=attempts+1 WHERE token_hash=? AND attempts<? RETURNING attempts').bind(h, CHALLENGE_TRIES).first();
+  if (!slot) {
+    await env.DB.prepare('DELETE FROM login_challenges WHERE token_hash=?').bind(h).run();
+    throw new HttpError(401, 'totp_expired', 'Zu viele falsche Codes. Bitte Benutzername und Passwort erneut eingeben.');
+  }
   const r = await checkSecondFactor(env, ch, body.code);
   if (!r) {
-    const tries = ch.attempts + 1;
+    const tries = slot.attempts;
     if (tries >= CHALLENGE_TRIES) await env.DB.prepare('DELETE FROM login_challenges WHERE token_hash=?').bind(h).run();
-    else await env.DB.prepare('UPDATE login_challenges SET attempts=? WHERE token_hash=?').bind(tries, h).run();
     const e = new HttpError(401, tries >= CHALLENGE_TRIES ? 'totp_expired' : 'totp_invalid', tries >= CHALLENGE_TRIES
       ? 'Zu viele falsche Codes. Bitte Benutzername und Passwort erneut eingeben.' : 'Code falsch oder abgelaufen.');
     e.userRow = { id: ch.id, username: ch.username }; // für die Fehlversuch-Sperre des Kontos (nicht an die App)
