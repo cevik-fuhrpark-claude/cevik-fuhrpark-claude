@@ -384,7 +384,7 @@ export function normalizeVehicleKind(raw) {
   if (raw === undefined || raw === null || String(raw).trim() === '') return null;
   const s = String(raw).trim().toLowerCase();
   if (['anhaenger', 'anhänger', 'anh', 'trailer', 'auflieger', 'sattelauflieger'].includes(s)) return 'anhaenger';
-  if (['lkw', 'kfz', 'truck', 'zugmaschine', 'motorwagen'].includes(s)) return 'lkw';
+  if (['lkw', 'kfz', 'truck', 'zugmaschine', 'motorwagen', 'sattelzugmaschine', 'sattelzug', 'sattelschlepper', 'lastkraftwagen'].includes(s)) return 'lkw';
   throw bad('validation', `Fahrzeugart unbekannt: ${raw} (Lkw oder Anhänger)`);
 }
 
@@ -403,7 +403,7 @@ async function upsertVehicleRows(env, rows, { keepExisting = false } = {}) {
       SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, ${J('kind')}, 1, ?1, ?1
       FROM json_each(?2) WHERE 1
       ON CONFLICT(id) DO UPDATE SET ${['plate', 'site', 'manufacturer', 'model', 'build_year', 'trailer_plate', 'trailer_vin', 'master_status', 'source', 'kind']
-        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=1, updated_at=excluded.updated_at`)
+        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=${keepExisting ? 'vehicles.active' : '1'}, updated_at=excluded.updated_at`)
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
   if (stmts.length) await env.DB.batch(stmts);
@@ -556,7 +556,10 @@ export async function myVehicles(env, user, envName) {
       km_due: rules.results.filter((r) => r.vehicle_id === v.id && !['HU', 'SP'].includes(r.kind)).map((r) => ({ r, k: kmDue(r, kmMap.get(v.id), warnKm) }))
         .filter((x) => x.k && ['ueberfaellig', 'faellig'].includes(x.k.km_status)).sort((a, b) => a.k.km_remaining - b.k.km_remaining).slice(0, 4)
         .map(({ r, k }) => ({ kind: r.kind, next_due_km: k.next_due_km, km_remaining: k.km_remaining, status: k.km_status, planned_date: r.planned_date >= today ? r.planned_date : null })),
-      notes: notes.results.filter((n) => n.vehicle_id === v.id).slice(0, 10).map(({ text, created_at }) => ({ text, created_at })),
+      // eigene Hinweise und die des fest gekoppelten Anhängers bzw. der Zugmaschine (mit Kennzeichen); „gültig bis“ mitgeben – die App blendet
+      // abgelaufene auch im Offline-Stand aus (vorher fehlte das Feld, Gespann-Hinweise wurden gelesen, aber nie gezeigt – 17.10.2026)
+      notes: notes.results.filter((n) => n.vehicle_id === v.id || (coupledOf.has(v.id) && n.vehicle_id === coupledOf.get(v.id).id)).slice(0, 10)
+        .map(({ vehicle_id, text, created_at, valid_until }) => ({ text, created_at, valid_until: valid_until || null, ...(vehicle_id !== v.id ? { plate: coupledOf.get(v.id).plate } : {}) })),
       // Winterreifen: nur „nicht erfüllt“ laut Erfassung (Information für die Fahrt bei Glätte, StVO § 2 Abs. 3a); nicht erfasst = null (kein Rauschen)
       winter: v.kind === 'anhaenger' ? null : (({ status, noncompliant }) => (status === 'nicht_erfuellt' ? { status, noncompliant } : null))(winterStatus(v.kind, winterMarks(tiresBy.get(v.id) || []))),
       coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked }))(coupledOf.get(v.id)) : null,
@@ -810,10 +813,13 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
         vin, plate: cells[ci.plate], site: cell(cells, ci.site), master_status: cell(cells, ci.status),
         manufacturer: cell(cells, ci.man), model: cell(cells, ci.model), build_year: yearRaw && /^\d{4}(\.0+)?$/.test(yearRaw) ? parseInt(yearRaw, 10) : null,
         trailer_plate: cell(cells, ci.trailer), kind: cell(cells, ci.kind),
-        source: ci.kind >= 0 && cell(cells, ci.src) ? `CSV-Import: ${cell(cells, ci.src).slice(0, 180)}` : 'CSV-Import Fuhrpark Stammliste',
+        source: ci.src >= 0 && cell(cells, ci.src) ? `CSV-Import: ${cell(cells, ci.src).slice(0, 180)}` : 'CSV-Import Fuhrpark Stammliste',
       });
       row._line = line;
-      rows.set(row.id, row); // doppelte FIN: letzte Zeile gilt
+      // doppelte FIN: letzte Zeile gilt – die frühere wird als übersprungen gemeldet (vorher still verworfen, 17.10.2026)
+      const prev = rows.get(row.id);
+      if (prev) result.skipped.push({ line: prev._line, plate: prev.plate, reason: `FIN doppelt in der Datei (Zeile ${line} gilt)` });
+      rows.set(row.id, row);
     } catch (e) { result.skipped.push({ line, plate: cells[ci.plate], reason: e.message }); }
   });
   if (rows.size > 5000) throw bad('validation', 'Maximal 5000 Fahrzeuge je Import.');
@@ -824,9 +830,12 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
     const ex = existing.get(r.id);
     if (!ex) { result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: 'neu' }); continue; }
     const changes = FIELDS.filter((f) => r[f] !== null && r[f] !== undefined && String(r[f]) !== String(ex[f] ?? '')).map((f) => ({ field: f, from: ex[f], to: r[f] }));
-    result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: changes.length || !ex.active ? 'geändert' : 'unverändert', changes, reactivated: !ex.active });
+    // außer Betrieb genommene Fahrzeuge bleiben außer Betrieb (Wieder-in-Betrieb-Nahme nur in der Fahrzeugakte mit Protokoll; vorher stellte
+    // eine alte Stammliste verkaufte Lkw still wieder in Betrieb – 17.10.2026)
+    result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: changes.length ? 'geändert' : 'unverändert', changes, ...(ex.active ? {} : { inactive_kept: true }) });
   }
-  result.preview.sort((a, b) => a.line - b.line);
+  result.preview.sort((a, b) => a.line - b.line); result.skipped.sort((a, b) => a.line - b.line);
+  result.inactive_kept = result.preview.filter((p) => p.inactive_kept).map((p) => p.plate);
   // Hinweis (keine Sperre): Kennzeichen nach dem Import an mehreren Fahrzeugen (Schreibweise egal) – meist Tippfehler in der FIN
   // oder Doppelanlage (vgl. SZ-YC 5539). Maßgeblich ist das Kennzeichen nach dem Import: Datei vor Bestand.
   const effPlate = new Map((await env.DB.prepare('SELECT id, plate FROM vehicles').all()).results.map((v) => [v.id, v.plate]));

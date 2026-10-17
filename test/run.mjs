@@ -10236,6 +10236,65 @@ await test('Fahrerakte/Konten/Aufträge/Verträge: älterer Nachweis löst nicht
   eq(await km(), 'ueber', '110 000 km gefahren > 100 000');
 });
 
+await test('Bußgelder/Fahrer-Hinweise/Notfall/Import/Auskunft: Fahrzeug außer Betrieb erkannt, Aktenzeichen-Dublette beim Ändern, Tatvorwurf-Bezeichnung, Berliner Uhrzeit; Gespann-Hinweise und -Rufnummern mit „gültig bis“; Import doppelte FIN/außer Betrieb/Quelle/Sattelzugmaschine; Auskunft vollständiger; „alle gelesen“ je Umgebung', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774';
+  const now = new Date().toISOString();
+  // Bußgeld zu Fahrzeug, das inzwischen außer Betrieb ist: Fahrzeug + Fahrer aus Zuordnung zum Tatzeitpunkt
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  db.prepare(`UPDATE driver_vehicles SET valid_from='2026-01-01T00:00:00.000Z'`).run();
+  db.prepare(`UPDATE vehicles SET active=0 WHERE vin='WMA15SZZ2HM722774'`).run();
+  const f1 = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'lenk_ruhezeit', offense_at: '2026-10-07T09:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Dortmund', reference: 'AZ-1' });
+  eq(f1.status, 201, JSON.stringify(f1.data));
+  const fd = (await F.get(`/api/fines/${f1.data.id}`)).data; ok(fd.fine.vehicle_id, 'Fahrzeug erkannt'); eq(fd.candidates.length, 1, "Fahrer zum Tatzeitpunkt");
+  db.prepare(`UPDATE vehicles SET active=1 WHERE vin='WMA15SZZ2HM722774'`).run();
+  const f2 = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-08T09:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Dortmund', reference: 'AZ-2X' })).data.id;
+  const v2 = (await F.get(`/api/fines/${f2}`)).data.fine.version;
+  const up = await F.post(`/api/fines/${f2}/commands`, { action: 'update', payload: { reference: 'AZ-1' }, expected_version: v2 });
+  eq(`${up.status} ${up.data.error}`, '409 duplicate_fine', 'Aktenzeichen-Dublette beim Ändern');
+  const csv = new TextDecoder().decode((await F.get('/api/fines?format=csv')).data);
+  ok(csv.includes(';Lenk-/Ruhezeit;') && !csv.includes(';lenk_ruhezeit;'), 'Tatvorwurf als Bezeichnung');
+  const { STRINGS } = await import('../public/i18n.js'); const { OFFENSE_DE } = await import('../src/fines.js');
+  for (const [k, v] of Object.entries(OFFENSE_DE)) eq(v, STRINGS.de['of_' + k], 'OFFENSE_DE = App-Text ' + k);
+  const { driverCandidates } = await import('../src/fines.js');
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES('ab1','test',?,'abfahrt','x',?,'[]','ok','2026-10-07T04:40:00.000Z')`).run(vid, U.driver.id);
+  db.prepare('UPDATE users SET active=1 WHERE id=?').run(U.driver.id);
+  const cands = await driverCandidates(e, 'test', { vehicle_id: vid, offense_at: '2026-10-07T09:00:00.000Z' });
+  eq(cands.find((c) => c.basis === 'manuell').evidence, 'Abfahrtskontrolle am Tattag 06:40 Uhr', 'Berliner Uhrzeit');
+  // Gespann: Hinweise/Rufnummern des gekoppelten Aufliegers beim Fahrer, mit „gültig bis“
+  ok([200, 201].includes((await U.own.post('/api/vehicles', { plate: 'SZ-AH 100', vin: 'WSM00000000000100', site: 'Dortmund', kind: 'anhaenger' })).status), 'Auflieger angelegt');
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-AH 100' WHERE id=?`).run(vid);
+  const TV = 'VIN:WSM00000000000100';
+  eq((await F.post(`/api/vehicles/${V1}/notes`, { text: 'Rampe defekt', for_driver: true, valid_until: BERLIN_TODAY })).status, 201);
+  eq((await F.post(`/api/vehicles/${TV}/notes`, { text: 'Plane links eingerissen', for_driver: true })).status, 201);
+  eq((await F.post('/api/emergency/contacts', { kind: 'sonstiges', label: 'Kühlaggregat-Hotline', phone: '0800 555', scope: 'vehicle', vehicle_id: TV })).status, 201);
+  const my = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.plate === 'SZ-YC 5513');
+  eq(my.notes.find((n) => n.text === 'Rampe defekt').valid_until, BERLIN_TODAY, '„gültig bis“ geliefert');
+  eq(my.notes.find((n) => n.text === 'Plane links eingerissen').plate, 'SZ-AH 100', 'Hinweis des Aufliegers mit Kennzeichen');
+  ok((await U.driver.get('/api/emergency')).data.vehicles.flatMap((v) => v.contacts.map((c) => c.label)).includes('Kühlaggregat-Hotline'), 'Rufnummer des Aufliegers');
+  // Fahrzeugimport
+  const imp = (csv, dry = true) => U.own.req('POST', `/api/vehicles/import${dry ? '?dry_run=1' : ''}`, csv, { 'content-type': 'text/csv' });
+  const d1 = (await imp('Kennzeichen;FIN;Fahrzeugart;Quelle\nSZ-DD 1;WMA15SZZ2HM700001;Sattelzugmaschine;ZB I\nSZ-DD 2;WMA15SZZ2HM700001;Lkw;ZB I')).data;
+  eq(d1.skipped.map((x) => `${x.line}:${x.reason}`).join(), '2:FIN doppelt in der Datei (Zeile 3 gilt)');
+  eq((await imp('Kennzeichen;FIN;Fahrzeugart\nSZ-DD 3;WMA15SZZ2HM700003;Sattelzugmaschine')).data.skipped.length, 0, 'Sattelzugmaschine = Lkw');
+  eq((await imp('Kennzeichen;FIN;Quelle\nSZ-DD 4;WMA15SZZ2HM700004;Zulassungsbescheinigung Teil I', false)).status, 200);
+  eq(db.prepare(`SELECT source FROM vehicles WHERE vin='WMA15SZZ2HM700004'`).get().source, 'CSV-Import: Zulassungsbescheinigung Teil I', 'Quelle ohne Spalte Fahrzeugart');
+  db.prepare(`UPDATE vehicles SET active=0 WHERE vin='WMA15SZZ2HM700004'`).run();
+  const d4 = (await imp('Kennzeichen;FIN\nSZ-DD 4;WMA15SZZ2HM700004')).data; eq(d4.inactive_kept.join(), 'SZ-DD 4', 'Vorschau nennt es');
+  await imp('Kennzeichen;FIN\nSZ-DD 4;WMA15SZZ2HM700004', false);
+  eq(db.prepare(`SELECT active FROM vehicles WHERE vin='WMA15SZZ2HM700004'`).get().active, 0, 'bleibt außer Betrieb');
+  // Auskunft: Reifenmessung und Teil der Werkstatt-Person
+  db.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,recorded_by,created_at) VALUES('te1','test',?,'VA-L','messung',4.2,?,?)`).run(vid, U.ws.id, now);
+  const x = (await U.own.get(`/api/admin/users/${U.ws.id}/data-export`)).data;
+  eq(x.tire_events_recorded.length, 1, "Reifenmessung in der Auskunft"); ok(Array.isArray(x.parts_recorded) && Array.isArray(x.stock_movements), 'weitere Abschnitte');
+  // „alle gelesen“ nur in der angezeigten Umgebung
+  const oid = db.prepare(`SELECT id FROM users WHERE username='yilmaz'`).get().id;
+  db.prepare(`INSERT INTO notifications(id,environment,user_id,kind,urgent,title,body,created_at,event_key,push_status) VALUES('n-p','production',?,'agent',1,'kritisch','x',?,'k-p','no_subscription'),('n-t','test',?,'agent',0,'t','x',?,'k-t','no_subscription')`).run(oid, now, oid, now);
+  await U.own.req('POST', '/api/notifications/read-all', {}, { 'x-cfp-env': 'test' });
+  eq(db.prepare(`SELECT opened_at FROM notifications WHERE id='n-p'`).get().opened_at, null, 'Betriebs-Hinweis bleibt ungelesen');
+  ok(db.prepare(`SELECT opened_at FROM notifications WHERE id='n-t'`).get().opened_at, 'Test-Hinweis gelesen');
+});
+
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

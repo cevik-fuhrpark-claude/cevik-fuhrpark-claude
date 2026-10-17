@@ -866,6 +866,7 @@ const IMPORT_TPL = [
   [/^Vorhandene letzte Prüfung (\d{4}-\d{2}-\d{2}) ist neuer – nicht überschrieben$/, 'Наявна остання перевірка $1 новіша – не перезаписано', 'Existing last inspection $1 is newer – not overwritten'],
   [/^Datum nicht erkannt: (.{0,200}) \(JJJJ-MM-TT, TT\.MM\.JJJJ oder MM\/JJJJ\)$/, 'Дату не розпізнано: $1 (РРРР-ММ-ДД, ДД.ММ.РРРР або ММ/РРРР)', 'Date not recognised: $1 (YYYY-MM-DD, DD.MM.YYYY or MM/YYYY)'],
   [/^Datum nicht erkannt: (.{0,200})$/, 'Дату не розпізнано: $1', 'Date not recognised: $1'],
+  [/^FIN doppelt in der Datei \(Zeile (\d{1,6}) gilt\)$/, 'VIN двічі у файлі (діє рядок $1)', 'VIN twice in the file (row $1 applies)'],
   [/^Datum ungültig: (.{0,200})$/, 'Недійсна дата: $1', 'Invalid date: $1'],
   [/^Monat ungültig: (.{0,200})$/, 'Недійсний місяць: $1', 'Invalid month: $1'],
   [/^Zahl nicht erkannt: (.{0,200})$/, 'Число не розпізнано: $1', 'Number not recognised: $1'],
@@ -1008,9 +1009,9 @@ Object.assign(STRINGS.en, { tires_winter_closed: 'Winter order closed, status op
 Object.assign(STRINGS.de, { dup_plate_warn: 'Hinweis: Kennzeichen {p} ist auch an einem anderen Fahrzeug vergeben (FIN {list}). Gespeichert – bitte FIN prüfen: Tippfehler oder Doppelanlage? Siehe Datenqualität.' });
 Object.assign(STRINGS.uk, { dup_plate_warn: 'Увага: номер {p} уже призначено іншому транспортному засобу (VIN {list}). Збережено – перевірте VIN: помилка введення чи дубль? Див. «Якість даних».' });
 Object.assign(STRINGS.en, { dup_plate_warn: 'Note: plate {p} is also assigned to another vehicle (VIN {list}). Saved – please check the VIN: typo or duplicate entry? See data quality.' });
-Object.assign(STRINGS.de, { imp_plate_conflict: '{n} Zeile(n): Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich' });
-Object.assign(STRINGS.uk, { imp_plate_conflict: 'Рядків: {n} – номер після імпорту буде й в іншого транспортного засобу. Перевірте VIN (помилка чи дубль?). Імпорт усе одно можливий' });
-Object.assign(STRINGS.en, { imp_plate_conflict: '{n} row(s): plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible' });
+Object.assign(STRINGS.de, { imp_inactive_kept: 'Außer Betrieb, bleibt außer Betrieb (Wieder-in-Betrieb-Nahme in der Fahrzeugakte): {n}', imp_plate_conflict: '{n} Zeile(n): Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich' });
+Object.assign(STRINGS.uk, { imp_inactive_kept: 'Виведено з експлуатації, залишається виведеним (повернення – у картці транспорту): {n}', imp_plate_conflict: 'Рядків: {n} – номер після імпорту буде й в іншого транспортного засобу. Перевірте VIN (помилка чи дубль?). Імпорт усе одно можливий' });
+Object.assign(STRINGS.en, { imp_inactive_kept: 'Out of service, stays out of service (return to service in the vehicle file): {n}', imp_plate_conflict: '{n} row(s): plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible' });
 Object.assign(STRINGS.de, { fine_vehicle_ambiguous: 'Kennzeichen steht an mehreren aktiven Fahrzeugen – nicht zugeordnet, damit kein falscher Fahrer ermittelt wird. Bitte Fahrzeugstamm prüfen (Datenqualität).' });
 Object.assign(STRINGS.uk, { fine_vehicle_ambiguous: 'Цей номер має кілька активних транспортних засобів – не призначено, щоб не визначити не того водія. Перевірте дані транспорту («Якість даних»).' });
 Object.assign(STRINGS.en, { fine_vehicle_ambiguous: 'This plate is on several active vehicles – not assigned, so that no wrong driver is identified. Please check the vehicle master data (data quality).' });

@@ -2,7 +2,7 @@
 // in der Oberfläche). Geltung: alle Fahrzeuge, ein Standort (laut Fahrzeugstamm, Schreibweisen zusammengefasst) oder ein Fahrzeug.
 // Je Umgebung getrennt (Test/Betrieb). Archiv statt Löschen. Lesen: alle angemeldeten Rollen (Fahrer brauchen die Nummern unterwegs);
 // gepflegt von Inhaber, Fuhrparkleitung und Disposition.
-import { nowIso, uuid, bad, forbidden, notFound, str } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, str, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { siteKey, siteLabels } from './reports.js';
 
@@ -38,6 +38,17 @@ export async function emergencyView(env, user, envName, query = {}) {
   } else if (user.role === 'driver') {
     vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.site FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id
       WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND v.active=1 ORDER BY d.valid_from DESC LIMIT 10`).bind(user.id, nowIso()).all()).results;
+    // fest gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (wie „Mein Fahrzeug“) – z. B. Hotline des Kühlaufliegers (17.10.2026)
+    if (vehicles.length) {
+      const pool = (await env.DB.prepare(`SELECT id, plate, site, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>''))`).all()).results;
+      const own = (await env.DB.prepare(`SELECT id, kind, trailer_plate FROM vehicles WHERE id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(vehicles.map((v) => v.id))).all()).results;
+      for (const o of own) {
+        const ov = vehicles.find((v) => v.id === o.id);
+        const p = o.kind === 'anhaenger' ? pool.find((x) => x.kind === 'lkw' && normPlate(x.trailer_plate) === normPlate(ov.plate))
+          : o.trailer_plate ? pool.find((x) => x.kind === 'anhaenger' && normPlate(x.plate) === normPlate(o.trailer_plate)) : null;
+        if (p && !vehicles.some((v) => v.id === p.id)) vehicles.push({ id: p.id, plate: p.plate, site: p.site });
+      }
+    }
   }
   const all = await activeContacts(env, envName);
   const general = all.filter((c) => !c.site && !c.vehicle_id).sort(sortContacts).map(pub);

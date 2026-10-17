@@ -568,7 +568,8 @@ async function handleApi(request, env, ctx, url) {
     return json({ ok: true });
   }
   if (path === '/api/notifications/read-all' && m === 'POST') {
-    await env.DB.prepare('UPDATE notifications SET opened_at=COALESCE(opened_at, ?) WHERE user_id=?').bind(nowIso(), user.id).run();
+    // nur die angezeigte Umgebung (wie Liste/Zähler) – vorher wurden aus der Test-Ansicht auch kritische Betriebs-Hinweise „gelesen“ (17.10.2026)
+    await env.DB.prepare('UPDATE notifications SET opened_at=COALESCE(opened_at, ?) WHERE user_id=? AND environment=? AND hidden_at IS NULL').bind(nowIso(), user.id, envName).run();
     return json({ ok: true });
   }
   if (path === '/api/push/subscribe' && m === 'POST') {

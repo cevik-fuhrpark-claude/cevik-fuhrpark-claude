@@ -70,7 +70,7 @@ export async function driverCandidates(env, envName, f) {
     .bind(f.vehicle_id, envName, new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(), new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString()).all()).results;
   for (const c of checks) {
     if (berlinDate(c.created_at) !== day) continue;
-    out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${c.created_at.slice(11, 16)} UTC`, check_at: c.created_at });
+    out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${berlinDateTime(c.created_at).slice(-5)} Uhr`, check_at: c.created_at });
   }
   return out;
 }
@@ -110,9 +110,10 @@ export async function createFine(env, user, envName, body) {
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10 });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
-  // nur aktive Fahrzeuge; bei gleichem Kennzeichen zählt das bewertete vor dem ruhenden, sonst mehrdeutig = keine Zuordnung
-  // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung)
-  const pick = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE active=1').all()).results, plate);
+  // bei gleichem Kennzeichen zählt das aktive bewertete vor dem ruhenden vor dem außer Betrieb genommenen, sonst mehrdeutig = keine Zuordnung
+  // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
+  // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
+  const pick = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, plate);
   const veh = pick.vehicle;
   const reference = str(body.reference, { max: 80 });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
@@ -193,7 +194,12 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
           set.response_due = due;
         }
-        if (p.reference !== undefined) set.reference = str(p.reference, { max: 80 });
+        if (p.reference !== undefined) {
+          set.reference = str(p.reference, { max: 80 });
+          // gleiche Dublettenregel wie beim Anlegen (Umgebung + Behörde + Aktenzeichen) – vorher über „Ändern“ umgehbar
+          const dup = set.reference && set.reference !== f.reference ? await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?').bind(envName, set.reference, f.authority, id).first() : null;
+          if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
+        }
         payload = { ...set };
         break;
       default:
@@ -259,11 +265,12 @@ export async function canReadFineFile(env, user, envName, fineId) {
 // CSV-Export (Buchhaltung/Steuerberatung): Tatzeit in Berliner Ortszeit (TT.MM.JJJJ HH:MM, wie im Schreiben – gespeichert ist UTC); Fahrernamen nur auf ausdrücklichen Wunsch (with_driver=1) und nur für Inhaber/Fuhrparkleitung
 // Status als Bezeichnung wie in der App (bis 16.10.2026 Code in der CSV); Test prüft Gleichheit mit i18n.js
 export const FINE_STATUS_DE = { eingegangen: 'Eingegangen', fahrer_ermittelt: 'Fahrer ermittelt', fahrer_informiert: 'Fahrer informiert', beantwortet: 'Beantwortet', bezahlt: 'Bezahlt', eingestellt: 'Eingestellt', erledigt: 'Erledigt' };
+export const OFFENSE_DE = { geschwindigkeit: 'Geschwindigkeit', abstand: 'Abstand', parken: 'Parken/Halten', rotlicht: 'Rotlicht', lenk_ruhezeit: 'Lenk-/Ruhezeit', ladung: 'Ladung/Gewicht', maut: 'Maut', handy: 'Handy', sonstiges: 'Sonstiges' };
 const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', bussgeldbescheid: 'Bußgeldbescheid', verwarnung: 'Verwarnung', maut: 'Maut', sonstiges: 'Sonstiges' };
 export function finesCsv(rows, csvCell, withDriver) {
   const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
   const lines = [head.join(';')];
-  for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), csvCell(f.reference), csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
+  for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), csvCell(f.reference), OFFENSE_DE[f.offense_type] || csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
     csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : String(f.amount_eur).replace('.', ','), f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
     ...(withDriver ? [csvCell(f.driver_name || f.driver_name_note)] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
