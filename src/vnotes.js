@@ -45,8 +45,11 @@ export async function addNote(env, user, envName, vehicleId, body) {
   const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(vehicleId, envName, today).first();
   if (n.n >= NOTES_MAX_ACTIVE) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
   const id = uuid();
-  await env.DB.prepare('INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until) VALUES (?,?,?,?,?,?,?,?)')
-    .bind(id, envName, vehicleId, text, body.for_driver ? 1 : 0, user.id, nowIso(), validUntil).run();
+  // Höchstzahl in derselben Anweisung (parallele Anlagen überschritten sie vorher, 17.10.2026)
+  const r = await env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until) SELECT ?1,?2,?3,?4,?5,?6,?7,?8
+    WHERE (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?3 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?9)) < ?10`)
+    .bind(id, envName, vehicleId, text, body.for_driver ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE).run();
+  if (!(r.meta && r.meta.changes)) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
   await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: !!body.for_driver, valid_until: validUntil });
   return { id };
 }

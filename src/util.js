@@ -1,6 +1,8 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
 
 export const nowIso = () => new Date().toISOString();
+// Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
+export const laterIso = (prev) => { const n = Date.now(); const p = Date.parse(prev || ''); return new Date(Number.isFinite(p) && p >= n ? p + 1 : n).toISOString(); };
 
 export function uuid() {
   return crypto.randomUUID();

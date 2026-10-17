@@ -5,7 +5,7 @@ import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, norm
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
-import { sha256Hex, berlinDateTime, hideDriverName, dateLang } from './util.js';
+import { sha256Hex, berlinDateTime, hideDriverName, dateLang, berlinDaySql } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter } from './maintenance.js';
@@ -42,7 +42,7 @@ export async function listVehicles(env, user, envName, query = {}) {
         AND e.result IN ('gefaehrliche_maengel','verkehrsunsicher')
         AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
           AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-        AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status<>'abgelehnt' AND c.created_at >= e.done_date)
+        AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date)
         ORDER BY e.result='verkehrsunsicher' DESC, e.done_date DESC LIMIT 1) AS failed_insp,
       (SELECT COUNT(*) FROM vehicle_notes n WHERE n.vehicle_id=v.id AND n.environment=? AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?)) AS notes_active,
       -- offene Herstellerrückrufe (noch nicht durchgeführt; gleiche Regel wie Vorgangs-Kurzinfo „Zum Fahrzeug“), Frist nur laut Schreiben
@@ -95,7 +95,7 @@ export function failedInspectionOf(v, events, cases, since) {
   if (v.eval_excluded) return null;
   const newer = (e2, e) => e2.kind === e.kind && e2.id !== e.id && (e2.done_date > e.done_date || (e2.done_date === e.done_date && e2.created_at > e.created_at));
   const hits = events.filter((e) => e.done_date >= since && ['gefaehrliche_maengel', 'verkehrsunsicher'].includes(e.result)
-    && !events.some((e2) => newer(e2, e)) && !cases.some((c) => c.status !== 'abgelehnt' && c.created_at >= e.done_date));
+    && !events.some((e2) => newer(e2, e)) && !cases.some((c) => c.status !== 'abgelehnt' && berlinDate(c.created_at) >= e.done_date)); // Berliner Tag wie SQL (17.10.2026)
   hits.sort((a, b) => (b.result === 'verkehrsunsicher') - (a.result === 'verkehrsunsicher') || (b.done_date > a.done_date ? 1 : b.done_date < a.done_date ? -1 : 0));
   return hits[0] ? { kind: hits[0].kind, done_date: hits[0].done_date, result: hits[0].result, event_id: hits[0].id } : null;
 }
@@ -468,10 +468,17 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   const endPrev = body.end_previous === true || body.end_previous === 'on' || body.end_previous === '1';
   const id = uuid();
   const stmts = [];
-  if (endPrev && open.length) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, now));
-  stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) VALUES (?,?,?,?,NULL,?,?,?)`)
-    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300 }) || 'Zuordnung durch Fuhrparkleitung', user.id, now));
-  await env.DB.batch(stmts);
+  // atomar (17.10.2026): bisherige immer im selben Stapel beenden (nicht nur, wenn beim Lesen welche offen waren) und nur einfügen, wenn
+  // keine offene Zuordnung Fahrer↔Fahrzeug besteht – zwei gleichzeitige Zuordnungen ergaben sonst doppelte bzw. zwei „aktuelle“ Fahrzeuge
+  if (endPrev) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, now));
+  stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7
+    WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))`)
+    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300 }) || 'Zuordnung durch Fuhrparkleitung', user.id, now),
+    env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
+  try { await env.DB.batch(stmts); } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
+    throw e;
+  }
   await audit(env, user.id, 'vehicle.assign_driver', vehicleId, { driver: driver.id, ended_previous: endPrev ? open.map((o) => o.plate) : [] });
   return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate) };
 }
@@ -682,6 +689,10 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
     const at = date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`;
     const prev = await env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC, rowid DESC LIMIT 1').bind(r.vehicle_id, at).first();
     if (prev && km < prev.km) throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.');
+    // auch nicht größer als ein später erfasster, unbegründeter Stand (nachgetragene Prüfung mit Tippfehler machte sonst die spätere
+    // Ablesung zum Rücksprung und verfälschte Fahrleistung/km-Fälligkeiten – wie „Kilometerstand erfassen“, 17.10.2026)
+    const nextR = await env.DB.prepare('SELECT km, note FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC, rowid ASC LIMIT 1').bind(r.vehicle_id, at).first();
+    if (nextR && km > nextR.km && !(nextR.note && String(nextR.note).trim())) throw bad('validation', 'Kilometerstand bei Durchführung ist größer als ein später erfasster km-Stand. Bitte prüfen.');
   }
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10 });
@@ -696,12 +707,31 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (docKm !== null && km !== null && r.interval_km && docKm === km + r.interval_km) docKm = null;
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
   const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
-  await env.DB.batch([
-    env.DB.prepare('UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL WHERE id=?')
-      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}`.slice(0, 300) : evidence, nowIso(), nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId),
+  // Atomar (17.10.2026):
+  // - Regel (letzte Durchführung, Fälligkeit) nur ändern, wenn diese Durchführung nicht älter ist als die gespeicherte – ein nachgetragener
+  //   alter Bericht (oder die langsamere von zwei gleichzeitigen Erfassungen) verschob sonst die Fälligkeit zurück. Die Durchführung selbst
+  //   wird immer gespeichert (Verlauf). Rückruf: nur, solange noch nicht durchgeführt (sonst 409, auch bei gleichzeitiger Erfassung).
+  // - Ein vorhandenes, abweichendes Prüfergebnis derselben Durchführung wird nie überschrieben (wie „Prüfergebnis nachtragen“).
+  const guard = (sql, ...a) => [env.DB.prepare(`INSERT INTO cmd_guard(ok) ${sql}`).bind(...a), env.DB.prepare('DELETE FROM cmd_guard')];
+  const stmts = [
+    ...(result ? guard('SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM maintenance_events WHERE rule_id=? AND done_date=? AND result IS NOT NULL AND result<>?', ruleId, date, result) : []),
+    env.DB.prepare(`UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL
+      WHERE id=? AND ${oneTime ? 'last_done_date IS NULL' : '(last_done_date IS NULL OR last_done_date <= ?)'}`)
+      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}`.slice(0, 300) : evidence, nowIso(), nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId, ...(oneTime ? [] : [date])),
+    ...(oneTime ? guard('SELECT changes()') : []),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
-    ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=?').bind(result, ruleId, date)] : []),
-  ]);
+    ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=? AND result IS NULL').bind(result, ruleId, date)] : []),
+  ];
+  const ruleIdx = result ? 2 : 0;
+  let out;
+  try { out = await env.DB.batch(stmts); } catch (e) {
+    if (String(e && e.message).includes('CHECK')) {
+      if (oneTime && (await env.DB.prepare('SELECT last_done_date FROM maintenance_rules WHERE id=?').bind(ruleId).first() || {}).last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
+      throw conflict('result_exists', 'Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.');
+    }
+    throw e;
+  }
+  const older = !oneTime && !(out[ruleIdx] && out[ruleIdx].meta && out[ruleIdx].meta.changes);
   await audit(env, user.id, 'maintenance.done', r.vehicle_id, { kind: r.kind, done_date: date, result, evidence });
   if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [r.vehicle_id] });
   if (km !== null) {
@@ -712,6 +742,9 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   // Gefährliche Mängel / verkehrsunsicher: sofort Leitung, Inhaber und Disposition der aktiven Umgebung informieren – nur für aktuelle
   // Prüfungen (≤ 30 Tage, neueste dieser Prüfart), nicht beim Nachtragen alter Berichte. Einmal je Prüfung und Person (event_key).
   const notified = await notifyInspectionDefect(env, ctx, envName, user, { vehicleId: r.vehicle_id, kind: r.kind, date, result, key: ruleId });
+  // older: Durchführung liegt vor der gespeicherten letzten – nur im Verlauf, Fälligkeit unverändert (Antwort nennt die gültige)
+  if (older) return { ok: true, notified, older_than_last: true, last_done_date: (await env.DB.prepare('SELECT last_done_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).last_done_date,
+    next_due_date: (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date };
   return { ok: true, notified, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
 }
 

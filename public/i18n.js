@@ -779,6 +779,7 @@ const V_MORE = [
   ['Für dieses Gerät gibt es bereits eine bestätigte Zuordnung – zuerst aufheben.', 'Для цього пристрою вже є підтверджена прив’язка – спочатку скасуйте її.', 'This device already has a confirmed assignment – remove it first.'],
   ['Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.', 'Для цього проведення вже внесено результат перевірки – його не буде перезаписано.', 'An inspection result has already been entered for this completion – it will not be overwritten.'],
   ['Diese Meldung wurde bereits mit anderem Inhalt gesendet.', 'Це повідомлення вже надіслано з іншим змістом.', 'This report was already sent with different content.'],
+  ['Kilometerstand bei Durchführung ist größer als ein später erfasster km-Stand. Bitte prüfen.', 'Пробіг на момент проведення більший за пізніше внесений. Перевірте.', 'Odometer at completion is higher than a later recorded reading. Please check.'],
   ['Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.', 'Пробіг на момент проведення менший за раніше внесений. Перевірте; у разі заміни тахографа спочатку внесіть новий пробіг з обґрунтуванням у картці транспорту.', 'The odometer reading at completion is lower than a previously recorded reading. Please check; if the odometer was replaced, first record the new reading with a reason in the vehicle file.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
@@ -840,6 +841,7 @@ const IMPORT_FIXED = [
   ['Letzte Prüfung bitte taggenau (JJJJ-MM-TT oder TT.MM.JJJJ)', 'Останню перевірку вкажіть з точністю до дня (РРРР-ММ-ДД або ДД.ММ.РРРР)', 'Please give the last inspection to the day (YYYY-MM-DD or DD.MM.YYYY)'],
   ['Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben', 'Немає дати: вкажіть «Nächster Termin» або «Letzte Prüfung»', 'No date: enter “Nächster Termin” or “Letzte Prüfung”'],
   ['Letzte Prüfung liegt nach dem nächsten Termin', 'Остання перевірка пізніше наступного терміну', 'The last inspection is after the next due date'],
+  ['Letzte Prüfung liegt in der Zukunft', 'Остання перевірка в майбутньому', 'The last inspection is in the future'],
   ['doppelt in der Datei', 'двічі у файлі', 'duplicate in the file'],
   ['Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung', '«Строк за км» не перевищує пробіг під час останньої перевірки', '“Due at km” is not above the mileage at the last inspection'],
   ['km-Intervall fehlt: „Intervall km“ oder „Fällig bei km“ angeben', 'Немає інтервалу в км: вкажіть «Intervall km» або «Faellig bei km»', 'Mileage interval missing: enter “Intervall km” or “Faellig bei km”'],
@@ -1012,6 +1014,9 @@ Object.assign(STRINGS.en, { fine_vehicle_ambiguous: 'This plate is on several ac
 Object.assign(STRINGS.de, { dq_telematics_plate_mismatch: 'Telematik-Gerät meldet anderes Kennzeichen' });
 Object.assign(STRINGS.uk, { dq_telematics_plate_mismatch: 'Телематичний пристрій передає інший номер' });
 Object.assign(STRINGS.en, { dq_telematics_plate_mismatch: 'Telematics device reports a different plate' });
+Object.assign(STRINGS.de, { mt_older_saved: 'im Verlauf gespeichert – liegt vor der letzten Durchführung ({d}), Fälligkeit unverändert' });
+Object.assign(STRINGS.uk, { mt_older_saved: 'збережено в історії – раніше за останнє проведення ({d}), строк не змінено' });
+Object.assign(STRINGS.en, { mt_older_saved: 'saved in the history – before the last completion ({d}), due date unchanged' });
 Object.assign(STRINGS.de, { dq_telematics_km_rejected: 'Telematik-km-Stand passt nicht zu den erfassten Ständen (nicht übernommen)' });
 Object.assign(STRINGS.uk, { dq_telematics_km_rejected: 'Пробіг з телематики не узгоджується з внесеними показниками (не внесено)' });
 Object.assign(STRINGS.en, { dq_telematics_km_rejected: 'Telematics odometer inconsistent with recorded readings (not taken over)' });

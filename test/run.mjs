@@ -9149,7 +9149,9 @@ await test('km-Plausibilität bei „Prüfung erledigt“ (kleiner als zuvor erf
   const { translateValidation } = await import('../public/i18n.js');
   ok(translateValidation('en', 'Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.'), 'Meldung übersetzt');
   // nachträglich datierte Durchführung mit zu großem km-Stand (vor der Ablesung vom Tag −10) → die spätere Ablesung ist ein Rücksprung ohne Begründung
-  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-20), evidence: 'Tippfehler-Test', done_km: 150000 })).status, 200);
+  // seit 17.10.2026 weist „erledigt“ das ab (größer als der spätere Stand); den Rücksprung erzeugt hier ein begründeter Nachtrag in der Akte
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-20), evidence: 'Tippfehler-Test', done_km: 150000 })).status, 400, 'größer als späterer Stand abgewiesen');
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 150000, measured_on: day(-20), note: 'Nachtrag laut Werkstattrechnung' })).status, 201);
   dq = (await users.fleet.get('/api/admin/data-quality')).data;
   let f = dq.items.find((i) => i.check === 'km_drop_unexplained' && i.vehicle_id === V);
   ok(f && f.severity === 'hinweis' && f.detail === `${day(-10)}: 150000 → 100000 km · manuell:fleet`, 'Befund mit Datum, Werten und Quelle: ' + (f && f.detail));
@@ -9877,6 +9879,115 @@ await test('Integrations-API: Master-Eingang schwärzt den Fahrernamen auch nach
   const txt = JSON.stringify([out.inbox, out.findings]);
   ok(!/Altname|Neuname/.test(txt), 'kein Name: ' + txt.slice(0, 400));
   ok(out.inbox.some((x) => x.person_redacted), 'als geschwärzt markiert');
+});
+
+await test('Bußgelder/Verträge/Versicherungsfälle/Hinweise/Rufnummern: gleichzeitige Änderungen atomar; Fahrerwechsel setzt Information/Quittung zurück; ungültiger Dateiname', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { makeCtx } = await import('./harness.mjs');
+  const fines = await import('../src/fines.js'); const claims = await import('../src/claims.js'); const contracts = await import('../src/contracts.js');
+  const vn = await import('../src/vnotes.js'); const em = await import('../src/emergency.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const E = 'production'; const now = new Date().toISOString(); const run = (q, ...a) => db.prepare(q).run(...a);
+  for (const [id, role] of [['o', 'owner'], ['f', 'fleet'], ['dA', 'driver'], ['dB', 'driver']]) run(`INSERT INTO users(id,username,display_name,role,environment,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, id, 'u' + id, 'Name ' + id, role, E, now, now);
+  run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('v1','WDB00000000000001','T-AB 1','lkw',1,0,?,?)`, now, now);
+  const O = { id: 'o', role: 'owner' }, F = { id: 'f', role: 'fleet' }, A = { id: 'dA', role: 'driver' }, B = { id: 'dB', role: 'driver' };
+  const settle = (ps) => Promise.allSettled(ps).then((r) => r.map((x) => (x.status === 'fulfilled' ? 'ok' : x.reason.status || 500)));
+  // 1. gleiches Aktenzeichen parallel → ein Vorgang, ein 409
+  const body = { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-10T10:00', plate_in_letter: 'T-AB 1', authority: 'Stadt X', reference: 'AZ-1' };
+  eq(JSON.stringify((await settle([fines.createFine(e, O, E, body), fines.createFine(e, F, E, body)])).sort()), JSON.stringify([409, 'ok']), 'Aktenzeichen parallel:');
+  eq(db.prepare(`SELECT COUNT(*) n FROM fines WHERE reference='AZ-1'`).get().n, 1); eq(db.prepare(`SELECT COUNT(*) n FROM fine_events`).get().n, 1, 'kein Ereignis ohne Vorgang:');
+  // 2. zwei Fahrerbestätigungen auf denselben Stand → eine gewinnt
+  const { id } = await fines.createFine(e, O, E, { ...body, reference: 'AZ-2' });
+  const cd = (u, d) => fines.fineCommand(e, makeCtx(), u, E, id, { action: 'confirm_driver', expected_version: 1, payload: { basis: 'manuell', evidence: 'Plan', driver_id: d } });
+  eq(JSON.stringify((await settle([cd(O, 'dA'), cd(F, 'dB')])).sort()), JSON.stringify([409, 'ok']), 'Versions-Guard:');
+  eq(db.prepare(`SELECT COUNT(*) n FROM fine_events WHERE fine_id=? AND action='confirm_driver'`).get(id).n, 1);
+  // 3. Fahrerwechsel nach Information + Quittung: neuer Fahrer sieht nichts vor der Information und kann danach quittieren
+  const { id: id3 } = await fines.createFine(e, O, E, { ...body, reference: 'AZ-3' });
+  const cmd = async (b) => fines.fineCommand(e, makeCtx(), O, E, id3, b);
+  await cmd({ action: 'confirm_driver', payload: { basis: 'manuell', evidence: 'x', driver_id: 'dA' } }); await cmd({ action: 'inform_driver' });
+  await fines.fineCommand(e, makeCtx(), A, E, id3, { action: 'driver_ack' });
+  await cmd({ action: 'set_status', note: 'falscher Fahrer', payload: { status: 'eingegangen' } });
+  await cmd({ action: 'confirm_driver', payload: { basis: 'manuell', evidence: 'korrigiert', driver_id: 'dB' } });
+  eq((await fines.listFines(e, B, E, {})).length, 0, 'B ohne Information:');
+  await cmd({ action: 'inform_driver' });
+  eq(JSON.stringify((await fines.fineDetail(e, B, E, id3)).allowed_actions), JSON.stringify(['driver_ack']), 'B kann quittieren:');
+  // 4. ungültiger Dateiname → Ersatzname, kein 500, keine verwaiste Datei
+  const pdf = new TextEncoder().encode('%PDF-1.4\n%%EOF');
+  const up = await fines.uploadFineFile(e, O, E, id3, new Request('https://x/', { method: 'POST', headers: { 'x-filename': '%E0%A4%A' }, body: pdf }));
+  eq(db.prepare('SELECT filename FROM files WHERE id=?').get(up.id).filename, 'schreiben');
+  // 5. Verträge: parallele Änderungen/Beenden → einer 409, nichts geht still verloren, beendete bleiben unverändert
+  const mk = async (partner) => (await contracts.createContract(e, O, 'v1', { kind: 'miete', partner, start_date: '2025-01-01', end_date: '2028-01-01', evidence: 'Vertrag' }, E)).id;
+  const k1 = await mk('A');
+  eq(JSON.stringify((await settle([contracts.endContract(e, O, k1, { ended_on: '2026-10-01', end_note: 'Rückgabe' }), contracts.endContract(e, F, k1, { ended_on: '2026-10-15', end_note: 'Kündigung' })])).sort()), JSON.stringify([409, 'ok']), 'Beenden parallel:');
+  eq(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='contract.end' AND target=?`).get(k1).n, 1);
+  const k2 = await mk('B');
+  eq(JSON.stringify((await settle([contracts.updateContract(e, O, k2, { monthly_rate_net: 999 }, E), contracts.updateContract(e, F, k2, { notice_months: 3 }, E)])).sort()), JSON.stringify([409, 'ok']), 'Ändern parallel:');
+  const k3 = await mk('C');
+  await settle([contracts.updateContract(e, O, k3, { partner: 'Neu' }, E), contracts.endContract(e, F, k3, { end_note: 'weg' })]);
+  const r3 = db.prepare('SELECT partner, ended_on FROM vehicle_contracts WHERE id=?').get(k3);
+  ok(!(r3.partner === 'Neu' && r3.ended_on), 'beendeter Vertrag nicht nachträglich geändert: ' + JSON.stringify(r3));
+  ok((await contracts.updateContract(e, O, k2, { note: 'nacheinander' }, E)).changed.length === 1, 'nacheinander weiter möglich');
+  // 6. Versicherungsfall parallel anlegen → kein 500
+  run(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at) VALUES('c1','V-1',?,'v1','o','Unfall','mittel','mittel','fahrbereit','in_reparatur','rk1','h',?,?)`, E, now, now);
+  const cb = { insurer: 'Vers AG', reported_on: '2026-10-01', evidence: 'Meldung' };
+  eq(JSON.stringify((await settle([claims.saveClaim(e, O, E, 'c1', cb), claims.saveClaim(e, F, E, 'c1', { ...cb, claim_no: 'S-9' })])).sort()), JSON.stringify([409, 'ok']), 'Versicherungsfall parallel:');
+  // 7. Höchstzahlen bei paralleler Anlage
+  for (let i = 0; i < 19; i++) await vn.addNote(e, O, E, 'v1', { text: 'Hinweis ' + i });
+  await settle(Array.from({ length: 5 }, (_, i) => vn.addNote(e, O, E, 'v1', { text: 'parallel ' + i })));
+  eq(db.prepare(`SELECT COUNT(*) n FROM vehicle_notes WHERE archived_at IS NULL`).get().n, vn.NOTES_MAX_ACTIVE, 'Hinweise ≤ Höchstzahl:');
+  for (let i = 0; i < 49; i++) run(`INSERT INTO emergency_contacts(id,environment,kind,label,phone,created_by,created_at,updated_at) VALUES(?,?,'sonstiges','L','+49 1',?,?,?)`, 'ec' + i, E, 'o', now, now);
+  await settle(Array.from({ length: 3 }, () => em.addContact(e, O, E, { kind: 'dispo', label: 'Dispo', phone: '+49 30 123456' })));
+  eq(db.prepare(`SELECT COUNT(*) n FROM emergency_contacts WHERE archived_at IS NULL`).get().n, em.EMERGENCY_MAX_ACTIVE, 'Rufnummern ≤ Höchstzahl:');
+});
+
+await test('Prüftermine/Fahrerzuordnung: älterer Bericht verschiebt keine Fälligkeit, Prüfergebnis nie überschrieben, Rückruf einmal, km gegen späteren Stand, Import ohne Zukunftsdatum, Zuordnung atomar', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const veh = await import('../src/vehicles.js'); const mt = await import('../src/maintenance.js'); const { berlinDate, addMonths } = await import('../src/util.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString(); const run = (q, ...a) => db.prepare(q).run(...a);
+  run(`INSERT INTO users(id,username,display_name,role,environment,created_at,updated_at) VALUES('f','flt','Flt','fleet','production',?,?),('d1','dr','Fahrer','driver','production',?,?)`, now, now, now, now);
+  run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('VIN:WDB00000000000001','WDB00000000000001','T-V1','lkw',1,0,?,?),('VIN:WDB00000000000002','WDB00000000000002','T-V2','lkw',1,0,?,?)`, now, now, now, now);
+  const F = { id: 'f', role: 'fleet', environment: 'production' }; const V = 'VIN:WDB00000000000001';
+  const rule = (id, kind, months) => run(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,evidence,created_by,created_at,updated_at) VALUES(?,?,?,?,'x','f',?,?)`, id, V, kind, months, now, now);
+  const today = berlinDate(); const d = (m) => addMonths(today, m);
+  const st = (p) => p.then(() => 'ok', (x) => x.status);
+  // 1. älterer Bericht nach neuerem: im Verlauf, Fälligkeit bleibt
+  rule('r1', 'UVV', 12);
+  await veh.completeMaintenance(e, F, 'r1', { done_date: d(-1), evidence: 'neu' });
+  const old = await veh.completeMaintenance(e, F, 'r1', { done_date: d(-20), evidence: 'alter Bericht' });
+  eq(old.older_than_last, true, 'als älter gemeldet:');
+  const r1 = db.prepare(`SELECT last_done_date, next_due_date FROM maintenance_rules WHERE id='r1'`).get();
+  eq(JSON.stringify([r1.last_done_date, r1.next_due_date]), JSON.stringify([d(-1), addMonths(d(-1), 12)]), 'Fälligkeit unverändert:');
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_events WHERE rule_id='r1'`).get().n, 2, 'beide im Verlauf:');
+  // 2. vorhandenes Prüfergebnis nicht überschreiben
+  rule('r2', 'Bremsen', 12);
+  await veh.completeMaintenance(e, F, 'r2', { done_date: d(-1), evidence: 'B1', result: 'gefaehrliche_maengel' });
+  eq(await st(veh.completeMaintenance(e, F, 'r2', { done_date: d(-1), evidence: 'B1', result: 'ohne_maengel' })), 409, 'abweichendes Ergebnis:');
+  eq(db.prepare(`SELECT result FROM maintenance_events WHERE rule_id='r2'`).get().result, 'gefaehrliche_maengel');
+  eq(await st(veh.completeMaintenance(e, F, 'r2', { done_date: d(-1), evidence: 'B1', result: 'gefaehrliche_maengel' })), 'ok', 'gleiches Ergebnis erneut:');
+  // 3. Rückruf parallel → einmal
+  rule('r3', 'Rückruf', null);
+  const rr = await Promise.allSettled([veh.completeMaintenance(e, F, 'r3', { done_date: d(-1), evidence: 'WS A' }), veh.completeMaintenance(e, F, 'r3', { done_date: today, evidence: 'WS B' })]);
+  eq(JSON.stringify(rr.map((x) => (x.status === 'fulfilled' ? 'ok' : x.reason.status)).sort()), JSON.stringify([409, 'ok']), 'Rückruf parallel:');
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_events WHERE rule_id='r3'`).get().n, 1, 'eine Durchführung:');
+  // 4. km größer als späterer unbegründeter Stand → abgewiesen; mit begründetem späteren Stand erlaubt
+  rule('r4', 'Ölwechsel', 12);
+  run(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at) VALUES('o1',?,500000,?, 'manuell:fleet',?)`, V, now, now);
+  eq(await st(veh.completeMaintenance(e, F, 'r4', { done_date: d(-2), evidence: 'Ö', done_km: '600000' })), 400, 'km > späterer Stand:');
+  run(`UPDATE odometer_readings SET note='Tachotausch' WHERE id='o1'`);
+  eq(await st(veh.completeMaintenance(e, F, 'r4', { done_date: d(-2), evidence: 'Ö', done_km: '600000' })), 'ok', 'begründeter späterer Stand:');
+  // 5. Import: letzte Prüfung in der Zukunft → übersprungen
+  const csv = `Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\nT-V2;;UVV;;${d(8)};12;Bericht`;
+  const imp = await mt.importMaintenanceCsv(e, F, csv, { dryRun: true });
+  eq(imp.created, 0); ok(imp.skipped.some((x) => /Zukunft/.test(x.reason)), 'Grund genannt: ' + JSON.stringify(imp.skipped));
+  // 6. Fahrerzuordnung parallel: keine doppelte bzw. zwei aktuelle Fahrzeuge
+  const a = await Promise.allSettled([veh.assignDriver(e, F, 'production', V, { user_id: 'd1' }), veh.assignDriver(e, F, 'production', V, { user_id: 'd1' })]);
+  eq(db.prepare(`SELECT COUNT(*) n FROM driver_vehicles WHERE valid_to IS NULL`).get().n, 1, 'eine offene Zuordnung: ' + JSON.stringify(a.map((x) => x.status)));
+  await Promise.allSettled([veh.assignDriver(e, F, 'production', 'VIN:WDB00000000000002', { user_id: 'd1', end_previous: true })]);
+  eq(db.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE valid_to IS NULL OR valid_to > ?`).all(new Date().toISOString()).map((x) => x.vehicle_id).join(), 'VIN:WDB00000000000002', 'Wechsel beendet das bisherige:');
+  // 7. „Prüfmangel ohne Auftrag“/„Prüfung nicht bestanden“: Auftrag am Prüftag kurz nach Mitternacht Berlin (UTC noch Vortag) zählt
+  const pd = d(-1); const c0 = new Date(Date.parse(pd + 'T00:00:00Z') - 1800000).toISOString(); // Vortag 23:30 UTC = Prüftag 00:30/01:30 Berlin
+  eq(veh.failedInspectionOf({ eval_excluded: 0 }, [{ id: 'x', kind: 'HU', done_date: pd, result: 'verkehrsunsicher', created_at: now }], [{ status: 'gemeldet', created_at: c0 }], d(-12)), null, 'Akte nach Berliner Tag:');
+  run(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,evidence,source,result,created_at) VALUES('ev7','r7',?,'HU',?,'B','erledigt','gefaehrliche_maengel',?)`, 'VIN:WDB00000000000002', pd, now);
+  run(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at) VALUES('c7','V-7','production','VIN:WDB00000000000002','f','Mängel','mittel','mittel','fahrbereit','gemeldet','rk7','h',?,?)`, c0, c0);
+  ok(!(await mt.defectsWithoutCaseQuery(e, 'production').all()).results.some((x) => x.id === 'ev7'), 'Liste nach Berliner Tag');
 });
 
 // Wächter: README und CHECKPOINT nennen die tatsächliche Testanzahl (diese Prüfung mitgezählt) – sonst veraltet die Doku unbemerkt

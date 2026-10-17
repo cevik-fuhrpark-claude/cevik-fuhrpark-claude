@@ -92,8 +92,11 @@ export async function addContact(env, user, envName, body) {
   const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM emergency_contacts WHERE environment=? AND archived_at IS NULL').bind(envName).first();
   if (n.n >= EMERGENCY_MAX_ACTIVE) throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
   const id = uuid(); const now = nowIso();
-  await env.DB.prepare('INSERT INTO emergency_contacts(id,environment,kind,label,phone,note,site,vehicle_id,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(id, envName, f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, now, now).run();
+  // Höchstzahl in derselben Anweisung (parallele Anlagen überschritten sie vorher, 17.10.2026)
+  const r = await env.DB.prepare(`INSERT INTO emergency_contacts(id,environment,kind,label,phone,note,site,vehicle_id,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11
+    WHERE (SELECT COUNT(*) FROM emergency_contacts WHERE environment=?2 AND archived_at IS NULL) < ?12`)
+    .bind(id, envName, f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, now, now, EMERGENCY_MAX_ACTIVE).run();
+  if (!(r.meta && r.meta.changes)) throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
   await audit(env, user.id, 'emergency.add', id, { environment: envName, ...f });
   return { id };
 }

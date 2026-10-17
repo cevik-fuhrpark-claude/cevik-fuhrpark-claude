@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -129,8 +129,11 @@ export async function updateContract(env, user, id, body, envName) {
   f.file_id = body.file_id !== undefined ? await checkFile(env, c.vehicle_id, envName, body.file_id) : c.file_id;
   const changed = Object.keys(f).filter((k) => f[k] !== c[k]);
   if (!changed.length) return { id, changed: [] };
-  await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?,partner=?,contract_no=?,start_date=?,end_date=?,notice_months=?,km_allowance=?,start_km=?,monthly_rate_net=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=?`)
-    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, nowIso(), id).run();
+  // nur auf dem gelesenen Stand und solange nicht beendet (vorher: parallele Änderungen überschrieben sich gegenseitig, beendete Verträge
+  // wurden trotzdem geändert – 17.10.2026)
+  const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?,partner=?,contract_no=?,start_date=?,end_date=?,notice_months=?,km_allowance=?,start_km=?,monthly_rate_net=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?`)
+    .bind(f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, f.file_id, laterIso(c.updated_at), id, c.updated_at).run();
+  if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'contract.update', id, { vehicle: c.plate, changed: Object.fromEntries(changed.map((k) => [k, { from: c[k], to: f[k] }])) });
   return { id, changed };
 }
@@ -143,7 +146,8 @@ export async function endContract(env, user, id, body) {
   const on = date(body.ended_on, 'Beendet am', { notFuture: true }) || berlinDate();
   const note = str(body.end_note, { required: true, max: 300, field: 'Grund' });
   if (c.start_date && on < c.start_date) throw bad('validation', 'Beendet am liegt vor dem Vertragsbeginn.');
-  await env.DB.prepare('UPDATE vehicle_contracts SET ended_on=?, end_note=?, updated_at=? WHERE id=?').bind(on, note, nowIso(), id).run();
+  const r = await env.DB.prepare('UPDATE vehicle_contracts SET ended_on=?, end_note=?, updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(on, note, laterIso(c.updated_at), id, c.updated_at).run();
+  if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'contract.end', id, { vehicle: c.plate, ended_on: on, note });
   return { id, ended_on: on };
 }

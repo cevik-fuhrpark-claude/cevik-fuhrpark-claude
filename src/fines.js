@@ -116,22 +116,29 @@ export async function createFine(env, user, envName, body) {
   const veh = pick.vehicle;
   const reference = str(body.reference, { max: 80 });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
-  if (reference) {
+  const dupCheck = async () => {
+    if (!reference) return;
     const dup = await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=?').bind(envName, reference, authority).first();
     if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
-  }
+  };
+  await dupCheck();
   const year = Number(berlinDate().slice(0, 4)); // Berliner Kalenderjahr wie alle Tagesangaben
   const c = await env.DB.prepare(`INSERT INTO fine_counters(environment, year, last_no) VALUES (?, ?, 1) ON CONFLICT(environment, year) DO UPDATE SET last_no = last_no + 1 RETURNING last_no`).bind(envName, year).first();
   const fineNo = `${envName === 'test' ? 'TB' : 'B'}-${year}-${String(c.last_no).padStart(4, '0')}`;
   const id = uuid();
   const now = nowIso();
-  await env.DB.batch([
+  // Aktenzeichen-Dublette auch bei gleichzeitiger Erfassung ausschließen: Einfügen nur, wenn (Umgebung, Behörde, Aktenzeichen) noch fehlt –
+  // in derselben Anweisung (vorher: erst prüfen, dann schreiben → zwei parallele Erfassungen ergaben zwei Vorgänge, 17.10.2026).
+  // Kein UNIQUE-Index, weil vorhandene Dubletten im Bestand die Migration scheitern ließen.
+  const res = await env.DB.batch([
     env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'eingegangen',?,?,?,?)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17
+      WHERE ?6 IS NULL OR NOT EXISTS (SELECT 1 FROM fines WHERE environment=?3 AND reference=?6 AND authority=?5)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
       str(body.location, { max: 200 }), plate, veh ? veh.id : null, num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true }), due,
       str(body.note, { max: 2000 }), user.id, now, now),
-    env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) VALUES (?,?,?,?,?,?,?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now),
+    env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
   ]);
+  if (!(res[0] && res[0].meta && res[0].meta.changes)) { await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
   return { id, fine_no: fineNo, vehicle_matched: !!veh, ...(pick.ambiguous ? { vehicle_ambiguous: true } : {}) };
 }
 
@@ -145,6 +152,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   let payload = {};
   if (action === 'driver_ack') {
     if (user.role !== 'driver' || f.driver_id !== user.id) throw forbidden();
+    if (f.driver_ack_at) return { ok: true, version: f.version, duplicate: true };
     set.driver_ack_at = now;
   } else {
     if (!fineActions(user, f).includes(action)) throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`);
@@ -162,6 +170,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           set.driver_id = null;
         }
         set.driver_basis = basis; set.driver_evidence = evidence; set.driver_confirmed_by = user.id; set.driver_confirmed_at = now; set.status = 'fahrer_ermittelt';
+        // neuer/erneut ermittelter Fahrer: „informiert“/„quittiert“ galten der vorherigen Ermittlung (vorher sah ein neuer Fahrer den Vorgang
+        // ohne Information und konnte nie quittieren, weil die Quittung des alten Fahrers stehen blieb – 17.10.2026)
+        set.driver_informed_at = null; set.driver_ack_at = null;
         payload = { basis, driver_id: set.driver_id, driver_name_note: set.driver_name_note };
         break;
       }
@@ -191,10 +202,19 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   }
   set.updated_at = now; set.version = f.version + 1;
   const cols = Object.keys(set);
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE fines SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=?`).bind(...cols.map((k) => set[k]), id),
-    env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) VALUES (?,?,?,?,?,?,?)').bind(uuid(), id, user.id, action, note, JSON.stringify(payload), now),
-  ]);
+  // atomarer Versions-Guard wie bei Vorgängen (cmd_guard): zwei gleichzeitige Befehle auf denselben Stand → einer gewinnt, der andere 409
+  // (vorher meldeten beide „ok“, die erste Fahrerbestätigung ging still verloren – 17.10.2026)
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE fines SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`).bind(...cols.map((k) => set[k]), id, f.version),
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
+      env.DB.prepare('DELETE FROM cmd_guard'),
+      env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) VALUES (?,?,?,?,?,?,?)').bind(uuid(), id, user.id, action, note, JSON.stringify(payload), now),
+    ]);
+  } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
+    throw e;
+  }
   if (action === 'inform_driver') {
     // Sperrbildschirm: nur Vorgangsnummer; Details erst nach Anmeldung
     // Fahrer arbeiten oft auf Ukrainisch/Englisch: Titel in ihrer Sprache
@@ -223,8 +243,9 @@ export async function uploadFineFile(env, user, envName, id, request) {
   if (cnt.n >= MAX_FINE_FILES) throw bad('too_many', `Maximal ${MAX_FINE_FILES} Dateien je Bußgeldvorgang.`);
   const fid = uuid();
   const key = `${envName}/fines/${id}/${fid}`;
+  // Dateiname vor dem Speichern ermitteln; ungültige %-Folge → Ersatzname (vorher 500 und verwaiste Datei im Speicher, 17.10.2026)
+  const name = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'schreiben'); } catch { return 'schreiben'; } })().replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'schreiben';
   await env.FILES.put(key, buf, { metadata: { type, fine_id: id } });
-  const name = decodeURIComponent(request.headers.get('x-filename') || 'schreiben').replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120);
   await env.DB.prepare(`INSERT INTO files(id,case_id,fine_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?)`)
     .bind(fid, id, envName, key, name, type, buf.length, sha, user.id, nowIso()).run();
   return { id: fid, duplicate: false };

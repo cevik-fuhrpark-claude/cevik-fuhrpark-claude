@@ -1210,7 +1210,7 @@ export async function uploadFile(env, user, envName, caseId, request) {
   const sha = await sha256Hex(buf);
   const dupe = await env.DB.prepare('SELECT id FROM files WHERE case_id=? AND sha256=?').bind(c.id, sha).first();
   if (dupe) return { id: dupe.id, duplicate: true };
-  const rawName = decodeURIComponent(request.headers.get('x-filename') || 'datei');
+  const rawName = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'datei'); } catch { return 'datei'; } })(); // ungültige %-Folge: Ersatzname statt 500
   const filename = rawName.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'datei';
   const id = uuid();
   const key = `${envName}/${c.id}/${id}`;
