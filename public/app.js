@@ -2437,6 +2437,13 @@ function evNote(e) {
     return (p.code === 'inspection_defects' ? tn('ev_defects', Number(p.defects) || 0) : t('ev_no_defects')) + km;
   }
   if (e.action === 'repeat_finding') return n.replace(/^Erneut festgestellt \(Abfahrtskontrolle\): /, '');
+  // Freigabe-Vermerk der Aufträge aus Prüftermin/Prüfmangel/Winterreifen (src/cases.js): Rahmen in der Oberflächensprache, Vermerk unverändert
+  if (e.action === 'approve_repair') {
+    let a;
+    if ((a = n.match(/^Auftrag aus Prüftermin ([^:]{1,40}?)(?:: ([\s\S]*))?$/))) return t('ev_order_maint').replace('{k}', mk(a[1])) + (a[2] ? ': ' + a[2] : '');
+    if ((a = n.match(/^Mängelbeseitigung aus ([^:]{1,40}?) vom (\d{2})\.(\d{2})\.(\d{4})(?:: ([\s\S]*))?$/))) return t('ev_order_defects').replace('{k}', mk(a[1])).replace('{d}', fmtD(`${a[4]}-${a[3]}-${a[2]}`)) + (a[5] ? ': ' + a[5] : '');
+    if ((a = n.match(/^Auftrag Winterreifen(?:: ([\s\S]*))?$/))) return t('ev_order_winter') + (a[1] ? ': ' + a[1] : '');
+  }
   if (e.action !== 'inspection') return n;
   const m = n.match(/^(?:(\d+) Mangel\/Mängel festgestellt|Kontrolle ohne Mängel)(?: · km-Stand (\d+) (?:größer als später erfasst \((\d+)\)|kleiner als zuletzt erfasst \((\d+)\)) – nicht in die Fahrzeugakte übernommen)?$/);
   if (!m) return n;
