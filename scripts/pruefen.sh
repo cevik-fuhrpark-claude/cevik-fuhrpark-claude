@@ -119,6 +119,7 @@ if [ -z "$OHNE_RAUCH" ]; then
     step "UI-Rauchtest Ukrainisch"; run_smoke CFP_LANG=uk
     step "UI-Rauchtest Englisch"; run_smoke CFP_LANG=en
     step "UI-Rauchtest HTML-Einschleusung (Freitexte)"; run_smoke CFP_XSS=1
+    step "UI-Rauchtest lange Wörter (Handy)"; run_smoke CFP_LONGWORD=1
     step "Zeitreise"; sh scripts/zeitreise-test.sh > /tmp/cfp-zeit.log 2>&1 || { cat /tmp/cfp-zeit.log; fail "Zeitreise"; }; echo "8 Zeitpunkte grün"
     step "UI-Zeitreise"; sh scripts/ui-zeitreise.sh > /tmp/cfp-uizeit.log 2>&1 || { grep -v ' grün$' /tmp/cfp-uizeit.log | tail -30; fail "UI-Zeitreise"; }; echo "4 Zeitpunkte grün"
   fi

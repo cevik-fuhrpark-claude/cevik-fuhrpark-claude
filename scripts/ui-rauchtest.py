@@ -5,6 +5,8 @@
 # CFP_XSS=1: HTML-Einschleusungs-Probe – nach der Vorbereitung hängt der Dev-Server (/__dev/taint) an alle Freitexte der Datenbank
 # '"'><b data-xss=1>X</b>' an; jede Ansicht (Bildschirm + Druck) darf kein Element mit data-xss enthalten (Freitext muss als Text
 # erscheinen). Layout-/Kontrast-/Sprachprüfungen entfallen in diesem Modus (lange Probetexte), JS-Fehler zählen weiter.
+# CFP_LONGWORD=1: Langwort-Probe (18.10.2026) – hängt an alle Freitexte (außer Kennzeichen und Rufnummern – beide sind auf kurze Zeichen geprüft) ein Wort aus 60 Zeichen ohne Leerzeichen an
+# (z. B. eingefügte Links, Teilenummern); geprüft wird nur Handy-Breite: kein waagrechtes Scrollen der Seite, keine JS-Fehler.
 # Zusätzlich: Kontrast WCAG AA (Handy-Breite) und Druckansichten (A4).
 # Prüft je Ansicht: keine JavaScript-Fehler, keine Fehlermeldung (rote Meldung), keine waagrechte Scrollleiste der Seite,
 # Überschrift vorhanden. Nur synthetische Testdaten (Kennzeichen RT-…), nichts verlässt den Rechner.
@@ -42,6 +44,9 @@ A11Y = """() => {
   return out;
 }"""
 SIZES = [('handy', 390, 844), ('tablet', 820, 1180), ('pc', 1440, 900)]
+LONGWORD = os.environ.get('CFP_LONGWORD') == '1'
+if LONGWORD:
+    SIZES = SIZES[:1]
 # Sichtbare ISO-Daten im Text (nicht in Eingabefeldern, Auswahllisten, Code oder als Dateiname/Adresse)
 ISO_DATES = r"""() => { const out = []; const re = /\b(19|20)\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/;
   const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);
@@ -400,6 +405,9 @@ with sync_playwright() as p:
         pq = urllib.parse.quote('"\'><b data-xss=1>X</b>')
         for rr in ('owner', 'fleet'):
             ROUTES[rr] += [f'master?q={pq}', f'help?q={pq}', f'search?q={pq}', f'vehicles?f={pq}', f'cases?f={pq}']
+    if LONGWORD:
+        tr = adm.evaluate("async () => (await fetch('/__dev/taint?skip=plate|phone&probe=' + encodeURIComponent(' Langwort' + 'x'.repeat(52)), { method: 'POST' })).json()")
+        print(f"Langwort-Probe in {len(tr.get('tainted') or {})} Spalten")
     xss_seen = [0]
     XSS_CHECK = """() => { const el = document.querySelector('[data-xss]'); const txt = document.body.innerText.includes('<b data-xss=1>X</b>');
       return { inj: el ? (el.parentElement ? el.parentElement.outerHTML.slice(0, 160) : el.outerHTML) : null, txt }; }"""
@@ -431,6 +439,14 @@ with sync_playwright() as p:
                     problems.append(f'{where}: Fehlermeldung „{err.first.text_content()}“')
                 if not pg.locator('h1').count():
                     problems.append(f'{where}: keine Überschrift')
+                if LONGWORD:
+                    over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
+                    if over > 2:
+                        wide = pg.evaluate("""() => { const W = document.documentElement.clientWidth; const out = [];
+                          for (const el of document.querySelectorAll('body *')) { const r = el.getBoundingClientRect(); if (r.right > W + 2 && el.offsetParent !== null && !el.closest('.scroll') && ![...el.children].some((c) => c.getBoundingClientRect().right > W + 2)) out.push(`<${el.tagName.toLowerCase()} class="${el.className}">${(el.textContent || '').trim().slice(0, 30)}`); }
+                          return out.slice(0, 3); }""")
+                        problems.append(f'{where}: Seite {over}px breiter als der Bildschirm {wide}')
+                    continue
                 if XSS:
                     x = pg.evaluate(XSS_CHECK)
                     if x['inj']:
@@ -507,6 +523,8 @@ with sync_playwright() as p:
             if any(base == x or (x.endswith('/') and base.startswith(x) and base.count('/') == x.count('/'))
                    or ('//' in x and base.startswith(x.split('//')[0] + '/') and base.endswith('/' + x.split('//')[1]) and base.count('/') == x.count('/')) for x in PRINT[role]):
                 print_routes.append((role, r))
+    if LONGWORD:
+        print_routes = []
     for role, r in print_routes:
         pg = pages[role]
         pg.set_viewport_size({'width': 718, 'height': 1000})

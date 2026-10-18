@@ -12855,6 +12855,28 @@ await test('Fehlersuche 18.10. (25): Datenqualität – Standortfilter vor der 2
   ok(!(await U.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'contract_km_no_reading' && i.vehicle_id === 'VIN:WMA15SZZ2HM700001'), 'künftiger Vertrag ohne Lücke');
 });
 
+await test('Verbesserungen 18.10. (26): Einheit „Stk“ je Sprache (шт./pcs), Kostenbericht nennt Standort in Anzeige-Schreibweise und CSV-Dateiname aus angezeigtem Zeitraum, lange Wörter umbrechen auf dem Handy', async () => {
+  const { U } = await freshWorld();
+  // Einheit: „pcs“/„шт.“/„Stück“/leer werden einheitlich als „Stk“ gespeichert, freie Einheiten bleiben
+  for (const [u, want] of [['pcs', 'Stk'], ['шт.', 'Stk'], ['ШТ', 'Stk'], ['Stück', 'Stk'], ['', 'Stk'], ['l', 'l'], ['Satz', 'Satz']]) {
+    const r = await U.ws.post('/api/stock', { name: 'Artikel ' + (u || 'leer'), unit: u, initial_qty: 1 }); eq(r.status, 201, JSON.stringify(r.data));
+    eq((await U.ws.get(`/api/stock/${r.data.id}`)).data.item.unit, want, `Einheit „${u}“`);
+  }
+  const { readFileSync } = await import('node:fs');
+  const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(/unit_pcs: 'Stk'/.test(i18n) && /unit_pcs: 'шт\.'/.test(i18n) && /unit_pcs: 'pcs'/.test(i18n), 'unit_pcs in DE/UK/EN');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/esc\(\w+\.unit\)|'\{u\}', \w+\.unit\)/g) || []).join(), '', 'Einheit nur über unitL anzeigen');
+  ok(!/name="unit" value="Stk"/.test(app), 'Formular-Vorgabe je Sprache');
+  ok(/a\.download = `fuhrpark-kosten_\$\{rep\.from \|\| from\}_\$\{rep\.to \|\| to\}/.test(app), 'CSV-Dateiname aus angezeigtem Zeitraum');
+  // Kostenbericht: Standort wie in den Stammdaten geschrieben (Eingabe klein)
+  const c = await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-02&site=dortmund'); eq(c.status, 200);
+  eq(c.data.site, 'Dortmund', 'Anzeige-Schreibweise'); eq((await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-02')).data.site, null);
+  // Lange Wörter: #app bricht um, Tabellen/Kennzeichen/Eingaben nicht
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/#app \{ overflow-wrap: anywhere; \}/.test(css) && /#app table, #app \.plate, #app input/.test(css), 'Umbruchregel');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

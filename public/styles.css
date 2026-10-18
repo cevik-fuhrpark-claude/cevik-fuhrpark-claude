@@ -42,6 +42,10 @@ h1 { font-size: 1.6rem; }
 h2 { font-size: 1.25rem; margin-top: 1.5rem; }
 h3 { font-size: 1.05rem; }
 p { margin: 0 0 0.75rem; max-width: 70ch; }
+/* Lange Wörter ohne Leerzeichen (eingefügte Links, Teilenummern, Namen) umbrechen statt die Seite auf dem Handy zu verbreitern (18.10.2026).
+   Tabellen, Kennzeichen und Eingabefelder behalten ihre Breite (Tabellen scrollen in .scroll). */
+#app { overflow-wrap: anywhere; }
+#app table, #app .plate, #app input, #app select, #app textarea { overflow-wrap: normal; }
 .muted { color: var(--steel); }
 .small { font-size: 0.875rem; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }

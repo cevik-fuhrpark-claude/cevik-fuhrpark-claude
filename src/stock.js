@@ -17,6 +17,9 @@ function siteScope(user, site) {
 // Atomare Bestandsprüfung im selben Stapel wie die Buchung (Muster cmd_guard aus cases.js): schlägt die Bedingung fehl, verletzt die
 // Zeile den CHECK (ok = 1) und der ganze Stapel wird zurückgerollt. Vorher wurde nur VOR dem Schreiben geprüft – zwei gleichzeitige
 // Entnahmen/Inventuren konnten den Bestand ins Minus bzw. die Korrektur doppelt buchen (17.10.2026).
+// Standardeinheit: „Stk“ wird je Sprache als Stk/шт./pcs angezeigt – Eingaben in diesen Formen einheitlich als „Stk“ speichern.
+export const stdUnit = (u) => (!u || /^(stk\.?|stück|pcs\.?|pc\.?|шт\.?)$/i.test(u.trim()) ? 'Stk' : u);
+
 export function stockGuardNonNegative(env, itemId) {
   return [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN ROUND(COALESCE(SUM(qty),0),3) >= 0 THEN 1 ELSE 0 END FROM stock_movements WHERE item_id=?`).bind(itemId),
     env.DB.prepare('DELETE FROM cmd_guard')];
@@ -102,7 +105,7 @@ export async function createItem(env, user, envName, body) {
   try {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
-      str(body.unit, { max: 20, field: 'Einheit' }) || 'Stk', r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })), str(body.location, { max: 80, field: 'Ort' }),
+      stdUnit(str(body.unit, { max: 20, field: 'Einheit' })), r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })), str(body.location, { max: 80, field: 'Ort' }),
       num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true }), user.id, now, now).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
