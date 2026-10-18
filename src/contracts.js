@@ -103,6 +103,17 @@ async function checkFile(env, vehicleId, envName, raw) {
   return f.id;
 }
 
+// Derselbe Vertrag (Art + Vertragsnummer, ohne Nummer Partner + Beginn), Groß-/Kleinschreibung auch bei Umlauten egal (18.10.2026: SQLite LOWER
+// kennt nur A–Z – „Ü-1“/„ü-1“ ergab eine Dublette mit doppelter Rate). Ein beendeter Vertrag sperrt seine Nummer nur für denselben Beginn
+// (Folgevertrag/-police mit gleicher Nummer und neuem Beginn ist möglich; 18.10.2026 vorher dauerhaft 409).
+const lcDe = (x) => String(x || '').trim().toLocaleLowerCase('de');
+export function sameContract(c, f) {
+  if (c.kind !== f.kind) return false;
+  if (lcDe(f.contract_no)) return lcDe(c.contract_no) === lcDe(f.contract_no) && (!c.ended_on || (c.start_date || '') === (f.start_date || ''));
+  return !lcDe(c.contract_no) && lcDe(c.partner) === lcDe(f.partner) && (c.start_date || '') === (f.start_date || '');
+}
+const DUP_MSG = 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).';
+
 export async function createContract(env, user, vehicleId, body, envName) {
   if (!isMgr(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
@@ -110,12 +121,14 @@ export async function createContract(env, user, vehicleId, body, envName) {
   const f = readBody(body);
   const fileId = await checkFile(env, v.id, envName, body.file_id);
   const id = uuid(); const now = nowIso();
+  const same = (await env.DB.prepare('SELECT kind, contract_no, partner, start_date, ended_on FROM vehicle_contracts WHERE vehicle_id=?').bind(v.id).all()).results;
+  if (same.some((c) => sameContract(c, f))) throw conflict('duplicate_contract', DUP_MSG);
   // derselbe Vertrag (Schlüssel wie beim Import: Fahrzeug + Art + Vertragsnummer, ohne Nummer Partner + Beginn) nur einmal – Doppelklick/parallel
   // legte ihn sonst mehrfach an, Monatsraten zählten doppelt (17.10.2026)
   const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at,km_basis_at)
     SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?17
     WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=?2 AND c.kind=?3 AND (CASE WHEN COALESCE(?5,'')<>''
-      THEN LOWER(COALESCE(c.contract_no,''))=LOWER(?5)
+      THEN LOWER(COALESCE(c.contract_no,''))=LOWER(?5) AND (c.ended_on IS NULL OR COALESCE(c.start_date,'')=COALESCE(?6,''))
       ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(?4,'')) AND COALESCE(c.start_date,'')=COALESCE(?6,'') END))`)
     .bind(id, v.id, f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, fileId, user.id, now, now).run();
   if (!r.meta || !r.meta.changes) throw conflict('duplicate_contract', 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).');
@@ -141,7 +154,7 @@ export async function updateContract(env, user, id, body, envName) {
   const changed = Object.keys(f).filter((k) => f[k] !== c[k]);
   // km-Grundlage nach Zähler-Rücksprung geprüft (Formular sendet `confirm_km_basis`, wenn das Kontingent „nicht berechenbar“ ist): Speichern ohne
   // Änderung zählt als Bestätigung – ab jetzt wird wieder gerechnet (Stand des Vertrags = Grundlage, siehe contractStatus)
-  if (!changed.length && body.confirm_km_basis && c.km_allowance) {
+  if (!changed.length && flagLike(body.confirm_km_basis) && c.km_allowance) { // nur echte Bestätigung (18.10.2026: "false"/"0" bestätigte)
     const nt = laterIso(c.updated_at);
     const t = await env.DB.prepare('UPDATE vehicle_contracts SET updated_at=?, km_basis_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(nt, nt, id, c.updated_at).run();
     if (!(t.meta && t.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
@@ -149,12 +162,16 @@ export async function updateContract(env, user, id, body, envName) {
     return { id, changed: [], km_basis_confirmed: true };
   }
   if (!changed.length) return { id, changed: [] };
+  if (['kind', 'contract_no', 'partner', 'start_date'].some((k) => changed.includes(k))) {
+    const same = (await env.DB.prepare('SELECT kind, contract_no, partner, start_date, ended_on FROM vehicle_contracts WHERE vehicle_id=? AND id<>?').bind(c.vehicle_id, id).all()).results;
+    if (same.some((x) => sameContract(x, f))) throw conflict('duplicate_contract', DUP_MSG);
+  }
   // nur auf dem gelesenen Stand und solange nicht beendet (vorher: parallele Änderungen überschrieben sich gegenseitig, beendete Verträge
   // wurden trotzdem geändert – 17.10.2026)
   // dieselbe Dublettenregel wie beim Anlegen (Ändern der Vertragsnummer erzeugte vorher die Dublette, Raten doppelt) und kein Wechsel weg von
   // „Versicherung“, solange ein Versicherungsfall auf den Vertrag verweist (der Fall war danach nicht mehr speicherbar) – 17.10.2026
   const DUP = `EXISTS (SELECT 1 FROM vehicle_contracts d WHERE d.vehicle_id=?16 AND d.id<>?14 AND d.kind=?1 AND (CASE WHEN COALESCE(?3,'')<>''
-      THEN LOWER(COALESCE(d.contract_no,''))=LOWER(?3)
+      THEN LOWER(COALESCE(d.contract_no,''))=LOWER(?3) AND (d.ended_on IS NULL OR COALESCE(d.start_date,'')=COALESCE(?4,''))
       ELSE COALESCE(d.contract_no,'')='' AND LOWER(COALESCE(d.partner,''))=LOWER(COALESCE(?2,'')) AND COALESCE(d.start_date,'')=COALESCE(?4,'') END))`;
   const CLAIM = `(?1<>'versicherung' AND EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.contract_id=?14))`;
   const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?1,partner=?2,contract_no=?3,start_date=?4,end_date=?5,notice_months=?6,km_allowance=?7,start_km=?8,monthly_rate_net=?9,evidence=?10,note=?11,file_id=?12,updated_at=?13,
@@ -204,7 +221,7 @@ export async function contractOverview(env, user, query = {}) {
   const filter = ['aktiv', 'aktion', 'beendet', 'alle'].includes(query.filter) ? query.filter : 'aktiv';
   const kind = CONTRACT_KINDS.includes(query.kind) ? query.kind : null;
   const [rows, settingsRows, latestKm] = await Promise.all([
-    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.site AS vehicle_site FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id ORDER BY v.plate, c.kind`).all(),
+    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id ORDER BY v.plate, c.kind`).all(),
     env.DB.prepare(`SELECT key, value FROM settings WHERE key='contract_warn_days'`).all(),
     latestKmByVehicle(env),
   ]);
@@ -218,7 +235,8 @@ export async function contractOverview(env, user, query = {}) {
   for (const c of list) { if (c.ended_on) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
   // laufend = nicht beendet und heute innerhalb der Laufzeit, unabhängig vom Listenfilter (17.10.2026: abgelaufene Verträge und der Filter
   // „Handlungsbedarf“ verfälschten die Summe gegenüber dem Kostenbericht)
-  const running = list.filter((c) => !c.ended_on && (!c.end_date || c.end_date >= today) && (!c.start_date || c.start_date <= today));
+  // ruhende Fahrzeuge zählen nicht (wie im Kostenbericht; 18.10.2026)
+  const running = list.filter((c) => !c.vehicle_eval_excluded && !c.ended_on && (!c.end_date || c.end_date >= today) && (!c.start_date || c.start_date <= today));
   if (filter === 'aktiv') list = list.filter((c) => !c.ended_on);
   else if (filter === 'aktion') list = list.filter((c) => !c.ended_on && c.status.overall !== 'ok');
   else if (filter === 'beendet') list = list.filter((c) => c.ended_on);
@@ -346,14 +364,13 @@ export async function importContracts(env, user, text, { dryRun = false, source 
 
   const [vehRes, exRes] = await Promise.all([
     env.DB.prepare('SELECT id, vin, plate, active, eval_excluded FROM vehicles').all(),
-    env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date FROM vehicle_contracts').all(),
+    env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date, ended_on FROM vehicle_contracts').all(),
   ]);
   const vehicles = vehRes.results;
   const byVin = new Map(vehicles.map((v) => [normVin(v.vin), v]));
   // Kennzeichen doppelt (ruhendes/außer Betrieb genommenes Doppel): das bewertete aktive Fahrzeug wie bei den anderen Importen (17.10.2026)
   const byPlate = { get: (raw) => { const r = pickVehicleByPlate(vehicles, raw); return r.vehicle || (r.ambiguous ? 'mehrdeutig' : undefined); } };
-  const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${no.toLowerCase()}` : `${vid}|${kind}|${String(partner || '').toLowerCase()}|${start || ''}`);
-  const existing = new Set(exRes.results.map((c) => keyOf(c.vehicle_id, c.kind, c.contract_no, c.partner, c.start_date)));
+  const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${lcDe(no)}` : `${vid}|${kind}|${lcDe(partner)}|${start || ''}`);
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
   const rows = []; const skipped = []; const seen = new Set();
   table.slice(1).forEach((cells, idx) => {
@@ -381,7 +398,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     const key = keyOf(v.id, f.kind, f.contract_no, f.partner, f.start_date);
     if (seen.has(key)) return skip('doppelt in der Datei');
     seen.add(key);
-    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status: existing.has(key) ? 'vorhanden' : 'neu' });
+    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status: exRes.results.some((c) => c.vehicle_id === v.id && sameContract(c, f)) ? 'vorhanden' : 'neu' });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
   const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows, skipped }; // höchstens 500 Zeilen – vorher still auf 300 gekürzt (17.10.2026)
@@ -393,7 +410,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at,km_basis_at)
     SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2, ?2 FROM json_each(?3)
     WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=${J('v')} AND c.kind=${J('kind')} AND (CASE WHEN COALESCE(${J('no')},'')<>''
-      THEN LOWER(COALESCE(c.contract_no,''))=LOWER(${J('no')})
+      THEN LOWER(COALESCE(c.contract_no,''))=LOWER(${J('no')}) AND (c.ended_on IS NULL OR COALESCE(c.start_date,'')=COALESCE(${J('sd')},''))
       ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(${J('partner')},'')) AND COALESCE(c.start_date,'')=COALESCE(${J('sd')},'') END))`)
     .bind(user.id, now, JSON.stringify(items)).run();
   const inserted = r.meta && typeof r.meta.changes === 'number' ? r.meta.changes : fresh.length;

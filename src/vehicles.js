@@ -29,10 +29,12 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT MAX(c.safety_lock) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
       (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')) AS in_workshop,
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
+      (SELECT MAX(measured_at) FROM odometer_readings o WHERE o.vehicle_id=v.id) AS last_km_at,
       (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL) AS next_due,
       -- nächste km-Fälligkeit (belegter Wert vor „km bei letzter Durchführung + Intervall“, wie ruleDueKm; HU/SP nur nach Datum)
       -- + Zeitpunkt der km-Grundlage dieser Regel und letzter km-Rücksprung (Tachotausch) – wie kmDue: danach kein Rest aus gemischten Zählern
-      (SELECT x.k || '|' || x.kb || '|' || x.kind FROM (SELECT COALESCE(m.due_km, m.last_done_km + NULLIF(m.interval_km, 0)) AS k, COALESCE(m.km_basis_at, m.updated_at, '') AS kb, m.kind FROM maintenance_rules m
+      (SELECT x.k || '|' || x.kb || '|' || x.ldk || '|' || x.ldd || '|' || x.kind FROM (SELECT COALESCE(m.due_km, m.last_done_km + NULLIF(m.interval_km, 0)) AS k, COALESCE(m.km_basis_at, m.updated_at, '') AS kb,
+          COALESCE(m.last_done_km, '') AS ldk, COALESCE(m.last_done_date, '') AS ldd, m.kind FROM maintenance_rules m
         WHERE m.vehicle_id=v.id AND m.kind NOT IN ('HU','SP')) x WHERE x.k IS NOT NULL ORDER BY x.k, x.kind LIMIT 1) AS next_km,
       ${KM_DROP_SQL('v.id')} AS km_drop,
       (SELECT i.created_at || '|' || i.result FROM inspections i WHERE i.vehicle_id=v.id AND i.environment=? AND i.kind='abfahrt' ORDER BY i.created_at DESC LIMIT 1) AS last_check,
@@ -58,8 +60,10 @@ export async function listVehicles(env, user, envName, query = {}) {
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
     // km-Fälligkeit: Rest-km nur mit erfasstem km-Stand (keine Schätzung)
     const nkp = v.next_km ? String(v.next_km).split('|') : null;
-    const [nk, nkb, nkk] = nkp ? [Number(nkp[0]), nkp[1] || null, nkp.slice(2).join('|')] : [null, null, null];
-    v.next_due_km = nk; v.next_due_km_kind = nkk; v.km_remaining = nk !== null && v.last_km !== null && v.last_km !== undefined ? nk - v.last_km : null; delete v.next_km;
+    const [nk, nkb, nldk, nldd, nkk] = nkp ? [Number(nkp[0]), nkp[1] || null, nkp[2] === '' ? null : Number(nkp[2]), nkp[3] || null, nkp.slice(4).join('|')] : [null, null, null, null, null];
+    // wie kmDue: belegter km-Stand der letzten Durchführung zählt, wenn die letzte Ablesung älter ist (18.10.2026)
+    const curKm = v.last_km !== null && v.last_km !== undefined && nldk !== null && nldk > v.last_km && nldd && v.last_km_at && berlinDate(v.last_km_at) <= nldd ? nldk : v.last_km;
+    v.next_due_km = nk; v.next_due_km_kind = nkk; v.km_remaining = nk !== null && curKm !== null && curKm !== undefined ? nk - curKm : null; delete v.next_km;
     // km-Zähler nach der letzten Änderung der km-Grundlage gesunken (Tachotausch): Rest wäre aus gemischten Zählern → kein Wert, Kennzeichen
     const drop = parseKmDrop(v.km_drop); delete v.km_drop;
     if (nk !== null && kmCounterDropAfter({ km_basis_at: nkb }, drop)) { v.km_remaining = null; v.km_unclear = 'counter_drop'; v.km_drop_at = drop.drop_at; }
@@ -431,8 +435,9 @@ export async function upsertVehicle(env, user, body) {
   // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
   // in Betrieb – dann mit Protokoll `vehicle.activate` (vorher still, 17.10.2026)
   const before = await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(row.id).first();
-  await upsertVehicleRows(env, [row], { keepActive: flag(body.keep_active, 'Aktiv lassen'), actorId: user.id });
-  if (before && !before.active && !body.keep_active) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
+  const keepActive = flag(body.keep_active, 'Aktiv lassen'); // einmal auswerten (18.10.2026: "0"/"false" nahm still ohne Protokoll in Betrieb)
+  await upsertVehicleRows(env, [row], { keepActive, actorId: user.id });
+  if (before && !before.active && !keepActive) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
   // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
   // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.
   const k = normPlate(row.plate);
@@ -468,8 +473,17 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const now = nowIso();
   // Außer Betrieb nehmen beendet laufende Fahrerzuordnungen (Verlauf bleibt) – sonst galt der Fahrer weiter als zugeordnet und die
   // Zuordnung lebte bei Wieder-in-Betrieb-Nahme auf (17.10.2026)
-  await env.DB.batch([env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, now, vehicleId),
-    ...(active ? [] : [env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, vehicleId, now)])]);
+  // offene Vorgänge zusätzlich im selben Stapel geprüft (18.10.2026: gleichzeitig angelegte Meldung blieb sonst offen am außer Betrieb genommenen Fahrzeug)
+  const openGuard = `FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`;
+  try {
+    await env.DB.batch([
+      ...(active ? [] : [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END ${openGuard}`).bind(vehicleId), env.DB.prepare('DELETE FROM cmd_guard')]),
+      env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, now, vehicleId),
+      ...(active ? [] : [env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, vehicleId, now)])]);
+  } catch (e) {
+    if (!active && String(e && e.message).includes('CHECK')) { const open = await env.DB.prepare(`SELECT COUNT(*) AS n ${openGuard}`).bind(vehicleId).first(); throw conflict('open_cases', `Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`); }
+    throw e;
+  }
   await audit(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason });
   // Hinweis: laufende Verträge (Leasing/Miete/Versicherung …) bleiben bestehen – Rückgabe/Kündigung separat klären
   const running = active ? 0 : (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicle_contracts WHERE vehicle_id=? AND ended_on IS NULL').bind(vehicleId).first()).n;
@@ -497,11 +511,17 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   // keine offene Zuordnung Fahrer↔Fahrzeug besteht – zwei gleichzeitige Zuordnungen ergaben sonst doppelte bzw. zwei „aktuelle“ Fahrzeuge
   if (endPrev) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, now));
   stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7
-    WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))`)
+    WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))
+      AND EXISTS (SELECT 1 FROM vehicles WHERE id=?3 AND active=1)`)
     .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300 }) || 'Zuordnung durch Fuhrparkleitung', user.id, now),
     env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
   try { await env.DB.batch(stmts); } catch (e) {
-    if (String(e && e.message).includes('CHECK')) throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
+    if (String(e && e.message).includes('CHECK')) {
+      // gleichzeitig außer Betrieb genommen (18.10.2026: Zuordnung blieb sonst offen und lebte bei Wieder-in-Betrieb-Nahme auf)
+      const va = await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(vehicleId).first();
+      if (!va || !va.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+      throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
+    }
     throw e;
   }
   await audit(env, user.id, 'vehicle.assign_driver', vehicleId, { driver: driver.id, ended_previous: endPrev ? open.map((o) => o.plate) : [] });
@@ -760,11 +780,15 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   //   wird immer gespeichert (Verlauf). Rückruf: nur, solange noch nicht durchgeführt (sonst 409, auch bei gleichzeitiger Erfassung).
   // - Ein vorhandenes, abweichendes Prüfergebnis derselben Durchführung wird nie überschrieben (wie „Prüfergebnis nachtragen“).
   const guard = (sql, ...a) => [env.DB.prepare(`INSERT INTO cmd_guard(ok) ${sql}`).bind(...a), env.DB.prepare('DELETE FROM cmd_guard')];
+  // km-Grundlage nur erneuern, wenn die Durchführung nicht vor dem letzten km-Rücksprung (Tachotausch) liegt (18.10.2026: nachgetragene
+  // Durchführung vom alten Zähler hob „ungeklärt“ auf, danach Rest-km aus gemischten Zählern)
+  const drop = parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(r.vehicle_id).first() || {}).d);
+  const basisAt = drop.drop_at && date < (String(drop.drop_at).length > 10 ? berlinDate(drop.drop_at) : String(drop.drop_at).slice(0, 10)) ? (r.km_basis_at || null) : nowIso();
   const stmts = [
     ...(result ? guard('SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM maintenance_events WHERE rule_id=? AND done_date=? AND result IS NOT NULL AND result<>?', ruleId, date, result) : []),
     env.DB.prepare(`UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL
       WHERE id=? AND ${oneTime ? 'last_done_date IS NULL' : '(last_done_date IS NULL OR last_done_date <= ?)'}`)
-      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}` : evidence, nowIso(), nowIso(), docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId, ...(oneTime ? [] : [date])),
+      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}` : evidence, nowIso(), basisAt, docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId, ...(oneTime ? [] : [date])),
     ...(oneTime ? guard('SELECT changes()') : []),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
     ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=? AND result IS NULL').bind(result, ruleId, date)] : []),

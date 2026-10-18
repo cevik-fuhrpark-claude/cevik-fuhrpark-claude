@@ -5989,7 +5989,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
   { const ce = d.events.find((e) => e.action === 'create'); const pl = typeof ce.payload === 'string' ? JSON.parse(ce.payload) : ce.payload;
     eq(pl.origin, 'wartung', 'Anlage-Ereignis nennt Herkunft Wartung (Verknüpfung im selben Batch)'); }
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 27), 'Auftrag aus Prüftermin ≤ 27 Abfragen'); // +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 29), 'Auftrag aus Prüftermin ≤ 29 Abfragen'); // +2 (18.10.2026): Fahrzeug noch in Betrieb im Anlage-Stapel; +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
   { // Anfragedaten können Herkunft/Verknüpfung nicht setzen
     const fake = await users.fleet.post('/api/cases', { vehicle_id: rule.data.vehicle_id || V1, description: 'Test Herkunft fremd gesetzt', origin: 'wartung', maintenance_rule_id: rule.data.id, request_key: rk() });
     eq(fake.status, 201); const fc = (await users.fleet.get(`/api/cases/${fake.data.id}`)).data;
@@ -6076,7 +6076,7 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   eq(o.data.status, 'werkstatt_freigegeben'); eq(o.data.priority, 'kritisch'); eq(o.data.driveability, 'nicht_fahrbereit');
   const c = (await users.fleet.get(`/api/cases/${o.data.id}`)).data;
   eq(c.case.origin, 'wartung'); eq(c.case.maintenance_event_id, evBad.id, 'Verknüpfung gespeichert');
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 29), 'Auftrag aus Prüfung ≤ 29 Abfragen'); // +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').every((w) => w.n <= 31), 'Auftrag aus Prüfung ≤ 31 Abfragen'); // +2 (18.10.2026): Fahrzeug noch in Betrieb im Anlage-Stapel; +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
   console.log('     Auftrag aus Prüftermin/Prüfung max. ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').map((w) => w.n)) + ' / ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').map((w) => w.n)) + ' Abfragen');
   ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
   eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
@@ -11477,6 +11477,85 @@ await test('Fehlersuche 18.10. (3): Reifengrößen-Import (FIN doppelt mit ander
   const own = (await U.driver.get('/api/drivers')).data.drivers[0]; ok(own && own.id === d1); ok(!('note' in own) && !('created_by' in own), JSON.stringify(Object.keys(own)));
   ok(!('note' in (await U.driver.get('/api/drivers/' + d1)).data.driver));
   eq((await F.get('/api/drivers/' + d1)).data.driver.note, 'intern: nur für die Leitung');
+});
+await test('Fehlersuche 18.10. (4): km-Grundlage bei nachgetragener Durchführung vor Tachotausch, km-Fälligkeit mit km der Durchführung, Rest 0 = fällig, Import erledigt geplanten Termin, außer Betrieb atomar, keep_active "0", Verträge (ruhend, Folgevertrag, Umlaute, confirm "false")', async () => {
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  { const { e, U, V1 } = await freshWorld(); const F = U.fleet;
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 290000, measured_on: day(-40) })).status, 201);
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 300000, measured_on: day(-20) })).status, 201);
+    const r = await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Ölwechsel', last_done_date: day(-60), last_done_km: 270000, interval_km: 30000, evidence: 'Rechnung 1' }); eq(r.status, 201);
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 1000, measured_on: day(-5), note: 'Tachotausch' })).status, 201);
+    const st = async () => (await F.get('/api/maintenance')).data.rows.find((y) => y.id === r.data.id);
+    eq((await st()).km_status, 'ungeklaert');
+    eq((await F.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-30), done_km: 295000, evidence: 'Rechnung 2 (nachgetragen)' })).status, 200);
+    eq((await st()).km_status, 'ungeklaert', 'Durchführung vom alten Zähler klärt den Rücksprung nicht');
+    eq((await F.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-1), done_km: 1500, evidence: 'Rechnung 3' })).status, 200);
+    eq((await st()).km_status, 'ok', 'Durchführung nach dem Tausch klärt ihn'); }
+  { const { e, U, V1 } = await freshWorld(); const F = U.fleet;
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 200000, measured_on: day(-200) })).status, 201);
+    const r = await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Ölwechsel', last_done_date: day(-10), last_done_km: 290000, interval_km: 30000, evidence: 'Rechnung' }); eq(r.status, 201);
+    const row = (await F.get('/api/maintenance')).data.rows.find((y) => y.id === r.data.id); eq(row.km_remaining, 30000, 'Rest höchstens das Intervall');
+    eq((await F.get('/api/vehicles')).data.vehicles.find((y) => y.id === V1).km_remaining, 30000, 'Fahrzeugliste gleich');
+    const { kmDue } = await import('../src/maintenance.js');
+    eq(kmDue({ due_km: 320000 }, { km: 320000, measured_at: day(0) }, null).km_status, 'faellig', 'Rest 0 = fällig');
+    eq(kmDue({ due_km: 320000 }, { km: 319999, measured_at: day(0) }, null).km_status, 'ok');
+    // Import mit neuer Durchführung erledigt den geplanten Werkstatttermin
+    const u = await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-350), interval_months: 12, evidence: 'UVV alt' }); eq(u.status, 201);
+    eq((await F.post(`/api/maintenance/${u.data.id}/plan`, { planned_date: day(5) })).status, 200);
+    eq((await F.req('POST', '/api/maintenance/import', `FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;UVV;${day(-1)};UVV-Protokoll 2026-123`, { 'content-type': 'text/csv' })).status, 200);
+    eq(e.DB.db.prepare('SELECT planned_date FROM maintenance_rules WHERE id=?').get(u.data.id).planned_date, null);
+    // keep_active "0": wieder in Betrieb mit Protokoll
+    const V2 = 'VIN:WDB9630051L917317';
+    eq((await F.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'verkauft' })).status, 200);
+    eq((await F.post('/api/vehicles', { vin: 'WDB9630051L917317', plate: 'SZ-KC 5515', keep_active: '0' })).status, 201);
+    eq(e.DB.db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.activate' AND target=?`).get(V2).n, 1); }
+  // außer Betrieb nehmen gleichzeitig mit Zuordnung bzw. Meldung: nie offen an außer Betrieb genommenem Fahrzeug
+  for (let i = 0; i < 8; i++) {
+    const { e, U, V1 } = await freshWorld(); addRandomLatency(e, 6); const db = e.DB.db;
+    const [a, b, c] = await Promise.all([U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }),
+      U.driver.post('/api/cases', { vehicle_id: V1, description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }),
+      U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'verkauft' })]);
+    ok([a.status, b.status, c.status].every((x) => x < 500), [a.status, b.status, c.status].join());
+    eq(db.prepare(`SELECT COUNT(*) n FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE v.active=0 AND d.valid_to IS NULL`).get().n, 0, 'Zuordnung, Lauf ' + i);
+    eq(db.prepare(`SELECT COUNT(*) n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE v.active=0 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).get().n, 0, 'Vorgang, Lauf ' + i);
+  }
+  // Verträge
+  { const { e, U, V1 } = await freshWorld(); const F = U.fleet; const V2 = 'VIN:WDB9630051L917317';
+    const base = { kind: 'leasing', start_date: day(-200), end_date: day(500), evidence: 'Vertrag' };
+    eq((await F.post(`/api/vehicles/${V1}/contracts`, { ...base, partner: 'A', monthly_rate_net: 1000 })).status, 201);
+    eq((await F.post(`/api/vehicles/${V2}/contracts`, { ...base, partner: 'B', monthly_rate_net: 500 })).status, 201);
+    e.DB.db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V2);
+    eq((await F.get('/api/contracts')).data.monthly_rate_sum_net, 1000, 'ruhendes Fahrzeug zählt nicht');
+    // Umlaut-Dublette
+    const ins = { kind: 'versicherung', partner: 'Ä-Versicherung', start_date: day(-100), end_date: day(265), evidence: 'Police' };
+    const p1 = await F.post(`/api/vehicles/${V1}/contracts`, { ...ins, contract_no: 'Ü-1' }); eq(p1.status, 201);
+    const p2 = await F.post(`/api/vehicles/${V1}/contracts`, { ...ins, contract_no: 'ü-1' }); eq(p2.status, 409); eq(p2.data.error, 'duplicate_contract');
+    // beendet: Folgevertrag mit gleicher Nummer und neuem Beginn möglich, gleicher Beginn nicht
+    eq((await F.post(`/api/contracts/${p1.data.id}/end`, { ended_on: day(-1), end_note: 'gekündigt' })).status, 200);
+    eq((await F.post(`/api/vehicles/${V1}/contracts`, { ...ins, contract_no: 'Ü-1' })).status, 409, 'gleicher Beginn');
+    eq((await F.post(`/api/vehicles/${V1}/contracts`, { ...ins, contract_no: 'Ü-1', start_date: day(0), end_date: day(364) })).status, 201, 'Folgepolice');
+    // confirm_km_basis "false" bestätigt nicht
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 100000, measured_on: day(-50) })).status, 201);
+    const k = await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'M', start_date: day(-40), end_date: day(300), km_allowance: 20000, start_km: 100500, evidence: 'x' }); eq(k.status, 201);
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 130000, measured_on: day(-10) })).status, 201);
+    eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 500, measured_on: day(-5), note: 'Tachotausch' })).status, 201);
+    const cur = async () => (await F.get('/api/contracts')).data.contracts.find((c) => c.id === k.data.id);
+    eq((await cur()).status.km.status, 'zaehler');
+    for (const v of ['false', '0']) { const r = await F.patch(`/api/contracts/${k.data.id}`, { confirm_km_basis: v, expected_updated_at: (await cur()).updated_at }); eq(r.status, 200); ok(!r.data.km_basis_confirmed, v); }
+    eq((await cur()).status.km.status, 'zaehler', 'weiter nicht berechenbar'); }
+});
+await test('Fehlersuche 18.10. (5): Oberfläche – Service Worker speichert nur einwandfreie Antworten, Push ohne Vorgang nach Rollenregel, Offline-Sprache, Fahrzeugliste offline, Fotos bei Wiederholung, Startseite nach dem Senden, Regel-Bezug übersetzt', async () => {
+  const fs = await import('node:fs');
+  const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/if \(r\.ok && r\.type === 'basic'\) \{ const c = r\.clone\(\); caches\.open/.test(sw), 'nur r.ok in den Cache');
+  ok(sw.includes(": '#/push';") && app.includes("[/^#\\/push$/, () => { location.replace(notifHref({})); }]"), 'Push ohne Ziel → Rollenregel der Hinweisliste');
+  ok(/S\.me\.language = l\.value; saveOfflineSession\(\);/.test(app), 'Sprachwechsel in der Offline-Sitzung');
+  ok(app.includes("if (!localStorage.getItem(`cfp_veh_${S.me.id}_${S.me.environment}`)) vehiclesCached()"), 'Fahrzeugliste vorhalten');
+  ok(/const photoTarget = [^\n]*S\.me\.role !== 'driver'/.test(app), 'Foto-Ziel offline wie online');
+  ok(/done\.size && \/\^#\\\/\?\$\/\.test\(location\.hash \|\| '#\/'\) && !viewDirty\(\)\) route\(\);/.test(app), 'Startseite nach dem Senden');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].check_photos_repeat && STRINGS[l].rule_checked_on, l);
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const h = computeHuSp({ kind: 'lkw', zgm_class: 'ueber_12' }, [], { today: BERLIN_TODAY }); eq(h.rule_checked, '2026-10-10'); ok(h.rule_ref && !/geprüft/.test(h.rule_ref));
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

@@ -125,9 +125,14 @@ export function kmDue(rule, latest, warnKm, today = null) {
     return { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: null, km_status: 'ungeklaert', km_unclear: 'counter_drop', km_drop_at: latest.drop_at,
       ...('base_km' in latest ? { km_forecast: null } : {}) };
   }
-  const remaining = next - latest.km;
-  const st = remaining < 0 ? 'ueberfaellig' : warnKm && remaining <= warnKm ? 'faellig' : 'ok';
-  const out = { next_due_km: next, current_km: latest.km, km_measured_at: latest.measured_at, km_remaining: remaining, km_status: st };
+  // belegter km-Stand der letzten Durchführung zählt mit (18.10.2026: alte Ablesung 200 000, Durchführung bei 290 000 → Rest 120 000 > Intervall)
+  // nur, wenn die Ablesung älter ist als die Durchführung – eine spätere kleinere Ablesung ist ein Zähler-Rücksprung (bisherige Regel)
+  const useDone = rule.last_done_km !== null && rule.last_done_km !== undefined && rule.last_done_km > latest.km && !!rule.last_done_date && calDay(latest.measured_at) <= rule.last_done_date;
+  const curKm = useDone ? rule.last_done_km : latest.km;
+  const remaining = next - curKm;
+  // Rest 0 = fällig (wie der Fälligkeitstag beim Datum; 18.10.2026 vorher „in Ordnung“ genau bei „fällig bei km“)
+  const st = remaining < 0 ? 'ueberfaellig' : remaining === 0 || (warnKm && remaining <= warnKm) ? 'faellig' : 'ok';
+  const out = { next_due_km: next, current_km: curKm, km_measured_at: useDone ? (rule.last_done_date || latest.measured_at) : latest.measured_at, km_remaining: remaining, km_status: st };
   if ('base_km' in latest) {
     // Prognose nie über einen km-Rücksprung hinweg (Ablesungen alter und neuer Zähler wären nicht vergleichbar)
     const rate = latest.drop_at && latest.base_at && latest.base_at < latest.drop_at ? null : kmRate(latest, { km: latest.base_km, measured_at: latest.base_at }, today);
@@ -483,11 +488,13 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       result.updated++;
       // nur auf dem gelesenen Stand (17.10.2026): eine gleichzeitig erfasste Durchführung („erledigt“) wurde sonst mit den alten Werten überschrieben
       updates.push(stmts.length); rowOf.set(stmts.length, result.rows.length - 1);
-      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=? WHERE id=?
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=?, planned_date=CASE WHEN ? THEN NULL ELSE planned_date END WHERE id=?
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
         .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, p.evidence, now,
-          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null), cur.id,
+          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
+          // neue Durchführung erledigt den geplanten Werkstatttermin (wie „erledigt“ in der Akte; 18.10.2026 stand er weiter im Werkstattplan)
+          p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, cur.id,
           cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));
       if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;

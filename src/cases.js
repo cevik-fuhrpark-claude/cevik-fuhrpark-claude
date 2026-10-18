@@ -745,13 +745,19 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
         reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,tire_order,version,created_at,updated_at)
         SELECT ${v('id')}, ${v('case_no')}, ?1, ${v('vehicle_id')}, ?2, ${v('reporter_name_note')}, ${v('description')}, ${v('location_note')}, ${v('priority')}, ${v('priority')},
           ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, ${v('maintenance_rule_id')}, ${v('maintenance_event_id')}, ${v('tire_order')}, 1, ?3, ?3
-        FROM json_each(?4)`).bind(envName, user.id, now, JSON.stringify(rows)),
+        FROM json_each(?4) WHERE EXISTS (SELECT 1 FROM vehicles WHERE id=${v('vehicle_id')} AND active=1)`).bind(envName, user.id, now, JSON.stringify(rows)),
+      // Fahrzeug gleichzeitig außer Betrieb genommen (18.10.2026: offener Vorgang an außer Betrieb genommenem Fahrzeug) → ganzer Stapel zurück
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN changes() = ? THEN 1 ELSE 0 END').bind(rows.length), env.DB.prepare('DELETE FROM cmd_guard'),
       env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         SELECT ${v('id')}, ${v('case_id')}, ?1, ?2, ?3, 'create', NULL, 'gemeldet', NULL, 1, NULL, ${v('payload')}, ?4 FROM json_each(?5)`)
         .bind(envName, user.id, user.role, now, JSON.stringify(events)),
       ...guard,
     ]);
   } catch (e) {
+    if (String(e && e.message).includes('CHECK')) {
+      const act = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first()).n;
+      if (act < new Set(specs.map((x) => x.vehicleId)).size) throw bad('validation', 'Fahrzeug unbekannt.');
+    }
     if (oneOpen && String(e && e.message).includes('CHECK')) {
       const o = await env.DB.prepare(`SELECT id, case_no ${openSql} ORDER BY created_at LIMIT 1`).bind(envName, oneOpen[1]).first();
       throw conflict('order_exists', `Es gibt bereits den offenen Auftrag ${o ? o.case_no : ''}.`, o ? { case_id: o.id, case_no: o.case_no } : undefined);
