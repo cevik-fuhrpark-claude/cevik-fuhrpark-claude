@@ -12928,6 +12928,69 @@ await test('Fehlersuche 18.10. (29): Tacho-Import erkennt „Auslesung vom/am“
   eq(dayCol(['Art', 'Auslesung vom', 'Download am']), -2, 'zwei Kandidaten → nicht eindeutig');
 });
 
+await test('Fehlersuche 18.10. (30): Abmelden meldet Push-Gerät der Anmeldung ab, Ruhezeit-Sammel-Push bleibt gesammelt, gleiche command_id gleichzeitig = duplicate, Antwort-Version nach Kostengrenze, Kosten-CSV unbewertet leer', async () => {
+  // 1. Abmelden ohne mitgesendeten Push-Endpunkt
+  { const { e, U } = await freshWorld();
+    const dev2 = new Client(worker, e, 'w.fuhrpark');
+    eq((await dev2.post('/api/login', { username: 'w.fuhrpark', password: 'Sicheres-Passwort-2026' })).status, 200);
+    const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+    eq((await dev2.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/logout-ohne-ep', keys: { p256dh: pub, auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+    eq((await U.fleet.get('/api/push/devices')).data.devices.length, 1);
+    eq((await dev2.post('/api/logout', {})).status, 200);
+    eq((await U.fleet.get('/api/push/devices')).data.devices.length, 0, 'Gerät der beendeten Anmeldung abgemeldet');
+    e.pushLog.length = 0; await U.fleet.post('/api/push/test');
+    ok(!e.pushLog.some((p) => p.url.includes('logout-ohne-ep')), 'kein Push mehr an das abgemeldete Gerät'); }
+  // 2. Ende der Ruhezeit, Sendegrenze erschöpft → nächster Lauf weiter ein Sammel-Push je Gerät
+  { const { e, U } = await freshWorld();
+    const { notifyUsers, releaseQuietPush, retryFailedPush } = await import('../src/notify.js');
+    const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+    for (const i of [1, 2]) await U.fleet.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/rz' + i, keys: { p256dh: pub, auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } });
+    const hm = (ms) => new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+    const now = Date.now();
+    eq((await U.fleet.put('/api/me/notify-prefs', { quiet: { from: hm(now - 3600e3), to: hm(now + 2 * 3600e3) } })).status, 200);
+    e.__nowMs = now;
+    for (const i of [1, 2, 3]) await notifyUsers(e, null, 'test', [U.fleet.id], { kind: 'agent_reminder', title: 'T', body: 'B' + i, eventKey: 'rz' + i });
+    const t1 = now + 2 * 3600e3 + 10 * 60e3; e.__nowMs = t1; e.__pushMaxSends = 1; e.pushLog.length = 0;
+    await releaseQuietPush(e, t1); eq(e.pushLog.length, 0, 'verschoben');
+    e.__pushMaxSends = 40; e.__nowMs = t1 + 15 * 60e3;
+    await retryFailedPush(e);
+    eq(e.pushLog.length, 2, 'ein Sammel-Push je Gerät');
+    eq(e.DB.db.prepare(`SELECT COUNT(*) n FROM notifications WHERE user_id=? AND push_status='accepted'`).get(U.fleet.id).n, 3, 'alle drei zugestellt');
+    delete e.__nowMs; delete e.__pushMaxSends; }
+  // 3. gleiche command_id gleichzeitig (Laufzeit wie D1) → 200 + duplicate, eine Buchung
+  { const { e, U, toRepair } = await freshWorld();
+    const id = await toRepair();
+    const v = (await U.fleet.get(`/api/cases/${id}`)).data.case.version; const cid = rk();
+    const orig = e.DB.batch.bind(e.DB); let n = 0;
+    e.DB.batch = async (st) => { if (n++ === 0) await new Promise((r) => setTimeout(r, 30)); return orig(st); };
+    const body = { action: 'record_work', command_id: cid, expected_version: v, payload: { hours: 1, description: 'x' } };
+    const rs = await Promise.all([U.ws.post(`/api/cases/${id}/commands`, body), U.ws.post(`/api/cases/${id}/commands`, body)]);
+    e.DB.batch = orig;
+    eq(rs.map((r) => r.status).join(','), '200,200', 'beide 200');
+    eq(rs.filter((r) => r.data.duplicate).length, 1, 'eine als duplicate');
+    eq((await U.fleet.get(`/api/cases/${id}`)).data.work.length, 1, 'nur eine Buchung');
+    // andere command_id mit veralteter Version bleibt ein Konflikt
+    eq((await U.ws.post(`/api/cases/${id}/commands`, { ...body, command_id: rk() })).status, 409, 'echter Konflikt weiter 409'); }
+  // 4. Kostengrenze überschritten → Antwort nennt die aktuelle Version; 5. Kosten-CSV ohne bewertete Position leer statt 0
+  { const { U, cmd, toRepair } = await freshWorld();
+    eq((await U.own.put('/api/settings', { repair_cost_limit_net: '500' })).status, 200);
+    const id = await toRepair();
+    const r = await cmd(U.ws, id, 'add_part', { name: 'Teil', quantity: 1, unit_price_net: 600 });
+    eq(r.status, 200); eq(r.data.cost_limit_exceeded, true);
+    eq(r.data.version, (await U.fleet.get(`/api/cases/${id}`)).data.case.version, 'Antwort-Version = aktuelle Version');
+    eq((await U.own.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
+    const id2 = await toRepair({ vehicle_id: 'VIN:WDB9630051L917317' });
+    eq((await cmd(U.ws, id2, 'add_part', { name: 'Spiegel', quantity: 1 })).status, 200);
+    const csv = await U.fleet.get(`/api/reports/costs?from=${BERLIN_YM}&to=${BERLIN_YM}&format=csv`);
+    const lines = new TextDecoder().decode(csv.data).split('\r\n'); const H = lines[0].replace('﻿', '').split(';');
+    const L = lines.find((l) => l.startsWith('SZ-KC 5515')).split(';');
+    eq(L[H.indexOf('Unbewertete Positionen')], '1');
+    eq(L[H.indexOf('Summe belegt netto')], '', 'unbewertet nie als 0');
+    eq(L[H.indexOf('Teile netto')], '', 'Teile nur unbewertet → leer');
+    const L1 = lines.find((l) => l.startsWith('SZ-YC 5513')).split(';');
+    eq(L1[H.indexOf('Teile netto')], '600', 'bewertetes Teil mit Betrag'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

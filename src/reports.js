@@ -67,7 +67,7 @@ export async function costReport(env, user, envName, query = {}) {
   const rows = new Map();
   const row = (vehicleId, month) => {
     const k = `${vehicleId}|${month}`;
-    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0 });
+    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0, pv: 0, pu: 0, ev: 0, eu: 0 });
     return rows.get(k);
   };
   const inRange = (m) => m >= from && m <= to;
@@ -90,16 +90,16 @@ export async function costReport(env, user, envName, query = {}) {
     if (covered.has(p.case_id)) continue;
     const m = monthOf(p.d); if (!inRange(m)) continue;
     const r = row(p.vehicle_id, m);
-    if (p.unit_price_net === null || p.valuation === 'unvalued') r.unvalued_items++;
+    if (p.unit_price_net === null || p.valuation === 'unvalued') { r.unvalued_items++; r.pu++; }
     else if (p.valuation === 'estimate') r.parts_estimate_net += r2(p.quantity * p.unit_price_net);
-    else { r.parts_actual_net += r2(p.quantity * p.unit_price_net); r.valued_items++; }
+    else { r.parts_actual_net += r2(p.quantity * p.unit_price_net); r.valued_items++; r.pv++; }
   }
   for (const e of ext) {
     const m = monthOf(e.d); if (!inRange(m)) continue;
     const r = row(e.vehicle_id, m);
-    if (e.amount_net === null || e.valuation === 'unvalued') r.unvalued_items++;
+    if (e.amount_net === null || e.valuation === 'unvalued') { r.unvalued_items++; r.eu++; }
     else if (e.valuation === 'estimate') r.external_estimate_net += r2(e.amount_net);
-    else { r.external_actual_net += r2(e.amount_net); r.valued_items++; }
+    else { r.external_actual_net += r2(e.amount_net); r.valued_items++; r.ev++; }
   }
   const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
   // Standortfilter (Standort laut Fahrzeugstamm, 'ohne' = ohne Standort): wirkt auf Zeilen, km, Vertragsraten und Erstattungen
@@ -120,6 +120,8 @@ export async function costReport(env, user, envName, query = {}) {
       hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
       actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0,
+      // nur unbewertete Teile/Fremdleistungen in der Zeile → Spalte ohne Betrag (nie „0 €“), wie „–“ in der App (18.10.2026)
+      ...(r.pu && !r.pv ? { parts_unvalued_only: true } : {}), ...(r.eu && !r.ev ? { external_unvalued_only: true } : {}),
     };
   }).sort((a, b) => (a.plate || a.vehicle_id).localeCompare(b.plate || b.vehicle_id) || a.month.localeCompare(b.month));
   const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, valued_items: t.valued_items + r.valued_items, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
@@ -262,8 +264,10 @@ export function costReportCsv(rep) {
     'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km (Monat)'];
   const lines = [head.join(';')];
   for (const r of rep.rows) {
-    lines.push([cell(r.plate), cell(r.vehicle_id), cell(r.site), r.month, r.cases_opened, num(r.hours), num(r.work_net), num(r.parts_actual_net), num(r.parts_estimate_net),
-      num(r.external_actual_net), num(r.external_estimate_net), num(r.actual_net), num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km)].join(';'));
+    // unbewertet nie als 0: ohne belegte Position bleibt „Summe belegt“ leer (wie „–“ in der App), ebenso Teile/Fremdleistung nur unbewertet
+    const ist = r.valued_items === 0 && r.unvalued_items > 0 ? '' : num(r.actual_net);
+    lines.push([cell(r.plate), cell(r.vehicle_id), cell(r.site), r.month, r.cases_opened, num(r.hours), num(r.work_net), r.parts_unvalued_only ? '' : num(r.parts_actual_net), num(r.parts_estimate_net),
+      r.external_unvalued_only ? '' : num(r.external_actual_net), num(r.external_estimate_net), ist, num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km)].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

@@ -454,9 +454,10 @@ export async function releaseQuietPush(env, now = env.__nowMs || Date.now(), use
   try {
     await deliverPush(env, mine.map(forDelivery), { collapse: true });
   } finally {
-    // Was die Zustellung nicht erledigt hat (Sendegrenze je Aufruf → verschoben), geht an die normale Wiederholung (Haltezeit leer)
-    await env.DB.prepare(`UPDATE notifications SET push_hold_until=NULL WHERE id IN (SELECT value FROM json_each(?1)) AND push_status='pending' AND push_hold_until=?2`)
-      .bind(JSON.stringify(mine.map((r) => r.id)), marker).run();
+    // Was die Zustellung nicht erledigt hat (Sendegrenze je Aufruf → verschoben), bleibt eine abgelaufene Haltezeit – der nächste Lauf
+    // bündelt wieder zu einem Sammel-Push je Person (18.10.2026: Haltezeit leer → Wiederholung schickte N Einzel-Pushs je Gerät)
+    await env.DB.prepare(`UPDATE notifications SET push_hold_until=?3 WHERE id IN (SELECT value FROM json_each(?1)) AND push_status='pending' AND push_hold_until=?2`)
+      .bind(JSON.stringify(mine.map((r) => r.id)), marker, new Date(now).toISOString()).run();
   }
   return mine.length;
 }

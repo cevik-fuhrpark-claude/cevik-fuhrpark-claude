@@ -272,7 +272,8 @@ export async function loginSecondFactor(env, request, body, ctx = null) {
 }
 
 export async function logout(env, user, body = {}) {
-  if (user?._session) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(user._session).run();
+  // Sitzung beenden und Push-Geräte beendeter Anmeldungen abmelden – auch wenn die App keinen Endpunkt mitsenden konnte (18.10.2026)
+  if (user?._session) await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(user._session), pushOrphanStmt(env, user.id)]);
   // Push-Gerät dieses Browsers mit abmelden (die App sendet den Endpunkt mit) – 17.10.2026
   const ep = body && typeof body.push_endpoint === 'string' ? body.push_endpoint.slice(0, 1000) : '';
   if (user && ep) await env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE endpoint=? AND user_id=? AND revoked_at IS NULL').bind(nowIso(), ep, user.id).run();
