@@ -85,7 +85,10 @@ async function ipKey(request) {
 
 export async function login(env, request, body, ctx = null) {
   const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();
-  const password = str(body.password, { required: true, max: 200, field: 'Passwort' });
+  // Passwort ungekürzt prüfen (18.10.2026): Einladung/Passwortwechsel speichern es samt Leerzeichen am Rand – str() kürzte nur hier,
+  // ein Passwort mit Leerzeichen am Ende sperrte das Konto aus
+  const password = typeof body.password === 'string' && body.password.length > 0 && body.password.length <= 200 ? body.password
+    : str(body.password, { required: true, max: 200, field: 'Passwort' });
   const ik = await ipKey(request);
   const win = Math.floor(Date.now() / 1000 / IP_FAIL_LIMIT.windowSec) * IP_FAIL_LIMIT.windowSec;
   const [att, ipRow] = await Promise.all([
@@ -140,6 +143,33 @@ async function recordFailure(env, username) {
   const u = await env.DB.prepare('UPDATE login_attempts SET locked_until=?1, failures=0, updated_at=?2 WHERE key=?3 AND failures>=?4')
     .bind(locked, now, username, LOCK_AFTER).run();
   return u.meta && u.meta.changes ? locked : null;
+}
+// Push-Geräte beendeter Anmeldungen abmelden (18.10.2026, Migration 0059) – im selben Stapel NACH dem Löschen der Sitzungen ausführen.
+// Geräte ohne bekannte Anmeldung (Bestand vor 0059) bleiben unverändert.
+export function pushOrphanStmt(env, userId) {
+  return env.DB.prepare(`UPDATE push_subscriptions SET revoked_at=?1 WHERE user_id=?2 AND revoked_at IS NULL AND session_hash IS NOT NULL
+    AND session_hash NOT IN (SELECT token_hash FROM sessions WHERE user_id=?2)`).bind(nowIso(), userId);
+}
+const LOCKED_MSG = 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.';
+// Bestätigung im angemeldeten Zustand (altes Passwort, Passwort/Code bei Zwei-Faktor): Fehlversuche zählen zur Anmeldesperre (18.10.2026 –
+// vorher unbegrenzt: wer eine offene Sitzung übernahm, konnte Passwort/Code durchprobieren). Bei Sperre: alle Anmeldungen enden.
+export async function reauthLocked(env, user) {
+  const row = await env.DB.prepare('SELECT u.username, a.locked_until FROM users u LEFT JOIN login_attempts a ON a.key=u.username WHERE u.id=?').bind(user.id).first();
+  if (row && row.locked_until && row.locked_until > nowIso()) throw new HttpError(429, 'locked', LOCKED_MSG);
+  return row ? row.username : null;
+}
+export async function reauthFailed(env, user) {
+  const username = await reauthLocked(env, user);
+  if (!username) return;
+  const locked = await recordFailure(env, username);
+  if (!locked) return;
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id),
+    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+    pushOrphanStmt(env, user.id),
+  ]);
+  await audit(env, null, 'login.locked', user.id, { username, minutes: LOCK_MINUTES });
+  throw new HttpError(429, 'locked', LOCKED_MSG);
 }
 // IP-Fehlversuchsfenster (gilt für Passwort und Zwei-Faktor-Code)
 async function ipFailWindow(env, request) {
@@ -290,8 +320,9 @@ export async function acceptInvite(env, request, body, ctx = null) {
 
 export async function changePassword(env, user, body) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
+  await reauthLocked(env, user);
   const { hash } = await hashPassword(String(body.old_password || ''), row.password_salt);
-  if (!timingSafeEqual(hash, row.password_hash || '')) throw new HttpError(401, 'invalid_login', 'Altes Passwort falsch.');
+  if (!timingSafeEqual(hash, row.password_hash || '')) { await reauthFailed(env, user); throw new HttpError(401, 'invalid_login', 'Altes Passwort falsch.'); }
   validatePassword(body.new_password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.new_password);
   await env.DB.batch([
@@ -299,6 +330,9 @@ export async function changePassword(env, user, body) {
     env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
     // begonnene Anmeldungen mit dem alten Passwort (Zwei-Faktor-Schritt offen) verfallen ebenfalls
     env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+    // offener Einladungs-/Zurücksetzen-Link verfällt (18.10.2026: ließ sich danach noch einlösen und überschrieb das neue Passwort)
+    env.DB.prepare('UPDATE invites SET used_at=? WHERE user_id=? AND used_at IS NULL').bind(nowIso(), user.id),
+    pushOrphanStmt(env, user.id),
   ]);
   await audit(env, user.id, 'password.change', user.id, null);
   return { ok: true };
@@ -358,7 +392,7 @@ export async function listOwnSessions(env, user) {
 export async function revokeOwnSession(env, user, sid) {
   if (!/^[0-9a-f]{16}$/.test(String(sid))) throw bad('invalid_session', 'Ungültige Anmeldung.');
   if (user._session.startsWith(sid)) throw bad('current_session', 'Die aktuelle Anmeldung bitte über „Abmelden“ beenden.');
-  const r = await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND substr(token_hash,1,16)=?').bind(user.id, sid).run();
+  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND substr(token_hash,1,16)=?').bind(user.id, sid), pushOrphanStmt(env, user.id)]);
   if (r.meta.changes) await audit(env, user.id, 'session.revoke', user.id, { count: r.meta.changes });
   return { ok: true, revoked: r.meta.changes };
 }
@@ -387,7 +421,7 @@ export async function forgetKnownDevice(env, user, request, did) {
   return { ok: true, forgotten: r.meta.changes };
 }
 export async function revokeOtherSessions(env, user) {
-  const r = await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session).run();
+  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session), pushOrphanStmt(env, user.id)]);
   await audit(env, user.id, 'session.revoke_others', user.id, { count: r.meta.changes });
   return { ok: true, revoked: r.meta.changes };
 }

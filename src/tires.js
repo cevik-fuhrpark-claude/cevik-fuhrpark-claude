@@ -245,7 +245,11 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
       if (verified.has(`${vid}|${axle}`)) { res.kept_verified++; continue; }
       // zu lange Größe: Zeile melden statt still kürzen (17.10.2026; Einzelerfassung weist sie ebenfalls ab)
       if (size.trim().length > 40) { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: `Reifengröße zu lang (max. 40 Zeichen): ${size.trim().slice(0, 60)}` }); continue; }
-      rows.set(`${vid}|${axle}`, { v: vid, a: axle, s: size.trim(), src: ['Quelldatei Fuhrpark', ci.src >= 0 ? String(c[ci.src] ?? '').trim() : '', '(ungeprüft)'].filter(Boolean).join(' ') }); // kurze Zeile: nie „undefined“
+      // dieselbe FIN/Achse in der Datei mit anderer Größe: spätere Zeile melden statt still überschreiben (18.10.2026)
+      const prevRow = rows.get(`${vid}|${axle}`);
+      if (prevRow && prevRow.s !== size.trim()) { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: `FIN doppelt in der Datei mit abweichender Größe (Zeile ${prevRow.line}): ${size.trim().slice(0, 40)}` }); continue; }
+      if (prevRow) continue;
+      rows.set(`${vid}|${axle}`, { line: c.line, v: vid, a: axle, s: size.trim(), src: ['Quelldatei Fuhrpark', ci.src >= 0 ? String(c[ci.src] ?? '').trim() : '', '(ungeprüft)'].filter(Boolean).join(' ') }); // kurze Zeile: nie „undefined“
     }
   }
   const list = [...rows.values()];

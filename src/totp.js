@@ -2,6 +2,7 @@
 // Jede Authenticator-App (z. B. die auf dem Handy vorinstallierte Passwort-App) erzeugt die Codes; die App selbst versendet nichts.
 // Ersatzcodes: 10 Einmal-Codes, nur als SHA-256-Hash gespeichert, werden genau einmal angezeigt.
 import { nowIso, sha256Hex, randomToken, hashPassword, timingSafeEqual, bad, HttpError } from './util.js';
+import { reauthLocked, reauthFailed, pushOrphanStmt } from './auth.js';
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 export const STEP_SEC = 30;
@@ -91,7 +92,8 @@ export async function totpStatus(env, user) {
 export async function totpSetup(env, user, body, auditFn) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   if (row.totp_enabled_at) throw bad('totp_already', 'Zwei-Faktor-Anmeldung ist bereits eingeschaltet.');
-  if (!(await checkPassword(row, body.password))) throw bad('wrong_password', 'Passwort falsch.');
+  await reauthLocked(env, user);
+  if (!(await checkPassword(row, body.password))) { await reauthFailed(env, user); throw bad('wrong_password', 'Passwort falsch.'); }
   const secret = newSecret();
   await env.DB.prepare('UPDATE users SET totp_pending=?, updated_at=? WHERE id=?').bind(secret, nowIso(), user.id).run();
   await auditFn(env, user.id, 'totp.setup_started', user.id, null);
@@ -117,6 +119,7 @@ export async function totpEnable(env, user, body, auditFn) {
       env.DB.prepare('DELETE FROM cmd_guard'),
       env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
       env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+      pushOrphanStmt(env, user.id),
     ]);
   } catch (e) {
     if (String(e && e.message).includes('CHECK')) throw bad('totp_already', 'Zwei-Faktor-Anmeldung ist bereits eingeschaltet.');
@@ -130,10 +133,17 @@ export async function totpEnable(env, user, body, auditFn) {
 export async function totpDisable(env, user, body, auditFn) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   if (!row.totp_enabled_at) throw bad('totp_off', 'Zwei-Faktor-Anmeldung ist nicht eingeschaltet.');
-  if (!(await checkPassword(row, body.password))) throw bad('wrong_password', 'Passwort falsch.');
+  await reauthLocked(env, user);
+  if (!(await checkPassword(row, body.password))) { await reauthFailed(env, user); throw bad('wrong_password', 'Passwort falsch.'); }
   const r = await checkSecondFactor(env, row, body.code);
-  if (!r) throw bad('totp_invalid', 'Code falsch oder abgelaufen.');
-  await env.DB.prepare('UPDATE users SET totp_secret=NULL, totp_pending=NULL, totp_enabled_at=NULL, totp_last_step=NULL, totp_recovery=NULL, updated_at=? WHERE id=?').bind(nowIso(), user.id).run();
+  if (!r) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
+  // wie beim Einschalten: andere Anmeldungen und offene Anmeldevorgänge enden (18.10.2026)
+  await env.DB.batch([
+    env.DB.prepare('UPDATE users SET totp_secret=NULL, totp_pending=NULL, totp_enabled_at=NULL, totp_last_step=NULL, totp_recovery=NULL, updated_at=? WHERE id=?').bind(nowIso(), user.id),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
+    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+    pushOrphanStmt(env, user.id),
+  ]);
   await auditFn(env, user.id, 'totp.disable', user.id, { by: r.kind });
   return { ok: true };
 }
@@ -142,8 +152,9 @@ export async function totpDisable(env, user, body, auditFn) {
 export async function totpNewRecovery(env, user, body, auditFn) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   if (!row.totp_enabled_at) throw bad('totp_off', 'Zwei-Faktor-Anmeldung ist nicht eingeschaltet.');
+  await reauthLocked(env, user);
   const step = await verifyTotp(row.totp_secret, body.code, row.totp_last_step);
-  if (step === null) throw bad('totp_invalid', 'Code falsch oder abgelaufen.');
+  if (step === null) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
   const { codes, hashes } = await makeRecovery();
   // Code nur einmal verbrauchen (wie bei der Anmeldung): parallel mit demselben Code lieferten vorher beide neue Ersatzcodes (17.10.2026)
   const u = await env.DB.prepare('UPDATE users SET totp_last_step=?, totp_recovery=?, updated_at=? WHERE id=? AND totp_enabled_at IS NOT NULL AND (totp_last_step IS NULL OR totp_last_step < ?)')
@@ -168,9 +179,11 @@ export async function checkSecondFactor(env, row, code) {
   const list = parseRc(row.totp_recovery); const h = await recoveryHash(n);
   const idx = list.findIndex((x) => timingSafeEqual(x, h));
   if (idx < 0) return null;
-  const rest = list.filter((_, i) => i !== idx);
-  const r = await env.DB.prepare('UPDATE users SET totp_recovery=? WHERE id=? AND totp_recovery=?').bind(JSON.stringify(rest), row.id, row.totp_recovery).run();
-  return r.meta.changes ? { kind: 'recovery', left: rest.length } : null;
+  // genau diesen Code atomar aus der gespeicherten Liste entfernen (18.10.2026): vorher nur, wenn die ganze Liste seit dem Lesen gleich war –
+  // zwei verschiedene gültige Ersatzcodes gleichzeitig: einer galt als „falsch“ und zählte als Fehlversuch
+  const r = await env.DB.prepare(`UPDATE users SET totp_recovery=(SELECT json_group_array(value) FROM json_each(users.totp_recovery) WHERE value<>?1)
+    WHERE id=?2 AND json_valid(totp_recovery) AND EXISTS (SELECT 1 FROM json_each(users.totp_recovery) WHERE value=?1) RETURNING totp_recovery`).bind(h, row.id).first();
+  return r ? { kind: 'recovery', left: parseRc(r.totp_recovery).length } : null;
 }
 
 // ---- Anmeldung, zweiter Schritt ----

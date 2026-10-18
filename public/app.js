@@ -250,6 +250,7 @@ async function route() {
         S.meta = await api('GET', '/api/meta');
         saveOfflineSession();
         refreshUnread();
+        pushRebind();
       }
     }
     for (const [re, fn] of routes) {
@@ -2658,6 +2659,16 @@ async function pushPanel(el) {
   };
   const pt = $('#pt', el);
   if (pt) pt.onclick = async () => { pt.disabled = true; try { const r = await api('POST', '/api/push/test'); toast(`Push: ${t('pst_' + r.push_status) === 'pst_' + r.push_status ? r.push_status : t('pst_' + r.push_status)}${r.error ? ' – ' + r.error : ''}`, r.push_status !== 'accepted'); } catch (err) { toast(err.message, true); } finally { pt.disabled = false; } };
+}
+// Vorhandenes Push-Abo dieses Browsers der aktuellen Anmeldung zuordnen (Migration 0059) – einmal je App-Start, still;
+// endet die Anmeldung (Passwortwechsel, „andere Anmeldungen beenden“), meldet der Server das Gerät ab
+async function pushRebind() {
+  try {
+    if (!('serviceWorker' in navigator) || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+    if (!sub) return;
+    const j = sub.toJSON(); await api('POST', '/api/push/subscribe', { endpoint: j.endpoint, keys: j.keys, device_label: deviceLabel() });
+  } catch {}
 }
 const deviceLabel = () => (/Android/.test(navigator.userAgent) ? 'Android' : /iPhone/.test(navigator.userAgent) ? 'iPhone' : /iPad/.test(navigator.userAgent) ? 'iPad' : /Windows/.test(navigator.userAgent) ? 'Windows-PC' : /Mac/.test(navigator.userAgent) ? 'Mac' : t('device'));
 

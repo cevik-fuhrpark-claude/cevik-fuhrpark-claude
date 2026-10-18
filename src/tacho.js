@@ -170,12 +170,16 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   if (table.length - 1 > MAX_IMPORT) throw bad('validation', `Maximal ${MAX_IMPORT} Zeilen je Import.`);
   const head = table[0].map((h) => h.toLowerCase());
-  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  // Vorrang nach der Namensliste, nicht nach der Spaltenposition (18.10.2026: „Datum letzte Aktivität“ vor „Auslesedatum“ wurde still als
+  // Auslesedatum genommen – Frist falsch): erst exakte Treffer in Listenreihenfolge, dann Anfangstreffer in Listenreihenfolge
+  const pick = (hd, names, ok = () => true) => { for (const n of names) { const i = hd.findIndex((h) => h.trim() === n && ok(h)); if (i >= 0) return i; }
+    for (const n of names) { const i = hd.findIndex((h) => h.trim().startsWith(n) && ok(h)); if (i >= 0) return i; } return -1; };
+  const col = (names) => pick(head, names);
   // Namensspalte: „Name“/„Fahrername“ vor „Fahrer…“; „Fahrerkartennummer“, „Fahrer-Nr.“ o. Ä. sind keine Namen
-  const nameCol = (hd) => { const notName = (h) => /karte|nr|nummer|kennung|id\b/.test(h); const exact = hd.findIndex((h) => ['name', 'fahrername', 'fahrer', 'name fahrer', 'fahrer name'].includes(h.trim()));
-    return exact >= 0 ? exact : hd.findIndex((h) => (h.startsWith('fahrer') || h.startsWith('name')) && !notName(h)); };
+  const nameCol = (hd) => { const notName = (h) => /karte|nr|nummer|kennung|id\b/.test(h);
+    return pick(hd, ['name', 'fahrername', 'name fahrer', 'fahrer name', 'fahrer'], (h) => !notName(h)); };
   const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: nameCol(head),
-    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: col(['datum', 'auslesedatum', 'ausgelesen']), ev: col(['nachweis', 'datei', 'beleg']) };
+    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: col(['auslesedatum', 'ausgelesen', 'datum']), ev: col(['nachweis', 'datei', 'beleg']) };
   const fallbackEv = str(source, { max: 200 }) || ''; // keine Quelle angegeben: leer statt null (leere Nachweis-Zelle ergab sonst 500)
   if (ci.kind < 0) throw bad('validation', 'Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.');
   // Eigene Übersicht der App (Export „Auslesungen“: Letzte Auslesung/Spätestens fällig) ist kein Beleg einer Auslesung

@@ -603,9 +603,10 @@ async function handleApi(request, env, ctx, url) {
     const pk = keyLen(p256dh); const ak = keyLen(authKey);
     if (!pk || pk.length !== 65 || pk[0] !== 4 || !ak || ak.length !== 16) throw new HttpError(400, 'validation', 'Ungültige Push-Schlüssel.');
     const now = nowIso();
-    await env.DB.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,device_label,created_at) VALUES (?,?,?,?,?,?,?)
-      ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth, device_label=excluded.device_label, revoked_at=NULL`)
-      .bind(uuid(), user.id, endpoint, p256dh, authKey, str(b.device_label, { max: 80 }), now).run();
+    // an die aktuelle Anmeldung gebunden (Migration 0059): endet sie (Passwortwechsel, „andere beenden“ …), wird das Gerät abgemeldet
+    await env.DB.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,device_label,created_at,session_hash) VALUES (?,?,?,?,?,?,?,?)
+      ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth, device_label=excluded.device_label, revoked_at=NULL, session_hash=excluded.session_hash`)
+      .bind(uuid(), user.id, endpoint, p256dh, authKey, str(b.device_label, { max: 80 }), now, user._session || null).run();
     return json({ ok: true });
   }
   if (path === '/api/push/unsubscribe' && m === 'POST') {

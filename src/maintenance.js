@@ -405,6 +405,19 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     const sortKey = next || last.date || '';
     const sortKm = dueKm ?? lastKm ?? -1;
     const prev = planned.get(key);
+    // Zeilen mit sich ergänzenden Angaben zusammenführen (18.10.2026): eine Zeile nur mit der Durchführung (Rechnung) und eine nur mit dem
+    // Termin laut Plakette – vorher verdrängte die Plakettenzeile die Durchführung (Termin mit Durchführungsdatum verglichen), die HU fehlte
+    if (prev && dueKm === null && lastKm === null && prev.dueKm === null && prev.lastKm === null) {
+      const docOnly = (x) => x.dueSource === 'nachweis' && !x.last; const doneOnly = (x) => !!x.last && x.dueSource !== 'nachweis';
+      const cur0 = { last: last.date, dueSource: due.date ? 'nachweis' : 'berechnet' };
+      const pair = docOnly(prev) && doneOnly(cur0) ? { last: last.date, next: prev.next, interval: interval || prev.interval }
+        : doneOnly(prev) && docOnly(cur0) ? { last: prev.last, next, interval: prev.interval || interval } : null;
+      if (pair) {
+        if (pair.last > pair.next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
+        Object.assign(prev, { next: pair.next, last: pair.last, interval: pair.interval, evidence: prev.evidence === ev ? ev : `${prev.evidence}; ${ev}`.slice(0, 500), sortKey: pair.next, dueSource: 'nachweis' });
+        return;
+      }
+    }
     if (prev && (prev.sortKey > sortKey || (prev.sortKey === sortKey && prev.sortKm >= sortKm))) return skip(`Doppelt in der Datei (Zeile ${prev.line} ist gleich oder neuer)`);
     if (prev) result.skipped.push({ line: prev.line, plate: prev.plate, reason: `Ersetzt durch Zeile ${line} (neuerer Beleg)` });
     planned.set(key, { line, vehicle_id: v.id, plate: v.plate, kind, next, last: last.date, interval, evidence: ev, matchedBy, sortKey, sortKm, husp, dueKm, lastKm, intervalKm, dueSource: due.date ? 'nachweis' : 'berechnet' });

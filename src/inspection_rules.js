@@ -72,7 +72,10 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
   const hus = sorted('HU');
   const sps = sorted('SP');
   const lastHu = hus[hus.length - 1] || null;
-  const prevHu = hus.length > 1 ? hus[hus.length - 2] : null;
+  // Vorzyklus: HU mit erheblichen/gefährlichen Mängeln vor einer späteren HU (= Nachprüfung) zählt nicht als eigener Zyklus
+  // (18.10.2026: HU nicht bestanden + Nachprüfung ließen die offene SP des Vorzyklus verschwinden)
+  const cycleHus = hus.filter((h, i) => i === hus.length - 1 || !BAD_RESULTS.includes(h.result));
+  const prevHu = cycleHus.length > 1 ? cycleHus[cycleHus.length - 2] : null;
   const lastSp = sps[sps.length - 1] || null;
 
   // ---------- HU ----------
@@ -132,8 +135,21 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
   if (firstSpDue) {
     sp.basis = 'erstzulassung';
     if (cycleDue < firstSpDue) {
-      sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue;
-      note(sp, 'sp_starts_later', `SP-Pflicht beginnt erst; erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose).`, { m: firstSpMonths });
+      if (daysBetween(today, firstSpDue) >= 0) {
+        sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue;
+        note(sp, 'sp_starts_later', `SP-Pflicht beginnt erst; erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose).`, { m: firstSpMonths });
+        return { hu, sp, rule_version: RULE_VERSION };
+      }
+      // Erste SP-Frist ist verstrichen, bevor die SP 6 Monate nach dieser HU greift (HU etwas vor dem Turnus): die erste SP ist fällig
+      // (18.10.2026: stand vorher dauerhaft auf „erste SP künftig“ mit vergangener Prognose – die versäumte erste SP wurde nie gemeldet)
+      const firstDone = sps.filter((x) => x.done_date >= prevMonthStart(firstSpDue));
+      if (firstDone.length) {
+        sp.cycle_done = firstDone[firstDone.length - 1].done_date; sp.status = 'ok'; sp.prognosis = dueMonthEnd(lastHu.done_date, 18);
+        note(sp, 'sp_cycle_done', `SP für diesen Zyklus durchgeführt (${sp.cycle_done}). Nächste SP 6 Monate nach der nächsten HU.`, { date: sp.cycle_done });
+      } else {
+        sp.due = spDoc || firstSpDue; sp.due_basis = spDoc ? 'nachweis' : 'berechnet'; sp.status = statusFor(sp.due, today, warnDays);
+        note(sp, 'sp_first_due', `Erste SP ${firstSpMonths} Monate nach Erstzulassung (${fmtMonth(firstSpDue)}) – noch nicht belegt.`, { m: firstSpMonths, due: fmtMonth(firstSpDue) });
+      }
       return { hu, sp, rule_version: RULE_VERSION };
     }
   } else if (sps.length) {
@@ -150,10 +166,15 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
   if (prevHu) {
     const prevDue = dueMonthEnd(prevHu.done_date, 6);
     const pduty = !firstSpDue || prevDue >= firstSpDue;
-    if (pduty && prevDue < lastHu.done_date) {
+    // auch eine HU im Zeitraum der fälligen SP (ab Vormonat) erledigt sie nicht (18.10.2026: vorher nur, wenn die SP schon überfällig war)
+    if (pduty && lastHu.done_date >= prevMonthStart(prevDue)) {
       const closed = sps.some((s) => s.done_date > prevHu.done_date && s.done_date >= prevMonthStart(prevDue) && s.done_date <= lastHu.done_date);
       if (!closed) note(sp, 'sp_prev_open', `SP fällig ${fmtMonth(prevDue)} (nach HU ${prevHu.done_date}) nicht belegt – die spätere HU ersetzt sie nicht.`, { due: fmtMonth(prevDue), hu: prevHu.done_date });
       if (!closed) sp.prev_cycle_open = prevDue;
+    } else if (!pduty && firstSpDue <= lastHu.done_date) {
+      // erste SP fiel in den Vorzyklus (vor der SP nach der vorigen HU) und ist nicht belegt (18.10.2026)
+      const closed = sps.some((s) => s.done_date >= prevMonthStart(firstSpDue) && s.done_date <= lastHu.done_date);
+      if (!closed) { note(sp, 'sp_prev_open', `SP fällig ${fmtMonth(firstSpDue)} (nach HU ${prevHu.done_date}) nicht belegt – die spätere HU ersetzt sie nicht.`, { due: fmtMonth(firstSpDue), hu: prevHu.done_date }); sp.prev_cycle_open = firstSpDue; }
     }
   }
 
@@ -224,20 +245,27 @@ export async function syncHuSpDues(env, { today, warnDays, actorId = null, vehic
     for (const kind of ['HU', 'SP']) {
       const r = x.rules.find((q) => q.kind === kind);
       if (!r || r.due_source === 'nachweis') continue;
+      const readDue = r.next_due_date || null;
       const target = kind === 'HU' ? (res.hu.due_basis === 'berechnet' ? res.hu.due : r.next_due_date) : res.sp.due;
       if ((target || null) !== (r.next_due_date || null)) {
         changes.push({ vehicle_id: x.v.id, plate: x.v.plate, kind, from: r.next_due_date || null, to: target || null, status: kind === 'HU' ? res.hu.status : res.sp.status });
-        stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, due_source='berechnet', interval_months=?, updated_at=? WHERE id=?`)
-          .bind(target || null, kind === 'HU' ? res.hu.interval_months : null, now, r.id));
+        // nur auf dem gelesenen Stand (18.10.2026): ein gleichzeitig eingetragener Nachweis wurde sonst mit „berechnet“ überschrieben
+        stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, due_source='berechnet', interval_months=?, updated_at=? WHERE id=?
+          AND (due_source IS NULL OR due_source<>'nachweis') AND next_due_date IS ?`)
+          .bind(target || null, kind === 'HU' ? res.hu.interval_months : null, now, r.id, readDue));
         Object.assign(r, { next_due_date: target || null, due_source: 'berechnet' }); // Eingangsdaten auf Stand halten (Weiterverwendung im Agenten)
       }
     }
   }
+  let applied = [];
   if (changes.length) {
-    stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+    const results = [];
+    for (let i = 0; i < stmts.length; i += 90) results.push(...(await env.DB.batch(stmts.slice(i, i + 90))));
+    // nur tatsächlich geschriebene Neuberechnungen protokollieren
+    applied = changes.filter((_, i) => results[i] && results[i].meta && results[i].meta.changes);
+    if (applied.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
       SELECT lower(hex(randomblob(16))), ?1, 'maintenance.husp_recalc', json_extract(value,'$.vehicle_id'), value, ?2 FROM json_each(?3)`)
-      .bind(actorId, now, JSON.stringify(changes)));
-    for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
+      .bind(actorId, now, JSON.stringify(applied)).run();
   }
-  return { changed: changes.length, changes, inputs: byV };
+  return { changed: applied.length, changes: applied, inputs: byV };
 }

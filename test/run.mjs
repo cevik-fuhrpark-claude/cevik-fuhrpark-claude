@@ -11354,6 +11354,130 @@ await test('Backlog 89: Verlaufsvermerke der Kontrolle als Code/Werte im payload
   eq(evNote({ action: 'inspection', note: '3 Mangel/Mängel festgestellt', payload: { inspection_id: 'x' } }), '[ev_defects:3]', 'älterer Eintrag per Muster');
   eq(evNote({ action: 'comment', note: 'Freitext', payload: null }), 'Freitext');
 });
+await test('Fehlersuche 18.10. (1): HU/SP (erste SP verstrichen, Nachprüfung, HU im SP-Zeitraum, Import ergänzender Zeilen, Neuberechnung auf gelesenem Stand)', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const v = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2024-03-15' };
+  const ev = [{ kind: 'HU', done_date: '2025-03-10' }, { kind: 'HU', done_date: '2026-02-20' }];
+  eq(computeHuSp(v, ev, { today: '2026-08-15' }).sp.status, 'erste_sp_kuenftig', 'vor der ersten SP-Frist');
+  { const r = computeHuSp(v, ev, { today: '2026-10-15' }).sp; eq(r.status, 'ueberfaellig', 'erste SP verstrichen'); eq(r.due, '2026-09-30'); ok(r.note_codes.some((n) => n.code === 'sp_first_due')); }
+  eq(computeHuSp(v, [...ev, { kind: 'SP', done_date: '2026-09-12' }], { today: '2026-10-15' }).sp.status, 'ok', 'erste SP belegt');
+  { const r = computeHuSp(v, [...ev, { kind: 'HU', done_date: '2027-02-10' }], { today: '2027-03-01' }).sp; eq(r.prev_cycle_open, '2026-09-30', 'nach der nächsten HU bleibt die versäumte erste SP gemeldet'); eq(r.status, 'ungeklaert'); }
+  // HU nicht bestanden + Nachprüfung: offene SP des Vorzyklus bleibt
+  const v2 = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2018-01-10' };
+  const b = computeHuSp(v2, [{ kind: 'HU', done_date: '2025-01-15' }, { kind: 'HU', done_date: '2026-01-12', result: 'erhebliche_maengel' }, { kind: 'HU', done_date: '2026-01-26', result: 'ohne_maengel' }], { today: '2026-02-10' }).sp;
+  eq(b.prev_cycle_open, '2025-07-31'); eq(b.status, 'ungeklaert');
+  // HU im Zeitraum der fälligen SP (ohne SP) erledigt sie nicht; mit „SP i. V. m. HU“ am selben Tag schon
+  const c = computeHuSp(v2, [{ kind: 'HU', done_date: '2026-03-10' }, { kind: 'HU', done_date: '2026-09-20' }], { today: '2026-09-25' }).sp;
+  eq(c.prev_cycle_open, '2026-09-30'); eq(c.status, 'ungeklaert');
+  eq(computeHuSp(v2, [{ kind: 'HU', done_date: '2026-03-10' }, { kind: 'HU', done_date: '2026-09-20' }, { kind: 'SP', done_date: '2026-09-20' }], { today: '2026-09-25' }).sp.prev_cycle_open, undefined);
+  eq(computeHuSp(v2, [{ kind: 'HU', done_date: '2026-03-10' }, { kind: 'HU', done_date: '2026-07-20' }], { today: '2026-07-25' }).sp.prev_cycle_open, undefined, 'HU vor dem SP-Zeitraum: neuer Zyklus');
+  // Import: Durchführung (Rechnung) + Plakette in getrennten Zeilen werden zusammengeführt
+  const { e, U, V1 } = await freshWorld();
+  eq((await U.own.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2016-05-10', spec_source: 'ZB I' })).status, 200);
+  const imp = (csv) => U.own.req('POST', '/api/maintenance/import', csv, { 'content-type': 'text/csv' });
+  const r = await imp('Kennzeichen;Art;Letzte Prüfung;Nächster Termin;Nachweis\nSZ-YC 5513;HU;2026-03-10;;Rechnung DEKRA 4711\nSZ-YC 5513;HU;;03/2027;Plakette\n');
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.skipped.length, 0, JSON.stringify(r.data.skipped));
+  const hu = e.DB.db.prepare(`SELECT last_done_date, next_due_date, due_source, evidence FROM maintenance_rules WHERE vehicle_id=? AND kind='HU'`).get(V1);
+  eq(hu.last_done_date, '2026-03-10'); eq(hu.next_due_date.slice(0, 7), '2027-03'); eq(hu.due_source, 'nachweis'); ok(/Rechnung DEKRA 4711/.test(hu.evidence) && /Plakette/.test(hu.evidence), hu.evidence);
+  eq(e.DB.db.prepare(`SELECT COUNT(*) n FROM maintenance_events WHERE vehicle_id=? AND kind='HU' AND done_date='2026-03-10'`).get(V1).n, 1, 'HU-Durchführung erfasst');
+  // Neuberechnung schreibt nur auf dem gelesenen Stand: gleichzeitig eingetragener Nachweis bleibt
+  eq((await imp('Kennzeichen;Art;Letzte Prüfung;Nachweis\nSZ-YC 5513;SP;2025-09-05;SP-Bericht 1\n')).status, 200);
+  const spId = e.DB.db.prepare(`SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'`).get(V1).id;
+  e.DB.db.prepare(`UPDATE maintenance_rules SET next_due_date=NULL, due_source='berechnet' WHERE id=?`).run(spId);
+  const orig = e.DB.batch.bind(e.DB); let hook = true;
+  e.DB.batch = async (st) => { if (hook && st.some((x) => /UPDATE maintenance_rules SET next_due_date=\?, due_source='berechnet'/.test(x.sql))) { hook = false;
+    e.DB.db.prepare(`UPDATE maintenance_rules SET next_due_date='2027-03-31', due_source='nachweis' WHERE id=?`).run(spId); } return orig(st); };
+  const { syncHuSpDues } = await import('../src/inspection_rules.js');
+  const sy = await syncHuSpDues(e, { today: BERLIN_TODAY, vehicleIds: [V1] }); e.DB.batch = orig;
+  ok(!hook, 'Wettlauf nachgestellt');
+  const sp = e.DB.db.prepare('SELECT next_due_date, due_source FROM maintenance_rules WHERE id=?').get(spId);
+  eq(`${sp.next_due_date}/${sp.due_source}`, '2027-03-31/nachweis', 'Nachweis nicht überschrieben');
+  ok(!sy.changes.some((x) => x.kind === 'SP'), 'nicht geschriebene Neuberechnung nicht protokolliert');
+});
+await test('Fehlersuche 18.10. (2): Anmeldung (Passwort mit Leerzeichen, Link nach Passwortwechsel, Fehlversuche im angemeldeten Zustand, Push-Geräte beendeter Anmeldungen, 2FA aus beendet andere, Ersatzcodes parallel)', async () => {
+  const { e, U } = await freshWorld(); const own = U.own; const T = await import('../src/totp.js');
+  const acct = async (name, pw = 'Kranich7Wolke9', role = 'fleet') => { const x = await own.post('/api/users', { username: name, display_name: name, role, environment: 'test' });
+    const a = new Client(worker, e, name); const r = await a.post('/api/invite/accept', { token: x.data.invite_token, password: pw }); eq(r.status, 200, JSON.stringify(r.data)); a.id = x.data.id; return a; };
+  // 1. Passwort mit Leerzeichen am Ende: Anmeldung mit genau diesem Passwort klappt, ohne Leerzeichen nicht
+  await acct('p.space', 'Kranich7Wolke9 ', 'driver');
+  eq((await new Client(worker, e, 'x1').post('/api/login', { username: 'p.space', password: 'Kranich7Wolke9 ' })).status, 200);
+  eq((await new Client(worker, e, 'x2').post('/api/login', { username: 'p.space', password: 'Kranich7Wolke9' })).status, 401);
+  // 2. eigener Passwortwechsel entwertet offenen Zurücksetzen-Link
+  const pr = await acct('p.reset', 'Kranich7Wolke9', 'driver');
+  const ri = await own.post(`/api/users/${pr.id}/invite`); eq(ri.status, 200);
+  eq((await pr.post('/api/me/password', { old_password: 'Kranich7Wolke9', new_password: 'Habicht8Regen3' })).status, 200);
+  eq((await new Client(worker, e, 'x3').get('/api/invite/' + ri.data.invite_token)).status, 410);
+  // 3. Push-Geräte beendeter Anmeldungen werden abgemeldet; das eigene Gerät bleibt
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const keys = { p256dh: Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url'), auth: Buffer.alloc(16, 1).toString('base64url') };
+  const revoked = (ep) => !!e.DB.db.prepare('SELECT revoked_at FROM push_subscriptions WHERE endpoint=?').get(ep).revoked_at;
+  for (const [label, act] of [
+    ['Passwortwechsel', (a) => a.post('/api/me/password', { old_password: 'Kranich7Wolke9', new_password: 'Habicht8Regen3' })],
+    ['andere abmelden', (a) => a.post('/api/me/sessions/revoke-others')],
+    ['eine Anmeldung beenden', async (a) => { const s = (await a.get('/api/me/sessions')).data.sessions.find((x) => !x.current); return a.req('DELETE', '/api/me/sessions/' + s.id); }],
+  ]) {
+    const name = 'pp' + Math.random().toString(36).slice(2, 8); const a = await acct(name);
+    const b = new Client(worker, e, name + 'b'); eq((await b.post('/api/login', { username: name, password: 'Kranich7Wolke9' })).status, 200);
+    eq((await b.post('/api/push/subscribe', { endpoint: 'https://push.example/b' + name, keys })).status, 200);
+    eq((await a.post('/api/push/subscribe', { endpoint: 'https://push.example/a' + name, keys })).status, 200);
+    eq((await act(a)).status, 200, label);
+    eq((await b.get('/api/me')).status, 401, label);
+    ok(revoked('https://push.example/b' + name), label + ': Gerät B abgemeldet'); ok(!revoked('https://push.example/a' + name), label + ': eigenes Gerät bleibt');
+  }
+  // 4. Fehlversuche im angemeldeten Zustand zählen zur Sperre (dann enden alle Anmeldungen)
+  const pl = await acct('p.lock');
+  const st = []; for (let i = 0; i < 9; i++) st.push((await pl.post('/api/me/password', { old_password: 'falsch' + i, new_password: 'Habicht8Regen3' })).status);
+  ok(st.includes(429), st.join(',')); eq((await pl.get('/api/me')).status, 401, 'nach Sperre abgemeldet');
+  eq((await new Client(worker, e, 'x4').post('/api/login', { username: 'p.lock', password: 'Kranich7Wolke9' })).status, 429, 'Konto gesperrt');
+  // 5./6. Zwei-Faktor: zwei verschiedene Ersatzcodes parallel; Ausschalten beendet andere Anmeldungen
+  const pt = await acct('p.totp');
+  const su = await pt.post('/api/me/totp/setup', { password: 'Kranich7Wolke9' }); eq(su.status, 200);
+  const en = await pt.post('/api/me/totp/enable', { code: await T.totpAt(su.data.secret, Date.now() - 30000) }); eq(en.status, 200);
+  const rc = en.data.recovery_codes;
+  const mk = async (n) => { const c = new Client(worker, e, 'tc' + n); const l = await c.post('/api/login', { username: 'p.totp', password: 'Kranich7Wolke9' }); return [c, l.data.challenge]; };
+  const P = await Promise.all([mk(1), mk(2)]);
+  const res = await Promise.all(P.map(([c, ch], i) => c.post('/api/login/totp', { challenge: ch, code: rc[1 + i] })));
+  eq(res.map((x) => x.status).join(','), '200,200', JSON.stringify(res.map((x) => x.data)));
+  eq(JSON.parse(e.DB.db.prepare(`SELECT totp_recovery FROM users WHERE username='p.totp'`).get().totp_recovery).length, rc.length - 2);
+  eq(e.DB.db.prepare(`SELECT failures FROM login_attempts WHERE key='p.totp'`).get()?.failures || 0, 0, 'kein Fehlversuch gezählt');
+  const other = P[0][0]; eq((await other.get('/api/me')).status, 200);
+  eq((await pt.post('/api/me/totp/disable', { password: 'Kranich7Wolke9', code: rc[3] })).status, 200);
+  eq((await other.get('/api/me')).status, 401, 'andere Anmeldung beendet'); eq((await pt.get('/api/me')).status, 200, 'eigene bleibt');
+  // Code bei neuen Ersatzcodes durchprobieren → Sperre
+  const pt2 = await acct('p.totp2'); const s2 = await pt2.post('/api/me/totp/setup', { password: 'Kranich7Wolke9' });
+  eq((await pt2.post('/api/me/totp/enable', { code: await T.totpAt(s2.data.secret, Date.now() - 30000) })).status, 200);
+  const cur = await T.totpAt(s2.data.secret); const near = new Set([cur, await T.totpAt(s2.data.secret, Date.now() + 30000), await T.totpAt(s2.data.secret, Date.now() - 30000)]);
+  const st2 = []; for (let i = 0; st2.length < 9; i++) { const c = String(100000 + i); if (near.has(c)) continue; st2.push((await pt2.post('/api/me/totp/recovery-codes', { code: c })).status); }
+  ok(st2.includes(429), st2.join(','));
+});
+await test('Fehlersuche 18.10. (3): Reifengrößen-Import (FIN doppelt mit anderer Größe), Auslesungen-Import (Spaltenvorrang), unbenannte Nachweise einzeln, interner Vermerk nicht beim Fahrer', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet;
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const csv = 'Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Antriebsachse\nListe A;SZ-YC 5513;WMA15SZZ2HM722774;385/65 R22.5;315/80 R22.5\nListe B;SZ-YC 5513;WMA15SZZ2HM722774;385/55 R22.5;315/80 R22.5\n';
+  const tr = await U.own.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' }); eq(tr.status, 200);
+  eq(tr.data.skipped.length, 1, JSON.stringify(tr.data.skipped)); eq(tr.data.skipped[0].line, 3); ok(/^FIN doppelt in der Datei mit abweichender Größe \(Zeile 2\)/.test(tr.data.skipped[0].reason));
+  eq(e.DB.db.prepare(`SELECT size FROM tire_specs WHERE vehicle_id=? AND axle='lenkachse'`).get(V1).size, '385/65 R22.5', 'erste Größe bleibt');
+  // Auslesungen: „Auslesedatum“ vor „Datum letzte Aktivität“; „Name“ vor „Fahrer“ (Kartennummer)
+  const d1 = (await F.post('/api/drivers', { display_name: 'Max Muster', personnel_no: 'P1', user_id: U.driver.id, note: 'intern: nur für die Leitung' })).data.id;
+  const t1 = await F.req('POST', '/api/tacho/import?dry_run=1', `Art;Personalnummer;Datum letzte Aktivität;Auslesedatum;Datei\nFahrerkarte;P1;${day(-36)};${day(-3)};a.ddd`, { 'content-type': 'text/csv' });
+  eq(t1.status, 200, JSON.stringify(t1.data)); eq(t1.data.rows.map((x) => x.downloaded_on).join(), day(-3));
+  const t2 = await F.req('POST', '/api/tacho/import?dry_run=1', `Art;Fahrer;Name;Datum;Datei\nFahrerkarte;DF000012345;Max Muster;${day(-3)};b.ddd`, { 'content-type': 'text/csv' });
+  eq(t2.status, 200, JSON.stringify(t2.data)); eq(t2.data.skipped.length, 0, JSON.stringify(t2.data.skipped)); eq(t2.data.rows.length, 1);
+  // zwei unbenannte „Sonstiges“: der abgelaufene bleibt abgelaufen
+  eq((await F.post(`/api/drivers/${d1}/documents`, { kind: 'sonstiges', evidence: 'ADR-Schein Kopie', valid_until: day(-18), issued_on: day(-1800) })).status, 201);
+  eq((await F.post(`/api/drivers/${d1}/documents`, { kind: 'sonstiges', evidence: 'Staplerschein', valid_until: day(800), issued_on: day(-300) })).status, 201);
+  const st = (await F.get('/api/drivers/' + d1)).data.status;
+  eq(st.items.filter((x) => x.kind === 'sonstiges').map((x) => x.status).sort().join(), 'abgelaufen,ok', JSON.stringify(st.items));
+  eq(st.overall, 'kritisch');
+  // benannte Nachweise lösen sich weiter ab
+  eq((await F.post(`/api/drivers/${d1}/documents`, { kind: 'unterweisung', title: 'Ladungssicherung', evidence: 'U1', valid_until: day(-5), issued_on: day(-370) })).status, 201);
+  eq((await F.post(`/api/drivers/${d1}/documents`, { kind: 'unterweisung', title: 'ladungssicherung ', evidence: 'U2', valid_until: day(360), issued_on: day(-5) })).status, 201);
+  eq((await F.get('/api/drivers/' + d1)).data.status.items.filter((x) => x.kind === 'unterweisung').length, 1);
+  // Fahrer sieht eigene Akte ohne internen Vermerk; Leitung mit
+  const own = (await U.driver.get('/api/drivers')).data.drivers[0]; ok(own && own.id === d1); ok(!('note' in own) && !('created_by' in own), JSON.stringify(Object.keys(own)));
+  ok(!('note' in (await U.driver.get('/api/drivers/' + d1)).data.driver));
+  eq((await F.get('/api/drivers/' + d1)).data.driver.note, 'intern: nur für die Leitung');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
