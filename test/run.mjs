@@ -8004,7 +8004,7 @@ await test('Benutzerliste: Sortierung (Rolle/Name/letzte Anmeldung zuerst ohne b
   ok(fn.indexOf('sortUsers(filterUsers(all, ufi, ud), uso)') > 0 && fn.indexOf('sortUsers(filterUsers(all, ufi, ud), uso)') < fn.indexOf('usersCsv(us, t, wsName, fmtDT)'), 'CSV in derselben Reihenfolge und Auswahl');
   ok(fn.includes('const no2fa = all.filter(') && fn.includes('const noPush = all.filter('), 'Hinweise (2FA/Push) unabhängig von der Auswahl');
   ok(fn.includes("printHead([t('uc_print'), ufi !== 'all' ? `${t('ufilter')}: ${ufLabel(ufi)}` : '', `${t('sort_by')}: ${t('usort_' + uso)}`, t('print_count').replace('{n}', us.length)])") && fn.includes("$('#uprt').onclick = () => window.print()"), 'druckbar mit Vermerk (Auswahl, Sortierung, Anzahl)');
-  ok(fn.includes('<th class="noprint"></th>') && fn.includes('<td class="noprint">${u.id !== S.me.id'), 'Spalte mit Bedienknöpfen nicht im Ausdruck');
+  ok(fn.includes('<th class="noprint"></th>') && fn.includes('<td class="noprint">${mayEdit(u)'), 'Spalte mit Bedienknöpfen nicht im Ausdruck');
   ok(/'wsload', 'users'[,\]]/.test(fs.readFileSync(new URL('../scripts/ui-rauchtest.py', import.meta.url), 'utf8')), 'Druckansicht im Rauchtest');
 });
 
@@ -8261,9 +8261,10 @@ await test('Datenqualität: Listen-Prüfungen nicht still gekappt – mehr als 2
   const mine = r.items.filter((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === VID);
   ok(mine.some((i) => i.detail.startsWith('1000 km')), 'neueste Kontrolle enthalten');
   ok(!mine.some((i) => i.detail.startsWith(`${1000 + 200 - before} km`)) || before > 0, 'älteste nicht enthalten');
-  // Standortfilter: Hinweis bleibt (Kappung gilt vor dem Filter)
+  // Standortfilter: Grenze gilt seit 18.10.2026 je Standort (Filter vor dem LIMIT) – Hinweis nur, wenn dieser Standort mehr als 200 hat
   const rs = (await users.fleet.get('/api/admin/data-quality?site=' + encodeURIComponent('DQ-Kappung'))).data;
-  ok(rs.truncated_checks.includes('km_inspection_rejected'), 'Hinweis auch mit Standort');
+  const nSite = rs.counts.km_inspection_rejected || 0;
+  ok(nSite <= 200 && (nSite === 200 || !rs.truncated_checks.includes('km_inspection_rejected')), 'Hinweis nur bei voller Liste des Standorts');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_truncated && STRINGS[l].dq_truncated.includes('{n}'), 'Text ' + l);
   const app = await (await import('node:fs/promises')).readFile(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -12820,6 +12821,34 @@ await test('Fehlersuche 18.10. (24): Versicherungsfall behält Schreiben nach Um
   eq((await U.viewer.get('/api/me')).status, 401, 'nach Leerlauf + Schreibabstand abgemeldet');
   db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(ago(70), U.fleet.id);
   eq((await U.fleet.get('/api/me')).status, 200); ok(Date.now() - Date.parse(db.prepare('SELECT last_seen FROM sessions WHERE user_id=?').get(U.fleet.id).last_seen) < 5000, 'last_seen nach > 60 s geschrieben');
+});
+
+await test('Fehlersuche 18.10. (25): Datenqualität – Standortfilter vor der 200er-Grenze, Datumsangaben sprachneutral; Kennzahlen-CSV „Art“ als Bezeichnung; Feldnamen statt „Feld“ in Meldungen', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const csv = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nM-AB 1;München;in Betrieb;MAN;2016;WMA15SZZ2HM700001;';
+  eq((await U.own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200);
+  const mk = async (vid) => { const x = await U.fleet.post('/api/cases', { vehicle_id: vid, description: 'Unfall Spiegel', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: crypto.randomUUID() }); eq(x.status, 201, JSON.stringify(x.data)); };
+  await mk('VIN:WMA15SZZ2HM700001');
+  db.prepare(`UPDATE cases SET created_at=? WHERE vehicle_id='VIN:WMA15SZZ2HM700001'`).run(new Date(Date.now() - 3 * 864e5).toISOString());
+  for (let i = 0; i < 201; i++) await mk(V1);
+  const all = (await U.fleet.get('/api/admin/data-quality')).data; ok(all.truncated_checks.includes('accident_no_claim'), 'gesamt gekappt');
+  const m = (await U.fleet.get('/api/admin/data-quality?site=M%C3%BCnchen')).data;
+  eq(m.counts.accident_no_claim, 1, 'München-Befund trotz 201 neuerer anderer'); ok(!m.truncated_checks.includes('accident_no_claim'), 'München nicht gekappt');
+  // Prüfergebnis fehlt: Datum als detail_args (App formatiert je Sprache)
+  const done = new Date(Date.parse(BERLIN_TODAY) - 10 * 864e5).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', interval_months: 12, last_done_date: done, evidence: 'Prüfbuch' }); ok(r.status < 300, JSON.stringify(r.data));
+  db.prepare(`UPDATE maintenance_events SET source='erfasst', result=NULL WHERE vehicle_id=? AND kind='UVV'`).run(V1);
+  const nr = (await U.fleet.get('/api/admin/data-quality')).data.items.find((i) => i.check === 'inspection_no_result');
+  if (nr) { eq(nr.detail_args.done_date, done); const C = await import('../public/csv.js'); eq(C.dqDetailText(nr, (k) => k, (d) => 'D(' + d + ')'), `UVV D(${done})`); }
+  // Kennzahlen je Fahrzeug: Art „Lkw“ statt „lkw“
+  const kc = new TextDecoder().decode((await U.fleet.get('/api/reports/kpi?format=csv&view=vehicles')).data);
+  ok(!/;lkw;/.test(kc) && !/;anhaenger;/.test(kc), 'keine Rohcodes'); ok(/;Lkw;/.test(kc) || kc.split('\r\n').length <= 3, kc.slice(0, 300));
+  // Feldname statt „Feld“: Bußgeld-Aktenzeichen und Fahrzeug-Standort
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt', reference: 'A'.repeat(81), offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ-YC 5513', response_due: BERLIN_TODAY });
+  eq(f.status, 400); ok(/^Aktenzeichen ist zu lang/.test(f.data.message), f.data.message);
+  const { readFileSync } = await import('node:fs'); const src = ['fines', 'vehicles', 'stock', 'cases', 'drivers'].map((n) => readFileSync(new URL(`../src/${n}.js`, import.meta.url), 'utf8')).join('\n');
+  eq((src.match(/str\(body\.(note|location|reference|site|manufacturer|model|master_status|supplier|document_ref|part_number|title|evidence)(?: \|\| null)?, \{ max: \d+ \}\)/g) || []).join(), '', 'Freitextfelder mit Feldnamen');
+  const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); ok(/Feld: 'Field'/.test(i18n) && /Feld: 'Поле'/.test(i18n), 'Feld übersetzt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -79,6 +79,16 @@ export async function dataQuality(env, user, envName, query = {}) {
   if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
   const staleDays = intParam(query.stale_days, 90, 7, 730);
   const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
+  // Standortfilter VOR den Listen-Grenzen (18.10.2026: vorher erst danach – ein Standort mit älteren Befunden wirkte bei mehr als
+  // 200 neueren anderer Standorte fehlerfrei, wie in maintenance.js am 18.10. behoben): JSON-Liste der Fahrzeug-IDs des Standorts
+  let siteOf = null; let vf = null; let sel0 = null;
+  if (query.site) {
+    const all = (await env.DB.prepare('SELECT id, site, active, eval_excluded FROM vehicles').all()).results;
+    siteOf = new Map(all.map((v) => [v.id, v.site]));
+    sel0 = siteSelection(all.filter((v) => v.active && !v.eval_excluded), query.site);
+    if (sel0.site) vf = JSON.stringify(all.filter((v) => sel0.match(v.site)).map((v) => v.id));
+  }
+  const VF = vf ? 'AND i.vehicle_id IN (SELECT value FROM json_each(?))' : '';
   const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates] = await Promise.all([
     // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded FROM vehicles WHERE active=1').all(),
@@ -108,8 +118,8 @@ export async function dataQuality(env, user, envName, query = {}) {
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at > i.created_at ORDER BY o.measured_at ASC LIMIT 1) AS next_km,
       EXISTS (SELECT 1 FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.km=i.odometer_km AND o.source LIKE 'kontrolle:%') AS taken
-      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ?)
-      WHERE (prev_km IS NOT NULL AND odometer_km < prev_km) OR (next_km IS NOT NULL AND odometer_km > next_km AND NOT taken) ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore).all(),
+      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ? ${VF})
+      WHERE (prev_km IS NOT NULL AND odometer_km < prev_km) OR (next_km IS NOT NULL AND odometer_km > next_km AND NOT taken) ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore, ...(vf ? [vf] : [])).all(),
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
@@ -124,9 +134,9 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.created_at FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.created_at >= ? AND c.status<>'abgelehnt' AND v.eval_excluded=0
       AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
-      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString(), ...ACC_CYR).all(),
+      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ${vf ? 'AND c.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString(), ...ACC_CYR, ...(vf ? [vf] : [])).all(),
     // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher ohne Vorgang zum Fahrzeug seit dem Prüfdatum
-    defectsWithoutCaseQuery(env, envName, DQ_MAX + 1).all(),
+    defectsWithoutCaseQuery(env, envName, DQ_MAX + 1, vf).all(),
     // Nachprüfung (nächste spätere Durchführung derselben Prüfart, ≤ 365 Tage, am/nach dem Freigabetag des Mängelauftrags) erneut mit erheblichen Mängeln
     env.DB.prepare(`SELECT n.id, n.vehicle_id, v.plate, n.kind, n.done_date, n.result, e.done_date AS first_date, MAX(c.case_no) AS case_no
       FROM maintenance_events e JOIN cases c ON c.maintenance_event_id=e.id AND c.environment=? AND c.status='fahrzeug_freigegeben'
@@ -134,9 +144,9 @@ export async function dataQuality(env, user, envName, query = {}) {
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)) ORDER BY x.done_date, x.created_at LIMIT 1)
       JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND ${berlinDaySql('c.closed_at')} <= n.done_date
-      AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
-      GROUP BY n.id ORDER BY n.done_date DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
-    noResultQuery(env, null, DQ_MAX + 1).all(),
+      AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher') ${vf ? 'AND n.vehicle_id IN (SELECT value FROM json_each(?))' : ''}
+      GROUP BY n.id ORDER BY n.done_date DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), ...(vf ? [vf] : [])).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
+    noResultQuery(env, null, DQ_MAX + 1, vf).all(),
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
     // außerdem: Stände außer Betrieb genommener Fahrzeuge mit dem letzten Zeitpunkt „außer Betrieb genommen“ laut Protokoll (ohne Protokolleintrag kein Befund)
@@ -231,11 +241,13 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const d of again.results) items.push({ check: 'reinspection_defects_again', severity: CHECKS.reinspection_defects_again, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id,
     detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')} · ${RES_DE[d.result]} · Mängelauftrag ${d.case_no} zur Prüfung vom ${d.first_date.split('-').reverse().join('.')}`,
     detail_args: { kind: d.kind, done_date: d.done_date, result: d.result, case_no: d.case_no, first_date: d.first_date } });
-  for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}` });
+  for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}`,
+    detail_args: { kind: d.kind, done_date: d.done_date } }); // App formatiert das Datum je Sprache (vorher „UVV 08.10.2026“ auch in EN, 18.10.2026)
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
   for (const r of telPlates.results) {
-    if (!r.v_active && r.deact_at && r.gps_time && r.gps_time > r.deact_at) add('telematics_vehicle_inactive', { id: r.vehicle_id, plate: r.v_plate }, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${berlinDateTime(r.gps_time)} · außer Betrieb seit ${berlinDate(r.deact_at).split('-').reverse().join('.')}`.replace(/\s+:/, ':'));
+    if (!r.v_active && r.deact_at && r.gps_time && r.gps_time > r.deact_at) addA('telematics_vehicle_inactive', { id: r.vehicle_id, plate: r.v_plate }, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${berlinDateTime(r.gps_time)} · außer Betrieb seit ${berlinDate(r.deact_at).split('-').reverse().join('.')}`.replace(/\s+:/, ':'),
+      { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), day: berlinDate(r.gps_time), time: berlinDateTime(r.gps_time).slice(-5), since: berlinDate(r.deact_at) });
     const v = vById.get(r.vehicle_id); if (!v) continue;
     if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
     if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`);
@@ -260,7 +272,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const sel = siteSelection(vs, query.site);
   let shown = items; let otherHidden = 0; let checked = vs.length;
   if (sel.site) {
-    const siteOf = new Map((await env.DB.prepare('SELECT id, site FROM vehicles').all()).results.map((v) => [v.id, v.site]));
+    if (!siteOf) siteOf = new Map((await env.DB.prepare('SELECT id, site FROM vehicles').all()).results.map((v) => [v.id, v.site]));
     shown = items.filter((i) => i.vehicle_id && sel.match(siteOf.get(i.vehicle_id)));
     otherHidden = items.filter((i) => !i.vehicle_id).length;
     checked = vs.filter((v) => sel.match(v.site)).length;

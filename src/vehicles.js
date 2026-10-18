@@ -399,12 +399,12 @@ function vehicleRow(user, body) {
   if (!plateOk(plate)) throw bad('validation', 'Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   if (body.trailer_plate && typeof body.trailer_plate === 'string' && body.trailer_plate.trim() && !plateOk(body.trailer_plate.trim().toUpperCase())) throw bad('validation', 'Anhänger-Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   return {
-    id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60 }), manufacturer: str(body.manufacturer, { max: 60 }), model: str(body.model, { max: 60 }),
+    id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60, field: 'Standort' }), manufacturer: str(body.manufacturer, { max: 60, field: 'Hersteller' }), model: str(body.model, { max: 60, field: 'Modell' }),
     build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
-    trailer_plate: str(body.trailer_plate, { max: 20 }), trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
+    trailer_plate: str(body.trailer_plate, { max: 20, field: 'Anhänger-Kennzeichen' }), trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
       const t = str(body.trailer_vin, { max: 30, field: 'Anhänger-FIN' }); if (!t) return null;
       const n = normalizeVin(t); if (!isValidVin(n)) throw bad('validation', 'Anhänger-FIN muss 17 Zeichen haben (ohne I, O, Q).'); return n; })(),
-    master_status: str(body.master_status, { max: 40 }), source: str(body.source, { max: 200 }) || `manuell durch ${user.username}`,
+    master_status: str(body.master_status, { max: 40, field: 'Stammstatus' }), source: str(body.source, { max: 200, field: 'Quelle' }) || `manuell durch ${user.username}`,
     kind: normalizeVehicleKind(body.kind),
   };
 }
@@ -533,7 +533,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7
     WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))
       AND EXISTS (SELECT 1 FROM vehicles WHERE id=?3 AND active=1)`)
-    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300 }) || 'Zuordnung durch Fuhrparkleitung', user.id, now),
+    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300, field: 'Nachweis' }) || 'Zuordnung durch Fuhrparkleitung', user.id, now),
     env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
   try { await env.DB.batch(stmts); } catch (e) {
     if (String(e && e.message).includes('CHECK')) {
@@ -653,7 +653,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
   const months = body.interval_months ? Math.round(num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' })) : null;
   const km = body.interval_km ? Math.round(num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true })) : null;
-  const lastDate = str(body.last_done_date, { max: 10 });
+  const lastDate = str(body.last_done_date, { max: 10, field: 'Letzte Prüfung' });
   const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   const husp = kind === 'HU' || kind === 'SP';
   if (ONE_TIME_KINDS.includes(kind) && (months || km)) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
@@ -662,7 +662,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (husp && (dueKm !== null || km !== null)) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
   if (dueKm !== null && lastKm !== null && dueKm <= lastKm) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
   if (dueKm !== null && km && lastKm !== null && dueKm === lastKm + km) dueKm = null; // ergibt sich ohnehin aus Intervall
-  let nextDue = str(body.next_due_date, { max: 10 });
+  let nextDue = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
   // erst prüfen, dann rechnen (ungültiges Datum wie „0000-00-00“ ließ addMonths mit „Invalid time value“ abbrechen – Fuzz 15.10.2026)
@@ -698,7 +698,7 @@ export async function planMaintenance(env, user, ruleId, body) {
   const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
   if (!r) throw notFound();
   // gleiche Prüfung wie Werkstatttermine: echtes Kalenderdatum, nicht mehr als 1 Jahr zurück / 2 Jahre voraus
-  const d = body.planned_date ? planDate(str(body.planned_date, { max: 10 })) : null;
+  const d = body.planned_date ? planDate(str(body.planned_date, { max: 10, field: 'Termin' })) : null;
   // Termin setzen nur für aktive Fahrzeuge und nicht für erledigte Rückrufe (wie „Werkstattauftrag erstellen“; 18.10.2026 – Termin stand
   // sonst im Plan/Kalender); Termin entfernen bleibt immer möglich
   if (d && !r.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
@@ -722,7 +722,7 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
     if (cls && cls !== fromKg) throw bad('validation', 'Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.');
     cls = fromKg;
   }
-  const ez = body.first_registration ? str(body.first_registration, { max: 10 }) : null;
+  const ez = body.first_registration ? str(body.first_registration, { max: 10, field: 'Erstzulassung' }) : null;
   if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
   await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=?').bind(cls, kg, ez, source, nowIso(), vehicleId).run();
   await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez }, source });
@@ -786,7 +786,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
     if (nextR && km > nextR.km && !(nextR.note && String(nextR.note).trim())) throw bad('validation', 'Kilometerstand bei Durchführung ist größer als ein später erfasster km-Stand. Bitte prüfen.');
   }
   const husp = r.kind === 'HU' || r.kind === 'SP';
-  const docNext = str(body.next_due_date, { max: 10 });
+  const docNext = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
   // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
   if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (docNext && docNext < date) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
@@ -870,7 +870,7 @@ export async function addOdometer(env, user, vehicleId, body) {
     if (d > today) throw bad('validation', 'Ablesedatum darf nicht in der Zukunft liegen.');
     if (d < today) measuredAt = `${d}T12:00:00.000Z`;
   }
-  const note = str(body.note, { max: 300 });
+  const note = str(body.note, { max: 300, field: 'Bemerkung' });
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
   // Plausibilität gegen die zeitlich benachbarten Werte: davor nicht größer, danach nicht kleiner – sonst nur mit Begründung
@@ -1066,7 +1066,7 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
   if (!f) throw notFound();
   const kind = 'kind' in body ? oneOf(body.kind || 'sonstiges', DOC_KINDS, 'Dokumentart') : (f.doc_kind || 'sonstiges');
   const note = 'note' in body ? str(body.note || null, { max: 200, field: 'Bemerkung' }) : f.doc_note;
-  const validUntil = 'valid_until' in body ? str(body.valid_until || null, { max: 10 }) : f.doc_valid_until;
+  const validUntil = 'valid_until' in body ? str(body.valid_until || null, { max: 10, field: 'Gültig bis' }) : f.doc_valid_until;
   if (validUntil && !isCalendarDate(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
   const before = { kind: f.doc_kind || 'sonstiges', note: f.doc_note ?? null, valid_until: f.doc_valid_until ?? null };
   const after = { kind, note: note ?? null, valid_until: validUntil ?? null };

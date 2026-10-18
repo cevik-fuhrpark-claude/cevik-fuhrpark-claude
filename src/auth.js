@@ -509,7 +509,7 @@ export async function createUser(env, actor, body) {
   const now = nowIso();
   // gleichzeitiges Anlegen desselben Namens: 409 statt 500 (UNIQUE) – 17.10.2026
   const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,workshop_site,employee_number,active,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,1,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30 }), actor.id, now, now).run();
+    VALUES (?,?,?,?,?,?,?,1,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30, field: 'Personalnummer' }), actor.id, now, now).run();
   if (!ins.meta || !ins.meta.changes) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const token = await createInvite(env, id, actor.id);
   await audit(env, actor.id, 'user.create', id, { role, environment, username });

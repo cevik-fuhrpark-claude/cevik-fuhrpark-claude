@@ -568,7 +568,7 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
   if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
-  const note = str(body.note, { max: 1000 });
+  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
   const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '')})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
@@ -603,7 +603,7 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   if (!ev.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || (ev.result === 'erhebliche_maengel' ? 'mittel' : 'kritisch'), PRIORITIES, 'Priorität');
   const driveability = oneOf(body.driveability || (ev.result === 'verkehrsunsicher' ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
-  const note = str(body.note, { max: 1000 });
+  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   const date = ev.done_date.split('-').reverse().join('.');
   const description = `Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ${ev.evidence})${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64 }) || uuid();
@@ -638,7 +638,7 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
   if (!v.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
-  const note = str(body.note, { max: 1000 });
+  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Termin vor dem Anlegen prüfen (sonst bliebe bei ungültigem Termin eine nicht freigegebene Meldung zurück)
   const planned = body.planned_date ? planDate(body.planned_date) : null;
   if (planned && planned < berlinDate()) throw bad('validation', 'Werkstatttermin darf nicht in der Vergangenheit liegen.');
@@ -682,14 +682,14 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     if (description.length < 5) throw bad('validation', 'Fehlerbeschreibung ist zu kurz.');
     const reportedPriority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Dringlichkeit');
     const driveability = oneOf(body.driveability || 'unbekannt', DRIVEABILITY, 'Fahrbereitschaft');
-    const suggested = body.workshop_site ? str(body.workshop_site, { max: 20 }) : null;
+    const suggested = body.workshop_site ? str(body.workshop_site, { max: 20, field: 'Werkstatt' }) : null;
     const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
-    const location = str(body.location_note, { max: 300 });
+    const location = str(body.location_note, { max: 300, field: 'Ort' });
     const origin = body.origin && ['meldung', 'kontrolle'].includes(body.origin) ? body.origin : 'meldung';
     const parentId = body.parent_case_id ? str(body.parent_case_id, { max: 40 }) : null;
-    const checkItem = origin === 'kontrolle' && body.check_item ? str(body.check_item, { max: 60 }) : null;
+    const checkItem = origin === 'kontrolle' && body.check_item ? str(body.check_item, { max: 60, field: 'Prüfpunkt' }) : null;
     specs.push({ vehicleId, description, reportedPriority, driveability, suggested, requestKey, location, origin, parentId, checkItem,
-      reporterNote: str(body.reporter_name_note, { max: 120 }) });
+      reporterNote: str(body.reporter_name_note, { max: 120, field: 'Name' }) });
     if (internal.origin) specs.at(-1).origin = internal.origin;
   }
   const J = (a) => JSON.stringify([...new Set(a)]);
@@ -802,7 +802,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const action = str(body.action, { required: true, max: 40, field: 'Aktion' });
   const commandId = str(body.command_id, { required: true, max: 64, field: 'command_id' });
   const expectedVersion = num(body.expected_version, { min: 1, field: 'Version' });
-  let note = str(body.note, { max: 4000 });
+  let note = str(body.note, { max: 4000, field: 'Bemerkung' });
   const p = body.payload || {};
 
   const { c, access } = await loadCase(env, user, envName, caseId);
@@ -1214,7 +1214,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
   const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
   // Vermerk vor dem Anlegen der Folgeaufträge prüfen (17.10.2026: zu langer Vermerk → 400 erst nach dem Anlegen; gesperrter Folgeauftrag ohne Kontrolle)
-  const inspNote = str(body.note, { max: 2000 });
+  const inspNote = str(body.note, { max: 2000, field: 'Bemerkung' });
   const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
   const now = nowIso();
   // Offline gespeicherte Abfahrtskontrolle (17.10.2026): Postausgang sendet den Zeitpunkt der Durchführung mit (`performed_at`).

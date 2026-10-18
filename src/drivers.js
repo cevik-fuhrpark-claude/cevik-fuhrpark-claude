@@ -135,14 +135,14 @@ export async function createDriver(env, user, envName, body) {
   const name = str(body.display_name, { required: true, max: 120, field: 'Name' });
   const userId = await validLinkedUser(env, envName, body.user_id);
   const id = uuid(); const now = nowIso();
-  const pno = str(body.personnel_no, { max: 40 });
+  const pno = str(body.personnel_no, { max: 40, field: 'Personalnummer' });
   // Personalnummer je Umgebung unter aktiven Fahrern eindeutig (Schreibweise wie beim Auslesungen-Import) – Doppelklick/parallel ergab
   // sonst zwei Fahrer, und der Import übersprang danach jede Zeile „Fahrer nicht eindeutig“ (17.10.2026)
   let r;
   try {
     r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10
       WHERE ?4 IS NULL OR NOT EXISTS (SELECT 1 FROM drivers x WHERE x.environment=?2 AND x.active=1 AND lower(trim(x.personnel_no))=lower(?4))`)
-      .bind(id, envName, name, pno, str(body.site, { max: 60 }), userId, str(body.note, { max: 1000 }), user.id, now, now).run();
+      .bind(id, envName, name, pno, str(body.site, { max: 60, field: 'Standort' }), userId, str(body.note, { max: 1000, field: 'Bemerkung' }), user.id, now, now).run();
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
   await audit(env, user.id, 'driver.create', id, { name, environment: envName });
@@ -164,11 +164,11 @@ export async function updateDriver(env, user, envName, id, body) {
   if (expected && expected !== d.updated_at) throw conflict('version_conflict', 'Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.');
   const f = {
     display_name: body.display_name !== undefined ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : d.display_name,
-    personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { max: 40 }) : d.personnel_no,
-    site: body.site !== undefined ? str(body.site, { max: 60 }) : d.site,
+    personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { max: 40, field: 'Personalnummer' }) : d.personnel_no,
+    site: body.site !== undefined ? str(body.site, { max: 60, field: 'Standort' }) : d.site,
     user_id: body.user_id !== undefined ? await validLinkedUser(env, envName, body.user_id) : d.user_id,
     active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active) ? 1 : 0),
-    note: body.note !== undefined ? str(body.note, { max: 1000 }) : d.note,
+    note: body.note !== undefined ? str(body.note, { max: 1000, field: 'Bemerkung' }) : d.note,
   };
   try {
     // nur mitgesendete Felder schreiben (17.10.2026: gleichzeitige Änderungen verschiedener Felder gingen sonst verloren)
@@ -214,7 +214,7 @@ export async function addDriverDocument(env, user, envName, id, body) {
       OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, substr(x.created_at,1,10)) > ?7)))`;
   stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11)`)
-    .bind(docId, id, kind, str(body.title, { max: 120 }), str(body.number, { max: 40 }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60 }) : null, issued, valid, evidence, user.id, now));
+    .bind(docId, id, kind, str(body.title, { max: 120, field: 'Bezeichnung' }), str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now));
   if (single) stmts.push(env.DB.prepare(`UPDATE driver_documents SET superseded=1 WHERE driver_id=?1 AND kind=?2 AND superseded=0 AND id<>?3
       AND (SELECT superseded FROM driver_documents WHERE id=?3)=0`).bind(id, kind, docId));
   await env.DB.batch(stmts);
@@ -228,7 +228,7 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   await loadDriver(env, user, envName, id);
   const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
   const result = oneOf(body.result, CHECK_RESULTS, 'Ergebnis');
-  const note = str(body.note, { max: 500 });
+  const note = str(body.note, { max: 500, field: 'Bemerkung' });
   if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.');
   const cid = uuid();
   // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026)

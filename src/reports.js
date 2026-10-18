@@ -281,7 +281,7 @@ export function kpiReportCsv(rep, part = 'vehicles') {
     for (const p of rep.by_priority) lines.push([p.priority, p.created, p.released, p.rejected, p.open, ...st(p.triage), ...st(p.workshop_ack), ...st(p.created_to_release), num(p.parts_wait_h), p.duplicates || 0, p.internal || 0].join(';'));
   } else {
     lines.push(['Kennzeichen', 'FIN-Schlüssel', 'Art', 'Standort', 'Vorgänge', 'Freigegeben', 'Werkstattzeit h', 'Wartezeit Teile h', 'Sperrzeit h', 'davon Dubletten', 'Ausfallzeit h', 'Verfügbarkeit %'].join(';'));
-    for (const v of rep.vehicles) lines.push([cell(v.plate), cell(v.vehicle_id), cell(v.kind), cell(v.site), v.cases, v.released, num(v.workshop_h), num(v.parts_wait_h), num(v.locked_h), v.duplicates || 0, num(v.downtime_h), num(v.availability_pct)].join(';'));
+    for (const v of rep.vehicles) lines.push([cell(v.plate), cell(v.vehicle_id), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', cell(v.site), v.cases, v.released, num(v.workshop_h), num(v.parts_wait_h), num(v.locked_h), v.duplicates || 0, num(v.downtime_h), num(v.availability_pct)].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }

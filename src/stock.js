@@ -101,8 +101,8 @@ export async function createItem(env, user, envName, body) {
   const now = nowIso();
   try {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80 }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
-      str(body.unit, { max: 20 }) || 'Stk', r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })), str(body.location, { max: 80 }),
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
+      str(body.unit, { max: 20, field: 'Einheit' }) || 'Stk', r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })), str(body.location, { max: 80, field: 'Ort' }),
       num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true }), user.id, now, now).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
@@ -119,9 +119,9 @@ export async function updateItem(env, user, envName, id, body) {
   if (expected && expected !== it.updated_at) throw conflict('version_conflict', 'Artikel wurde zwischenzeitlich geändert. Bitte neu laden.');
   const fields = {
     name: body.name !== undefined ? str(body.name, { required: true, max: 200, field: 'Bezeichnung' }) : it.name,
-    part_number: body.part_number !== undefined ? str(body.part_number, { max: 80 }) : it.part_number,
+    part_number: body.part_number !== undefined ? str(body.part_number, { max: 80, field: 'Teilenummer' }) : it.part_number,
     min_qty: body.min_qty !== undefined ? r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })) : it.min_qty,
-    location: body.location !== undefined ? str(body.location, { max: 80 }) : it.location,
+    location: body.location !== undefined ? str(body.location, { max: 80, field: 'Ort' }) : it.location,
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
   };
@@ -164,15 +164,15 @@ export async function addMovement(env, user, envName, id, body) {
   if (dup) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
   if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
-  if (type === 'korrektur' && !str(body.note, { max: 500 })) throw bad('validation', 'Korrektur braucht einen Grund.');
+  if (type === 'korrektur' && !str(body.note, { max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.');
   if (type === 'entnahme') qty = -qty;
   if (qty < 0 && (await onHand(env, id)) + qty < 0) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, id)} ${it.unit}).`);
   const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true });
   // Entnahme: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
   const price = type === 'entnahme' && it.unit_price_net !== null ? it.unit_price_net : entered;
   const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
-    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120 }), str(body.document_ref, { max: 200 }),
-    str(body.note, { max: 500 }), user.id, nowIso(), rkey)];
+    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120, field: 'Lieferant' }), str(body.document_ref, { max: 200, field: 'Beleg' }),
+    str(body.note, { max: 500, field: 'Bemerkung' }), user.id, nowIso(), rkey)];
   if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
   // Lieferung eingegangen: Bestellvermerk endet (Teillieferung → neu vermerken, falls noch offen)
   if (type === 'zugang' && it.ordered_on) stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id));
@@ -207,7 +207,7 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
   const eta = body.eta ? String(body.eta) : null;
   if (eta && (!isCalendarDate(eta) || eta < on)) throw bad('validation', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.');
   const r = await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=? AND ordered_on IS NULL AND active=1')
-    .bind(qty, on, eta, str(body.note, { max: 200 }), user.id, nowIso(), id).run();
+    .bind(qty, on, eta, str(body.note, { max: 200, field: 'Bemerkung' }), user.id, nowIso(), id).run();
   if (!(r.meta && r.meta.changes)) throw conflict('stock_order_exists', 'Für diesen Artikel ist bereits eine Bestellung vermerkt. Bitte neu laden.');
   await audit(env, user.id, 'stock.order_mark', null, { item: id, qty, eta });
   return { ok: true };
@@ -231,7 +231,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, on_hand: await onHand(env, id) };
   const avail = await onHand(env, id);
   if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}).`);
-  const note = str(body.note, { max: 300 });
+  const note = str(body.note, { max: 300, field: 'Bemerkung' });
   const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=? AND (name=? OR (part_number IS NOT NULL AND part_number<>\'\' AND part_number=?))')
     .bind(envName, toSite, it.name, it.part_number || '\u0000').all()).results;
   let target = cands.find((c) => (c.part_number || '') === (it.part_number || '') && c.name === it.name) || null;
@@ -306,7 +306,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   if (!Array.isArray(body.counts) || !body.counts.length) throw bad('validation', 'Keine Zählmengen übermittelt.');
   if (body.counts.length > 2000) throw bad('validation', 'Maximal 2000 Artikel je Inventur.');
   const items = new Map((await listStock(env, user, envName, { site })).map((i) => [i.id, i]));
-  const note = str(body.note, { max: 300 });
+  const note = str(body.note, { max: 300, field: 'Bemerkung' });
   const date = berlinDate();
   const diffs = [];
   const seen = new Set();

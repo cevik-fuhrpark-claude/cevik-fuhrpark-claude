@@ -210,7 +210,7 @@ export async function setTireSpec(env, user, vehicleId, body) {
   const r = await env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,verified_by,verified_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
     ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, verified=excluded.verified, verified_by=excluded.verified_by, verified_at=excluded.verified_at, updated_at=excluded.updated_at
     WHERE excluded.verified=1 OR tire_specs.verified=0`)
-    .bind(vehicleId, axle, size, str(body.source, { max: 200 }) || (verified ? `am Fahrzeug geprüft (${user.username})` : `manuell (${user.username})`),
+    .bind(vehicleId, axle, size, str(body.source, { max: 200, field: 'Quelle' }) || (verified ? `am Fahrzeug geprüft (${user.username})` : `manuell (${user.username})`),
       verified, verified ? user.id : null, verified ? now : null, now).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
   await audit(env, user.id, 'tires.spec', vehicleId, { axle, from: prev ? prev.size : null, to: size, verified: !!verified });

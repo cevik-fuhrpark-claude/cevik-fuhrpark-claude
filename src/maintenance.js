@@ -159,8 +159,8 @@ function daysUntil(due, today) {
 // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen).
 // Mit recordedBy: nur selbst erfasste Durchführungen (Startseite „Prüfergebnis fehlt“).
 // limit: Datenqualität liest 201 (eine Zeile mehr), um eine Kappung zu erkennen
-export function noResultQuery(env, recordedBy = null, limit = 200) {
-  const [sql, params] = noResultSql(recordedBy, limit);
+export function noResultQuery(env, recordedBy = null, limit = 200, vf = null) {
+  const [sql, params] = noResultSql(recordedBy, limit, vf);
   return env.DB.prepare(sql).bind(...params);
 }
 // vf: JSON-Liste der Fahrzeug-IDs (Standortfilter) – vor dem LIMIT angewandt (vorher erst danach: Standort mit älteren Fällen leer, 18.10.2026)
@@ -178,8 +178,8 @@ function noResultSql(recordedBy = null, limit = 200, vf = null) {
 // Ist danach bereits eine neuere Durchführung derselben Prüfart eingetragen (Nachprüfung, z. B. nach Reparatur außerhalb der App), gilt
 // die ältere als überholt: Zeigt die neuere erneut Mängel, erscheint stattdessen sie selbst.
 export const DEFECT_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];
-export function defectsWithoutCaseQuery(env, envName, limit = 200) {
-  const [sql, params] = defectsWithoutCaseSql(envName, limit);
+export function defectsWithoutCaseQuery(env, envName, limit = 200, vf = null) {
+  const [sql, params] = defectsWithoutCaseSql(envName, limit, vf);
   return env.DB.prepare(sql).bind(...params);
 }
 function defectsWithoutCaseSql(envName, limit = 200, vf = null) {

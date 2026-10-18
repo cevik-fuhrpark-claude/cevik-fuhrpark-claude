@@ -130,20 +130,20 @@ export async function createFine(env, user, envName, body) {
   if (Date.parse(offenseAt) > Date.now() + 5 * 60000) throw bad('validation', 'Tatzeit liegt in der Zukunft.');
   if (offenseAt < '2000-01-01') throw bad('validation', 'Tatzeit vor 2000 – bitte Jahr prüfen.'); // Tippfehler 1926 (18.10.2026), wie Versicherungsfälle
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
-  const due = str(body.response_due, { max: 10 });
+  const due = str(body.response_due, { max: 10, field: 'Antwortfrist' });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
   if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
   if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.'); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
   // Frist vor der Tat: Tippfehler im Jahr – Agent meldete sofort „überfällig“ (18.10.2026)
   if (due && due < berlinDate(offenseAt)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
   // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
-  const location = str(body.location, { max: 200 }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true }); const fnote = str(body.note, { max: 2000 });
+  const location = str(body.location, { max: 200, field: 'Ort' }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true }); const fnote = str(body.note, { max: 2000, field: 'Bemerkung' });
   // bei gleichem Kennzeichen zählt das aktive bewertete vor dem ruhenden vor dem außer Betrieb genommenen, sonst mehrdeutig = keine Zuordnung
   // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
   // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
   const pick = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, plate);
   const veh = pick.vehicle;
-  const reference = str(body.reference, { max: 80 });
+  const reference = str(body.reference, { max: 80, field: 'Aktenzeichen' });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
   // Idempotenzschlüssel je Formular: Doppelklick/Netzwiederholung ergibt denselben Vorgang statt eines zweiten (18.10.2026) –
   // wichtig bei Schreiben ohne Aktenzeichen, die keine Dublettenprüfung haben. Geprüft vor allem anderen (auch vor der Aktenzeichen-Dublette
@@ -195,7 +195,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   const f = await loadFine(env, user, envName, id);
   const action = str(body.action, { required: true, max: 30, field: 'Aktion' });
   const p = body.payload || {};
-  const note = str(body.note, { max: 2000 });
+  const note = str(body.note, { max: 2000, field: 'Bemerkung' });
   const now = nowIso();
   const set = {};
   let payload = {};
