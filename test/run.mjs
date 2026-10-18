@@ -2049,7 +2049,8 @@ await test('Abmeldung nach Leerlauf: Standard aus; Werkstatt-Zeit getrennt von a
     eq((await users.fleet.get('/api/me')).data.user.idle_logout_min, null, 'andere Rollen: eigene Einstellung (leer)');
     const seen = (await env.DB.prepare('SELECT last_seen FROM sessions WHERE user_id=?').bind(tab.id).first()).last_seen;
     ok(Date.now() - Date.parse(seen) < 60000, 'Aktivität setzt Leerlauf zurück');
-    await setSeen(tab.id, 31); await setSeen(users.fleet.id, 31);
+    // Grenze = Leerlauf + Schreibabstand (30 + 1 Min.) – genau 31 Min. liegt bei gleicher Millisekunde auf der Grenze (gelegentlich rot)
+    await setSeen(tab.id, 31.5); await setSeen(users.fleet.id, 31.5);
     eq((await users.fleet.get('/api/me')).status, 200, 'andere Rollen nicht betroffen');
     eq((await tab.get('/api/me')).status, 401, 'Werkstatt nach 31 Min. abgemeldet');
     eq((await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id=?').bind(tab.id).first()).n, 0, 'Sitzung gelöscht');
@@ -12928,7 +12929,7 @@ await test('Fehlersuche 18.10. (29): Tacho-Import erkennt „Auslesung vom/am“
   eq(dayCol(['Art', 'Auslesung vom', 'Download am']), -2, 'zwei Kandidaten → nicht eindeutig');
 });
 
-await test('Fehlersuche 18.10. (30): Abmelden meldet Push-Gerät der Anmeldung ab, Ruhezeit-Sammel-Push bleibt gesammelt, gleiche command_id gleichzeitig = duplicate, Antwort-Version nach Kostengrenze, Kosten-CSV unbewertet leer', async () => {
+await test('Fehlersuche 18.10. (30): Abmelden meldet Push-Gerät der Anmeldung ab, Ruhezeit-Sammel-Push bleibt gesammelt, gleiche command_id gleichzeitig = duplicate (andere Aktion = 409), Antwort-Version nach Kostengrenze, Kosten-CSV unbewertet leer', async () => {
   // 1. Abmelden ohne mitgesendeten Push-Endpunkt
   { const { e, U } = await freshWorld();
     const dev2 = new Client(worker, e, 'w.fuhrpark');
@@ -12970,7 +12971,14 @@ await test('Fehlersuche 18.10. (30): Abmelden meldet Push-Gerät der Anmeldung a
     eq(rs.filter((r) => r.data.duplicate).length, 1, 'eine als duplicate');
     eq((await U.fleet.get(`/api/cases/${id}`)).data.work.length, 1, 'nur eine Buchung');
     // andere command_id mit veralteter Version bleibt ein Konflikt
-    eq((await U.ws.post(`/api/cases/${id}/commands`, { ...body, command_id: rk() })).status, 409, 'echter Konflikt weiter 409'); }
+    eq((await U.ws.post(`/api/cases/${id}/commands`, { ...body, command_id: rk() })).status, 409, 'echter Konflikt weiter 409');
+    // gleiche Kennung, andere Aktion → 409 command_id_reused (nicht still duplicate); gleiche Aktion → duplicate
+    const v2 = (await U.fleet.get(`/api/cases/${id}`)).data.case.version;
+    const re = await U.ws.post(`/api/cases/${id}/commands`, { action: 'add_part', command_id: cid, expected_version: v2, payload: { name: 'X', quantity: 1 } });
+    eq(re.status, 409); eq(re.data.error, 'command_id_reused');
+    eq((await U.fleet.get(`/api/cases/${id}`)).data.parts.length, 0, 'nichts gebucht');
+    const same = await U.ws.post(`/api/cases/${id}/commands`, { ...body, expected_version: v2 });
+    eq(same.status, 200); eq(same.data.duplicate, true); }
   // 4. Kostengrenze überschritten → Antwort nennt die aktuelle Version; 5. Kosten-CSV ohne bewertete Position leer statt 0
   { const { U, cmd, toRepair } = await freshWorld();
     eq((await U.own.put('/api/settings', { repair_cost_limit_net: '500' })).status, 200);

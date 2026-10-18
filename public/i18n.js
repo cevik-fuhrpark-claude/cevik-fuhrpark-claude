@@ -667,6 +667,7 @@ const V_MORE = [
   ['Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.', 'На цей договір посилається страховий випадок – вид договору залишається «Страхування».', 'An insurance claim refers to this contract – the contract type remains “Insurance”.'],
   ['Inzwischen wurde ein anderer Kilometerstand erfasst. Bitte neu laden und prüfen.', 'Тим часом внесено інший пробіг. Оновіть сторінку та перевірте.', 'Another odometer reading has been recorded in the meantime. Please reload and check.'],
   ['since: Zeitpunkt nach ISO 8601 (z. B. 2026-10-17T08:00:00Z).', 'since: момент часу за ISO 8601 (напр. 2026-10-17T08:00:00Z).', 'since: point in time in ISO 8601 (e.g. 2026-10-17T08:00:00Z).'],
+  ['Diese Befehlskennung wurde bereits für eine andere Aktion verwendet.', 'Цей ідентифікатор команди вже використано для іншої дії.', 'This command ID has already been used for a different action.'],
   ['Artikel wurde zwischenzeitlich geändert. Bitte neu laden.', 'Артикул тим часом змінено. Оновіть сторінку.', 'The item has been changed in the meantime. Please reload.'],
   ['Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.', 'Картку водія тим часом змінено. Оновіть сторінку.', 'The driver record has been changed in the meantime. Please reload.'],
   ['Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.', 'Дані документа тим часом змінено. Оновіть сторінку.', 'The document details have been changed in the meantime. Please reload.'],

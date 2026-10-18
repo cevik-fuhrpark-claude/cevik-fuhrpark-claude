@@ -808,7 +808,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const { c, access } = await loadCase(env, user, envName, caseId);
 
   // Idempotenz: gleicher Befehl bereits ausgeführt -> aktuellen Stand liefern
-  const done = await env.DB.prepare('SELECT id FROM case_events WHERE case_id=? AND command_id=?').bind(c.id, commandId).first();
+  const done = await env.DB.prepare('SELECT id, action FROM case_events WHERE case_id=? AND command_id=?').bind(c.id, commandId).first();
+  // dieselbe Kennung für eine andere Aktion: nicht still „duplicate“ (sonst glaubt ein Schnittstellen-Client, die Aktion sei ausgeführt) – 18.10.2026
+  if (done && done.action !== action) throw conflict('command_id_reused', 'Diese Befehlskennung wurde bereits für eine andere Aktion verwendet.');
   if (done) return { ok: true, duplicate: true, version: c.version };
 
   const allowed = allowedActions(user, c, access);
@@ -1128,7 +1130,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     // gleiche command_id gleichzeitig (Netzwiederholung): der erste Stapel hat die Version schon erhöht, der zweite scheitert am
     // Versions-Guard vor dem UNIQUE der command_id → als Wiederholung melden, nicht als Konflikt/Bestand/Tagesgrenze (18.10.2026)
     if (commandId && String(e && e.message).includes('CHECK')
-      && await env.DB.prepare('SELECT 1 FROM case_events WHERE case_id=? AND command_id=?').bind(c.id, commandId).first()) return { ok: true, duplicate: true };
+      && await env.DB.prepare('SELECT 1 FROM case_events WHERE case_id=? AND command_id=? AND action=?').bind(c.id, commandId, action).first()) return { ok: true, duplicate: true };
     // Lagerentnahme im selben Stapel: parallel anderweitig entnommen → Bestand reicht nicht (statt „Vorgang geändert“)
     if (String(e && e.message).includes('CHECK') && stockGuardItem && (await onHand(env, stockGuardItem.id)) < stockGuardItem.qty) {
       throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, stockGuardItem.id)} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
