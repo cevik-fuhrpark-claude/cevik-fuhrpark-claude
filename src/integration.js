@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex, pickVehicleByPlate } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex, pickVehicleByPlate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
@@ -96,6 +96,8 @@ function redactInbox(row, names) {
 }
 
 // Umgebung: test | production (Groß-/Kleinschreibung egal), fehlend = production; anderes → 400 (18.10.2026: „tset“ lieferte still Betriebsdaten)
+// ISO-Zeitpunkt mit echtem Kalendertag und gültiger Uhrzeit (Date.parse rechnet 30.02. bzw. 24:00 still auf den Folgetag um, 18.10.2026)
+const validStamp = (x) => { const mm = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(x)); return !!mm && isCalendarDate(mm[1]) && (mm[2] === undefined || (+mm[2] < 24 && +mm[3] < 60 && (mm[4] === undefined || +mm[4] < 60))); };
 const envParam = (url) => {
   const raw = url.searchParams.get('environment'); if (raw === null || raw.trim() === '') return 'production';
   const v = raw.trim().toLowerCase(); if (v === 'test' || v === 'production') return v;
@@ -108,8 +110,10 @@ export async function integrationRouter(request, env, ctx, url) {
   const m = request.method;
   if (m !== 'GET' && scope !== 'write') throw new HttpError(403, 'read_only_token', 'Dieses Token darf nur lesen.');
   if (p === '/v1/vehicles' && m === 'GET') {
-    const rows = (await env.DB.prepare(`SELECT v.id, v.vin, v.plate, v.kind, v.site, v.manufacturer, v.model, v.build_year, v.trailer_plate, v.trailer_vin, v.master_status, v.updated_at
-      FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).all()).results;
+    envParam(url); // Wert prüfen wie überall (Stammdaten sind gemeinsam; 18.10.2026 wurde „tset“ angenommen)
+    // eval_excluded: ruhend (aus allen Bewertungen ausgenommen, z. B. Reparatur/Verkauf offen) – additiv, sonst nicht von einsatzbereiten unterscheidbar
+    const rows = (await env.DB.prepare(`SELECT v.id, v.vin, v.plate, v.kind, v.site, v.manufacturer, v.model, v.build_year, v.trailer_plate, v.trailer_vin, v.master_status, v.updated_at, CASE WHEN v.eval_excluded THEN 1 ELSE 0 END AS eval_excluded
+      FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).all()).results.map((v) => ({ ...v, eval_excluded: !!v.eval_excluded }));
     const sel = siteSelection(rows, url.searchParams.get('site'));
     return json({ schema_version: '1.0', ...(sel.site ? { site: sel.site } : {}), vehicles: sel.site ? rows.filter((v) => sel.match(v.site)) : rows });
   }
@@ -118,7 +122,7 @@ export async function integrationRouter(request, env, ctx, url) {
     // since als Zeitpunkt lesen (auch mit Zeitzone, z. B. +02:00) und in UTC vergleichen – Textvergleich ließ Vorgänge stumm aus (17.10.2026)
     const sinceRaw = url.searchParams.get('since');
     const sinceMs = sinceRaw ? Date.parse(sinceRaw) : 0;
-    if (!Number.isFinite(sinceMs) || (sinceRaw && !/^\d{4}-\d{2}-\d{2}/.test(sinceRaw))) throw bad('validation', 'since: Zeitpunkt nach ISO 8601 (z. B. 2026-10-17T08:00:00Z).');
+    if (!Number.isFinite(sinceMs) || (sinceRaw && !validStamp(sinceRaw))) throw bad('validation', 'since: Zeitpunkt nach ISO 8601 (z. B. 2026-10-17T08:00:00Z).');
     const since = new Date(sinceMs).toISOString();
     const rows = (await env.DB.prepare(`SELECT c.id, c.case_no, c.environment, c.vehicle_id, c.status, c.priority, c.reported_priority, c.reported_driveability, c.safety_lock,
       c.workshop_site, c.origin, c.parent_case_id, c.fleet_received_at, c.workshop_ack_at, c.created_at, c.updated_at, c.closed_at, c.version,
@@ -166,7 +170,7 @@ export async function integrationRouter(request, env, ctx, url) {
     }
     return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
-      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, next_due_km: v.next_due_km ?? null, next_due_km_kind: v.next_due_km_kind ?? null, km_remaining: v.km_remaining ?? null, km_unclear: v.km_unclear || null, open_recalls: v.open_recalls ?? 0, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}), ...(winterBy ? { winter: winterBy.get(v.id) } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
+      vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, eval_excluded: !!v.eval_excluded, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, next_due_km: v.next_due_km ?? null, next_due_km_kind: v.next_due_km_kind ?? null, km_remaining: v.km_remaining ?? null, km_unclear: v.km_unclear || null, open_recalls: v.open_recalls ?? 0, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}), ...(winterBy ? { winter: winterBy.get(v.id) } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }
   if (p === '/v1/findings' && m === 'GET') {
     const [rows, names] = await Promise.all([env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen'`).bind(envParam(url)).all().then((r) => r.results), personNames(env, envParam(url))]);
@@ -208,6 +212,7 @@ export async function integrationRouter(request, env, ctx, url) {
   // Telematik-Zustand für die Überwachung der Einspeisung (z. B. n8n): nur Zähler und Zeitpunkte je Anbieter –
   // keine Positionen, keine Geräte-IDs, keine Kennzeichen (Datensparsamkeit). Reine Information, kein Grenzwert.
   if (p === '/v1/telematics/status' && m === 'GET') {
+    envParam(url);
     const ov = await telematicsOverview(env, { role: 'owner' });
     const cnt = (list, prov) => list.filter((x) => x.provider === prov).length;
     return json({ schema_version: '1.0', generated_at: nowIso(),
@@ -221,6 +226,7 @@ export async function integrationRouter(request, env, ctx, url) {
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung
   if (p === '/v1/telematics' && m === 'POST') {
+    envParam(url);
     const body = await readJson(request, 2 * 1024 * 1024);
     const items = Array.isArray(body.items) ? body.items : null;
     if (!items) throw bad('validation', 'items[] erforderlich.');
@@ -271,8 +277,7 @@ export async function integrationRouter(request, env, ctx, url) {
       // GPS-Zeit ohne Zeitzone wird ausdrücklich als UTC gelesen (vorher abhängig von der Laufzeitumgebung) – Quellen senden mit „Z“/Versatz
       const gt = typeof it.gps_time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(it.gps_time) ? it.gps_time + 'Z' : it.gps_time;
       // nur ISO-Datum mit Uhrzeit ab 2000 (18.10.2026: „1“ wurde als 2001-01-01 gelesen und als km-Stand gespeichert, Epochenzahlen still verworfen)
-      const gtOk = typeof gt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(gt) && gt >= '2000' && !Number.isNaN(Date.parse(gt));
-      const gpsGiven = it.gps_time !== undefined && it.gps_time !== null && it.gps_time !== '';
+      const gtOk = typeof gt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(gt) && gt >= '2000' && !Number.isNaN(Date.parse(gt)) && validStamp(gt);
       const gps = gtOk ? new Date(gt).toISOString() : null;
       const lat = numOf(it.lat) !== null && Math.abs(numOf(it.lat)) <= 90 ? numOf(it.lat) : null;
       const lon = numOf(it.lon) !== null && Math.abs(numOf(it.lon)) <= 180 ? numOf(it.lon) : null;
@@ -282,6 +287,7 @@ export async function integrationRouter(request, env, ctx, url) {
         res.unmatched++;
         continue;
       }
+      const gpsGiven = it.gps_time !== undefined && it.gps_time !== null && it.gps_time !== '';
       if (gpsGiven && !gps) { res.rejected++; continue; } // ungültige GPS-Zeit: nicht ohne Zeit speichern
       // Keine Rückschritte: ältere GPS-Zeit überschreibt keinen neueren Stand (auch innerhalb desselben Aufrufs)
       // GPS-Zeit mehr als 10 Minuten in der Zukunft (Geräteuhr falsch): verwerfen, sonst blockiert sie spätere echte Stände

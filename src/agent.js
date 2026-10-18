@@ -407,8 +407,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Kostenbewertung ist eine Auswertung (Kostenbericht nimmt ruhende Fahrzeuge aus) – deren Befund trotz Vorgangsbezug ebenfalls (17.10.2026)
     const EXCLUDED_CASE_CODES = ['COSTS_UNVALUED'];
     const excludedVeh = new Set(base.excluded);
-    // Behördenfristen (Bußgelder) bleiben – sie hängen nicht an der Bewertung des Fahrzeugs (17.10.2026)
-    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && (!findings[i].case_id || EXCLUDED_CASE_CODES.includes(findings[i].code)) && !String(findings[i].code).startsWith('FINE_') && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
+    // Behördenfristen (Bußgelder) bleiben – sie hängen nicht an der Bewertung des Fahrzeugs (17.10.2026); ebenso Vertragsfristen (Kündigung,
+    // Vertragsende): eine verpasste Kündigung verlängert das Leasing auch für ein ruhendes Fahrzeug, die Vertragsliste zeigt sie (18.10.2026)
+    if (excludedVeh.size) for (let i = findings.length - 1; i >= 0; i--) if (findings[i].vehicle_id && (!findings[i].case_id || EXCLUDED_CASE_CODES.includes(findings[i].code)) && !String(findings[i].code).startsWith('FINE_') && !String(findings[i].code).startsWith('CONTRACT_') && excludedVeh.has(findings[i].vehicle_id)) findings.splice(i, 1);
 
     // ---- Befunde persistieren (Sammel-Upsert), Erledigtes schließen, Übergaben an Master ----
     const now = nowIso();
@@ -440,7 +441,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (changed && f.severity !== 'kritisch' && REMINDER_CODES.has(f.code)) newReminders.push(f);
       if (changed && SEV_RANK[f.severity] >= SEV_RANK.handeln) {
         // erledigter Befund, der wieder auftritt = neue Episode (das Upsert setzt first_seen neu) → neue Übergabe/Push (vorher alte event_id, nichts kam an, 17.10.2026)
-        candidates.push({ eventInput: `${findingId}|${fingerprint}|${existing && existing.status !== 'erledigt' ? existing.first_seen : now}`, findingId, fingerprint, f });
+        // offener Befund mit geändertem Fingerabdruck (z. B. kritisch → mittel → kritisch) = neue Eskalation: neue event_id (vorher kehrte die alte
+        // event_id zurück, galt als bekannt – keine Übergabe, kein kritischer Push, 18.10.2026)
+        candidates.push({ eventInput: `${findingId}|${fingerprint}|${existing && existing.status !== 'erledigt' && existing.fingerprint === fingerprint ? existing.first_seen : now}`, findingId, fingerprint, f });
       }
     }
     const eventIds = await Promise.all(candidates.map((c) => sha256Hex(c.eventInput)));
@@ -456,15 +459,15 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Nicht mehr zutreffende Befunde schließen (eine Anweisung)
     upserts.push(env.DB.prepare(`UPDATE agent_findings SET status='erledigt', resolved_at=?1 WHERE environment=?2 AND status='offen'
       AND (finding_code || '|' || subject_key) NOT IN (SELECT value FROM json_each(?3))`).bind(now, environment, JSON.stringify([...seen])));
-    await env.DB.batch(upserts);
-
-    // Übergaben an den Master: idempotent über event_id; nur neue zählen
+    // Übergaben an den Master: idempotent über event_id; nur neue zählen. Im selben Stapel wie das Speichern der Befunde (18.10.2026: scheiterte
+    // die Übergabe nach gespeicherten Befunden einmal, galt der Befund im nächsten Lauf als unverändert – die Übergabe ging endgültig verloren)
+    let fresh = [];
     if (candidates.length) {
       const known = new Set();
       for (const part of chunks(candidates)) {
         for (const r of (await env.DB.prepare('SELECT event_id FROM master_inbox WHERE event_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(part.map((c) => c.eventId))).all()).results) known.add(r.event_id);
       }
-      const fresh = candidates.filter((c) => !known.has(c.eventId));
+      fresh = candidates.filter((c) => !known.has(c.eventId));
       const payloads = fresh.map(({ eventId, findingId, f }) => ({
         schema_version: '1.0', event_id: eventId, event_type: 'fleet.finding.review_required', environment,
         occurred_at: now, finding_id: findingId, finding_code: f.code, case_id: f.case_id, vehicle_id: f.vehicle_id,
@@ -472,10 +475,13 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         requires_human_approval: !!f.requires_decision, source_agent: 'claude-fleet-agent', agent_run_id: runId,
       }));
       if (payloads.length) {
-        await env.DB.batch(chunks(payloads).map((part) => env.DB.prepare(`INSERT OR IGNORE INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,finding_id,case_id,vehicle_id,severity,payload,received_at)
+        upserts.push(...chunks(payloads).map((part) => env.DB.prepare(`INSERT OR IGNORE INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,finding_id,case_id,vehicle_id,severity,payload,received_at)
           SELECT json_extract(value,'$.event_id'), '1.0', ?1, 'claude-fleet-agent', json_extract(value,'$.event_type'), json_extract(value,'$.finding_id'), json_extract(value,'$.case_id'),
             json_extract(value,'$.vehicle_id'), json_extract(value,'$.severity'), value, ?2 FROM json_each(?3)`).bind(environment, now, JSON.stringify(part))));
       }
+    }
+    await env.DB.batch(upserts);
+    if (fresh.length) {
       handoffs = fresh.length;
       for (const c of fresh) if (c.f.severity === 'kritisch') newCritical.push({ eventId: c.eventId, f: c.f });
     }
@@ -539,7 +545,10 @@ export async function masterPanel(env, environment) {
   const casesTruncated = caseRows.results.length > MASTER_CASES_MAX;
   const cases = caseRows.results.slice(0, MASTER_CASES_MAX);
   const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results;
-  const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id
+  // has_newer: es gibt eine neuere Übergabe desselben Befunds – unabhängig von deren Entscheidung (18.10.2026: nach Entscheidung der neuesten
+  // zählte die ältere, nie entschiedene wieder als offene Entscheidung)
+  const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id
+      AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id
     WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC, m.rowid DESC
     LIMIT (SELECT COUNT(*) FROM master_inbox WHERE environment=?1 AND decision_status IN ('offen','gesehen')) + ${MASTER_INBOX_DONE_MAX}`).bind(environment).all()).results
     .map((m) => ({ ...m, payload: JSON.parse(m.payload) }));
@@ -555,7 +564,8 @@ export async function masterPanel(env, environment) {
   // je Befund eine offene Entscheidung: wiederkehrender Befund (neue Übergabe) zählte den alten, nie entschiedenen Eintrag mit (17.10.2026);
   // ältere Einträge desselben Befunds sind als `superseded` markiert (neuester steht zuerst)
   const openIds = new Set();
-  for (const m of inbox) if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && m.finding_id) { if (openIds.has(m.finding_id)) m.superseded = true; else openIds.add(m.finding_id); }
+  for (const m of inbox) if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && m.finding_id) { if (m.has_newer || openIds.has(m.finding_id)) m.superseded = true; else openIds.add(m.finding_id); }
+  for (const m of inbox) delete m.has_newer;
   const decisionsOpen = openIds.size + inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && !m.finding_id).length;
   return {
     environment, generated_at: nowIso(), vehicles_total: vehicles, vehicles_locked: lockedVehicles, vehicles_in_workshop: inWorkshop,

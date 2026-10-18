@@ -12658,6 +12658,55 @@ await test('Fehlersuche 18.10. (20): Hinweise – ruhendes Gespann-Doppel, gemei
   ok(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE (event_key LIKE 'q-%' OR event_key LIKE 'f-%') AND push_status IN ('pending','failed')`).get().n > 0, 'Rest bleibt für den nächsten Lauf');
 });
 
+await test('Fehlersuche 18.10. (21): Integrations-API (ruhend erkennbar, ohne GPS-Zeit abgewiesen, ungültige Kalenderdaten, environment überall geprüft); Agent (erneute Eskalation, Übergabe im selben Stapel, ältere Übergabe überholt, Vertragsfristen ruhender Fahrzeuge)', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const anon = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  db.prepare(`UPDATE vehicles SET eval_excluded=1 WHERE plate='SZ-KC 5515'`).run();
+  const vs = (await anon.req('GET', '/api/integration/v1/vehicles', undefined, H)).data.vehicles;
+  eq(vs.find((v) => v.plate === 'SZ-KC 5515').eval_excluded, true); eq(vs.find((v) => v.plate === 'SZ-YC 5513').eval_excluded, false);
+  eq((await anon.req('GET', '/api/integration/v1/availability', undefined, H)).data.vehicles.find((v) => v.plate === 'SZ-KC 5515').eval_excluded, true);
+  db.prepare(`UPDATE vehicles SET eval_excluded=0`).run();
+  const tel = async (items) => (await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items }, H)).data;
+  let t;
+  for (const g of ['2026-02-30T08:00:00Z', '2026-10-10T24:00:00Z', '2026-10-10T08:60:00Z']) { t = await tel([{ external_id: 'WF-9', vin: 'WMA15SZZ2HM722774', gps_time: g, km: 812500 }]); eq(t.rejected, 1, g); }
+  eq((await anon.req('GET', '/api/integration/v1/cases?since=2026-02-30T00:00:00Z', undefined, H)).status, 400);
+  eq((await anon.req('GET', '/api/integration/v1/cases?since=2026-10-17T09:59:59%2B02:00', undefined, H)).status, 200);
+  for (const pth of ['/v1/vehicles', '/v1/telematics/status']) eq((await anon.req('GET', `/api/integration${pth}?environment=tset`, undefined, H)).status, 400, pth);
+  eq((await anon.req('POST', '/api/integration/v1/telematics?environment=tset', { provider: 'webfleet', items: [] }, H)).status, 400);
+  // Agent: kritisch → mittel → kritisch = neue Übergabe und kritischer Push
+  eq((await U.own.put('/api/settings', { sla_test_ack_mittel_min: '1' })).status, 200);
+  const id = await newCase({ priority: 'kritisch' }); eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  const old = new Date(Date.now() - 600000).toISOString(); db.prepare('UPDATE case_events SET created_at=? WHERE case_id=?').run(old, id);
+  const run = async () => { const r = await U.fleet.post('/api/agent/run', {}); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  const sev = () => db.prepare(`SELECT severity FROM agent_findings WHERE finding_code='WORKSHOP_ACK_MISSING'`).get()?.severity;
+  const inboxN = () => db.prepare(`SELECT COUNT(*) n FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE f.finding_code='WORKSHOP_ACK_MISSING'`).get().n;
+  await run(); eq(sev(), 'kritisch'); const n1 = inboxN();
+  eq((await cmd(U.fleet, id, 'change_priority', { priority: 'mittel' }, 'neu bewertet')).status, 200); db.prepare('UPDATE case_events SET created_at=? WHERE case_id=?').run(old, id);
+  await run(); eq(sev(), 'handeln');
+  eq((await cmd(U.fleet, id, 'change_priority', { priority: 'kritisch' }, 'doch dringend')).status, 200); db.prepare('UPDATE case_events SET created_at=? WHERE case_id=?').run(old, id);
+  await run(); eq(sev(), 'kritisch'); eq(inboxN(), n1 + 2, 'erneute Eskalation übergeben');
+  // nur die neueste offene Übergabe zählt; ältere bleiben überholt, auch wenn die neueste entschieden ist
+  const fid = db.prepare(`SELECT id FROM agent_findings WHERE finding_code='WORKSHOP_ACK_MISSING'`).get().id;
+  const mp = (await U.fleet.get('/api/master')).data; const mine = mp.inbox.filter((m) => m.finding_id === fid);
+  eq(mine.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && !m.superseded).length, 1, 'eine offene Entscheidung je Befund');
+  const newest = db.prepare('SELECT event_id FROM master_inbox WHERE finding_id=? ORDER BY received_at DESC, rowid DESC LIMIT 1').get(fid).event_id;
+  db.prepare(`UPDATE master_inbox SET decision_status='erledigt' WHERE event_id=?`).run(newest);
+  eq((await U.fleet.get('/api/master')).data.inbox.filter((m) => m.finding_id === fid && ['offen', 'gesehen'].includes(m.decision_status) && !m.superseded).length, 0, 'ältere zählt nicht wieder');
+  // Übergabe im selben Stapel: scheitert sie, wird auch der Befund nicht gespeichert – der nächste Lauf übergibt
+  const orig = e.DB.batch.bind(e.DB); let fail = true;
+  e.DB.batch = async (st) => { if (fail && st.some((x) => /INTO master_inbox/.test(x.sql || ''))) { fail = false; throw new Error('D1_ERROR: Network connection lost'); } return orig(st); };
+  const id2 = await newCase({ priority: 'kritisch', vehicle_id: 'VIN:WDB9630051L917317' });
+  ok((await U.fleet.post('/api/agent/run', {})).status >= 500, 'Lauf 1 scheitert'); e.DB.batch = orig;
+  await run();
+  ok(db.prepare(`SELECT COUNT(*) n FROM master_inbox m JOIN agent_findings f ON f.id=m.finding_id WHERE f.finding_code='CRITICAL_UNTRIAGED' AND f.case_id=?`).get(id2).n >= 1, 'übergeben');
+  // Vertragsfristen bleiben bei ruhenden Fahrzeugen (wie Bußgeldfristen)
+  const end = new Date(Date.parse(BERLIN_TODAY) - 3 * 864e5).toISOString().slice(0, 10);
+  eq((await U.own.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'MietCo', contract_no: 'M-9', start_date: '2025-01-01', end_date: end, evidence: 'V' })).status, 201);
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
+  U.own.envHeader = 'test'; const ro = await U.own.post('/api/agent/run', {}); U.own.envHeader = null; eq(ro.status, 200, JSON.stringify(ro.data));
+  ok(db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE finding_code='CONTRACT_ENDED' AND status='offen'`).get().n >= 1, 'Vertragsbefund bleibt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
