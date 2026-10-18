@@ -12369,6 +12369,28 @@ await test('Push-Ruhezeit: Ende in der Nacht der Zeitumstellung (Frühjahr über
   eq(q('22:00', '02:30', '2026-10-25T01:10:00Z'), '2026-10-25T01:30:00.000Z');
 });
 
+await test('Fehlgeschlagener Sammel-Push (Ende der Ruhezeit) wird gebündelt wiederholt – ein Push statt einzelner; unabhängige Fehlschläge weiter einzeln', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const { notifyUsers, releaseQuietPush, retryFailedPush } = await import('../src/notify.js');
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  eq((await U.fleet.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/sammel', keys: { p256dh: b64urlEncode(pub), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) }, device_label: 'Handy' })).status, 200);
+  eq((await U.fleet.put('/api/me/notify-prefs', { quiet: { from: '22:00', to: '06:00' } })).status, 200);
+  const t0 = Date.parse('2026-12-10T22:00:00Z'); e.__nowMs = t0;
+  try {
+    for (let i = 0; i < 3; i++) await notifyUsers(e, null, 'test', [U.fleet.id], { kind: 'agent_reminder', title: 'R' + i, body: 'b' + i, eventKey: 'sammel' + i });
+    db.prepare('UPDATE notifications SET created_at=? WHERE user_id=?').run(new Date(t0).toISOString(), U.fleet.id);
+    const st = () => db.prepare('SELECT push_status FROM notifications WHERE user_id=? ORDER BY created_at, rowid').all(U.fleet.id).map((x) => x.push_status);
+    ok(st().every((x) => x === 'pending'), 'in der Ruhezeit zurückgehalten');
+    const sent = []; let fail = true;
+    e.__pushFetch = async (u) => { sent.push(u); return fail ? new Response('x', { status: 500 }) : new Response('', { status: 201 }); };
+    e.__nowMs = Date.parse('2026-12-11T05:01:00Z');
+    await releaseQuietPush(e, e.__nowMs); eq(sent.length, 1, 'ein Sammel-Push'); ok(st().every((x) => x === 'failed'), 'alle fehlgeschlagen');
+    fail = false; sent.length = 0; await retryFailedPush(e);
+    eq(sent.length, 1, 'Wiederholung gebündelt (vorher 3 Einzel-Pushs)'); ok(st().every((x) => x === 'accepted'), JSON.stringify(st()));
+  } finally { delete e.__nowMs; }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

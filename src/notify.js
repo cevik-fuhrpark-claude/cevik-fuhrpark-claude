@@ -368,7 +368,8 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   for (const st of [...states]) for (const f of followers.get(st.id) || []) {
     // Stumm geschaltete Art gilt je Hinweis; sonst teilt der Hinweis das Ergebnis des gesammelten Pushs
     // Ruhezeit: ein dringender Träger nimmt nicht dringende Folgehinweise mit (ein Push je Person) – sie gelten damit als zugestellt
-    states.push(isMuted(f) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id });
+    // fehlgeschlagen: Träger im Fehlertext vermerken – die Wiederholung bündelt dann wieder (sonst N Einzel-Pushs, 18.10.2026)
+    states.push(isMuted(f) ? { id: f.id, s: 'disabled', a: 0 } : { ...st, id: f.id, ...(st.s === 'failed' ? { e: `${st.e || ''} ${COLLAPSE_MARK}${st.id}]`.trim() } : {}) });
   }
   const now = nowIso();
   const writes = [];
@@ -400,17 +401,29 @@ const forDelivery = (r) => {
   return { ...x, ...t, urgent: !!r.urgent, lang: translated || text_lang === cur ? cur : text_lang || null };
 };
 
+const COLLAPSE_MARK = '[Sammel-Push mit ';
+const COLLAPSE_RE = /\[Sammel-Push mit ([\w-]+)\]$/;
 // Wiederholung fehlgeschlagener Pushs (Cron), max. 3 Versuche. Wegen Ruhezeit zurückgehaltene Hinweise erst nach deren Ende.
 export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.push_last_error, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
     WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ?1 AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND ((n.push_hold_until IS NULL AND n.created_at < ?2) OR n.push_hold_until < ?3)))
     ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt;
     // ebenso eine vor > 5 Min. beanspruchte Ruhezeit-Freigabe, deren Zustellung abbrach (18.10.2026: blieb sonst für immer „pending“)
     .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString(), QUIET_CLAIM_PREFIX + new Date(now - 5 * 60000).toISOString()).all()).results;
-  await deliverPush(env, rows.map(forDelivery));
+  // Folge-Hinweise eines fehlgeschlagenen Sammel-Pushs (Vermerk im Fehlertext) wieder mit ihrem Träger bündeln, sofern er mit wiederholt wird;
+  // alle übrigen Hinweise einzeln (je Hinweis in der aktuellen Sprache)
+  const byId = new Map(rows.map((r) => [r.id, r])); const groups = new Map(); const single = [];
+  for (const r of rows) {
+    const m = r.push_last_error && String(r.push_last_error).match(COLLAPSE_RE); const carrier = m && byId.get(m[1]);
+    if (carrier && carrier.user_id === r.user_id) { if (!groups.has(carrier.id)) groups.set(carrier.id, [carrier]); groups.get(carrier.id).push(r); }
+  }
+  const grouped = new Set([...groups.values()].flat().map((r) => r.id));
+  for (const r of rows) if (!grouped.has(r.id)) single.push(r);
+  await deliverPush(env, single.map(forDelivery));
+  for (const g of groups.values()) await deliverPush(env, g.map(forDelivery), { collapse: true });
   return rows.length;
 }
 
