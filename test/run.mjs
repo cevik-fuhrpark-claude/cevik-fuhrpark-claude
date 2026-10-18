@@ -12159,6 +12159,22 @@ await test('Auslesung stornieren (Migration 0062): Begründung Pflicht, nur Leit
   // Datenauskunft nennt das Storno
   const dx = (await U.own.get(`/api/drivers/${did}/data-export`)).data; ok(JSON.stringify(dx).includes('Tippfehler, richtig'), 'Auskunft mit Storno');
 });
+await test('Auslesungen-Import: Personalnummer ohne führende Nullen, Ersatzzuordnung über den Namen nur ohne Personalnummer in der App, mehrdeutig bleibt übersprungen', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const mk = async (name, pno) => (await F.post('/api/drivers', { display_name: name, ...(pno ? { personnel_no: pno } : {}) })).data.id;
+  const a = await mk('Anna Null', '00123'); const b = await mk('Bernd Ohne', null); const c = await mk('Clara Nummer', '777');
+  const d1 = await mk('Dora Eins', '0042'); const d2 = await mk('Dieter Zwei', '42');
+  const day = BERLIN_TODAY;
+  const csv = ['Art;Personalnummer;Name;Auslesedatum;Nachweis',
+    `Fahrerkarte;123;;${day};A`,          // Excel hat die Nullen entfernt → Anna
+    `Fahrerkarte;9001;Bernd Ohne;${day};B`, // Nummer unbekannt, Bernd hat keine Nummer → über Namen
+    `Fahrerkarte;9002;Clara Nummer;${day};C`, // Clara hat eine andere Nummer → nicht über den Namen
+    `Fahrerkarte;42;;${day};D`].join('\n');   // 0042 und 42 → mehrdeutig
+  const r = await F.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' }); eq(r.status, 200, JSON.stringify(r.data));
+  const got = new Set(db.prepare('SELECT driver_id FROM tacho_downloads WHERE driver_id IS NOT NULL').all().map((x) => x.driver_id));
+  ok(got.has(a), 'führende Nullen'); ok(got.has(b), 'Ersatz über Namen'); ok(!got.has(c), 'widersprüchliche Nummer nicht über Namen'); ok(!got.has(d1) && !got.has(d2), 'mehrdeutig');
+  eq(r.data.counts.neu, 2); eq(r.data.counts.uebersprungen, 2);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

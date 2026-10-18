@@ -229,7 +229,9 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded FROM vehicles WHERE active=1`).all()).results;
   const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=? AND cancelled_at IS NULL`).bind(envName).all()).results.map((r) => r.k));
   const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
-  const byPno = uniq(drivers, (d) => (d.personnel_no ? d.personnel_no.normalize('NFC').trim().toLowerCase() : null));
+  // Personalnummer ohne führende Nullen vergleichen (Excel macht aus „00123“ die Zahl 123, 18.10.2026); zwei Nummern, die dadurch gleich werden → mehrdeutig
+  const pnoKey = (x) => { const k = String(x || '').normalize('NFC').trim().toLowerCase(); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k || null; };
+  const byPno = uniq(drivers, (d) => (d.personnel_no ? pnoKey(d.personnel_no) : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));
   const byVin = new Map(vehicles.map((v) => [v.vin, v]));
   // Kennzeichen doppelt, aber nur eines bewertet (ruhendes Doppel, z. B. Tippfehler-FIN): das bewertete Fahrzeug – wie die Fristen-Übersicht
@@ -254,7 +256,9 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     let target; let label;
     if (kind === 'fahrerkarte') {
       const pno = get(cells, ci.pno).normalize('NFC').toLowerCase(); const nm = normName(get(cells, ci.name));
-      target = pno ? byPno.get(pno) : nm ? byName.get(nm) : undefined;
+      target = pno ? byPno.get(pnoKey(pno)) : nm ? byName.get(nm) : undefined;
+      // Personalnummer unbekannt, Name eindeutig und in der App ohne Personalnummer erfasst → über den Namen (keine widersprüchliche Nummer)
+      if (pno && !target && nm) { const n = byName.get(nm); if (n && n !== 'mehrdeutig' && !n.personnel_no) target = n; }
       if (target === 'mehrdeutig') return skip(`Fahrer nicht eindeutig: ${get(cells, ci.pno) || get(cells, ci.name)}`);
       if (!target) return skip(`Fahrer nicht gefunden: ${get(cells, ci.pno) || get(cells, ci.name) || '–'}`);
       label = target.display_name;
