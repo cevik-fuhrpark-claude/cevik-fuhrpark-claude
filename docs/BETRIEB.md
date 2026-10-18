@@ -88,6 +88,8 @@ herunterladen und im eigenen Drive ablegen. Jeder Export steht im Audit-Log.
 spielt die Datei in eine frische In-Memory-Datenbank mit aktuellem Schema ein und vergleicht je Tabelle die Zeilenzahl sowie die
 Fremdschlüssel. Ein automatischer Test macht das bei jedem `npm test` mit der Sicherung der Testdaten. Die JSON-Sicherung ist ein
 Archiv der Fachdaten – Benutzer müssten nach einer Wiederherstellung daraus neu eingeladen werden (keine Passwörter enthalten).
+Zeilengrenze: je Tabelle höchstens 200 000 Zeilen. Darüber enthält die Sicherung die **neuesten** 200 000 Zeilen, `truncated[]` nennt die Tabelle,
+die App warnt nach dem Herunterladen und die Probe meldet „UNVOLLSTÄNDIG“ (seit 18.10.2026; vorher fielen still die neuesten Zeilen weg). Dann D1 Time Travel nutzen.
 
 **Wiederherstellung der Datenbank auf einen Zeitpunkt** (nur nach Freigabe durch den Inhaber – überschreibt den aktuellen Stand):
 ```

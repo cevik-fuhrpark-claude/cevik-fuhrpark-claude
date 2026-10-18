@@ -30,7 +30,9 @@ export function restoreInto(db, backup) {
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; } finally { db.exec('PRAGMA foreign_keys = ON'); }
   const fk = db.prepare('PRAGMA foreign_key_check').all();
-  return { ok: report.every((r) => r.ok) && fk.length === 0, tables: report, foreign_key_errors: fk.length };
+  // gekappte Sicherung (Tabelle über der Zeilengrenze): nie „vollständig“, auch wenn alle enthaltenen Zeilen zurückkamen
+  const truncated = Array.isArray(backup.truncated) ? backup.truncated : [];
+  return { ok: report.every((r) => r.ok) && fk.length === 0 && !truncated.length, tables: report, foreign_key_errors: fk.length, truncated };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
@@ -43,6 +45,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const r = restoreInto(env.DB.db, JSON.parse(readFileSync(file, 'utf8')));
   for (const t of r.tables) console.log(`${t.ok ? '✔' : '✘'} ${t.table.padEnd(24)} ${String(t.restored).padStart(7)} / ${t.expected}${t.error ? ' – ' + t.error : ''}`);
   console.log(`Fremdschlüssel-Fehler: ${r.foreign_key_errors}`);
+  if (r.truncated.length) console.log(`Gekappt (Zeilengrenze, älteste Zeilen fehlen): ${r.truncated.join(', ')}`);
   console.log(r.ok ? 'Wiederherstellung vollständig.' : 'Wiederherstellung UNVOLLSTÄNDIG.');
   process.exit(r.ok ? 0 : 1);
 }

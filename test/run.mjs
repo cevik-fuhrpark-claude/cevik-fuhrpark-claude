@@ -12877,6 +12877,22 @@ await test('Verbesserungen 18.10. (26): Einheit „Stk“ je Sprache (шт./pcs)
   ok(/#app \{ overflow-wrap: anywhere; \}/.test(css) && /#app table, #app \.plate, #app input/.test(css), 'Umbruchregel');
 });
 
+await test('Fehlersuche 18.10. (27): Datensicherung über der Zeilengrenze behält die neuesten Zeilen, meldet „gekappt“, Probe nie „vollständig“, App warnt', async () => {
+  const { e, U } = await freshWorld();
+  e.DB.db.exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 200500)
+    INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) SELECT 'x'||i, NULL, 'probe', NULL, NULL, '2026-01-01T00:00:00.000Z' FROM n`);
+  const b = (await U.own.get('/api/admin/backup')).data;
+  eq(b.data.audit_log.length, 200000); eq(JSON.stringify(b.truncated), '["audit_log"]');
+  eq(b.data.audit_log[b.data.audit_log.length - 1].id, 'x200500', 'neueste Zeile zuletzt (Anlagereihenfolge) enthalten');
+  ok(!b.data.audit_log.some((r) => r.action === 'setup'), 'älteste Zeilen fallen weg');
+  eq(b.data.vehicles.length, 2); eq(b.truncated.includes('vehicles'), false);
+  const { restoreInto } = await import('../scripts/sicherung-probe.mjs'); const { ensureSchema } = await import('../src/worker.js');
+  const fresh = makeEnv(); await ensureSchema(fresh); const r = restoreInto(fresh.DB.db, b);
+  eq(r.ok, false, 'Probe meldet unvollständig'); eq(r.truncated.join(), 'audit_log');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/blob\.truncated\.length\) toast\(t\('backup_truncated'\)/.test(app), 'App warnt bei gekappter Sicherung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

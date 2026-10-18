@@ -3705,7 +3705,7 @@ async function viewSettings() {
     });
     $('#sinv').innerHTML = `<section class="panel warn" role="alert"><p style="margin-top:0"><b>${esc(t('settings_stored_invalid'))}</b></p><ul class="small">${items.join('')}</ul></section>`;
   }
-  $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${bDate()}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
+  $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${bDate()}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); if (blob && Array.isArray(blob.truncated) && blob.truncated.length) toast(t('backup_truncated').replace('{t}', blob.truncated.join(', ')), true); } catch (err) { toast(err.message, true); } };
   $('#tcsv').onchange = async () => {
     const f = $('#tcsv').files[0]; if (!f) return;
     const text = await readCsvFile(f);

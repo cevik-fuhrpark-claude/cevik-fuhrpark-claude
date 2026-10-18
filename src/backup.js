@@ -32,7 +32,9 @@ export function backupQueries(tables) {
       // Kommazahlen (REAL) mit 17 gültigen Stellen als {"r":"…"} – json_array gibt sonst nur 15 aus (GPS-Position gerundet, 17.10.2026)
       const col = (c) => `CASE WHEN typeof(${q(c)})='real' THEN json_object('r', printf('%!.17g', ${q(c)})) ELSE ${q(c)} END`;
       for (let k = 0; k < cols.length; k += ARGS) parts.push(`json_array(${cols.slice(k, k + ARGS).map(col).join(',')})`);
-      return `SELECT '${t}' AS t, json_array(${parts.join(',')}) AS j FROM (SELECT * FROM ${q(t)} LIMIT ${ROW_LIMIT})`;
+      // neueste Zeilen zuerst und eine Zeile mehr als die Grenze: so bleibt bei einer Kappung das Neueste erhalten und „gekappt“
+      // heißt wirklich „es fehlen Zeilen“ (vorher fielen die neuesten Protokollzeilen still weg, genau 200 000 galten als gekappt; 18.10.2026)
+      return `SELECT '${t}' AS t, json_array(${parts.join(',')}) AS j FROM (SELECT * FROM ${q(t)} ORDER BY rowid DESC LIMIT ${ROW_LIMIT + 1})`;
     }).join(' UNION ALL '));
   }
   return out;
@@ -60,7 +62,7 @@ export async function exportBackup(env, user) {
     let results;
     if (batched) results = batched[g].results;
     else try { results = (await env.DB.prepare(queries[g]).all()).results; } catch {
-      for (const t of TABLES.slice(g * GROUP, (g + 1) * GROUP)) data[t] = (await env.DB.prepare(`SELECT * FROM ${q(t)} LIMIT ${ROW_LIMIT}`).all()).results;
+      for (const t of TABLES.slice(g * GROUP, (g + 1) * GROUP)) data[t] = (await env.DB.prepare(`SELECT * FROM ${q(t)} ORDER BY rowid DESC LIMIT ${ROW_LIMIT + 1}`).all()).results;
       continue;
     }
     for (const r of results) {
@@ -71,14 +73,19 @@ export async function exportBackup(env, user) {
       data[r.t].push(row);
     }
   }
-  for (const t of TABLES) counts[t] = data[t].length;
+  const cut = [];
+  for (const t of TABLES) {
+    if (data[t].length > ROW_LIMIT) { data[t].length = ROW_LIMIT; cut.push(t); } // älteste Zeile(n) fallen weg
+    data[t].reverse(); // wieder in Anlagereihenfolge
+    counts[t] = data[t].length;
+  }
   // Benutzer: alle Spalten laut Schema außer Passwort-Hash/-Salz (neue Spalten wie push_muted, home_site kommen automatisch mit)
   // ohne Passwort-Hash/-Salz und ohne Zwei-Faktor-Geheimnis/Ersatzcodes (nur „eingeschaltet seit“ bleibt)
   data.users = batched ? batched[queries.length].results : (await env.DB.prepare(usersSql).all()).results;
   counts.users = data.users.length;
   data.settings = batched ? batched[queries.length + 1].results : (await env.DB.prepare(settingsSql).all()).results;
   counts.settings = data.settings.length;
-  const truncated = Object.entries(counts).filter(([, n]) => n >= ROW_LIMIT).map(([t]) => t);
+  const truncated = cut;
   await audit(env, user.id, 'backup.export', null, { counts });
   return {
     format: 'cevik-fuhrpark-backup', schema_version: 1, created_at: nowIso(), created_by: user.username,
