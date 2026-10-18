@@ -12236,7 +12236,7 @@ await test('Telematik-Prüffälle ohne stilles Kappen: Liste 500, Gesamtzahl und
   db.prepare("DELETE FROM telematics_unmatched WHERE provider='webfleet'").run();
   const ov2 = (await U.fleet.get('/api/telematics')).data; eq(ov2.unmatched_truncated, false); eq(ov2.unmatched_total, 80);
 });
-await test('Telematik „größer als späterer Stand“ in Übersicht, Akte, CSV und Status wie Datenqualität (begründeter späterer Stand nicht)', async () => {
+await test('Telematik „größer als späterer Stand“ in Übersicht, Akte, CSV und Status wie Datenqualität (begründeter späterer Stand nicht, ruhende Fahrzeuge nicht)', async () => {
   const { e, U, V1 } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
   const d = (days) => new Date(Date.now() - days * 864e5).toISOString();
   const ins = db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at,note) VALUES (?,?,?,?,'manuell:fleet',?,?)`);
@@ -12266,6 +12266,15 @@ await test('Telematik „größer als späterer Stand“ in Übersicht, Akte, CS
   db.prepare("UPDATE telematics_latest SET km=150000 WHERE external_id='YF-ABOVE'").run();
   const k2 = (await U.fleet.get('/api/telematics')).data.km_rejected.find((x) => x.vehicle_id === V1); eq(k2.direction, 'below'); eq(k2.recorded_km, 190000);
   eq((await U.fleet.get('/api/vehicles/' + encodeURIComponent(V1))).data.telematics[0].km_rejected_below, 190000);
+  // ruhendes Fahrzeug (aus allen Bewertungen ausgenommen): wie Datenqualität weder km- noch Kennzeichen-Abweichung in Übersicht/Status
+  db.prepare("UPDATE telematics_latest SET source_plate='XX-ANDERS 1' WHERE external_id='YF-ABOVE'").run();
+  ok((await U.fleet.get('/api/telematics')).data.plate_mismatches.some((x) => x.vehicle_id === V1), 'aktiv: Kennzeichen-Abweichung');
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
+  const ovr = (await U.fleet.get('/api/telematics')).data;
+  eq(ovr.km_rejected.filter((x) => x.vehicle_id === V1).length + ovr.plate_mismatches.filter((x) => x.vehicle_id === V1).length, 0, 'ruhend: keine Abweichungen');
+  const str = (await new Client(worker, e, 'anon').req('GET', '/api/integration/v1/telematics/status', undefined, { authorization: 'Bearer integration-token-xyz' })).data.providers.find((p) => p.provider === 'yellowfox');
+  eq(str.km_rejected + str.plate_mismatches, 0, 'Status ohne ruhende');
+  eq((await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.vehicle_id === V1 && /^telematics_(km_rejected|plate_mismatch)$/.test(i.check)).length, 0, 'Datenqualität ebenso');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

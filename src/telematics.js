@@ -18,12 +18,14 @@ export async function telematicsOverview(env, user, query = {}) {
     env.DB.prepare(`SELECT COUNT(DISTINCT t.vehicle_id) AS vehicles, MAX(t.received_at) AS last_received FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id AND v.active=1 AND v.eval_excluded=0`).first(),
     // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch),
     // und Geräte, deren letzter km-Stand kleiner ist als der davor erfasste oder größer als ein später erfasster ohne Begründung
-    // (gleiche Regel wie Datenqualität telematics_km_rejected, beide Richtungen seit 18.10.2026) – eine Abfrage
+    // (gleiche Regel wie Datenqualität telematics_km_rejected, beide Richtungen seit 18.10.2026) – eine Abfrage;
+    // wie die Datenqualität nur aktive, bewertete Fahrzeuge (ruhende sind aus allen Bewertungen ausgenommen, außer Betrieb genommene
+    // meldet `inactive_vehicle_reports`; vorher zählten Übersicht/Status sie mit, 18.10.2026)
     env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at,
       (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > t.gps_time ORDER BY o.measured_at ASC LIMIT 1) AS next_json
       FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
       LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
-      WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) ORDER BY v.plate, t.provider`).all(),
+      WHERE v.active=1 AND v.eval_excluded=0 AND (t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL)) ORDER BY v.plate, t.provider`).all(),
     // Letzter Stand je bewertetem, aktivem Kraftfahrzeug; Anhänger nur, wenn sie ein eigenes Gerät haben (sonst fiele dessen Ausfall nirgends auf).
     // Ohne Daten zuerst, dann ältester Stand zuerst.
     // Reine Information – keine Frist, kein Grenzwert (ob das Fahrzeug stand oder das Gerät ausgefallen ist, steht nicht fest).
