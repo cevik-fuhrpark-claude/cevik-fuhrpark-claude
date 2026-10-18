@@ -405,7 +405,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const addLock = (vid, a, b) => { if (b > a) { if (!locks.has(vid)) locks.set(vid, []); locks.get(vid).push([a, b]); } };
   // Werkstattzeit (freigegebene Aufträge) und Ausfallzeit (Werkstatt-Übernahme → Freigabe/Ablehnung, offen bis jetzt, plus Sperrzeit) je Fahrzeug
   // als Zeitabschnitte – parallele Aufträge am selben Fahrzeug zählen einmal (16.10.2026: Werkstattzeit wurde vorher je Auftrag addiert)
-  const shop = new Map(); const down = new Map();
+  const shop = new Map(); const down = new Map(); const pwait = new Map();
   const addIv = (m, vid, a, b) => { if (Number.isFinite(a) && Number.isFinite(b) && b > a) { if (!m.has(vid)) m.set(vid, []); m.get(vid).push([a, b]); } };
   // Kostenfreigaben: je Überschreitung (Ereignis „cost_limit_exceeded“) bis „Kosten freigeben“ – nur Anzahl und Dauer, keine Beträge
   const ca = { exceeded: 0, approved: 0, pending: 0, closed_without: 0, cases: 0, wait: [] };
@@ -415,12 +415,13 @@ export async function kpiReport(env, user, envName, query = {}) {
     const t0 = Date.parse(c.created_at);
     const approved = evs.find((e) => e.to_status === 'werkstatt_freigegeben');
     // Teile-Wartezeit: Summe der Abschnitte im Status „wartet_teile“ (offener Abschnitt bis jetzt)
+    // je Fahrzeug zusätzlich als Abschnitte (parallele Aufträge desselben Fahrzeugs zählen dort einmal, wie Werkstatt-/Ausfallzeit; 18.10.2026)
     let wait = 0; let since = null;
     for (const e of evs) {
       if (e.to_status === 'wartet_teile' && since === null) since = Date.parse(e.created_at);
-      else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { wait += Date.parse(e.created_at) - since; since = null; }
+      else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { wait += Date.parse(e.created_at) - since; addIv(pwait, c.vehicle_id, since, Date.parse(e.created_at)); since = null; }
     }
-    if (since !== null) wait += now - since;
+    if (since !== null) { wait += now - since; addIv(pwait, c.vehicle_id, since, now); }
     // Termintreue Teile: je Abschnitt „wartet auf Teile“ der zuletzt gesetzte Liefertermin (laut Werkstatt) gegen das Ende des Abschnitts
     // (Reparatur fortgesetzt) nach Berliner Datum. Ohne Liefertermin nur gezählt; offener Abschnitt nur, wenn der Termin schon vorbei ist.
     let seg = null;
@@ -463,12 +464,12 @@ export async function kpiReport(env, user, envName, query = {}) {
     v.cases++; if (c.status === 'fahrzeug_freigegeben') v.released++; if (c.status === 'abgelehnt' && c.duplicate_of) v.duplicates++;
     if (workshop !== null) addIv(shop, c.vehicle_id, Date.parse(approved.created_at), Date.parse(c.closed_at));
     { const iv = workshopIntervalOf(c, now); if (iv) addIv(down, c.vehicle_id, iv[0], iv[1]); }
-    v.parts_wait_h += wait / H;
     byVehicle.set(c.vehicle_id, v);
   }
   for (const [vid, list] of locks) { byVehicle.get(vid).locked_h = unionMs(list) / H; for (const iv of list) addIv(down, vid, iv[0], iv[1]); }
   for (const [vid, list] of shop) byVehicle.get(vid).workshop_h = unionMs(list) / H;
   for (const [vid, list] of down) byVehicle.get(vid).downtime_h = unionMs(list) / H;
+  for (const [vid, list] of pwait) byVehicle.get(vid).parts_wait_h = unionMs(list) / H;
   const availability = site ? null : await fleetAvailability(env, envName, from, to, [...plates.values()].filter((v) => v.active && !v.eval_excluded && vOk(v.id)), now);
   const avBy = new Map(availability ? availability.by_vehicle.map((x) => [x.vehicle_id, x.pct]) : []);
   const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
@@ -476,6 +477,8 @@ export async function kpiReport(env, user, envName, query = {}) {
     const x = groups[k];
     return { priority: k, created: x.created, released: x.released, rejected: x.rejected, duplicates: x.duplicates, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
   });
+  // Zeile „alle“ = Summe der gerundeten Dringlichkeiten (sonst 0 + 0 = 0,1 durch Rundung, 18.10.2026)
+  { const all = by_priority.find((x) => x.priority === 'alle'); if (all) all.parts_wait_h = r1(by_priority.filter((x) => x.priority !== 'alle').reduce((a, x) => a + x.parts_wait_h, 0)); }
   const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, site: plates.get(v.vehicle_id)?.site || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h), downtime_h: r1(v.downtime_h), availability_pct: avBy.has(v.vehicle_id) ? avBy.get(v.vehicle_id) : null }))
     .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
   const pOut = (x) => ({ kept: x.kept, late: x.late, without_eta: x.without_eta, open_overdue: x.open_overdue,

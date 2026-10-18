@@ -12277,6 +12277,52 @@ await test('Telematik „größer als späterer Stand“ in Übersicht, Akte, CS
   eq((await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.vehicle_id === V1 && /^telematics_(km_rejected|plate_mismatch)$/.test(i.check)).length, 0, 'Datenqualität ebenso');
 });
 
+await test('Fehlersuche 18.10. (14): km-Prognose ab belegter Durchführung, Prüfungslisten mit Standortfilter vor der 200er-Grenze + lists_truncated, Disposition bei Freigabe als kritisch, Teile-Wartezeit je Fahrzeug ohne Doppelzählung, Übersetzungen', async () => {
+  // (1) km-Prognose: Rest ab der Durchführung → Datum ab der Durchführung (vorher ab der älteren Ablesung, 15 Tage zu früh)
+  const { kmDue } = await import('../src/maintenance.js');
+  const latest = { km: 106000, measured_at: '2026-10-01T08:00:00Z', drop_at: null, base_km: 100000, base_at: '2026-08-02T08:00:00Z' };
+  const kd = kmDue({ kind: 'Ölwechsel', interval_km: 10000, last_done_km: 107500, last_done_date: '2026-10-16', due_km: null, km_basis_at: '2026-10-16T10:00:00Z' }, latest, null, '2026-10-18');
+  eq(kd.km_remaining, 10000); eq(kd.km_forecast.date, '2027-01-24', 'Prognose ab Durchführung');
+  const kd2 = kmDue({ kind: 'Ölwechsel', interval_km: 10000, last_done_km: 100000, last_done_date: '2026-07-01', due_km: null }, latest, null, '2026-10-18');
+  eq(kd2.km_forecast.date, '2026-11-10', 'ohne belegte Durchführung weiter ab der Ablesung');
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  // (2) 204 Pflichtprüfungen ohne Ergebnis; der einzige Münchner Fall ist der älteste
+  const insV = db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES (?,?,?,?,'lkw',1,0,?,?)`);
+  const insE = db.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,evidence,source,created_at) VALUES (?,?,?,?,?,'Beleg','erfasst',?)`);
+  const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10); const now = new Date().toISOString();
+  for (let i = 0; i < 51; i++) { const id = 'V-RM-' + i; insV.run(id, 'VRM' + i, 'TT-RM ' + i, i === 50 ? 'Muenchen' : 'Dortmund', now, now);
+    ['UVV', 'Tachograph', 'HU', 'SP'].forEach((k, j) => insE.run(`E-${i}-${j}`, `R-${i}-${j}`, id, k, day(10 + i), now)); }
+  const ov = (await U.fleet.get('/api/maintenance')).data;
+  eq(ov.result_missing.length, 200); ok(ov.lists_truncated.includes('result_missing'), 'Kappung gemeldet: ' + JSON.stringify(ov.lists_truncated));
+  const ovM = (await U.fleet.get('/api/maintenance?site=Muenchen')).data;
+  eq(ovM.result_missing.length, 4, 'Standortfilter vor der Grenze (vorher 0)'); eq(ovM.lists_truncated.length, 0);
+  const iv = (await new Client(worker, e, 'anon').req('GET', '/api/integration/v1/maintenance?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data;
+  ok(Array.isArray(iv.lists_truncated) && Array.isArray(iv.defects_without_case) && Array.isArray(iv.reinspection_pending), 'Integrations-API: Listen + lists_truncated');
+  // (3) Freigabe mit Hochstufung auf kritisch → Disposition bekommt „Priorität geändert“
+  const disp = await (async () => { const x = await U.own.post('/api/users', { username: 'w.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); const c = new Client(worker, e, 'w.dispo'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; })();
+  const cid = await newCase();
+  eq((await cmd(U.fleet, cid, 'approve_repair', { workshop_site: 'DORTMUND', priority: 'kritisch' }, 'sofort')).status, 200);
+  const dn = db.prepare('SELECT kind FROM notifications WHERE user_id=? AND case_id=?').all(disp.id, cid).map((x) => x.kind);
+  ok(dn.includes('priority_changed'), 'Disposition informiert: ' + JSON.stringify(dn));
+  const cid2 = await newCase({ vehicle_id: 'VIN:WDB9630051L917317' });
+  eq((await cmd(U.fleet, cid2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'normal')).status, 200);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND case_id=?').get(disp.id, cid2).n, 0, 'ohne Hochstufung nichts an die Disposition');
+  // (4) zwei parallele Aufträge am selben Fahrzeug warten gleichzeitig 10 h auf Teile → je Fahrzeug 10 h, je Dringlichkeit Summe der Aufträge
+  const { kpiReport } = await import('../src/reports.js');
+  const insC = db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at,workshop_site,closed_at,workshop_ack_at)
+    VALUES (?,?,'production','V-RM-0','u','d','mittel','mittel','fahrbereit','fahrzeug_freigegeben',?,?,?,?,'DORTMUND',?,?)`);
+  const insEv = db.prepare(`INSERT INTO case_events(id,case_id,environment,action,to_status,created_at) VALUES (?,?,'production',?,?,?)`);
+  for (const id of ['PX1', 'PX2']) { insC.run(id, id, id, id, '2026-08-10T06:00:00Z', '2026-08-10T06:00:00Z', '2026-08-11T06:00:00Z', '2026-08-10T07:00:00Z');
+    [['create', 'gemeldet', '06:00'], ['approve', 'werkstatt_freigegeben', '06:30'], ['start_repair', 'in_reparatur', '07:00'], ['wait_parts', 'wartet_teile', '08:00'], ['resume_repair', 'in_reparatur', '18:00']]
+      .forEach(([a, st, t], i) => insEv.run(id + i, id, a, st, `2026-08-10T${t}:00Z`)); insEv.run(id + '9', id, 'release', 'fahrzeug_freigegeben', '2026-08-11T06:00:00Z'); }
+  const kr = await kpiReport(e, { role: 'fleet' }, 'production', { from: '2026-08', to: '2026-08' });
+  eq(kr.vehicles.find((x) => x.vehicle_id === 'V-RM-0').parts_wait_h, 10, 'je Fahrzeug einmal');
+  const bp = Object.fromEntries(kr.by_priority.map((x) => [x.priority, x.parts_wait_h])); eq(bp.mittel, 20); eq(bp.alle, 20, '„alle“ = Summe der Zeilen');
+  // (5) Übersetzungen der Mängelstatistik-Fehlertexte
+  const I = await import('../public/i18n.js');
+  for (const k of ['days: 7–730 Tage', 'kind: abfahrt oder nach_reparatur']) ok(I.translateValidation('uk', k) !== k && I.translateValidation('en', k) !== k, k);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

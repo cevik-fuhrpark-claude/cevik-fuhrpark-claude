@@ -3,7 +3,7 @@ import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, 
 import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
-import { maintenanceOverview, maintenanceHistory, defectsWithoutCaseQuery, reinspectionPendingQuery } from './maintenance.js';
+import { maintenanceOverview, maintenanceHistory, maintenanceEventLists } from './maintenance.js';
 import { listVehicles } from './vehicles.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { dataQuality, CHECKS } from './quality.js';
@@ -177,12 +177,13 @@ export async function integrationRouter(request, env, ctx, url) {
   if (p === '/v1/costs' && m === 'GET') return json({ schema_version: '1.0', ...(await costReport(env, null, envParam(url), Object.fromEntries(url.searchParams))) });
   // Prüftermine (ohne Auftragsdaten) + additiv: Prüfmängel ohne Auftrag und ausstehende Nachprüfungen der gewählten Umgebung (ohne Personennamen)
   if (p === '/v1/maintenance' && m === 'GET') {
-    const [defects, reinspection] = await env.DB.batch([defectsWithoutCaseQuery(env, envParam(url)), reinspectionPendingQuery(env, envParam(url))]);
     const ov = await maintenanceOverview(env, null, null, { site: url.searchParams.get('site') });
-    // mit Standortfilter: nur Fahrzeuge des Standorts (jedes aktive Fahrzeug steht in rows oder – ohne Pflichttermin – in gaps)
+    // mit Standortfilter: nur Fahrzeuge des Standorts (jedes aktive Fahrzeug steht in rows oder – ohne Pflichttermin – in gaps);
+    // Filter vor der Begrenzung auf 200 (vorher danach – Standort mit älteren Fällen leer, 18.10.2026); `lists_truncated` nennt gekappte Listen
     const inSite = ov.site ? new Set([...ov.rows, ...ov.gaps].map((x) => x.vehicle_id)) : null;
-    const keep = (list) => (inSite ? list.filter((x) => inSite.has(x.vehicle_id)) : list);
-    return json({ schema_version: '1.0', ...ov, environment: envParam(url), defects_without_case: keep(defects.results), reinspection_pending: keep(reinspection.results) });
+    const lists = await maintenanceEventLists(env, envParam(url), inSite);
+    return json({ schema_version: '1.0', ...ov, environment: envParam(url), defects_without_case: lists.defects_without_case, reinspection_pending: lists.reinspection_pending,
+      lists_truncated: lists.truncated.filter((n) => n !== 'result_missing') });
   }
   if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams), envParam(url)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, environment: envParam(url), truncated: h.truncated, events: h.rows.map(({ recorded_by_name, result_addable, ...r }) => r) }); }
   // Datenqualität: Anzahlen je Prüfung/Schweregrad + fahrzeugbezogene Befunde – ohne Personennamen (Fahrer-, Konto- und Einladungsbefunde nur als Anzahl)

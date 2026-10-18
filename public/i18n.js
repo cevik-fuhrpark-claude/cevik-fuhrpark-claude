@@ -655,6 +655,8 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  ['days: 7–730 Tage', 'days: 7–730 днів', 'days: 7–730 days'],
+  ['kind: abfahrt oder nach_reparatur', 'kind: abfahrt або nach_reparatur', 'kind: abfahrt or nach_reparatur'],
   ['Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.', 'Цей табельний номер уже призначено активному водієві.', 'This personnel number is already assigned to an active driver.'],
   ['Diese Kontrolle ist bereits erfasst.', 'Цю перевірку вже внесено.', 'This check has already been recorded.'],
   ['Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.', 'На цей договір посилається страховий випадок – вид договору залишається «Страхування».', 'An insurance claim refers to this contract – the contract type remains “Insurance”.'],

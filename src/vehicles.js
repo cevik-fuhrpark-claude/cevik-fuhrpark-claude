@@ -235,6 +235,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   }
   // Fahrleistung je Monat (16.10.2026) – nur aus gespeicherten Kilometerständen, keine Schätzung (alle, die die Akte sehen)
   if (!tl) out.mileage = vehicleMileage(odoRows, mileageLo);
+  // Vorwarnung Prüftermine (Tage) für die Fälligkeitsfarbe der Akte – gleiche Einstellung wie Übersicht/Server (18.10.2026; vorher fest 30)
+  if (!tl) out.maintenance_warn_days = maintenanceWarnDays(sets.get('maintenance_warn_days'));
   return out;
 }
 

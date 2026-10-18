@@ -144,7 +144,8 @@ export function kmDue(rule, latest, warnKm, today = null) {
   if ('base_km' in latest) {
     // Prognose nie über einen km-Rücksprung hinweg (Ablesungen alter und neuer Zähler wären nicht vergleichbar)
     const rate = latest.drop_at && latest.base_at && latest.base_at < latest.drop_at ? null : kmRate(latest, { km: latest.base_km, measured_at: latest.base_at }, today);
-    const fc = kmForecastDate(remaining, rate, latest.measured_at);
+    // Anker = Zeitpunkt des Rest-km-Stands (bei belegter Durchführung deren Datum, sonst die Ablesung; 18.10.2026 vorher stets die Ablesung → Prognose um die Lücke zu früh)
+    const fc = kmForecastDate(remaining, rate, out.km_measured_at);
     out.km_forecast = fc ? { date: fc, km_per_day: Math.round(rate.km_per_day), from: rate.from, to: rate.to } : null;
   }
   return out;
@@ -162,13 +163,14 @@ export function noResultQuery(env, recordedBy = null, limit = 200) {
   const [sql, params] = noResultSql(recordedBy, limit);
   return env.DB.prepare(sql).bind(...params);
 }
-function noResultSql(recordedBy = null, limit = 200) {
+// vf: JSON-Liste der Fahrzeug-IDs (Standortfilter) – vor dem LIMIT angewandt (vorher erst danach: Standort mit älteren Fällen leer, 18.10.2026)
+function noResultSql(recordedBy = null, limit = 200, vf = null) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
-      WHERE v.active=1 AND v.eval_excluded=0 AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
+      WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
       ${recordedBy ? 'AND e.recorded_by = ?' : ''}
       AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
-      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...REQUIRED_KINDS, new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10), ...(recordedBy ? [recordedBy] : [])]];
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), ...REQUIRED_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), ...(recordedBy ? [recordedBy] : [])]];
 }
 
 // Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
@@ -180,13 +182,13 @@ export function defectsWithoutCaseQuery(env, envName, limit = 200) {
   const [sql, params] = defectsWithoutCaseSql(envName, limit);
   return env.DB.prepare(sql).bind(...params);
 }
-function defectsWithoutCaseSql(envName, limit = 200) {
+function defectsWithoutCaseSql(envName, limit = 200, vf = null) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
-      WHERE v.active=1 AND v.eval_excluded=0 AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
+      WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date) -- Berliner Tag (Auftrag 00:30 Uhr am Prüftag zählt, 17.10.2026)
       AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), envName]];
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), berlinDate(new Date(Date.now() - 365 * 86400000).toISOString()), envName]];
 }
 
 // Mängelauftrag aus Prüfung technisch freigegeben (≤ 365 Tage nach der Prüfung), kein weiterer offener Auftrag dazu und seitdem keine neuere
@@ -196,16 +198,16 @@ export function reinspectionPendingQuery(env, envName) {
   const [sql, params] = reinspectionPendingSql(envName);
   return env.DB.prepare(sql).bind(...params);
 }
-function reinspectionPendingSql(envName) {
+function reinspectionPendingSql(envName, limit = 200, vf = null) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence, c.id AS case_id, c.case_no, c.closed_at
       FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       JOIN cases c ON c.maintenance_event_id=e.id AND c.environment=? AND c.status='fahrzeug_freigegeben'
-      WHERE v.active=1 AND v.eval_excluded=0 AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
+      WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       AND c.closed_at = (SELECT MAX(c3.closed_at) FROM cases c3 WHERE c3.maintenance_event_id=e.id AND c3.environment=c.environment AND c3.status='fahrzeug_freigegeben')
       AND NOT EXISTS (SELECT 1 FROM cases c2 WHERE c2.maintenance_event_id=e.id AND c2.environment=c.environment AND c2.status NOT IN ('fahrzeug_freigegeben','abgelehnt'))
       AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-      ORDER BY c.closed_at LIMIT 200`, [envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)]];
+      ORDER BY c.closed_at DESC LIMIT ${Number(limit)}`, [envName, ...(vf ? [vf] : []), berlinDate(new Date(Date.now() - 365 * 86400000).toISOString())]];
 }
 
 // Die drei Prüfungs-Listen (Prüfmängel ohne Auftrag, ausstehende Nachprüfung, Pflichtprüfung ohne Ergebnis) in EINER D1-Abfrage –
@@ -214,15 +216,24 @@ function reinspectionPendingSql(envName) {
 const EVENT_LISTS = {
   defects_without_case: [defectsWithoutCaseSql, ['id', 'vehicle_id', 'plate', 'kind', 'done_date', 'result', 'evidence'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
   reinspection_pending: [reinspectionPendingSql, ['id', 'vehicle_id', 'plate', 'kind', 'done_date', 'result', 'evidence', 'case_id', 'case_no', 'closed_at'], (a, b) => String(a.closed_at).localeCompare(String(b.closed_at))],
-  result_missing: [() => noResultSql(), ['id', 'vehicle_id', 'plate', 'kind', 'done_date'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
+  result_missing: [(envName, limit, vf) => noResultSql(null, limit, vf), ['id', 'vehicle_id', 'plate', 'kind', 'done_date'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
 };
-export async function maintenanceEventLists(env, envName) {
+// vehicleIds: nur diese Fahrzeuge (Standortfilter, vor dem LIMIT); je Liste höchstens 200, eine Zeile mehr gelesen →
+// out.truncated = Namen der gekappten Listen (vorher still gekappt, 18.10.2026)
+export async function maintenanceEventLists(env, envName, vehicleIds = null) {
   const names = Object.keys(EVENT_LISTS);
-  const parts = names.map((n) => { const [mk, cols] = EVENT_LISTS[n]; const [sql, params] = mk(envName); return { sql: `SELECT ${names.indexOf(n)} AS k, (SELECT json_group_array(json_object(${cols.map((c) => `'${c}', ${c}`).join(', ')})) FROM (${sql})) AS j`, params }; });
+  const vf = vehicleIds ? JSON.stringify([...vehicleIds]) : null;
+  const parts = names.map((n) => { const [mk, cols] = EVENT_LISTS[n]; const [sql, params] = mk(envName, 201, vf); return { sql: `SELECT ${names.indexOf(n)} AS k, (SELECT json_group_array(json_object(${cols.map((c) => `'${c}', ${c}`).join(', ')})) FROM (${sql})) AS j`, params }; });
   const rows = (await env.DB.prepare(parts.map((x) => x.sql).join(' UNION ALL ')).bind(...parts.flatMap((x) => x.params)).all()).results;
   const out = {};
-  for (const r of rows) { const n = names[r.k]; out[n] = JSON.parse(r.j || '[]').sort(EVENT_LISTS[n][2]); }
+  const truncated = [];
+  for (const r of rows) { const n = names[r.k]; const list = JSON.parse(r.j || '[]');
+    // zuerst die jüngsten 200 behalten (Abfrage absteigend), dann wie gewohnt sortieren
+    if (list.length > 200) { const key = n === 'reinspection_pending' ? 'closed_at' : 'done_date';
+      truncated.push(n); list.sort((a, b) => String(b[key]).localeCompare(String(a[key]))); list.length = 200; }
+    out[n] = list.sort(EVENT_LISTS[n][2]); }
   for (const n of names) out[n] = out[n] || [];
+  out.truncated = truncated;
   return out;
 }
 
@@ -293,13 +304,12 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   }
   // Prüfmängel ohne Folgevorgang (nur App-Ansicht mit Umgebung; Lesezugriff ohne Nachweistext nicht nötig – gleiche Rechte wie die Übersicht)
   // + Pflichtprüfung ohne Prüfergebnis (gleiche Regel wie Datenqualität `inspection_no_result`) – für „Heute zu tun“ der Leitung; eine Abfrage
-  const lists = envName ? await maintenanceEventLists(env, envName) : null;
-  if (lists && sKey) for (const k of Object.keys(lists)) if (Array.isArray(lists[k])) lists[k] = lists[k].filter((x) => vIds.has(x.vehicle_id));
+  const lists = envName ? await maintenanceEventLists(env, envName, sKey ? vIds : null) : null;
   const defects = lists ? lists.defects_without_case : undefined;
   const reinspection = lists ? lists.reinspection_pending : undefined;
   const noResult = lists ? lists.result_missing : undefined;
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, site: siteSel, site_options: siteOptions, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}),
+  return { today, site: siteSel, site_options: siteOptions, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}), ...(lists ? { lists_truncated: lists.truncated } : {}),
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 

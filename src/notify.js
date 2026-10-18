@@ -167,6 +167,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       add(workshopUsers);
       // Melder: „Meldung an Werkstatt übergeben“ statt „Neuer Werkstattauftrag“ (18.10.2026); meldende Werkstatt desselben Standorts bleibt beim Auftrag
       if (kind === 'approved') add(reporter.map((u) => ({ ...u, kind: 'forwarded' })));
+      // Hochstufung auf „kritisch“ mit der Freigabe: Disposition wie bei „Priorität ändern“ (18.10.2026: erfuhr nichts)
+      if (kind === 'approved' && c.priority === 'kritisch' && ctxData.previous && ctxData.previous.priority !== 'kritisch') add(usersByRole(['dispatch']).map((u) => ({ ...u, kind: 'priority_changed' })));
       if (internalLock) { add(usersByRole(['dispatch']).map((u) => ({ ...u, kind: 'safety_lock' }))); add(assignedDrivers().map((u) => ({ ...u, kind: 'safety_lock' }))); }
       break;
     case 'acknowledged': case 'started': case 'waiting_parts': case 'resumed': case 'quality_check': case 'open_item_safety':
