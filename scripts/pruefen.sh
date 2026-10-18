@@ -29,6 +29,9 @@ UI_SKRIPTE='UI-Ablauftest|ui-ablauf.py|/tmp/cfp-ablauf.log
 UI-Baujahr-Hinweis, Lagerbuchung einmal|ui-baujahr-lager.py|/tmp/cfp-baujahr.log
 UI-Konflikt ohne Eingabeverlust (Kommentar, Fahrerakte)|ui-konflikt-eingaben.py|/tmp/cfp-konflikt.log
 UI-Postausgang Foto nachreichen, Rechte Fahrzeugakte, Verlauf übersetzt|ui-postausgang-foto.py|/tmp/cfp-postfoto.log
+UI-Postausgang nur unter der erfassenden Person (zwei Tabs)|ui-postausgang-fremder-name.py|/tmp/cfp-pa-person.log
+UI-Postausgang in der Umgebung der Erfassung|ui-postausgang-umgebung.py|/tmp/cfp-pa-umgebung.log
+UI-Sprache offline gewählt bleibt|ui-sprache-offline.py|/tmp/cfp-sprache-offline.log
 UI-Aktionsformular bleibt offen, Vertrag km-Grundlage|ui-aktionsformular.py|/tmp/cfp-aktionsformular.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

@@ -992,7 +992,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'add_part': {
-      const qty = Math.round(num(p.quantity ?? 1, { min: 0.01, max: 100000, field: 'Menge' }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
+      const qty = Math.round(num(p.quantity ?? 1, { min: 0.01, max: 100000, field: 'Menge', decimalComma: true }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide

@@ -139,7 +139,8 @@ export function oneOf(v, allowed, field) {
 // Zahlen aus Formularen: Dezimalkomma; deutsches Format mit Tausenderpunkt und Komma („1.234,50“) wird verstanden.
 // Bei ganzzahligen Feldern (grouped: km, km-Kontingent) gilt „120.000“ als 120000. Sonst ist „2.000“ ohne Komma mehrdeutig (2 oder 2000?) und wird abgewiesen, statt still als 2 gespeichert zu werden.
 // cents: Geldbetrag – höchstens 2 Nachkommastellen (18.10.2026: „100,0051“ wurde ungerundet gespeichert, Summen wichen ab)
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false } = {}) {
+// decimalComma: Mengenfeld (Lager, Teile) – „4,750“ ist 4,75 (3 Nachkommastellen), nicht das englische Tausenderkomma
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, decimalComma = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
@@ -152,7 +153,7 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // englisches Tausenderkomma „15,000“/„1,000“ ebenso mehrdeutig (18.10.2026: wurde still als 15 bzw. 1 € gespeichert, km „120,500“ als 121)
-    else if (/^-?[1-9]\d{0,2}(,\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausendertrennzeichen (z. B. 15000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
+    else if (!decimalComma && /^-?[1-9]\d{0,2}(,\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausendertrennzeichen (z. B. 15000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // nur Dezimalzahlen (kein „0x1E240“, „0b101“, „1e5“ – Number() verstünde sie)
     if (!/^[-+]?(\d+([.,]\d+)?|[.,]\d+)$/.test(t)) throw bad('validation', `${field}: ungültige Zahl.`);
     n = Number(t.replace(',', '.'));

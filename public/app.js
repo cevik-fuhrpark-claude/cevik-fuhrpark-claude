@@ -71,6 +71,10 @@ function plate(p, opts = {}) {
 async function api(method, path, body, extra = {}) {
   const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
   if (S.viewEnv && S.me && S.me.role === 'owner') headers['x-cfp-env'] = S.viewEnv;
+  // Postausgang: Umgebung, in der die Meldung erfasst wurde (Inhaber kann die Ansicht inzwischen gewechselt haben – 18.10.2026)
+  if (extra.env && S.me && S.me.role === 'owner') headers['x-cfp-env'] = extra.env;
+  // Änderungen nur für die Person, die das Formular/den Postausgang erstellt hat (anderer Tab, andere Anmeldung → 409 user_mismatch)
+  if (method !== 'GET' && S.me && S.me.id && !path.startsWith('/api/logout')) headers['x-cfp-user'] = extra.asUser || S.me.id;
   let b = body;
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
   let res;
@@ -86,7 +90,10 @@ async function api(method, path, body, extra = {}) {
     // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch): erst Code (err_*), sonst bekannter Text (Prüf- und Konfliktmeldungen); unbekannt: Server-Text
     const code = data && data.error;
     const tr = code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, data.message));
-    const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data; throw e;
+    const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
+    // inzwischen andere Person angemeldet (anderer Tab): Stand neu laden – Eingaben/Postausgang bleiben auf dem Gerät erhalten
+    if (code === 'user_mismatch') setTimeout(() => location.reload(), 2500);
+    throw e;
   }
   return data;
 }
@@ -238,7 +245,13 @@ async function route() {
   const gen = S.routeGen = (S.routeGen || 0) + 1;
   try {
     if (!S.me && !pub) {
-      try { const r = await api('GET', '/api/me'); S.me = r.user; lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false; }
+      try {
+        const r = await api('GET', '/api/me'); S.me = r.user; lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false;
+        // offline gewählte Sprache jetzt speichern (18.10.2026: ging beim nächsten Start mit Netz verloren)
+        let pl = null; try { pl = localStorage.getItem('cfp_lang_pending'); } catch {}
+        const m = pl && pl.match(/^(.+):(de|uk|en)$/);
+        if (m && m[1] === S.me.id) { if (m[2] !== S.lang) { S.lang = S.me.language = m[2]; await api('PATCH', '/api/me', { language: m[2] }).catch(() => {}); } try { localStorage.removeItem('cfp_lang_pending'); } catch {} }
+      }
       catch (err) {
         // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
         const cached = err.offline ? offlineSession() : null;
@@ -505,12 +518,19 @@ document.addEventListener('visibilitychange', pollUnread);
 setInterval(pollUnread, 120000);
 
 // ---------- Öffentliche Ansichten ----------
+// Anmeldeseite: unversendete Meldungen auf diesem Gerät (Anmeldung beendet, z. B. Leerlauf/Passwortwechsel) – nur Name und Anzahl,
+// damit die Person sich hier anmeldet und sie gesendet werden (18.10.2026: lagen sonst ohne Hinweis im Gerät)
+function orphanOutboxNote() {
+  const by = new Map();
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith('cfp_outbox_')) for (const x of JSON.parse(localStorage.getItem(k) || '[]')) { const n = x.user_name; if (n) by.set(n, (by.get(n) || 0) + 1); } } catch {}
+  return by.size ? `<p class="small alert" id="orphan_outbox" role="note">${[...by].map(([n, c]) => esc(tn('outbox_orphan', c).replaceAll('{name}', n))).join('<br>')}</p>` : '';
+}
 function viewLogin() {
   render(`<div class="center"><form id="f" class="narrow panel">
     <h1>CEVIK ${esc(t('app'))}</h1><p class="muted small">[CLAUDE]</p>
     <label for="u">${esc(t('username'))}</label><input id="u" autocomplete="username" required autocapitalize="none">
     <label for="p">${esc(t('password'))}</label><input id="p" type="password" autocomplete="current-password" required>
-    <div class="actions"><button class="btn block">${esc(t('login'))}</button></div>
+    <div class="actions"><button class="btn block">${esc(t('login'))}</button></div>${orphanOutboxNote()}
     <details class="small" style="margin-top:8px"><summary>${esc(t('forgot_pw'))}</summary><p class="muted">${esc(t('forgot_pw_hint'))}</p></details>
     ${langSelect()}
   </form></div>`);
@@ -561,7 +581,7 @@ function langSelect() {
 function bindLang(save = false) {
   const l = $('#lang');
   // Sprache auch in der Offline-Sitzung merken (18.10.2026: Offline-Start kam sonst in der alten Sprache)
-  if (l) l.onchange = async () => { S.lang = l.value; try { localStorage.setItem('cfp_lang', l.value); } catch {} if (save) { if (S.me) { S.me.language = l.value; saveOfflineSession(); } await api('PATCH', '/api/me', { language: l.value }).catch(() => {}); } route(); };
+  if (l) l.onchange = async () => { S.lang = l.value; try { localStorage.setItem('cfp_lang', l.value); } catch {} if (save) { if (S.me) { S.me.language = l.value; saveOfflineSession(); } await api('PATCH', '/api/me', { language: l.value }).then(() => { try { localStorage.removeItem('cfp_lang_pending'); } catch {} }).catch((err) => { if (err.offline && S.me) try { localStorage.setItem('cfp_lang_pending', `${S.me.id}:${l.value}`); } catch {} }); } route(); };
 }
 async function viewSetup() {
   const st = await api('GET', '/api/setup/status');
@@ -881,9 +901,9 @@ async function idbDo(mode, fn) { const db = await idb(); return new Promise((res
 const photosPut = (key, list) => idbDo('readwrite', (st) => st.put(list, key));
 const photosGet = (key) => idbDo('readonly', (st) => st.get(key));
 const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
-async function uploadCasePhotos(caseId, list) {
+async function uploadCasePhotos(caseId, list, ox = {}) {
   let failed = 0;
-  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (err.offline) throw err; failed++; } }
+  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (err.offline) throw err; failed++; } }
   return failed;
 }
 let flushing = false;
@@ -906,7 +926,8 @@ async function flushOutbox() {
         let r = item.photo_target ? { id: item.photo_target, followups: [{ id: item.photo_target }], case_no: item.case_no } : null;
         // Abfahrtskontrolle mit dem Zeitpunkt der Durchführung (nicht des Sendens) – km-Stand wird zeitlich richtig eingeordnet
         const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at } : item.body;
-        if (!r) r = await api('POST', item.path || '/api/cases', sendBody);
+        const ox = { asUser: item.user_id || S.me.id, env: item.env };
+        if (!r) r = await api('POST', item.path || '/api/cases', sendBody, ox);
         let failed = 0; let skippedTxt = '';
         if (item.photos) {
           const ph = await photosGet(item.body.request_key).catch(() => null);
@@ -914,7 +935,7 @@ async function flushOutbox() {
           // Netzabbruch beim Foto-Upload: Eintrag behalten und Fotos später nachreichen (vorher gingen sie verloren, 17.10.2026);
           // der Server erkennt bereits hochgeladene Fotos am Inhalt (keine Dubletten)
           if (ph && ph.length && !target) skippedTxt = photosSkippedText(r); // Kontrolle ohne Ziel: bewusst nicht übertragen (nicht „fehlgeschlagen“)
-          try { if (ph && ph.length && target) failed = await uploadCasePhotos(target, ph); }
+          try { if (ph && ph.length && target) failed = await uploadCasePhotos(target, ph, ox); }
           catch (err) { if (err.offline) { photoPending.set(item.body.request_key, { target, case_no: r.case_no }); kept++; continue; } throw err; }
           await photosDel(item.body.request_key).catch(() => {});
         }
@@ -923,6 +944,7 @@ async function flushOutbox() {
       }
       catch (err) {
         if (err.offline || err.status === 429 || err.status >= 500) { kept++; continue; }
+        if (err.code === 'user_mismatch') { kept++; break; } // andere Person angemeldet: nichts senden, Eintrag bleibt
         // Vom Server abgewiesen (z. B. Fahrzeug inzwischen außer Betrieb): nicht still verwerfen, sondern als „nicht gesendet“
         // auf dem Gerät behalten – Text zum Kopieren, erneut senden oder bewusst verwerfen (17.10.2026). Fotos bleiben bis dahin.
         failedNow.set(item.body.request_key, { status: err.status || 0, message: String(err.message || ''), at: new Date().toISOString() });
@@ -992,7 +1014,13 @@ async function vehiclesCached() {
   try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability, coupled: v.coupled || null })))); } catch {} return vs; }
   catch (err) { if (!err.offline) throw err; let vs = null; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; return vs; }
 }
-function outboxAdd(path, body, photos = 0) { const list = outboxGet(); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, photos, saved_at: new Date().toISOString() }); outboxSet(list); }
+// Abmelden mit unversendeten Meldungen: vorher senden versuchen, sonst ausdrücklich bestätigen (sie bleiben auf dem Gerät für diese Person – 18.10.2026)
+async function logoutOutboxOk() {
+  if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
+  const pend = outboxGet().filter((x) => !x.failed).length;
+  return !pend || confirm(tn('logout_outbox_confirm', pend));
+}
+function outboxAdd(path, body, photos = 0) { const list = outboxGet(); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, photos, saved_at: new Date().toISOString(), user_id: S.me.id, user_name: S.me.display_name, env: S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment }); outboxSet(list); }
 
 // ---------- Neue Meldung ----------
 async function viewNew(preId) {
@@ -1336,7 +1364,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     for (const [k, v] of fd.entries()) if (k !== 'note' && v !== '') p[k] = v;
     for (const k of ['confirm', 'confirm_winter_open', 'safety_relevant', 'covers_work_and_parts']) if (k in p) p[k] = true;
     if (p.estimate) { p.valuation = 'estimate'; delete p.estimate; }
-    for (const k of ['hours', 'quantity', 'unit_price_net', 'amount_net']) if (k in p) p[k] = String(p[k]).replace(',', '.');
+    // Zahlen unverändert senden – der Server liest deutsche Schreibweise („4,750“, „1.234,50“); vorher wurde „4,750“ zu „4.750“ und abgewiesen (18.10.2026)
+    for (const k of ['hours', 'quantity', 'unit_price_net', 'amount_net']) if (k in p) p[k] = String(p[k]).trim();
     if (p.stock_item_id) { delete p.name; delete p.part_number; delete p.supplier; if (!fd.get('unit_price_net')) delete p.unit_price_net; } else delete p.stock_item_id;
     cmd(action, fd.get('note') || null, p);
   };
@@ -2007,7 +2036,7 @@ async function viewStock() {
     };
     $('#invnote').oninput = () => invDraft.save();
     fill(); if ($('#invsite')) $('#invsite').onchange = fill;
-    const body = () => ({ site: invSite(), note: $('#invnote').value || null, counts: $$('[data-inv]').map((x) => ({ item_id: x.dataset.inv, counted: x.value.trim() === '' ? '' : x.value.replace(',', '.') })) });
+    const body = () => ({ site: invSite(), note: $('#invnote').value || null, counts: $$('[data-inv]').map((x) => ({ item_id: x.dataset.inv, counted: x.value.trim() === '' ? '' : x.value.trim() })) });
     const show = (r, booked) => { $('#invres').innerHTML = r.differences.length ? `<div class="list">${r.differences.map((d) => `<div class="row ${booked ? '' : 'p-mittel'}"><span class="title">${esc(d.name)}</span><b>${d.delta > 0 ? '+' : ''}${d.delta} ${esc(d.unit)}</b><span class="sub" style="white-space:normal">${esc(t('inventory_book_qty'))} ${d.book} → ${esc(t('inventory_counted'))} ${d.counted}</span></div>`).join('')}</div>` : `<p>${esc(t('inventory_no_diff'))}</p>`; };
     $('#invchk').onclick = async () => { try { const r = await api('POST', '/api/stock/inventory?dry_run=1', body()); show(r, false); invPrev = r.differences; $('#invbook').disabled = !(r.counted > 0); $('#invbook').textContent = t(r.differences.length ? 'inventory_book' : 'inventory_close'); } catch (err) { toast(err.message, true); } };
     $('#invbook').onclick = async () => {
@@ -2017,7 +2046,7 @@ async function viewStock() {
       catch (err) { toast(err.message, true); if (err.code === 'inventory_changed') { invPrev = null; $('#invbook').disabled = true; $('#invres').innerHTML = `<p class="small muted">${esc(t('inventory_recheck'))}</p>`; } }
     };
   }
-  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].replace(',', '.'); } try { await api('POST', '/api/stock', b); viewStock(); } catch (err) { toast(err.message, true); } };
+  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } try { await api('POST', '/api/stock', b); viewStock(); } catch (err) { toast(err.message, true); } };
 }
 
 // Zählliste für die Inventur (Ausdruck zum Ausfüllen): je Lager nach Lagerort/Artikel, standardmäßig ohne Buchbestand (Blindzählung)
@@ -2174,7 +2203,7 @@ async function viewStockItem(id) {
   // Entnahme: Wert = hinterlegter Artikelpreis (Server übernimmt ihn) – Preisfeld dann aus, Hinweis an
   const mfType = $('#mf [name=type]'); const mfSync = () => { const fixed = mfType.value === 'entnahme' && !!$('#mfpricehint'); $('#mfprice').hidden = fixed; $('#mf [name=unit_price_net]').disabled = fixed; if ($('#mfpricehint')) $('#mfpricehint').hidden = !fixed; };
   mfType.onchange = mfSync; mfSync();
-  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].replace(',', '.'); } b.request_key = e.target.dataset.rk || (e.target.dataset.rk = crypto.randomUUID()); try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = e.target.dataset.rk || (e.target.dataset.rk = crypto.randomUUID()); try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   // Artikel-Stammdaten: alle Felder senden (leer = entfernen); Deaktivieren mit Restbestand nur nach Rückfrage
   $('#itedf').onsubmit = async (e) => { e.preventDefault(); const g = (k) => e.target.elements.namedItem(k);
     const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
@@ -2186,10 +2215,10 @@ async function viewStockItem(id) {
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
     try { const r = await api('PATCH', `/api/stock/${id}`, b); toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).replace(',', '.'); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
+  if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).replace(',', '.'); if (!b.note) delete b.note; b.request_key = e.target.dataset.rk || (e.target.dataset.rk = crypto.randomUUID());
+  if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = e.target.dataset.rk || (e.target.dataset.rk = crypto.randomUUID());
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b); toast(t('transfer_done').replace('{q}', fmtNum(String(b.qty).replace(',', '.'))).replace('{u}', it.unit).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }
 
@@ -2223,7 +2252,7 @@ async function viewFines() {
   const fs = $('#fsite'); if (fs) fs.onchange = () => { S.fineSite = fs.value; viewFines(); };
   const fp = $('#fprt'); if (fp) fp.onclick = () => window.print();
   const nf = $('#nf');
-  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.replace(',', '.'); try { const r = await api('POST', '/api/fines', b); if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
+  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); try { const r = await api('POST', '/api/fines', b); if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
 }
 
 const FINE_EV = { create: 'new_fine', confirm_driver: 'confirm_driver', inform_driver: 'inform_driver', set_status: 'set_status', driver_ack: 'ack_fine', update: 'fine_updated', upload: 'upload' };
@@ -3458,7 +3487,7 @@ function viewMore(open) {
   const tfa = $('#tfa');
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
-  $('#lo').onclick = async () => { try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
+  $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
 }
 

@@ -11770,6 +11770,17 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   const p1 = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv1, { 'content-type': 'text/csv' }); eq(p1.status, 200); eq(p1.data.rows[0].monthly_rate_net ?? p1.data.rows[0].data?.monthly_rate_net, 1234.5, 'Leasingrate ' + JSON.stringify(p1.data.rows[0]));
   const csv2 = 'Kennzeichen;Vertragsart;Vertragspartner;Laufleistung p.a.;Nachweis\nSZ-YC 5513;Leasing;Leasing AG;20000;Vertrag 2';
   eq((await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv2, { 'content-type': 'text/csv' })).status, 400, 'Jahreswert');
+  // 10. Andere Person im anderen Tab angemeldet: Änderung mit fremder x-cfp-user → 409 user_mismatch, nichts angelegt; Lesen/Abmelden unberührt
+  const before = db.prepare('SELECT COUNT(*) n FROM cases').get().n;
+  const mm = await U.driver.req('POST', '/api/cases', { vehicle_id: V1, description: 'Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }, { 'x-cfp-user': U.ws.id });
+  eq(mm.status, 409); eq(mm.data.error, 'user_mismatch'); eq(db.prepare('SELECT COUNT(*) n FROM cases').get().n, before, 'nichts angelegt');
+  eq((await U.driver.req('POST', '/api/cases', { vehicle_id: V1, description: 'Spiegel', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }, { 'x-cfp-user': U.driver.id })).status, 201, 'eigene Person');
+  eq((await U.driver.req('GET', '/api/cases', undefined, { 'x-cfp-user': U.ws.id })).status, 200, 'Lesen unberührt');
+  const { STRINGS: S2 } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['err_user_mismatch', 'err_request_key_reused', 'outbox_orphan', 'logout_outbox_confirm']) ok(S2[l][k], `${l} ${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: S\.me\.id, user_name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
+  ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
+  const { num } = await import('../src/util.js'); eq(num('4,750', { decimalComma: true }), 4.75); eq(num('1.234,50'), 1234.5);
   // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
   const { agentBasics } = await import('../src/agent.js');
   const kc = await newCase({ priority: 'kritisch', description: 'Bremse' });

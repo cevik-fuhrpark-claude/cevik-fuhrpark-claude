@@ -140,6 +140,12 @@ async function handleApi(request, env, ctx, url) {
   // ---- Ab hier: angemeldet ----
   const user = await auth.getSessionUser(env, request);
   if (!user) throw new HttpError(401, 'unauthenticated', 'Bitte anmelden.');
+  // Gerät mit mehreren Tabs: die App nennt bei Änderungen die Person, für die das Formular/der Postausgang gilt. Ist inzwischen eine andere
+  // Person angemeldet, nichts unter deren Namen anlegen (18.10.2026: Meldungen von Anna gingen unter Bernds Namen raus)
+  const claimedUser = request.headers.get('x-cfp-user');
+  if (claimedUser && m !== 'GET' && m !== 'HEAD' && path !== '/api/logout' && claimedUser !== user.id) {
+    throw new HttpError(409, 'user_mismatch', 'Auf diesem Gerät ist inzwischen eine andere Person angemeldet – nichts gespeichert. Bitte Seite neu laden.');
+  }
   const envName = auth.effectiveEnv(user, request);
   usageEnv.set(request, envName);
   await guardSharedWrite(env, user, path, m);

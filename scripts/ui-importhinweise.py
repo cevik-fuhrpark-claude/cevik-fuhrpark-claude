@@ -64,6 +64,7 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#ctimpr').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vertr_{lang}_{w}.png')
         q.evaluate(JS,['POST','/api/login',{'username':'i.inhaber','password':PW}])
         q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        q.reload()  # Personenwechsel per fetch: App neu laden (seit 18.10.2026 lehnt der Server Änderungen der vorherigen Person ab – user_mismatch)
         q.goto(B+'/#/settings'); q.wait_for_selector('#tcsv',state='attached')
         q.set_input_files('#tcsv',{'name':'r.csv','mimeType':'text/csv','buffer':TCSV}); q.wait_for_selector('#tcsvr details')
         check(TEXP[lang] in q.inner_text('#tcsvr'),'Reifen: '+TEXP[lang])
