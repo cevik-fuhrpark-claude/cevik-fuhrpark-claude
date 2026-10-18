@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents, quoteCell } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -284,7 +284,7 @@ export function stockCsv(items, csvCell) {
   const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Unter Mindestbestand', 'Preis netto', 'Bestandswert netto', 'Letzte Entnahme', 'Zuletzt gezählt (Inventur)', 'Zählmenge'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
-  for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
+  for (const i of items) lines.push([csvCell(i.site), quoteCell(csvCell(i.part_number)), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
     n(i.unit_price_net), i.unit_price_net === null ? '' : n(roundCents(i.on_hand * i.unit_price_net)), i.last_out_date || '', i.last_counted_date || '', n(i.last_counted_qty)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -294,7 +294,7 @@ export function reorderCsv(items, csvCell) {
   const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto', 'Letzter Lieferant', 'Letzter Zugang', 'Bestellt Menge', 'Bestellt am', 'Liefertermin laut Lieferant', 'Noch zu bestellen'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
-  for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), n(i.shortfall), n(i.used_90d),
+  for (const i of items) lines.push([csvCell(i.site), quoteCell(csvCell(i.part_number)), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), n(i.shortfall), n(i.used_90d),
     n(i.unit_price_net), n(i.shortfall_value_net), csvCell(i.last_supplier), i.last_receipt_date || '', n(i.ordered_qty), i.ordered_on || '', i.ordered_eta || '', n(i.open_after_order)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -462,7 +462,7 @@ export function stockAsOfCsv(rep, csvCell) {
   const head = ['Stichtag', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand zum Stichtag', 'Letzter Einkaufspreis netto bis Stichtag', 'Wert netto (letzter Einkaufspreis)', 'Artikelpreis netto (heute)', 'Wert netto (Artikelpreis heute)', 'Artikel aktiv'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
-  for (const i of rep.items) lines.push([rep.date, csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.qty), n(i.last_purchase_price), n(i.value_purchase_net), n(i.price_today), n(i.value_today_net), i.active ? 'ja' : 'nein'].join(';'));
+  for (const i of rep.items) lines.push([rep.date, csvCell(i.site), quoteCell(csvCell(i.part_number)), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.qty), n(i.last_purchase_price), n(i.value_purchase_net), n(i.price_today), n(i.value_today_net), i.active ? 'ja' : 'nein'].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
@@ -472,7 +472,7 @@ export function inventoryDiffCsv(rep, csvCell) {
   const head = ['Datum', 'Uhrzeit', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Buchbestand', 'Gezählt', 'Differenz', 'Artikelpreis netto (heute)', 'Wert Differenz netto', 'Beleg', 'Bemerkung'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
-  for (const r of rep.movements) lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), csvCell(r.part_number), csvCell(r.name), csvCell(r.unit), n(r.book), n(r.counted), n(r.qty), n(r.item_price_net), n(r.diff_value_net), csvCell(r.document_ref), csvCell(r.note)].join(';'));
+  for (const r of rep.movements) lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), quoteCell(csvCell(r.part_number)), csvCell(r.name), csvCell(r.unit), n(r.book), n(r.counted), n(r.qty), n(r.item_price_net), n(r.diff_value_net), quoteCell(csvCell(r.document_ref)), csvCell(r.note)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 export function journalCsv(rep, csvCell) {
@@ -480,8 +480,8 @@ export function journalCsv(rep, csvCell) {
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const r of rep.movements) {
-    lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), csvCell(r.part_number), csvCell(r.name), r.transfer_id ? `Umlagerung ${r.qty < 0 ? 'nach' : 'von'} ${r.transfer_site}` : TYPE_DE[r.type], n(r.qty), csvCell(r.unit),
-      n(r.unit_price_net), n(r.value_net), csvCell(r.case_no), csvCell(r.plate), csvCell(r.supplier), csvCell(r.document_ref), csvCell(r.note)].join(';'));
+    lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), quoteCell(csvCell(r.part_number)), csvCell(r.name), r.transfer_id ? `Umlagerung ${r.qty < 0 ? 'nach' : 'von'} ${r.transfer_site}` : TYPE_DE[r.type], n(r.qty), csvCell(r.unit),
+      n(r.unit_price_net), n(r.value_net), csvCell(r.case_no), csvCell(r.plate), csvCell(r.supplier), quoteCell(csvCell(r.document_ref)), csvCell(r.note)].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

@@ -1,7 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate } from './util.js';
+import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt } from './vehicles.js';
@@ -321,6 +321,9 @@ export const csvCell = (x) => {
   if (/^[=+\-@\t\r]/.test(s) && !/^-\d+(?:[.,]\d+)?$/.test(s)) s = "'" + s;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
+// Kennungen/Freitext, die nie als Datum umgeschrieben werden dürfen (Schadennummer, Aktenzeichen, Vertrags-/Teilenummer, Beleg):
+// in Anführungszeichen – `csvDatesDe` wandelt nur unquotierte JJJJ-MM-TT um (Schadennummer „2026-10-01“ wurde „01.10.2026“, 18.10.2026)
+export const csvText = (x) => quoteCell(csvCell(x));
 const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', erledigt: 'erledigt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
 
 export function maintenanceCsv(ov) {

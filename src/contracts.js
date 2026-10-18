@@ -6,7 +6,7 @@ import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate } from './util.js';
 import { audit } from './auth.js';
-import { latestKmByVehicle, csvCell, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
+import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
@@ -258,7 +258,7 @@ export function contractsCsv(ov) {
     const s = c.status;
     lines.push([c.plate, KIND_DE[c.kind], c.partner, c.contract_no, c.start_date, c.end_date, c.notice_months, s.notice ? s.notice.by : '',
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
-      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein'].map(csvCell).join(';'));
+      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein'].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

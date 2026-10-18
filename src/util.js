@@ -333,6 +333,9 @@ export async function rateLimit(env, action, userId) {
 // [CLAUDE] CSV-Exporte: reine Kalendertage (JJJJ-MM-TT) als TT.MM.JJJJ wie in der App und in den übrigen Spalten
 // (Zeitpunkte kommen bereits als „TT.MM.JJJJ HH:MM“). Nur ganze, nicht in Anführungszeichen stehende Felder;
 // Monatswerte (JJJJ-MM), Kalenderwochen und Freitext bleiben unverändert. Ungültige Tage (2026-02-30) bleiben wie sie sind.
+// Kennungen (Schadennummer, Aktenzeichen, Vertrags-/Teilenummer, Beleg), die wie JJJJ-MM-TT aussehen, in Anführungszeichen setzen –
+// `csvDatesDe` schreibt nur unquotierte Daten um (Schadennummer „2026-10-01“ wurde „01.10.2026“, 18.10.2026); sonst unverändert
+export const quoteCell = (cell) => (/^\d{4}-\d{2}-\d{2}$/.test(cell) ? `"${cell}"` : cell);
 export function csvDatesDe(text) {
   const s = String(text); let out = ''; let field = ''; let q = false; let quoted = false;
   const flush = () => {

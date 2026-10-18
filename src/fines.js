@@ -1,7 +1,7 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, PLATE_KEY_SQL } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, PLATE_KEY_SQL, quoteCell } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -359,7 +359,7 @@ const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', 
 export function finesCsv(rows, csvCell, withDriver) {
   const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
   const lines = [head.join(';')];
-  for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), csvCell(f.reference), OFFENSE_DE[f.offense_type] || csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
+  for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), quoteCell(csvCell(f.reference)), OFFENSE_DE[f.offense_type] || csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
     csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : String(f.amount_eur).replace('.', ','), f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
     ...(withDriver ? [csvCell(f.driver_name || f.driver_name_note)] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';

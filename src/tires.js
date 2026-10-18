@@ -164,17 +164,17 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const allowed = positionsForKind(v.kind);
   const wrong = positions.filter((p) => !allowed.includes(p));
   if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).');
-  const tread0 = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true });
+  const tread0 = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true, decimalComma: true });
   // auf 3 Nachkommastellen wie die Anzeige – sonst „1,6 mm liegt unter dem Minimum von 1,6 mm“ bei 1,5996 (18.10.2026)
   const tread = tread0 === null ? null : Math.round(tread0 * 1000) / 1000;
-  const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', nullable: true });
+  const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', nullable: true, decimalComma: true });
   if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
-  const size = str(body.size, { max: 40 });
+  const size = str(body.size, { max: 40, field: 'Reifengröße' });
   if (type === 'wechsel' && !size) throw bad('validation', 'Beim Reifenwechsel ist die Reifengröße Pflicht.');
-  const dot = str(body.dot, { max: 20 });
+  const dot = str(body.dot, { max: 20, field: 'DOT' });
   if (dot && !dotDate(dot)) throw bad('validation', 'DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).');
   if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.');
-  const caseId = body.case_id ? str(body.case_id, { max: 40 }) : null;
+  const caseId = body.case_id ? str(body.case_id, { max: 40, field: 'Vorgang' }) : null;
   if (caseId) {
     const c = await env.DB.prepare('SELECT id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
@@ -182,7 +182,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   const now = nowIso();
-  const brand = str(body.brand, { max: 60 }); const note = str(body.note, { max: 1000 });
+  const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   const ids = positions.map(() => uuid());
   await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter)));

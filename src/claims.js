@@ -4,7 +4,7 @@
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents } from './util.js';
 import { audit } from './auth.js';
-import { csvCell } from './maintenance.js';
+import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
 
 export const CLAIM_STATUS = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
@@ -67,6 +67,8 @@ export async function saveClaim(env, user, envName, caseId, body) {
   // Schreiben/Abrechnung als Datei desselben Vorgangs verknüpfen (Feld weglassen = unverändert, leer/null = Verknüpfung aufheben)
   if (body.file_id === undefined) f.file_id = ex ? ex.file_id : null;
   else if (body.file_id === null || body.file_id === '') f.file_id = null;
+  // unverändert mitgesendet: auch gültig, wenn die Datei an einer Dublette hängt (Fall wurde umgehängt, 18.10.2026)
+  else if (ex && ex.file_id && body.file_id === ex.file_id) f.file_id = ex.file_id;
   else {
     const file = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(body.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
     if (!file) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
@@ -97,7 +99,7 @@ const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_
 // Für die Vorgangsansicht (nur Leitung): Versicherungsfall + Versicherungsverträge des Fahrzeugs zur Auswahl (eine Abfrage)
 export async function claimForCase(env, caseId, vehicleId) {
   const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
-      FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.case_id=ic.case_id WHERE ic.case_id=?1
+      FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.environment=ic.environment WHERE ic.case_id=?1
     UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
       FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'`).bind(caseId, vehicleId).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
@@ -159,7 +161,7 @@ export function claimsCsv(ov) {
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
-    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein'].map(csvCell).join(';'));
+    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein'].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

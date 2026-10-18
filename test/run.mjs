@@ -12784,6 +12784,44 @@ await test('Fehlersuche 18.10. (23): Anmeldung – 2FA-Einschalten gegen laufend
   }
 });
 
+await test('Fehlersuche 18.10. (24): Versicherungsfall behält Schreiben nach Umhängen von der Dublette, Kennungen im CSV nicht als Datum umgeschrieben, Reifen-Felder mit Namen/Dezimalkomma, Leerlauf-Abmeldung nicht zu früh', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 864e5).toISOString().slice(0, 10);
+  // (1) Schreiben an der Dublette B, Fall wird auf A umgehängt → Name sichtbar, Speichern ohne Änderung behält die Verknüpfung
+  const A = await newCase(); const B = await newCase({ description: 'Unfall Spiegel' });
+  const up = await U.fleet.req('POST', `/api/cases/${B}/files`, new TextEncoder().encode('%PDF-1.4\n%schreiben\n%%EOF'), { 'x-filename': 'schreiben.pdf', 'content-type': 'application/pdf' });
+  eq(up.status, 201, JSON.stringify(up.data)); const fid = up.data.id;
+  eq((await U.fleet.put(`/api/cases/${B}/claim`, { insurer: 'Muster AG', claim_no: '2026-10-01', reported_on: day(-2), evidence: 'Schreiben', file_id: fid })).status, 200);
+  eq((await cmd(U.fleet, B, 'reject', { duplicate_of: A }, 'Dublette')).status, 200);
+  const cl = (await U.fleet.get(`/api/cases/${A}`)).data.claim;
+  eq(cl.file_id, fid); eq(cl.file_name, 'schreiben.pdf', 'Dateiname am Original sichtbar');
+  const sv = await U.fleet.put(`/api/cases/${A}/claim`, { expected_updated_at: cl.updated_at, insurer: cl.insurer, claim_no: cl.claim_no, reported_on: cl.reported_on, status: 'in_pruefung', evidence: cl.evidence, file_id: fid });
+  eq(sv.status, 200, JSON.stringify(sv.data)); eq(db.prepare('SELECT file_id FROM insurance_claims WHERE case_id=?').get(A).file_id, fid, 'Verknüpfung bleibt');
+  // (2) Schadennummer „2026-10-01“ bleibt im CSV (Versicherungsfälle und Vorgänge), echte Datumsspalten weiter TT.MM.JJJJ
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
+  const row = csv.split('\r\n').find((l) => l.includes('Muster AG')); ok(row.includes(';"2026-10-01";'), row);
+  ok(row.includes(';' + day(-2).split('-').reverse().join('.') + ';'), 'Gemeldet am TT.MM.JJJJ');
+  // (3) Reifen: Feldname bei zu langer Eingabe, Dezimalkomma mit 3 Stellen
+  const tp = `/api/vehicles/${V1}/tires/events`;
+  const pos = (await U.ws.get(`/api/vehicles/${V1}/tires`)).data.allowed_positions[0];
+  const r1 = await U.ws.post(tp, { event_type: 'messung', position: pos, tread_mm: '8', brand: 'x'.repeat(65) });
+  eq(r1.status, 400); ok(/^Marke ist zu lang/.test(r1.data.message), r1.data.message);
+  const r2 = await U.ws.post(tp, { event_type: 'messung', position: pos, tread_mm: '8', note: 'x'.repeat(1001) }); ok(/^Bemerkung ist zu lang/.test(r2.data.message), r2.data.message);
+  const r3 = await U.ws.post(tp, { event_type: 'messung', position: pos, tread_mm: '12,500', pressure_bar: '8,500' }); eq(r3.status, 201, JSON.stringify(r3.data));
+  eq(db.prepare('SELECT tread_mm, pressure_bar FROM tire_events ORDER BY created_at DESC, rowid DESC LIMIT 1').get().tread_mm, 12.5);
+  const { readFileSync } = await import('node:fs'); const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(/Marke: 'Brand'/.test(i18n) && /Marke: 'Марка'/.test(i18n), 'Feldname übersetzt');
+  // (4) Leerlauf-Abmeldung (6 Min.): 251 s nach der letzten Nutzung noch angemeldet, auch wenn last_seen bis zu 1 Min. älter ist
+  eq((await U.own.put('/api/settings', { idle_logout_other_min: 6 })).status, 200);
+  const ago = (sec) => new Date(Date.now() - sec * 1000).toISOString();
+  db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(ago(251 + 59), U.viewer.id);
+  eq((await U.viewer.get('/api/me')).status, 200, 'nicht vor Ablauf abgemeldet');
+  db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(ago(6 * 60 + 61), U.viewer.id);
+  eq((await U.viewer.get('/api/me')).status, 401, 'nach Leerlauf + Schreibabstand abgemeldet');
+  db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(ago(70), U.fleet.id);
+  eq((await U.fleet.get('/api/me')).status, 200); ok(Date.now() - Date.parse(db.prepare('SELECT last_seen FROM sessions WHERE user_id=?').get(U.fleet.id).last_seen) < 5000, 'last_seen nach > 60 s geschrieben');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -25,13 +25,16 @@ export async function getSessionUser(env, request) {
   if (!row) return null;
   const idleMs = Number(row.idle_min) > 0 ? Math.max(Number(row.idle_min), 5) * 60000 : 0;
   const idle = Date.now() - Date.parse(row.s_seen);
-  if (row.s_exp < nowIso() || !row.active || (idleMs && idle > idleMs)) {
+  // last_seen wird nur alle `writeEvery` geschrieben, ist also bis dahin veraltet: abmelden erst nach Leerlauf + writeEvery – sonst endete
+  // die Sitzung bis zu ⅓ früher als eingestellt, ohne Vorwarnung der App (18.10.2026: 6 Min. eingestellt, nach 251 s abgemeldet)
+  const writeEvery = idleMs ? Math.min(60 * 1000, idleMs / 3) : 10 * 60 * 1000;
+  if (row.s_exp < nowIso() || !row.active || (idleMs && idle > idleMs + writeEvery)) {
     await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(h).run();
     return null;
   }
   // last_seen höchstens alle 10 Minuten schreiben (bei Leerlauf-Abmeldung häufiger, damit aktive Nutzung zählt)
   // Hintergrund-Abfragen der App (x-cfp-bg: Zahl am Glockensymbol) verlängern die Sitzung nicht – sonst bliebe ein offenes, unbedientes Tablet angemeldet
-  if (idle > Math.min(10 * 60 * 1000, idleMs ? idleMs / 3 : Infinity) && request.headers.get('x-cfp-bg') !== '1') {
+  if (idle > writeEvery && request.headers.get('x-cfp-bg') !== '1') {
     await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(nowIso(), h).run();
   }
   // Für die App: gleiche Leerlauf-Grenze, damit sie geteilte Bildschirme selbst leert (ohne auf den nächsten Aufruf zu warten)
