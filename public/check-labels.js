@@ -85,3 +85,30 @@ export function checkKeysFor(word) {
   }
   return out;
 }
+
+// [CLAUDE] Automatisch erzeugte Lager-Buchungstexte (src/stock.js) in der Oberflächensprache (18.10.2026). Gespeichert bleibt der deutsche
+// Text (CSV, Suche, Protokoll); freie Vermerke nach „ – “ bleiben unverändert. Unbekannte Texte unverändert (nichts erfinden).
+// Muster müssen zu src/stock.js passen (Wächter-Test).
+export const STOCK_NOTE_RE = {
+  initial: /^Anfangsbestand$/,
+  transfer: /^Umlagerung (nach|von) ([^\s–]+)( – [\s\S]*)?$/,
+  caseOut: /^Vorgang ([A-Z]{1,3}-\d{4}-\d{1,6})$/,
+  inventory: /^Inventur (\d{4}-\d{2}-\d{2}): gezählt (-?\d+(?:\.\d+)?) (.{1,20}?), Buchbestand (-?\d+(?:\.\d+)?) \3( – [\s\S]*)?$/,
+  inventoryRef: /^Inventur (\d{4}-\d{2}-\d{2})$/,
+};
+const STOCK_T = {
+  de: { initial: 'Anfangsbestand', to: 'Umlagerung nach {s}', from: 'Umlagerung von {s}', caseOut: 'Vorgang {n}', inv: 'Inventur {d}: gezählt {c} {u}, Buchbestand {b} {u}', invRef: 'Inventur {d}' },
+  uk: { initial: 'Початковий залишок', to: 'Переміщення до {s}', from: 'Переміщення з {s}', caseOut: 'Заявка {n}', inv: 'Інвентаризація {d}: пораховано {c} {u}, обліковий залишок {b} {u}', invRef: 'Інвентаризація {d}' },
+  en: { initial: 'Opening stock', to: 'Transfer to {s}', from: 'Transfer from {s}', caseOut: 'Case {n}', inv: 'Stocktake {d}: counted {c} {u}, book stock {b} {u}', invRef: 'Stocktake {d}' },
+};
+export function stockNoteText(s, lang = 'de', { site = (x) => x, num = (x) => x, date = (x) => x } = {}) {
+  if (typeof s !== 'string' || !s) return s;
+  const T = STOCK_T[lang] || STOCK_T.de; const R = STOCK_NOTE_RE; let m;
+  const fill = (tpl, o) => tpl.replace(/\{(\w)\}/g, (_, k) => o[k]);
+  if (R.initial.test(s)) return T.initial;
+  if ((m = s.match(R.transfer))) return fill(m[1] === 'nach' ? T.to : T.from, { s: site(m[2]) }) + (m[3] || '');
+  if ((m = s.match(R.caseOut))) return fill(T.caseOut, { n: m[1] });
+  if ((m = s.match(R.inventory))) return fill(T.inv, { d: date(m[1]), c: num(Number(m[2])), u: m[3], b: num(Number(m[4])) }) + (m[5] || '');
+  if ((m = s.match(R.inventoryRef))) return fill(T.invRef, { d: date(m[1]) });
+  return s;
+}

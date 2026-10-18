@@ -12053,6 +12053,27 @@ await test('Fehlersuche 18.10. (11): Stichtag mit Einkaufspreis der Umlagerung, 
   ok(app.includes('a + rc2(i.on_hand * i.unit_price_net)'), 'Lagerwert je Zeile gerundet');
   ok(app.includes("cfp_emerg_${S.me.id}_${S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment}"), 'Offline-Rufnummern je Ansicht');
 });
+await test('Lager-Buchungstexte in der Oberflächensprache (Anfangsbestand, Umlagerung, Vorgang, Inventur), Muster passend zu src/stock.js', async () => {
+  const { stockNoteText, STOCK_NOTE_RE } = await import('../public/check-labels.js');
+  const o = { site: (c) => ({ DORTMUND: 'Werkstatt Dortmund' }[c] || c), num: (n) => n.toLocaleString('de-DE'), date: (d) => d.split('-').reverse().join('.') };
+  eq(stockNoteText('Anfangsbestand', 'en', o), 'Opening stock'); eq(stockNoteText('Anfangsbestand', 'uk', o), 'Початковий залишок');
+  eq(stockNoteText('Umlagerung nach DORTMUND – für Lkw 5513', 'en', o), 'Transfer to Werkstatt Dortmund – für Lkw 5513', 'freier Vermerk unverändert');
+  eq(stockNoteText('Umlagerung von MUENCHEN', 'uk', o), 'Переміщення з MUENCHEN');
+  eq(stockNoteText('Vorgang TC-2026-0012', 'en', o), 'Case TC-2026-0012');
+  eq(stockNoteText('Inventur 2026-10-18: gezählt 1234.5 l, Buchbestand 1240 l – Jahresinventur', 'de', o), 'Inventur 18.10.2026: gezählt 1.234,5 l, Buchbestand 1.240 l – Jahresinventur');
+  eq(stockNoteText('Inventur 2026-10-18', 'en', o), 'Stocktake 18.10.2026');
+  eq(stockNoteText('Lieferung Bosch', 'en', o), 'Lieferung Bosch', 'freier Text unverändert'); eq(stockNoteText(null, 'en', o), null);
+  // echte Buchungen erzeugen genau diese Texte
+  const { e, U } = await freshWorld();
+  const it = (await U.ws.post('/api/stock', { name: 'Filter', unit_price_net: 5, initial_qty: 4, unit: 'Stk' })).data;
+  eq((await U.ws.post(`/api/stock/${it.id}/transfer`, { to_site: 'MUENCHEN', qty: 1, note: 'eilig' })).status, 201);
+  eq((await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 2.5 }] })).status, 200);
+  const notes = e.DB.db.prepare('SELECT note, document_ref FROM stock_movements').all();
+  for (const n of notes) { ok(n.note === null || stockNoteText(n.note, 'en', o) !== n.note, 'Muster erkennt: ' + n.note); if (/^Inventur/.test(n.document_ref || '')) ok(STOCK_NOTE_RE.inventoryRef.test(n.document_ref), n.document_ref); }
+  eq(stockNoteText('Vorgang T-2026-0001', 'en', o), 'Case T-2026-0001', 'Vorgangsnummer wie src/cases.js (T-/S-JJJJ-NNNN)');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('stNote(m.note)') && app.includes("esc(stNote(m.note || ''))") && app.includes("esc(stNote(m.document_ref || ''))"), 'Journal, Artikelverlauf, Inventurdifferenzen übersetzt');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
