@@ -1,14 +1,55 @@
 // [CLAUDE] Service Worker: Push-Empfang mit Empfangsquittung, Klick öffnet den Vorgang, App-Hülle offline
-const CACHE = 'cfp-shell-v12';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n.js', '/check-labels.js', '/finding-labels.js', '/finding-messages.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/icons/icon.svg'];
-self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
-self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
+// App-Hülle je Fassung vollständig und atomar im Cache (18.10.2026): vorher wurde jede Datei einzeln ersetzt – ein Funkloch mitten im Laden
+// mischte neue und alte Module (Offline-Start hing bei „Lädt…“), und eine einzeln gespeicherte neue version.json verdeckte, dass die
+// laufenden Dateien alt waren (keine Leiste „Aktualisierung verfügbar“). Jetzt: Cache `cfp-shell-<Fassung>` mit allen Dateien inkl.
+// version.json, erst nach vollständigem Laden aktiv; ohne Verbindung wird nur aus dem jüngsten vollständigen Cache bedient.
+const PREFIX = 'cfp-shell-';
+const META = 'cfp-meta';
+const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n.js', '/check-labels.js', '/finding-labels.js', '/finding-messages.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/icons/icon.svg', '/version.json'];
+async function currentCache() {
+  const r = await (await caches.open(META)).match('/__current');
+  return r ? r.text() : null;
+}
+let refreshing = null;
+async function refreshShell(version) {
+  if (!version) return;
+  const name = PREFIX + version;
+  if ((await currentCache()) === name) return;
+  if (refreshing === name) return;
+  refreshing = name;
+  try {
+    const c = await caches.open(name);
+    await c.addAll(SHELL.map((p) => new Request(p, { cache: 'reload' }))); // alles oder nichts
+    await (await caches.open(META)).put('/__current', new Response(name));
+    const ks = await caches.keys();
+    await Promise.all(ks.filter((k) => k !== name && k !== META).map((k) => caches.delete(k)));
+  } catch { await caches.delete(name).catch(() => {}); } finally { refreshing = null; }
+}
+async function fetchVersion() {
+  const r = await fetch('/version.json', { cache: 'no-store' });
+  return r.ok ? ((await r.clone().json()).version || null) : null;
+}
+self.addEventListener('install', (e) => { e.waitUntil(fetchVersion().then(refreshShell).catch(() => {}).then(() => self.skipWaiting())); });
+self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });
+async function fromCache(req) {
+  const name = await currentCache();
+  if (!name) return Response.error();
+  const c = await caches.open(name);
+  return (await c.match(req, { ignoreSearch: true })) || (req.mode === 'navigate' ? c.match('/') : Response.error());
+}
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.startsWith('/api/')) return;
-  // Netz zuerst, damit Aktualisierungen sofort ankommen; Cache nur ohne Verbindung
-  // nur einwandfreie Antworten speichern (18.10.2026: ein 503 beim Deployment überschrieb die App-Hülle, Offline-Start hing bei „Lädt…“)
-  e.respondWith(fetch(e.request).then((r) => { if (r.ok && r.type === 'basic') { const c = r.clone(); caches.open(CACHE).then((ca) => ca.put(e.request, c)); } return r; }).catch(() => caches.match(e.request).then((r) => r || caches.match('/'))));
+  // Netz zuerst, damit Aktualisierungen sofort ankommen; ohne Verbindung (oder Fehlerantwort) die Hülle der zuletzt vollständig geladenen Fassung.
+  // Neue Fassung (version.json online) → im Hintergrund vollständig laden; nur einwandfreie Antworten zählen.
+  if (u.pathname === '/version.json') {
+    e.respondWith(fetch(e.request).then((r) => {
+      if (r.ok) e.waitUntil(r.clone().json().then((j) => refreshShell(j && j.version)).catch(() => {}));
+      return r;
+    }).catch(() => fromCache(e.request)));
+    return;
+  }
+  e.respondWith(fetch(e.request).then((r) => (r.ok || r.type !== 'basic' ? r : fromCache(e.request).then((x) => (x.type === 'error' ? r : x)))).catch(() => fromCache(e.request)));
 });
 self.addEventListener('push', (e) => {
   let d = {};

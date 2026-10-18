@@ -2,7 +2,7 @@
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf } from './util.js';
 import { audit } from './auth.js';
 import { csvCell } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -109,7 +109,7 @@ export async function claimOverview(env, user, envName, query = {}) {
   const filter = ['offen', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','claim_followup_days')`).all()).results.map((r) => [r.key, r.value]));
   const rv = sets.get('workshop_hourly_rate_net');
-  const rate = rv !== undefined && rv !== null && rv !== '' && Number.isFinite(Number(rv)) ? Number(rv) : null;
+  const rate = rateOf(rv);
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
   const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate, v.site AS vehicle_site,

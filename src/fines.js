@@ -74,10 +74,11 @@ export async function driverCandidates(env, envName, f) {
   }
   const day = berlinDate(f.offense_at);
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at FROM inspections i JOIN users u ON u.id=i.performed_by
-    WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4`)
+    WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND u.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4`)
     .bind(f.vehicle_id, envName, new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(), new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString()).all()).results;
   for (const c of checks) {
     if (berlinDate(c.created_at) !== day) continue;
+    if (out.some((o) => o.user_id === c.user_id && o.basis === 'manuell')) continue; // je Person einmal (mehrere Kontrollen am Tattag)
     out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${berlinDateTime(c.created_at).slice(-5)} Uhr`, check_at: c.created_at });
   }
   return out;
@@ -187,8 +188,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=? AND environment=? AND ((active=1 AND role='driver')
             OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.vehicle_id IN (${fineVehiclesSql('?3')}) AND dv.valid_from <= ?4 AND (dv.valid_to IS NULL OR dv.valid_to > ?4)))`)
             .bind(did, envName, f.vehicle_id, f.offense_at).first();
-          if (!d) throw bad('validation', 'Fahrer nicht gefunden.');
-          set.driver_id = d.id; set.driver_name_note = null;
+          // … ebenso jeder angebotene Kandidat (18.10.2026: Fahrer mit Abfahrtskontrolle am Tattag, inzwischen deaktiviert → 400)
+          if (!d && !(await driverCandidates(env, envName, f)).some((c) => c.user_id === did)) throw bad('validation', 'Fahrer nicht gefunden.');
+          set.driver_id = did; set.driver_name_note = null;
         } else {
           set.driver_name_note = str(p.driver_name_note, { required: true, max: 120, field: 'Fahrer' });
           set.driver_id = null;

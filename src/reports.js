@@ -2,12 +2,12 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam } from './util.js';
+import { bad, forbidden, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam, rateOf, roundCents } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const r2 = (x) => Math.round(x * 100) / 100;
+const r2 = roundCents; // kaufmännisch, gegen Gleitkommafehler abgesichert (18.10.2026)
 
 // Standort-Schlüssel: ohne Leerzeichen am Rand, Groß-/Kleinschreibung egal; leer = 'ohne'
 export const siteKey = (s) => (s && String(s).trim() ? String(s).trim().toLocaleLowerCase('de') : 'ohne');
@@ -47,7 +47,7 @@ export async function costReport(env, user, envName, query = {}) {
   const { from, to } = monthRange(query);
   const vehicleFilter = query.vehicle_id ? String(query.vehicle_id).slice(0, 40) : null;
   const rateRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
-  const rate = rateRow && rateRow.value !== '' && Number.isFinite(Number(rateRow.value)) ? Number(rateRow.value) : null;
+  const rate = rateOf(rateRow && rateRow.value);
   // Zeitfenster großzügig in UTC laden, exakte Monatsgrenze danach in Berliner Zeit prüfen
   const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
@@ -74,31 +74,32 @@ export async function costReport(env, user, envName, query = {}) {
   const monthOf = (d) => (d.length === 10 ? d.slice(0, 7) : berlinDate(d).slice(0, 7));
   for (const c of caseMonths) { const m = monthOf(c.d); if (inRange(m)) row(c.vehicle_id, m).cases_opened++; }
   // Arbeitszeit zählt je Vorgang und Monat als EINE Position (wie computeCosts in Akte/Vorgang) – vorher je Zeiteintrag (17.10.2026)
-  const workItem = new Set();
+  const workItem = new Set(); const workHours = new Map(); // je Vorgang und Monat: Stunden × Satz, auf Cent gerundet (wie computeCosts)
   for (const w of work) {
     if (covered.has(w.case_id)) continue;
     const m = monthOf(w.d); if (!inRange(m)) continue;
     const r = row(w.vehicle_id, m); r.hours += w.hours;
-    if (rate !== null) r.work_net += w.hours * rate;
+    if (rate !== null) { const wk = `${w.case_id}|${m}`; const x = workHours.get(wk) || { r, h: 0 }; x.h += w.hours; workHours.set(wk, x); }
     const k = `${w.case_id}|${m}`;
     if (!(w.hours > 0) || workItem.has(k)) continue;
     workItem.add(k);
     if (rate === null) r.unvalued_items++; else r.valued_items++;
   }
+  for (const { r, h } of workHours.values()) r.work_net += r2(h * rate);
   for (const p of parts) {
     if (covered.has(p.case_id)) continue;
     const m = monthOf(p.d); if (!inRange(m)) continue;
     const r = row(p.vehicle_id, m);
     if (p.unit_price_net === null || p.valuation === 'unvalued') r.unvalued_items++;
-    else if (p.valuation === 'estimate') r.parts_estimate_net += p.quantity * p.unit_price_net;
-    else { r.parts_actual_net += p.quantity * p.unit_price_net; r.valued_items++; }
+    else if (p.valuation === 'estimate') r.parts_estimate_net += r2(p.quantity * p.unit_price_net);
+    else { r.parts_actual_net += r2(p.quantity * p.unit_price_net); r.valued_items++; }
   }
   for (const e of ext) {
     const m = monthOf(e.d); if (!inRange(m)) continue;
     const r = row(e.vehicle_id, m);
     if (e.amount_net === null || e.valuation === 'unvalued') r.unvalued_items++;
-    else if (e.valuation === 'estimate') r.external_estimate_net += e.amount_net;
-    else { r.external_actual_net += e.amount_net; r.valued_items++; }
+    else if (e.valuation === 'estimate') r.external_estimate_net += r2(e.amount_net);
+    else { r.external_actual_net += r2(e.amount_net); r.valued_items++; }
   }
   const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
   // Standortfilter (Standort laut Fahrzeugstamm, 'ohne' = ohne Standort): wirkt auf Zeilen, km, Vertragsraten und Erstattungen
@@ -111,8 +112,9 @@ export async function costReport(env, user, envName, query = {}) {
   for (const [k, r] of rows) if ((plates.get(r.vehicle_id) || {}).eval_excluded || (siteFilter && !plates.has(r.vehicle_id))) rows.delete(k);
   const out = [...rows.values()].map((r) => {
     const v = plates.get(r.vehicle_id) || {};
-    const actual = r.work_net + r.parts_actual_net + r.external_actual_net;
-    const estimate = r.parts_estimate_net + r.external_estimate_net;
+    // Summe aus den gerundeten Spalten (18.10.2026: Zeile 4,99 + 1 + 0 ergab „Summe belegt“ 6)
+    const actual = (rate === null ? 0 : r2(r.work_net)) + r2(r.parts_actual_net) + r2(r.external_actual_net);
+    const estimate = r2(r.parts_estimate_net) + r2(r.external_estimate_net);
     return {
       vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, month: r.month, cases_opened: r.cases_opened,
       hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
@@ -452,7 +454,8 @@ export async function kpiReport(env, user, envName, query = {}) {
       const x = g(k); x.created++;
       if (c.status === 'fahrzeug_freigegeben') x.released++; else if (c.status === 'abgelehnt') { x.rejected++; if (c.duplicate_of) x.duplicates++; } else x.open++;
       if (c.fleet_received_at) x.triage.push((Date.parse(c.fleet_received_at) - t0) / H);
-      if (approved && c.workshop_ack_at) x.ack.push((Date.parse(c.workshop_ack_at) - Date.parse(approved.created_at)) / H);
+      // erste Übernahme (wie Ausfallzeit; 18.10.2026: nach Werkstattwechsel zählte die Zeit der ersten Werkstatt der zweiten zu bzw. fiel weg)
+      if (approved && c.first_ack_at) x.ack.push((Date.parse(c.first_ack_at) - Date.parse(approved.created_at)) / H);
       if (c.status === 'fahrzeug_freigegeben' && c.closed_at) x.total.push((Date.parse(c.closed_at) - t0) / H);
       x.parts_wait_h += wait / H;
     }
@@ -497,7 +500,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const inspection_defects = { inspections: dd.inspections, without_order: dd.without_order, ordered: dd.ordered, released: dd.released, open: dd.open, reinspected: dd.reinspected, defects_again: dd.defects_again,
     to_release_days: { n: dd.days.length, median_d: r1(quantile(dd.days, 0.5)), p90_d: r1(quantile(dd.days, 0.9)) } };
   return { from, to, environment: envName, site, sites, vehicle_site, vehicle_sites, by_priority, vehicles, availability: availability ? { ...availability, by_vehicle: undefined, lowest: availability.by_vehicle.filter((x) => x.downtime_h > 0).slice(0, 5) } : null, parts_eta, cost_approvals, inspection_defects,
-    definitions: { duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → Übernahme durch Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug (nur freigegebene Aufträge; parallele Aufträge am selben Fahrzeug zählen einmal)', downtime_h: 'Ausfallzeit je Fahrzeug: Werkstatt-Übernahme → technische Freigabe bzw. Ablehnung (offen bis jetzt) und Zeit mit Sicherheitssperre zusammen, Überschneidungen einmal; Vorgänge aus dem Zeitraum, ohne Übernahme-Zeitstempel nicht gezählt', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', availability: 'Technische Verfügbarkeit: 100 % minus Ausfallstunden (Werkstatt-Übernahme → technische Freigabe/Ablehnung, offen bis jetzt, und Sicherheitssperre; je Fahrzeug Überschneidungen einmal) durch Fahrzeugstunden im Zeitraum (Monatsbeginn bis Monatsende bzw. jetzt, Berliner Zeit; frühestens ab Anlage des Fahrzeugs). Alle Vorgänge, die in den Zeitraum hineinreichen, auf den Zeitraum zugeschnitten. Aktive Fahrzeuge laut Stamm, ohne von der Bewertung ausgenommene; Werkstattaufenthalte ohne Vorgang in der App sind nicht erfasst. Mit Werkstattfilter nicht berechnet', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
+    definitions: { duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung)', workshop_ack: 'Werkstattfreigabe → erste Übernahme durch eine Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug (nur freigegebene Aufträge; parallele Aufträge am selben Fahrzeug zählen einmal)', downtime_h: 'Ausfallzeit je Fahrzeug: Werkstatt-Übernahme → technische Freigabe bzw. Ablehnung (offen bis jetzt) und Zeit mit Sicherheitssperre zusammen, Überschneidungen einmal; Vorgänge aus dem Zeitraum, ohne Übernahme-Zeitstempel nicht gezählt', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', availability: 'Technische Verfügbarkeit: 100 % minus Ausfallstunden (Werkstatt-Übernahme → technische Freigabe/Ablehnung, offen bis jetzt, und Sicherheitssperre; je Fahrzeug Überschneidungen einmal) durch Fahrzeugstunden im Zeitraum (Monatsbeginn bis Monatsende bzw. jetzt, Berliner Zeit; frühestens ab Anlage des Fahrzeugs). Alle Vorgänge, die in den Zeitraum hineinreichen, auf den Zeitraum zugeschnitten. Aktive Fahrzeuge laut Stamm, ohne von der Bewertung ausgenommene; Werkstattaufenthalte ohne Vorgang in der App sind nicht erfasst. Mit Werkstattfilter nicht berechnet', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
 }
 
 // Werkstatt-Auslastung als CSV (Excel DE): eine Zeile je Standort und Kalenderwoche (älteste zuerst), offene Aufträge je Status

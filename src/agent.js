@@ -1,6 +1,6 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
-import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate, oneOf, str, notFound, conflict } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate, oneOf, str, notFound, conflict, rateOf } from './util.js';
 import { notifyUsers } from './notify.js';
 import { audit } from './auth.js';
 import { tireFindings } from './tires.js';
@@ -260,7 +260,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Kosten unbewertet bei abgeschlossenen Vorgängen (letzte 90 Tage)
     const rateRaw = settings.get('workshop_hourly_rate_net');
-    const rate = rateRaw === undefined || rateRaw === null || rateRaw === '' ? null : rateRaw;
+    const rate = rateOf(rateRaw);
     const closed = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate,
         (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) AS hours_n,
         (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation='unvalued')) AS unv_n,

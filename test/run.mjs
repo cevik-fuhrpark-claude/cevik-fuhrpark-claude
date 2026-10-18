@@ -11550,7 +11550,8 @@ await test('Fehlersuche 18.10. (4): km-Grundlage bei nachgetragener Durchführun
 await test('Fehlersuche 18.10. (5): Oberfläche – Service Worker speichert nur einwandfreie Antworten, Push ohne Vorgang nach Rollenregel, Offline-Sprache, Fahrzeugliste offline, Fotos bei Wiederholung, Startseite nach dem Senden, Regel-Bezug übersetzt', async () => {
   const fs = await import('node:fs');
   const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/if \(r\.ok && r\.type === 'basic'\) \{ const c = r\.clone\(\); caches\.open/.test(sw), 'nur r.ok in den Cache');
+  // seit 18.10.2026 (Runde 2): Hülle je Fassung vollständig per addAll, keine Einzelablage mehr (gemischte Module) – Fehlerantworten nie im Cache
+  ok(/c\.addAll\(SHELL\.map/.test(sw) && !/\.put\(e\.request/.test(sw) && sw.includes("'/version.json']"), 'Hülle atomar je Fassung inkl. version.json');
   ok(sw.includes(": '#/push';") && app.includes("[/^#\\/push$/, () => { location.replace(notifHref({})); }]"), 'Push ohne Ziel → Rollenregel der Hinweisliste');
   ok(/S\.me\.language = l\.value; saveOfflineSession\(\);/.test(app), 'Sprachwechsel in der Offline-Sitzung');
   ok(app.includes("if (!localStorage.getItem(`cfp_veh_${S.me.id}_${S.me.environment}`)) vehiclesCached()"), 'Fahrzeugliste vorhalten');
@@ -11872,6 +11873,71 @@ await test('Fehlersuche 18.10. (9): Auslesungen-Import Datumsspalte/NFD-Namen/Da
   // Server-Texte und Anzeige-Muster bleiben gekoppelt (Wächter): Muster stehen wörtlich in src/cases.js
   const csrc = (await import('node:fs')).readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
   for (const frag of ['`Prüfung/Wartung ${rule.kind} durchführen', '`Herstellerrückruf durchführen (Referenz: ', '`Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ', "'Umrüstung auf Winterreifen (Alpine-Symbol)'", "'Winterreifen prüfen und Winterkennzeichnung erfassen'", '` – Positionen laut Reifenerfassung ${parts.join(\'; \')}. Wechsel mit Winterkennzeichnung in der Fahrzeugakte → Reifen erfassen.']) ok(csrc.includes(frag), 'cases.js: ' + frag);
+});
+
+await test('Fehlersuche 18.10. (10): Bußgeld-Kandidat aus Abfahrtskontrolle bestätigbar (deaktiviert), nur aus der Umgebung, Führerscheinkontrolle „bald“ = Hinweis, Stundensatz 0 = unbewertet, Cent-Rundung 1,005, Freigabegrenze nach Satzänderung, Übernahme-Kennzahl nach Werkstattwechsel', async () => {
+  const { e, U, V1, cmd, toRepair, newCase } = await freshWorld(); const db = e.DB.db;
+  // 1. Fahrer mit Abfahrtskontrolle am Tattag, danach deaktiviert: angeboten und bestätigbar
+  const t0 = new Date(Date.now() - 3 * 86400000); t0.setUTCHours(6, 0, 0, 0);
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-f1','test',?, 'abfahrt','v1',?, '[]','ok',?)`).run(V1, U.driver.id, t0.toISOString());
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-f2','test',?, 'abfahrt','v1',?, '[]','ok',?)`).run(V1, U.driver.id, new Date(t0.getTime() + 3600000).toISOString());
+  db.prepare('UPDATE users SET active=0 WHERE id=?').run(U.driver.id);
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: new Date(t0.getTime() + 3 * 3600000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X', reference: 'A-361' });
+  eq(f.status, 201, JSON.stringify(f.data));
+  let det = (await U.fleet.get(`/api/fines/${f.data.id}`)).data;
+  eq(det.candidates.filter((c) => c.user_id === U.driver.id).length, 1, 'Kandidat einmal trotz zwei Kontrollen');
+  const cf = await U.fleet.post(`/api/fines/${f.data.id}/commands`, { action: 'confirm_driver', expected_version: det.fine.version, payload: { basis: 'manuell', evidence: 'Abfahrtskontrolle', driver_id: U.driver.id } });
+  eq(cf.status, 200, JSON.stringify(cf.data));
+  // … in die andere Umgebung verschoben: nicht mehr angeboten
+  db.prepare("UPDATE users SET active=1, environment='production' WHERE id=?").run(U.driver.id);
+  const f2 = await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: new Date(t0.getTime() + 3 * 3600000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X', reference: 'A-362' });
+  ok(!(await U.fleet.get(`/api/fines/${f2.data.id}`)).data.candidates.some((c) => c.user_id === U.driver.id), 'Person aus anderer Umgebung nicht angeboten');
+  db.prepare("UPDATE users SET environment='test' WHERE id=?").run(U.driver.id);
+  // 2. Führerscheinkontrolle bald fällig → Hinweis
+  eq((await U.own.put('/api/settings', { license_check_months: 6 })).status, 200);
+  const did = (await U.fleet.post('/api/drivers', { display_name: 'Anna Probe' })).data.id;
+  eq((await U.fleet.post(`/api/drivers/${did}/documents`, { kind: 'fuehrerschein', evidence: 'Original', valid_until: '2035-01-01' })).status, 201);
+  const cd = new Date(BERLIN_TODAY + 'T00:00:00Z'); cd.setUTCMonth(cd.getUTCMonth() - 6); cd.setUTCDate(cd.getUTCDate() + 10);
+  eq((await U.fleet.post(`/api/drivers/${did}/license-checks`, { checked_on: cd.toISOString().slice(0, 10), result: 'in_ordnung' })).status, 201);
+  const dl = (await U.fleet.get('/api/drivers')).data; const anna = (dl.drivers || dl).find((x) => x.id === did);
+  eq(anna.status ? anna.status.overall || anna.overall : anna.overall, 'hinweis', JSON.stringify(anna).slice(0, 300));
+  // 3. Stundensatz 0 (Altwert) = unbewertet
+  db.prepare("INSERT OR REPLACE INTO settings(key,value,updated_at) VALUES ('workshop_hourly_rate_net','0',?)").run(new Date().toISOString());
+  const c0 = await toRepair(); eq((await cmd(U.ws, c0, 'record_work', { hours: 4, description: 'x' })).status, 200);
+  let k = (await U.fleet.get(`/api/cases/${c0}`)).data.costs; eq(k.actual_net, 0); eq(k.unvalued_items, 1, 'Stunden ohne Satz unbewertet'); eq(k.complete, false);
+  // 4. Cent-Rundung: 33,30 €/h × 0,15 h = 4,995 → 5,00; Teil 1,005 → 1,01; Bericht-Zeile = Summe der Spalten
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: '33,30' })).status, 200);
+  const { roundCents } = await import('../src/util.js'); eq(roundCents(1.005), 1.01); eq(roundCents(4.995), 5); eq(roundCents(-1.005), -1.01); eq(roundCents(10.004), 10);
+  const w4 = await freshWorld(); eq((await w4.U.own.put('/api/settings', { workshop_hourly_rate_net: '33,30' })).status, 200);
+  const c4 = await w4.toRepair(); eq((await w4.cmd(w4.U.ws, c4, 'record_work', { hours: 0.15, description: 'x' })).status, 200);
+  eq((await w4.cmd(w4.U.ws, c4, 'add_part', { name: 'Clip', quantity: 1, unit_price_net: 1.005 })).status, 200);
+  eq((await w4.U.fleet.get(`/api/cases/${c4}`)).data.costs.actual_net, 6.01, 'Vorgang 5,00 + 1,01');
+  const rr = (await w4.U.fleet.get(`/api/reports/costs?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.rows[0];
+  eq(rr.work_net, 5); eq(rr.actual_net, roundCents(rr.work_net + rr.parts_actual_net + rr.external_actual_net), 'Zeile = Spalten');
+  eq((await w4.cmd(w4.U.fleet, c4, 'add_external_cost', { supplier: 'X', amount_net: '10,005' })).status, 400, 'Fremdleistung max. 2 Nachkommastellen');
+  // 5. Freigabegrenze: Satz nach der Buchung erhöht → technische Freigabe abgewiesen und markiert
+  const w5 = await freshWorld(); eq((await w5.U.own.put('/api/settings', { workshop_hourly_rate_net: 80, repair_cost_limit_net: 500 })).status, 200);
+  const c5 = await w5.toRepair(); eq((await w5.cmd(w5.U.ws, c5, 'record_work', { hours: 5, description: 'x' })).status, 200);
+  const items5 = (await w5.U.ws.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+  eq((await w5.U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: c5, request_key: rk(), items: items5 })).status, 201);
+  eq((await w5.cmd(w5.U.ws, c5, 'request_quality_check', {}, 'fertig')).status, 200);
+  eq((await w5.U.own.put('/api/settings', { workshop_hourly_rate_net: 200 })).status, 200);
+  const tr = await w5.cmd(w5.U.fleet, c5, 'technical_release', { confirm: true }, 'Kontrolle ok');
+  eq(tr.status, 400); eq(tr.data.error, 'cost_approval_open', JSON.stringify(tr.data));
+  ok((await w5.U.fleet.get(`/api/cases/${c5}`)).data.case.cost_over_limit_at, 'nach Satzänderung markiert');
+  // 6. Kennzahl Werkstatt-Übernahme nach Werkstattwechsel = erste Übernahme
+  const w6 = await freshWorld(); const d6 = w6.e.DB.db;
+  const c6 = await w6.newCase(); eq((await w6.cmd(w6.U.fleet, c6, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await w6.cmd(w6.U.ws, c6, 'acknowledge')).status, 200);
+  const th = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  for (const ev of d6.prepare('SELECT id, action FROM case_events WHERE case_id=?').all(c6)) d6.prepare('UPDATE case_events SET created_at=? WHERE id=?').run(ev.action === 'create' ? th(11) : ev.action === 'approve_repair' ? th(10) : th(9), ev.id);
+  d6.prepare('UPDATE cases SET created_at=?, fleet_received_at=?, workshop_ack_at=? WHERE id=?').run(th(11), th(10), th(9), c6);
+  const rw = await w6.cmd(w6.U.fleet, c6, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Wechsel');
+  eq(rw.status, 200, JSON.stringify(rw.data));
+  const ymFrom = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 12 * 3600000)).slice(0, 7); // Meldung vor 11 h: ggf. Vormonat
+  const kp = (await w6.U.fleet.get(`/api/reports/kpi?from=${ymFrom}&to=${BERLIN_YM}`)).data;
+  const alle = kp.by_priority ? kp.by_priority.find((x) => x.priority === 'alle') : (kp.priorities || []).find((x) => x.priority === 'alle');
+  eq(alle.workshop_ack.n, 1, 'Übernahme bleibt nach Wechsel gezählt'); ok(Math.abs(alle.workshop_ack.median_h - 1) < 0.1, JSON.stringify(alle.workshop_ack));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

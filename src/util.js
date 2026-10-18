@@ -457,3 +457,8 @@ export function fileSlug(s) {
     .replace(/Ł/g, 'L').replace(/ł/g, 'l').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]/g, '').slice(0, 60);
 }
 export const siteSuffix = (site) => { const s = site ? fileSlug(site) : ''; return s ? '_' + s : ''; };
+
+// Stundensatz aus den Einstellungen: nur eine positive Zahl gilt (18.10.2026: Altwert „0“ aus einer Sicherung ergab belegte 0 € statt „unbewertet“)
+export const rateOf = (v) => { if (v === undefined || v === null || String(v).trim() === '') return null; const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
+// Kaufmännisch auf Cent runden, gegen Gleitkommafehler abgesichert (1,005 → 1,01; vorher 1,00) und symmetrisch für negative Beträge
+export const roundCents = (n) => { const x = Number(n); if (!Number.isFinite(x)) return x; return Math.sign(x) * Math.round(Number((Math.abs(x) * 100).toFixed(6))) / 100 + 0; };

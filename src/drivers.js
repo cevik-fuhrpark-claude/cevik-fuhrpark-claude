@@ -77,7 +77,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   }
   const hasLicense = docs.some((x) => !x.superseded && x.kind === 'fuehrerschein');
   const worst = items.some((i) => i.status === 'abgelaufen') || check.status === 'mangel' ? 'kritisch'
-    : items.some((i) => i.status === 'laeuft_ab') || ['faellig', 'fehlt'].includes(check.status) || !hasLicense ? 'hinweis' : 'ok';
+    : items.some((i) => i.status === 'laeuft_ab') || ['faellig', 'fehlt', 'bald'].includes(check.status) || !hasLicense ? 'hinweis' : 'ok'; // „bald“ wie bald ablaufende Nachweise (18.10.2026)
   return { items, replaced, check, has_license: hasLicense, overall: worst };
 }
 

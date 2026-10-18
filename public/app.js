@@ -255,7 +255,7 @@ async function route() {
       catch (err) {
         // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
         const cached = err.offline ? offlineSession() : null;
-        if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); if (!st.needs_setup && /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
+        if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); if (!st.needs_setup && /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+|vehicles\/(VIN|VIN%3A)[:A-Z0-9]+|more\?o=sess|push)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
         S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
       }
       if (S.me.role === 'owner') S.viewEnv = localStorage.getItem('cfp_env') || null;
@@ -3773,7 +3773,8 @@ setInterval(checkVersion, 30 * 60 * 1000);
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') location.hash = e.data.hash; if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
+  // Push-Klick auf die schon offene Ansicht: neu aufbauen (gleicher Hash löst kein hashchange aus; 18.10.2026), Eingaben bleiben unangetastet
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') { if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
 }
 document.documentElement.lang = S.lang;
 route();

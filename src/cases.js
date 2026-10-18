@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, rateOf, roundCents } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -328,7 +328,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     detail.external_costs = (await env.DB.prepare('SELECT * FROM external_costs WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
     // Kosten aus den bereits geladenen Positionen; Stundensatz und Freigabegrenze in einer Abfrage (vorher 5 Zusatzabfragen)
     const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','repair_cost_limit_net')`).all()).results.map((r) => [r.key, r.value]));
-    const rate = sets.has('workshop_hourly_rate_net') && sets.get('workshop_hourly_rate_net') !== '' ? Number(sets.get('workshop_hourly_rate_net')) : null;
+    const rate = rateOf(sets.get('workshop_hourly_rate_net'));
     detail.costs = detail.work && detail.parts ? computeCosts(rate, detail.work, detail.parts, detail.external_costs) : await caseCosts(env, c.id);
     const limRaw = sets.has('repair_cost_limit_net') && sets.get('repair_cost_limit_net') !== '' ? Number(sets.get('repair_cost_limit_net')) : null;
     const lim = Number.isFinite(limRaw) && limRaw > 0 ? limRaw : null;
@@ -410,18 +410,18 @@ export function computeCosts(rate, work, parts, ext) {
   if (!coveredByExternal) {
     if (hours > 0) {
       if (rate === null || !Number.isFinite(rate)) unvalued.push({ type: 'arbeitszeit', hours });
-      else { valued += hours * rate; valuedItems++; }
+      else { valued += round2(hours * rate); valuedItems++; } // je Position auf Cent (18.10.2026: Bericht/Akte wichen um Cent ab)
     }
     for (const p of parts) {
       if (p.unit_price_net === null || p.valuation === 'unvalued') unvalued.push({ type: 'teil', quantity: p.quantity });
-      else if (p.valuation === 'estimate') estimate += p.quantity * p.unit_price_net;
-      else { valued += p.quantity * p.unit_price_net; valuedItems++; }
+      else if (p.valuation === 'estimate') estimate += round2(p.quantity * p.unit_price_net);
+      else { valued += round2(p.quantity * p.unit_price_net); valuedItems++; }
     }
   }
   for (const e of ext) {
     if (e.amount_net === null || e.valuation === 'unvalued') unvalued.push({ type: 'fremdleistung' });
-    else if (e.valuation === 'estimate') estimate += e.amount_net;
-    else { valued += e.amount_net; valuedItems++; }
+    else if (e.valuation === 'estimate') estimate += round2(e.amount_net);
+    else { valued += round2(e.amount_net); valuedItems++; }
   }
   return {
     hours, hourly_rate_net: rate, actual_net: round2(valued), valued_items: valuedItems, estimate_net: round2(estimate),
@@ -436,7 +436,7 @@ export async function caseCosts(env, caseId) {
     (SELECT json_group_array(json_object('hours', hours)) FROM work_entries WHERE case_id=?1) AS w,
     (SELECT json_group_array(json_object('quantity', quantity, 'unit_price_net', unit_price_net, 'valuation', valuation)) FROM parts WHERE case_id=?1) AS p,
     (SELECT json_group_array(json_object('amount_net', amount_net, 'valuation', valuation, 'covers_work_and_parts', covers_work_and_parts)) FROM external_costs WHERE case_id=?1) AS e`).bind(caseId).first();
-  const rate = r.rate === null || r.rate === '' ? null : Number(r.rate);
+  const rate = rateOf(r.rate);
   return computeCosts(rate, JSON.parse(r.w || '[]'), JSON.parse(r.p || '[]'), JSON.parse(r.e || '[]'));
 }
 
@@ -453,7 +453,7 @@ export async function vehicleCosts(env, envName, vehicleId) {
        UNION ALL SELECT x.case_id, c.case_no, x.supplier AS item, 'external' AS item_kind, x.supplier, x.warranty_until FROM external_costs x ${J} AND x.warranty_until >= ?3
        ORDER BY 6, 2 LIMIT ${WARR_VEH_MAX + 1}) g) AS g`)
     .bind(envName, vehicleId, berlinDate()).first();
-  const rate = r.rate === null || r.rate === '' ? null : Number(r.rate);
+  const rate = rateOf(r.rate);
   const by = (txt) => {
     const m = new Map();
     for (const x of JSON.parse(txt || '[]')) { if (!m.has(x.case_id)) m.set(x.case_id, []); m.get(x.case_id).push(x); }
@@ -470,7 +470,7 @@ export async function vehicleCosts(env, envName, vehicleId) {
   const warrantiesTruncated = warranties.length > WARR_VEH_MAX; if (warrantiesTruncated) warranties.length = WARR_VEH_MAX;
   return { warranties_truncated: warrantiesTruncated, actual_net: round2(actual), valued_items: valuedItems, estimate_net: round2(estimate), unvalued_items: unvalued, complete: unvalued === 0, warranties };
 }
-const round2 = (n) => Math.round(n * 100) / 100;
+const round2 = roundCents; // kaufmännisch, gegen Gleitkommafehler abgesichert (18.10.2026)
 
 // Werkstatttermin: JJJJ-MM-TT, gültiges Datum, nicht mehr als 1 Jahr in der Vergangenheit/2 Jahre in der Zukunft
 export function planDate(v) {
@@ -1035,7 +1035,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     case 'add_external_cost': {
       const supplier = str(p.supplier, { required: true, max: 120, field: 'Lieferant' });
-      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true });
+      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, cents: true });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);
@@ -1083,7 +1083,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'technical_release': {
       requireNote('Bitte Kontrollnachweis eintragen.');
       if (!flag(p.confirm, 'Bestätigung')) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
-      if (c.cost_over_limit_at) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
+      // Grenze erst nach der letzten Buchung überschritten (Stundensatz erhöht, Grenze gesenkt, Satz nachgetragen – 18.10.2026: Freigabe
+      // ohne Kostenfreigabe möglich): jetzt markieren (Hinweis an die Leitung) und die Freigabe abweisen
+      if (c.cost_over_limit_at || await checkCostLimit(env, ctx, user, envName, c)) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten – keine Freigabe möglich.');
       const insp = await repairInspection(env, c.id);
