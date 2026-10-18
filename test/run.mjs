@@ -12121,6 +12121,44 @@ await test('Fehlersuche 18.10. (12): Auslesungen-Import ohne Fälligkeitsspalte,
   const sw = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
   ok(sw.includes("u.pathname.startsWith('/werkstatt/')) return;"), 'sw.js überspringt /werkstatt/');
 });
+await test('Auslesung stornieren (Migration 0062): Begründung Pflicht, nur Leitung, zählt nicht mehr für Frist/Übersicht/Datenqualität, Tag neu erfassbar, Verlauf und Protokoll', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const d0 = (n) => { const x = new Date(BERLIN_TODAY + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - n); return x.toISOString().slice(0, 10); };
+  const did = (await F.post('/api/drivers', { display_name: 'Storno Probe' })).data.id;
+  eq((await F.post(`/api/drivers/${did}/documents`, { kind: 'fahrerkarte', evidence: 'Karte', valid_until: '2030-01-01' })).status, 201);
+  eq((await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: did, downloaded_on: d0(40), evidence: 'Datei alt' })).status, 201);
+  const typo = await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: did, downloaded_on: d0(1), evidence: 'Datei Tippfehler' }); eq(typo.status, 201);
+  eq((await F.get(`/api/drivers/${did}`)).data.tacho.status, 'ok', 'Tippfehler hält die Frist „ok“');
+  // Rechte und Pflichtangaben
+  eq((await U.driver.post(`/api/tacho/downloads/${typo.data.id}/cancel`, { reason: 'Tippfehler' })).status, 403);
+  eq((await U.ws.post(`/api/tacho/downloads/${typo.data.id}/cancel`, { reason: 'Tippfehler' })).status, 403);
+  eq((await F.post(`/api/tacho/downloads/${typo.data.id}/cancel`, {})).status, 400, 'ohne Begründung');
+  eq((await F.post(`/api/tacho/downloads/${typo.data.id}/cancel`, { reason: 'x' })).status, 400, 'zu kurz');
+  eq((await F.post('/api/tacho/downloads/gibtsnicht/cancel', { reason: 'Tippfehler' })).status, 404);
+  const c = await F.post(`/api/tacho/downloads/${typo.data.id}/cancel`, { reason: 'Tippfehler, richtig ist ein anderer Tag' }); eq(c.status, 200, JSON.stringify(c.data));
+  eq((await F.post(`/api/tacho/downloads/${typo.data.id}/cancel`, { reason: 'nochmal' })).data.duplicate, true, 'zweites Storno ohne Wirkung');
+  const det = (await F.get(`/api/drivers/${did}`)).data;
+  eq(det.tacho.last, d0(40), 'Frist aus der nächstälteren Auslesung'); eq(det.tacho.status, 'ueberfaellig');
+  const h = det.tacho_downloads.find((x) => x.id === typo.data.id); ok(h.cancelled_at && h.cancel_reason.startsWith('Tippfehler'), 'Verlauf zeigt Storno');
+  const ov = (await F.get('/api/tacho')).data; eq(ov.drivers.find((x) => x.id === did).last, d0(40), 'Übersicht ohne stornierte');
+  // derselbe Tag kann nach Storno neu erfasst werden; doppelt gültig weiter abgewiesen
+  eq((await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: did, downloaded_on: d0(1), evidence: 'Datei richtig' })).status, 201, 'Tag nach Storno neu erfassbar');
+  eq((await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: did, downloaded_on: d0(1), evidence: 'Datei doppelt' })).status, 409);
+  // Massenspeicher: Fahrzeugakte, Zeitleiste ohne stornierte
+  const vu = await F.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V1, downloaded_on: d0(2), evidence: 'VU' }); eq(vu.status, 201);
+  eq((await F.post(`/api/tacho/downloads/${vu.data.id}/cancel`, { reason: 'falsches Fahrzeug' })).status, 200);
+  const va = (await F.get(`/api/vehicles/${V1}`)).data; eq(va.tacho.last, null, 'Fahrzeugakte: keine gültige Auslesung'); ok(va.tacho_downloads.some((x) => x.cancelled_at), 'Verlauf mit Storno');
+  // Import überspringt den Tag nicht wegen der stornierten Auslesung
+  const csv = `Art;Kennzeichen;Auslesedatum;Nachweis\nMassenspeicher;SZ-YC 5513;${d0(2)};Import VU`;
+  const im = await F.req('POST', '/api/tacho/import', csv, { 'content-type': 'text/csv' }); eq(im.status, 200, JSON.stringify(im.data));
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tacho_downloads WHERE vehicle_id IS NOT NULL AND cancelled_at IS NULL').get().n, 1, 'Import legt den Tag gültig an');
+  // Protokoll + Übersetzung
+  ok(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='tacho.cancel'").get().n === 2);
+  const I = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['tacho_cancel', 'tacho_cancelled', 'tacho_cancel_reason', 'tacho_cancel_hint']) ok(I.STRINGS[l][k], `${l}.${k}`);
+  // Datenauskunft nennt das Storno
+  const dx = (await U.own.get(`/api/drivers/${did}/data-export`)).data; ok(JSON.stringify(dx).includes('Tippfehler, richtig'), 'Auskunft mit Storno');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -493,6 +493,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/tacho/downloads' && m === 'GET') return json({ downloads: await tacho.listDownloads(env, user, envName, Object.fromEntries(url.searchParams)) });
   if (path === '/api/tacho/downloads' && m === 'POST') return json(await tacho.addDownload(env, user, envName, await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/tacho\/downloads\/([\w-]+)\/cancel$/)) && m === 'POST') return json(await tacho.cancelDownload(env, user, envName, mm[1], await readJson(request)));
 
   // Bußgelder & Zeugenfragebögen
   if (path === '/api/fines' && m === 'GET') {

@@ -41,12 +41,12 @@ export async function warnDays(env) {
 // Zwei Sammelabfragen (unabhängig von der Anzahl Fahrer/Fahrzeuge) – auch vom Fuhrparkagenten genutzt
 export async function tachoRows(env, envName, warn, today = berlinDate()) {
   const drv = (await env.DB.prepare(`SELECT d.id, d.display_name, d.personnel_no, d.site,
-      (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.driver_id=d.id) AS last,
+      (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.driver_id=d.id AND t.cancelled_at IS NULL) AS last,
       (SELECT x.valid_until FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0 ORDER BY x.created_at DESC LIMIT 1) AS card_valid_until,
       (SELECT COUNT(*) FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0) AS has_card
     FROM drivers d WHERE d.environment=? AND d.active=1 ORDER BY d.display_name`).bind(envName).all()).results;
   const veh = (await env.DB.prepare(`SELECT v.id, v.plate, v.site,
-      (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.vehicle_id=v.id AND t.environment=?) AS last
+      (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.vehicle_id=v.id AND t.environment=? AND t.cancelled_at IS NULL) AS last
     FROM vehicles v WHERE v.active=1 AND v.eval_excluded=0 AND v.kind<>'anhaenger' ORDER BY v.plate`).bind(envName).all()).results;
   const drivers = drv.filter((d) => d.has_card || d.last).map((d) => ({ id: d.id, display_name: d.display_name, personnel_no: d.personnel_no, site: d.site,
     card_valid_until: d.card_valid_until, has_card: !!d.has_card, ...tachoStatus(d.last, TACHO_RULE.card_days, today, warn) }));
@@ -76,12 +76,12 @@ export async function listDownloads(env, user, envName, q = {}) {
   if (q.driver_id) {
     const d = await env.DB.prepare('SELECT id, user_id FROM drivers WHERE id=? AND environment=?').bind(str(q.driver_id, { max: 40 }), envName).first();
     if (!d || (!isMgr(user) && !(user.role === 'driver' && d.user_id === user.id))) throw notFound('Fahrer nicht gefunden.');
-    return (await env.DB.prepare(`SELECT t.id, t.kind, t.downloaded_on, t.evidence, t.note, t.created_at, u.display_name AS created_by_name FROM tacho_downloads t
+    return (await env.DB.prepare(`SELECT t.id, t.kind, t.downloaded_on, t.evidence, t.note, t.created_at, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t
       LEFT JOIN users u ON u.id=t.created_by WHERE t.driver_id=? ORDER BY t.downloaded_on DESC LIMIT 100`).bind(d.id).all()).results;
   }
   if (!isMgr(user)) throw forbidden();
   if (!q.vehicle_id) throw bad('validation', 'driver_id oder vehicle_id angeben.');
-  return (await env.DB.prepare(`SELECT t.id, t.kind, t.downloaded_on, t.evidence, t.note, t.created_at, u.display_name AS created_by_name FROM tacho_downloads t
+  return (await env.DB.prepare(`SELECT t.id, t.kind, t.downloaded_on, t.evidence, t.note, t.created_at, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t
     LEFT JOIN users u ON u.id=t.created_by WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT 100`).bind(str(q.vehicle_id, { max: 60 }), envName).all()).results;
 }
 
@@ -111,6 +111,22 @@ export async function addDownload(env, user, envName, body) {
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Für diesen Tag ist bereits eine Auslesung erfasst.'); throw e; }
   await audit(env, user.id, 'tacho.download', driverId || vehicleId, { kind, downloaded_on: on, environment: envName });
   return { id, label };
+}
+
+// Auslesung stornieren (Tippfehler im Datum, falscher Fahrer/Fahrzeug): bleibt mit Begründung im Verlauf, zählt nicht mehr für Fristen.
+// Atomar nur einmal; danach kann der richtige Tag neu erfasst werden (18.10.2026).
+export async function cancelDownload(env, user, envName, id, body = {}) {
+  if (!isMgr(user)) throw forbidden();
+  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');
+  const t = await env.DB.prepare('SELECT id, kind, driver_id, vehicle_id, downloaded_on, cancelled_at FROM tacho_downloads WHERE id=? AND environment=?').bind(str(id, { max: 40 }), envName).first();
+  if (!t) throw notFound('Auslesung nicht gefunden.');
+  if (t.cancelled_at) return { ok: true, duplicate: true };
+  const now = nowIso();
+  const r = await env.DB.prepare('UPDATE tacho_downloads SET cancelled_at=?, cancelled_by=?, cancel_reason=? WHERE id=? AND cancelled_at IS NULL').bind(now, user.id, reason, t.id).run();
+  if (!(r.meta && r.meta.changes)) return { ok: true, duplicate: true };
+  await audit(env, user.id, 'tacho.cancel', t.driver_id || t.vehicle_id, { kind: t.kind, downloaded_on: t.downloaded_on, reason, environment: envName });
+  return { ok: true };
 }
 
 // Für den Fuhrparkagenten: nur Fahrer/Fahrzeuge mit mindestens einer erfassten Auslesung (keine erfundenen Fristen)
@@ -211,7 +227,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
 
   const drivers = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
   const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded FROM vehicles WHERE active=1`).all()).results;
-  const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results.map((r) => r.k));
+  const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=? AND cancelled_at IS NULL`).bind(envName).all()).results.map((r) => r.k));
   const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
   const byPno = uniq(drivers, (d) => (d.personnel_no ? d.personnel_no.normalize('NFC').trim().toLowerCase() : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));

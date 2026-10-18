@@ -98,10 +98,10 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT d.id, d.display_name, d.user_id, u.active AS u_active,
       EXISTS(SELECT 1 FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fuehrerschein' AND x.superseded=0) AS has_license,
       EXISTS(SELECT 1 FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0) AS has_card,
-      EXISTS(SELECT 1 FROM tacho_downloads t WHERE t.driver_id=d.id) AS has_download
+      EXISTS(SELECT 1 FROM tacho_downloads t WHERE t.driver_id=d.id AND t.cancelled_at IS NULL) AS has_download
       FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=1`).bind(envName).all(),
     env.DB.prepare(`SELECT u.id, u.display_name FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id)`).bind(envName).all(),
-    env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL`).bind(envName).all(),
+    env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL AND cancelled_at IS NULL`).bind(envName).all(),
     // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung;
     // seit 17.10.2026 auch größer als ein später erfasster Stand (nachgereichte Offline-Kontrolle), sofern nicht übernommen
     env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,

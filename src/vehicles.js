@@ -222,9 +222,10 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     out.contracts = await vehicleContracts(env, vehicleId, odometer[0] ? { ...odometer[0], ...kmDrop } : null, sets, envName);
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
-      out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
+      out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
         WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT ?`).bind(vehicleId, envName, cap || 20).all()).results;
-      out.tacho = { ...tachoStatus(out.tacho_downloads[0] ? out.tacho_downloads[0].downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
+      const validVu = out.tacho_downloads.find((x) => !x.cancelled_at); // stornierte zählen nicht (18.10.2026)
+      out.tacho = { ...tachoStatus(validVu ? validVu.downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
     }
   }
   // Fahrleistung je Monat (16.10.2026) – nur aus gespeicherten Kilometerständen, keine Schätzung (alle, die die Akte sehen)
@@ -333,7 +334,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   if (isManager(user)) {
     const fines = (await env.DB.prepare(`SELECT id, fine_no, kind, offense_type, offense_at, status FROM fines WHERE vehicle_id=? AND environment=? ORDER BY offense_at DESC LIMIT ?`)
       .bind(vehicleId, envName, cap).all()).results;
-    for (const x of d.tacho_downloads || []) add('tacho', x.downloaded_on, { evidence: x.evidence, by: x.created_by_name });
+    for (const x of (d.tacho_downloads || []).filter((y) => !y.cancelled_at)) add('tacho', x.downloaded_on, { evidence: x.evidence, by: x.created_by_name });
     for (const c of d.contracts || []) {
       add('contract', c.start_date || c.created_at, { contract_event: 'start', contract_kind: c.kind, partner: c.partner, evidence: c.evidence });
       add('contract', c.ended_on, { contract_event: 'end', contract_kind: c.kind, partner: c.partner, evidence: c.end_note });
