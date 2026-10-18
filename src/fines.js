@@ -136,6 +136,21 @@ export async function createFine(env, user, envName, body) {
   const veh = pick.vehicle;
   const reference = str(body.reference, { max: 80 });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
+  // Idempotenzschlüssel je Formular: Doppelklick/Netzwiederholung ergibt denselben Vorgang statt eines zweiten (18.10.2026) –
+  // wichtig bei Schreiben ohne Aktenzeichen, die keine Dublettenprüfung haben. Geprüft vor allem anderen (auch vor der Aktenzeichen-Dublette
+  // und vor dem Hochzählen der Nummer), damit die Wiederholung einer erfolgreichen Anlage nicht als „Aktenzeichen bereits erfasst“ scheitert.
+  const rk = body.request_key;
+  if (rk !== undefined && rk !== null && rk !== '' && (typeof rk !== 'string' || rk.length > 80 || !/^[\w.-]+$/.test(rk))) throw bad('validation', 'request_key: ungültiger Wert.');
+  const rkey = rk ? 'fine:' + rk : null;
+  const byKey = async () => {
+    if (!rkey) return null;
+    const prev = await env.DB.prepare('SELECT id, fine_no, vehicle_id, environment, created_by FROM fines WHERE request_key=?').bind(rkey).first();
+    if (!prev) return null;
+    if (prev.environment !== envName || prev.created_by !== user.id) throw conflict('fine_key_reused', 'request_key wurde bereits für einen anderen Bußgeldvorgang verwendet.');
+    return { id: prev.id, fine_no: prev.fine_no, vehicle_matched: !!prev.vehicle_id, duplicate: true };
+  };
+  const again = await byKey();
+  if (again) return again;
   const dupCheck = async () => {
     if (!reference) return;
     const dup = await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=?').bind(envName, reference, authority).first();
@@ -150,15 +165,20 @@ export async function createFine(env, user, envName, body) {
   // Aktenzeichen-Dublette auch bei gleichzeitiger Erfassung ausschließen: Einfügen nur, wenn (Umgebung, Behörde, Aktenzeichen) noch fehlt –
   // in derselben Anweisung (vorher: erst prüfen, dann schreiben → zwei parallele Erfassungen ergaben zwei Vorgänge, 17.10.2026).
   // Kein UNIQUE-Index, weil vorhandene Dubletten im Bestand die Migration scheitern ließen.
-  const res = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at)
-      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17
+  let res;
+  try { res = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at,request_key)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17,?18
       WHERE ?6 IS NULL OR NOT EXISTS (SELECT 1 FROM fines WHERE environment=?3 AND reference=?6 AND authority=?5)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
       location, plate, veh ? veh.id : null, amount, due,
-      fnote, user.id, now, now),
+      fnote, user.id, now, now, rkey),
     env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
-  ]);
-  if (!(res[0] && res[0].meta && res[0].meta.changes)) { await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
+  ]); } catch (e) {
+    // gleichzeitige Wiederholung mit demselben Schlüssel: der eindeutige Index weist die zweite ab → den ersten Vorgang melden
+    if (rkey && /request_key|UNIQUE/i.test(String(e && e.message))) { const w = await byKey(); if (w) return w; }
+    throw e;
+  }
+  if (!(res[0] && res[0].meta && res[0].meta.changes)) { const w = await byKey(); if (w) return w; await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
   return { id, fine_no: fineNo, vehicle_matched: !!veh, ...(pick.ambiguous ? { vehicle_ambiguous: true } : {}) };
 }
 

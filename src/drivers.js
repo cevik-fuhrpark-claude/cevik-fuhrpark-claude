@@ -18,6 +18,10 @@ const date = (v, field, { required = false, notFuture = false } = {}) => {
   if (!d) return null;
   if (!ISO.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z'))) throw bad('validation', `${field}: Datum im Format JJJJ-MM-TT.`);
   if (notFuture && d > berlinDate()) throw bad('validation', `${field}: darf nicht in der Zukunft liegen.`);
+  // Jahres-Tippfehler (2062 statt 2026, 1026): Nachweis galt sonst Jahrzehnte als gültig bzw. sofort als abgelaufen (18.10.2026).
+  // Untergrenze 1950 (alte Führerscheine), Obergrenze heute + 20 Jahre (Führerschein 15, Fahrerkarte/Code 95 5 Jahre)
+  const max = String(Number(berlinDate().slice(0, 4)) + 20) + berlinDate().slice(4);
+  if (d < '1950-01-01' || d > max) throw bad('validation', `${field}: Datum außerhalb des zulässigen Bereichs.`);
   return d;
 };
 const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);

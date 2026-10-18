@@ -11943,6 +11943,52 @@ await test('Fehlersuche 18.10. (10): Bußgeld-Kandidat aus Abfahrtskontrolle bes
   eq(alle.workshop_ack.n, 1, 'Übernahme bleibt nach Wechsel gezählt'); ok(Math.abs(alle.workshop_ack.median_h - 1) < 0.1, JSON.stringify(alle.workshop_ack));
 });
 
+await test('Bußgeld-Erfassung idempotent (request_key, Migration 0061), Fahrerakte-Datumsplausibilität 1950 bis heute + 20 Jahre', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const base = { kind: 'anhoerung', offense_type: 'parken', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Y' };
+  // 1. Schreiben ohne Aktenzeichen, Wiederholung mit demselben Schlüssel → derselbe Vorgang, keine zweite Nummer
+  const a = await U.fleet.post('/api/fines', { ...base, request_key: 'rk-fine-1' });
+  eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.fleet.post('/api/fines', { ...base, request_key: 'rk-fine-1' });
+  ok(b.status === 200 || b.status === 201, JSON.stringify(b.data)); eq(b.data.id, a.data.id, 'derselbe Vorgang'); eq(b.data.fine_no, a.data.fine_no); eq(b.data.duplicate, true);
+  eq(db.prepare("SELECT COUNT(*) AS n FROM fines WHERE request_key='fine:rk-fine-1'").get().n, 1);
+  const cnt = db.prepare("SELECT last_no FROM fine_counters WHERE environment='test'").get().last_no;
+  // 2. mit Aktenzeichen: Wiederholung meldet den Vorgang statt „Aktenzeichen bereits erfasst“
+  const c = await U.fleet.post('/api/fines', { ...base, reference: 'AZ-RK-1', request_key: 'rk-fine-2' });
+  eq(c.status, 201);
+  const c2 = await U.fleet.post('/api/fines', { ...base, reference: 'AZ-RK-1', request_key: 'rk-fine-2' });
+  eq(c2.data.id, c.data.id, 'Wiederholung statt Dublette');
+  eq((await U.fleet.post('/api/fines', { ...base, reference: 'AZ-RK-1', request_key: 'rk-fine-3' })).status, 409, 'echte Dublette weiter abgewiesen');
+  // 3. ohne Schlüssel wie bisher zwei Vorgänge; ungültiger Schlüssel 400; fremde Person mit gleichem Schlüssel 409
+  const n0 = db.prepare('SELECT COUNT(*) AS n FROM fines').get().n;
+  eq((await U.fleet.post('/api/fines', base)).status, 201); eq((await U.fleet.post('/api/fines', base)).status, 201);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM fines').get().n, n0 + 2);
+  eq((await U.fleet.post('/api/fines', { ...base, request_key: 'a b' })).status, 400);
+  eq((await U.fleet.post('/api/fines', { ...base, request_key: { x: 1 } })).status, 400);
+  const o = await U.own.post('/api/fines', { ...base, request_key: 'rk-fine-1' });
+  eq(o.status, 409, JSON.stringify(o.data)); eq(o.data.code || o.data.error, 'fine_key_reused');
+  // 4. gleichzeitige Wiederholung: ein Vorgang
+  const par = await Promise.all([1, 2, 3].map(() => U.fleet.post('/api/fines', { ...base, request_key: 'rk-par' })));
+  ok(par.every((r) => r.status === 200 || r.status === 201), par.map((r) => r.status).join(','));
+  eq(new Set(par.map((r) => r.data.id)).size, 1, 'parallel nur ein Vorgang');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM fines WHERE request_key='fine:rk-par'").get().n, 1);
+  ok(cnt > 0);
+  // 5. App sendet den Schlüssel je Formular
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/b\.request_key = nf\.dataset\.rk \|\| \(nf\.dataset\.rk = uid\(\)\); try \{ const r = await api\('POST', '\/api\/fines'/.test(app), 'Bußgeld-Formular mit request_key');
+  // 6. Fahrerakte: Jahres-Tippfehler abgewiesen, Grenzen erlaubt
+  const did = (await U.fleet.post('/api/drivers', { display_name: 'Datum Probe' })).data.id;
+  const y = Number(BERLIN_TODAY.slice(0, 4));
+  const r62 = await U.fleet.post(`/api/drivers/${did}/documents`, { kind: 'fahrerkarte', evidence: 'Karte', valid_until: `${y + 36}-01-01` });
+  eq(r62.status, 400, 'gültig bis in 36 Jahren'); ok(/außerhalb des zulässigen Bereichs/.test(r62.data.message || r62.data.error || JSON.stringify(r62.data)));
+  eq((await U.fleet.post(`/api/drivers/${did}/documents`, { kind: 'fahrerkarte', evidence: 'Karte', valid_until: '1026-01-01' })).status, 400, 'Jahr 1026');
+  eq((await U.fleet.post(`/api/drivers/${did}/documents`, { kind: 'fuehrerschein', evidence: 'Original', issued_on: '1949-12-31' })).status, 400, 'vor 1950');
+  eq((await U.fleet.post(`/api/drivers/${did}/documents`, { kind: 'fuehrerschein', evidence: 'Original', issued_on: '1975-05-01', valid_until: `${y + 15}-01-01` })).status, 201, 'alter Führerschein, 15 Jahre gültig');
+  eq((await U.fleet.post(`/api/drivers/${did}/license-checks`, { checked_on: '1900-01-01', evidence: 'Sichtprüfung' })).status, 400, 'Kontrolldatum 1900');
+  // Übersetzung der Meldung
+  const I = await import('../public/i18n.js');
+  eq(I.translateValidation('en', 'Gültig bis: Datum außerhalb des zulässigen Bereichs.').includes('Valid until'), true, 'EN übersetzt');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
