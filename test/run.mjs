@@ -12391,6 +12391,43 @@ await test('Fehlgeschlagener Sammel-Push (Ende der Ruhezeit) wird gebündelt wie
   } finally { delete e.__nowMs; }
 });
 
+await test('Fehlersuche 18.10. (15): Vertragsimport (englische Tausender, Laufleistung p. a., Kündigungsfrist Tage/„3 Monate“, Brutto-Rate, Formelschutz-Rücknahme), Storno vor Beginn ohne Rate, Versicherungsfall an Dublette umgehängt, leerer Status, Befunddatum', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const imp = async (csv) => U.fleet.req('POST', '/api/contracts/import?dry_run=1&source=Test', csv, { 'content-type': 'text/csv' });
+  const H = 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsbeginn';
+  let r = await imp(`${H};Monatsrate netto;km-Kontingent\nSZ-YC 5513;Leasing;LG AG;2026-01-01;1,000;120,000`);
+  eq(r.status, 200); eq(r.data.rows ? r.data.rows.length : 0, 0, 'englische Tausender nicht übernommen: ' + JSON.stringify(r.data).slice(0, 300));
+  ok(JSON.stringify(r.data.skipped).includes('Zahl nicht erkannt'), 'als „Zahl nicht erkannt“ gemeldet');
+  for (const h of ['Laufleistung p. a.', 'Laufleistung jährl.', 'Laufleistung pa']) { r = await imp(`${H};${h}\nSZ-YC 5513;Leasing;LG AG;2026-01-01;20000`); eq(r.status, 400, h); }
+  for (const h of ['Kündigungsfrist (Tage)', 'Kündigungsfrist in Wochen']) { r = await imp(`${H};${h}\nSZ-YC 5513;Leasing;LG AG;2026-01-01;30`); eq(r.status, 400, h); }
+  r = await imp(`${H};Vertragsende;Kündigungsfrist\nSZ-YC 5513;Leasing;LG AG;2026-01-01;2029-12-31;3 Monate`); eq(r.status, 200); eq(r.data.rows[0].notice_months, 3, '„3 Monate“');
+  r = await imp(`${H};Monatsrate inkl. MwSt.\nSZ-YC 5513;Leasing;LG AG;2026-01-01;1.190,00`); eq(r.status, 200); ok(r.data.rows[0].monthly_rate_net === null || r.data.rows[0].monthly_rate_net === undefined, 'Brutto nicht als Netto');
+  r = await imp(`${H};Monatsrate zzgl. MwSt.\nSZ-YC 5513;Leasing;LG AG;2026-01-01;1.000,00`); eq(r.data.rows[0].monthly_rate_net, 1000, 'zzgl. = netto');
+  r = await imp(`${H};Vertragsnummer;Bemerkung\nSZ-YC 5513;Leasing;'+Assekuranz;2026-01-01;'-;'- inkl. Wartung`); eq(r.data.rows[0].partner, '+Assekuranz'); eq(r.data.rows[0].contract_no, '-'); eq(r.data.rows[0].note, '- inkl. Wartung');
+  // Storno vor Beginn: keine Rate im Kostenbericht
+  const { contractCosts } = await import('../src/reports.js'); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,start_date,ended_on,monthly_rate_net,evidence,created_by,created_at,updated_at) VALUES ('K-ST',?, 'miete','Miet AG','2026-10-28','2026-10-01',1500,'Beleg',?,?,?)`).run(V1, U.fleet.id, now, now);
+  const plates = new Map([[V1, { plate: 'SZ-YC 5513', eval_excluded: 0 }]]);
+  const cc = await contractCosts(e, '2026-10', '2026-10', V1, plates); eq(cc.total_net === null ? 0 : cc.total_net, 0, 'Storno vor Beginn ohne Rate');
+  // Versicherungsfall an Dublette → beim Ablehnen auf das Original umgehängt
+  const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const A = await newCase({ description: 'Unfall Tür links' }); const B = await newCase({ description: 'Unfall Tür links (Nachmeldung)' });
+  eq((await U.fleet.put(`/api/cases/${B}/claim`, { insurer: 'Vers AG', reported_on: day(10), evidence: 'Meldung Portal' })).status, 200);
+  eq((await cmd(U.fleet, B, 'reject', { duplicate_of: A }, 'Dublette')).status, 200);
+  eq(db.prepare('SELECT case_id FROM insurance_claims').get().case_id, A, 'Fall hängt am Original');
+  // beide mit Fall → 409
+  const C = await newCase({ description: 'Unfall 3' }); eq((await U.fleet.put(`/api/cases/${C}/claim`, { insurer: 'Vers AG', reported_on: day(5), evidence: 'x' })).status, 200);
+  const rj = await cmd(U.fleet, C, 'reject', { duplicate_of: A }, 'Dublette'); eq(rj.status, 409); eq(rj.data.error, 'claim_on_both');
+  // leerer Status behält den gespeicherten
+  eq((await U.fleet.put(`/api/cases/${A}/claim`, { status: 'reguliert', reimbursed_net: 800, reimbursed_on: day(1) })).status, 200);
+  eq((await U.fleet.put(`/api/cases/${A}/claim`, { status: '' })).status, 200); eq(db.prepare('SELECT status FROM insurance_claims WHERE case_id=?').get(A).status, 'reguliert', 'Status bleibt');
+  // Befundtext mit TT.MM.JJJJ; ruhendes Fahrzeug ohne Befund
+  const { claimFindings } = await import('../src/claims.js');
+  const sets = new Map([['claim_followup_days', '3']]);
+  let f = await claimFindings(e, 'test', sets); const fc = f.find((x) => x.case_id === C); ok(fc && new RegExp(day(5).split('-').reverse().join('\\.')).test(fc.message), fc && fc.message);
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1); f = await claimFindings(e, 'test', sets); eq(f.length, 0, 'ruhend: kein Befund');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

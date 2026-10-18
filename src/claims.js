@@ -30,7 +30,8 @@ function readBody(body, existing = {}) {
     contract_id: str(pick('contract_id'), { max: 40, field: 'Versicherungsvertrag' }),
     claim_no: str(pick('claim_no'), { max: 60, field: 'Schadennummer' }),
     reported_on: day(pick('reported_on'), 'Gemeldet am', true),
-    status: oneOf(pick('status') || 'gemeldet', CLAIM_STATUS, 'Status'),
+    // leerer/fehlender Status behält den gespeicherten (18.10.2026: setzte einen regulierten Fall still auf „gemeldet“ zurück)
+    status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status'),
     deductible_net: num(pick('deductible_net'), { min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, cents: true }),
     reimbursed_net: num(pick('reimbursed_net'), { min: 0, max: 10000000, field: 'Erstattung', nullable: true, cents: true }),
     reimbursed_on: day(pick('reimbursed_on'), 'Erstattet am'),
@@ -166,8 +167,8 @@ export async function claimFindings(env, environment, settings) {
   const limit = new Date(Date.parse(berlinDate() + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
   const rows = (await env.DB.prepare(`SELECT ic.id, ic.case_id, ic.vehicle_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, c.case_no, v.plate
     FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id
-    WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND ic.reported_on <= ?`).bind(environment, limit).all()).results;
+    WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND ic.reported_on <= ? AND v.eval_excluded=0`).bind(environment, limit).all()).results; // ruhende Fahrzeuge aus Bewertungen ausgenommen (18.10.2026)
   return rows.map((r) => ({ code: 'CLAIM_OPEN_LONG', subject: r.id, case_id: r.case_id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet', requires_decision: 0,
-    ...fm('CLAIM_OPEN_LONG', { label: `${r.case_no} (${r.plate})`, insurer: r.insurer, claim_no: r.claim_no || null, date: r.reported_on, st: r.status, days: n }),
+    ...fm('CLAIM_OPEN_LONG', { label: `${r.case_no} (${r.plate})`, insurer: r.insurer, claim_no: r.claim_no || null, date: r.reported_on.split('-').reverse().join('.'), st: r.status, days: n }),
     next_action: 'Beim Versicherer nach dem Stand fragen; Status bzw. Erstattung mit Nachweis im Vorgang eintragen.' }));
 }

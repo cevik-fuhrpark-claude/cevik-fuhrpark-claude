@@ -225,6 +225,8 @@ export async function contractCosts(env, from, to, vehicleFilter, plates) {
   for (const c of rows) {
     const v = plates.get(c.vehicle_id);
     if (!v || v.eval_excluded) continue;
+    // vor Beginn beendet (Storno) – keine Rate (18.10.2026: im selben Monat zählte sonst eine volle Monatsrate)
+    if (c.ended_on && c.start_date && c.ended_on < c.start_date) continue;
     const endM = (c.ended_on || c.end_date || nowM).slice(0, 7);
     if (c.start_date && (c.start_date.slice(0, 7) > hiM || endM < from)) continue; // Laufzeit außerhalb des Zeitraums
     if (!c.start_date) { if (endM >= from) without_start++; continue; }

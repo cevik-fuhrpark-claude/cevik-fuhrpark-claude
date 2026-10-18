@@ -331,6 +331,8 @@ export function parseDeNum(raw) {
   // Komma nur im deutschen Muster (1.234,50 bzw. 1234,5) – „1,234.50“ ergab vorher still 1,2345 (17.10.2026)
   if (t.includes(',')) { if (!/^\d{1,3}(\.\d{3})*,\d+$|^\d+,\d+$/.test(t)) return NaN; t = t.replace(/\./g, '').replace(',', '.'); }
   else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  // „1,000“/„120,000“ (englische Tausender) ist mehrdeutig – wurde still 1,00 € bzw. 120 km (18.10.2026); wie das Formular abweisen
+  if (/^\d{1,3}(,\d{3})+$/.test(String(raw || '').replace(/[€\s ]|EUR|km/gi, ''))) return NaN;
   return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
 }
 
@@ -346,23 +348,28 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const bare = (h) => h.replace(/[.:]+$/, '').trim();
   const col = (names, exclude = []) => {
     for (const n of names) {
-      const i = head.findIndex((h) => !exclude.some((x) => h.includes(x)) && (EXACT.has(n) ? bare(h) === n : h.startsWith(n)));
+      const i = head.findIndex((h) => !(typeof exclude === 'function' ? exclude(h) : exclude.some((x) => h.includes(x))) && (EXACT.has(n) ? bare(h) === n : h.startsWith(n)));
       if (i >= 0) return i;
     }
     return -1;
   };
   // Jahreswerte („Laufleistung p.a.“) sind kein Gesamt-Kontingent – nicht still übernehmen (18.10.2026: 20 000 km/Jahr galt als Gesamtkontingent)
-  const ANNUAL = ['p.a', 'pro jahr', 'jährlich', 'jaehrlich', '/jahr', 'je jahr'];
-  if (head.some((h) => ['laufleistung', 'kontingent'].some((k) => h.includes(k)) && ANNUAL.some((x) => h.includes(x)))
-    && !head.some((h) => ['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'].some((k) => h.startsWith(k)) && !ANNUAL.some((x) => h.includes(x)))) {
+  // auch „p. a.“, „pa“, „jährl.“ (18.10.2026: nur genau „p.a“ wurde erkannt)
+  const isAnnual = (h) => /\bp\.?\s*a\b\.?|jährl|jaehrl|jahr/.test(h);
+  if (head.some((h) => ['laufleistung', 'kontingent'].some((k) => h.includes(k)) && isAnnual(h))
+    && !head.some((h) => ['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'].some((k) => h.startsWith(k)) && !isAnnual(h))) {
     throw bad('validation', 'Spalte mit Laufleistung pro Jahr erkannt – bitte das Gesamt-km-Kontingent der Laufzeit als Spalte „km-Kontingent“ angeben (Jahreswerte werden nicht umgerechnet).');
   }
+  // Brutto-Rate („inkl. MwSt.“, „gross“) ist keine Netto-Rate (18.10.2026: wurde still 19 % zu hoch übernommen); „zzgl./netto/exkl.“ bleibt netto
+  const isGrossOrCount = (h) => h.includes('anzahl') || h.includes('brutto') || (/inkl|gross|mwst|\bust\b/.test(h) && !/zzgl|netto|exkl|ohne/.test(h));
+  // Kündigungsfrist in Tagen/Wochen ist keine Monatsangabe (18.10.2026: 30 Tage galten still als 30 Monate)
+  if (head.some((h) => /^(kündigung|kuendigung)/.test(h) && /tag|woche/.test(h))) throw bad('validation', 'Kündigungsfrist in Tagen oder Wochen erkannt – bitte in Monaten angeben (Spalte „Kündigungsfrist (Monate)“; Tage/Wochen werden nicht umgerechnet).');
   // Beginn auch „Laufzeitbeginn“/„Leasingbeginn“ (wurde still ignoriert, 17.10.2026)
   const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin', 'fin ']), kind: col(['vertragsart', 'art', 'typ']),
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'nummer', 'nr']),
     start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'beginn', 'start']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'ende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
-    allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], ANNUAL), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
-    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], ['brutto', 'anzahl']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
+    allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], isAnnual), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
+    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], isGrossOrCount), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
   const fallbackEv = str(source, { max: 300, field: 'Quelle' });
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
   if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');
@@ -378,7 +385,8 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   // Kennzeichen doppelt (ruhendes/außer Betrieb genommenes Doppel): das bewertete aktive Fahrzeug wie bei den anderen Importen (17.10.2026)
   const byPlate = { get: (raw) => { const r = pickVehicleByPlate(vehicles, raw); return r.vehicle || (r.ambiguous ? 'mehrdeutig' : undefined); } };
   const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${lcDe(no)}` : `${vid}|${kind}|${lcDe(partner)}|${start || ''}`);
-  const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
+  // Formelschutz des eigenen CSV-Exports („'-“, „'+Assekuranz“) zurücknehmen – Re-Import ergab sonst Dubletten (18.10.2026)
+  const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim().replace(/^'(?=[=+\-@\t\r])/, '') : '');
   const rows = []; const skipped = []; const seen = new Set();
   table.slice(1).forEach((cells, idx) => {
     const line = cells.line || idx + 2;
@@ -396,7 +404,8 @@ export async function importContracts(env, user, text, { dryRun = false, source 
       body[k] = d || null;
     }
     for (const [k, c] of [['notice_months', ci.notice], ['km_allowance', ci.allowance], ['start_km', ci.start_km], ['monthly_rate_net', ci.rate]]) {
-      const n = parseDeNum(get(cells, c));
+      // „3 Monate“ in der Spalte Kündigungsfrist: Einheit entfernen (wurde als „Zahl nicht erkannt“ übersprungen)
+      const n = parseDeNum(k === 'notice_months' ? get(cells, c).replace(/\s*(monate?|mon\.?|mo\.?)\s*$/i, '') : get(cells, c));
       if (Number.isNaN(n)) return skip(`Zahl nicht erkannt: ${get(cells, c)}`);
       body[k] = n;
     }

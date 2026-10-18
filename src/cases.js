@@ -929,6 +929,14 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
           payload.moved_duplicates = moved;
           extra.push(env.DB.prepare('UPDATE cases SET duplicate_of=?, updated_at=? WHERE duplicate_of=? AND environment=?').bind(o.id, now, c.id, envName));
         }
+        // Versicherungsfall der Dublette auf das Original umhängen (18.10.2026: blieb an der abgelehnten Dublette offen, Datenqualität meldete
+        // das Original als „Unfall ohne Versicherungsfall“ → zweiter Fall für denselben Schaden); haben beide einen, erst klären
+        const cl = (await env.DB.prepare('SELECT case_id FROM insurance_claims WHERE case_id IN (?, ?) AND environment=?').bind(c.id, o.id, envName).all()).results;
+        if (cl.length === 2) throw conflict('claim_on_both', 'Beide Vorgänge haben einen Versicherungsfall – bitte zuerst klären, welcher gilt.');
+        if (cl.length === 1 && cl[0].case_id === c.id) {
+          payload.moved_claim = true;
+          extra.push(env.DB.prepare('UPDATE insurance_claims SET case_id=?, updated_at=? WHERE case_id=? AND environment=? AND NOT EXISTS (SELECT 1 FROM insurance_claims x WHERE x.case_id=?)').bind(o.id, now, c.id, envName, o.id));
+        }
         if (!note || note.length < 3) note = `Dublette von ${o.case_no}`;
       }
       requireNote('Bitte Ablehnungsgrund angeben.');

@@ -658,6 +658,8 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  ['Beide Vorgänge haben einen Versicherungsfall – bitte zuerst klären, welcher gilt.', 'Обидва випадки мають страховий випадок – спершу з’ясуйте, який із них чинний.', 'Both cases have an insurance claim – please clarify first which one applies.'],
+  ['Kündigungsfrist in Tagen oder Wochen erkannt – bitte in Monaten angeben (Spalte „Kündigungsfrist (Monate)“; Tage/Wochen werden nicht umgerechnet).', 'Розпізнано строк розірвання в днях або тижнях – вкажіть у місяцях (стовпець «Kündigungsfrist (Monate)»; дні/тижні не перераховуються).', 'Notice period in days or weeks detected – please give it in months (column “Kündigungsfrist (Monate)”; days/weeks are not converted).'],
   ['days: 7–730 Tage', 'days: 7–730 днів', 'days: 7–730 days'],
   ['kind: abfahrt oder nach_reparatur', 'kind: abfahrt або nach_reparatur', 'kind: abfahrt or nach_reparatur'],
   ['Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.', 'Цей табельний номер уже призначено активному водієві.', 'This personnel number is already assigned to an active driver.'],
