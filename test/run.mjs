@@ -12893,6 +12893,27 @@ await test('Fehlersuche 18.10. (27): Datensicherung über der Zeilengrenze behä
   ok(/blob\.truncated\.length\) toast\(t\('backup_truncated'\)/.test(app), 'App warnt bei gekappter Sicherung');
 });
 
+await test('Fehlersuche 18.10. (28): Vertragsimport ohne zweiten laufenden Vertrag derselben Nummer; Mängelstatistik „letzte N Tage“ = Berliner Kalendertage', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const csv = 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Monatsrate;Nachweis\nSZ-YC 5513;Leasing;MAN Financial;L-100;01.01.2024;31.12.2026;1000;Vertrag A\nSZ-YC 5513;Leasing;MAN Financial;L-100;01.01.2025;31.12.2027;1000;Vertrag B\nSZ-YC 5513;Leasing;MAN Financial;L-100;;;1000;Vertrag C\nSZ-KC 5515;Leasing;MAN Financial;L-100;01.01.2025;;900;anderes Fahrzeug\n';
+  const pre = await U.own.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(pre.status, 200);
+  eq(JSON.stringify(pre.data.counts), JSON.stringify({ neu: 2, vorhanden: 0, uebersprungen: 2 }), JSON.stringify(pre.data.skipped));
+  ok(pre.data.skipped.every((x) => x.reason === 'doppelt in der Datei'));
+  eq((await U.own.req('POST', '/api/contracts/import', csv, { 'content-type': 'text/csv' })).data.counts.neu, 2);
+  eq(db.prepare(`SELECT COUNT(*) n FROM vehicle_contracts WHERE contract_no='L-100'`).get().n, 2);
+  // Rückimport derselben Datei: alles vorhanden bzw. doppelt, nichts neu
+  eq((await U.own.req('POST', '/api/contracts/import', csv, { 'content-type': 'text/csv' })).data.counts.neu, 0);
+  // Mängelstatistik: Fenster beginnt um 00:00 Berlin vor (N−1) Tagen
+  const { berlinDayStartIso } = await import('../src/util.js');
+  const first = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') - 29 * 864e5).toISOString().slice(0, 10);
+  const start = berlinDayStartIso(first); const envName = 'test'; const uid = U.fleet.id;
+  const ins = db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES(?,?,?,'abfahrt','v1',?,?,'maengel',?)`);
+  ins.run('dq-in', envName, V1, uid, JSON.stringify([{ key: 'licht', result: 'mangel' }]), new Date(Date.parse(start) + 60000).toISOString());
+  ins.run('dq-out', envName, V1, uid, JSON.stringify([{ key: 'licht', result: 'mangel' }]), new Date(Date.parse(start) - 60000).toISOString());
+  const r = (await U.fleet.get('/api/reports/defects?days=30')).data;
+  eq(r.since, start, 'Beginn = Tagesanfang Berlin'); eq(r.totals.checks, 1, 'erste Minute des ersten Tages zählt, letzte Minute davor nicht');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

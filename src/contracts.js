@@ -416,7 +416,11 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     const key = keyOf(v.id, f.kind, f.contract_no, f.partner, f.start_date);
     if (seen.has(key)) return skip('doppelt in der Datei');
     seen.add(key);
-    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status: exRes.results.some((c) => c.vehicle_id === v.id && sameContract(c, f)) ? 'vorhanden' : 'neu' });
+    const status = exRes.results.some((c) => c.vehicle_id === v.id && sameContract(c, f)) ? 'vorhanden' : 'neu';
+    // zwei neue Zeilen derselben Vertragsnummer (anderer oder fehlender Beginn) wären zwei laufende Verträge – das Formular weist das
+    // schon ab (`sameContract` gegen laufenden Vertrag); die Einfüge-Prüfung sieht Zeilen derselben Anweisung nicht (18.10.2026)
+    if (status === 'neu' && rows.some((r) => r.status === 'neu' && r.vehicle_id === v.id && sameContract({ ...r, ended_on: null }, f))) return skip('doppelt in der Datei');
+    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
   const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows, skipped }; // höchstens 500 Zeilen – vorher still auf 300 gekürzt (17.10.2026)

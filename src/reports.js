@@ -584,7 +584,9 @@ export async function defectReport(env, user, envName, query = {}) {
   if (!Number.isInteger(days) || days < 7 || days > 730) throw bad('invalid_days', 'days: 7–730 Tage');
   const kind = query.kind || '';
   if (kind && !['abfahrt', 'nach_reparatur'].includes(kind)) throw bad('invalid_kind', 'kind: abfahrt oder nach_reparatur');
-  const since = new Date(Date.now() - days * 86400000).toISOString();
+  // letzte N Berliner Kalendertage einschließlich heute (wie `staleBefore`) – vorher 24-h-Schritte ab jetzt: Zahlen hingen von der Uhrzeit ab,
+  // am Tag der Zeitumstellung fiel ein Kalendertag halb heraus (18.10.2026)
+  const since = berlinDayStartIso(new Date(Date.parse(berlinDate() + 'T00:00:00Z') - (days - 1) * 86400000).toISOString().slice(0, 10));
   const kf = kind ? ' AND i.kind=?' : '';
   const args = kind ? [envName, since, kind] : [envName, since];
   const [checks, items, again] = await Promise.all([
