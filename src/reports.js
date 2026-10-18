@@ -678,8 +678,8 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // + offene Herstellerrückrufe ohne Frist (noch nicht durchgeführt): keine erfundene Frist, aber Werkstattarbeit, die eingeplant werden kann;
   // Referenz laut Nachweis (Schreiben/KBA-Nr.) wie in der Vorgangs-Kurzinfo – sonst kein Nachweistext
   const openRecall = (r) => r.kind === 'Rückruf' && r.status === 'ohne_termin' && !r.last_done_date;
-  // km-Fälligkeit „ungeklärt“ (Zähler gesunken) überdeckt im Gesamtstatus „bald fällig“ nach Datum – die Datumsfälligkeit bleibt aber einzuplanen
-  const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && r.km_unclear && DUE.includes(r.date_status);
+  // „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus „bald fällig“ nach Datum – die Datumsfälligkeit bleibt aber einzuplanen
+  const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && DUE.includes(r.date_status);
   const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || kmUnclearDateDue(r) || openRecall(r)) && !(r.planned_date && r.planned_date >= today) && !r.open_order)
     .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: kmUnclearDateDue(r) ? r.date_status : r.status,
       next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null,

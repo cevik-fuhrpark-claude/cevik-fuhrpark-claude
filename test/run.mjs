@@ -12323,6 +12323,23 @@ await test('Fehlersuche 18.10. (14): km-Prognose ab belegter Durchführung, Prü
   for (const k of ['days: 7–730 Tage', 'kind: abfahrt oder nach_reparatur']) ok(I.translateValidation('uk', k) !== k && I.translateValidation('en', k) !== k, k);
 });
 
+await test('Werkstattplan: SP „Frist ungeklärt“ mit bald fälligem Termin steht unter „Fällig – ohne Termin“ (date_status für HU/SP)', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const { berlinDate, addMonths } = await import('../src/util.js'); const today = berlinDate(); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,zgm_class,active,eval_excluded,created_at,updated_at) VALUES ('V-SPU','WDBSPU0000000001','SZ-SP 1','Dortmund','lkw','ueber_12',1,0,?,?)`).run(now, now);
+  const insE = db.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,evidence,source,created_at) VALUES (?,?,'V-SPU',?,?,'Beleg','erfasst',?)`);
+  // SP-Pflicht belegt, HU vor 18 Monaten, SP danach fehlt (Vorzyklus offen), HU vor 6 Monaten → SP fällig Ende dieses Monats, Status „ungeklärt“
+  insE.run('SPU-0', 'R-SPU-SP', 'SP', addMonths(today, -24), now); insE.run('SPU-1', 'R-SPU-HU', 'HU', addMonths(today, -18), now); insE.run('SPU-2', 'R-SPU-HU', 'HU', addMonths(today, -6), now);
+  const insR = db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,evidence,created_by,created_at,updated_at) VALUES (?,'V-SPU',?,?,'Beleg','u',?,?)`);
+  insR.run('R-SPU-HU', 'HU', 12, now, now); insR.run('R-SPU-SP', 'SP', 6, now, now);
+  const sp = (await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === 'V-SPU' && r.kind === 'SP');
+  eq(sp.status, 'ungeklaert', 'Frist ungeklärt: ' + JSON.stringify(sp.notes)); eq(sp.date_status, 'faellig', 'Datumsstufe bald fällig'); ok(sp.days >= 0 && sp.days <= 31);
+  const hu = (await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === 'V-SPU' && r.kind === 'HU'); eq(hu.date_status, 'ok');
+  const plan = (await U.fleet.get('/api/workshop/plan?days=7')).data;
+  const md = plan.maintenance_due.find((x) => x.vehicle_id === 'V-SPU' && x.kind === 'SP'); ok(md, 'im Werkstattplan unter „Fällig – ohne Termin“'); eq(md.status, 'faellig');
+  ok(!plan.maintenance_due.some((x) => x.vehicle_id === 'V-SPU' && x.kind === 'HU'), 'HU in Ordnung – nicht aufgeführt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

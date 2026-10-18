@@ -2830,8 +2830,8 @@ const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_defa
 const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) : c.evidence || '');
 // Planungshilfe: km-Prognose fällt in die nächsten 30 Tage (ändert keinen Status, nur Anzeige)
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
-// km-Fälligkeit „ungeklärt“ (Zähler gesunken) überdeckt im Gesamtstatus eine Datumsfälligkeit – die bleibt einzuplanen (Server: date_status)
-const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && !!r.km_unclear && ['ueberfaellig', 'faellig'].includes(r.date_status);
+// „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus eine Datumsfälligkeit – die bleibt einzuplanen (Server: date_status)
+const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && ['ueberfaellig', 'faellig'].includes(r.date_status);
 async function viewMaint() {
   let ov;
   const msQ = vsDef('maintSite') ? '&site=' + encodeURIComponent(vsDef('maintSite')) : '';
