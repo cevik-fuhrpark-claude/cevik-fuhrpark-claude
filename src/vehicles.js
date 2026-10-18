@@ -72,9 +72,12 @@ export async function listVehicles(env, user, envName, query = {}) {
     if (isManager(user)) { const [an, ac] = String(v.af || '0|0').split('|'); v.agent_findings_open = Number(an) || 0; v.agent_findings_critical = Number(ac) || 0; }
     delete v.af;
     const fi = v.failed_insp ? v.failed_insp.split('|') : null; v.failed_inspection = fi ? { kind: fi[0], done_date: fi[1], result: fi[2] } : null; delete v.failed_insp; }
-  const byPlate = new Map(rows.map((v) => [normPlate(v.plate), v]));
+  // gleiches Kennzeichen (ruhendes Doppel mit FIN-Tippfehler): das bewertete Fahrzeug gilt für die Kopplung (wie pickVehicleByPlate;
+  // vorher gewann die zuletzt gelesene Zeile – das ruhende Doppel stand als „einsatzbereit“ im Gespann, die Sperre fehlte, 18.10.2026)
+  const byPlate = new Map();
+  for (const v of rows) { const k = normPlate(v.plate); const p = byPlate.get(k); if (!p || (p.eval_excluded && !v.eval_excluded)) byPlate.set(k, v); }
   const pulledBy = new Map();
-  for (const v of rows) if (v.kind === 'lkw' && v.trailer_plate) { const tr = byPlate.get(normPlate(v.trailer_plate)); if (tr && tr.kind === 'anhaenger') pulledBy.set(tr.id, v); }
+  for (const v of rows) if (v.kind === 'lkw' && v.trailer_plate) { const tr = byPlate.get(normPlate(v.trailer_plate)); const p = tr && pulledBy.get(tr.id); if (tr && tr.kind === 'anhaenger' && (!p || (p.eval_excluded && !v.eval_excluded))) pulledBy.set(tr.id, v); }
   let list = rows.map((v) => ({
     ...v,
     trailer_id: v.kind === 'lkw' && v.trailer_plate && byPlate.get(normPlate(v.trailer_plate))?.kind === 'anhaenger' ? byPlate.get(normPlate(v.trailer_plate)).id : null,
@@ -164,10 +167,12 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Kopplung Lkw ↔ Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“ des Lkw)
   // locked: Sicherheitssperre eines offenen Vorgangs des gekoppelten Fahrzeugs in dieser Umgebung (nur Information)
   const all = tl ? [] : (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.trailer_plate, EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.safety_lock=1
-    AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked FROM vehicles v WHERE v.active=1`).bind(envName).all()).results;
+    AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked, v.eval_excluded FROM vehicles v WHERE v.active=1`).bind(envName).all()).results;
+  // ruhende Doppel nur, wenn es kein bewertetes Fahrzeug mit dem Kennzeichen gibt (18.10.2026)
+  const preferEval = (xs) => (xs.some((x) => !x.eval_excluded) ? xs.filter((x) => !x.eval_excluded) : xs);
   const coupled = v.kind === 'anhaenger'
-    ? all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw', locked: !!x.locked }))
-    : all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate)).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger', locked: !!x.locked }));
+    ? preferEval(all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate))).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw', locked: !!x.locked }))
+    : preferEval(all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate))).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger', locked: !!x.locked }));
   const documents = VEHICLE_DOC_READ.includes(user.role)
     ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.doc_valid_until, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
@@ -368,6 +373,8 @@ export function vehiclesCsv(list, csvCell) {
   // Inhaber/Fuhrparkleitung: offene Agentenbefunde (Anzahl, davon kritisch) – nur wenn die Liste die Felder trägt (gleiche Sichtbarkeit wie die Liste)
   const withAF = list.some((v) => 'agent_findings_open' in v);
   if (withAF) head.push('Offene Agentenbefunde', 'davon kritisch');
+  // ruhend/außer Betrieb sichtbar (sonst „keine offenen Meldungen“ ohne Kennzeichnung, 18.10.2026) – am Ende, Spaltenpositionen bleiben
+  head.push('Bewertung/Betrieb');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -377,7 +384,8 @@ export function vehiclesCsv(list, csvCell) {
     // km-Fälligkeit am Ende angehängt (bestehende Spaltenpositionen bleiben); Rest-km negativ = überschritten
     v.next_due_km ?? '', csvCell(v.next_due_km_kind), v.km_remaining ?? '',
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
-    v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : [])].join(';'));
+    v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : []),
+    v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv'].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
@@ -386,6 +394,10 @@ function vehicleRow(user, body) {
   const vin = normalizeVin(body.vin);
   if (!isValidVin(vin)) throw bad('validation', 'FIN muss 17 Zeichen haben (ohne I, O, Q).');
   const plate = str(body.plate, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
+  // nur lateinische Buchstaben (kyrillisches „С“/„А“ von ukrainischer Tastatur sieht gleich aus, Kopplung und Dublettenprüfung griffen still nicht, 18.10.2026)
+  const plateOk = (x) => /^[A-Z0-9ÄÖÜ \-.\/_\u00a0\u202f\t\u2010\u2011\u2013\u2014]+$/.test(x);
+  if (!plateOk(plate)) throw bad('validation', 'Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
+  if (body.trailer_plate && typeof body.trailer_plate === 'string' && body.trailer_plate.trim() && !plateOk(body.trailer_plate.trim().toUpperCase())) throw bad('validation', 'Anhänger-Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   return {
     id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60 }), manufacturer: str(body.manufacturer, { max: 60 }), model: str(body.model, { max: 60 }),
     build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
@@ -555,7 +567,8 @@ export async function myVehicles(env, user, envName) {
     WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND v.active=1 ORDER BY d.valid_from DESC`).bind(user.id, now).all()).results;
   if (!vs.length) return { vehicles: [] };
   // Gespann: gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (fest gekoppelt) – deren Sperre betrifft die Fahrt ebenfalls
-  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>''))`).all()).results;
+  // bewertete vor ruhenden Fahrzeugen (ruhendes Doppel mit gleichem Kennzeichen verdeckte sonst Sperre und Hinweise des echten Anhängers, 18.10.2026)
+  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>'')) ORDER BY COALESCE(eval_excluded,0), created_at`).all()).results;
   const coupledOf = new Map();
   for (const v of vs) {
     const p = v.kind === 'anhaenger'
@@ -916,7 +929,12 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   const head = table[0].map((h) => h.trim().toLowerCase());
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { plate: col(['kennzeichen']), site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin']), trailer: col(['anhänger', 'anhaenger']), kind: col(['fahrzeugart', 'art']), src: col(['quelle', 'nachweis']) };
+  // Kennzeichen-/Anhänger-/Art-Spalte nicht über den Anfang allein (18.10.2026: „Kennzeichen Anhänger“ wurde Fahrzeugkennzeichen bzw. ging
+  // still verloren, „Art km-Fälligkeit“ des eigenen Exports galt ohne Spalte „Fahrzeugart“ als Fahrzeugart)
+  const isTrailerHead = (h) => /anh(ä|ae)nger|auflieger/.test(h) && !/fin|fahrgestell|gekoppelt/.test(h);
+  const plateIdx = head.findIndex((h) => h.startsWith('kennzeichen') && !isTrailerHead(h));
+  const kindIdx = head.findIndex((h) => h.startsWith('fahrzeugart')) >= 0 ? head.findIndex((h) => h.startsWith('fahrzeugart')) : head.findIndex((h) => h.startsWith('art') && !/km|f(ä|ae)llig|prüf|pruef/.test(h));
+  const ci = { plate: plateIdx, site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin']), trailer: head.findIndex(isTrailerHead), kind: kindIdx, src: col(['quelle', 'nachweis']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
   // Reifen-/Prüftermin-Dateien abweisen; der eigene Fahrzeug-Export („Letzter km-Stand“, „Letzte Abfahrtskontrolle“) bleibt importierbar
   if (head.some((h) => h.startsWith('reifen') || h === 'art' || /^(prüfart|pruefart|letzte prüf|letzte pruef|nächster termin|naechster termin)/.test(h))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');

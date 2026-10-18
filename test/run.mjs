@@ -5324,8 +5324,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   vk = await vrow(users.fleet);
   eq(vk.next_due_km, 380000, 'belegte km-Fälligkeit, kleinste zuerst'); eq(vk.next_due_km_kind, 'Inspektion'); eq(vk.km_remaining, -20000);
   const vcs = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
-  ok(/;380000;Inspektion;-20000;0;\d+;\d+$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
+  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
+  ok(/;380000;Inspektion;-20000;0;\d+;\d+;aktiv$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
   const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
   eq(JSON.stringify([av.next_due_km, av.next_due_km_kind, av.km_remaining]), JSON.stringify([380000, 'Inspektion', -20000]), 'Integrations-API: km-Fälligkeit');
@@ -5759,8 +5759,8 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   eq(vl.find((x) => x.vin === 'WDB96340310555651').open_recalls, 1, 'Liste: ein offener Rückruf');
   ok(vl.filter((x) => x.vin !== 'WDB96340310555651').every((x) => x.open_recalls === 0), 'andere Fahrzeuge: 0');
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
-  ok(/;1;\d+;\d+$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
+  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
+  ok(/;1;\d+;\d+;aktiv$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
   // Rückrufschreiben als eigene Dokumentart in der Fahrzeugakte (Meta, Upload, Anzeige; Übersetzung je Sprache)
   ok((await users.fleet.get('/api/meta')).data.doc_kinds.includes('rueckruf'), 'Dokumentart Rückrufschreiben');
@@ -7634,10 +7634,10 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     const r = await c.get('/api/vehicles'); ok(r.status === 200 && r.data.vehicles.every((x) => !('agent_findings_open' in x) && !('agent_findings_critical' in x) && !('af' in x)), 'Rolle ohne Leitung: Feld sichtbar');
   }
   const csvL = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch'), 'CSV Leitung: Spalten am Ende');
-  ok(csvL.find((l) => l.startsWith('AF-BEF 1;')).endsWith(`;${db.n};${db.c || 0}`), 'CSV-Zeile = Datenbank');
+  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb'), 'CSV Leitung: Spalten am Ende');
+  ok(csvL.find((l) => l.startsWith('AF-BEF 1;')).endsWith(`;${db.n};${db.c || 0};aktiv`), 'CSV-Zeile = Datenbank');
   const csvD = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(csvD[0].endsWith(';Offene Rückrufe'), 'CSV Disposition: ohne Agentenbefunde');
+  ok(csvD[0].endsWith(';Offene Rückrufe;Bewertung/Betrieb'), 'CSV Disposition: ohne Agentenbefunde');
   const iv = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles; ok(iv.every((x) => !('agent_findings_open' in x)), 'Integrations-API unverändert');
   const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
   ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);
@@ -12563,6 +12563,42 @@ await test('Fehlersuche 18.10. (18): Prüftermin-Import (alte Plakette vor neuer
   const d2 = (await U.fleet.post('/api/drivers', { display_name: 'Ohne Karte' })).data.id; const now = new Date().toISOString();
   db.prepare(`INSERT INTO tacho_downloads(id,environment,kind,driver_id,downloaded_on,evidence,created_by,created_at,cancelled_at,cancelled_by,cancel_reason) VALUES('tdx','test','fahrerkarte',?,?, 'x',?,?,?,?,'falscher Fahrer')`).run(d2, addD(-3), U.fleet.id, now, now, U.fleet.id);
   eq((await U.fleet.get(`/api/drivers/${d2}`)).data.tacho, null);
+});
+
+await test('Fehlersuche 18.10. (19): Fahrzeuge – ruhendes Doppel mit gleichem Kennzeichen verdeckt das Gespann nicht (Liste, Akte, Mein Fahrzeug), Importspalten „Kennzeichen Anhänger“/„Art km-Fälligkeit“, CSV „Bewertung/Betrieb“, kyrillische Kennzeichen abgewiesen', async () => {
+  const { e, U, cmd } = await freshWorld(); const db = e.DB.db; const own = U.own;
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  const imp = (csv, dry) => own.req('POST', '/api/vehicles/import' + (dry ? '?dry_run=1' : ''), csv, { 'content-type': 'text/csv' });
+  // Spalte „Kennzeichen Anhänger“ nach „Kennzeichen“ und davor
+  let r = await imp('Kennzeichen;FIN;Kennzeichen Anhänger;Fahrzeugart\nSZ-YC 1;WMA15SZZ2HM700001;SZ-A 1;Lkw\nSZ-A 1;WMA15SZZ2HM700002;;Anhänger'); eq(r.status, 200, JSON.stringify(r.data));
+  eq(db.prepare(`SELECT trailer_plate FROM vehicles WHERE id='VIN:WMA15SZZ2HM700001'`).get().trailer_plate, 'SZ-A 1');
+  r = await imp('Kennzeichen Anhänger;Kennzeichen;FIN\nSZ-A 9;SZ-YC 2;WMA15SZZ2HM700003', true); eq(r.data.preview[0].plate, 'SZ-YC 2', 'Anhängerspalte zuerst');
+  // ruhendes Doppel des Anhängers (FIN-Tippfehler), später angelegt
+  eq((await own.post('/api/vehicles', { vin: 'WMA15SZZ2HM700009', plate: 'SZ-A1', kind: 'anhaenger' })).status, 201);
+  db.prepare(`UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WMA15SZZ2HM700009'`).run();
+  const c = await U.driver.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM700002', description: 'Bremse Anhänger', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); eq(c.status, 201, JSON.stringify(c.data));
+  const truck = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === 'VIN:WMA15SZZ2HM700001');
+  eq(truck.trailer_id, 'VIN:WMA15SZZ2HM700002'); eq(truck.coupled.id, 'VIN:WMA15SZZ2HM700002'); eq(truck.coupled.availability, 'gesperrt');
+  eq((await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === 'VIN:WMA15SZZ2HM700002').truck_id, 'VIN:WMA15SZZ2HM700001');
+  const det = (await U.fleet.get('/api/vehicles/VIN:WMA15SZZ2HM700001')).data; eq(det.coupled.length, 1, 'Akte: nur das bewertete'); eq(det.coupled[0].locked, true);
+  eq((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM700001/drivers', { user_id: U.driver.id, evidence: 'Dispo' })).status, 201);
+  const mine = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === 'VIN:WMA15SZZ2HM700001');
+  eq(mine.coupled.id, 'VIN:WMA15SZZ2HM700002'); eq(mine.coupled.locked, true, 'Fahrer sieht die Sperre des echten Anhängers');
+  // CSV: Spalte „Bewertung/Betrieb“
+  const lines = dec(await U.fleet.get('/api/vehicles?format=csv')).split('\r\n');
+  ok(lines[0].endsWith(';Bewertung/Betrieb')); ok(lines.find((l) => l.startsWith('SZ-A1;')).endsWith(';ruhend (nicht in Bewertungen)'));
+  // eigener Export ohne Spalte „Fahrzeugart“: „Art km-Fälligkeit“ gilt nicht als Fahrzeugart
+  const own0 = dec(await own.get('/api/vehicles?format=csv')).replace(/^﻿/, '').split('\r\n').filter(Boolean).map((l) => l.split(';'));
+  const kIdx = own0[0].indexOf('Fahrzeugart'); const noKind = own0.map((cs) => cs.filter((_, i) => i !== kIdx).join(';')).join('\n');
+  r = await imp(noKind, true); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.skipped.length, 0, JSON.stringify(r.data.skipped));
+  // kyrillische Buchstaben im Kennzeichen
+  const k = await own.post('/api/vehicles', { vin: 'WMA15SZZ2HM700005', plate: 'SZ-YС 5513' }); eq(k.status, 400); ok(/unzulässige Zeichen/.test(k.data.message));
+  r = await imp('Kennzeichen;FIN;Anhänger\nSZ-YC 7;WMA15SZZ2HM700006;SZ-А 1', true); eq(r.data.skipped.length, 1); ok(/Anhänger-Kennzeichen enthält unzulässige/.test(r.data.skipped[0].reason));
+  eq((await own.post('/api/vehicles', { vin: 'WMA15SZZ2HM700007', plate: 'SZ–AH 200' })).status, 201, 'Gedankenstrich bleibt erlaubt');
+  // Hilfe: Kontrolle nach Reparatur führt die Werkstatt im Status „in Reparatur“ durch (nicht die Leitung in „Abschlusskontrolle“)
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const L of ['de', 'uk', 'en']) { ok(STRINGS[L].help_ws_s.includes(STRINGS[L].act_inspection), `Werkstatt-Hilfe nennt „${STRINGS[L].act_inspection}“ (${L})`); eq(STRINGS[L].help_release_s.split('|').length, STRINGS.de.help_release_s.split('|').length); }
+  ok(!/öffnen und „Kontrolle durchführen“/.test(STRINGS.de.help_release_s));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
