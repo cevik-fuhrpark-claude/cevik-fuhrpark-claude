@@ -177,7 +177,7 @@ function parseDay(raw) {
 }
 // Spalte mit dem Auslesedatum (18.10.2026: „Downloaddatum“/„Datum der Auslesung“ neben „Datum letzte Aktivität“/„Datum Kartenablauf“
 // – der Anfangstreffer „datum“ nahm still die erste Datumsspalte; „Ausgelesen von“ (Person) galt als Datum). Reihenfolge: exakte Namen,
-// dann Spalten mit „auslese“/„download“ (ohne Personenangabe), dann genau eine Spalte „Datum…“; mehrere → -2 (nicht eindeutig)
+// dann Spalten mit „auslese“/„auslesung“/„download“ (ohne Personenangabe; „Auslesung vom“ wurde bis 18.10.2026 übersehen und still „Datum letzte Aktivität“ genommen), dann genau eine Spalte „Datum…“; mehrere → -2 (nicht eindeutig)
 const DAY_EXACT = ['auslesedatum', 'datum der auslesung', 'datum auslesung', 'auslesung', 'ausgelesen am', 'downloaddatum', 'download-datum', 'download datum', 'download', 'datum'];
 export function dayCol(head) {
   const hd = head.map((h) => String(h || '').trim().toLowerCase());
@@ -186,7 +186,7 @@ export function dayCol(head) {
   // Fälligkeits-/Planspalten („Nächster Download“, „Download fällig am“, „Auslesefrist“) sind kein Auslesedatum (18.10.2026: Fälligkeitstag
   // wurde als Auslesung gespeichert → Frist 28 Tage später „ok“ statt überfällig)
   const planned = /n(ä|ae)chst|f(ä|ae)llig|frist|\bsoll|geplant|\bplan/;
-  const hits = hd.map((h, i) => (/auslese|ausgelesen|download/.test(h) && !person.test(h) && !planned.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
+  const hits = hd.map((h, i) => (/auslese|auslesung|ausgelesen|download/.test(h) && !person.test(h) && !planned.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
   if (hits.length === 1) return hits[0];
   if (hits.length > 1) return -2;
   const dates = hd.map((h, i) => (h.startsWith('datum') && !planned.test(h) ? i : -1)).filter((i) => i >= 0);

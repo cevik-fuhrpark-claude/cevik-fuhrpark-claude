@@ -12917,6 +12917,13 @@ await test('Fehlersuche 18.10. (28): Vertragsimport ohne zweiten laufenden Vertr
   eq(r.since, start, 'Beginn = Tagesanfang Berlin'); eq(r.totals.checks, 1, 'erste Minute des ersten Tages zählt, letzte Minute davor nicht');
 });
 
+await test('Fehlersuche 18.10. (29): Tacho-Import erkennt „Auslesung vom/am“, „Zeitpunkt Auslesung“ neben „Datum letzte Aktivität“', async () => {
+  const { dayCol } = await import('../src/tacho.js');
+  for (const h of ['Auslesung vom', 'Auslesung am', 'Zeitpunkt Auslesung', 'Tag der Auslesung']) eq(dayCol(['Art', 'Personalnummer', 'Datum letzte Aktivität', h, 'Nachweis']), 3, h);
+  eq(dayCol(['Art', 'Datum letzte Aktivität', 'Nächste Auslesung']), 1, 'Planspalte bleibt ausgenommen');
+  eq(dayCol(['Art', 'Auslesung vom', 'Download am']), -2, 'zwei Kandidaten → nicht eindeutig');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
