@@ -217,12 +217,13 @@ export async function vehicleContracts(env, vehicleId, latest, settings, envName
 
 const ORDER = { handeln: 0, hinweis: 1, ok: 2, beendet: 3 };
 // Übersicht über alle Fahrzeuge (Mehr → Verträge): Filter offen/aktion/beendet/alle, Vertragsart
-export async function contractOverview(env, user, query = {}) {
+export async function contractOverview(env, user, query = {}, envName = null) {
   if (!isMgr(user)) throw forbidden();
   const filter = ['aktiv', 'aktion', 'beendet', 'alle'].includes(query.filter) ? query.filter : 'aktiv';
   const kind = CONTRACT_KINDS.includes(query.kind) ? query.kind : null;
   const [rows, settingsRows, latestKm] = await Promise.all([
-    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id ORDER BY v.plate, c.kind`).all(),
+    // Vertragsdokument nur aus der eigenen Umgebung (wie die Fahrzeugakte; 18.10.2026: Übersicht/CSV zeigten „verknüpft“ für ein Test-Dokument im Betrieb)
+    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site, f.id AS file_ok FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id LEFT JOIN files f ON f.id=c.file_id AND f.environment=? ORDER BY v.plate, c.kind`).bind(envName).all(),
     env.DB.prepare(`SELECT key, value FROM settings WHERE key='contract_warn_days'`).all(),
     latestKmByVehicle(env),
   ]);
@@ -231,7 +232,7 @@ export async function contractOverview(env, user, query = {}) {
   // Filter „Fahrzeug-Standort“ (Standort laut Fahrzeugstamm, Schreibweisen zusammengefasst) – vor den Zählern, damit diese zum Standort passen
   const sel = siteSelection(rows.results.map((r) => ({ site: r.vehicle_site })), query.site);
   // Vertragsart ebenfalls vor den Zählern (vorher „Handlungsbedarf (2)“ bei leerer Liste der gewählten Art, 17.10.2026)
-  let list = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind)).map((c) => ({ ...c, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
+  let list = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind)).map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
   for (const c of list) { if (c.ended_on) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
   // laufend = nicht beendet und heute innerhalb der Laufzeit, unabhängig vom Listenfilter (17.10.2026: abgelaufene Verträge und der Filter
@@ -251,13 +252,13 @@ export async function contractOverview(env, user, query = {}) {
 const ST_DE = { handeln: 'handeln', hinweis: 'Hinweis', ok: 'in Ordnung', beendet: 'beendet' };
 export function contractsCsv(ov) {
   const head = ['Kennzeichen', 'Vertragsart', 'Vertragspartner', 'Vertragsnummer', 'Beginn', 'Ende', 'Kündigungsfrist (Monate)', 'Kündigung spätestens', 'Monatsrate netto (EUR)',
-    'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung', 'Vertragsdokument verknüpft'];
+    'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung', 'Vertragsdokument verknüpft', 'Fahrzeug ruhend (nicht in Summen)'];
   const lines = [head.join(';')];
   for (const c of ov.contracts) {
     const s = c.status;
     lines.push([c.plate, KIND_DE[c.kind], c.partner, c.contract_no, c.start_date, c.end_date, c.notice_months, s.notice ? s.notice.by : '',
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
-      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein'].map(csvCell).join(';'));
+      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein'].map(csvCell).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
@@ -384,7 +385,8 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const byVin = new Map(vehicles.map((v) => [normVin(v.vin), v]));
   // Kennzeichen doppelt (ruhendes/außer Betrieb genommenes Doppel): das bewertete aktive Fahrzeug wie bei den anderen Importen (17.10.2026)
   const byPlate = { get: (raw) => { const r = pickVehicleByPlate(vehicles, raw); return r.vehicle || (r.ambiguous ? 'mehrdeutig' : undefined); } };
-  const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${lcDe(no)}` : `${vid}|${kind}|${lcDe(partner)}|${start || ''}`);
+  // mit Nummer auch der Beginn: Folgevertrag mit gleicher Nummer (nach Beenden erlaubt, `sameContract`) galt beim Rückimport sonst als „doppelt in der Datei“ (18.10.2026)
+  const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${lcDe(no)}|${start || ''}` : `${vid}|${kind}|${lcDe(partner)}|${start || ''}`);
   // Formelschutz des eigenen CSV-Exports („'-“, „'+Assekuranz“) zurücknehmen – Re-Import ergab sonst Dubletten (18.10.2026)
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim().replace(/^'(?=[=+\-@\t\r])/, '') : '');
   const rows = []; const skipped = []; const seen = new Set();

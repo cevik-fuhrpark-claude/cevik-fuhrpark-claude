@@ -5529,7 +5529,7 @@ await test('Vertragsdokument: nur Dokument desselben Fahrzeugs und derselben Umg
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id).file_id, f1, 'bleibt verknüpft');
   ok((await users.fleet.get('/api/contracts')).data.contracts.find((x) => x.id === c.data.id).file_id, 'Übersicht kennt Verknüpfung');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/contracts?format=csv&filter=alle')).data);
-  ok(csv.split('\r\n')[0].endsWith(';Vertragsdokument verknüpft') && csv.split('\r\n').some((l) => l.startsWith('VT-DOC 1;Leasing;Doc-Leasing;D-1;') && l.endsWith(';ja')), 'CSV-Spalte');
+  ok(csv.split('\r\n')[0].endsWith(';Vertragsdokument verknüpft;Fahrzeug ruhend (nicht in Summen)') && csv.split('\r\n').some((l) => l.startsWith('VT-DOC 1;Leasing;Doc-Leasing;D-1;') && l.endsWith(';ja;nein')), 'CSV-Spalte');
   let dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
   ok(!dq.some((i) => i.check === 'contract_no_document' && i.vehicle_id === V), 'mit Dokument kein Hinweis');
   eq((await users.fleet.patch(`/api/contracts/${c.data.id}`, { file_id: null })).status, 200);
@@ -12482,6 +12482,32 @@ await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenz
   db.prepare('UPDATE tire_events SET created_at=? WHERE vehicle_id=?').run(at, V1);
   const row = (await U.ws.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1);
   eq(row.oldest_age_days, 91, 'Kalendertage'); eq(row.stale, true, 'älter als 90 Tage');
+});
+
+await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag gleicher Nummer, ruhende Fahrzeuge gekennzeichnet (CSV), Vertragsdokument nur aus der eigenen Umgebung', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const own = U.own;
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  const a = await own.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Allianz', contract_no: 'P-1', start_date: '2024-01-01', end_date: '2025-01-01', evidence: 'Police 2024' }); eq(a.status, 201);
+  eq((await own.post(`/api/contracts/${a.data.id}/end`, { ended_on: '2025-01-01', end_note: 'Ablauf' })).status, 200);
+  eq((await own.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Allianz', contract_no: 'P-1', start_date: '2025-01-01', end_date: '2027-01-01', evidence: 'Police 2025' })).status, 201);
+  const ex = dec(await own.get('/api/contracts?filter=alle&format=csv'));
+  const imp = await own.req('POST', '/api/contracts/import?dry_run=1', ex.replace(/^\ufeff/, ''), { 'content-type': 'text/csv' });
+  eq(imp.status, 200); eq(JSON.stringify(imp.data.counts), JSON.stringify({ neu: 0, vorhanden: 2, uebersprungen: 0 }), 'Rückimport ' + JSON.stringify(imp.data.skipped));
+  eq((await own.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'LeaseCo', contract_no: 'L-1', start_date: '2025-01-01', monthly_rate_net: 1000, evidence: 'Vertrag' })).status, 201);
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
+  const ov = (await own.get('/api/contracts?filter=alle')).data;
+  ok(ov.contracts.every((c) => c.vehicle_eval_excluded === true), 'ruhend gekennzeichnet'); eq(ov.monthly_rate_sum_net, null, 'nicht in der Summe');
+  ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').slice(1).filter(Boolean).every((l) => l.endsWith(';ja')), 'CSV-Spalte ruhend = ja');
+  db.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').run(V1);
+  // Vertragsdokument aus „test“ gilt im Betrieb nicht als verknüpft (wie die Fahrzeugakte)
+  own.envHeader = 'test';
+  const fd = await own.req('POST', `/api/vehicles/${V1}/documents?doc_kind=vertrag`, new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52, 10]), { 'x-filename': 'vertrag.pdf', 'content-type': 'application/pdf' }); eq(fd.status, 201, JSON.stringify(fd.data));
+  const c = await own.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'MietCo', start_date: '2025-02-01', evidence: 'V', file_id: fd.data.id }); eq(c.status, 201);
+  const inTest = (await own.get('/api/contracts?filter=alle')).data.contracts.find((x) => x.id === c.data.id); eq(inTest.file_id, fd.data.id, 'eigene Umgebung: verknüpft');
+  own.envHeader = null;
+  const inProd = (await own.get('/api/contracts?filter=alle')).data.contracts.find((x) => x.id === c.data.id);
+  eq(inProd.file_id, null, 'Betrieb: nicht verknüpft'); eq(inProd.file_other_env, true);
+  ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').some((l) => l.includes(';MietCo;') && l.endsWith(';nein;nein')), 'CSV Betrieb: nein');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

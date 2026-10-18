@@ -285,7 +285,7 @@ async function handleApi(request, env, ctx, url) {
   // Fahrzeugverträge (Leasing/Miete/Finanzierung/Versicherung/Wartung) – nur Inhaber/Fuhrparkleitung
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/contracts$/)) && m === 'POST') return json(await contracts.createContract(env, user, mm[1], await readJson(request), envName), 201);
   if (path === '/api/contracts' && m === 'GET') {
-    const ov = await contracts.contractOverview(env, user, Object.fromEntries(url.searchParams));
+    const ov = await contracts.contractOverview(env, user, Object.fromEntries(url.searchParams), envName);
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter, site: ov.site });
       return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.csv"` } });
