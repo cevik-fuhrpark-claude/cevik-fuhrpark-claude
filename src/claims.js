@@ -117,7 +117,7 @@ export async function claimOverview(env, user, envName, query = {}) {
   const rate = rateOf(rv);
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
-  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate, v.site AS vehicle_site,
+  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS not_actual,
@@ -138,24 +138,28 @@ export async function claimOverview(env, user, envName, query = {}) {
     // ohne jede Kostenposition: „–“ statt 0 € (wie die Vorgangsansicht; vorher Saldo = −Erstattung, 17.10.2026)
     const complete = r.items > 0 && workNet !== null && (r.covered ? r.ext_not_actual === 0 : r.not_actual === 0);
     const cost = complete ? r2(workNet + (r.covered ? 0 : r.parts_net) + r.ext_net) : null;
-    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, items, ...rest } = r;
+    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, items, vehicle_excluded, ...rest } = r;
     const sh = shape(rest, today);
-    return { ...sh, followup_due: followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
+    // ruhende Fahrzeuge (Entscheidung 10.10.2026: aus allen Bewertungen ausgenommen) bleiben sichtbar, aber ohne Nachfass-Hinweis und außerhalb der Summe – wie Agent und Kostenbericht (18.10.2026)
+    const excluded = !!vehicle_excluded;
+    return { ...sh, eval_excluded: excluded, followup_due: !excluded && followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
   });
   const counts = { offen: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
   for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; }
   if (filter === 'offen') list = list.filter((c) => c.open); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
-  const reimb = list.filter((c) => c.reimbursed_net !== null);
-  return { today, filter, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: reimb.length ? r2(reimb.reduce((s, c) => s + c.reimbursed_net, 0)) : null };
+  const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
+  const reimbX = list.filter((c) => c.reimbursed_net !== null && c.eval_excluded);
+  const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);
+  return { today, filter, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
 }
 
 export function claimsCsv(ov) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
-    'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung', 'Schreiben verknüpft'];
+    'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
-    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.file_id ? 'ja' : 'nein'].map(csvCell).join(';'));
+    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein'].map(csvCell).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

@@ -5688,7 +5688,7 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
   eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft\r\n'), 'CSV-Spalte');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen)\r\n'), 'CSV-Spalte');
   eq((await users.fleet.put(P, { file_id: null })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.put(P, { file_id: fid })).status, 200);
@@ -12426,6 +12426,24 @@ await test('Fehlersuche 18.10. (15): Vertragsimport (englische Tausender, Laufle
   const sets = new Map([['claim_followup_days', '3']]);
   let f = await claimFindings(e, 'test', sets); const fc = f.find((x) => x.case_id === C); ok(fc && new RegExp(day(5).split('-').reverse().join('\\.')).test(fc.message), fc && fc.message);
   db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1); f = await claimFindings(e, 'test', sets); eq(f.length, 0, 'ruhend: kein Befund');
+});
+
+await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Nachfass-Hinweis und außerhalb der Summe Erstattungen (eigene Zeile, CSV-Spalte)', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('claim_followup_days','3',datetime()) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
+  const A = await newCase({ description: 'Unfall Spiegel' }); const B = await newCase({ description: 'Unfall Stoßfänger' });
+  eq((await U.fleet.put(`/api/cases/${A}/claim`, { insurer: 'Vers AG', reported_on: day(10), status: 'reguliert', reimbursed_net: 750.5, reimbursed_on: day(2), evidence: 'Abrechnung' })).status, 200);
+  eq((await U.fleet.put(`/api/cases/${B}/claim`, { insurer: 'Vers AG', reported_on: day(10), evidence: 'Meldung' })).status, 200);
+  let ov = (await U.fleet.get('/api/claims?filter=alle')).data;
+  eq(ov.reimbursed_sum_net, 750.5); eq(ov.reimbursed_sum_excluded_net, null); ok(ov.claims.find((c) => c.case_id === B).followup_due, 'aktiv: nachfassen');
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
+  ov = (await U.fleet.get('/api/claims?filter=alle')).data;
+  eq(ov.claims.length, 2, 'bleiben sichtbar'); ok(ov.claims.every((c) => c.eval_excluded === true), 'als ruhend markiert');
+  eq(ov.reimbursed_sum_net, null, 'nicht in der Summe'); eq(ov.reimbursed_sum_excluded_net, 750.5, 'eigene Zeile');
+  eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
+  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen)\r\n'), 'CSV-Kopf'); ok(/;ja\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
