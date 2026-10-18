@@ -1,6 +1,6 @@
 // [CLAUDE] Benachrichtigungen: Ereignis -> Empfänger (nur bestätigte Benutzerkonten) -> In-App + Push
 // Zustände getrennt: gespeichert -> Push vom Dienst angenommen -> am Gerät empfangen -> geöffnet -> übernommen
-import { nowIso, uuid, quietHoldUntil, dateLang, PLATE_KEY_SQL } from './util.js';
+import { nowIso, uuid, quietHoldUntil, dateLang, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
 import { sendPush } from './push.js';
 import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 
@@ -119,12 +119,13 @@ export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Ar
 // (Abfragebudget); Kennzeichen-Vergleich ohne Leer-/Trennzeichen wie normPlate (PLATE_KEY_SQL).
 async function candidateUsers(env, c, site, withCoupled, oldSite) {
   const own = `d.vehicle_id=?4`;
-  const coupled = withCoupled ? ` OR d.vehicle_id IN (SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?4 WHERE x.active=1 AND x.id<>v.id AND (
+  const coupled = withCoupled ? ` OR d.vehicle_id IN (SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?4 WHERE x.active=1 AND x.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('x')} AND (
       (v.kind='anhaenger' AND x.kind='lkw' AND ${PLATE_KEY_SQL('x.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.trailer_plate')}=${PLATE_KEY_SQL('v.plate')})
       OR (v.kind='lkw' AND x.kind='anhaenger' AND ${PLATE_KEY_SQL('v.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.plate')}=${PLATE_KEY_SQL('v.trailer_plate')})))` : '';
   const assigned = `EXISTS (SELECT 1 FROM driver_vehicles d WHERE d.user_id=u.id AND (${own}${coupled}) AND (d.valid_to IS NULL OR d.valid_to > ?5))`;
   return (await env.DB.prepare(`SELECT u.id, u.language, u.role, (u.id=?1) AS is_reporter,
       (u.password_hash IS NOT NULL AND u.environment=?2) AS qualified,
+      (u.password_hash IS NOT NULL AND (u.environment=?2 OR u.role='owner')) AS reporter_ok,
       (u.role='workshop' AND u.workshop_site IS ?3) AS at_site,
       (u.role='workshop' AND ?6 IS NOT NULL AND u.workshop_site IS ?6) AS at_old_site,
       (u.role='driver' AND ${assigned}) AS is_assigned
@@ -147,7 +148,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
   const pool = await candidateUsers(env, c, site, ['released', 'safety_lock', 'safety_lock_lifted'].includes(kind) || (kind === 'created' && !!c.safety_lock) || internalLock, oldSite);
   const pick = (u, extra = {}) => ({ id: u.id, language: u.language, role: u.role, ...extra });
   // Melder nur in derselben Umgebung (nach einem Umgebungswechsel kamen sonst Hinweise/Pushs aus der alten Umgebung, unsichtbar in der Liste – 17.10.2026)
-  const reporter = pool.filter((u) => u.is_reporter && u.qualified).map((u) => pick(u));
+  // Inhaber sieht beide Umgebungen (Ansicht „Test“): als Melder auch dort benachrichtigt (wie retryFailedPush; 18.10.2026 erhielt er nichts)
+  const reporter = pool.filter((u) => u.is_reporter && u.reporter_ok).map((u) => pick(u));
   const usersByRole = (roles) => pool.filter((u) => u.qualified && roles.includes(u.role)).map((u) => pick(u));
   const workshopUsers = site ? pool.filter((u) => u.qualified && u.at_site).map((u) => pick(u)) : [];
   const assignedDrivers = () => pool.filter((u) => u.qualified && u.is_assigned && u.id !== c.reporter_id).map((u) => pick(u, { assigned: 1 }));
@@ -169,7 +171,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       if (kind === 'approved') add(reporter.map((u) => ({ ...u, kind: 'forwarded' })));
       // Hochstufung auf „kritisch“ mit der Freigabe: Disposition wie bei „Priorität ändern“ (18.10.2026: erfuhr nichts)
       if (kind === 'approved' && c.priority === 'kritisch' && ctxData.previous && ctxData.previous.priority !== 'kritisch') add(usersByRole(['dispatch']).map((u) => ({ ...u, kind: 'priority_changed' })));
-      if (internalLock) { add(usersByRole(['dispatch']).map((u) => ({ ...u, kind: 'safety_lock' }))); add(assignedDrivers().map((u) => ({ ...u, kind: 'safety_lock' }))); }
+      // interner Auftrag mit Sperre: auch weitere Konten der Leitung/Inhaber (wie „Fahrzeug sperren“; 18.10.2026 erfuhren sie nichts)
+      if (internalLock) { add(usersByRole(['dispatch', 'fleet', 'owner']).map((u) => ({ ...u, kind: 'safety_lock' }))); add(assignedDrivers().map((u) => ({ ...u, kind: 'safety_lock' }))); }
       break;
     case 'acknowledged': case 'started': case 'waiting_parts': case 'resumed': case 'quality_check': case 'open_item_safety':
       add(usersByRole(['fleet', 'owner']));
@@ -185,7 +188,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       // Werkstattwechsel (17.10.2026): neue Werkstatt bekommt „Neuer Werkstattauftrag“, die bisherige erfährt die Abgabe
       // (ohne Link – sie hat danach keinen Zugriff mehr); Melder nicht erneut (er bekam die Freigabe schon)
       add(workshopUsers.map((u) => ({ ...u, kind: 'approved' })));
-      add(pool.filter((u) => u.qualified && u.at_old_site && !u.at_site).map((u) => pick(u, { kind: 'reassigned_away', away: 1 })));
+      // Melder (z. B. meldende Werkstatt) behält Lesezugriff – kein „abgegeben“ ohne Link
+      add(pool.filter((u) => u.qualified && u.at_old_site && !u.at_site && !u.is_reporter).map((u) => pick(u, { kind: 'reassigned_away', away: 1 })));
       break;
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(usersByRole(['dispatch', 'fleet', 'owner'])); add(workshopUsers);
@@ -306,6 +310,10 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   const mutedByUser = new Map();
   const holdByUser = new Map(); // Person in ihrer Ruhezeit → Ende der Ruhezeit (ISO); nicht dringende Pushs warten bis dahin
   let sends = 0; const deferred = new Set();
+  // gemeinsame Sendegrenze je Worker-Aufruf (Cron: Agent, Ende der Ruhezeit, Wiederholung, Sammelgruppen nacheinander – vorher bis 80 Sendungen
+  // in einem Lauf, Grenze 50 Unteranfragen; überzählige scheiterten und waren nach 3 Versuchen verloren, 18.10.2026)
+  const budget = env.__sendBudget || null;
+  const room = () => (budget ? Math.min(maxSends - sends, budget.left) : maxSends - sends);
   // Stumm-/Ruhezeit-Einstellungen VOR dem Sammeln laden: ein stumm geschalteter Träger nahm sonst die übrigen Hinweise mit (kein Push, 17.10.2026)
   if (all.some((n) => !n.urgent)) {
     const nowMs = env.__nowMs || Date.now();
@@ -343,10 +351,10 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     if (!n.urgent && holdByUser.has(n.user_id)) { states.push({ id: n.id, s: 'pending', a: 0, h: holdByUser.get(n.user_id) }); continue; }
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
     if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
-    if (sends + subs.length > maxSends) { deferred.add(n.id); continue; } // bleibt pending → Cron
+    if (subs.length > room()) { deferred.add(n.id); continue; } // bleibt pending → Cron
     let accepted = false; let lastErr = null;
     for (const s of subs) {
-      sends++;
+      sends++; if (budget) budget.left--;
       // lang: Sprache des Textes, damit das Gerät die Mitteilung richtig vorliest/trennt (fehlt bei nicht übersetzten Freitexten)
       // ein einzelnes unbrauchbares Abo (Schlüssel) darf die Zustellung an die übrigen Empfänger nicht abbrechen (17.10.2026)
       const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(n.ref ? { ref: n.ref } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),

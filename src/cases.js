@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, rateOf, roundCents } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -363,7 +363,7 @@ export function warrantyDate(v) {
 async function otherLockCaseNo(env, c) {
   const PK = PLATE_KEY_SQL;
   const r = await env.DB.prepare(`SELECT x.case_no FROM cases x WHERE x.environment=?1 AND x.id<>?2 AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
-    AND (x.vehicle_id=?3 OR x.vehicle_id IN (SELECT o.id FROM vehicles o JOIN vehicles v ON v.id=?3 WHERE o.active=1 AND o.id<>v.id AND (
+    AND (x.vehicle_id=?3 OR x.vehicle_id IN (SELECT o.id FROM vehicles o JOIN vehicles v ON v.id=?3 WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
       (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
       OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))))
     ORDER BY x.created_at LIMIT 1`).bind(c.environment, c.id, c.vehicle_id).first();
@@ -908,7 +908,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // bisherige Werkstatt: alte Hinweise zum Auftrag ausblenden (Link → 404, zurückgehaltener Push ging nach der Ruhezeit noch raus – 17.10.2026);
       // der Hinweis „an andere Werkstatt übergeben“ entsteht danach neu
       if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL
-        AND user_id IN (SELECT id FROM users WHERE role='workshop' AND workshop_site=?)`).bind(now, c.id, c.workshop_site));
+        AND user_id IN (SELECT id FROM users WHERE role='workshop' AND workshop_site=?) AND user_id<>?`).bind(now, c.id, c.workshop_site, c.reporter_id || '')); // Melder behält seine Hinweise (Lesezugriff)
       notifyKind = 'reassigned';
       break;
     }

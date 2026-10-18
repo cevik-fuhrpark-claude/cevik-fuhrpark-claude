@@ -1662,7 +1662,7 @@ await test('Kennzahlen: Reaktions-/Durchlaufzeiten je Priorität stimmen mit den
   eq(all.created, all.released + all.rejected + all.open);
   eq(r.data.by_priority.filter((x) => x.priority !== 'alle').reduce((n, x) => n + x.created, 0), all.created, 'Summe Prioritäten');
   ok(all.triage.n > 0 && all.triage.median_h >= 0 && all.triage.p90_h >= all.triage.median_h, 'Erstbewertung');
-  ok(all.created_to_release.n === all.released, 'Durchlaufzeit nur für freigegebene');
+  ok(all.created_to_release.n === all.released - list.filter((c) => c.status === 'fahrzeug_freigegeben' && c.origin === 'wartung').length, 'Durchlaufzeit nur für freigegebene (ohne interne Aufträge)');
   ok(r.data.vehicles.length > 0 && r.data.vehicles.every((v) => v.plate && v.workshop_h >= 0), 'je Fahrzeug');
   // Filter je Werkstatt-Standort: Summe der Standorte = alle, unbekannter Standort = leer
   ok(r.data.sites.length >= 1, 'Standorte im Zeitraum');
@@ -4943,8 +4943,8 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   ok(k1.every((x) => x.duplicates <= x.rejected), 'Dubletten ≤ abgelehnt');
   eq((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.vehicles.find((v) => v.plate === 'DU-PL 1').duplicates, 2, 'je Fahrzeug: zwei Dubletten');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&format=csv&part=priority`)).data).trim().split('\r\n');
-  ok(kcsv[0].endsWith(';davon Dubletten'), 'CSV-Spalte am Ende');
-  eq(Number(kcsv.find((l) => l.startsWith('alle;')).split(';').at(-1)), pick(k1, 'alle').duplicates, 'CSV = JSON');
+  ok(kcsv[0].endsWith(';davon Dubletten;davon interne Aufträge'), 'CSV-Spalte am Ende');
+  eq(Number(kcsv.find((l) => l.startsWith('alle;')).split(';').at(-2)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
   ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';')).length === 2, 'CSV-Spalte „Dublette von“');
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
@@ -6192,7 +6192,7 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
   // Kennzahlen: Mängelbeseitigung aus Prüfungen (Zeitraum deckt alle Prüfdaten dieses Tests ab)
   const kq = `/api/reports/kpi?from=${day(-5).slice(0, 7)}&to=${day(0).slice(0, 7)}`;
   const kd = (await users.fleet.get(kq)).data.inspection_defects;
-  ok(kd.inspections >= 3 && kd.ordered + kd.without_order === kd.inspections && kd.released + kd.open === kd.ordered, 'Summen stimmen: ' + JSON.stringify(kd));
+  ok(kd.inspections >= 3 && kd.ordered + kd.without_order + kd.settled_without_order === kd.inspections && kd.released + kd.open === kd.ordered, 'Summen stimmen: ' + JSON.stringify(kd));
   ok(kd.released >= 2 && kd.to_release_days.n === kd.released && kd.to_release_days.median_d >= 0 && kd.to_release_days.p90_d <= 5, 'Dauer in Tagen');
   ok(kd.reinspected >= 2 && kd.defects_again >= 1 && kd.without_order >= 1, 'Nachprüfung/erneut Mängel/ohne Auftrag');
   const kdp = (await owner.get(kq, { 'x-cfp-env': 'production' })).data.inspection_defects;
@@ -12599,6 +12599,63 @@ await test('Fehlersuche 18.10. (19): Fahrzeuge – ruhendes Doppel mit gleichem 
   const { STRINGS } = await import('../public/i18n.js');
   for (const L of ['de', 'uk', 'en']) { ok(STRINGS[L].help_ws_s.includes(STRINGS[L].act_inspection), `Werkstatt-Hilfe nennt „${STRINGS[L].act_inspection}“ (${L})`); eq(STRINGS[L].help_release_s.split('|').length, STRINGS.de.help_release_s.split('|').length); }
   ok(!/öffnen und „Kontrolle durchführen“/.test(STRINGS.de.help_release_s));
+});
+
+await test('Fehlersuche 18.10. (20): Hinweise – ruhendes Gespann-Doppel, gemeinsame Push-Sendegrenze je Cron-Lauf, interner Auftrag mit Sperre an die Leitung, Inhaber als Melder in „Test“, Melder-Werkstatt beim Werkstattwechsel; Kennzahlen ohne interne Aufträge, Prüfmängel „ohne Auftrag erledigt“', async () => {
+  const { e, U, cmd, V1 } = await freshWorld(); const db = e.DB.db; const own = U.own;
+  const addD = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 864e5).toISOString().slice(0, 10);
+  const notes = (uid, caseId) => db.prepare('SELECT kind, hidden_at FROM notifications WHERE user_id=? AND case_id IS ? ORDER BY rowid').all(uid, caseId);
+  // 1. Sperre am ruhenden Doppel des Anhängers erreicht den Fahrer der Zugmaschine nicht (wie „Mein Fahrzeug“)
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-AH 100' WHERE id=?`).run(V1);
+  eq((await own.post('/api/vehicles', { vin: 'WMA15SZZ2HM700011', plate: 'SZ-AH 100', kind: 'anhaenger' })).status, 201);
+  eq((await own.post('/api/vehicles', { vin: 'WMA15SZZ2HM700012', plate: 'SZ-AH100', kind: 'anhaenger' })).status, 201);
+  db.prepare(`UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WMA15SZZ2HM700012'`).run();
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Dispo' })).status, 201);
+  const dc = await U.fleet.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM700012', description: 'Doppel', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() }); eq(dc.status, 201);
+  eq(notes(U.driver.id, null).length + notes(U.driver.id, dc.data.id).length, 0, 'Fahrer der Zugmaschine: kein Hinweis zum Doppel');
+  const rc = await U.fleet.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM700011', description: 'echter Anhänger', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() }); eq(rc.status, 201);
+  ok(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE user_id=? AND kind='created'`).get(U.driver.id).n >= 1, 'echter Anhänger: Fahrer informiert');
+  // 2. interner Auftrag mit Sperre: weitere Leitung erfährt die Sperre
+  const x2 = await own.post('/api/users', { username: 'w.fuhrpark2', display_name: 'Leitung 2', role: 'fleet', environment: 'test' }); const fleet2 = new Client(worker, e, 'w.fuhrpark2');
+  await fleet2.post('/api/invite/accept', { token: x2.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const rule = await U.fleet.post('/api/vehicles/VIN:WDB9630051L917317/maintenance', { kind: 'UVV', last_done_date: addD(-400), interval_months: 12, evidence: 'UVV-Test' }); eq(rule.status, 201, JSON.stringify(rule.data));
+  const io = await U.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', priority: 'kritisch' }); eq(io.status, 201, JSON.stringify(io.data));
+  ok(notes(x2.data.id, io.data.id).some((n) => n.kind === 'safety_lock'), 'Leitung 2: Sperre');
+  // 3. Inhaber meldet in der Ansicht „Test“ und bekommt als Melder den Eingang
+  own.envHeader = 'test';
+  const oc = await own.post('/api/cases', { vehicle_id: V1, description: 'Inhaber meldet', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(oc.status, 201);
+  own.envHeader = null;
+  eq((await cmd(U.fleet, oc.data.id, 'receive')).status, 200);
+  ok(notes(own.id || db.prepare(`SELECT id FROM users WHERE username='yilmaz'`).get().id, oc.data.id).some((n) => n.kind === 'received'), 'Inhaber: Eingang bestätigt');
+  // 4. meldende Werkstatt behält ihre Hinweise beim Werkstattwechsel, kein „abgegeben“
+  const wc = await U.wsMuc.post('/api/cases', { vehicle_id: V1, description: 'Werkstatt meldet', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'MUENCHEN', request_key: rk() }); eq(wc.status, 201);
+  eq((await cmd(U.fleet, wc.data.id, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'frei')).status, 200);
+  eq((await cmd(U.fleet, wc.data.id, 'reassign_workshop', { workshop_site: 'DORTMUND' }, 'Wechsel')).status, 200);
+  const wn = notes(U.wsMuc.id, wc.data.id); ok(wn.length > 0 && wn.every((n) => !n.hidden_at), 'Melder-Hinweise sichtbar ' + JSON.stringify(wn));
+  ok(!wn.some((n) => n.kind === 'reassigned_away') && !notes(U.wsMuc.id, null).some((n) => n.kind === 'reassigned_away'), 'kein „abgegeben“ an den Melder');
+  // 5. Kennzahlen: interner Auftrag nicht in Erstbewertung; Prüfmangel extern behoben = „ohne Auftrag erledigt“
+  const m = BERLIN_TODAY.slice(0, 7);
+  const all = (await U.fleet.get(`/api/reports/kpi?from=${m}&to=${m}`)).data.by_priority.find((p) => p.priority === 'alle');
+  eq(all.internal, 1); eq(all.triage.n, db.prepare(`SELECT COUNT(*) n FROM cases WHERE environment='test' AND fleet_received_at IS NOT NULL AND COALESCE(origin,'')<>'wartung'`).get().n, 'ohne internen Auftrag');
+  ok(/;davon interne Aufträge\r\n/.test(new TextDecoder().decode((await U.fleet.get(`/api/reports/kpi?from=${m}&to=${m}&format=csv&part=priority`)).data)), 'CSV-Spalte');
+  const r2 = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Tachograph', last_done_date: addD(-800), interval_months: 24, evidence: 'Tacho' }); eq(r2.status, 201, JSON.stringify(r2.data));
+  eq((await U.fleet.post(`/api/maintenance/${r2.data.id}/complete`, { done_date: addD(-1), evidence: 'Prüfung 1', result: 'gefaehrliche_maengel' })).status, 200);
+  eq((await U.fleet.post(`/api/maintenance/${r2.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Nachprüfung', result: 'ohne_maengel' })).status, 200);
+  const k = (await U.fleet.get(`/api/reports/kpi?from=${addD(-1).slice(0, 7)}&to=${m}`)).data.inspection_defects;
+  eq(k.without_order, 0, JSON.stringify(k)); eq(k.settled_without_order, 1); eq(k.reinspected, 1, 'Nachprüfung auch ohne Auftrag');
+  // 6. gemeinsame Sendegrenze je Cron-Lauf (Ende der Ruhezeit + Wiederholung zusammen höchstens PUSH_MAX_SENDS)
+  const { b64urlEncode } = await import('../src/util.js'); const { PUSH_MAX_SENDS } = await import('../src/notify.js');
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const people = [U.fleet, U.ws, U.wsMuc, U.driver, U.viewer, fleet2];
+  for (const [i, u] of people.entries()) for (let j = 0; j < 5; j++) eq((await u.post('/api/push/subscribe', { endpoint: `https://push.example/ok/b${i}-${j}`, keys: { p256dh: await key(), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  db.prepare(`UPDATE notifications SET push_status='accepted'`).run();
+  const old = new Date(Date.now() - 30 * 60000).toISOString();
+  const ins = db.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status,push_attempts,push_hold_until) VALUES (?,'test',?,NULL,?,'comment',0,'K','x',?,?,?,?)`);
+  for (const u of people) { const id = u.id || x2.data.id; ins.run(rk(), id, 'q-' + rk(), old, 'pending', 0, new Date(Date.now() - 60000).toISOString()); ins.run(rk(), id, 'f-' + rk(), old, 'failed', 1, null); }
+  const before = e.pushLog.length;
+  await worker.scheduled({ cron: 'prod' }, e, { waitUntil() {} });
+  const sent = e.pushLog.length - before; ok(sent > 0 && sent <= PUSH_MAX_SENDS, `Sendungen im Cron-Lauf: ${sent}`);
+  ok(db.prepare(`SELECT COUNT(*) n FROM notifications WHERE (event_key LIKE 'q-%' OR event_key LIKE 'f-%') AND push_status IN ('pending','failed')`).get().n > 0, 'Rest bleibt für den nächsten Lauf');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -443,6 +443,9 @@ export function hideDriverName(user, row, nameKey, roleKey) {
 const PLATE_STRIP = [' ', '-', '.', '/', '_', '\u00a0', '\u202f', '\t', '\u2013', '\u2014', '\u2011', '\u2010'];
 export const PLATE_KEY_SQL = (x) => PLATE_STRIP.reduce((acc, ch) => `REPLACE(${acc},'${ch}','')`, `UPPER(COALESCE(${x},''))`)
   .replace(/^/, "REPLACE(REPLACE(REPLACE(").concat(",'ä','Ä'),'ö','Ö'),'ü','Ü')");
+// Gespann-Kopplung in SQL: ein Fahrzeug zählt nur, wenn es bewertet ist oder es kein bewertetes aktives Fahrzeug gleicher Art mit dem
+// Kennzeichen gibt (ruhendes Doppel mit FIN-Tippfehler, wie pickVehicleByPlate/„Mein Fahrzeug“; 18.10.2026)
+export const COUPLING_PREFERRED_SQL = (a) => `(COALESCE(${a}.eval_excluded,0)=0 OR NOT EXISTS (SELECT 1 FROM vehicles y WHERE y.active=1 AND y.kind=${a}.kind AND COALESCE(y.eval_excluded,0)=0 AND ${PLATE_KEY_SQL('y.plate')}=${PLATE_KEY_SQL(a + '.plate')}))`;
 export const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
 // Fahrzeug zu einem Kennzeichen aus einem Schreiben/Gerät: zuerst aktive bewertete, dann ruhende (eval_excluded), dann außer Betrieb.
 // Mehrere Treffer in derselben Stufe = mehrdeutig → kein Fahrzeug (lieber manuell klären als falscher Fahrer/falsche Position).

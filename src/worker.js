@@ -11,7 +11,7 @@ import * as vnotes from './vnotes.js';
 import * as emergency from './emergency.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, releaseQuietPush, notifyUsers, MUTABLE_KINDS, parseMuted, currentLangText, nt } from './notify.js';
+import { retryFailedPush, releaseQuietPush, PUSH_MAX_SENDS, notifyUsers, MUTABLE_KINDS, parseMuted, currentLangText, nt } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -710,7 +710,9 @@ export default {
       return withHeaders(errorResponse(e));
     }
   },
-  async scheduled(event, env, ctx) {
+  async scheduled(event, env0, ctx) {
+    // eigene Sicht je Aufruf mit gemeinsamer Push-Sendegrenze (env selbst wird zwischen Aufrufen geteilt)
+    const env = Object.create(env0); env.__sendBudget = { left: env0.__pushMaxSends || PUSH_MAX_SENDS };
     await ensureSchema(env);
     // Abfragebudget je Aufruf: Betrieb und Test laufen in getrennten Cron-Aufrufen (siehe wrangler.toml)
     const testRun = event && event.cron === CRON_TEST;

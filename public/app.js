@@ -2952,7 +2952,7 @@ async function viewKpi() {
     ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('kvsite', 'vsite', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="kpiprt">${esc(t('print'))}</button></div></form>${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}${r.vehicle_site ? `<p class="small muted">${esc(t('kpi_vsite_hint'))}</p>` : ''}${r.by_priority.length ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kcsvv">${esc(t('kpi_csv_veh'))}</button><button type="button" class="btn secondary" id="kcsvp">${esc(t('kpi_csv_prio'))}</button></div>` : ''}`;
   html += r.by_priority.length ? r.by_priority.map((p) => `<section class="panel ${p.priority === 'kritisch' ? 'alert' : ''}"><h3>${esc(p.priority === 'alle' ? t('filter_all') : t('prio_' + p.priority))}</h3><dl class="kv">
-    <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}${p.duplicates ? ` (${esc(t('kpi_dupes').replace('{n}', p.duplicates))})` : ''}` : ''}</dd>
+    <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}${p.duplicates ? ` (${esc(t('kpi_dupes').replace('{n}', p.duplicates))})` : ''}` : ''}${p.internal ? ` · ${esc(t('kpi_internal').replace('{n}', p.internal))}` : ''}</dd>
     <dt>${esc(t('kpi_triage'))}</dt><dd>${st(p.triage)}</dd><dt>${esc(t('kpi_ack'))}</dt><dd>${st(p.workshop_ack)}</dd><dt>${esc(t('kpi_total'))}</dt><dd>${st(p.created_to_release)}</dd><dt>${esc(t('kpi_parts'))}</dt><dd>${dur(p.parts_wait_h)}</dd></dl></section>`).join('') : `<p class="muted">–</p>`;
   // Technische Verfügbarkeit (Flotte) – nur ohne Werkstattfilter; Liste der geringsten nur mit Ausfall
   const pct = (x) => `${fmtNum(x, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
@@ -2980,7 +2980,7 @@ async function viewKpi() {
   const stD = (x) => (x.n ? `${dD(x.median_d)} <span class="small muted">(P90 ${dD(x.p90_d)}, n=${x.n})</span>` : '–');
   if (idf && idf.inspections) html += `<section class="panel" id="kpiid"><h3>${esc(t('kpi_id'))}</h3><dl class="kv">
     <dt>${esc(t('kpi_id_insp'))}</dt><dd>${idf.inspections}</dd>
-    <dt>${esc(t('kpi_id_ordered'))}</dt><dd>${idf.ordered}${idf.without_order ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_without'))} ${idf.without_order}</b>` : ''}</dd>
+    <dt>${esc(t('kpi_id_ordered'))}</dt><dd>${idf.ordered}${idf.without_order ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_without'))} ${idf.without_order}</b>` : ''}${idf.settled_without_order ? ` · ${esc(t('kpi_id_settled'))} ${idf.settled_without_order}` : ''}</dd>
     <dt>${esc(t('kpi_released'))}</dt><dd>${idf.released}${idf.open ? ` · ${esc(t('kpi_open'))} ${idf.open}` : ''}</dd>
     <dt>${esc(t('kpi_id_days'))}</dt><dd>${stD(idf.to_release_days)}</dd>
     <dt>${esc(t('kpi_id_reinsp'))}</dt><dd>${idf.reinspected}${idf.defects_again ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_again'))} ${idf.defects_again}</b>` : ''}</dd></dl><p class="small muted">${esc(t('kpi_id_rule'))}</p></section>`;

@@ -1661,3 +1661,7 @@ Object.assign(STRINGS.en, { tacho_cancel: 'Cancel', tacho_cancelled: 'cancelled'
 Object.assign(STRINGS.de, { tm_unmatched_truncated: 'Prüffälle angezeigt: {n} von {m} (die neuesten). Ältere bitte beim Anbieter klären oder nach dem Zuordnen der neuesten erneut öffnen.' });
 Object.assign(STRINGS.uk, { tm_unmatched_truncated: 'Випадки для перевірки – показано: {n} з {m} (найновіші). Старіші з’ясуйте з постачальником або відкрийте знову після призначення найновіших.' });
 Object.assign(STRINGS.en, { tm_unmatched_truncated: 'Items to check shown: {n} of {m} (newest). Clarify older ones with the provider or reopen after assigning the newest.' });
+// [CLAUDE] 18.10.2026: Kennzahlen – interne Aufträge, Prüfmängel ohne Auftrag erledigt
+Object.assign(STRINGS.de, { kpi_internal: 'davon interne Aufträge: {n} (Prüftermin/Prüfmangel/Winterreifen – nicht in Erstbewertung und „Meldung → Freigabe“)', kpi_id_settled: 'ohne Auftrag erledigt (später erneut geprüft bzw. außer Betrieb)' });
+Object.assign(STRINGS.uk, { kpi_internal: 'з них внутрішніх замовлень: {n} (огляд/дефект огляду/зимові шини – не враховано в первинній оцінці та «Повідомлення → допуск»)', kpi_id_settled: 'вирішено без замовлення (пізніше повторний огляд або виведено з експлуатації)' });
+Object.assign(STRINGS.en, { kpi_internal: 'of which internal orders: {n} (inspection date/inspection defect/winter tyres – not in first assessment and “report → release”)', kpi_id_settled: 'settled without order (inspected again later or out of service)' });
