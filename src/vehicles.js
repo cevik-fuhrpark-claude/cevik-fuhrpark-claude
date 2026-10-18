@@ -682,10 +682,14 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
 // Geplanter Werkstatttermin für eine Prüfung (ersetzt keine Durchführung, verschiebt keine Frist)
 export async function planMaintenance(env, user, ruleId, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
-  const r = await env.DB.prepare('SELECT id, vehicle_id, kind FROM maintenance_rules WHERE id=?').bind(ruleId).first();
+  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
   if (!r) throw notFound();
   // gleiche Prüfung wie Werkstatttermine: echtes Kalenderdatum, nicht mehr als 1 Jahr zurück / 2 Jahre voraus
   const d = body.planned_date ? planDate(str(body.planned_date, { max: 10 })) : null;
+  // Termin setzen nur für aktive Fahrzeuge und nicht für erledigte Rückrufe (wie „Werkstattauftrag erstellen“; 18.10.2026 – Termin stand
+  // sonst im Plan/Kalender); Termin entfernen bleibt immer möglich
+  if (d && !r.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+  if (d && ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
   await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d });
   return { ok: true, planned_date: d };

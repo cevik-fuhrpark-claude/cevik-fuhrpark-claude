@@ -12323,7 +12323,7 @@ await test('Fehlersuche 18.10. (14): km-Prognose ab belegter Durchführung, Prü
   for (const k of ['days: 7–730 Tage', 'kind: abfahrt oder nach_reparatur']) ok(I.translateValidation('uk', k) !== k && I.translateValidation('en', k) !== k, k);
 });
 
-await test('Werkstattplan: SP „Frist ungeklärt“ mit bald fälligem Termin steht unter „Fällig – ohne Termin“ (date_status für HU/SP)', async () => {
+await test('Werkstattplan: SP „Frist ungeklärt“ mit bald fälligem Termin steht unter „Fällig – ohne Termin“ (date_status für HU/SP); Termin nach Fristende außerhalb des Zeitraums bleibt mit Hinweis; Planen nur aktive Fahrzeuge/offene Rückrufe', async () => {
   const { e, U } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
   const { berlinDate, addMonths } = await import('../src/util.js'); const today = berlinDate(); const now = new Date().toISOString();
   db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,zgm_class,active,eval_excluded,created_at,updated_at) VALUES ('V-SPU','WDBSPU0000000001','SZ-SP 1','Dortmund','lkw','ueber_12',1,0,?,?)`).run(now, now);
@@ -12338,6 +12338,22 @@ await test('Werkstattplan: SP „Frist ungeklärt“ mit bald fälligem Termin s
   const plan = (await U.fleet.get('/api/workshop/plan?days=7')).data;
   const md = plan.maintenance_due.find((x) => x.vehicle_id === 'V-SPU' && x.kind === 'SP'); ok(md, 'im Werkstattplan unter „Fällig – ohne Termin“'); eq(md.status, 'faellig');
   ok(!plan.maintenance_due.some((x) => x.vehicle_id === 'V-SPU' && x.kind === 'HU'), 'HU in Ordnung – nicht aufgeführt');
+  // überfällige UVV: Termin in 40 Tagen (nach Fristende, außerhalb des Zeitraums) bleibt mit Hinweis; Termin in 3 Tagen steht unter den Tagen
+  const day = (n) => new Date(Date.parse(today + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,last_done_date,next_due_date,evidence,created_by,created_at,updated_at) VALUES ('R-SPU-UVV','V-SPU','UVV',12,?,?,'Beleg','u',?,?)`).run(addMonths(today, -13), day(-5), now, now);
+  eq((await U.fleet.post('/api/maintenance/R-SPU-UVV/plan', { planned_date: day(40) })).status, 200);
+  let pl = (await U.fleet.get('/api/workshop/plan?days=14')).data; let u = pl.maintenance_due.find((x) => x.id === 'R-SPU-UVV');
+  ok(u && u.planned_after_due === day(40), 'Termin nach Fristende außerhalb des Zeitraums: weiter aufgeführt mit Hinweis');
+  pl = (await U.fleet.get('/api/workshop/plan?days=60')).data; ok(!pl.maintenance_due.some((x) => x.id === 'R-SPU-UVV'), 'im Zeitraum: unter den Tagen, nicht doppelt');
+  eq((await U.fleet.post('/api/maintenance/R-SPU-UVV/plan', { planned_date: day(3) })).status, 200);
+  pl = (await U.fleet.get('/api/workshop/plan?days=14')).data; ok(!pl.maintenance_due.some((x) => x.id === 'R-SPU-UVV'), 'Termin im Zeitraum');
+  const I = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].wplan_mdue_late.includes('{d}'), l);
+  // Termin planen: außer Betrieb genommenes Fahrzeug / erledigter Rückruf → abgewiesen; Termin entfernen bleibt möglich
+  db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,last_done_date,evidence,created_by,created_at,updated_at) VALUES ('R-SPU-RC','V-SPU','Rückruf',?,'KBA 123','u',?,?)`).run(day(-2), now, now);
+  const rc = await U.fleet.post('/api/maintenance/R-SPU-RC/plan', { planned_date: day(5) }); eq(rc.status, 409); eq(rc.data.error, 'already_done');
+  db.prepare("UPDATE vehicles SET active=0 WHERE id='V-SPU'").run();
+  eq((await U.fleet.post('/api/maintenance/R-SPU-UVV/plan', { planned_date: day(4) })).status, 400, 'außer Betrieb');
+  eq((await U.fleet.post('/api/maintenance/R-SPU-UVV/plan', { planned_date: '' })).status, 200, 'Termin entfernen möglich');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
