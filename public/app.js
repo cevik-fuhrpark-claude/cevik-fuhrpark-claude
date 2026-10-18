@@ -1014,6 +1014,17 @@ async function vehiclesCached() {
   try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability, coupled: v.coupled || null })))); } catch {} return vs; }
   catch (err) { if (!err.offline) throw err; let vs = null; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; return vs; }
 }
+// Netz bricht beim Foto-Upload des direkten Sendens ab: restliche Fotos auf dem Gerät speichern und über den Postausgang nachreichen
+// (Meldung ist schon angelegt – Eintrag nur mit Fotoziel; 18.10.2026: Fotos gingen sonst verloren). Rückgabe: Anzahl gespeicherter Fotos.
+async function photosLater(path, body, r, target, files) {
+  try {
+    const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name });
+    await photosPut(body.request_key, list);
+    outboxAdd(path, body, list.length);
+    outboxSet(outboxGet().map((x) => (x.body.request_key === body.request_key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)));
+    return list.length;
+  } catch { return 0; }
+}
 // Abmelden mit unversendeten Meldungen: vorher senden versuchen, sonst ausdrücklich bestätigen (sie bleiben auf dem Gerät für diese Person – 18.10.2026)
 async function logoutOutboxOk() {
   if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
@@ -1070,11 +1081,12 @@ async function viewNew(preId) {
       const r = await api('POST', '/api/cases', body);
       const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
       let failed = 0;
+      let later = 0;
       for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
+        try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (err.offline) { later = await photosLater('/api/cases', body, r, r.id, files.slice(i)); break; } failed++; }
       }
-      toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed);
+      toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
       location.hash = '#/cases/' + r.id;
     } catch (err) {
       if (err.offline) {
@@ -1454,11 +1466,12 @@ async function viewDepartureCheck(preId) {
       let failed = 0;
       // Ziel: erster eigener Folgeauftrag; ein Wiederholungsvermerk an einem fremden Vorgang ist für Fahrer nicht sichtbar (17.10.2026)
       const fTarget = (r.followups.find((f) => f && f.id && !f.repeat) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
+      let later = 0;
       if (files.length && fTarget) for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch { failed++; }
+        try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (err.offline) { later = await photosLater('/api/inspections', body, r, fTarget, files.slice(i)); break; } failed++; }
       }
-      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
+      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
       location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       $('#sb').disabled = false;

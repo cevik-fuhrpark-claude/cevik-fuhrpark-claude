@@ -11780,6 +11780,7 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: S\.me\.id, user_name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
   ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
+  eq((app.match(/if \(err\.offline\) \{ later = await photosLater\(/g) || []).length, 2, 'Fotos bei Netzabbruch nachreichen (Meldung + Abfahrtskontrolle)');
   const { num } = await import('../src/util.js'); eq(num('4,750', { decimalComma: true }), 4.75); eq(num('1.234,50'), 1234.5);
   // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
   const { agentBasics } = await import('../src/agent.js');
