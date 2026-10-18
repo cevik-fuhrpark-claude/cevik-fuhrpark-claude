@@ -12,6 +12,7 @@ import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, par
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
 import { maintenanceWarnDays } from './settings.js';
+import { kmRejection } from './telematics.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
@@ -174,12 +175,16 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Letzter Telematik-Stand (nur Inhaber, Fuhrparkleitung, Disposition – Positionsdaten sind über die Fahrerzuordnung personenbeziehbar)
   const telematics = !tl && (isManager(user) || user.role === 'dispatch')
     ? (await env.DB.prepare(`SELECT t.provider, t.external_id, t.match_basis, t.gps_time, t.received_at, t.lat, t.lon, t.km, t.speed, t.ignition, t.source_plate,
-        (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1) AS prev_km
+        (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
+        (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > t.gps_time ORDER BY o.measured_at ASC LIMIT 1) AS next_json
         FROM telematics_latest t WHERE t.vehicle_id=? ORDER BY t.gps_time DESC`).bind(vehicleId).all()).results
       // Gerät meldet ein anderes Kennzeichen (gleiche Regel wie Datenqualität telematics_plate_mismatch) – nur Hinweis, keine Korrektur;
       // km kleiner als der zuvor erfasste Stand (gleiche Regel wie telematics_km_rejected) → km_rejected_below = erfasster Stand
-      .map(({ source_plate, prev_km, ...x }) => ({ ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null,
-        km_rejected_below: x.km !== null && prev_km !== null && x.gps_time && Math.round(x.km) < prev_km ? prev_km : null }))
+      // oder größer als ein später erfasster Stand ohne Begründung → km_rejected_above = { km, at } (seit 18.10.2026, wie Datenqualität)
+      .map(({ source_plate, prev_km, next_json, ...x }) => { const rej = kmRejection({ ...x, prev_km, next_json });
+        return { ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null,
+          km_rejected_below: rej && rej.direction === 'below' ? rej.recorded_km : null,
+          km_rejected_above: rej && rej.direction === 'above' ? { km: rej.recorded_km, at: rej.recorded_at } : null }; })
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
   const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), maintenanceWarnDays(sets.get('maintenance_warn_days')));

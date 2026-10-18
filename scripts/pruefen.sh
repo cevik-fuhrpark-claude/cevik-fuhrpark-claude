@@ -77,6 +77,7 @@ UI-Restarbeit nach Freigabe, Arbeitsdatum-Grenzen|ui-restarbeit-freigabe.py|/tmp
 UI-Fahrerakte Nachtrag, Vertragsformular-Stand|ui-fahrerakte-nachtrag.py|/tmp/cfp-fahrerakte-nachtrag.log
 UI-Bußgeld-Erfassung Wiederholung (request_key)|ui-bussgeld-wiederholung.py|/tmp/cfp-bussgeld-wiederholung.log
 UI-Auslesung stornieren (Fahrer-/Fahrzeugakte)|ui-auslesung-storno.py|/tmp/cfp-auslesung-storno.log
+UI-Telematik-km größer als später erfasster Stand (Übersicht, Akte)|ui-telematik-km-spaeter.py|/tmp/cfp-telematik-km-spaeter.log
 UI-Dokumentangaben korrigieren|ui-dokument-korrigieren.py|/tmp/cfp-dokument-korrigieren.log
 UI-Offline-Postausgang (Fotos, Wiederholung, keine Verluste)|ui-postausgang.py|/tmp/cfp-postausgang.log
 UI-Offline-Postausgang abgewiesen (sichtbar, erneut senden, verwerfen)|ui-postausgang-abgewiesen.py|/tmp/cfp-postausgang-abgewiesen.log

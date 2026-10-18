@@ -1085,6 +1085,9 @@ Object.assign(STRINGS.en, { dq_telematics_km_rejected: 'Telematics odometer inco
 Object.assign(STRINGS.de, { tm_km_rejected: 'kleiner als erfasster Stand {km} – nicht übernommen' });
 Object.assign(STRINGS.uk, { tm_km_rejected: 'менше за записаний пробіг {km} – не внесено' });
 Object.assign(STRINGS.en, { tm_km_rejected: 'lower than recorded reading {km} – not taken over' });
+Object.assign(STRINGS.de, { tm_km_rejected_next: 'größer als später erfasster Stand {km} ({date}) – nicht übernommen' });
+Object.assign(STRINGS.uk, { tm_km_rejected_next: 'більше за пізніше записаний пробіг {km} ({date}) – не внесено' });
+Object.assign(STRINGS.en, { tm_km_rejected_next: 'higher than later recorded reading {km} ({date}) – not taken over' });
 // [CLAUDE] Telematik-Übersicht: abweichend gemeldete Kennzeichen (13.10.2026)
 Object.assign(STRINGS.de, { tm_reports: 'meldet', tm_mismatch_hint: 'Das Gerät ist über FIN oder bestätigte Zuordnung diesem Fahrzeug zugeordnet, meldet aber ein anderes Kennzeichen. Nichts wird automatisch geändert – Gerätekonfiguration beim Anbieter oder Fahrzeugstamm prüfen.' });
 Object.assign(STRINGS.uk, { tm_reports: 'передає', tm_mismatch_hint: 'Пристрій призначено цьому транспортному засобу за VIN або підтвердженою прив’язкою, але він передає інший номер. Нічого не змінюється автоматично – перевірте налаштування пристрою в постачальника або дані транспортного засобу.' });

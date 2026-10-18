@@ -7306,7 +7306,7 @@ await test('Datenqualität: Telematik-km kleiner als erfasster km-Stand → Hinw
   eq(pk.km_rejected.length, 1); eq(pk.km_rejected[0].recorded_km, 612000); ok(!('vehicle_id' in pk.km_rejected[0]), 'ohne Dopplung');
   const { parseCsv } = await import('../src/util.js');
   const kcsv = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/telematics?format=csv')).data).replace(/^\ufeff/, ''));
-  eq(kcsv[0][7], 'Geräte-km kleiner als erfasst (nicht übernommen)', 'CSV-Spalte');
+  eq(kcsv[0][7], 'Geräte-km passt nicht zu erfassten Ständen (nicht übernommen)', 'CSV-Spalte');
   const krow = kcsv.find((x) => x[0] === pk.plate); ok(krow[7].startsWith('yellowfox TL-KM: 98765 km (') && krow[7].includes('< 612000 km ('), krow[7]);
   ok(kcsv.slice(1).every((x) => (x[7] === '') === !ov.positions.find((p) => p.plate === x[0]).km_rejected.length), 'Spalte nur bei Abweichung gefüllt');
   // Integrations-API Telematik-Zustand: nur Zähler/Zeitpunkte je Anbieter, keine Geräte-IDs/Kennzeichen/Positionen
@@ -12236,6 +12236,38 @@ await test('Telematik-Prüffälle ohne stilles Kappen: Liste 500, Gesamtzahl und
   db.prepare("DELETE FROM telematics_unmatched WHERE provider='webfleet'").run();
   const ov2 = (await U.fleet.get('/api/telematics')).data; eq(ov2.unmatched_truncated, false); eq(ov2.unmatched_total, 80);
 });
+await test('Telematik „größer als späterer Stand“ in Übersicht, Akte, CSV und Status wie Datenqualität (begründeter späterer Stand nicht)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const d = (days) => new Date(Date.now() - days * 864e5).toISOString();
+  const ins = db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at,note) VALUES (?,?,?,?,'manuell:fleet',?,?)`);
+  ins.run('ka1', V1, 190000, d(5), d(5), null); ins.run('ka2', V1, 200000, d(1), d(1), null);
+  db.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,gps_time,received_at,km) VALUES (?,'yellowfox','YF-ABOVE','vin',?,?,250000.4)`).run(V1, d(2), d(2));
+  const ov = (await U.fleet.get('/api/telematics')).data;
+  const k = ov.km_rejected.filter((x) => x.vehicle_id === V1); eq(k.length, 1, 'Übersicht meldet den Fall');
+  eq(k[0].direction, 'above'); eq(k[0].km, 250000); eq(k[0].recorded_km, 200000); eq(k[0].recorded_at, db.prepare("SELECT measured_at FROM odometer_readings WHERE id='ka2'").get().measured_at, 'Zeitpunkt des späteren Stands');
+  ok(!('next_json' in k[0]) && !('prev_km' in k[0]), 'keine Rohfelder');
+  const pos = ov.positions.find((x) => x.vehicle_id === V1); eq(pos.km_rejected.length, 1); eq(pos.km_rejected[0].direction, 'above'); ok(!('plate' in pos.km_rejected[0]), 'ohne Dopplung');
+  const { parseCsv } = await import('../src/util.js');
+  const csv = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/telematics?format=csv')).data).replace(/^﻿/, ''));
+  const row = csv.find((x) => x[0] === pos.plate); ok(/^yellowfox YF-ABOVE: 250000 km \(.+\) > 200000 km \(/.test(row[7]), row[7]);
+  const ak = (await U.fleet.get('/api/vehicles/' + encodeURIComponent(V1))).data.telematics[0];
+  eq(ak.km_rejected_below, null); eq(ak.km_rejected_above.km, 200000); ok(ak.km_rejected_above.at, 'Datum des späteren Stands'); ok(!('next_json' in ak), 'kein Rohfeld');
+  const st = (await new Client(worker, e, 'anon').req('GET', '/api/integration/v1/telematics/status', undefined, { authorization: 'Bearer integration-token-xyz' })).data;
+  eq(st.providers.find((p) => p.provider === 'yellowfox').km_rejected, 1, 'Status zählt auch diese Richtung');
+  const q = (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_km_rejected' && i.vehicle_id === V1); eq(q.length, 1, 'gleiche Regel wie Datenqualität');
+  const I = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { const s = I.STRINGS[l].tm_km_rejected_next; ok(s && s.includes('{km}') && s.includes('{date}'), l); }
+  // späterer Stand mit Begründung (Tachotausch): kein Hinweis – weder Übersicht noch Akte noch Datenqualität
+  db.prepare("UPDATE odometer_readings SET note='Tachotausch' WHERE id='ka2'").run();
+  eq((await U.fleet.get('/api/telematics')).data.km_rejected.filter((x) => x.vehicle_id === V1).length, 0, 'begründet → kein Fall');
+  eq((await U.fleet.get('/api/vehicles/' + encodeURIComponent(V1))).data.telematics[0].km_rejected_above, null);
+  eq((await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_km_rejected' && i.vehicle_id === V1).length, 0);
+  // kleiner als der Stand davor bleibt „below“
+  db.prepare("UPDATE telematics_latest SET km=150000 WHERE external_id='YF-ABOVE'").run();
+  const k2 = (await U.fleet.get('/api/telematics')).data.km_rejected.find((x) => x.vehicle_id === V1); eq(k2.direction, 'below'); eq(k2.recorded_km, 190000);
+  eq((await U.fleet.get('/api/vehicles/' + encodeURIComponent(V1))).data.telematics[0].km_rejected_below, 190000);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
