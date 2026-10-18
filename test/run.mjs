@@ -12849,6 +12849,10 @@ await test('Fehlersuche 18.10. (25): Datenqualität – Standortfilter vor der 2
   const { readFileSync } = await import('node:fs'); const src = ['fines', 'vehicles', 'stock', 'cases', 'drivers'].map((n) => readFileSync(new URL(`../src/${n}.js`, import.meta.url), 'utf8')).join('\n');
   eq((src.match(/str\(body\.(note|location|reference|site|manufacturer|model|master_status|supplier|document_ref|part_number|title|evidence)(?: \|\| null)?, \{ max: \d+ \}\)/g) || []).join(), '', 'Freitextfelder mit Feldnamen');
   const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); ok(/Feld: 'Field'/.test(i18n) && /Feld: 'Поле'/.test(i18n), 'Feld übersetzt');
+  // Vertrag mit künftigem Beginn: keine Lücke „km-Stand fehlt“
+  const start = new Date(Date.parse(BERLIN_TODAY) + 14 * 864e5).toISOString().slice(0, 10);
+  eq((await U.own.post(`/api/vehicles/VIN:WMA15SZZ2HM700001/contracts`, { kind: 'leasing', partner: 'Zukunft-Leasing', start_date: start, km_allowance: 100000, start_km: 0, evidence: 'Vertrag' })).status, 201);
+  ok(!(await U.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'contract_km_no_reading' && i.vehicle_id === 'VIN:WMA15SZZ2HM700001'), 'künftiger Vertrag ohne Lücke');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -229,7 +229,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     // detail bleibt deutsch (CSV, Integrations-API); detail_args sprachneutral für die Oberfläche (DE/UK/EN)
     const ca = { contract_kind: c.kind, partner: c.partner };
     if (!c.active) addA('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
-    else if (c.km_allowance && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) addA('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
+    // Vertrag beginnt erst künftig: eine Ablesung ab Beginn kann es noch nicht geben – keine Lücke (18.10.2026)
+    else if (c.km_allowance && !(c.start_date && c.start_date > berlinDate()) && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) addA('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
     else if (c.km_allowance && c.start_km !== null && c.last_km !== null && c.last_km < c.start_km) addA('contract_km_below_start', v, `${CK_DE[c.kind]} · ${c.partner} · ${c.last_km} km < ${c.start_km} km`, { ...ca, km: c.last_km, start_km: c.start_km });
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
     if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) addA('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
