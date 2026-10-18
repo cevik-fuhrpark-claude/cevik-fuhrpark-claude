@@ -3221,7 +3221,7 @@ async function viewTelematics() {
   }));
   $$('[data-unmap]').forEach((b) => (b.onclick = async () => {
     if (!confirm(t('tm_remove') + '?')) return;
-    const [provider, ext] = b.dataset.unmap.split('|');
+    const u = b.dataset.unmap; const cut = u.indexOf('|'); const provider = u.slice(0, cut), ext = u.slice(cut + 1); // Geräte-ID darf „|“ enthalten (18.10.2026)
     try { await api('DELETE', `/api/telematics/mappings?provider=${encodeURIComponent(provider)}&external_id=${encodeURIComponent(ext)}`); viewTelematics(); } catch (err) { toast(err.message, true); }
   }));
 }

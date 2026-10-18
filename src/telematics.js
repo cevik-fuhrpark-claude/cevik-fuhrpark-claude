@@ -14,7 +14,8 @@ export async function telematicsOverview(env, user, query = {}) {
       FROM telematics_unmatched t LEFT JOIN vehicles v ON v.id=t.candidate_vehicle_id ORDER BY t.last_seen DESC LIMIT 500`).all(),
     env.DB.prepare(`SELECT m.provider, m.external_id, m.vehicle_id, v.plate, m.evidence, m.confirmed_at, u.display_name AS confirmed_by_name
       FROM telematics_mappings m JOIN vehicles v ON v.id=m.vehicle_id LEFT JOIN users u ON u.id=m.confirmed_by ORDER BY v.plate`).all(),
-    env.DB.prepare(`SELECT COUNT(*) AS vehicles, MAX(received_at) AS last_received FROM telematics_latest`).first(),
+    // Fahrzeuge, nicht Zeilen (ein Fahrzeug mit zwei Anbietern zählte doppelt, 18.10.2026); nur aktive, bewertete wie `positions`
+    env.DB.prepare(`SELECT COUNT(DISTINCT t.vehicle_id) AS vehicles, MAX(t.received_at) AS last_received FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id AND v.active=1 AND v.eval_excluded=0`).first(),
     // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch),
     // und Geräte, deren letzter km-Stand kleiner ist als der davor erfasste (gleiche Regel wie telematics_km_rejected) – eine Abfrage
     env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at

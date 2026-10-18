@@ -259,6 +259,9 @@ export async function integrationRouter(request, env, ctx, url) {
     const lastGps = new Map(latest.results.map((r) => [r.vehicle_id, r.gps_time]));
     // Gesammelte Schreibzugriffe: je Tabelle EINE Anweisung über json_each (jede Anweisung zählt zum Abfragebudget)
     const unmatched = new Map(); const matchedExt = new Set(); const latestRows = new Map(); const odo = new Map();
+    // höchster km-Stand je Fahrzeug innerhalb dieses Aufrufs: ein späterer kleinerer Tageswert (Nachlieferung mehrerer Tage) wird verworfen –
+    // die Plausibilität im Stapel sah nur den Stand vor dem Aufruf → unbegründeter Rücksprung 100 000 → 90 000 (18.10.2026)
+    const kmMaxInCall = new Map(); let kmRejectedInCall = 0;
     for (const { it, ext, vin, plate } of rows) {
       if (!ext) { res.rejected++; continue; }
       let vehicleId = null; let basis = null;
@@ -266,7 +269,10 @@ export async function integrationRouter(request, env, ctx, url) {
       else if (vin && vinOf.has(vin)) { vehicleId = vinOf.get(vin); basis = 'vin'; }
       // GPS-Zeit ohne Zeitzone wird ausdrücklich als UTC gelesen (vorher abhängig von der Laufzeitumgebung) – Quellen senden mit „Z“/Versatz
       const gt = typeof it.gps_time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(it.gps_time) ? it.gps_time + 'Z' : it.gps_time;
-      const gps = gt && !Number.isNaN(Date.parse(gt)) ? new Date(gt).toISOString() : null;
+      // nur ISO-Datum mit Uhrzeit ab 2000 (18.10.2026: „1“ wurde als 2001-01-01 gelesen und als km-Stand gespeichert, Epochenzahlen still verworfen)
+      const gtOk = typeof gt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(gt) && gt >= '2000' && !Number.isNaN(Date.parse(gt));
+      const gpsGiven = it.gps_time !== undefined && it.gps_time !== null && it.gps_time !== '';
+      const gps = gtOk ? new Date(gt).toISOString() : null;
       const lat = numOf(it.lat) !== null && Math.abs(numOf(it.lat)) <= 90 ? numOf(it.lat) : null;
       const lon = numOf(it.lon) !== null && Math.abs(numOf(it.lon)) <= 180 ? numOf(it.lon) : null;
       const validPos = lat !== null && lon !== null && !(lat === 0 && lon === 0);
@@ -275,6 +281,7 @@ export async function integrationRouter(request, env, ctx, url) {
         res.unmatched++;
         continue;
       }
+      if (gpsGiven && !gps) { res.rejected++; continue; } // ungültige GPS-Zeit: nicht ohne Zeit speichern
       // Keine Rückschritte: ältere GPS-Zeit überschreibt keinen neueren Stand (auch innerhalb desselben Aufrufs)
       // GPS-Zeit mehr als 10 Minuten in der Zukunft (Geräteuhr falsch): verwerfen, sonst blockiert sie spätere echte Stände
       if (gps && Date.parse(gps) > Date.now() + 600000) { res.rejected++; continue; }
@@ -290,7 +297,9 @@ export async function integrationRouter(request, env, ctx, url) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)
         const day = berlinDate(gps); const key = `${vehicleId}|${day}`; const cur = odo.get(key);
-        if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps });
+        const maxSoFar = kmMaxInCall.get(vehicleId);
+        if (maxSoFar !== undefined && Math.round(km) < maxSoFar) kmRejectedInCall++;
+        else { kmMaxInCall.set(vehicleId, Math.round(km)); if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps }); }
       }
       matchedExt.add(ext);
       res.matched++;
@@ -341,6 +350,7 @@ export async function integrationRouter(request, env, ctx, url) {
         res.odometer_rejected = (out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].n) || 0;
       }
     }
+    res.odometer_rejected = (res.odometer_rejected || 0) + kmRejectedInCall;
     return json({ ok: true, ...res });
   }
   throw new HttpError(404, 'not_found', 'Unbekannter Integrationspfad.');

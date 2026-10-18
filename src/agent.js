@@ -321,8 +321,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const h = kind === 'HU' ? res.hu : res.sp;
         const subject = res.rules[kind] || `${vid}|${kind}`;
         const m = (d) => `${d.slice(5, 7)}/${d.slice(0, 4)}`;
+        // „6 Monate nach HU“ nur nennen, wenn die Fälligkeit tatsächlich daraus folgt (erste SP nach Erstzulassung hat eine andere Grundlage, 18.10.2026)
+        const huPlus6 = (d) => { const t = Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1 + 6; return `${String(t % 12 + 1).padStart(2, '0')}/${Math.floor(t / 12)}`; };
         if (h.status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject, vehicle_id: vid, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-          ...fm('HUSP_OVERDUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), hu: kind === 'SP' && res.hu.last_done ? res.hu.last_done : null }),
+          ...fm('HUSP_OVERDUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), hu: kind === 'SP' && res.hu.last_done && m(h.due) === huPlus6(res.hu.last_done) ? res.hu.last_done : null }),
           next_action: 'Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.' });
         else if (h.status === 'bald_faellig') add({ code: 'MAINTENANCE_DUE', subject, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
           ...fm('HUSP_DUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), planned: h.planned_date || null }), next_action: h.planned_date ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });

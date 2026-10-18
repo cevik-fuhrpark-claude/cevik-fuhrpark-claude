@@ -12178,6 +12178,50 @@ await test('Auslesungen-Import: Personalnummer ohne führende Nullen, Ersatzzuor
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("if (!x.tacho && mgr) x.tacho = { last: null, due: null, days: null, status: 'keine' };"), 'Fahrerakte zeigt Auslese-Formular für die Leitung immer');
 });
+await test('Fehlersuche 18.10. (13): Telematik-Nachlieferung mehrerer Tage ohne km-Rücksprung, GPS-Zeit nur ISO ab 2000, Fahrzeuge mit Daten je Fahrzeug, Zuordnung mit „|“, Befundtexte (Auslesung überfällig, Pluralformen, SP-Grundlage, Bußgeld-Hinweis), Hilfe', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const H = { authorization: 'Bearer integration-token-xyz' }; const an = new Client(worker, e, 'anon');
+  const vid = db.prepare("SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'").get().id;
+  const t1 = new Date(Date.now() - 3 * 86400000).toISOString(); const t2 = new Date(Date.now() - 2 * 86400000).toISOString();
+  // 1. zwei Tage in einem Aufruf, zweiter Tag kleiner → verworfen, kein Rücksprung in der Akte
+  const r = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [
+    { external_id: 'WF-9', vin: 'WMA15SZZ2HM722774', gps_time: t1, km: 100000 }, { external_id: 'WF-9', vin: 'WMA15SZZ2HM722774', gps_time: t2, km: 90000 }] }, H);
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.odometer_written, 1); eq(r.data.odometer_rejected, 1);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM odometer_readings WHERE vehicle_id=? AND km=90000').get(vid).n, 0, 'kleinerer Folgetag nicht übernommen');
+  // … steigend über mehrere Tage weiterhin alle übernommen
+  const t3 = new Date(Date.now() - 86400000).toISOString();
+  const r2 = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-9', vin: 'WMA15SZZ2HM722774', gps_time: t3, km: 100400 }] }, H);
+  eq(r2.data.odometer_written, 1);
+  // 2. GPS-Zeit locker → abgewiesen (vorher „1“ = 2001-01-01 als km-Stand)
+  for (const g of ['1', '12', 1760781000000, '0026-01-01T00:00:00Z', '18.10.2026 10:00']) {
+    const x = await an.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'YF-' + String(g).length, vin: 'WDB9630051L917317', gps_time: g, km: 5000 }] }, H);
+    eq(x.data.rejected, 1, 'GPS-Zeit ' + g); eq(x.data.odometer_written, 0);
+  }
+  eq(db.prepare("SELECT COUNT(*) AS n FROM odometer_readings WHERE measured_at < '2002'").get().n, 0);
+  // ohne GPS-Zeit (Feld fehlt) wie bisher angenommen
+  eq((await an.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'YF-x', vin: 'WDB9630051L917317' }] }, H)).data.matched, 1);
+  // 3. Fahrzeug mit zwei Anbietern zählt einmal
+  await an.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'YF-9', vin: 'WMA15SZZ2HM722774', gps_time: new Date().toISOString(), km: 100500 }] }, H);
+  const ov = (await U.fleet.get('/api/telematics')).data;
+  eq(ov.latest.vehicles, 2, 'zwei Fahrzeuge, nicht drei Zeilen ' + JSON.stringify(ov.latest));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!app.includes("b.dataset.unmap.split('|')"), 'Zuordnung aufheben trennt nur am ersten „|“');
+  // 4. Befundtexte
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  ok(renderFindingMessage('DRIVER_DOC_EXPIRES_SOON', { name: 'X', ddoc: 'fahrerkarte', date: '2026-10-19', days: 1 }, 'de').includes('(in 1 Tag)'), 'de 1 Tag');
+  ok(renderFindingMessage('DRIVER_DOC_EXPIRES_SOON', { name: 'X', ddoc: 'fahrerkarte', date: '2026-10-19', days: 1 }, 'en').includes('(in 1 day)'), 'en 1 day');
+  ok(renderFindingMessage('DRIVER_DOC_EXPIRES_SOON', { name: 'X', ddoc: 'fahrerkarte', date: '2026-10-25', days: 7 }, 'de').includes('(in 7 Tagen)'), 'de 7 Tagen');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/finding-messages.js', import.meta.url), 'utf8');
+  ok(!/in \{days\} Tagen\)|nach \{days\} Tagen|after \{days\} days|in \{days\} days\)/.test(src), 'Pluralformen statt fester „Tagen/days“');
+  ok(!/seit \{due\} nicht ausgelesen|not downloaded since \{due\}/.test(src), 'Auslesung: {due} ist der letzte zulässige Tag');
+  const ag = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
+  ok(ag.includes('m(h.due) === huPlus6(res.hu.last_done)'), 'SP: „6 Monate nach HU“ nur bei passender Grundlage');
+  const fi = (await import('node:fs')).readFileSync(new URL('../src/fines.js', import.meta.url), 'utf8');
+  ok(fi.includes("f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.'"), 'Bußgeld-Hinweis je Status');
+  const I = await import('../public/i18n.js');
+  ok(I.STRINGS.de.help_fines_s.includes('Abfahrtskontrolle am Tattag') && I.STRINGS.en.help_fines_s.includes('departure check'), 'Hilfe Bußgeld-Kandidaten');
+  ok(I.STRINGS.de.help_accident_s.includes('fest gekoppeltem Anhänger') && I.STRINGS.uk.help_accident_s.includes('зчепленим'), 'Hilfe Notfall-Nummern mit Gespann');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
