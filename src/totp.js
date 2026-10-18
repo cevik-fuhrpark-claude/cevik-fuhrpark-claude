@@ -235,6 +235,7 @@ export async function totpReset(env, actor, userId, auditFn) {
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET totp_secret=NULL, totp_pending=NULL, totp_enabled_at=NULL, totp_last_step=NULL, totp_recovery=NULL, updated_at=? WHERE id=?').bind(nowIso(), userId),
     env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId),
+    pushOrphanStmt(env, userId), // verlorenes Handy bekommt keine Pushs mehr (18.10.2026)
     env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(userId),
   ]);
   await auditFn(env, actor.id, 'totp.reset', userId, null);

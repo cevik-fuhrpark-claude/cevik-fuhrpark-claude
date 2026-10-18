@@ -138,7 +138,8 @@ export function oneOf(v, allowed, field) {
 
 // Zahlen aus Formularen: Dezimalkomma; deutsches Format mit Tausenderpunkt und Komma („1.234,50“) wird verstanden.
 // Bei ganzzahligen Feldern (grouped: km, km-Kontingent) gilt „120.000“ als 120000. Sonst ist „2.000“ ohne Komma mehrdeutig (2 oder 2000?) und wird abgewiesen, statt still als 2 gespeichert zu werden.
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false } = {}) {
+// cents: Geldbetrag – höchstens 2 Nachkommastellen (18.10.2026: „100,0051“ wurde ungerundet gespeichert, Summen wichen ab)
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
@@ -157,6 +158,7 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     n = Number(t.replace(',', '.'));
   }
   if (!Number.isFinite(n) || n < min || n > max) throw bad('validation', `${field}: ungültige Zahl.`);
+  if (cents && Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw bad('validation', `${field}: höchstens 2 Nachkommastellen.`);
   return n;
 }
 

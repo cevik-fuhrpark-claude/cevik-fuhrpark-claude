@@ -162,7 +162,9 @@ export async function addMovement(env, user, envName, id, body) {
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
   let qty = r3(num(body.qty, { min: -1e6, max: 1e6, field: 'Menge' }));
   const rkey = requestKey(body);
-  const dup = rkey ? await env.DB.prepare('SELECT 1 AS x FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“)
+  if (dup && (dup.item_id !== id || dup.transfer_id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (dup) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
   if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
@@ -228,6 +230,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   const rkey = requestKey(body);
   const prevT = rkey ? await env.DB.prepare('SELECT transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  if (prevT && !prevT.transfer_id) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, on_hand: await onHand(env, id) };
   const avail = await onHand(env, id);
   if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}).`);
@@ -265,7 +268,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
 }
 
 // Für den Werkstattbefehl add_part: liefert Artikel + Statement für die Entnahme (in derselben Transaktion)
-export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, partId) {
+export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, partId, price = null) {
   const it = await env.DB.prepare('SELECT * FROM stock_items WHERE id=? AND environment=? AND active=1').bind(itemId, envName).first();
   if (!it) throw bad('validation', 'Lagerartikel nicht gefunden.');
   if (it.site !== c.workshop_site) throw bad('validation', 'Lagerartikel gehört nicht zur zuständigen Werkstatt.');
@@ -273,7 +276,7 @@ export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, 
   const avail = await onHand(env, itemId);
   if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
   const stmt = env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,part_id,unit_price_net,note,user_id,created_at)
-    VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net, `Vorgang ${c.case_no}`, user.id, nowIso());
+    VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net ?? price, `Vorgang ${c.case_no}`, user.id, nowIso());
   // Prüfung im Stapel des Vorgangsbefehls (zwei Vorgänge am selben Artikel); cases.js erkennt den Fall über guardItemId
   return { item: it, stmt, guard: stockGuardNonNegative(env, itemId) };
 }

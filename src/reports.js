@@ -515,7 +515,7 @@ export function workshopLoadCsv(rep) {
 }
 
 // ---- Werkstatt-Auslastung je Standort und Kalenderwoche (ohne Auswertung je Person) ----
-// Stunden = Summe erfasster Arbeitszeit der Aufträge des Standorts (Arbeitstag), übernommen = workshop_ack_at, freigegeben = closed_at.
+// Stunden = Summe erfasster Arbeitszeit, gebucht für den Standort (Arbeitstag), übernommen = workshop_ack_at (+ Übernahmen vor einem Werkstattwechsel), freigegeben = closed_at.
 export function isoWeek(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const day = (d.getUTCDay() + 6) % 7; // Mo=0
@@ -534,22 +534,27 @@ export async function workshopLoad(env, user, envName, query = {}) {
   const siteFilter = user.role === 'workshop' ? user.workshop_site : null;
   const sf = siteFilter ? ' AND c.workshop_site=?' : '';
   const args = (extra) => (siteFilter ? [envName, extra, siteFilter] : [envName, extra]);
-  const [hours, acks, closed, open, sites] = await Promise.all([
-    env.DB.prepare(`SELECT c.workshop_site AS site, w.work_date AS d, SUM(w.hours) AS h FROM work_entries w JOIN cases c ON c.id=w.case_id
-      WHERE c.environment=? AND w.work_date >= ?${sf} GROUP BY c.workshop_site, w.work_date`).bind(...args(startDate)).all(),
+  // Stunden beim Standort der Buchung (w.site, Migration 0060; ältere Buchungen beim Auftragsstandort) – nach einem Werkstattwechsel
+  // zählten sie sonst bei der neuen Werkstatt (18.10.2026); Übernahmen der bisherigen Werkstatt aus dem Wechsel-Ereignis (prev_ack_at)
+  const wsf = siteFilter ? ' AND COALESCE(w.site, c.workshop_site)=?' : '';
+  const [hours, acks, closed, open, sites, prevAcks] = await Promise.all([
+    env.DB.prepare(`SELECT COALESCE(w.site, c.workshop_site) AS site, w.work_date AS d, SUM(w.hours) AS h FROM work_entries w JOIN cases c ON c.id=w.case_id
+      WHERE c.environment=? AND w.work_date >= ?${wsf} GROUP BY COALESCE(w.site, c.workshop_site), w.work_date`).bind(...args(startDate)).all(),
     // Zeitpunkte (UTC) ab Beginn des Berliner Montags – vorher fehlten Übernahmen/Freigaben Mo 00:00–02:00 der ersten Woche (17.10.2026)
     env.DB.prepare(`SELECT c.workshop_site AS site, c.workshop_ack_at AS t FROM cases c WHERE c.environment=? AND c.workshop_ack_at >= ?${sf}`).bind(...args(berlinDayStartIso(startDate))).all(),
     env.DB.prepare(`SELECT c.workshop_site AS site, c.closed_at AS t FROM cases c WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at >= ?${sf} AND c.workshop_site IS NOT NULL`).bind(...args(berlinDayStartIso(startDate))).all(),
     env.DB.prepare(`SELECT c.workshop_site AS site, c.status, COUNT(*) AS n FROM cases c WHERE c.environment=? AND c.status IN (${OPEN_WS.map(() => '?').join(',')})${sf} GROUP BY c.workshop_site, c.status`)
       .bind(envName, ...OPEN_WS, ...(siteFilter ? [siteFilter] : [])).all(),
     env.DB.prepare('SELECT code, name FROM workshops WHERE active=1').all(),
+    env.DB.prepare(`SELECT json_extract(e.payload,'$.from') AS site, json_extract(e.payload,'$.prev_ack_at') AS t FROM case_events e
+      WHERE e.environment=? AND e.action='reassign_workshop' AND json_extract(e.payload,'$.prev_ack_at') >= ?${siteFilter ? " AND json_extract(e.payload,'$.from')=?" : ''}`).bind(...args(berlinDayStartIso(startDate))).all(),
   ]);
   const weekList = []; for (let i = 0; i < weeks; i++) weekList.push(isoWeek(new Date(Date.parse(startDate + 'T00:00:00Z') + i * 7 * 86400000).toISOString().slice(0, 10)));
   const bySite = new Map();
   const site = (code) => { const k = code || 'ohne'; if (!bySite.has(k)) bySite.set(k, { site: k, weeks: Object.fromEntries(weekList.map((w) => [w, { hours: 0, acknowledged: 0, released: 0 }])), open: {} }); return bySite.get(k); };
   for (const s of sites.results) if (!siteFilter || s.code === siteFilter) site(s.code);
   for (const r of hours.results) { const w = site(r.site).weeks[isoWeek(r.d)]; if (w) w.hours = Math.round((w.hours + r.h) * 100) / 100; }
-  for (const r of acks.results) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.acknowledged++; }
+  for (const r of [...acks.results, ...prevAcks.results]) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.acknowledged++; }
   for (const r of closed.results) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.released++; }
   for (const r of open.results) site(r.site).open[r.status] = r.n;
   const names = new Map(sites.results.map((s) => [s.code, s.name]));

@@ -83,7 +83,7 @@ function readBody(body, existing = {}) {
     notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
     km_allowance: intOrNull(pick('km_allowance'), 'km-Kontingent', 5000000),
     start_km: intOrNull(pick('start_km'), 'km bei Übernahme', 9999999),
-    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true }),
+    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, cents: true }),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
   };
@@ -197,7 +197,8 @@ export async function endContract(env, user, id, body) {
   if (c.ended_on) throw bad('contract_ended', 'Vertrag ist bereits beendet.');
   const on = date(body.ended_on, 'Beendet am', { notFuture: true }) || berlinDate();
   const note = str(body.end_note, { required: true, max: 300, field: 'Grund' });
-  if (c.start_date && on < c.start_date) throw bad('validation', 'Beendet am liegt vor dem Vertragsbeginn.');
+  // Storno vor Beginn (Beginn noch in der Zukunft): Beenden vor dem Beginn zulässig – sonst blieb er „aktiv“ und zählte ab Beginn Raten (18.10.2026)
+  if (c.start_date && on < c.start_date && c.start_date <= berlinDate()) throw bad('validation', 'Beendet am liegt vor dem Vertragsbeginn.');
   const r = await env.DB.prepare('UPDATE vehicle_contracts SET ended_on=?, end_note=?, updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(on, note, laterIso(c.updated_at), id, c.updated_at).run();
   if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'contract.end', id, { vehicle: c.plate, ended_on: on, note });
@@ -350,12 +351,18 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     }
     return -1;
   };
+  // Jahreswerte („Laufleistung p.a.“) sind kein Gesamt-Kontingent – nicht still übernehmen (18.10.2026: 20 000 km/Jahr galt als Gesamtkontingent)
+  const ANNUAL = ['p.a', 'pro jahr', 'jährlich', 'jaehrlich', '/jahr', 'je jahr'];
+  if (head.some((h) => ['laufleistung', 'kontingent'].some((k) => h.includes(k)) && ANNUAL.some((x) => h.includes(x)))
+    && !head.some((h) => ['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'].some((k) => h.startsWith(k)) && !ANNUAL.some((x) => h.includes(x)))) {
+    throw bad('validation', 'Spalte mit Laufleistung pro Jahr erkannt – bitte das Gesamt-km-Kontingent der Laufzeit als Spalte „km-Kontingent“ angeben (Jahreswerte werden nicht umgerechnet).');
+  }
   // Beginn auch „Laufzeitbeginn“/„Leasingbeginn“ (wurde still ignoriert, 17.10.2026)
   const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin', 'fin ']), kind: col(['vertragsart', 'art', 'typ']),
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'nummer', 'nr']),
     start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'beginn', 'start']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'ende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
-    allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung']), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
-    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'monatsrate', 'rate'], ['brutto', 'anzahl']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
+    allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], ANNUAL), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
+    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], ['brutto', 'anzahl']), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
   const fallbackEv = str(source, { max: 300, field: 'Quelle' });
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
   if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');

@@ -1258,7 +1258,7 @@ await test('Mindestbestand unterschritten → Agent-Hinweis; Zugang behebt ihn',
 console.log('Bußgelder & Zeugenfragebögen');
 let FINE;
 await test('Erfassung nur durch Fuhrpark; Kennzeichen-Zuordnung; Aktenzeichen-Dublette', async () => {
-  const body = { kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: 'AZ-4711', offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1, Dortmund', plate_in_letter: 'SZ YC 5513', amount_eur: 70, response_due: '2026-01-01' };
+  const body = { kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: 'AZ-4711', offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1, Dortmund', plate_in_letter: 'SZ YC 5513', amount_eur: 70, response_due: BERLIN_TODAY };
   eq((await users.driver.post('/api/fines', body)).status, 403);
   const r = await users.fleet.post('/api/fines', body);
   eq(r.status, 201); eq(r.data.vehicle_matched, true); ok(r.data.fine_no.startsWith('TB-'));
@@ -1315,6 +1315,8 @@ await test('Lesezugriff sieht Bußgelder ohne Fahreridentität und interne Notiz
   eq((await viewer.post(`/api/fines/${FINE}/commands`, { action: 'update', payload: {} })).status, 403, 'nur lesen');
 });
 await test('Überschrittene Frist → Agent-Befund; Status erledigt schließt ihn', async () => {
+  // Frist vor der Tat wird seit 18.10.2026 abgewiesen – verstrichene Frist daher direkt setzen (Schreiben von früher)
+  env.DB.db.prepare(`UPDATE fines SET response_due='2026-01-01', offense_at='2025-12-01T09:00:00.000Z' WHERE id=?`).run(FINE);
   await users.fleet.post('/api/agent/run');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_OVERDUE'), 'Frist überschritten');
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'FINE_VEHICLE_UNKNOWN'), 'Unbekanntes Kennzeichen');
@@ -1494,6 +1496,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`Artikel doppelt gezählt: ${it.name}`', 'Artikel doppelt gezählt: Öl $& 5W30', 'Позицію підраховано двічі: Öl $& 5W30', 'Item counted twice: Öl $& 5W30'],
     ['`Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`', 'Einheit im Ziellager abweichend (l statt Stk) – bitte dort prüfen.', 'Одиниця на цільовому складі інша (l замість Stk) – перевірте там.', 'Different unit in the target store (l instead of Stk) – please check there.'],
     ['`Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`', 'Vorgang V-2026-0007 ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.', 'Заявка V-2026-0007 сама є дублікатом – виберіть початкову заявку.', 'Case V-2026-0007 is itself a duplicate – please choose the original case.'],
+    ['`${field}: höchstens 2 Nachkommastellen.`', 'Betrag: höchstens 2 Nachkommastellen.', 'Сума: не більше 2 знаків після коми.', 'Amount: at most 2 decimal places.'],
     ['`Unbekannter Prüfpunkt ${it.key}.`', 'Unbekannter Prüfpunkt xyz.', 'Невідомий пункт перевірки xyz.', 'Unknown check item xyz.'],
     ["`Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`", 'Arbeitsdatum: nicht in der Zukunft und nicht vor dem 17.10.2025.', 'Дата роботи: не в майбутньому і не раніше 17.10.2025.', 'Work date: not in the future and not before 17.10.2025.'],
   ];
@@ -11703,6 +11706,77 @@ await test('Fehlersuche 18.10. (7): Freigabe bei weiterer Sperre („bleibt gesp
   // 10. Nutzungsstatistik: Fachbereiche statt „Sonstiges“
   const { areaOf } = await import('../src/usage.js');
   eq(['GET drivers', 'GET claims/:id', 'GET telematics', 'GET workshop/plan', 'GET emergency', 'POST tacho/import', 'GET sites', 'GET part-suggestions'].map(areaOf).join(), 'drivers,claims,telematics,workshop,emergency,tacho,vehicles,cases');
+  // 11. Backlog 90: Werkstatt-Auslastung bleibt nach einem Werkstattwechsel bei der buchenden Werkstatt (Stunden, Übernahme)
+  const wl = await newCase({ description: 'Kupplung' }); eq((await cmd(U.fleet, wl, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, wl, 'acknowledge')).status, 200); eq((await cmd(U.ws, wl, 'record_work', { hours: 5, description: 'Ausbau' })).status, 200);
+  eq(db.prepare('SELECT site FROM work_entries WHERE case_id=?').get(wl).site, 'DORTMUND', 'Standort der Buchung gespeichert');
+  const loadOf = async (c, site) => { const r = (await c.get('/api/reports/workshop-load')).data; const x = r.sites.find((y) => y.site === site); return x ? [x.weeks.reduce((a, w) => a + w.hours, 0), x.weeks.reduce((a, w) => a + w.acknowledged, 0)] : [0, 0]; };
+  const before = await loadOf(U.fleet, 'DORTMUND');
+  eq((await cmd(U.fleet, wl, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  eq(JSON.stringify(await loadOf(U.fleet, 'DORTMUND')), JSON.stringify(before), 'Dortmund behält Stunden und Übernahme');
+  eq(JSON.stringify(await loadOf(U.ws, 'DORTMUND')), JSON.stringify(before), 'Werkstatt Dortmund sieht eigene Buchung weiter');
+  eq((await loadOf(U.wsMuc, 'MUENCHEN'))[0], 0, 'München ohne fremde Stunden');
+});
+await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungültig, Push-Geräte nach Zurücksetzen/2FA-Reset abgemeldet, Agent zählt ausgeblendete Hinweise nicht, Geldbeträge max. 2 Nachkommastellen, Bußgeld-Frist nicht vor der Tat + leere Änderung ohne Version, Teil aus dem Lager mit gleichem Preis im Journal, request_key je Artikel, Vertrags-Storno vor Beginn, Vertragsimport (Leasingrate, Laufleistung p. a.)', async () => {
+  let { e, U, cmd, newCase, V1 } = await freshWorld(); let db = e.DB.db;
+  // 1. Zurücksetzen-Link: nach Deaktivierung + Reaktivierung bzw. nach Rollenwechsel ungültig
+  const anon = new Client(worker, e, 'anon-359');
+  const upd = async (id, b) => { const cur = (await U.own.get('/api/users')).data.users.find((x) => x.id === id); return U.own.patch(`/api/users/${id}`, { ...b, expected_updated_at: cur.updated_at }); };
+  const link = async (id) => (await U.own.post(`/api/users/${id}/invite`)).data;
+  let l = await link(U.driver.id); ok(l && l.invite_token, 'Link ' + JSON.stringify(l));
+  eq((await upd(U.driver.id, { active: false })).status, 200); eq((await upd(U.driver.id, { active: true })).status, 200);
+  eq((await anon.post('/api/invite/accept', { token: l.invite_token, password: 'Neues-Passwort-2026-x' })).status, 410, 'nach Reaktivierung ungültig');
+  l = await link(U.viewer.id);
+  eq((await upd(U.viewer.id, { role: 'fleet' })).status, 200);
+  eq((await anon.post('/api/invite/accept', { token: l.invite_token, password: 'Neues-Passwort-2026-x' })).status, 410, 'nach Rollenwechsel ungültig');
+  // 2. Push-Gerät nach Zurücksetzen-Link abgemeldet
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  eq((await U.ws.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/r359', keys: { p256dh: Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url'), auth: Buffer.alloc(16, 4).toString('base64url') } })).status, 200);
+  const l2 = await link(U.ws.id); eq((await anon.post('/api/invite/accept', { token: l2.invite_token, password: 'Neues-Passwort-2026-y' })).status, 200);
+  ok(db.prepare(`SELECT revoked_at FROM push_subscriptions WHERE endpoint='https://push.example/ok/r359'`).get().revoked_at, 'Gerät abgemeldet');
+  ({ e, U, cmd, newCase, V1 } = await freshWorld()); db = e.DB.db; // Sitzungen oben beendet
+  // 3. Geldbeträge: mehr als 2 Nachkommastellen → 400 (DE/UK/EN)
+  const r = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Z', offense_type: 'parken', offense_at: new Date(Date.now() - 86400e3).toISOString(), plate_in_letter: 'SZ-YC 5513', amount_eur: '35,5555' });
+  eq(r.status, 400); eq(r.data.message, 'Betrag: höchstens 2 Nachkommastellen.');
+  const { translateValidation } = await import('../public/i18n.js'); eq(translateValidation('en', r.data.message), 'Amount: at most 2 decimal places.');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'L', monthly_rate_net: '999,9951', evidence: 'Vertrag' })).status, 400, 'Monatsrate');
+  // 4. Bußgeld: Frist vor der Tat abgewiesen; leere Änderung ohne neue Version
+  const tat = new Date(Date.now() - 2 * 86400e3).toISOString(); const yday = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 5 * 86400e3));
+  eq((await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Z', offense_type: 'parken', offense_at: tat, plate_in_letter: 'SZ-YC 5513', response_due: yday })).status, 400, 'Frist vor Tat');
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Z', offense_type: 'parken', offense_at: tat, plate_in_letter: 'SZ-YC 5513', amount_eur: '35,50' }); eq(f.status, 201);
+  const v0 = (await U.fleet.get(`/api/fines/${f.data.id}`)).data.fine.version;
+  const u0 = await U.fleet.post(`/api/fines/${f.data.id}/commands`, { action: 'update', expected_version: v0, payload: {}, amount_eur: 'abc' }); eq(u0.status, 200); eq(u0.data.unchanged, true);
+  eq((await U.fleet.get(`/api/fines/${f.data.id}`)).data.fine.version, v0, 'keine neue Version');
+  eq((await U.fleet.post(`/api/fines/${f.data.id}/commands`, { action: 'update', expected_version: v0, payload: { response_due: yday } })).status, 400, 'Änderung: Frist vor Tat');
+  // 5. Teil aus dem Lager: ohne Artikelpreis gilt der eingegebene Preis auch im Journal; mit Artikelpreis der Artikelpreis für beide
+  const id = await newCase(); eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  const a = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Filter ohne Preis', initial_qty: 5 })).data.id;
+  const b = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Filter mit Preis', initial_qty: 5, unit_price_net: 10 })).data.id;
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: a, quantity: 1, unit_price_net: 50 })).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: b, quantity: 1, unit_price_net: 50 })).status, 200);
+  eq(db.prepare(`SELECT group_concat(unit_price_net) p FROM (SELECT unit_price_net FROM parts WHERE case_id=? ORDER BY unit_price_net)`).get(id).p, '10.0,50.0', 'Teile');
+  eq(db.prepare(`SELECT group_concat(unit_price_net) p FROM (SELECT unit_price_net FROM stock_movements WHERE case_id=? ORDER BY unit_price_net)`).get(id).p, '10.0,50.0', 'Lagerjournal gleich');
+  // 6. request_key: an einem anderen Artikel bzw. für eine Umlagerung wiederverwendet → 409
+  const k = rk(); eq((await U.ws.post(`/api/stock/${a}/movements`, { type: 'zugang', qty: 1, request_key: k })).status, 201);
+  eq((await U.ws.post(`/api/stock/${a}/movements`, { type: 'zugang', qty: 1, request_key: k })).data.duplicate, true, 'Wiederholung');
+  const re = await U.ws.post(`/api/stock/${b}/movements`, { type: 'entnahme', qty: 1, request_key: k }); eq(re.status, 409); eq(re.data.error, 'request_key_reused');
+  eq((await U.ws.post(`/api/stock/${a}/transfer`, { to_site: 'MUENCHEN', qty: 1, request_key: k })).status, 409);
+  // 7. Vertrag mit künftigem Beginn lässt sich stornieren (beenden vor Beginn)
+  const fut = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + 30 * 86400e3));
+  const c = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'Vermieter X', start_date: fut, evidence: 'Mietvertrag' }); eq(c.status, 201);
+  eq((await U.fleet.post(`/api/contracts/${c.data.id}/end`, { end_note: 'vor Beginn storniert' })).status, 200, 'Storno vor Beginn');
+  // 8. Vertragsimport: „Leasingrate netto“ erkannt, „Laufleistung p.a.“ abgewiesen
+  const csv1 = 'Kennzeichen;Vertragsart;Vertragspartner;Leasingrate netto;Nachweis\nSZ-YC 5513;Leasing;Leasing AG;1.234,50;Vertrag 1';
+  const p1 = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv1, { 'content-type': 'text/csv' }); eq(p1.status, 200); eq(p1.data.rows[0].monthly_rate_net ?? p1.data.rows[0].data?.monthly_rate_net, 1234.5, 'Leasingrate ' + JSON.stringify(p1.data.rows[0]));
+  const csv2 = 'Kennzeichen;Vertragsart;Vertragspartner;Laufleistung p.a.;Nachweis\nSZ-YC 5513;Leasing;Leasing AG;20000;Vertrag 2';
+  eq((await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv2, { 'content-type': 'text/csv' })).status, 400, 'Jahreswert');
+  // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
+  const { agentBasics } = await import('../src/agent.js');
+  const kc = await newCase({ priority: 'kritisch', description: 'Bremse' });
+  const und = async () => { const x = await agentBasics(e, 'test'); const y = x.undelivered.find((z) => z.case_id === kc); return y ? y.n : 0; };
+  const n0 = await und(); ok(n0 >= 1, 'nicht zugestellt vorher ' + n0);
+  db.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND user_id=?`).run(new Date().toISOString(), kc, U.ws.id);
+  ok((await und()) < n0, 'ausgeblendete zählen nicht');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

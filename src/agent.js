@@ -110,7 +110,8 @@ const BASICS_SQL = `SELECT
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(*) AS n FROM notifications n
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
-     AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 GROUP BY n.case_id)) AS undelivered,
+     AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 AND n.hidden_at IS NULL
+     AND n.user_id IN (SELECT id FROM users WHERE active=1) GROUP BY n.case_id)) AS undelivered,
   (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded`;
 
 export async function agentBasics(env, environment) {

@@ -903,7 +903,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.');
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null;
-      payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}) };
+      // prev_ack_at: Übernahme der bisherigen Werkstatt (zählt in deren Auslastung weiter, Backlog 90)
+      payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}), ...(c.workshop_ack_at ? { prev_ack_at: c.workshop_ack_at } : {}) };
       // bisherige Werkstatt: alte Hinweise zum Auftrag ausblenden (Link → 404, zurückgehaltener Push ging nach der Ruhezeit noch raus – 17.10.2026);
       // der Hinweis „an andere Werkstatt übergeben“ entsteht danach neu
       if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL
@@ -981,8 +982,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const dayH = await workHoursOn(env, user.id, date);
       if (dayH + hours > 24 + 1e-9) throw bad('validation', workDayMsg(date, dayH));
       const wid = uuid();
-      extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at) VALUES (?,?,?,?,?,?,?)')
-        .bind(wid, c.id, user.id, date, hours, desc, now),
+      // Standort zum Buchungszeitpunkt (Werkstatt-Auslastung bleibt nach einem Werkstattwechsel bei der buchenden Werkstatt, Migration 0060)
+      extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at,site) VALUES (?,?,?,?,?,?,?,?)')
+        .bind(wid, c.id, user.id, date, hours, desc, now, c.workshop_site || null),
         env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN COALESCE(SUM(hours),0) <= 24.000000001 THEN 1 ELSE 0 END FROM work_entries WHERE user_id=? AND work_date=?').bind(user.id, date),
         env.DB.prepare('DELETE FROM cmd_guard'));
       workGuard = { date, hours };
@@ -993,14 +995,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const qty = Math.round(num(p.quantity ?? 1, { min: 0.01, max: 100000, field: 'Menge' }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
+      // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
+      // (18.10.2026: Eingabe landete nur im Teil, Journal blieb „unbewertet“ bzw. beim Artikelpreis; Regel wie die Entnahme im Lager)
+      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true });
       if (p.stock_item_id) {
-        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid);
+        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice);
         stockItem = w.item;
         extra.push(w.stmt, ...w.guard); stockGuardItem = { id: w.item.id, qty, unit: w.item.unit };
       }
       const name = stockItem ? stockItem.name : str(p.name, { required: true, max: 200, field: 'Teil' });
-      const rawPrice = p.unit_price_net === undefined || p.unit_price_net === '' || p.unit_price_net === null ? (stockItem ? stockItem.unit_price_net : null) : p.unit_price_net;
-      const price = num(rawPrice, { min: 0, max: 1000000, field: 'Preis', nullable: true });
+      const price = stockItem && stockItem.unit_price_net !== null && stockItem.unit_price_net !== undefined ? stockItem.unit_price_net : inPrice;
       const valuation = price === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const warranty = warrantyDate(p.warranty_until);
       extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until)

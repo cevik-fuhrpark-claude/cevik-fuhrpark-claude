@@ -301,6 +301,8 @@ export async function acceptInvite(env, request, body, ctx = null) {
       env.DB.prepare('DELETE FROM cmd_guard'),
       env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, now, row.user_id),
       env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(row.user_id),
+      // Push-Geräte der damit beendeten Anmeldungen abmelden (18.10.2026: Zurücksetzen-Link ließ das verlorene Handy weiter Pushs bekommen)
+      pushOrphanStmt(env, row.user_id),
       env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(row.user_id),
     // neues Passwort gesetzt: eine bestehende Fehlversuch-Sperre aufheben
       env.DB.prepare('DELETE FROM login_attempts WHERE key=(SELECT username FROM users WHERE id=?)').bind(row.user_id),
@@ -502,6 +504,10 @@ export async function updateUser(env, actor, userId, body) {
   if (role !== target.role || environment !== target.environment || !active) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, userId, now));
   if (role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE drivers SET user_id=NULL, updated_at=? WHERE user_id=? AND (environment<>? OR ?<>'driver')`).bind(now, userId, environment, role));
   if (!active) stmts.push(env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(userId));
+  // offene Einladungs-/Zurücksetzen-Links entwerten: bei Deaktivierung immer (galt nach Reaktivierung wieder), bei Rollen-/Umgebungswechsel
+  // nur für eingerichtete Konten (Zurücksetzen-Link der alten Rolle gab sonst Zugang mit der neuen; Erst-Einladung bleibt gültig) – 18.10.2026
+  if (!active || role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE invites SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL
+    AND (?3 = 1 OR EXISTS (SELECT 1 FROM users WHERE id=?2 AND password_hash IS NOT NULL))`).bind(now, userId, active ? 0 : 1));
   try { await env.DB.batch(stmts); } catch (e) {
     if (String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Der Benutzer wurde zwischenzeitlich geändert. Bitte neu laden.');
     throw e;
