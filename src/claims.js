@@ -2,7 +2,7 @@
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents } from './util.js';
 import { audit } from './auth.js';
 import { csvCell } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -116,19 +116,19 @@ export async function claimOverview(env, user, envName, query = {}) {
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS not_actual,
-      (SELECT COALESCE(SUM(p.quantity*p.unit_price_net),0) FROM parts p WHERE p.case_id=c.id AND p.valuation='actual' AND p.unit_price_net IS NOT NULL) AS parts_net,
-      (SELECT COALESCE(SUM(e.amount_net),0) FROM external_costs e WHERE e.case_id=c.id AND e.valuation='actual' AND e.amount_net IS NOT NULL) AS ext_net,
+      (SELECT COALESCE(SUM(ROUND(p.quantity*p.unit_price_net*100 + 1e-6)/100.0),0) FROM parts p WHERE p.case_id=c.id AND p.valuation='actual' AND p.unit_price_net IS NOT NULL) AS parts_net,
+      (SELECT COALESCE(SUM(ROUND(e.amount_net*100 + 1e-6)/100.0),0) FROM external_costs e WHERE e.case_id=c.id AND e.valuation='actual' AND e.amount_net IS NOT NULL) AS ext_net,
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS ext_not_actual,
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS covered,
       (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) + (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id) + (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id) AS items
     FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE ic.environment=? ORDER BY ic.reported_on DESC`).bind(envName).all()).results;
   const today = berlinDate();
-  const r2 = (x) => Math.round(x * 100) / 100;
+  const r2 = roundCents; // je Position auf Cent wie die Vorgangsbewertung (18.10.2026)
   // Filter „Fahrzeug-Standort“ vor den Zählern (Standort laut Fahrzeugstamm)
   const sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
   let list = rows.filter((r) => !sel.site || sel.match(r.vehicle_site)).map((r) => {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
-    const workNet = r.covered ? 0 : rate === null ? (r.hours ? null : 0) : r.hours * rate;
+    const workNet = r.covered ? 0 : rate === null ? (r.hours ? null : 0) : r2(r.hours * rate);
     // ersetzt eine Fremdleistung eigene Arbeit/Teile, zählen nur die Fremdleistungen – auch deren Bewertung (vorher: unbewertete Fremdrechnung → „0 €“, 17.10.2026)
     // ohne jede Kostenposition: „–“ statt 0 € (wie die Vorgangsansicht; vorher Saldo = −Erstattung, 17.10.2026)
     const complete = r.items > 0 && workNet !== null && (r.covered ? r.ext_not_actual === 0 : r.not_actual === 0);

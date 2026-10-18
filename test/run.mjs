@@ -11915,6 +11915,9 @@ await test('Fehlersuche 18.10. (10): Bußgeld-Kandidat aus Abfahrtskontrolle bes
   const rr = (await w4.U.fleet.get(`/api/reports/costs?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.rows[0];
   eq(rr.work_net, 5); eq(rr.actual_net, roundCents(rr.work_net + rr.parts_actual_net + rr.external_actual_net), 'Zeile = Spalten');
   eq((await w4.cmd(w4.U.fleet, c4, 'add_external_cost', { supplier: 'X', amount_net: '10,005' })).status, 400, 'Fremdleistung max. 2 Nachkommastellen');
+  // Versicherungsfall-Kosten nach derselben Positionsrundung wie der Vorgang
+  eq((await w4.U.fleet.put(`/api/cases/${c4}/claim`, { insurer: 'X-Versicherung', reported_on: BERLIN_TODAY, evidence: 'Portal' })).status, 200);
+  eq((await w4.U.fleet.get('/api/claims')).data.claims.find((x) => x.case_id === c4).case_cost_net, 6.01, 'Versicherungsfall = Vorgang');
   // 5. Freigabegrenze: Satz nach der Buchung erhöht → technische Freigabe abgewiesen und markiert
   const w5 = await freshWorld(); eq((await w5.U.own.put('/api/settings', { workshop_hourly_rate_net: 80, repair_cost_limit_net: 500 })).status, 200);
   const c5 = await w5.toRepair(); eq((await w5.cmd(w5.U.ws, c5, 'record_work', { hours: 5, description: 'x' })).status, 200);
