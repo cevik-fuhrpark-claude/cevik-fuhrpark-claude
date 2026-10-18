@@ -1998,7 +1998,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -12221,6 +12221,20 @@ await test('Fehlersuche 18.10. (13): Telematik-Nachlieferung mehrerer Tage ohne 
   const I = await import('../public/i18n.js');
   ok(I.STRINGS.de.help_fines_s.includes('Abfahrtskontrolle am Tattag') && I.STRINGS.en.help_fines_s.includes('departure check'), 'Hilfe Bußgeld-Kandidaten');
   ok(I.STRINGS.de.help_accident_s.includes('fest gekoppeltem Anhänger') && I.STRINGS.uk.help_accident_s.includes('зчепленим'), 'Hilfe Notfall-Nummern mit Gespann');
+});
+await test('Telematik-Prüffälle ohne stilles Kappen: Liste 500, Gesamtzahl und Zähler je Anbieter vollständig, Hinweis DE/UK/EN, Status je Anbieter', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const ins = db.prepare('INSERT INTO telematics_unmatched(provider,external_id,source_plate,source_vin,candidate_vehicle_id,last_seen) VALUES (?,?,NULL,NULL,NULL,?)');
+  for (let i = 0; i < 520; i++) ins.run('webfleet', 'WF-' + i, new Date(Date.now() - i * 1000).toISOString());
+  for (let i = 0; i < 80; i++) ins.run('yellowfox', 'YF-' + i, new Date(Date.now() - 600000 - i * 1000).toISOString());
+  const ov = (await U.fleet.get('/api/telematics')).data;
+  eq(ov.unmatched.length, 500); eq(ov.unmatched_total, 600); eq(ov.unmatched_truncated, true); eq(ov.unmatched_by_provider.yellowfox, 80);
+  const st = (await new Client(worker, e, 'anon').req('GET', '/api/integration/v1/telematics/status', undefined, { authorization: 'Bearer integration-token-xyz' })).data;
+  eq(st.providers.find((p) => p.provider === 'yellowfox').unmatched, 80, 'Status zählt alle (vorher 0, weil die Liste bei 500 endete)'); eq(st.unmatched_truncated, true);
+  const I = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\} /.test(I.STRINGS[l].tm_unmatched_truncated), l + ' neutrale Form');
+  db.prepare("DELETE FROM telematics_unmatched WHERE provider='webfleet'").run();
+  const ov2 = (await U.fleet.get('/api/telematics')).data; eq(ov2.unmatched_truncated, false); eq(ov2.unmatched_total, 80);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

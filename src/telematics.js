@@ -9,9 +9,9 @@ const canManage = (u) => ['owner', 'fleet'].includes(u.role);
 
 export async function telematicsOverview(env, user, query = {}) {
   if (!canManage(user)) throw forbidden();
-  const [unmatched, mappings, latest, reported, positions, perProvider] = await Promise.all([
+  const [unmatched, mappings, latest, reported, positions, perProvider, unmatchedCount] = await Promise.all([
     env.DB.prepare(`SELECT t.provider, t.external_id, t.source_plate, t.source_vin, t.candidate_vehicle_id, v.plate AS candidate_plate, t.last_seen
-      FROM telematics_unmatched t LEFT JOIN vehicles v ON v.id=t.candidate_vehicle_id ORDER BY t.last_seen DESC LIMIT 500`).all(),
+      FROM telematics_unmatched t LEFT JOIN vehicles v ON v.id=t.candidate_vehicle_id ORDER BY t.last_seen DESC LIMIT 501`).all(),
     env.DB.prepare(`SELECT m.provider, m.external_id, m.vehicle_id, v.plate, m.evidence, m.confirmed_at, u.display_name AS confirmed_by_name
       FROM telematics_mappings m JOIN vehicles v ON v.id=m.vehicle_id LEFT JOIN users u ON u.id=m.confirmed_by ORDER BY v.plate`).all(),
     // Fahrzeuge, nicht Zeilen (ein Fahrzeug mit zwei Anbietern zählte doppelt, 18.10.2026); nur aktive, bewertete wie `positions`
@@ -37,7 +37,12 @@ export async function telematicsOverview(env, user, query = {}) {
     env.DB.prepare(`SELECT t.provider, COUNT(*) AS devices, COUNT(DISTINCT t.vehicle_id) AS vehicles, MAX(t.received_at) AS last_received, MAX(t.gps_time) AS last_gps_time,
       SUM(CASE WHEN v.active=0 AND t.gps_time > (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=t.vehicle_id AND a.action='vehicle.deactivate') THEN 1 ELSE 0 END) AS inactive_vehicle_reports
       FROM telematics_latest t LEFT JOIN vehicles v ON v.id=t.vehicle_id GROUP BY t.provider`).all(),
+    // Prüffälle je Anbieter vollständig gezählt – die Liste ist auf 500 begrenzt (vorher still gekappt, 18.10.2026)
+    env.DB.prepare('SELECT provider, COUNT(*) AS n FROM telematics_unmatched GROUP BY provider').all(),
   ]);
+  const unmatchedTruncated = unmatched.results.length > 500; if (unmatchedTruncated) unmatched.results.length = 500;
+  const unmatched_by_provider = Object.fromEntries(unmatchedCount.results.map((r) => [r.provider, r.n]));
+  const unmatched_total = unmatchedCount.results.reduce((a, r) => a + r.n, 0);
   const byP = new Map(perProvider.results.map((r) => [r.provider, r]));
   const by_provider = PROVIDERS.map((provider) => { const r = byP.get(provider) || {};
     return { provider, devices: r.devices || 0, vehicles: r.vehicles || 0, last_received: r.last_received || null, last_gps_time: r.last_gps_time || null, inactive_vehicle_reports: r.inactive_vehicle_reports || 0 }; });
@@ -50,7 +55,7 @@ export async function telematicsOverview(env, user, query = {}) {
   for (const k of km_rejected) { if (!kmRej.has(k.vehicle_id)) kmRej.set(k.vehicle_id, []); kmRej.get(k.vehicle_id).push(k); }
   // Standortfilter nur für „Letzter Stand je Fahrzeug“ (Schreibweise egal wie in anderen Übersichten); Abweichungen bleiben vollständig
   const sel = siteSelection(positions.results, query.site);
-  return { providers: PROVIDERS, unmatched: unmatched.results, mappings: mappings.results, latest, by_provider, plate_mismatches, km_rejected, site: sel.site, site_options: sel.options,
+  return { providers: PROVIDERS, unmatched: unmatched.results, unmatched_total, unmatched_by_provider, unmatched_truncated: unmatchedTruncated, mappings: mappings.results, latest, by_provider, plate_mismatches, km_rejected, site: sel.site, site_options: sel.options,
     positions: positions.results.filter((r) => sel.match(r.site)).map((r) => ({ ...r, providers: r.providers ? r.providers.split(',').sort() : [],
       km_rejected: (kmRej.get(r.vehicle_id) || []).map(({ provider, external_id, km, gps_time, recorded_km, recorded_at }) => ({ provider, external_id, km, gps_time, recorded_km, recorded_at })) })) };
 }

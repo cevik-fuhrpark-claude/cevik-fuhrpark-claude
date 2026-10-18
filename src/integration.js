@@ -210,12 +210,12 @@ export async function integrationRouter(request, env, ctx, url) {
     const ov = await telematicsOverview(env, { role: 'owner' });
     const cnt = (list, prov) => list.filter((x) => x.provider === prov).length;
     return json({ schema_version: '1.0', generated_at: nowIso(),
-      providers: ov.by_provider.map((r) => ({ ...r, unmatched: cnt(ov.unmatched, r.provider), mappings: cnt(ov.mappings, r.provider),
+      providers: ov.by_provider.map((r) => ({ ...r, unmatched: ov.unmatched_by_provider[r.provider] || 0, mappings: cnt(ov.mappings, r.provider),
         plate_mismatches: cnt(ov.plate_mismatches, r.provider), km_rejected: cnt(ov.km_rejected, r.provider) })),
       // Zählung wie bisher nur Kraftfahrzeuge; Anhänger mit eigenem Gerät additiv
       vehicles_total: ov.positions.filter((x) => x.kind !== 'anhaenger').length, vehicles_without_data: ov.positions.filter((x) => x.kind !== 'anhaenger' && !x.gps_time).length,
       trailers_with_data: ov.positions.filter((x) => x.kind === 'anhaenger').length,
-      unmatched_truncated: ov.unmatched.length >= 500 });
+      unmatched_truncated: ov.unmatched_truncated });
   }
 
   // Telematik-Einspeisung: nur FIN oder bestätigtes Mapping führt zur Zuordnung
