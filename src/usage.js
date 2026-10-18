@@ -4,7 +4,10 @@ import { berlinDate, HttpError, intParam } from './util.js';
 
 const AREA = { cases: 'cases', vehicles: 'vehicles', contracts: 'vehicles', tires: 'tires', stock: 'stock', fines: 'fines', maintenance: 'maintenance', reports: 'reports',
   master: 'master', agent: 'master', notifications: 'notifications', push: 'notifications', users: 'admin', admin: 'admin', settings: 'admin',
-  me: 'account', logout: 'account', meta: 'account', dashboard: 'dashboard', inspections: 'checks' };
+  me: 'account', logout: 'account', meta: 'account', dashboard: 'dashboard', inspections: 'checks',
+  // 18.10.2026: ganze Fachbereiche standen unter „Sonstiges“
+  drivers: 'drivers', claims: 'claims', telematics: 'telematics', workshop: 'workshop', emergency: 'emergency', tacho: 'tacho', sites: 'vehicles',
+  'part-suggestions': 'cases', 'work-suggestions': 'cases' };
 
 // Pfadsegmente, die Einzelobjekte bezeichnen (UUID, Vorgangsnummer, FIN, Token, Zahlen), werden zu ':id'
 export function featureOf(method, path, action) {

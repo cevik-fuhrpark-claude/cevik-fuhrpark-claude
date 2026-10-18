@@ -6838,7 +6838,7 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
     if (drvC.length > drv.length) withCoupled++;
     const expect = {
       created: [...lead, ...(urgent ? [...dispo, ...ws] : []), ...(c.safety_lock ? drvC : [])],
-      received: reporter, priority_changed: [...reporter, ...(c.status !== 'gemeldet' ? ws : [])],
+      received: reporter, priority_changed: [...reporter, ...(c.status !== 'gemeldet' || c.priority === 'kritisch' ? ws : []), ...(c.priority === 'kritisch' ? dispo : [])],
       approved: [...ws, ...reporter], rework: ws, acknowledged: lead, waiting_parts: [...lead, ...dispo], cost_limit: lead, cost_approved: ws,
       released: [...reporter, ...dispo, ...lead, ...ws, ...drvC], safety_lock: [...reporter, ...dispo, ...lead, ...ws, ...drvC],
       comment: [...reporter, ...lead, ...(!['gemeldet', 'abgelehnt'].includes(c.status) ? ws : [])],
@@ -6851,7 +6851,7 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
       eq([...new Set(list.map((u) => u.id))].sort().join(','), [...new Set(expect[k])].sort().join(','), `${c.case_no} ${k}: gleiche Empfänger`);
       const dk = ['released', 'safety_lock'].includes(k) || (k === 'created' && c.safety_lock) ? drvC : drv;
       for (const u of list) eq(!!u.assigned, dk.includes(u.id) && !reporter.includes(u.id) && !lead.includes(u.id), `${k}: assigned nur für zugeordnete Fahrer`);
-      ok(list.every((u) => Object.keys(u).every((x) => ['id', 'language', 'role', 'assigned'].includes(x))), 'nur id/Sprache/Rolle');
+      ok(list.every((u) => Object.keys(u).every((x) => ['id', 'language', 'role', 'assigned', 'kind'].includes(x))), 'nur id/Sprache/Rolle (ggf. abweichende Hinweisart)');
       compared++;
     }
   }
@@ -11692,6 +11692,17 @@ await test('Fehlersuche 18.10. (7): Freigabe bei weiterer Sperre („bleibt gesp
   const dq = (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim').map((i) => i.case_id);
   ok(!dq.includes(ua) && dq.includes(ub), 'Unfallwort UK nur als Substantiv');
   for (const p of ['costs', 'kpi']) eq((await U.fleet.get(`/api/reports/${p}?to=2000-06`)).status, 200, p);
+  // 9. Melder: „Meldung an Werkstatt übergeben“; Hochstufen auf „kritisch“ im Status „gemeldet“ erreicht Dispo und vorgeschlagene Werkstatt
+  const fw = await newCase({ description: 'Tür klemmt' }); eq((await cmd(U.fleet, fw, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq(last(U.driver.id, fw).kind, 'forwarded', 'Melder'); eq(last(U.ws.id, fw).kind, 'approved', 'Werkstatt');
+  const { MUTABLE_KINDS } = await import('../src/notify.js'); ok(MUTABLE_KINDS.includes('forwarded'), 'abschaltbar');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['pk_forwarded', 'area_drivers', 'area_claims', 'area_telematics', 'area_workshop', 'area_emergency', 'area_tacho']) ok(STRINGS[l][k], `${l} ${k}`);
+  const es = await newCase({ description: 'Licht flackert', workshop_site: 'MUENCHEN' });
+  eq((await cmd(U.fleet, es, 'change_priority', { priority: 'kritisch' }, 'Bremslicht betroffen')).status, 200);
+  eq(last(dispo.id, es)?.kind, 'priority_changed', 'Dispo informiert'); eq(last(U.wsMuc.id, es)?.urgent, 1, 'vorgeschlagene Werkstatt dringend');
+  // 10. Nutzungsstatistik: Fachbereiche statt „Sonstiges“
+  const { areaOf } = await import('../src/usage.js');
+  eq(['GET drivers', 'GET claims/:id', 'GET telematics', 'GET workshop/plan', 'GET emergency', 'POST tacho/import', 'GET sites', 'GET part-suggestions'].map(areaOf).join(), 'drivers,claims,telematics,workshop,emergency,tacho,vehicles,cases');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

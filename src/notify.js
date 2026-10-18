@@ -9,7 +9,7 @@ const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' 
 const T = {
   de: {
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
-    priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', rejected: 'Meldung abgelehnt',
+    priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
     safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit',
@@ -19,7 +19,7 @@ const T = {
   },
   uk: {
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
-    priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', rejected: 'Повідомлення відхилено',
+    priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
     safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)',
@@ -29,7 +29,7 @@ const T = {
   },
   en: {
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
-    priority_changed: 'Priority changed', approved: 'New workshop order', rejected: 'Report rejected',
+    priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
     safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', open_item_safety: 'Safety-relevant open item',
@@ -44,7 +44,7 @@ export const nt = (lang, key) => (T[lang] && T[lang][key]) || T.de[key];
 
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
 export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'acknowledged', 'started', 'waiting_parts', 'resumed',
-  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away'];
+  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away', 'forwarded'];
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
   const L = T[lang] ? lang : 'de';
@@ -158,10 +158,13 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'received': case 'rejected': case 'priority_changed':
       add(reporter);
       if (kind === 'priority_changed' && c.status !== 'gemeldet') add(workshopUsers);
+      // Hochstufung auf „kritisch“: wie eine kritische Meldung auch Disposition und (vorgeschlagene) Werkstatt (18.10.2026: erfuhren nichts)
+      if (kind === 'priority_changed' && c.priority === 'kritisch') { add(usersByRole(['dispatch'])); add(workshopUsers); }
       break;
     case 'approved': case 'rework':
       add(workshopUsers);
-      if (kind === 'approved') add(reporter);
+      // Melder: „Meldung an Werkstatt übergeben“ statt „Neuer Werkstattauftrag“ (18.10.2026); meldende Werkstatt desselben Standorts bleibt beim Auftrag
+      if (kind === 'approved') add(reporter.map((u) => ({ ...u, kind: 'forwarded' })));
       if (internalLock) { add(usersByRole(['dispatch']).map((u) => ({ ...u, kind: 'safety_lock' }))); add(assignedDrivers().map((u) => ({ ...u, kind: 'safety_lock' }))); }
       break;
     case 'acknowledged': case 'started': case 'waiting_parts': case 'resumed': case 'quality_check': case 'open_item_safety':

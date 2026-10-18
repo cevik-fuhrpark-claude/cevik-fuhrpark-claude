@@ -3200,7 +3200,7 @@ async function viewUsage() {
   const days = S.usageDays || 30;
   const r = await api('GET', `/api/admin/usage?days=${days}`);
   const AREA = { cases: 'nav_cases', vehicles: 'vehicles', tires: 'fleet_tires', stock: 'stock', fines: 'fines', maintenance: 'inspections_due', reports: 'area_reports',
-    master: 'nav_master', notifications: 'notifications', admin: 'area_admin', account: 'nav_profile', dashboard: 'nav_home', checks: 'departure_check', other: 'area_other' };
+    master: 'nav_master', notifications: 'notifications', admin: 'area_admin', account: 'nav_profile', dashboard: 'nav_home', checks: 'departure_check', drivers: 'area_drivers', claims: 'area_claims', telematics: 'area_telematics', workshop: 'area_workshop', emergency: 'area_emergency', tacho: 'area_tacho', other: 'area_other' };
   const max = Math.max(1, ...r.daily.map((d) => d.calls));
   render(`<h1>${esc(t('usage'))}</h1><p class="small muted">${esc(t('usage_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${[7, 30, 90, 365].map((d) => `<button type="button" class="btn ${d === days ? '' : 'secondary'}" data-ud="${d}">${esc(nDays(d))}</button>`).join('')}</div>
