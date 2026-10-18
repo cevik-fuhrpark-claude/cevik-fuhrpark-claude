@@ -4617,6 +4617,7 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   eq(a2.data.followups[0].repeat, true);
   const fa = (await users.fleet.get(`/api/cases/${a1.data.followups[0].id}`)).data;
   ok(fa.events.some((e) => e.action === 'repeat_finding' && /Bremsleuchte links aus/.test(e.note)), 'Vermerk im Verlauf');
+  ok(fa.events.some((e) => e.action === 'repeat_finding' && e.payload && e.payload.code === 'repeat_departure_check' && e.payload.defect_note === 'Bremsleuchte links aus' && e.payload.inspection_id), 'Vermerk als Code im payload (Backlog 89)');
   ok((await users.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === fa.case.id).last_repeat_at, 'Liste kennt letzte Wiederholung (Heute zu tun)');
   eq(fa.case.check_item, keys[2]);
   // Werkstatt sieht die Wiederholung in ihrer Tagesübersicht – nur für Aufträge des eigenen Standorts
@@ -11321,6 +11322,37 @@ await test('Fehlersuche 17.10. (10): Datensicherung (ein Stand, Kommazahlen gena
   for (const ph of ['0231/123456', '0231-123456', '0231123456', '(0231) 123456']) { const r = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst', phone: ph }); eq(r.status, 409, ph); eq(r.data.error, 'duplicate_contact'); }
   const other = (await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Andere', phone: '0231 999999' })).data.id;
   const ch = await F.patch(`/api/emergency/contacts/${other}`, { phone: '0231-123456' }); eq(ch.status, 409); eq(ch.data.error, 'duplicate_contact');
+});
+await test('Backlog 89: Verlaufsvermerke der Kontrolle als Code/Werte im payload, App übersetzt ohne Textmuster (ältere Einträge weiter per Muster)', async () => {
+  const VM = 'VIN:WDB96340310888888';
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const rule = await users.fleet.post(`/api/vehicles/${VM}/maintenance`, { kind: 'Verbandkasten', last_done_date: day(-400), interval_months: 12, evidence: 'Test 89' });
+  eq(rule.status, 201, JSON.stringify(rule.data));
+  const o = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o.status, 201);
+  const id = o.data.id;
+  const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case;
+  eq((await users.ws.post(`/api/cases/${id}/commands`, { action: 'start_repair', command_id: rk(), expected_version: cur.version })).status, 200);
+  const last = env.DB.db.prepare('SELECT MAX(km) AS km FROM odometer_readings WHERE vehicle_id=?').get(VM).km;
+  const prev = (last || 0) + 5000;
+  env.DB.db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)`).run(crypto.randomUUID(), VM, prev, new Date(Date.now() - 3600000).toISOString(), 'manuell', users.fleet.id || null, new Date().toISOString());
+  const keys = (await users.ws.get('/api/meta')).data.checklist.map((c) => c.key);
+  const r = await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), odometer_km: 1000, items: keys.map((k, i) => ({ key: k, result: i < 2 ? 'mangel' : 'ok', note: i < 2 ? 'Test 89 Mangel ' + i : null })) });
+  eq(r.status, 201, JSON.stringify(r.data));
+  const ev = (await users.fleet.get(`/api/cases/${id}`)).data.events.find((e) => e.action === 'inspection');
+  ok(ev, 'Verlaufseintrag Kontrolle');
+  eq(ev.payload.code, 'inspection_defects'); eq(ev.payload.defects, 2);
+  eq(JSON.stringify(ev.payload.km_rejected), JSON.stringify({ km: 1000, previous_km: prev }));
+  ok(/^2 Mangel\/Mängel festgestellt · km-Stand 1000 kleiner als zuletzt erfasst/.test(ev.note), 'deutscher Text bleibt für Suche/CSV/Protokoll');
+  // App-Funktion evNote mit Platzhalter-Übersetzung: payload schlägt Text, Muster nur für ältere Einträge
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('function evNote(e) {'), app.indexOf('\n}\n', app.indexOf('function evNote(e) {')) + 2);
+  const evNote = new Function('t', 'tn', 'fmtNum', src + '\nreturn evNote;')((k) => `[${k}]`, (k, n) => `[${k}:${n}]`, (n) => String(n));
+  eq(evNote(ev), '[ev_defects:2] · [ev_km_smaller]');
+  eq(evNote({ action: 'inspection', note: 'egal', payload: { code: 'inspection_ok', defects: 0 } }), '[ev_no_defects]');
+  eq(evNote({ action: 'repeat_finding', note: 'Erneut festgestellt (Abfahrtskontrolle): x', payload: { code: 'repeat_departure_check', defect_note: 'Blinker' } }), 'Blinker');
+  eq(evNote({ action: 'repeat_finding', note: 'Erneut festgestellt (Abfahrtskontrolle): Alt', payload: { inspection_id: 'x' } }), 'Alt', 'älterer Eintrag ohne Code');
+  eq(evNote({ action: 'inspection', note: '3 Mangel/Mängel festgestellt', payload: { inspection_id: 'x' } }), '[ev_defects:3]', 'älterer Eintrag per Muster');
+  eq(evNote({ action: 'comment', note: 'Freitext', payload: null }), 'Freitext');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

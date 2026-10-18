@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 350 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 351 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -138,5 +138,5 @@ Der vollständige Verlauf aller erledigten Punkte und Sitzungsprotokolle steht i
 86. ~~Fuhrparkagent: Lauf-Sperre je Umgebung~~ – erledigt 17.10.2026 (05:15-Sitzung): zweiter gleichzeitiger Lauf – Cron überspringt, manuell 409 `agent_running`.
 87. ~~Vertrag km-Kontingent nach Tachotausch~~ – erledigt 17.10.2026 (19:15-Sitzung): **Migration 0058** `vehicle_contracts.km_basis_at`; nur Änderung von km bei Übernahme/Kontingent/Beginn oder das neue Häkchen „km bei Übernahme … geprüft“ (DE/UK/EN, vorher verdecktes Feld bei jeder Bearbeitung) klären einen Zähler-Rücksprung.
 88. ~~Vorgang: halb ausgefülltes Aktionsformular bleibt offen~~ – erledigt 17.10.2026 (19:15-Sitzung): `S.openAct` + `render(…, { defer: true })`/`finishRender()`; geschlossen nach Absenden/„Abbrechen“ oder Seitenwechsel. UI-Skript `ui-aktionsformular.py` (prüft auch das Häkchen aus Backlog 87).
-89. Verlaufsvermerke (Kontrolle, erneut festgestellt) serverseitig als Code/payload speichern statt deutschem Text; App übersetzt heute per Muster (`evNote`).
+89. ~~Verlaufsvermerke als Code~~ – erledigt 18.10.2026 (00:15-Sitzung): `case_events.payload` trägt bei `inspection` `code` (`inspection_defects`/`inspection_ok`), `defects`, `km_rejected` {km, previous_km|next_km}, bei `repeat_finding` `code: repeat_departure_check` + `defect_note`; `note` bleibt deutsch für Suche/CSV/Protokoll; `evNote` nutzt payload, Textmuster nur für ältere Einträge. Keine Migration (Spalte gab es).
 83. ~~Restliche deutsche Einzeltexte bei `validation`~~ – erledigt 12.10.2026 (16:16-Sitzung). Neue Server-Texte künftig gleich in `V_MORE` (`public/i18n.js`) ergänzen.

@@ -1265,14 +1265,17 @@ export async function submitInspection(env, ctx, user, envName, body) {
       stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         VALUES (?,?,?,?,?,'inspection',?,?,?,?,?,?,?)`).bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, c.version, c.version,
         (defects.length ? `${defects.length} Mangel/Mängel festgestellt` : 'Kontrolle ohne Mängel') + (kmRejected ? (kmRejected.next_km !== undefined ? ` · km-Stand ${odo} größer als später erfasst (${kmRejected.next_km}) – nicht in die Fahrzeugakte übernommen` : ` · km-Stand ${odo} kleiner als zuletzt erfasst (${kmRejected.previous_km}) – nicht in die Fahrzeugakte übernommen`) : ''),
-        JSON.stringify({ inspection_id: id, followups: followups.map((f) => f.case_no) }), now));
+        // Backlog 89 (18.10.2026): Vermerk zusätzlich als Code/Werte, damit die App ihn ohne Textmuster übersetzt (note bleibt für Suche/CSV/Protokoll)
+        JSON.stringify({ inspection_id: id, followups: followups.map((f) => f.case_no), code: defects.length ? 'inspection_defects' : 'inspection_ok', defects: defects.length,
+          ...(kmRejected ? { km_rejected: kmRejected.next_km !== undefined ? { km: odo, next_km: kmRejected.next_km } : { km: odo, previous_km: kmRejected.previous_km } } : {}) }), now));
     }
     if (repeats.length) { // zwei Anweisungen unabhängig von der Anzahl
-      const rep = repeats.map(({ open, d }) => ({ id: uuid(), case_id: open.id, status: open.status, version: open.version, note: `Erneut festgestellt (Abfahrtskontrolle): ${d.note}` }));
+      const rep = repeats.map(({ open, d }) => ({ id: uuid(), case_id: open.id, status: open.status, version: open.version, note: `Erneut festgestellt (Abfahrtskontrolle): ${d.note}`,
+        payload: JSON.stringify({ inspection_id: id, code: 'repeat_departure_check', defect_note: d.note }) }));
       const x = (k) => `json_extract(value,'$.${k}')`;
       stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
-        SELECT ${x('id')}, ${x('case_id')}, ?1, ?2, ?3, 'repeat_finding', ${x('status')}, ${x('status')}, ${x('version')}, ${x('version')}, ${x('note')}, ?4, ?5 FROM json_each(?6)`)
-        .bind(envName, user.id, user.role, JSON.stringify({ inspection_id: id }), now, JSON.stringify(rep)));
+        SELECT ${x('id')}, ${x('case_id')}, ?1, ?2, ?3, 'repeat_finding', ${x('status')}, ${x('status')}, ${x('version')}, ${x('version')}, ${x('note')}, ${x('payload')}, ?4 FROM json_each(?5)`)
+        .bind(envName, user.id, user.role, now, JSON.stringify(rep)));
       stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify(rep.map((r) => r.case_id))));
     }
     try { await env.DB.batch(stmts); } catch (e) {

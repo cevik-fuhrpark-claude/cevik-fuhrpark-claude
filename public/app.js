@@ -2369,6 +2369,14 @@ async function viewDriver(id) {
 // Freitext unverändert. Muster wie in src/cases.js (createInspection).
 function evNote(e) {
   const n = String(e.note || '');
+  const p = e.payload || {};
+  // Backlog 89 (18.10.2026): neue Einträge tragen Code + Werte im payload; Textmuster nur noch für ältere Einträge
+  if (e.action === 'repeat_finding' && p.code === 'repeat_departure_check' && typeof p.defect_note === 'string') return p.defect_note;
+  if (e.action === 'inspection' && (p.code === 'inspection_defects' || p.code === 'inspection_ok')) {
+    const k = p.km_rejected;
+    const km = k && Number.isFinite(Number(k.km)) ? ' · ' + (k.next_km !== undefined ? t('ev_km_greater').replace('{km}', fmtNum(Number(k.km))).replace('{next}', fmtNum(Number(k.next_km))) : t('ev_km_smaller').replace('{km}', fmtNum(Number(k.km))).replace('{prev}', fmtNum(Number(k.previous_km)))) : '';
+    return (p.code === 'inspection_defects' ? tn('ev_defects', Number(p.defects) || 0) : t('ev_no_defects')) + km;
+  }
   if (e.action === 'repeat_finding') return n.replace(/^Erneut festgestellt \(Abfahrtskontrolle\): /, '');
   if (e.action !== 'inspection') return n;
   const m = n.match(/^(?:(\d+) Mangel\/Mängel festgestellt|Kontrolle ohne Mängel)(?: · km-Stand (\d+) (?:größer als später erfasst \((\d+)\)|kleiner als zuletzt erfasst \((\d+)\)) – nicht in die Fahrzeugakte übernommen)?$/);
