@@ -795,6 +795,7 @@ const V_MORE = [
   ['Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.', 'Розмір шин цієї осі перевірено на транспорті – змінити можна лише після нової перевірки на транспорті.', 'The tyre size of this axle was checked on the vehicle – it can only be changed with a new check on the vehicle.'],
   ['Tatzeit liegt in der Zukunft.', 'Час порушення в майбутньому.', 'Time of offence is in the future.'],
   ['Tatzeit vor 2000 – bitte Jahr prüfen.', 'Час порушення до 2000 року – перевірте рік.', 'Time of offence before 2000 – please check the year.'],
+  ['„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.', '«Дійсний до» більш ніж на 20 років у майбутньому – перевірте рік.', '“Valid until” is more than 20 years in the future – please check the year.'],
   ['Frist vor 2000 – bitte Jahr prüfen.', 'Строк до 2000 року – перевірте рік.', 'Deadline before 2000 – please check the year.'],
   ['Durchführungszeitpunkt ungültig.', 'Неправильний час проведення.', 'Time of completion is invalid.'],
   ['Die Kontrolle liegt mehr als 7 Tage zurück und wird nicht mehr übernommen. Bitte neu durchführen.', 'Перевірка була понад 7 днів тому і більше не приймається. Проведіть її заново.', 'The check is more than 7 days old and is no longer accepted. Please carry it out again.'],

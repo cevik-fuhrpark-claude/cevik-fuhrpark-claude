@@ -3348,7 +3348,7 @@ await test('Panne & Notfall: Rufnummern je Umgebung (alle/Standort/Fahrzeug), Fa
   const dv = d.vehicles.find((x) => x.id === VID); eq(dv.contacts.map((c) => c.id).join(), [v.data.id, s.data.id].join(), 'Fahrzeug vor Standort');
   eq(dv.contacts[1].site, vsite.trim(), 'Standort in Anzeige-Schreibweise des Fahrzeugstamms');
   const o = (await users.driver.get(`/api/emergency?vehicle_id=${encodeURIComponent(other.id)}`)).data;
-  eq(o.vehicles.length, 1); eq(o.vehicles[0].contacts.length, 0, 'anderes Fahrzeug/anderer Standort: keine fremden Nummern'); eq(o.general.length, before + 1);
+  eq(o.vehicles[0].id, other.id, 'gescanntes Fahrzeug zuerst (danach ggf. das fest gekoppelte)'); eq(o.vehicles[0].contacts.length, 0, 'anderes Fahrzeug/anderer Standort: keine fremden Nummern'); eq(o.general.length, before + 1);
   eq((await users.driver.get('/api/emergency?vehicle_id=VIN:UNBEKANNT123')).status, 404);
   eq((await users.dispatch.get('/api/emergency')).data.vehicles.length, 0, 'Nicht-Fahrer ohne Fahrzeug: nur allgemeine'); eq((await users.dispatch.get('/api/emergency')).data.can_edit, true);
   eq((await users.prodFleet.get('/api/emergency')).data.general.some((c) => c.id === g.data.id), false, 'Test-Nummern nicht im Betrieb');
@@ -11988,6 +11988,70 @@ await test('Bußgeld-Erfassung idempotent (request_key, Migration 0061), Fahrera
   // Übersetzung der Meldung
   const I = await import('../public/i18n.js');
   eq(I.translateValidation('en', 'Gültig bis: Datum außerhalb des zulässigen Bereichs.').includes('Valid until'), true, 'EN übersetzt');
+});
+await test('Fehlersuche 18.10. (11): Stichtag mit Einkaufspreis der Umlagerung, Lager-Cent-Rundung (roundCents), Inventur-Wettlauf ohne Abweichung, Rufnummer-Standort-Schreibweise/Bearbeiten ohne Stamm/Gespann nach QR, Nutzungsbereiche, Hinweis-Gültigkeit', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const today = BERLIN_TODAY;
+  // 1. Umlagerung trägt den letzten Einkaufspreis des Quelllagers in den Stichtag (vorher Ziel „unbewertet“, Summe sank durch reine Umlagerung)
+  const k = await U.ws.post('/api/stock', { name: 'Kupplung', part_number: 'K1', unit_price_net: 100, initial_qty: 4 }); eq(k.status, 201);
+  const before = (await U.fleet.get('/api/stock/asof?date=' + today)).data.summary.purchase;
+  eq((await U.ws.post(`/api/stock/${k.data.id}/transfer`, { to_site: 'MUENCHEN', qty: 3 })).status, 201);
+  const as = (await U.fleet.get('/api/stock/asof?date=' + today)).data;
+  const muc = as.items.find((i) => i.site === 'MUENCHEN' && i.name === 'Kupplung');
+  eq(muc.last_purchase_price, 100, 'Zielartikel mit Einkaufspreis der Quelle'); eq(muc.value_purchase_net, 300);
+  eq(as.summary.purchase.value_net, before.value_net, 'Summe unverändert durch Umlagerung'); eq(as.summary.purchase.unvalued, before.unvalued);
+  // 2. Cent-Rundung: 3,5 l × 0,29 € = 1,015 → 1,02 (Stichtag, Journal, Bestellvorschlag, CSV)
+  const a = await U.ws.post('/api/stock', { name: 'AdBlue', unit: 'l', unit_price_net: '0,29', initial_qty: '3,5', min_qty: '7' }); eq(a.status, 201, JSON.stringify(a.data));
+  eq((await U.ws.get('/api/stock/asof?date=' + today)).data.items.find((i) => i.name === 'AdBlue').value_purchase_net, 1.02, 'Stichtag 1,02');
+  eq((await U.ws.get(`/api/stock/journal?from=${today}&to=${today}`)).data.movements.find((m) => m.name === 'AdBlue').value_net, 1.02, 'Journal 1,02');
+  eq((await U.ws.get('/api/stock?reorder=1')).data.items.find((i) => i.name === 'AdBlue').shortfall_value_net, 1.02, 'Fehlmenge 3,5 l → 1,02');
+  // 3. Inventur: Entnahme zwischen Prüfung und Buchung bei einem Artikel OHNE Abweichung → 409, nichts gebucht/vermerkt
+  const A = await U.ws.post('/api/stock', { name: 'Inv A', initial_qty: 10 }); const B = await U.ws.post('/api/stock', { name: 'Inv B', initial_qty: 10 });
+  const orig = e.DB.batch.bind(e.DB); let once = true;
+  const inject = () => db.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,note,user_id,created_at) VALUES (?,'test',?,'entnahme',-3,'parallel',?,?)`).run(crypto.randomUUID(), A.data.id, U.ws.id, new Date().toISOString());
+  e.DB.batch = async (st) => { if (once && st.length > 2) { once = false; inject(); } return orig(st); };
+  const go = await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: A.data.id, counted: 10 }, { item_id: B.data.id, counted: 8 }] });
+  e.DB.batch = orig;
+  eq(go.status, 409, JSON.stringify(go.data));
+  eq(db.prepare("SELECT COUNT(*) AS n FROM stock_movements WHERE item_id=? AND type='korrektur'").get(B.data.id).n, 0, 'B nicht korrigiert');
+  eq(db.prepare('SELECT last_counted_qty AS q FROM stock_items WHERE id=?').get(A.data.id).q, null, 'A nicht als gezählt vermerkt');
+  // … ganz ohne Abweichung ebenso
+  once = true; e.DB.batch = async (st) => { if (once && st.length >= 2) { once = false; inject(); } return orig(st); };
+  const go2 = await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: A.data.id, counted: 7 }] });
+  e.DB.batch = orig;
+  eq(go2.status, 409, 'ohne Abweichung: Wettlauf erkannt ' + JSON.stringify(go2.data));
+  eq((await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: A.data.id, counted: 4 }, { item_id: B.data.id, counted: 10 }] })).status, 200, 'normale Inventur weiter möglich');
+  // 4. Rufnummer: Stammliste kippt die Schreibweise → keine zweite gleiche Standort-Nummer
+  const c1 = await U.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst DO', phone: '0231 123456', scope: 'site', site: 'Dortmund' }); eq(c1.status, 201);
+  const now = new Date().toISOString();
+  for (let i = 0; i < 3; i++) db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES(?,?,?,?, 'lkw',1,0,?,?)`).run('vx' + i, 'WDB0000000000000' + i, 'SZ-XX ' + i, 'DORTMUND', now, now);
+  eq((await U.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst DO', phone: '0231 123456', scope: 'site', site: 'Dortmund' })).status, 409, 'Dublette trotz anderer Schreibweise');
+  // … Standort verschwindet aus dem Stamm: Nummer bleibt korrigierbar
+  db.prepare("UPDATE vehicles SET site='Hamm'").run();
+  const cur = (await U.fleet.get('/api/emergency/contacts')).data.contacts.find((c) => c.id === c1.data.id);
+  const pt = await U.fleet.req('PATCH', '/api/emergency/contacts/' + c1.data.id, { phone: '0231 999999', expected_updated_at: cur.updated_at });
+  eq(pt.status, 200, JSON.stringify(pt.data));
+  eq((await U.fleet.req('PATCH', '/api/emergency/contacts/' + c1.data.id, { site: 'Bochum', scope: 'site' })).status, 400, 'neuer Standort weiter nur aus dem Stamm');
+  // 5. QR-Scan des Lkw zeigt die Nummer des fest gekoppelten Anhängers
+  db.prepare("UPDATE vehicles SET site='Dortmund', trailer_plate='SZ-AH 1' WHERE vin='WMA15SZZ2HM722774'").run();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES('ah1','WAH00000000000001','SZ-AH 1','Dortmund','anhaenger',1,0,?,?)`).run(now, now);
+  eq((await U.fleet.post('/api/emergency/contacts', { kind: 'sonstiges', label: 'Kühlaggregat-Hotline', phone: '0800 111222', scope: 'vehicle', vehicle_id: 'ah1' })).status, 201);
+  const qr = (await U.driver.get('/api/emergency?vehicle_id=' + encodeURIComponent('VIN:WMA15SZZ2HM722774'))).data;
+  ok(qr.vehicles.some((v) => v.id === 'ah1' && v.contacts.some((c) => c.label === 'Kühlaggregat-Hotline')), 'Anhänger-Hotline nach QR-Scan ' + JSON.stringify(qr.vehicles.map((v) => v.plate)));
+  // 6. Nutzungsbereiche
+  const { featureOf, areaOf } = await import('../src/usage.js');
+  eq(areaOf(featureOf('GET', '/api/files/abc123')), 'cases'); eq(areaOf(featureOf('DELETE', '/api/assignments/9f1c2d')), 'vehicles'); eq(areaOf(featureOf('GET', '/api/integration/v1/kpi')), 'admin');
+  // 7. Hinweis zum Fahrzeug: „Gültig bis“ höchstens 20 Jahre (übersetzt)
+  const y = Number(today.slice(0, 4));
+  const vn = await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/notes', { text: 'Ladeetage hakt', valid_until: `${y + 36}-01-01` });
+  eq(vn.status, 400, JSON.stringify(vn.data));
+  const I = await import('../public/i18n.js');
+  ok(I.translateValidation('en', '„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.').startsWith('“Valid until”'), 'EN');
+  eq((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/notes', { text: 'Ladeetage hakt', valid_until: `${y + 1}-01-01` })).status, 201);
+  // 8. Oberfläche: Lagermengen im Sprachformat, Summen je Zeile gerundet
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/\$\{i\.on_hand\} \$\{esc|\$\{it\.on_hand\} \$\{esc|\$\{m\.qty\}<\/b>|\$\{d\.delta\} \$\{esc/.test(app), 'Lagermengen mit fmtNum');
+  ok(app.includes('a + rc2(i.on_hand * i.unit_price_net)'), 'Lagerwert je Zeile gerundet');
+  ok(app.includes("cfp_emerg_${S.me.id}_${S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment}"), 'Offline-Rufnummern je Ansicht');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

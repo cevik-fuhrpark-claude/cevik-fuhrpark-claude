@@ -41,6 +41,8 @@ export async function addNote(env, user, envName, vehicleId, body) {
     validUntil = String(body.valid_until);
     if (!isCalendarDate(validUntil)) throw bad('validation', '„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).');
     if (validUntil < today) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.');
+    // Jahres-Tippfehler (2062): Hinweis sonst praktisch dauerhaft (18.10.2026) – höchstens 20 Jahre wie die Fahrerakte
+    if (validUntil > String(Number(today.slice(0, 4)) + 20) + today.slice(4)) throw bad('validation', '„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.');
   }
   const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(vehicleId, envName, today).first();
   if (n.n >= NOTES_MAX_ACTIVE) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);

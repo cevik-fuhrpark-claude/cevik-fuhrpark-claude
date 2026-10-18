@@ -41,6 +41,9 @@ export async function emergencyView(env, user, envName, query = {}) {
   } else if (user.role === 'driver') {
     vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.site FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id
       WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND v.active=1 ORDER BY d.valid_from DESC LIMIT 10`).bind(user.id, nowIso()).all()).results;
+  }
+  {
+    // auch nach QR-Scan (?vehicle_id=) – Lkw-Aufkleber zeigt die Hotline des Aufliegers (18.10.2026)
     // fest gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (wie „Mein Fahrzeug“) – z. B. Hotline des Kühlaufliegers (17.10.2026)
     if (vehicles.length) {
       const pool = (await env.DB.prepare(`SELECT id, plate, site, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>''))`).all()).results;
@@ -88,6 +91,9 @@ async function readBody(env, body, existing = {}) {
   if (scope === 'site') {
     const raw = str(body.site !== undefined ? body.site : existing.site, { max: 60, field: 'Standort' });
     if (!raw) throw bad('validation', 'Standort angeben.');
+    // Standort unverändert (z. B. nur Nummer korrigiert): ohne Stammprüfung behalten – sonst ließ sich eine Nummer nicht mehr korrigieren,
+    // sobald kein Fahrzeug mehr an diesem Standort steht (18.10.2026)
+    if (existing.site && siteKey(raw) === siteKey(existing.site)) return { kind, label, phone, note, site: existing.site, vehicle_id: null };
     const labels = siteLabels((await env.DB.prepare('SELECT site FROM vehicles').all()).results);
     if (siteKey(raw) === 'ohne' || !labels.has(siteKey(raw))) throw bad('validation', 'Standort ist im Fahrzeugstamm nicht vorhanden.');
     site = labels.get(siteKey(raw));
@@ -100,9 +106,18 @@ async function readBody(env, body, existing = {}) {
   return { kind, label, phone, note, site, vehicle_id: vehicleId };
 }
 
+// Standort einer Rufnummer in der Schreibweise einer schon aktiven Nummer desselben Standorts (Groß-/Kleinschreibung, Leerzeichen):
+// die Stammliste kann ihre häufigste Schreibweise ändern („Dortmund“ → „DORTMUND“) – die Dublettenprüfung vergleicht exakt (18.10.2026)
+async function sameSiteSpelling(env, envName, f, selfId = null) {
+  if (!f.site) return;
+  const same = (await activeContacts(env, envName)).find((c) => c.id !== selfId && c.site && siteKey(c.site) === siteKey(f.site));
+  if (same) f.site = same.site;
+}
+
 export async function addContact(env, user, envName, body) {
   if (!WRITE.includes(user.role)) throw forbidden();
   const f = await readBody(env, body || {});
+  await sameSiteSpelling(env, envName, f);
   const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM emergency_contacts WHERE environment=? AND archived_at IS NULL').bind(envName).first();
   if (n.n >= EMERGENCY_MAX_ACTIVE) throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
   const id = uuid(); const now = nowIso();
@@ -128,6 +143,7 @@ export async function updateContact(env, user, envName, id, body) {
   // korrigierte Nummer still zurück (17.10.2026)
   if (body && body.expected_updated_at && String(body.expected_updated_at) !== ex.updated_at) throw conflict('version_conflict', 'Rufnummer wurde zwischenzeitlich geändert. Bitte neu laden.');
   const f = await readBody(env, body || {}, ex);
+  await sameSiteSpelling(env, envName, f, id);
   const changed = Object.keys(f).filter((k) => (f[k] ?? null) !== (ex[k] ?? null));
   if (!changed.length) return { ok: true, changed: [] };
   // atomar: nicht archiviert und unverändert seit dem Lesen (gleichzeitiges Archivieren/Ändern)

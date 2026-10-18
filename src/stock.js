@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -19,10 +19,6 @@ function siteScope(user, site) {
 // Entnahmen/Inventuren konnten den Bestand ins Minus bzw. die Korrektur doppelt buchen (17.10.2026).
 export function stockGuardNonNegative(env, itemId) {
   return [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN ROUND(COALESCE(SUM(qty),0),3) >= 0 THEN 1 ELSE 0 END FROM stock_movements WHERE item_id=?`).bind(itemId),
-    env.DB.prepare('DELETE FROM cmd_guard')];
-}
-function stockGuardEquals(env, itemId, qty) {
-  return [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN ABS(COALESCE(SUM(qty),0) - ?2) < 0.0005 THEN 1 ELSE 0 END FROM stock_movements WHERE item_id=?1`).bind(itemId, qty),
     env.DB.prepare('DELETE FROM cmd_guard')];
 }
 const isCheck = (e) => String(e && e.message).includes('CHECK');
@@ -57,7 +53,7 @@ export async function listStock(env, user, envName, query) {
       const shortfall = r3(r.min_qty - r.on_hand);
       // nach Bestellvermerk noch offen (Fehlmenge minus bestellte Menge, nie negativ) – Hinweis gegen Doppelbestellung
       const open_after_order = r.ordered_on ? r3(Math.max(0, shortfall - (r.ordered_qty || 0))) : shortfall;
-      return { ...r, shortfall, open_after_order, shortfall_value_net: r.unit_price_net === null ? null : Math.round(shortfall * r.unit_price_net * 100) / 100 };
+      return { ...r, shortfall, open_after_order, shortfall_value_net: r.unit_price_net === null ? null : roundCents(shortfall * r.unit_price_net) };
     });
     // Zum Bestellen: letzter Lieferant (jüngster Zugang mit Lieferant) und letzter Zugang – nur aus gebuchten Zugängen, eine Abfrage
     if (list.length) {
@@ -287,7 +283,7 @@ export function stockCsv(items, csvCell) {
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), csvCell(i.part_number), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), i.below_min ? 'ja' : 'nein',
-    n(i.unit_price_net), i.unit_price_net === null ? '' : n(Math.round(i.on_hand * i.unit_price_net * 100) / 100), i.last_out_date || '', i.last_counted_date || '', n(i.last_counted_qty)].join(';'));
+    n(i.unit_price_net), i.unit_price_net === null ? '' : n(roundCents(i.on_hand * i.unit_price_net)), i.last_out_date || '', i.last_counted_date || '', n(i.last_counted_qty)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
@@ -342,12 +338,18 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
       last_counted_qty=(SELECT json_extract(j.value,'$.q') FROM json_each(?) j WHERE json_extract(j.value,'$.id')=stock_items.id)
     WHERE environment=? AND id IN (SELECT json_extract(value,'$.id') FROM json_each(?))`).bind(now, cj, envName, cj);
   // Inventur ohne Abweichungen: nichts zu buchen, aber mit Datum im Protokoll vermerkt (Nachweis „Lager gezählt“)
-  if (!diffs.length) { await env.DB.batch([markCounted]); await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
+  // Bestand aller gezählten Artikel muss nach dem Stapel der Zählmenge entsprechen – auch ohne Abweichung (18.10.2026: Entnahme zwischen Prüfung
+  // und Buchung → „gezählt 10“ vermerkt bei Bestand 7). Eine Anweisung für alle (Abfragebudget), am Ende des Stapels.
+  const allGuard = [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM json_each(?) j
+      WHERE ABS((SELECT COALESCE(SUM(m.qty),0) FROM stock_movements m WHERE m.item_id=json_extract(j.value,'$.id')) - json_extract(j.value,'$.q')) >= 0.0005) THEN 0 ELSE 1 END`).bind(cj),
+    env.DB.prepare('DELETE FROM cmd_guard')];
+  const changed = () => new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
+  if (!diffs.length) { try { await env.DB.batch([markCounted, ...allGuard]); } catch (e) { if (isCheck(e)) throw changed(); throw e; } await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
   // je Korrektur: danach muss der Bestand genau der Zählmenge entsprechen – sonst (parallele Inventur/Entnahme) nichts buchen
   try {
     await env.DB.batch([markCounted, ...diffs.flatMap((d) => [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
       VALUES (?,?,?,'korrektur',?,NULL,NULL,NULL,?,?,?,?)`).bind(uuid(), envName, d.item_id, d.delta, `Inventur ${date}`,
-      `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now), ...stockGuardEquals(env, d.item_id, d.counted)])]);
+      `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now)]), ...allGuard]);
   } catch (e) {
     if (isCheck(e)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
     throw e;
@@ -402,7 +404,8 @@ export async function journal(env, user, envName, query = {}) {
     WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${item ? 'AND m.item_id=?' : ''} ${typeSql}
     ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 1]).all()).results;
   // kaufmännisch symmetrisch (18.10.2026: −0,125 wurde −0,12, +0,125 aber +0,13 – Rest 0,01 € bei Bestand 0)
-  const r2 = (x) => Math.sign(x) * Math.round(Math.abs(x) * 100) / 100;
+  // gegen Gleitkommafehler wie alle Beträge (roundCents: 3,5 × 0,29 = 1,015 → 1,02; 18.10.2026)
+  const r2 = roundCents;
   let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
     .filter((r) => r.date >= from && r.date <= to);
   const truncated = list.length > JOURNAL_MAX;
@@ -425,9 +428,16 @@ export async function journal(env, user, envName, query = {}) {
   return { from, to, site, type, item: item ? { id: item.id, name: item.name, part_number: item.part_number, site: item.site } : null, environment: envName, truncated, max: JOURNAL_MAX, summary: sum, movements: list };
 }
 
+// Einkaufspreis eines Zugangs: eigener Zugang = sein Preis; Umlagerungs-Zugang = letzter Einkaufspreis des Quellartikels bis zur Umlagerung
+// (18.10.2026: Umlagerungen wurden übergangen – Zielartikel „unbewertet“ bzw. mit älterem eigenem Preis, Summe änderte sich durch reine Umlagerung).
+// Eine Stufe: Ware, die schon umgelagert in die Quelle kam, zählt dort ohne Einkaufspreis (dann gilt der ältere eigene Einkauf).
+const EFF_PRICE = `(CASE WHEN m.transfer_id IS NULL THEN m.unit_price_net ELSE (SELECT p.unit_price_net FROM stock_movements s JOIN stock_movements p ON p.item_id=s.item_id
+    WHERE s.transfer_id=m.transfer_id AND s.item_id<>m.item_id AND p.type='zugang' AND p.transfer_id IS NULL AND p.unit_price_net IS NOT NULL AND p.created_at <= m.created_at
+    ORDER BY p.created_at DESC LIMIT 1) END)`;
+
 // Bestand zum Stichtag (z. B. 31.12. für den Jahresabschluss): Summe aller Buchungen bis Ende des Berliner Kalendertags,
 // auch inzwischen ausgebuchte Artikel; nur Artikel mit Bestand ≠ 0. Zwei Preisangaben, die Bewertungsmethode legt die Buchhaltung fest:
-// letzter Einkaufspreis bis zum Stichtag (jüngster Zugang mit Preis, ohne Umlagerungen) und der heute hinterlegte Artikelpreis.
+// letzter Einkaufspreis bis zum Stichtag (jüngster Zugang mit Einkaufspreis; Umlagerung mit dem Einkaufspreis des Quelllagers) und der heute hinterlegte Artikelpreis.
 // Ohne Preis bleibt der Wert leer (nie 0 €). Werkstattrolle nur eigenes Lager.
 export async function stockAsOf(env, user, envName, query = {}) {
   const site = siteScope(user, query.site ? String(query.site).slice(0, 20) : null);
@@ -438,9 +448,9 @@ export async function stockAsOf(env, user, envName, query = {}) {
   const end = berlinDayStartIso(new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10));
   const rows = (await env.DB.prepare(`SELECT i.id, i.site, i.part_number, i.name, i.unit, i.location, i.active, i.unit_price_net AS price_today,
       (SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.created_at < ?) AS qty,
-      (SELECT m.unit_price_net FROM stock_movements m WHERE m.item_id=i.id AND m.type='zugang' AND m.transfer_id IS NULL AND m.unit_price_net IS NOT NULL AND m.created_at < ? ORDER BY m.created_at DESC LIMIT 1) AS last_purchase_price
+      (SELECT ${EFF_PRICE} FROM stock_movements m WHERE m.item_id=i.id AND m.type='zugang' AND m.created_at < ? AND ${EFF_PRICE} IS NOT NULL ORDER BY m.created_at DESC LIMIT 1) AS last_purchase_price
     FROM stock_items i WHERE i.environment=? ${site ? 'AND i.site=?' : ''} ORDER BY i.site, i.name`).bind(...[end, end, envName, ...(site ? [site] : [])]).all()).results;
-  const r2 = (x) => Math.round(x * 100) / 100;
+  const r2 = roundCents;
   const items = rows.map((r) => ({ ...r, qty: r3(r.qty || 0) })).filter((r) => r.qty !== 0).map((r) => ({ ...r, active: !!r.active,
     value_purchase_net: r.last_purchase_price === null ? null : r2(r.qty * r.last_purchase_price), value_today_net: r.price_today === null ? null : r2(r.qty * r.price_today) }));
   const sum = (k) => ({ value_net: r2(items.reduce((a, i) => a + (i[k] || 0), 0)), unvalued: items.filter((i) => i[k] === null).length });

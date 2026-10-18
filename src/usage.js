@@ -7,7 +7,9 @@ const AREA = { cases: 'cases', vehicles: 'vehicles', contracts: 'vehicles', tire
   me: 'account', logout: 'account', meta: 'account', dashboard: 'dashboard', inspections: 'checks',
   // 18.10.2026: ganze Fachbereiche standen unter „Sonstiges“
   drivers: 'drivers', claims: 'claims', telematics: 'telematics', workshop: 'workshop', emergency: 'emergency', tacho: 'tacho', sites: 'vehicles',
-  'part-suggestions': 'cases', 'work-suggestions': 'cases' };
+  'part-suggestions': 'cases', 'work-suggestions': 'cases',
+  // 18.10.2026 (10:15): Foto-/Dokumentansichten (überwiegend Vorgänge), Zuordnung beenden, Integrations-API standen unter „Sonstiges“
+  files: 'cases', assignments: 'vehicles', integration: 'admin' };
 
 // Pfadsegmente, die Einzelobjekte bezeichnen (UUID, Vorgangsnummer, FIN, Token, Zahlen), werden zu ':id'
 export function featureOf(method, path, action) {
