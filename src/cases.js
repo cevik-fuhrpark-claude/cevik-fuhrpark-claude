@@ -1005,7 +1005,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
       // (18.10.2026: Eingabe landete nur im Teil, Journal blieb „unbewertet“ bzw. beim Artikelpreis; Regel wie die Entnahme im Lager)
-      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true });
+      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, decimalComma: true });
       if (p.stock_item_id) {
         const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice);
         stockItem = w.item;

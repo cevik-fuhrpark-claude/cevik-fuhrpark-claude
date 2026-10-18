@@ -3872,7 +3872,7 @@ await test('Fahrzeugimport: Vorschau (neu/geändert/unverändert), leere Spalten
 
 await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Namen; ICS-Text korrekt maskiert', async () => {
   const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
-  await users.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle Süd; Abt. 3', reference: 'AZ-ICS-1', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 35.5, response_due: '2099-03-15' });
+  await users.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle Süd; Abt. 3', reference: 'AZ-ICS-1', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 35.5, response_due: '2040-03-15' });
   const csv = await users.fleet.get('/api/fines?format=csv');
   eq(csv.status, 200); const t = dec(csv);
   ok(t.startsWith('\ufeffVorgang;Art;Behörde') && !t.includes(';Fahrer') && t.includes('35,5'), 'ohne Fahrer, Komma-Betrag');
@@ -3886,7 +3886,7 @@ await test('Bußgelder: CSV (Fahrer nur auf Wunsch) und Fristenkalender ohne Nam
   ok(dec(await users.fleet.get('/api/fines?format=csv&with_driver=1')).split('\r\n')[0].endsWith(';Fahrer'), 'mit Fahrer auf Wunsch');
   eq((await users.driver.get('/api/fines?format=csv')).status, 403);
   const ics = dec(await users.fleet.get('/api/fines?format=ics'));
-  ok(ics.includes('DTSTART;VALUE=DATE:20990315') && ics.includes('Bußgeldstelle Süd\\; Abt. 3'), 'Frist mit maskiertem Semikolon');
+  ok(ics.includes('DTSTART;VALUE=DATE:20400315') && ics.includes('Bußgeldstelle Süd\\; Abt. 3'), 'Frist mit maskiertem Semikolon');
   try {
     eq((await owner.put('/api/settings', { fine_warn_days: '' })).status, 200);
     ok(!dec(await users.fleet.get('/api/fines?format=ics')).includes('VALARM'), 'leer = keine Erinnerung');
@@ -3908,7 +3908,7 @@ await test('Bußgelder: Tatzeit ohne Zeitzone = Berliner Ortszeit wie im Schreib
   eq(berlinLocalToIso('2026-10-25T01:59'), '2026-10-24T23:59:00.000Z', 'vor Umstellung Oktober');
   eq(berlinLocalToIso('2026-07-01T08:30:00Z'), '2026-07-01T08:30:00Z', 'mit Zeitzone unverändert');
   eq(berlinLocalToIso('2026-02-30T08:00'), null); eq(berlinLocalToIso('2026-07-01T24:00'), null);
-  const base = { kind: 'verwarnung', authority: 'Ordnungsamt Zeitzone', offense_type: 'parken', plate_in_letter: 'XX-TZ 1', response_due: '2099-05-01' };
+  const base = { kind: 'verwarnung', authority: 'Ordnungsamt Zeitzone', offense_type: 'parken', plate_in_letter: 'XX-TZ 1', response_due: '2040-05-01' };
   const r = await users.fleet.post('/api/fines', { ...base, reference: 'AZ-TZ-1', offense_at: '2026-07-01T08:30' });
   eq(r.status, 201);
   const f = (await users.fleet.get('/api/fines')).data.fines.find((x) => x.reference === 'AZ-TZ-1');
@@ -3921,7 +3921,7 @@ await test('Bußgelder: Tatzeit ohne Zeitzone = Berliner Ortszeit wie im Schreib
 
 await test('Bußgelder: Filter Fahrzeug-Standort (Schreibweise egal, ohne Fahrzeug = „ohne“, Summe = alle), CSV und Kalender gefiltert', async () => {
   const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
-  eq((await users.fleet.post('/api/fines', { kind: 'verwarnung', authority: 'Ordnungsamt Standorttest', reference: 'AZ-SITE-UNBEKANNT', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'XX-ZZ 9999', response_due: '2099-04-01' })).status, 201);
+  eq((await users.fleet.post('/api/fines', { kind: 'verwarnung', authority: 'Ordnungsamt Standorttest', reference: 'AZ-SITE-UNBEKANNT', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'XX-ZZ 9999', response_due: '2040-04-01' })).status, 201);
   const all = (await users.fleet.get('/api/fines')).data;
   eq(all.site, null);
   ok(all.site_options.includes('ohne'), '„ohne“ für Schreiben ohne erkanntes Fahrzeug');
@@ -3939,7 +3939,7 @@ await test('Bußgelder: Filter Fahrzeug-Standort (Schreibweise egal, ohne Fahrze
   const csv = dec(await users.fleet.get('/api/fines?format=csv&site=ohne'));
   ok(csv.includes('AZ-SITE-UNBEKANNT') && !csv.includes('AZ-ICS-1'), 'CSV gefiltert');
   const ics = dec(await users.fleet.get(`/api/fines?format=ics&site=${encodeURIComponent(known.vehicle_site)}`));
-  ok(ics.includes('20990315') && !ics.includes('20990401') && ics.includes('Behördenfristen – '), 'Kalender gefiltert und benannt');
+  ok(ics.includes('20400315') && !ics.includes('20400401') && ics.includes('Behördenfristen – '), 'Kalender gefiltert und benannt');
   const viewer = await invite(owner, { username: 'test.lesen.finesite', display_name: 'Test Lesezugriff Standort', role: 'viewer', environment: 'test' });
   const vw = (await viewer.get('/api/fines?site=ohne')).data;
   ok(vw.fines.length >= 1 && vw.fines.every((f) => !('driver_id' in f)), 'Lesezugriff: Filter, weiterhin ohne Fahrer');
@@ -4991,7 +4991,7 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
-  ok(rest.length === 6 && rest.every((l) => /value="|const money|const shown|const nv/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
+  ok(rest.length === 7 && rest.every((l) => /value="|const money|const shown|const nv/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
   // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
   const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
   eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');
@@ -12106,14 +12106,14 @@ await test('Fehlersuche 18.10. (12): Auslesungen-Import ohne Fälligkeitsspalte,
   eq(again.status, 200, 'Wiederholung ' + JSON.stringify(again.data)); eq(again.data.duplicate, true);
   eq((await F.req('PUT', `/api/cases/${cs}/claim`, { ...body, claim_no: 'S-9' })).status, 409, 'anderer Inhalt auf altem Stand → Konflikt');
   // Datenauskunft: Bußgeld mit Nachweis/Betrag/Frist und Verlauf der Leitung, Kontrollpunkte
-  const f = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Z', amount_eur: 35, response_due: '2099-01-01' });
+  const f = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Z', amount_eur: 35, response_due: '2040-01-01' });
   const fd = (await F.get(`/api/fines/${f.data.id}`)).data;
   eq((await F.post(`/api/fines/${f.data.id}/commands`, { action: 'confirm_driver', expected_version: fd.fine.version, payload: { basis: 'manuell', evidence: 'Tourenplan KW 41', driver_id: U.driver.id } })).status, 200);
   const { CHECKLIST } = await import('../src/cases.js');
   const insp = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: CHECKLIST.map((i, n) => (n ? { key: i.key, result: 'ok' } : { key: i.key, result: 'mangel', note: 'Bremse hinten links schleift' })) });
   const ex = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
   const fx = ex.fines_as_driver.find((x) => x.authority === 'Stadt Z');
-  eq(fx.driver_evidence, 'Tourenplan KW 41'); eq(fx.amount_eur, 35); eq(fx.response_due, '2099-01-01'); ok(fx.driver_confirmed_at);
+  eq(fx.driver_evidence, 'Tourenplan KW 41'); eq(fx.amount_eur, 35); eq(fx.response_due, '2040-01-01'); ok(fx.driver_confirmed_at);
   ok(ex.fine_events_as_driver.some((x) => x.action === 'confirm_driver'), 'Verlauf der Leitung zum eigenen Bußgeld');
   eq(insp.status, 201, JSON.stringify(insp.data)); ok(ex.inspections.some((x) => String(x.items).includes('Bremse hinten links schleift')), 'Prüfpunkte der eigenen Kontrolle');
   ok(!JSON.stringify(ex).includes('password_hash'), 'keine Hashes');
@@ -12444,6 +12444,44 @@ await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Na
   eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
   ok(csv.includes(';Fahrzeug ruhend (nicht in Summen)\r\n'), 'CSV-Kopf'); ok(/;ja\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
+});
+
+await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenze, Frist-Obergrenze; Lagerpreis mit Dezimalkomma, Umlagerungs-Schlüssel je Artikel; Profiltiefe gerundet, Messalter in Berliner Kalendertagen', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
+  const addD = (n) => new Date(Date.parse(today) + n * 864e5).toISOString().slice(0, 10);
+  const fine = (x) => U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 864e5).toISOString(), plate_in_letter: 'SZ YC 5513', ...x });
+  const f1 = await fine({ reference: 'AZ-1', response_due: addD(5) }); eq(f1.status, 201);
+  db.prepare("UPDATE fines SET created_at='2026-01-01T00:00:00Z' WHERE id=?").run(f1.data.id);
+  for (const r of ['AZ-2', 'AZ-3']) eq((await fine({ reference: r, plate_in_letter: 'XX-Q 999' })).status, 201);
+  const site = db.prepare('SELECT site FROM vehicles WHERE id=?').get(V1).site;
+  const { listFinesSel } = await import('../src/fines.js'); const me = { ...U.fleet, role: 'fleet', id: U.fleet.id };
+  let sel = await listFinesSel(e, me, 'test', { site }, 2);
+  eq(sel.rows.map((r) => r.reference).join(','), 'AZ-1', 'Standortfilter vor der Grenze'); ok(sel.site_options.length >= 2, 'Standortauswahl aus allen Schreiben');
+  sel = await listFinesSel(e, me, 'test', { status: 'open' }, 2); ok(sel.rows.some((r) => r.reference === 'AZ-1'), 'offen: nächste Frist bleibt trotz Grenze'); eq(sel.truncated, true);
+  const far = String(Number(today.slice(0, 4)) + 21) + today.slice(4);
+  let r = await fine({ reference: 'AZ-4', response_due: far }); eq(r.status, 400, 'Frist + 21 Jahre'); ok(/außerhalb des zulässigen Bereichs/.test(r.data.message || r.data.error_message || JSON.stringify(r.data)));
+  const ver = (await U.fleet.get(`/api/fines/${f1.data.id}`)).data.fine.version;
+  eq((await U.fleet.post(`/api/fines/${f1.data.id}/commands`, { action: 'update', payload: { response_due: far }, expected_version: ver })).status, 400, 'Ändern: Frist + 21 Jahre');
+  eq((await U.fleet.post(`/api/fines/${f1.data.id}/commands`, { action: 'update', payload: { response_due: addD(30) }, expected_version: ver })).status, 200, 'Fristverlängerung');
+  // Lager: Preis „1,250“ = 1,25 € (Dezimalkomma wie Mengen und wie das Bearbeiten-Formular vorbelegt)
+  const a = await U.ws.post('/api/stock', { name: 'Motoröl 5W30', unit: 'l', initial_qty: '10', unit_price_net: '1,250' }); eq(a.status, 201, JSON.stringify(a.data));
+  eq((await U.ws.get(`/api/stock/${a.data.id}`)).data.item.unit_price_net, 1.25);
+  const pa = await U.ws.req('PATCH', `/api/stock/${a.data.id}`, { unit_price_net: '1,125' }); eq(pa.status, 200, 'Bearbeiten mit „1,125“ ' + JSON.stringify(pa.data)); eq((await U.ws.get(`/api/stock/${a.data.id}`)).data.item.unit_price_net, 1.125);
+  // Umlagerungs-Schlüssel eines anderen Artikels → 409 statt still „duplicate“
+  const B = (await U.ws.post('/api/stock', { name: 'Filter B', initial_qty: '5' })).data.id; const A2 = (await U.ws.post('/api/stock', { name: 'Filter A', initial_qty: '5' })).data.id;
+  eq((await U.ws.post(`/api/stock/${A2}/transfer`, { to_site: 'MUENCHEN', qty: '2', request_key: 'k-uml-1' })).status, 201);
+  const t2 = await U.ws.post(`/api/stock/${B}/transfer`, { to_site: 'MUENCHEN', qty: '3', request_key: 'k-uml-1' }); eq(t2.status, 409); eq(t2.data.error, 'request_key_reused');
+  eq((await U.ws.get(`/api/stock/${B}`)).data.item.on_hand, 5);
+  const w = await U.ws.post(`/api/stock/${A2}/transfer`, { to_site: 'MUENCHEN', qty: '2', request_key: 'k-uml-1' }); eq(w.data.duplicate, true, 'echte Wiederholung bleibt Erfolg');
+  // Reifen: Profiltiefe auf 3 Nachkommastellen, Messalter in Berliner Kalendertagen
+  let te = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: '1,5996' }); eq(te.status, 201, JSON.stringify(te.data));
+  eq(db.prepare('SELECT tread_mm FROM tire_events WHERE id=?').get(te.data.id).tread_mm, 1.6); eq((await U.ws.get(`/api/vehicles/${V1}/tires`)).data.positions.find((p) => p.position === 'VA-L').status, 'ok', '1,6 mm = Minimum, nicht darunter');
+  const d91 = addD(-91); const bfmt = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin', dateStyle: 'short', timeStyle: 'short' });
+  const at = [1, 2].map((h) => new Date(Date.parse(d91 + 'T23:59:00Z') - h * 36e5)).find((x) => bfmt.format(x) === d91 + ' 23:59').toISOString(); // 23:59 Berliner Zeit
+  db.prepare('UPDATE tire_events SET created_at=? WHERE vehicle_id=?').run(at, V1);
+  const row = (await U.ws.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1);
+  eq(row.oldest_age_days, 91, 'Kalendertage'); eq(row.stale, true, 'älter als 90 Tage');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

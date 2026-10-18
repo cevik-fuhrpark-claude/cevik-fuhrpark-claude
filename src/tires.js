@@ -164,7 +164,9 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const allowed = positionsForKind(v.kind);
   const wrong = positions.filter((p) => !allowed.includes(p));
   if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).');
-  const tread = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true });
+  const tread0 = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true });
+  // auf 3 Nachkommastellen wie die Anzeige – sonst „1,6 mm liegt unter dem Minimum von 1,6 mm“ bei 1,5996 (18.10.2026)
+  const tread = tread0 === null ? null : Math.round(tread0 * 1000) / 1000;
   const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', nullable: true });
   if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
   const size = str(body.size, { max: 40 });
@@ -332,7 +334,7 @@ export async function fleetTires(env, user, envName, query = {}) {
       if (minTread === null || p.tread_mm < minTread) minTread = p.tread_mm;
       if (!oldest || p.at < oldest) oldest = p.at;
     }
-    const ageDays = oldest ? Math.floor((now - Date.parse(oldest)) / 86400000) : null;
+    const ageDays = oldest ? Math.round((Date.parse(today) - Date.parse(berlinDate(new Date(oldest)))) / 86400000) : null; // Berliner Kalendertage (18.10.2026: vorher 24-h-Blöcke – Messung 23:59 galt einen Tag jünger)
     const w = winterStatus(v.kind, winterMarks(evByV.get(v.id) || []));
     // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
     const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));

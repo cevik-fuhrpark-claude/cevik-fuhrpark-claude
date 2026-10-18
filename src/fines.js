@@ -23,6 +23,9 @@ function shape(f, user) {
   return rest;
 }
 
+// Obergrenze für Fristen: heute + 20 Jahre (wie Fahrerakte/Hinweise)
+const maxDueDay = () => String(Number(berlinDate().slice(0, 4)) + 20) + berlinDate().slice(4);
+
 export async function listFines(env, user, envName, query) {
   return (await listFinesSel(env, user, envName, query)).rows;
 }
@@ -34,14 +37,19 @@ export async function listFinesSel(env, user, envName, query = {}, max = 500) {
   let rows; let sel = null; let truncated = false;
   if (isMgr(user) || user.role === 'viewer') {
     const open = query.status === 'open';
-    rows = (await env.DB.prepare(`SELECT f.*, v.plate, v.site AS vehicle_site, u.display_name AS driver_name FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id LEFT JOIN users u ON u.id=f.driver_id
+    // Standort und „offen“ über alle Schreiben auswählen, erst dann begrenzen (18.10.2026: Filter wirkten nach der 500er-Grenze –
+    // älteres offenes Schreiben eines Standorts fehlte in der Standortliste und in „Heute zu tun“)
+    const idx = (await env.DB.prepare(`SELECT f.id, f.response_due, v.site AS vehicle_site FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id
       WHERE f.environment=? ${open ? "AND f.status NOT IN ('bezahlt','eingestellt','erledigt')" : ''}
-      ORDER BY f.created_at DESC, f.rowid DESC LIMIT ?`).bind(envName, max + 1).all()).results;
-    // die 500 jüngsten Schreiben (vorher: nach Frist aufsteigend begrenzt – dann wären bei > 500 die neuesten weggefallen), Anzeige-Reihenfolge wie bisher
-    if (rows.length > max) { rows.length = max; truncated = true; }
+      ORDER BY f.created_at DESC, f.rowid DESC`).bind(envName).all()).results;
+    sel = siteSelection(idx.map((r) => ({ site: r.vehicle_site })), query.site);
+    let pick = sel.site ? idx.filter((r) => sel.match(r.vehicle_site)) : idx;
+    // offen: die mit der nächsten Frist behalten (sonst fiele ein bald fälliges älteres Schreiben weg); sonst die jüngsten
+    if (open) pick = [...pick].sort((x, y) => (x.response_due === null) - (y.response_due === null) || (x.response_due || '').localeCompare(y.response_due || ''));
+    if (pick.length > max) { pick = pick.slice(0, max); truncated = true; }
+    rows = pick.length ? (await env.DB.prepare(`SELECT f.*, v.plate, v.site AS vehicle_site, u.display_name AS driver_name FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id LEFT JOIN users u ON u.id=f.driver_id
+      WHERE f.environment=? AND f.id IN (SELECT value FROM json_each(?))`).bind(envName, JSON.stringify(pick.map((r) => r.id))).all()).results : [];
     rows.sort((x, y) => (x.response_due === null) - (y.response_due === null) || (x.response_due || '').localeCompare(y.response_due || '') || (y.created_at || '').localeCompare(x.created_at || ''));
-    sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
-    if (sel.site) rows = rows.filter((r) => sel.match(r.vehicle_site));
   } else if (user.role === 'driver') {
     rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id
       WHERE f.environment=? AND f.driver_id=? AND f.driver_informed_at IS NOT NULL ORDER BY f.offense_at DESC`).bind(envName, user.id).all()).results;
@@ -125,6 +133,7 @@ export async function createFine(env, user, envName, body) {
   const due = str(body.response_due, { max: 10 });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
   if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
+  if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.'); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
   // Frist vor der Tat: Tippfehler im Jahr – Agent meldete sofort „überfällig“ (18.10.2026)
   if (due && due < berlinDate(offenseAt)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
   // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
@@ -243,6 +252,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           const due = str(p.response_due, { max: 10 });
           if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
           if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
+          if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.'); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
           if (due && due < berlinDate(f.offense_at)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
           set.response_due = due;
         }

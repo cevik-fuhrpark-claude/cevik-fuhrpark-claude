@@ -103,7 +103,7 @@ export async function createItem(env, user, envName, body) {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80 }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
       str(body.unit, { max: 20 }) || 'Stk', r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })), str(body.location, { max: 80 }),
-      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }), user.id, now, now).run();
+      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true }), user.id, now, now).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
     throw e;
@@ -122,7 +122,7 @@ export async function updateItem(env, user, envName, id, body) {
     part_number: body.part_number !== undefined ? str(body.part_number, { max: 80 }) : it.part_number,
     min_qty: body.min_qty !== undefined ? r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: true })) : it.min_qty,
     location: body.location !== undefined ? str(body.location, { max: 80 }) : it.location,
-    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }) : it.unit_price_net,
+    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
   };
   // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
@@ -167,7 +167,7 @@ export async function addMovement(env, user, envName, id, body) {
   if (type === 'korrektur' && !str(body.note, { max: 500 })) throw bad('validation', 'Korrektur braucht einen Grund.');
   if (type === 'entnahme') qty = -qty;
   if (qty < 0 && (await onHand(env, id)) + qty < 0) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, id)} ${it.unit}).`);
-  const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true });
+  const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: true });
   // Entnahme: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
   const price = type === 'entnahme' && it.unit_price_net !== null ? it.unit_price_net : entered;
   const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
@@ -225,8 +225,9 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   const qty = r3(num(body.qty, { min: 0, max: 1e6, field: 'Menge', decimalComma: true }));
   if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   const rkey = requestKey(body);
-  const prevT = rkey ? await env.DB.prepare('SELECT transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
-  if (prevT && !prevT.transfer_id) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
+  const prevT = rkey ? await env.DB.prepare('SELECT transfer_id, item_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  // Schlüssel einer Umlagerung eines anderen Artikels ist keine Wiederholung (18.10.2026: Umlagerung B wurde still als „duplicate“ von A beantwortet, nichts gebucht)
+  if (prevT && (!prevT.transfer_id || prevT.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, on_hand: await onHand(env, id) };
   const avail = await onHand(env, id);
   if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${avail} ${it.unit}).`);
@@ -251,7 +252,8 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   stmts.push(...stockGuardNonNegative(env, it.id));
   try { await env.DB.batch(stmts); } catch (e) {
     if (rkey && String(e && e.message).includes('request_key')) {
-      const p2 = await env.DB.prepare('SELECT transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first();
+      const p2 = await env.DB.prepare('SELECT transfer_id, item_id FROM stock_movements WHERE request_key=?').bind(rkey).first();
+      if (p2 && (!p2.transfer_id || p2.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
       if (p2) return { ok: true, duplicate: true, transfer_id: p2.transfer_id, on_hand: await onHand(env, id) };
     }
     if (isCheck(e)) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, id)} ${it.unit}).`);

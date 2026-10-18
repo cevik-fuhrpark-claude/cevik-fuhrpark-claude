@@ -20,7 +20,8 @@ const pnm = (name, hidden) => (hidden ? t('name_hidden_driver') : name);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // [CLAUDE] Kalenderdatum in Berlin wie der Server („heute“, Fristen, Monate) – nicht UTC (nachts bis 2 Uhr Vortag) und nicht Gerätezeitzone
 const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
-const bDate = (days = 0) => BERLIN_FMT.format(new Date(Date.now() + days * 86400000));
+// Kalendertage addieren (18.10.2026: vorher 24-h-Blöcke – nachts nach der Herbst-Umstellung war bDate(7) ein Tag zu früh)
+const bDate = (days = 0) => { const t = BERLIN_FMT.format(new Date()); if (!days) return t; const [y, m, d] = t.split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, d + days)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
 // frühestes Arbeitsdatum wie im Server: 12 Monate vor dem Meldetag (29.02. → 28.02.)
 const workDateMin = (iso) => { const d = BERLIN_FMT.format(new Date(iso)); const y = `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`; return y.endsWith('-02-29') ? y.slice(0, 8) + '28' : y; };
 const bYm = (back = 0) => { const [y, m] = bDate().slice(0, 7).split('-').map(Number); return new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 7); };
@@ -2309,6 +2310,8 @@ async function viewFine(id) {
   if (A.includes('inform_driver')) acts.push(`<button class="btn" id="inf">${esc(t('inform_driver'))}</button>`);
   if (A.includes('driver_ack')) acts.push(`<button class="btn" id="ack">${esc(t('ack_fine'))}</button>`);
   if (acts.length) html += `<div class="actions">${acts.join('')}</div>`;
+  // Frist/Betrag/Aktenzeichen laut neuem Schreiben ändern (Server konnte es, die App bot es nicht an – 18.10.2026; z. B. Fristverlängerung)
+  if (A.includes('update')) html += `<details class="panel noprint"><summary>${esc(t('fine_edit'))}</summary><form id="uf"><label>${esc(t('response_due'))}</label><input type="date" name="response_due" value="${esc(f.response_due || '')}"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal" value="${f.amount_eur === null || f.amount_eur === undefined ? '' : esc(String(f.amount_eur).replace('.', ','))}"><label>${esc(t('reference'))}</label><input name="reference" maxlength="80" value="${esc(f.reference || '')}"><p class="small muted">${esc(t('fine_edit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (A.includes('set_status')) html += `<details class="panel"><summary>${esc(t('set_status'))}</summary><form id="sf"><label>${esc(t('status'))}</label><select name="status">${['beantwortet', 'bezahlt', 'eingestellt', 'erledigt', 'eingegangen'].map((x) => `<option value="${x}">${esc(t('fs_' + x))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note" required><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (d.events) html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(FINE_EV[e.action] ? t(FINE_EV[e.action]) : e.action)}</b>${e.actor_name ? ' · ' + esc(e.actor_name) : ''}${e.note ? `<div>${esc(e.note)}</div>` : ''}</li>`).join('')}</ol>`;
   render(html, 'more');
@@ -2316,13 +2319,22 @@ async function viewFine(id) {
   const cmd = async (action, payload = {}, note = null) => { try { await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }); toast('✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
   const cf = $('#cf');
   if (cf) {
-    try { const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active); $('#drv').innerHTML = `<option value="">–</option>` + us.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)}</option>`).join(''); } catch {}
+    // nur Fahrer der Umgebung des Schreibens (Inhaber sieht Konten aller Umgebungen); Kandidaten ergänzen, auch wenn inzwischen deaktiviert/Rolle gewechselt (18.10.2026)
+    try {
+      const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active && (!u.environment || !f.environment || u.environment === f.environment));
+      const ids = new Set(us.map((u) => u.id)); const extra = [];
+      for (const c of d.candidates || []) if (c.user_id && !ids.has(c.user_id)) { ids.add(c.user_id); extra.push({ id: c.user_id, display_name: c.display_name }); }
+      $('#drv').innerHTML = `<option value="">–</option>` + [...us, ...extra].map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)}</option>`).join('');
+    } catch {
+      const ex = $('#drv'); if (ex) for (const c of d.candidates || []) if (c.user_id && ![...ex.options].some((o) => o.value === c.user_id)) ex.add(new Option(c.display_name, c.user_id));
+    }
     $$('input[name=cand]').forEach((r) => (r.onchange = () => { const c = d.candidates[r.value]; $('#drv').value = c.user_id; cf.basis.value = c.basis; cf.evidence.value = c.evidence; }));
     cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; return cmd('confirm_driver', b); };
   }
   const inf = $('#inf'); if (inf) inf.onclick = () => cmd('inform_driver');
   const ack = $('#ack'); if (ack) ack.onclick = () => cmd('driver_ack');
   const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); return cmd('set_status', { status: sf.status.value }, sf.note.value); };
+  const uf = $('#uf'); if (uf) uf.onsubmit = (e) => { e.preventDefault(); return cmd('update', { response_due: uf.response_due.value || null, amount_eur: uf.amount_eur.value.trim() || null, reference: uf.reference.value.trim() || null }); };
   const ff = $('#ff'); if (ff) ff.onchange = async () => { const file = ff.files[0]; if (!file) return; try { const blob = await prepareUpload(file); await api('POST', `/api/fines/${id}/files`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); viewFine(id); } catch (err) { toast(err.message, true); } };
 }
 
