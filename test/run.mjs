@@ -11790,6 +11790,76 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   db.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND user_id=?`).run(new Date().toISOString(), kc, U.ws.id);
   ok((await und()) < n0, 'ausgeblendete zählen nicht');
 });
+await test('Fehlersuche 18.10. (9): Auslesungen-Import Datumsspalte/NFD-Namen/Datum mit Komma, Reifen positions als Liste + „geprüft beibehalten“ je Achse, Durchführung vor Tachotausch (Import/Neuanlage) bleibt ungeklärt, km 0 als Zahl, Fahrer-Startseite mit km der Durchführung, Telematik-km „120.500“/Hex, Titel/Protokoll übersetzt', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const D = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+  const csvP = (c, path, body) => c.req('POST', path, body, { 'content-type': 'text/csv' });
+  // 1. Auslesedatum: „Downloaddatum“ neben „Datum letzte Aktivität“ bzw. „Datum der Auslesung“ neben „Datum Kartenablauf“ (vorher erste Datumsspalte)
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Max Muster', personnel_no: '4711' })).status, 201);
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Jürgen Müller', personnel_no: '4712' })).status, 201);
+  for (const head of ['Art;Personalnummer;Downloaddatum;Datum letzte Aktivität;Datei', 'Art;Personalnummer;Datum letzte Aktivität;Datum der Auslesung;Datei', 'Art;Personalnummer;Ausgelesen von;Ausgelesen am;Datei']) {
+    const pv = await csvP(U.fleet, '/api/tacho/import?dry_run=1', `${head}\nFahrerkarte;4711;${head.startsWith('Art;Personalnummer;Downloaddatum') ? D(3) : head.includes('von') ? 'Herr Admin' : D(40)};${head.startsWith('Art;Personalnummer;Downloaddatum') ? D(40) : D(3)};C.ddd\n`);
+    eq(pv.status, 200, head); eq(pv.data.rows.length, 1, head + JSON.stringify(pv.data.skipped)); eq(pv.data.rows[0].downloaded_on, D(3), head);
+  }
+  const amb = await csvP(U.fleet, '/api/tacho/import?dry_run=1', `Art;Personalnummer;Datum Kartenablauf;Datum letzte Aktivität;Datei\nFahrerkarte;4711;${D(3)};${D(40)};C.ddd\n`);
+  eq(amb.status, 400, 'zwei Datumsspalten ohne Auslesedatum'); eq(amb.data.error, 'tacho_day_ambiguous');
+  // eigene Fristen-Übersicht bleibt erkannt
+  eq((await csvP(U.fleet, '/api/tacho/import?dry_run=1', 'Art;Name;Letzte Auslesung;Spätestens fällig\nFahrerkarte;Max Muster;01.10.2026;29.10.2026\n')).data.error, 'wrong_file_tacho');
+  const nfd = await csvP(U.fleet, '/api/tacho/import?dry_run=1', `Art;Name;Datum;Datei\nFahrerkarte;${'Jürgen Müller'.normalize('NFD')};${D(3).split('-').reverse().join('.')}, 08:15;a.ddd\n`);
+  eq(nfd.data.rows.length, 1, 'NFD-Name + „TT.MM.JJJJ, hh:mm“ ' + JSON.stringify(nfd.data.skipped)); eq(nfd.data.rows[0].downloaded_on, D(3));
+  // 2./3. Reifen: positions als Text → 400; „geprüft beibehalten“ je Fahrzeug/Achse
+  const tp = await U.ws.post(`/api/vehicles/${encodeURIComponent(V1)}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', positions: 'VA-R' });
+  eq(tp.status, 400); eq(tp.data.error, 'tire_positions_list');
+  eq((await U.ws.post(`/api/vehicles/${encodeURIComponent(V1)}/tires/events`, { event_type: 'sichtpruefung', position: 'VA-L', positions: ['VA-R'] })).status, 201);
+  eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V1)}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true })).status, 200);
+  const ti = await csvP(U.own, '/api/tires/import?dry_run=1', 'Quelle;Kennzeichen;FIN;Reifen Lenkachse\nA;SZ-YC 5513;WMA15SZZ2HM722774;315/80 R22.5\nB;SZ-YC 5513;WMA15SZZ2HM722774;315/80 R22.5\n');
+  eq(ti.status, 200); eq(ti.data.kept_verified, 1, 'je Achse');
+  // 4. Durchführung vor Tachotausch (Import und Neuanlage) hebt „ungeklärt“ nicht auf
+  const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'Ölwechsel', evidence: 'Wartungsheft', interval_km: 100000, last_done_km: 200000, last_done_date: D(60) })).status, 201);
+  for (const V of [V1, V2]) {
+    eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V)}/odometer`, { km: 250000, measured_on: D(30) })).status, 201);
+    eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V)}/odometer`, { km: 5000, measured_on: D(10), note: 'Tachotausch' })).status, 201);
+  }
+  const im = await csvP(U.own, '/api/maintenance/import', `Kennzeichen;Art;Letzte Prüfung;km bei letzter Prüfung;Nachweis\nSZ-YC 5513;Ölwechsel;${D(20)};260000;Rechnung 1\n`);
+  eq(im.status, 200); eq(im.data.updated, 1, JSON.stringify(im.data.skipped));
+  eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V2)}/maintenance`, { kind: 'Ölwechsel', evidence: 'Wartungsheft', interval_km: 100000, last_done_km: 260000, last_done_date: D(20) })).status, 201);
+  let ov = (await U.own.get('/api/maintenance')).data.rows;
+  for (const V of [V1, V2]) { const x = ov.find((r) => r.vehicle_id === V && r.kind === 'Ölwechsel'); eq(x.km_status, 'ungeklaert', V); eq(x.km_remaining, null, V); }
+  // nach dem Tausch durchgeführt → neue Grundlage
+  eq((await U.own.post(`/api/vehicles/${encodeURIComponent(V2)}/maintenance`, { kind: 'Bremsen', evidence: 'Rechnung 2', interval_km: 100000, last_done_km: 5000, last_done_date: D(5) })).status, 201);
+  ov = (await U.own.get('/api/maintenance')).data.rows; eq(ov.find((r) => r.vehicle_id === V2 && r.kind === 'Bremsen').km_remaining, 100000);
+  // 5. km 0 als JSON-Zahl
+  const w2 = await freshWorld();
+  eq((await w2.U.own.post(`/api/vehicles/${encodeURIComponent(V1)}/odometer`, { km: 120000 })).status, 201);
+  eq((await w2.U.own.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'Ölwechsel', evidence: 'Heft', interval_km: 100000, last_done_km: 0, last_done_date: D(400) })).status, 201);
+  eq((await w2.U.own.get('/api/maintenance')).data.rows.find((r) => r.kind === 'Ölwechsel').km_status, 'ueberfaellig', 'km 0 als Zahl');
+  // 6. Fahrer-Startseite: km-Stand der Durchführung, wenn die Ablesung älter ist
+  eq((await w2.U.own.put('/api/settings', { maintenance_warn_km: 5000 })).status, 200);
+  eq((await w2.U.fleet.post(`/api/vehicles/${encodeURIComponent(V2)}/drivers`, { user_id: w2.U.driver.id, evidence: 'Dienstplan' })).status < 300, true);
+  eq((await w2.U.own.post(`/api/vehicles/${encodeURIComponent(V2)}/odometer`, { km: 250000, measured_on: D(30) })).status, 201);
+  eq((await w2.U.own.post(`/api/vehicles/${encodeURIComponent(V2)}/maintenance`, { kind: 'Bremsen', evidence: 'Rechnung 4711', last_done_km: 296000, last_done_date: D(5), due_km: 300000 })).status, 201);
+  const mv = (await w2.U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V2);
+  ok(mv && mv.km_due && mv.km_due.some((k) => k.kind === 'Bremsen' && k.km_remaining === 4000), JSON.stringify(mv && mv.km_due));
+  // 7. Telematik: km „120.500“ (mehrdeutig) und Hex nicht übernommen, Dezimaltext weiter möglich
+  const H = { authorization: 'Bearer integration-token-xyz' }; const an = new Client(worker, e, 'anon');
+  const gps = new Date(Date.now() - 60000).toISOString();
+  const tr = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [
+    { external_id: 'A', vin: 'WMA15SZZ2HM722774', gps_time: gps, km: '120.500', lat: 51.5, lon: 7.4 },
+    { external_id: 'B', vin: 'WDB9630051L917317', gps_time: gps, km: '0x1D4C0', lat: '0x33', lon: '7.4' }] }, H);
+  eq(tr.status, 200); eq(tr.data.odometer_written, 0);
+  const tl = e.DB.db.prepare('SELECT vehicle_id, km, lat FROM telematics_latest ORDER BY vehicle_id').all();
+  ok(tl.every((x) => x.km === null), JSON.stringify(tl)); eq(tl.find((x) => x.vehicle_id === V2).lat, null, 'Hex-Breite');
+  // 8. Hinweis ohne Vorgang „KRITISCH: neue Meldung (ungeprüft)“ in der aktuellen Sprache; Protokoll: Status/Art als Bezeichnung
+  const { localizedTitle } = await import('../src/notify.js');
+  eq(localizedTitle({ kind: 'created', urgent: 1, case_id: null, title: 'KRITISCH: neue Meldung (ungeprüft)' }, 'en') !== 'KRITISCH: neue Meldung (ungeprüft)', true);
+  eq(localizedTitle({ kind: 'created', case_id: null, title: 'Agent: freier Text' }, 'en'), 'Agent: freier Text');
+  const { auditDetailText } = await import('../public/i18n.js');
+  ok(/Reported → Settled|Reported.*Settled/i.test(auditDetailText('en', { status: { from: 'gemeldet', to: 'reguliert' } })) || !/gemeldet|reguliert/.test(auditDetailText('en', { status: { from: 'gemeldet', to: 'reguliert' } })), auditDetailText('en', { status: { from: 'gemeldet', to: 'reguliert' } }));
+  ok(!/werkstatt|leasing/.test(auditDetailText('en', { kind: 'werkstatt' }) + auditDetailText('de', { kind: 'leasing' })), auditDetailText('en', { kind: 'werkstatt' }));
+  eq(auditDetailText('de', { kind: 'HU' }).includes('HU'), true, 'Prüfart unverändert');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

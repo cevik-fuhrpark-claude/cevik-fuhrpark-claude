@@ -143,12 +143,12 @@ export function tachoCsv(ov, cell) {
 // Datum (JJJJ-MM-TT oder TT.MM.JJJJ), Nachweis/Datei (sonst Pflichtangabe `source` für alle Zeilen).
 // Zuordnung nur eindeutig: Fahrer über Personalnummer, sonst exakt gleicher Name; Fahrzeug über FIN, sonst eindeutiges Kennzeichen.
 const MAX_IMPORT = 2000;
-const normName = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const normName = (n) => String(n || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' '); // NFC: Namen vom Mac (zerlegte Umlaute)
 function parseDay(raw) {
   const t = String(raw || '').trim(); let m;
   const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
   if (ISO.test(t)) return iso(t);
-  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s.*)?$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:,?\s.*)?$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
   // Zeitstempel mit Zeitzone (Z oder ±hh:mm): Berliner Kalendertag (22:30Z am 31.03. = 01.04. in Berlin); ohne Zone der Datumsteil
   if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})$/i)) && iso(m[1])) {
     const d = new Date(t.replace(' ', 'T').replace(/\s+/g, '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
@@ -156,6 +156,21 @@ function parseDay(raw) {
   }
   if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]/))) return iso(m[1]);
   return null;
+}
+// Spalte mit dem Auslesedatum (18.10.2026: „Downloaddatum“/„Datum der Auslesung“ neben „Datum letzte Aktivität“/„Datum Kartenablauf“
+// – der Anfangstreffer „datum“ nahm still die erste Datumsspalte; „Ausgelesen von“ (Person) galt als Datum). Reihenfolge: exakte Namen,
+// dann Spalten mit „auslese“/„download“ (ohne Personenangabe), dann genau eine Spalte „Datum…“; mehrere → -2 (nicht eindeutig)
+const DAY_EXACT = ['auslesedatum', 'datum der auslesung', 'datum auslesung', 'auslesung', 'ausgelesen am', 'downloaddatum', 'download-datum', 'download datum', 'download', 'datum'];
+export function dayCol(head) {
+  const hd = head.map((h) => String(h || '').trim().toLowerCase());
+  for (const n of DAY_EXACT) { const i = hd.indexOf(n); if (i >= 0) return i; }
+  const person = /\b(von|durch|person|benutzer|user|mitarbeiter|name)\b/;
+  const hits = hd.map((h, i) => (/auslese|ausgelesen|download/.test(h) && !person.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
+  if (hits.length === 1) return hits[0];
+  if (hits.length > 1) return -2;
+  const dates = hd.map((h, i) => (h.startsWith('datum') ? i : -1)).filter((i) => i >= 0);
+  if (dates.length === 1) return dates[0];
+  return dates.length > 1 ? -2 : -1;
 }
 function kindOf(raw) {
   const k = String(raw || '').trim().toLowerCase();
@@ -169,7 +184,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const table = parseCsv(text);
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   if (table.length - 1 > MAX_IMPORT) throw bad('validation', `Maximal ${MAX_IMPORT} Zeilen je Import.`);
-  const head = table[0].map((h) => h.toLowerCase());
+  const head = table[0].map((h) => h.normalize('NFC').toLowerCase());
   // Vorrang nach der Namensliste, nicht nach der Spaltenposition (18.10.2026: „Datum letzte Aktivität“ vor „Auslesedatum“ wurde still als
   // Auslesedatum genommen – Frist falsch): erst exakte Treffer in Listenreihenfolge, dann Anfangstreffer in Listenreihenfolge
   const pick = (hd, names, ok = () => true) => { for (const n of names) { const i = hd.findIndex((h) => h.trim() === n && ok(h)); if (i >= 0) return i; }
@@ -179,7 +194,8 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const nameCol = (hd) => { const notName = (h) => /karte|nr|nummer|kennung|id\b/.test(h);
     return pick(hd, ['name', 'fahrername', 'name fahrer', 'fahrer name', 'fahrer'], (h) => !notName(h)); };
   const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: nameCol(head),
-    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: col(['auslesedatum', 'ausgelesen', 'datum']), ev: col(['nachweis', 'datei', 'beleg']) };
+    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: dayCol(head), ev: col(['nachweis', 'datei', 'beleg']) };
+  if (ci.day === -2) throw bad('tacho_day_ambiguous', 'Datumsspalte nicht eindeutig – bitte die Spalte mit dem Auslesedatum „Auslesedatum“ nennen.');
   const fallbackEv = str(source, { max: 200 }) || ''; // keine Quelle angegeben: leer statt null (leere Nachweis-Zelle ergab sonst 500)
   if (ci.kind < 0) throw bad('validation', 'Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.');
   // Eigene Übersicht der App (Export „Auslesungen“: Letzte Auslesung/Spätestens fällig) ist kein Beleg einer Auslesung
@@ -192,7 +208,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded FROM vehicles WHERE active=1`).all()).results;
   const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results.map((r) => r.k));
   const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
-  const byPno = uniq(drivers, (d) => (d.personnel_no ? d.personnel_no.trim().toLowerCase() : null));
+  const byPno = uniq(drivers, (d) => (d.personnel_no ? d.personnel_no.normalize('NFC').trim().toLowerCase() : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));
   const byVin = new Map(vehicles.map((v) => [v.vin, v]));
   // Kennzeichen doppelt, aber nur eines bewertet (ruhendes Doppel, z. B. Tippfehler-FIN): das bewertete Fahrzeug – wie die Fristen-Übersicht
@@ -216,7 +232,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     if (evidence.length > 300) return skip('Nachweis zu lang (max. 300 Zeichen)'); // vorher still gekürzt (17.10.2026)
     let target; let label;
     if (kind === 'fahrerkarte') {
-      const pno = get(cells, ci.pno).toLowerCase(); const nm = normName(get(cells, ci.name));
+      const pno = get(cells, ci.pno).normalize('NFC').toLowerCase(); const nm = normName(get(cells, ci.name));
       target = pno ? byPno.get(pno) : nm ? byName.get(nm) : undefined;
       if (target === 'mehrdeutig') return skip(`Fahrer nicht eindeutig: ${get(cells, ci.pno) || get(cells, ci.name)}`);
       if (!target) return skip(`Fahrer nicht gefunden: ${get(cells, ci.pno) || get(cells, ci.name) || '–'}`);

@@ -48,7 +48,9 @@ export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approv
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
   const L = T[lang] ? lang : 'de';
-  if (!T.de[n.kind] || !n.case_id && n.kind === 'created') return n.title; // Agent/Sonstiges: Text wie gespeichert
+  // Agent/Sonstiges: Text wie gespeichert (Freitexte schützt die nächste Zeile; 18.10.2026: Hinweis „KRITISCH: neue Meldung“ an zugeordnete
+  // Fahrer ohne case_id blieb nach Sprachwechsel deutsch)
+  if (!T.de[n.kind]) return n.title;
   if (n.title !== T.de[n.kind] && n.title !== T.uk[n.kind] && n.title !== T.en[n.kind] && !(n.kind === 'created' && [T.de, T.uk, T.en].some((x) => x.created_urgent === n.title))) return n.title;
   return n.kind === 'created' && n.urgent ? T[L].created_urgent : T[L][n.kind];
 }

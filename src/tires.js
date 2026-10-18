@@ -157,6 +157,8 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.'); // wie Kontrolle/Meldung (17.10.2026)
   const position = oneOf(body.position, POSITIONS, 'Position');
   // Sammel-Erfassung (z. B. Umrüstung auf Winterreifen): gleiche Angaben für weitere Positionen, atomar in einem Batch
+  // `positions` als Text o. Ä. wurde still ignoriert (18.10.2026: nur die erste Position erfasst) – nur Liste oder nichts
+  if (body.positions != null && !Array.isArray(body.positions)) throw bad('tire_positions_list', 'Weitere Positionen bitte als Liste angeben.');
   const extra = Array.isArray(body.positions) ? body.positions.map((p) => oneOf(p, POSITIONS, 'Position')) : [];
   const positions = [...new Set([position, ...extra])];
   const allowed = positionsForKind(v.kind);
@@ -229,7 +231,7 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
   // Abfragebudget: Fahrzeuge und geprüfte Werte vorab laden, Schreibvorgang als Sammelanweisung
   const byVin = new Map((await env.DB.prepare('SELECT id, vin FROM vehicles').all()).results.map((v) => [v.vin, v.id]));
   const verified = new Set((await env.DB.prepare('SELECT vehicle_id, axle FROM tire_specs WHERE verified=1').all()).results.map((r) => `${r.vehicle_id}|${r.axle}`));
-  const rows = new Map();
+  const rows = new Map(); const keptVerified = new Set(); // geprüft beibehalten je Fahrzeug/Achse, nicht je Dateizeile (18.10.2026)
   for (const c of lines) {
     if (c.every((x) => !String(x || '').trim())) continue; // Leerzeile (z. B. am Dateiende)
     const vin = normalizeVin(c[ci.fin]);
@@ -242,7 +244,7 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
     for (const [axle, k] of [['lenkachse', 'lenk'], ['liftachse', 'lift'], ['antriebsachse', 'antr'], ['anhaenger', 'anh']]) {
       const size = ci[k] >= 0 ? c[ci[k]] : '';
       if (!size || !/\d/.test(size)) continue;
-      if (verified.has(`${vid}|${axle}`)) { res.kept_verified++; continue; }
+      if (verified.has(`${vid}|${axle}`)) { keptVerified.add(`${vid}|${axle}`); res.kept_verified = keptVerified.size; continue; }
       // zu lange Größe: Zeile melden statt still kürzen (17.10.2026; Einzelerfassung weist sie ebenfalls ab)
       if (size.trim().length > 40) { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: `Reifengröße zu lang (max. 40 Zeichen): ${size.trim().slice(0, 60)}` }); continue; }
       // dieselbe FIN/Achse in der Datei mit anderer Größe: spätere Zeile melden statt still überschreiben (18.10.2026)

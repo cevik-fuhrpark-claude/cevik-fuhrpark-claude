@@ -233,7 +233,10 @@ export async function integrationRouter(request, env, ctx, url) {
     // Einträge, die kein Objekt sind (null, Zahl, Text, Liste), werden wie leere Einträge abgewiesen statt die ganze Lieferung mit „Interner Fehler“ zu beenden
     // Zahlenwerte: null, "", Wahrheitswerte und Unsinn gelten als „nicht geliefert“ (Number(null) = 0 schrieb vorher 0 km bzw. Breite 0
     // in Akte und Position, 17.10.2026); km nur im Bereich der App-Erfassung (0–5 000 000), sonst blockierte ein Ausreißer alle späteren Stände
-    const numOf = (x) => (typeof x === 'number' ? (Number.isFinite(x) ? x : null) : typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x)) ? Number(x) : null);
+    // Text nur als einfache Dezimalzahl mit Punkt (18.10.2026: „0x1D4C0“ wurde als 120 000 km, „0x33“ als Breite 51 übernommen)
+    const numOf = (x) => (typeof x === 'number' ? (Number.isFinite(x) ? x : null) : typeof x === 'string' && /^-?\d+(\.\d+)?$/.test(x.trim()) ? Number(x.trim()) : null);
+    // km als Text mit Tausenderpunkt („120.500“) ist mehrdeutig (120,5 oder 120 500) – nicht übernommen wie in der App (18.10.2026: Akte 121 km)
+    const kmOf = (x) => (typeof x === 'string' && /^\d{1,3}(\.\d{3})+$/.test(x.trim()) ? null : numOf(x));
     const rows = items.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})).map((it) => {
       // Kennungen nur als Text/Zahl (18.10.2026: Objekte wurden als „[object Object]“ gespeichert), Geräte-ID gekürzt wie bei der Bestätigung
       const txt = (x) => (typeof x === 'string' ? x.trim() : typeof x === 'number' && Number.isFinite(x) ? String(x) : x === undefined || x === null ? '' : null);
@@ -280,7 +283,7 @@ export async function integrationRouter(request, env, ctx, url) {
       // ohne gültige GPS-Zeit keinen vorhandenen Stand überschreiben (vorher: Position/km gelöscht, Fahrzeug „ohne Daten“, 17.10.2026)
       if (!gps && prev) { res.rejected++; continue; }
       if (gps) lastGps.set(vehicleId, gps);
-      const km = numOf(it.km) !== null && numOf(it.km) >= 0 && numOf(it.km) <= 5000000 ? numOf(it.km) : null;
+      const km = kmOf(it.km) !== null && kmOf(it.km) >= 0 && kmOf(it.km) <= 5000000 ? kmOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
         speed: numOf(it.speed) !== null && numOf(it.speed) >= 0 ? numOf(it.speed) : null, ign: ignOf(it.ignition) });
       if (km !== null && gps) {

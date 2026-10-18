@@ -814,6 +814,8 @@ const V_MORE = [
   ['Spalte mit Laufleistung pro Jahr erkannt – bitte das Gesamt-km-Kontingent der Laufzeit als Spalte „km-Kontingent“ angeben (Jahreswerte werden nicht umgerechnet).', 'Розпізнано стовпець із пробігом на рік – вкажіть загальний ліміт км за весь строк у стовпці «km-Kontingent» (річні значення не перераховуються).', 'Column with annual mileage detected – please provide the total km allowance for the term as column “km-Kontingent” (annual values are not converted).'],
   ['Frist liegt vor der Tatzeit – bitte Jahr prüfen.', 'Строк раніше за час порушення – перевірте рік.', 'Deadline is before the time of the offence – please check the year.'],
   ['Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.', 'Цей номер уже внесено з тим самим видом і сферою дії.', 'This number is already entered with the same type and scope.'],
+  ['Datumsspalte nicht eindeutig – bitte die Spalte mit dem Auslesedatum „Auslesedatum“ nennen.', 'Стовпець дати неоднозначний – назвіть стовпець із датою зчитування «Auslesedatum».', 'Date column is ambiguous – please name the column with the download date “Auslesedatum”.'],
+  ['Weitere Positionen bitte als Liste angeben.', 'Додаткові позиції вкажіть списком.', 'Please give further positions as a list.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cents: '{f}: не більше 2 знаків після коми.', work_date_range: 'Дата роботи: не в майбутньому і не раніше {d}.', open_cases: 'Транспорт ще має відкриті заявки ({n}, усі середовища) – спочатку закрийте їх.', already_assigned: '{v} уже призначено цьому транспорту.', duplicate_fine: 'Номер справи вже внесено ({v}).', date_fmt: '{f}: вкажіть дійсну дату у форматі РРРР-ММ-ДД.', date_range: '{f}: дата поза допустимим діапазоном.', not_future: '{f}: не може бути в майбутньому.', integer: '{f}: ціле число.', max_rows: 'Не більше {n} рядків за один імпорт.', notes_max: 'Не більше {n} активних приміток на транспорт – заархівуйте виконані.', kind_unknown: 'Невідомий тип транспорту: {v} (Lkw або Anhänger)', counted_twice: 'Позицію підраховано двічі: {v}', unit_differs: 'Одиниця на цільовому складі інша ({a} замість {b}) – перевірте там.', dup_of_dup: 'Заявка {v} сама є дублікатом – виберіть початкову заявку.', unknown_item: 'Невідомий пункт перевірки {v}.' });
@@ -1378,8 +1380,9 @@ function settingLabel(lang, k) {
   return m ? `${S(m[1] === 'test' ? 'env_testname' : 'env_prod')} · ${S(m[2] === 'triage' ? 'act_receive' : 'act_acknowledge')} · ${S('prio_' + m[3])} (min)` : null;
 }
 // Codewerte (snake_case) je Schlüssel als Bezeichnung: Prüfergebnis, Ergebnis Führerscheinkontrolle, zGM-Klasse, HU/SP-Status
-const AUDIT_VALUE_PREFIX = { result: ['res_', 'lcr_'], zgm_class: ['zc_'], status: ['hs_'], doc_kind: ['dk_'], vehicle_kind: ['vk_'] };
-const AUDIT_SINGLE_WORD = new Set(['doc_kind', 'vehicle_kind']); // Codes ohne Unterstrich (versicherung, lkw) trotzdem übersetzen
+// 18.10.2026: Status Versicherungsfall (cls_) und Art Rufnummer/Vertrag (em_kind_/ck_) – Protokoll zeigte „gemeldet → reguliert“, „Kind: werkstatt“
+const AUDIT_VALUE_PREFIX = { result: ['res_', 'lcr_'], zgm_class: ['zc_'], status: ['hs_', 'cls_'], kind: ['em_kind_', 'ck_'], doc_kind: ['dk_'], vehicle_kind: ['vk_'] };
+const AUDIT_SINGLE_WORD = new Set(['doc_kind', 'vehicle_kind', 'status', 'kind']); // Codes ohne Unterstrich (versicherung, lkw) trotzdem übersetzen
 const AUDIT_DETAIL_VALUES = { true: ['ja', 'так', 'yes'], false: ['nein', 'ні', 'no'], test: ['Test', 'Тест', 'Test'], production: ['Betrieb', 'Робочий', 'Production'] };
 // refs: vom Server aufgelöste Kennungen (Fahrer/Person → Name, Fahrzeug → Kennzeichen) je oberstem Schlüssel; ersetzt nur die Anzeige
 // Datumswerte im Protokoll-Detail (Anzeige) im Format der Sprache: „2026-08-01“ → DE/UK 01.08.2026, EN 01/08/2026; Zeitstempel in Berliner Zeit.

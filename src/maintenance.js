@@ -86,6 +86,14 @@ export const parseKmDrop = (x) => { if (!x) return { drop_at: null, drop_rec: nu
 // Erledigt wird das durch eine Durchführung mit neuem km-Stand oder das Neueintragen der Regel (updated_at nach Erfassung des Rücksprungs).
 // Maßgeblich ist die letzte Änderung der km-Grundlage (km_basis_at, Migration 0055) – nicht updated_at (ändert sich auch beim Planen eines Termins)
 export const kmCounterDropAfter = (rule, latest) => { const at = rule && (rule.km_basis_at || rule.updated_at); return !!(latest && latest.drop_at && !(at && at > (latest.drop_rec || latest.drop_at))); };
+// km-Grundlage einer Durchführung vom `doneDate`: liegt sie vor dem Tag des letzten km-Rücksprungs (Tachotausch), gehören ihre km zum alten
+// Zähler – die bisherige Grundlage bleibt (ohne bisherige: Tag der Durchführung, also vor dem Rücksprung → „ungeklärt“). Sonst `now`.
+// Gleiche Regel für „erledigt“, Neuanlage und Import (18.10.2026: Import/Neuanlage hoben „ungeklärt“ auf, Rest-km aus gemischten Zählern)
+export function kmBasisForDone(drop, doneDate, prevBasis, now) {
+  if (!drop || !drop.drop_at || !doneDate) return now;
+  const dropDay = String(drop.drop_at).length > 10 ? berlinDate(drop.drop_at) : String(drop.drop_at).slice(0, 10);
+  return doneDate < dropDay ? (prevBasis || `${doneDate}T00:00:00.000Z`) : now;
+}
 
 // Fahrleistungs-Prognose für km-Fälligkeiten – nur Planungshilfe, nie verbindlich und ohne Einfluss auf Status/Agent.
 // Grundlage ausschließlich gespeicherte km-Stände: früheste und letzte Ablesung innerhalb von 90 Tagen, mindestens 14 Tage auseinander,
@@ -329,10 +337,11 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (ci.kind < 0 || ci.evidence < 0) throw bad('validation', 'Spalten Art und Nachweis erforderlich.');
   if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
 
-  const vehicles = (await env.DB.prepare('SELECT id, plate, eval_excluded FROM vehicles WHERE active=1').all()).results;
+  // km_drop: letzter km-Rücksprung je Fahrzeug (km-Grundlage einer Durchführung vor dem Tachotausch bleibt „ungeklärt“, kmBasisForDone)
+  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, ${KM_DROP_SQL('v.id')} AS km_drop FROM vehicles v WHERE v.active=1`).all()).results;
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = plateIndex(vehicles);
-  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source FROM maintenance_rules ORDER BY created_at').all()).results;
+  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source, km_basis_at FROM maintenance_rules ORDER BY created_at').all()).results;
   const ruleOf = new Map(); const ruleCount = new Map();
   for (const r of existing) { const k = `${r.vehicle_id}|${r.kind}`; if (!ruleOf.has(k)) ruleOf.set(k, r); ruleCount.set(k, (ruleCount.get(k) || 0) + 1); }
   // „Sonstiges“ darf es je Fahrzeug mehrfach geben (Kran-, Tankprüfung …): der Import kennt nur eine Zeile je Fahrzeug+Art und schrieb
@@ -482,7 +491,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       creates.push(stmts.length); rowOf.set(stmts.length, result.rows.length - 1);
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
         SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15 WHERE NOT EXISTS (SELECT 1 FROM maintenance_rules WHERE vehicle_id=?2 AND kind=?3)`)
-        .bind(ruleId, p.vehicle_id, p.kind, p.interval, km.interval, last, km.last, km.due, next, p.evidence, user.id, now, now, p.dueSource, now));
+        .bind(ruleId, p.vehicle_id, p.kind, p.interval, km.interval, last, km.last, km.due, next, p.evidence, user.id, now, now, p.dueSource,
+          kmBasisForDone(parseKmDrop((byId.get(p.vehicle_id) || {}).km_drop), last, null, now)));
       if (last) stmts.push(maintEventStmt(env, { rule_id: ruleId, vehicle_id: p.vehicle_id, kind: p.kind, done_date: last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }, { ifRule: true }));
     } else if (action === 'aktualisiert') {
       result.updated++;
@@ -492,7 +502,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
         .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, p.evidence, now,
-          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0, now, p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
+          (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0,
+          kmBasisForDone(parseKmDrop((byId.get(p.vehicle_id) || {}).km_drop), p.last, cur.km_basis_at, now), p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
           // neue Durchführung erledigt den geplanten Werkstatttermin (wie „erledigt“ in der Akte; 18.10.2026 stand er weiter im Werkstattplan)
           p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, cur.id,
           cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));
