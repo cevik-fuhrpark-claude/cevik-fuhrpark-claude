@@ -60,13 +60,15 @@ function cookieHeader(token, maxAgeSec) {
 // Sitzung nur anlegen, wenn das geprüfte Passwort (pwHash) noch gilt und das Konto aktiv ist (17.10.2026): vorher konnte eine
 // Anmeldung mit dem alten Passwort, deren Prüfung (PBKDF2) während eines Passwortwechsels lief, nach dessen „andere Sitzungen beenden“
 // eine gültige Sitzung anlegen; ebenso nach Deaktivierung.
-async function createSession(env, userId, request, pwHash) {
+// passwordOnly (18.10.2026): Sitzung ohne zweiten Faktor nur, solange die Zwei-Faktor-Anmeldung aus ist – sonst legte eine
+// Passwort-Anmeldung, deren Prüfung lief, während die Person die Zwei-Faktor-Anmeldung einschaltete, danach eine Sitzung ohne Code an.
+async function createSession(env, userId, request, pwHash, passwordOnly = false) {
   const token = randomToken(32);
   const h = await sha256Hex(token);
   const now = new Date();
   const exp = new Date(now.getTime() + SESSION_DAYS * 86400000).toISOString();
   const r = await env.DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at,last_seen,user_agent) SELECT ?,?,?,?,?,?
-    WHERE EXISTS (SELECT 1 FROM users WHERE id=? AND active=1 AND password_hash=?)`)
+    WHERE EXISTS (SELECT 1 FROM users WHERE id=? AND active=1 AND password_hash=?${passwordOnly ? ' AND totp_enabled_at IS NULL' : ''})`)
     .bind(h, userId, now.toISOString(), exp, now.toISOString(), (request.headers.get('user-agent') || '').slice(0, 200), userId, pwHash || '').run();
   if (!r.meta || !r.meta.changes) throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   return cookieHeader(token, SESSION_DAYS * 86400);
@@ -91,16 +93,10 @@ export async function login(env, request, body, ctx = null) {
     : str(body.password, { required: true, max: 200, field: 'Passwort' });
   const ik = await ipKey(request);
   const win = Math.floor(Date.now() / 1000 / IP_FAIL_LIMIT.windowSec) * IP_FAIL_LIMIT.windowSec;
-  const [att, ipRow] = await Promise.all([
-    env.DB.prepare('SELECT * FROM login_attempts WHERE key = ?').bind(username).first(),
-    env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(ik, win).first(),
-  ]);
-  if (ipRow && ipRow.count >= IP_FAIL_LIMIT.max) {
-    throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
-  }
-  if (att && att.locked_until && att.locked_until > nowIso()) {
-    throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
-  }
+  // Versuch VOR der (langen) Passwortprüfung reservieren – je Netzadresse und je Konto (18.10.2026): vorher wurden Sperre und
+  // IP-Fenster nur vorab gelesen; 50 gleichzeitige falsche Passwörter wurden alle geprüft, ein richtiges im selben Schub hob die Sperre auf.
+  await reserveIp(env, ik, win);
+  await reserveAttempt(env, username);
   const user = await env.DB.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
   let ok = false;
   if (user && user.active && user.password_hash) {
@@ -110,8 +106,7 @@ export async function login(env, request, body, ctx = null) {
     await hashPassword(password); // gleiche Laufzeit, keine Benutzer-Enumeration
   }
   if (!ok) {
-    const locked = await recordFailure(env, username);
-    await recordIpFailure(env, ik, win);
+    const locked = await finishFailure(env, username);
     if (locked) {
       if (user) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id).run();
       await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
@@ -120,29 +115,58 @@ export async function login(env, request, body, ctx = null) {
   }
   // Zwei-Faktor-Anmeldung eingeschaltet: noch keine Sitzung, nur ein kurzlebiger Anmeldevorgang für den Code.
   // Fehlversuche bleiben stehen, bis der Code stimmt (falsche Codes zählen zur selben Sperre wie falsche Passwörter).
+  await releaseIp(env, ik, win);
   if (user.totp_enabled_at) {
+    await undoAttempt(env, username);
     return { second_factor: 'totp', challenge: await createChallenge(env, user.id, user.password_hash) };
   }
-  await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(username).run();
-  const cookie = await createSession(env, user.id, request, user.password_hash);
+  await clearAttempts(env, username);
+  const cookie = await createSession(env, user.id, request, user.password_hash, true);
   await audit(env, user.id, 'login', user.id, null);
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }
 
-// Fehlversuch zählen (Passwort oder Code); ab LOCK_AFTER Sperre für LOCK_MINUTES. Liefert den Sperrzeitpunkt oder null.
-// Atomar in der Datenbank gezählt (17.10.2026): vorher Lesen → +1 → Schreiben; parallele Fehlversuche (lange Passwort-Prüfung)
-// lasen alle denselben Stand – 30 gleichzeitige falsche Passwörter ergaben 1 Fehlversuch, keine Sperre. Eine gesetzte Sperre
-// wird nie mit NULL überschrieben.
-async function recordFailure(env, username) {
+// Fehlversuche je Konto (Passwort oder Code), ab LOCK_AFTER Sperre für LOCK_MINUTES. Ablauf seit 18.10.2026:
+// reserveAttempt() zählt den Versuch VOR der Prüfung atomar (während einer Sperre wird nicht weitergezählt) und weist ab, wenn das
+// Konto gesperrt ist oder schon LOCK_AFTER Versuche offen sind – so werden je Sperrfenster höchstens LOCK_AFTER Versuche geprüft,
+// auch bei gleichzeitigen Anfragen. Danach: falsch → finishFailure() (Sperre ab LOCK_AFTER), richtig → clearAttempts() (Zähler weg,
+// eine inzwischen gesetzte Sperre bleibt und gilt) bzw. undoAttempt() (nur diese Reservierung zurück, z. B. Passwort richtig, Code folgt).
+const lockedErr = () => new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
+async function lockAccount(env, username, minFailures) {
+  const now = nowIso(); const locked = new Date(Date.now() + LOCK_MINUTES * 60000).toISOString();
+  const u = await env.DB.prepare('UPDATE login_attempts SET locked_until=?1, failures=0, updated_at=?2 WHERE key=?3 AND failures>=?4 AND (locked_until IS NULL OR locked_until<=?2)')
+    .bind(locked, now, username, minFailures).run();
+  return u.meta && u.meta.changes ? locked : null;
+}
+async function reserveAttempt(env, username) {
   const now = nowIso();
   const r = await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?1,1,NULL,?2)
-    ON CONFLICT(key) DO UPDATE SET failures=login_attempts.failures+1, updated_at=?2 RETURNING failures`).bind(username, now).first();
-  if (!r || r.failures < LOCK_AFTER) return null;
-  const locked = new Date(Date.now() + LOCK_MINUTES * 60000).toISOString();
-  const u = await env.DB.prepare('UPDATE login_attempts SET locked_until=?1, failures=0, updated_at=?2 WHERE key=?3 AND failures>=?4')
-    .bind(locked, now, username, LOCK_AFTER).run();
-  return u.meta && u.meta.changes ? locked : null;
+    ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN login_attempts.locked_until > ?2 THEN login_attempts.failures ELSE login_attempts.failures+1 END, updated_at=?2
+    RETURNING failures, locked_until`).bind(username, now).first();
+  if (r && r.locked_until && r.locked_until > now) throw lockedErr();
+  if (r && r.failures > LOCK_AFTER) {
+    // mehr gleichzeitige Versuche als erlaubt: sofort sperren (sonst bliebe der Zähler ohne Sperre stehen)
+    if (await lockAccount(env, username, LOCK_AFTER + 1)) {
+      const u = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
+      if (u) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(u.id).run();
+      await audit(env, null, 'login.locked', u ? u.id : null, { username, minutes: LOCK_MINUTES });
+    }
+    throw lockedErr();
+  }
+}
+async function finishFailure(env, username) { return lockAccount(env, username, LOCK_AFTER); }
+async function undoAttempt(env, username) {
+  const now = nowIso();
+  await env.DB.prepare('UPDATE login_attempts SET failures=MAX(failures-1,0), updated_at=?2 WHERE key=?1 AND (locked_until IS NULL OR locked_until<=?2)').bind(username, now).run();
+}
+async function clearAttempts(env, username) {
+  const now = nowIso();
+  const r = await env.DB.batch([
+    env.DB.prepare('DELETE FROM login_attempts WHERE key=?1 AND (locked_until IS NULL OR locked_until<=?2)').bind(username, now),
+    env.DB.prepare('SELECT locked_until FROM login_attempts WHERE key=?1 AND locked_until>?2').bind(username, now),
+  ]);
+  if (r[1] && r[1].results && r[1].results.length) throw lockedErr(); // gleichzeitiger Schub hat inzwischen gesperrt
 }
 // Push-Geräte beendeter Anmeldungen abmelden (18.10.2026, Migration 0059) – im selben Stapel NACH dem Löschen der Sitzungen ausführen.
 // Geräte ohne bekannte Anmeldung (Bestand vor 0059) bleiben unverändert.
@@ -153,15 +177,31 @@ export function pushOrphanStmt(env, userId) {
 const LOCKED_MSG = 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.';
 // Bestätigung im angemeldeten Zustand (altes Passwort, Passwort/Code bei Zwei-Faktor): Fehlversuche zählen zur Anmeldesperre (18.10.2026 –
 // vorher unbegrenzt: wer eine offene Sitzung übernahm, konnte Passwort/Code durchprobieren). Bei Sperre: alle Anmeldungen enden.
-export async function reauthLocked(env, user) {
-  const row = await env.DB.prepare('SELECT u.username, a.locked_until FROM users u LEFT JOIN login_attempts a ON a.key=u.username WHERE u.id=?').bind(user.id).first();
-  if (row && row.locked_until && row.locked_until > nowIso()) throw new HttpError(429, 'locked', LOCKED_MSG);
+// Seit 18.10.2026 reserviert reauthLocked() den Versuch vor der Prüfung (wie die Anmeldung); bei Erfolg reauthOk(), bei Fehler reauthFailed().
+async function usernameOf(env, user) {
+  const row = await env.DB.prepare('SELECT username FROM users WHERE id=?').bind(user.id).first();
   return row ? row.username : null;
 }
+export async function reauthLocked(env, user) {
+  const username = await usernameOf(env, user);
+  if (username) await reauthReserve(env, user, username);
+  return username;
+}
+async function reauthReserve(env, user, username) {
+  try { await reserveAttempt(env, username); } catch (e) {
+    // Sperre durch zu viele gleichzeitige Versuche: wie bei reauthFailed alle Anmeldungen beenden
+    if (e instanceof HttpError && e.status === 429) await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id), pushOrphanStmt(env, user.id)]);
+    throw e;
+  }
+}
+export async function reauthOk(env, user) {
+  const username = await usernameOf(env, user);
+  if (username) await undoAttempt(env, username);
+}
 export async function reauthFailed(env, user) {
-  const username = await reauthLocked(env, user);
+  const username = await usernameOf(env, user);
   if (!username) return;
-  const locked = await recordFailure(env, username);
+  const locked = await finishFailure(env, username);
   if (!locked) return;
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id),
@@ -177,41 +217,51 @@ async function ipFailWindow(env, request) {
   const win = Math.floor(Date.now() / 1000 / IP_FAIL_LIMIT.windowSec) * IP_FAIL_LIMIT.windowSec;
   return { ik, win };
 }
-async function ipLimited(env, ik, win) {
-  const ipRow = await env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(ik, win).first();
-  return !!(ipRow && ipRow.count >= IP_FAIL_LIMIT.max);
-}
 async function recordIpFailure(env, ik, win) {
   const ipc = await env.DB.prepare(`INSERT INTO rate_limits(key, window_start, count) VALUES (?, ?, 1)
     ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
     RETURNING count`).bind(ik, win).first();
   if (ipc && ipc.count === IP_FAIL_LIMIT.max) await audit(env, null, 'login.ip_limited', null, { failures: ipc.count, minutes: IP_FAIL_LIMIT.windowSec / 60 });
+  return ipc ? ipc.count : 0;
+}
+// IP-Versuch vor der Prüfung zählen (18.10.2026); bei Erfolg wieder abziehen
+async function reserveIp(env, ik, win) {
+  if (await recordIpFailure(env, ik, win) > IP_FAIL_LIMIT.max) throw lockedErr();
+}
+async function releaseIp(env, ik, win) {
+  await env.DB.prepare('UPDATE rate_limits SET count=MAX(count-1,0) WHERE key=? AND window_start=?').bind(ik, win).run();
 }
 
 // Zweiter Schritt der Anmeldung: Code aus der Authenticator-App oder ein Ersatzcode
 export async function loginSecondFactor(env, request, body, ctx = null) {
   // IP-Begrenzung wie bei der Passwort-Anmeldung (fehlte beim Code – 17.10.2026)
   const { ik, win } = await ipFailWindow(env, request);
-  if (await ipLimited(env, ik, win)) throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
+  await reserveIp(env, ik, win);
+  // Konto-Versuch VOR der Code-Prüfung reservieren (18.10.2026): vorher wurde die Sperre erst nach einem richtigen Code geprüft –
+  // viele parallele Anmeldevorgänge mit je 5 Versuchen ließen hunderte Codes prüfen
+  const owner = await env.DB.prepare('SELECT u.username FROM login_challenges c JOIN users u ON u.id=c.user_id WHERE c.token_hash=?').bind(await sha256Hex(String(body.challenge || ''))).first();
+  if (owner) await reserveAttempt(env, owner.username);
   let res;
   try { res = await redeemChallenge(env, body); }
   catch (e) {
     // falscher Code: zählt zur Fehlversuch-Sperre des Kontos (Anmeldevorgang verrät den Benutzer nur serverseitig) und zum IP-Fenster
     if (e instanceof HttpError && e.userRow) {
-      await recordIpFailure(env, ik, win);
-      const locked = await recordFailure(env, e.userRow.username);
+      const locked = await finishFailure(env, e.userRow.username);
       if (locked) {
         await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(e.userRow.id).run();
         await audit(env, null, 'login.locked', e.userRow.id, { username: e.userRow.username, minutes: LOCK_MINUTES, by: 'totp' });
         throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
       }
+    } else if (owner) {
+      // abgelaufener Anmeldevorgang (kein Code geprüft): Reservierungen zurück; unbekannte Vorgänge zählen im IP-Fenster
+      await undoAttempt(env, owner.username);
+      await releaseIp(env, ik, win);
     }
     throw e;
   }
   const { row, factor } = res;
-  const att = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE key = ?').bind(row.username).first();
-  if (att && att.locked_until && att.locked_until > nowIso()) throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
-  await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(row.username).run();
+  await releaseIp(env, ik, win);
+  await clearAttempts(env, row.username);
   const cookie = await createSession(env, row.id, request, row.password_hash);
   await audit(env, row.id, 'login', row.id, { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) });
   await noteLoginDevice(env, ctx, row, request, body.device_id);
@@ -314,7 +364,7 @@ export async function acceptInvite(env, request, body, ctx = null) {
   const user = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(row.user_id).first();
   // Neues Passwort ersetzt nicht den zweiten Faktor: mit eingeschalteter Zwei-Faktor-Anmeldung erst nach dem Code anmelden
   if (user.totp_enabled_at) return { second_factor: 'totp', challenge: await createChallenge(env, user.id, ph) };
-  const cookie = await createSession(env, row.user_id, request, ph);
+  const cookie = await createSession(env, row.user_id, request, ph, true);
   await audit(env, user.id, 'invite.accept', user.id, null); // zählt als Anmeldung (Benutzerliste „Letzte Anmeldung“)
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
@@ -325,6 +375,7 @@ export async function changePassword(env, user, body) {
   await reauthLocked(env, user);
   const { hash } = await hashPassword(String(body.old_password || ''), row.password_salt);
   if (!timingSafeEqual(hash, row.password_hash || '')) { await reauthFailed(env, user); throw new HttpError(401, 'invalid_login', 'Altes Passwort falsch.'); }
+  await reauthOk(env, user);
   validatePassword(body.new_password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.new_password);
   await env.DB.batch([
@@ -507,7 +558,10 @@ export async function updateUser(env, actor, userId, body) {
   // offene Einladungs-/Zurücksetzen-Links entwerten: bei Deaktivierung immer (galt nach Reaktivierung wieder), bei Rollen-/Umgebungswechsel
   // nur für eingerichtete Konten (Zurücksetzen-Link der alten Rolle gab sonst Zugang mit der neuen; Erst-Einladung bleibt gültig) – 18.10.2026
   if (!active || role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE invites SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL
-    AND (?3 = 1 OR EXISTS (SELECT 1 FROM users WHERE id=?2 AND password_hash IS NOT NULL))`).bind(now, userId, active ? 0 : 1));
+    AND (?3 = 1 OR EXISTS (SELECT 1 FROM users WHERE id=?2 AND password_hash IS NOT NULL)
+      OR NOT EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by AND c.role='owner'))`).bind(now, userId, active ? 0 : 1));
+  // Erst-Einladung, die nicht vom Inhaber stammt, verfällt beim Rollen-/Umgebungswechsel ebenfalls (18.10.2026): sonst konnte die
+  // Fuhrparkleitung mit ihrem Link ein vom Inhaber hochgestuftes Konto (z. B. Inhaber/Betrieb) selbst einrichten.
   try { await env.DB.batch(stmts); } catch (e) {
     if (String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Der Benutzer wurde zwischenzeitlich geändert. Bitte neu laden.');
     throw e;

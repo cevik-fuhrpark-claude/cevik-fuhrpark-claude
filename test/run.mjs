@@ -12733,6 +12733,57 @@ await test('Fehlersuche 18.10. (22): Fahrzeugdokumente „Sonstiges“ je Bemerk
   await run(); ok(!open().some((x) => x.subject_key.startsWith(`${V1}|versicherung`)), 'Versicherung: neueres Dokument ersetzt älteres');
 });
 
+await test('Fehlersuche 18.10. (23): Anmeldung – 2FA-Einschalten gegen laufende Passwort-Anmeldung, Fehlversuche vor der Prüfung reserviert (Passwort- und Code-Schübe), Erst-Einladung der Leitung verfällt beim Hochstufen', async () => {
+  const PW = 'Sicheres-Passwort-2026'; const T = await import('../src/totp.js');
+  // (1) 2FA wird eingeschaltet, während eine Passwort-Anmeldung läuft → keine Sitzung ohne Code
+  for (let i = 0; i < 3; i++) {
+    const { e, U } = await freshWorld();
+    const su = await U.driver.post('/api/me/totp/setup', { password: PW }); eq(su.status, 200);
+    const att = new Client(worker, e, 'att' + i);
+    const [, en] = await Promise.all([att.post('/api/login', { username: 'w.fahrer', password: PW }), U.driver.post('/api/me/totp/enable', { code: await T.totpAt(su.data.secret) })]);
+    eq(en.status, 200); ok((await att.get('/api/me')).status !== 200 || !e.DB.db.prepare(`SELECT 1 FROM users WHERE username='w.fahrer' AND totp_enabled_at IS NOT NULL`).get(), 'keine Sitzung ohne zweiten Faktor');
+    eq((await U.driver.get('/api/me')).status, 200, 'eigene Sitzung bleibt');
+  }
+  // (2) 50 gleichzeitige falsche Passwörter: höchstens 8 geprüft, Rest 429; richtiges Passwort im Schub hebt die Sperre nicht auf
+  { const { e, U } = await freshWorld();
+    const res = await Promise.all(Array.from({ length: 40 }, (_, i) => new Client(worker, e, 'b' + i).post('/api/login', { username: 'w.fahrer', password: 'Falsch-Passwort-' + i }))
+      .concat([new Client(worker, e, 'bok').post('/api/login', { username: 'w.fahrer', password: PW })]));
+    ok(res.filter((r) => r.status === 401).length <= 8, 'höchstens 8 geprüft: ' + res.filter((r) => r.status === 401).length);
+    ok(res.filter((r) => r.status === 429).length >= 32, '429');
+    eq((await new Client(worker, e, 'after').post('/api/login', { username: 'w.fahrer', password: PW })).status, 429, 'Sperre gilt danach');
+    ok(e.DB.db.prepare(`SELECT locked_until FROM login_attempts WHERE key='w.fahrer'`).get()?.locked_until, 'Sperre gespeichert');
+    // richtige Anmeldung ohne Schub: Zähler zurück (Reservierung zählt nicht als Fehlversuch)
+    eq((await new Client(worker, e, 'v1').post('/api/login', { username: 'w.lesen', password: PW })).status, 200);
+    eq(e.DB.db.prepare(`SELECT COUNT(*) n FROM login_attempts WHERE key='w.lesen'`).get().n, 0, 'nichts stehen geblieben');
+    // im angemeldeten Zustand: richtige Bestätigung zählt nicht, falsche zählt
+    eq((await U.viewer.post('/api/me/totp/setup', { password: PW })).status, 200);
+    eq(e.DB.db.prepare(`SELECT COALESCE(MAX(failures),0) f FROM login_attempts WHERE key='w.lesen'`).get().f, 0, 'Bestätigung ok → kein Fehlversuch');
+    eq((await U.viewer.post('/api/me/password', { old_password: 'falsch-falsch-1', new_password: 'Neues-Kennwort-2027x' })).status, 401);
+    eq(e.DB.db.prepare(`SELECT failures f FROM login_attempts WHERE key='w.lesen'`).get().f, 1, 'falsches altes Passwort zählt einmal');
+  }
+  // (3) Code-Schub über viele Anmeldevorgänge: höchstens 8 Codes geprüft, richtiger Code im Schub kein Erfolg
+  { const { e, U } = await freshWorld();
+    const su = await U.fleet.post('/api/me/totp/setup', { password: PW });
+    eq((await U.fleet.post('/api/me/totp/enable', { code: await T.totpAt(su.data.secret, Date.now() - 30000) })).status, 200);
+    const chs = [];
+    for (let i = 0; i < 7; i++) { const c = new Client(worker, e, 'ch' + i); const l = await c.post('/api/login', { username: 'w.fuhrpark', password: PW }); eq(l.data.second_factor, 'totp'); chs.push([c, l.data.challenge]); }
+    const good = await T.totpAt(su.data.secret);
+    const res = await Promise.all(chs.flatMap(([c, ch], i) => [0, 1, 2, 3].map((k) => c.post('/api/login/totp', { challenge: ch, code: String(100000 + i * 10 + k) })))
+      .concat([chs[0][0].post('/api/login/totp', { challenge: chs[6][1], code: good })]));
+    ok(res.filter((r) => r.data && r.data.error === 'totp_invalid').length <= 8, 'höchstens 8 Codes geprüft');
+    eq(res.filter((r) => r.status === 200).length, 0, 'kein Erfolg im Schub'); ok(res.filter((r) => r.status === 429).length >= 1, 'gesperrt');
+  }
+  // (4) Erst-Einladung der Leitung verfällt, wenn der Inhaber das Konto hochstuft; Einladung des Inhabers bleibt gültig
+  { const { e, U } = await freshWorld();
+    const c = await U.fleet.post('/api/users', { username: 'neu.person', display_name: 'Neue Person', role: 'driver' }); eq(c.status, 201);
+    eq((await U.own.patch(`/api/users/${c.data.id}`, { role: 'owner', environment: 'production' })).status, 200);
+    eq((await new Client(worker, e, 'x').post('/api/invite/accept', { token: c.data.invite_token, password: 'Uebernahme-Konto-77x' })).status, 410, 'Link der Leitung entwertet');
+    const o = await U.own.post('/api/users', { username: 'neu.zwei', display_name: 'Neu Zwei', role: 'driver', environment: 'test' }); eq(o.status, 201);
+    eq((await U.own.patch(`/api/users/${o.data.id}`, { role: 'workshop', workshop_site: 'DORTMUND' })).status, 200);
+    eq((await new Client(worker, e, 'y').post('/api/invite/accept', { token: o.data.invite_token, password: 'Werkstatt-Konto-88y' })).status, 200, 'Link des Inhabers bleibt');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2,7 +2,7 @@
 // Jede Authenticator-App (z. B. die auf dem Handy vorinstallierte Passwort-App) erzeugt die Codes; die App selbst versendet nichts.
 // Ersatzcodes: 10 Einmal-Codes, nur als SHA-256-Hash gespeichert, werden genau einmal angezeigt.
 import { nowIso, sha256Hex, randomToken, hashPassword, timingSafeEqual, bad, HttpError } from './util.js';
-import { reauthLocked, reauthFailed, pushOrphanStmt } from './auth.js';
+import { reauthLocked, reauthFailed, reauthOk, pushOrphanStmt } from './auth.js';
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 export const STEP_SEC = 30;
@@ -94,6 +94,7 @@ export async function totpSetup(env, user, body, auditFn) {
   if (row.totp_enabled_at) throw bad('totp_already', 'Zwei-Faktor-Anmeldung ist bereits eingeschaltet.');
   await reauthLocked(env, user);
   if (!(await checkPassword(row, body.password))) { await reauthFailed(env, user); throw bad('wrong_password', 'Passwort falsch.'); }
+  await reauthOk(env, user);
   const secret = newSecret();
   await env.DB.prepare('UPDATE users SET totp_pending=?, updated_at=? WHERE id=?').bind(secret, nowIso(), user.id).run();
   await auditFn(env, user.id, 'totp.setup_started', user.id, null);
@@ -137,6 +138,7 @@ export async function totpDisable(env, user, body, auditFn) {
   if (!(await checkPassword(row, body.password))) { await reauthFailed(env, user); throw bad('wrong_password', 'Passwort falsch.'); }
   const r = await checkSecondFactor(env, row, body.code);
   if (!r) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
+  await reauthOk(env, user);
   // wie beim Einschalten: andere Anmeldungen und offene Anmeldevorgänge enden (18.10.2026)
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET totp_secret=NULL, totp_pending=NULL, totp_enabled_at=NULL, totp_last_step=NULL, totp_recovery=NULL, updated_at=? WHERE id=?').bind(nowIso(), user.id),
@@ -155,6 +157,7 @@ export async function totpNewRecovery(env, user, body, auditFn) {
   await reauthLocked(env, user);
   const step = await verifyTotp(row.totp_secret, body.code, row.totp_last_step);
   if (step === null) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
+  await reauthOk(env, user);
   const { codes, hashes } = await makeRecovery();
   // Code nur einmal verbrauchen (wie bei der Anmeldung): parallel mit demselben Code lieferten vorher beide neue Ersatzcodes (17.10.2026)
   const u = await env.DB.prepare('UPDATE users SET totp_last_step=?, totp_recovery=?, updated_at=? WHERE id=? AND totp_enabled_at IS NOT NULL AND (totp_last_step IS NULL OR totp_last_step < ?)')
