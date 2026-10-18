@@ -12356,6 +12356,19 @@ await test('Werkstattplan: SP „Frist ungeklärt“ mit bald fälligem Termin s
   eq((await U.fleet.post('/api/maintenance/R-SPU-UVV/plan', { planned_date: '' })).status, 200, 'Termin entfernen möglich');
 });
 
+await test('Push-Ruhezeit: Ende in der Nacht der Zeitumstellung (Frühjahr übersprungen, Herbst doppelt) und Normalfälle', async () => {
+  const { quietHoldUntil } = await import('../src/util.js'); const q = (f, t, iso) => quietHoldUntil(f, t, Date.parse(iso));
+  // Normalfälle unverändert
+  eq(q('22:00', '06:00', '2026-12-10T22:30:00Z'), '2026-12-11T05:00:00.000Z'); eq(q('22:00', '06:00', '2026-12-10T12:00:00Z'), null);
+  eq(q('12:00', '13:00', '2026-07-01T10:30:00Z'), '2026-07-01T11:00:00.000Z');
+  // Frühjahr 28.03.2027: 02:30 gibt es nicht → Ende um 03:00 MESZ (01:00Z), nicht 03:30 MESZ
+  eq(q('20:00', '02:30', '2027-03-28T00:59:00Z'), '2027-03-28T01:00:00.000Z'); eq(q('20:00', '02:30', '2027-03-28T01:00:00Z'), null);
+  eq(q('03:00', '02:00', '2027-03-28T00:51:00Z'), '2027-03-28T01:00:00.000Z', 'Ende übersprungen, danach wieder Ruhezeit');
+  // Herbst 25.10.2026: erstes 02:30 MESZ (00:30Z) beendet die Ruhezeit; im zweiten Durchlauf 02:00–02:30 MEZ gilt sie erneut bis 02:30 MEZ
+  eq(q('22:00', '02:30', '2026-10-24T23:00:00Z'), '2026-10-25T00:30:00.000Z'); eq(q('22:00', '02:30', '2026-10-25T00:45:00Z'), null);
+  eq(q('22:00', '02:30', '2026-10-25T01:10:00Z'), '2026-10-25T01:30:00.000Z');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

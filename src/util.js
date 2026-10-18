@@ -267,12 +267,25 @@ export const QUIET_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function quietHoldUntil(from, to, nowMs = Date.now()) {
   if (!QUIET_TIME.test(from || '') || !QUIET_TIME.test(to || '') || from === to) return null;
   const mins = (x) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5));
-  const local = new Date(nowMs + berlinOffsetMs(nowMs));
-  const cur = local.getUTCHours() * 60 + local.getUTCMinutes();
   const f = mins(from); const t = mins(to);
-  if (!(f < t ? cur >= f && cur < t : cur >= f || cur < t)) return null;
+  const curOf = (ms) => { const l = new Date(ms + berlinOffsetMs(ms)); return l.getUTCHours() * 60 + l.getUTCMinutes(); };
+  const inQuiet = (ms) => { const c = curOf(ms); return f < t ? c >= f && c < t : c >= f || c < t; };
+  if (!inQuiet(nowMs)) return null;
+  const local = new Date(nowMs + berlinOffsetMs(nowMs)); const cur = curOf(nowMs);
   const day = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + (cur < t ? 0 : 1))).toISOString().slice(0, 10);
-  return berlinLocalToIso(`${day}T${to}`);
+  const cand = Date.parse(berlinLocalToIso(`${day}T${to}`));
+  // Nacht der Zeitumstellung (18.10.2026): Ende 02:xx gibt es im Frühjahr nicht bzw. im Herbst doppelt – maßgeblich ist die erste Minute,
+  // deren Wanduhrzeit außerhalb der Ruhezeit liegt (Frühjahr 03:00 MESZ, Herbst das erste 02:xx). Sonst ist das der berechnete Zeitpunkt.
+  if (curOf(cand) === t && !inQuiet(cand) && (cand - 60000 <= nowMs || inQuiet(cand - 60000))) {
+    // Herbst: erste Minute außerhalb ist evtl. eine Stunde früher (erstes Auftreten der doppelten Uhrzeit)
+    const early = cand - 3600000;
+    if (early > nowMs && curOf(early) === t && !inQuiet(early)) return new Date(early).toISOString();
+    return new Date(cand).toISOString();
+  }
+  let ms = Math.floor((Math.max(nowMs, cand - 3 * 3600000)) / 60000) * 60000; if (ms < nowMs || !inQuiet(ms)) ms = Math.ceil(nowMs / 60000) * 60000;
+  // Ende = erste Minute außerhalb der Ruhezeit oder in der die Wanduhrzeit das Ende überspringt (Frühjahr: 01:59 → 03:00)
+  for (let i = 0, prev = curOf(ms); i < 6 * 60; i++) { const c = curOf(ms); if (!inQuiet(ms) || (prev < t && c > t)) return new Date(ms).toISOString(); prev = c; ms += 60000; }
+  return new Date(cand).toISOString();
 }
 const p2 = (n) => (n < 10 ? '0' + n : String(n));
 export function berlinDateTime(iso) {
