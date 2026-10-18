@@ -3,7 +3,7 @@
 import { icsLang } from '../public/ics-texts.js';
 import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate } from './util.js';
 import { audit } from './auth.js';
-import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
+import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt } from './vehicles.js';
 import { siteSelection } from './reports.js';
 import { CASE_STATUS_DE } from './cases.js';
@@ -344,7 +344,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     last: kmCol((h) => /letzte|zuletzt/.test(h) && h !== 'letzter km-stand'), // „Letzter km-Stand“ = aktueller Zählerstand, nicht die Prüfung
     interval: kmCol((h) => h.startsWith('intervall')) };
   const ci = { plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), kind: col(['art', 'prüfart', 'pruefart', 'prüfung', 'pruefung']),
-    due: col(['nächster', 'naechster', 'fällig', 'faellig', 'termin']), last: col(['letzte', 'zuletzt']), interval: col(['intervall']), evidence: col(['nachweis', 'quelle', 'beleg']) };
+    due: col(['nächste', 'naechste', 'fällig', 'faellig', 'termin']), last: col(['letzte', 'zuletzt']), interval: col(['intervall']), evidence: col(['nachweis', 'quelle', 'beleg']) };
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
   if (ci.kind < 0 || ci.evidence < 0) throw bad('validation', 'Spalten Art und Nachweis erforderlich.');
   if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
@@ -399,9 +399,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     // wie Einzelerfassung/„erledigt“: keine Durchführung in der Zukunft (sonst verdeckte eine erfundene Folgefrist einen fälligen Termin, 17.10.2026)
     if (last.date && last.date > berlinDate()) return skip('Letzte Prüfung liegt in der Zukunft');
     let interval = null;
-    const ir = get(cells, ci.interval);
-    if (ir) { interval = Number(ir.replace(',', '.')); if (!Number.isInteger(interval) || interval < 1 || interval > 120) return skip(`Intervall ungültig: ${ir}`); }
     const husp = kind === 'HU' || kind === 'SP';
+    const ir = husp ? '' : get(cells, ci.interval); // HU/SP: Intervall spielt keine Rolle (Zeile mit „12 Monate“ fiel sonst weg, 18.10.2026)
+    if (ir) { interval = Number(ir.replace(',', '.')); if (!Number.isInteger(interval) || interval < 1 || interval > 120) return skip(`Intervall ungültig: ${ir}`); }
     // HU/SP: Fälligkeit nur aus Nachweis (Plakette/Beleg) oder zentral nach StVZO Anlage VIII – nie aus einem pauschalen Intervall
     if (husp) interval = null;
     // Kilometer (nicht HU/SP – dort zählt nur die Zeit): belegte Fälligkeit, km bei letzter Prüfung, Intervall km
@@ -438,8 +438,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       const cur0 = { last: last.date, dueSource: due.date ? 'nachweis' : 'berechnet' };
       const pair = docOnly(prev) && doneOnly(cur0) ? { last: last.date, next: prev.next, interval: interval || prev.interval }
         : doneOnly(prev) && docOnly(cur0) ? { last: prev.last, next, interval: prev.interval || interval } : null;
-      if (pair) {
-        if (pair.last > pair.next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
+      // Durchführung nach dem Termin laut Plakette: alte Plakette – keine Zusammenführung, die normale Regel (neuerer Beleg gilt) entscheidet
+      // (vorher fiel die neuere Durchführung weg, wenn die alte Plakette in der Datei zuerst stand, 18.10.2026)
+      if (pair && !(pair.last > pair.next)) {
         Object.assign(prev, { next: pair.next, last: pair.last, interval: pair.interval, evidence: prev.evidence === ev ? ev : `${prev.evidence}; ${ev}`.slice(0, 500), sortKey: pair.next, dueSource: 'nachweis' });
         return;
       }
@@ -454,7 +455,16 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   for (const p of [...planned.values()].sort((a, b) => a.line - b.line)) {
     const cur = ruleOf.get(`${p.vehicle_id}|${p.kind}`);
     const skipRow = (reason) => result.skipped.push({ line: p.line, plate: p.plate, reason });
+    // eigener Export mit neuer „Letzte Prüfung“, aber unverändertem berechnetem „Nächster Termin“: der alte Termin ist kein Nachweis,
+    // sondern folgt aus der neuen Durchführung (wurde sonst als Nachweis gespeichert, 18.10.2026)
+    if (cur && p.next && p.next === cur.next_due_date && p.last && (!cur.last_done_date || p.last > cur.last_done_date)
+      && (cur.due_source === 'berechnet' || (cur.due_source == null && cur.interval_months && cur.last_done_date && addMonths(cur.last_done_date, cur.interval_months) === cur.next_due_date))) {
+      p.next = null; p.dueSource = 'berechnet';
+    }
+    // dasselbe für km: unveränderte (abgeleitete) km-Fälligkeit bei neuerer Durchführung gilt nicht als Beleg
+    if (cur && !p.husp && p.dueKm !== null && p.lastKm !== null && cur.last_done_km !== null && p.lastKm > cur.last_done_km && p.dueKm === ruleDueKm(cur)) p.dueKm = null;
     let action; let next = p.next; let last = p.last;
+    let keepDoc = false;
     if (!cur) action = 'neu';
     else if (!p.next && !p.last) { next = cur.next_due_date; last = cur.last_done_date; action = 'unverändert'; } // nur km-Angaben
     else if (p.next) {
@@ -468,6 +478,11 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       if (cur.last_done_date && cur.last_done_date > p.last) { skipRow(`Vorhandene letzte Prüfung ${cur.last_done_date} ist neuer – nicht überschrieben`); continue; }
       const iv = p.husp ? null : (p.interval || cur.interval_months);
       next = iv ? addMonths(p.last, iv) : p.husp ? null : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
+      // HU/SP: ältere Rechnung als die belegte Plakette – Termin laut Nachweis bleibt, die Durchführung kommt nur in den Verlauf
+      // (wurde sonst durch die Rechnung als „berechnet“ ersetzt und überfällig, 18.10.2026)
+      if (p.husp && cur.due_source === 'nachweis' && cur.next_due_date && dueMonthEnd(p.last, p.kind === 'HU' ? 12 : 6) < cur.next_due_date) {
+        next = cur.next_due_date; keepDoc = true;
+      }
       // dieselbe Durchführung wie gespeichert: deren Termin bleibt (ein späterer Termin laut Nachweis wurde sonst durch „letzte + Intervall“ ersetzt, 17.10.2026)
       if (cur.last_done_date === p.last && cur.next_due_date && !(p.interval && !p.husp && p.interval !== cur.interval_months)) next = cur.next_due_date;
       action = cur.last_done_date === p.last && cur.next_due_date === next ? 'unverändert' : 'aktualisiert';
@@ -513,9 +528,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=?, planned_date=CASE WHEN ? THEN NULL ELSE planned_date END WHERE id=?
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
-        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, p.evidence, now,
+        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, keepDoc && cur.evidence && cur.evidence !== p.evidence ? `${cur.evidence}; ${p.evidence}`.slice(0, 500) : p.evidence, now,
           (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0,
-          kmBasisForDone(parseKmDrop((byId.get(p.vehicle_id) || {}).km_drop), p.last, cur.km_basis_at, now), p.next && p.dueSource === 'nachweis' ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
+          kmBasisForDone(parseKmDrop((byId.get(p.vehicle_id) || {}).km_drop), p.last, cur.km_basis_at, now), (p.next && p.dueSource === 'nachweis') || keepDoc ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
           // neue Durchführung erledigt den geplanten Werkstatttermin (wie „erledigt“ in der Akte; 18.10.2026 stand er weiter im Werkstattplan)
           p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, cur.id,
           cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));

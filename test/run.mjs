@@ -12512,6 +12512,59 @@ await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag 
   ok(/id="amore">[^`]*<p class="print-only small" id="aumorep">\$\{esc\(t\('audit_more_print'\)\)\}/.test((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Druckhinweis Protokoll');
 });
 
+await test('Fehlersuche 18.10. (18): Prüftermin-Import (alte Plakette vor neuerer Durchführung, ältere HU-Rechnung lässt Nachweis stehen, eigener Export mit neuer Durchführung, Spalte „Nächste Prüfung“, HU mit Intervall-Text); Fahrerakte (älterer Führerschein, Unterweisung mit Thema, stornierte Auslesung)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const own = U.own;
+  db.prepare(`UPDATE vehicles SET zgm_class='ueber_12', kind='lkw'`).run();
+  const addD = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 864e5).toISOString().slice(0, 10);
+  const imp = async (csv, dry) => { const x = await own.req('POST', '/api/maintenance/import' + (dry ? '?dry_run=1' : ''), csv, { 'content-type': 'text/csv' }); eq(x.status, 200, JSON.stringify(x.data)); return x.data; };
+  const rule = (kind) => db.prepare('SELECT * FROM maintenance_rules WHERE vehicle_id=? AND kind=?').get(V1, kind);
+  const H = 'Kennzeichen;Art;Nächster Termin;Letzte Prüfung;Nachweis\n';
+  // 1. alte Plakette steht vor der neueren Durchführung: die Durchführung gilt (vorher übersprungen, HU „überfällig“)
+  let r = await imp(H + 'SZ-YC 5513;HU;03/2026;;Plakette alt\nSZ-YC 5513;HU;;2026-04-10;Rechnung HU April', true);
+  eq(r.rows.length, 1); eq(r.rows[0].last_done_date, '2026-04-10', 'Durchführung übernommen ' + JSON.stringify(r.skipped));
+  ok(r.skipped.some((x) => x.line === 2 && /Ersetzt durch Zeile 3/.test(x.reason)));
+  // 2. Plakette belegt, danach ältere HU-Rechnung: Nachweis bleibt (Termin, Quelle, Nachweistext), Durchführung im Verlauf
+  await imp(H + 'SZ-YC 5513;HU;08/2027;;Plakette 08/2027 Foto');
+  eq(rule('HU').next_due_date, '2027-08-31'); eq(rule('HU').due_source, 'nachweis');
+  await imp('Kennzeichen;Art;Letzte Prüfung;Nachweis\nSZ-YC 5513;HU;2025-08-12;Rechnung HU 2025');
+  eq(rule('HU').next_due_date, '2027-08-31', 'Plakette nicht überschrieben'); eq(rule('HU').due_source, 'nachweis'); ok(/Plakette 08\/2027 Foto/.test(rule('HU').evidence), 'Nachweistext bleibt');
+  eq(db.prepare(`SELECT COUNT(*) n FROM maintenance_events WHERE vehicle_id=? AND kind='HU' AND done_date='2025-08-12'`).get(V1).n, 1, 'Durchführung im Verlauf');
+  // 3. eigener Export: nur „Letzte Prüfung“ geändert, berechneter „Nächster Termin“ unverändert → Termin aus neuer Durchführung, kein Nachweis
+  await imp('Kennzeichen;Art;Letzte Prüfung;Intervall Monate;Nachweis\nSZ-YC 5513;UVV;2025-11-15;12;UVV-Buch');
+  eq(rule('UVV').next_due_date, '2026-11-15'); const dueOld = rule('UVV').next_due_date.split('-').reverse().join('.');
+  await imp(`${H}SZ-YC 5513;UVV;${dueOld};10.10.2026;UVV-Buch 2026`);
+  eq(rule('UVV').next_due_date, '2027-10-10', 'aus neuer Durchführung'); eq(rule('UVV').due_source, 'berechnet');
+  // km: unveränderte abgeleitete km-Fälligkeit bei neuerer Durchführung ist kein Beleg
+  const HK = 'Kennzeichen;Art;Letzte Prüfung;Fällig bei km;km bei letzter Prüfung;Intervall km;Nachweis\n';
+  await imp(HK + 'SZ-YC 5513;Ölwechsel;01.03.2026;;400000;100000;Rechnung Öl März');
+  await imp(HK + 'SZ-YC 5513;Ölwechsel;10.10.2026;500000;480000;100000;Rechnung Öl Okt');
+  eq(rule('Ölwechsel').last_done_km, 480000); eq(rule('Ölwechsel').due_km, null, 'Fälligkeit 580 000 aus Intervall');
+  // 4. Spalte „Nächste Prüfung“ wird erkannt
+  r = await imp('Kennzeichen;Art;Letzte Prüfung;Nächste Prüfung;Nachweis\nSZ-KC 5515;UVV;2026-01-15;2026-12-31;UVV-Prüfbuch', true);
+  eq(r.rows[0].next_due_date, '2026-12-31');
+  // 5. HU mit Intervall-Text wird nicht verworfen
+  r = await imp('Kennzeichen;Art;Letzte Prüfung;Intervall;Nachweis\nSZ-KC 5515;HU;2026-05-02;12 Monate;Rechnung', true);
+  eq(r.skipped.length, 0, JSON.stringify(r.skipped)); eq(r.rows[0].last_done_date, '2026-05-02');
+  // Fahrerakte
+  const D = await import('../src/drivers.js');
+  const d = (await U.fleet.post('/api/drivers', { display_name: 'Max Muster' })).data.id;
+  const soon = addD(20);
+  eq((await U.fleet.post(`/api/drivers/${d}/documents`, { kind: 'fuehrerschein', valid_until: soon, evidence: 'Kartenführerschein' })).status, 201);
+  const old = await U.fleet.post(`/api/drivers/${d}/documents`, { kind: 'fuehrerschein', issued_on: '1995-03-01', evidence: 'Papierführerschein (Verlauf)' });
+  eq(old.status, 201); eq(old.data.older_than_current, true, 'alter Führerschein nur Verlauf');
+  ok((await D.driverFindings(e, 'test')).some((f) => f.code === 'DRIVER_DOC_EXPIRES_SOON' && f.subject === `${d}|fuehrerschein`), 'Ablauf weiter überwacht');
+  for (const t of ['UVV', 'ADR']) eq((await U.fleet.post(`/api/drivers/${d}/documents`, { kind: 'unterweisung', title: t, valid_until: addD(-5), evidence: 'Liste' })).status, 201);
+  const msgs = (await D.driverFindings(e, 'test')).filter((f) => f.code === 'DRIVER_DOC_EXPIRED').map((f) => f.message);
+  ok(msgs.some((m) => m.includes('Unterweisung „UVV“')) && msgs.some((m) => m.includes('Unterweisung „ADR“')), 'Thema im Befund ' + JSON.stringify(msgs));
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  ok(renderFindingMessage('DRIVER_DOC_EXPIRED', { name: 'M', ddoc: 'unterweisung', topic: 'ADR', date: '2026-01-01' }, 'en').includes('"ADR"'));
+  eq(renderFindingMessage('DRIVER_DOC_EXPIRED', { name: 'M', ddoc: 'fahrerkarte', topic: null, date: '2026-01-01' }, 'de').includes('„'), false, 'ohne Thema kein leeres „“');
+  // stornierte Auslesung zählt in der Akte nicht als „Auslesung vorhanden“ (wie Übersicht)
+  const d2 = (await U.fleet.post('/api/drivers', { display_name: 'Ohne Karte' })).data.id; const now = new Date().toISOString();
+  db.prepare(`INSERT INTO tacho_downloads(id,environment,kind,driver_id,downloaded_on,evidence,created_by,created_at,cancelled_at,cancelled_by,cancel_reason) VALUES('tdx','test','fahrerkarte',?,?, 'x',?,?,?,?,'falscher Fahrer')`).run(d2, addD(-3), U.fleet.id, now, now, U.fleet.id);
+  eq((await U.fleet.get(`/api/drivers/${d2}`)).data.tacho, null);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

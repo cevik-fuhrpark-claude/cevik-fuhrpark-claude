@@ -70,7 +70,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
     if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until || null, ...(n.valid_until ? {} : { by_issued_on: n.issued_on || String(n.created_at || '').slice(0, 10) || null }) }); continue; } }
     const left = days(today, d.valid_until);
     const topic = GROUPED_KINDS.includes(d.kind) ? groupKey(d).slice(d.kind.length + 1) : '';
-    items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic } : {}) });
+    items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic, ...(String(d.title || '').trim() ? { title: String(d.title).trim().slice(0, 80) } : {}) } : {}) });
   }
   let check = { last: lastCheck ? lastCheck.checked_on : null, result: lastCheck ? lastCheck.result : null, due: null, status: lastCheck ? 'ok' : 'fehlt' };
   if (lastCheck && lastCheck.result !== 'in_ordnung') check.status = 'mangel';
@@ -123,9 +123,9 @@ export async function driverDetail(env, user, envName, id) {
   const downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by WHERE t.driver_id=? ORDER BY t.downloaded_on DESC LIMIT ?`).bind(id, DRIVER_HIST_MAX + 1).all()).results;
   const downloadsTruncated = downloads.length > DRIVER_HIST_MAX; if (downloadsTruncated) downloads.length = DRIVER_HIST_MAX;
   const hasCard = docs.some((x) => !x.superseded && x.kind === 'fahrerkarte');
-  // stornierte Auslesungen bleiben im Verlauf, zählen aber nicht für die Frist (18.10.2026)
+  // stornierte Auslesungen bleiben im Verlauf, zählen aber nicht für die Frist (18.10.2026) – und nicht als „Auslesung vorhanden“ (wie Übersicht)
   const valid = downloads.find((x) => !x.cancelled_at);
-  const tacho = hasCard || downloads.length ? { ...tachoStatus(valid ? valid.downloaded_on : null, TACHO_RULE.card_days, berlinDate(), warnDaysOf(sm)), rule: TACHO_RULE } : null;
+  const tacho = hasCard || valid ? { ...tachoStatus(valid ? valid.downloaded_on : null, TACHO_RULE.card_days, berlinDate(), warnDaysOf(sm)), rule: TACHO_RULE } : null;
   const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)`).bind(d.user_id, nowIso()).all()).results : [];
   return { driver: d, documents: docs, license_checks: checks, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: downloads, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
 }
@@ -211,7 +211,7 @@ export async function addDriverDocument(env, user, envName, id, body) {
   const single = ['fuehrerschein', 'fahrerkarte', 'code95'].includes(kind);
   const newerExists = `EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=?2 AND x.kind=?3 AND x.superseded=0 AND (
       (x.valid_until IS NOT NULL AND ?8 IS NOT NULL AND x.valid_until > ?8)
-      OR ((x.valid_until IS NULL OR ?8 IS NULL) AND x.issued_on IS NOT NULL AND ?7 IS NOT NULL AND x.issued_on > ?7)))`;
+      OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, substr(x.created_at,1,10)) > ?7)))`;
   stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11)`)
     .bind(docId, id, kind, str(body.title, { max: 120 }), str(body.number, { max: 40 }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60 }) : null, issued, valid, evidence, user.id, now));
@@ -249,9 +249,9 @@ export async function driverFindings(env, environment, settings = null) {
       // je Thema ein Befund (Unterweisung/Sonstiges mit Titel; vorher fasste der Schlüssel Fahrer|Art mehrere abgelaufene Themen zu einem zusammen, 17.10.2026)
       const subject = `${d.id}|${i.kind}${i.topic ? '|' + i.topic.slice(0, 80) : ''}`;
       if (i.status === 'abgelaufen') out.push({ code: 'DRIVER_DOC_EXPIRED', subject, severity: i.kind === 'fuehrerschein' || i.kind === 'fahrerkarte' ? 'kritisch' : 'handeln', requires_decision: 1,
-        ...fm('DRIVER_DOC_EXPIRED', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', date: i.valid_until }), next_action: 'Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.' });
+        ...fm('DRIVER_DOC_EXPIRED', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', topic: i.title || null, date: i.valid_until }), next_action: 'Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.' });
       else if (i.status === 'laeuft_ab') out.push({ code: 'DRIVER_DOC_EXPIRES_SOON', subject, severity: 'hinweis', requires_decision: 0,
-        ...fm('DRIVER_DOC_EXPIRES_SOON', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', date: i.valid_until, days: i.days }), next_action: 'Verlängerung rechtzeitig veranlassen.' });
+        ...fm('DRIVER_DOC_EXPIRES_SOON', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', topic: i.title || null, date: i.valid_until, days: i.days }), next_action: 'Verlängerung rechtzeitig veranlassen.' });
     }
     if (d.status.check.status === 'faellig') out.push({ code: 'LICENSE_CHECK_DUE', subject: `${d.id}|fs_kontrolle`, severity: 'handeln', requires_decision: 0,
       ...fm('LICENSE_CHECK_DUE', { name: d.display_name, last: d.status.check.last }), next_action: 'Original-Führerschein vorlegen lassen und Kontrolle erfassen.' });
