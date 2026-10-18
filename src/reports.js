@@ -31,7 +31,8 @@ export function siteSelection(vehicles, raw) {
 function monthRange(q) {
   const now = berlinDate().slice(0, 7);
   const to = q.to || now;
-  const from = q.from || `${Number(to.slice(0, 4)) - 1}-${to.slice(5, 7)}`;
+  // ohne „Von“: 12 Monate vor „Bis“, frühestens 2000-01 (18.10.2026: „Bis 2000-06“ allein → 400)
+  const from = q.from || (MONTH.test(to) ? [`${Number(to.slice(0, 4)) - 1}-${to.slice(5, 7)}`, '2000-01'].sort()[1] : to);
   if (!MONTH.test(from) || !MONTH.test(to)) throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.');
   // Jahr begrenzen (9999-12 ergab beim Monatsende „10000-01-01“ → 500 im Kennzahlenbericht, 17.10.2026)
   if (from < '2000-01' || to > '2100-12') throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.');
@@ -313,9 +314,12 @@ export function lockIntervalsOf(evs, now = Date.now()) {
   return out;
 }
 // Ausfall eines Vorgangs in der Werkstatt: Übernahme → technische Freigabe/Ablehnung (offen bis jetzt); ohne Übernahme-Zeitstempel keiner
+// Beginn = erste Übernahme (auch vor einem Werkstattwechsel – der setzt workshop_ack_at zurück; 18.10.2026: Ausfall sank dadurch auf 0 h)
+export const FIRST_ACK_SQL = (a) => `COALESCE((SELECT MIN(e.created_at) FROM case_events e WHERE e.case_id=${a}.id AND e.action IN ('acknowledge','start_repair')), ${a}.workshop_ack_at) AS first_ack_at`;
 export function workshopIntervalOf(c, now = Date.now()) {
-  if (!c.workshop_ack_at) return null;
-  const a = Date.parse(c.workshop_ack_at);
+  const ack = c.first_ack_at || c.workshop_ack_at;
+  if (!ack) return null;
+  const a = Date.parse(ack);
   const b = c.status === 'fahrzeug_freigegeben' || c.status === 'abgelehnt' ? (c.closed_at ? Date.parse(c.closed_at) : NaN) : now;
   return Number.isFinite(a) && Number.isFinite(b) && b > a ? [a, b] : null;
 }
@@ -341,7 +345,7 @@ export async function fleetAvailability(env, envName, from, to, vehicles, now = 
   for (const v of vehicles) { const c = Date.parse(v.created_at); const a = Number.isFinite(c) ? Math.max(lo, c) : lo; if (hi > a) vStart.set(v.id, a); }
   if (!vStart.size) return null;
   const loIso = new Date(lo).toISOString(); const hiIso = new Date(hi).toISOString();
-  const cs = (await env.DB.prepare(`SELECT id, vehicle_id, status, workshop_ack_at, closed_at FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
+  const cs = (await env.DB.prepare(`SELECT id, vehicle_id, status, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, closed_at FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
     AND created_at < ? AND (closed_at IS NULL OR closed_at > ? OR status NOT IN ('fahrzeug_freigegeben','abgelehnt'))`).bind(envName, JSON.stringify([...vStart.keys()]), hiIso, loIso).all()).results;
   const evs = cs.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload FROM case_events
     WHERE case_id IN (SELECT value FROM json_each(?)) AND (action IN ('create','set_safety_lock','lift_safety_lock') OR to_status IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY case_id, created_at`)
@@ -376,7 +380,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const vSel = siteSelection([...plates.values()].filter((v) => !v.eval_excluded), query.vsite);
   const vehicle_sites = vSel.options; const vehicle_site = vSel.site;
   const vOk = (vid) => vSel.match((plates.get(vid) || {}).site);
-  const allCases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.duplicate_of, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, c.closed_at FROM cases c
+  const allCases = (await env.DB.prepare(`SELECT c.id, c.vehicle_id, c.priority, c.status, c.duplicate_of, c.workshop_site, c.created_at, c.fleet_received_at, c.workshop_ack_at, ${FIRST_ACK_SQL('c')}, c.closed_at FROM cases c
     JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
     WHERE c.environment=? AND c.created_at >= ? AND c.created_at < ?`).bind(envName, lo, hi).all()).results
     .filter((c) => { const m = berlinDate(c.created_at).slice(0, 7); return m >= from && m <= to && vOk(c.vehicle_id); });
@@ -573,7 +577,7 @@ export async function defectReport(env, user, envName, query = {}) {
       WHERE i.environment=? AND i.created_at >= ?${kf} AND json_extract(j.value,'$.result')='mangel' GROUP BY item, i.vehicle_id`).bind(...args).all(),
     // Vorgänge aus Kontrollen (alle Kontrollarten) im Zeitraum, deren Prüfpunkt am selben Fahrzeug in den 90 Tagen davor repariert und freigegeben wurde
     env.DB.prepare(`SELECT c.check_item AS item, v.site, COUNT(*) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
-      WHERE c.environment=? AND c.created_at >= ? AND c.origin='kontrolle' AND c.check_item IS NOT NULL AND EXISTS (SELECT 1 FROM cases p
+      WHERE c.environment=? AND c.created_at >= ? AND c.origin='kontrolle' AND c.check_item IS NOT NULL AND c.status<>'abgelehnt' AND c.duplicate_of IS NULL AND EXISTS (SELECT 1 FROM cases p
         WHERE p.vehicle_id=c.vehicle_id AND p.environment=c.environment AND p.check_item=c.check_item AND p.id<>c.id AND p.status='fahrzeug_freigegeben'
         AND p.closed_at <= c.created_at AND p.closed_at >= strftime('%Y-%m-%dT%H:%M:%fZ', c.created_at, '-90 days')) GROUP BY c.check_item, v.site`).bind(envName, since).all(),
   ]);

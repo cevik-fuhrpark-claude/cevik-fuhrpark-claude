@@ -22,7 +22,8 @@ export function normPhone(v) {
 }
 
 // Rufnummern-Vergleich nach Ziffern: „0231 123456“, „0231/123456“, „0231-123456“ sind dieselbe Nummer (17.10.2026: viermal angelegt)
-const PK = (x) => [' ', '/', '-', '.', '(', ')'].reduce((a, ch) => `REPLACE(${a},'${ch}','')`, x);
+// „+49 (0)231 …“: die (0) wird international nicht gewählt – gilt als dieselbe Nummer wie „+49 231 …“ (18.10.2026)
+const PK = (x) => [' ', '/', '-', '.', '(', ')'].reduce((a, ch) => `REPLACE(${a},'${ch}','')`, `REPLACE(${x},'(0)','')`);
 const pub = (r) => ({ id: r.id, kind: r.kind, label: r.label, phone: r.phone, note: r.note || null, scope: r.vehicle_id ? 'vehicle' : r.site ? 'site' : 'all', site: r.site || null });
 
 async function activeContacts(env, envName) {

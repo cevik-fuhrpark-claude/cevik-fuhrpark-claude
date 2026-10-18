@@ -10,7 +10,7 @@ import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
-import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth } from './reports.js';
+import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
 import { maintenanceWarnDays } from './settings.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -124,7 +124,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     let reason = null; try { reason = JSON.parse(deact.detail || '{}').reason || null; } catch { reason = null; }
     inactiveInfo = isManager(user) ? { since: deact.created_at, reason, by_name: deact.display_name || null } : { since: deact.created_at };
   }
-  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
+  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
   if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');

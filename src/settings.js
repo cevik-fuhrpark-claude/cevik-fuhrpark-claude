@@ -49,7 +49,9 @@ export function settingValue(key, v) {
   let n;
   try { n = num(v, { min: r.min, max: r.max, grouped: !!r.int }); } catch { throw invalid(key, r); }
   if (r.int && !Number.isInteger(n)) throw invalid(key, r);
-  return String(Math.round(n * 100) / 100); // höchstens 2 Nachkommastellen (Euro, mm)
+  // höchstens 2 Nachkommastellen (Euro, mm) – mehr wird abgewiesen statt gerundet (18.10.2026: „0,004“ € wurde still zu 0 = Grenze aus)
+  if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw invalid(key, r);
+  return String(Math.round(n * 100) / 100);
 }
 
 function invalid(key, r) {

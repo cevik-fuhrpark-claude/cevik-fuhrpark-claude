@@ -95,7 +95,12 @@ function redactInbox(row, names) {
   return { ...m, decision_note: redactText(m.decision_note, n), payload: { ...m.payload, message: redactText(m.payload.message, n), next_action: redactText(m.payload.next_action, n) }, person_redacted: true };
 }
 
-const envParam = (url) => (url.searchParams.get('environment') === 'test' ? 'test' : 'production');
+// Umgebung: test | production (Groß-/Kleinschreibung egal), fehlend = production; anderes → 400 (18.10.2026: „tset“ lieferte still Betriebsdaten)
+const envParam = (url) => {
+  const raw = url.searchParams.get('environment'); if (raw === null || raw.trim() === '') return 'production';
+  const v = raw.trim().toLowerCase(); if (v === 'test' || v === 'production') return v;
+  throw bad('validation', 'environment muss test oder production sein.');
+};
 
 export async function integrationRouter(request, env, ctx, url) {
   const scope = await checkToken(request, env);
@@ -230,8 +235,11 @@ export async function integrationRouter(request, env, ctx, url) {
     // in Akte und Position, 17.10.2026); km nur im Bereich der App-Erfassung (0–5 000 000), sonst blockierte ein Ausreißer alle späteren Stände
     const numOf = (x) => (typeof x === 'number' ? (Number.isFinite(x) ? x : null) : typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x)) ? Number(x) : null);
     const rows = items.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})).map((it) => {
-      const ext = String(it.external_id || '').slice(0, 80);
-      return { it, ext, vin: it.vin ? normalizeVin(it.vin) : null, plate: it.plate ? String(it.plate).trim().toUpperCase().slice(0, 20) : null };
+      // Kennungen nur als Text/Zahl (18.10.2026: Objekte wurden als „[object Object]“ gespeichert), Geräte-ID gekürzt wie bei der Bestätigung
+      const txt = (x) => (typeof x === 'string' ? x.trim() : typeof x === 'number' && Number.isFinite(x) ? String(x) : x === undefined || x === null ? '' : null);
+      const e0 = txt(it.external_id); const v0 = txt(it.vin); const p0 = txt(it.plate);
+      if (e0 === null || v0 === null || p0 === null) return { it, ext: '', vin: null, plate: null };
+      return { it, ext: e0.slice(0, 80), vin: v0 ? normalizeVin(v0) : null, plate: p0 ? p0.toUpperCase().slice(0, 20) : null };
     });
     const J = (a) => JSON.stringify([...new Set(a.filter(Boolean))]);
     const [maps, byVin, plates, latest] = await Promise.all([
@@ -274,7 +282,7 @@ export async function integrationRouter(request, env, ctx, url) {
       if (gps) lastGps.set(vehicleId, gps);
       const km = numOf(it.km) !== null && numOf(it.km) >= 0 && numOf(it.km) <= 5000000 ? numOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
-        speed: numOf(it.speed), ign: ignOf(it.ignition) });
+        speed: numOf(it.speed) !== null && numOf(it.speed) >= 0 ? numOf(it.speed) : null, ign: ignOf(it.ignition) });
       if (km !== null && gps) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)

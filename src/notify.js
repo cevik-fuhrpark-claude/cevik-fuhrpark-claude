@@ -12,7 +12,7 @@ const T = {
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', rejected: 'Meldung abgelehnt',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
-    safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit',
+    safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit',
     agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben', reassigned_away: 'Auftrag an andere Werkstatt übergeben', inspection_defect: 'Prüfung mit gefährlichen Mängeln', fine: 'Neues Schreiben einer Behörde', test: 'Testbenachrichtigung', test_body: 'Push funktioniert auf diesem Gerät.',
     new_login: 'Neue Anmeldung auf einem anderen Gerät', new_login_body: '{d} · {t}. Waren Sie das nicht? Mehr → Mein Konto: unter „Meine Anmeldungen (Geräte)“ das Gerät abmelden und das Passwort ändern.', unknown_device: 'Unbekanntes Gerät',
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
@@ -22,7 +22,7 @@ const T = {
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', rejected: 'Повідомлення відхилено',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
-    safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)',
+    safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)',
     agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено', reassigned_away: 'Замовлення передано іншій майстерні', inspection_defect: 'Огляд із небезпечними дефектами', fine: 'Новий лист від органу влади', test: 'Тестове сповіщення', test_body: 'Push працює на цьому пристрої.',
     new_login: 'Новий вхід на іншому пристрої', new_login_body: '{d} · {t}. Це були не ви? Ще → Мій акаунт: у «Мої входи (пристрої)» вийдіть на цьому пристрої та змініть пароль.', unknown_device: 'Невідомий пристрій',
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
@@ -32,7 +32,7 @@ const T = {
     priority_changed: 'Priority changed', approved: 'New workshop order', rejected: 'Report rejected',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
-    safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', comment: 'New comment', open_item_safety: 'Safety-relevant open item',
+    safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', open_item_safety: 'Safety-relevant open item',
     agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved', reassigned_away: 'Order handed over to another workshop', inspection_defect: 'Inspection with dangerous defects', fine: 'New letter from an authority', test: 'Test notification', test_body: 'Push works on this device.',
     new_login: 'New sign-in on another device', new_login_body: '{d} · {t}. Not you? More → My account: under “My sign-ins (devices)” sign out that device and change your password.', unknown_device: 'Unknown device',
     res_gefaehrliche_maengel: 'dangerous defects', res_verkehrsunsicher: 'unroadworthy', do_not_plan: 'do not schedule',
@@ -140,7 +140,9 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
   const add = (rows) => { for (const r of rows) if (!list.find((x) => x.id === r.id)) list.push(r); };
   const site = c.workshop_site || c.suggested_workshop_site;
   const oldSite = kind === 'reassigned' && ctxData.previous?.workshop_site !== site ? ctxData.previous?.workshop_site : null;
-  const pool = await candidateUsers(env, c, site, ['released', 'safety_lock', 'safety_lock_lifted'].includes(kind) || (kind === 'created' && !!c.safety_lock), oldSite);
+  // Interner Auftrag (Herkunft „wartung“) mit Sperre: bei der Freigabe erfahren Disposition und Fahrer die Sperre (es gab kein „created“)
+  const internalLock = kind === 'approved' && c.origin === 'wartung' && !!c.safety_lock && ctxData.previous?.status === 'gemeldet';
+  const pool = await candidateUsers(env, c, site, ['released', 'safety_lock', 'safety_lock_lifted'].includes(kind) || (kind === 'created' && !!c.safety_lock) || internalLock, oldSite);
   const pick = (u, extra = {}) => ({ id: u.id, language: u.language, role: u.role, ...extra });
   // Melder nur in derselben Umgebung (nach einem Umgebungswechsel kamen sonst Hinweise/Pushs aus der alten Umgebung, unsichtbar in der Liste – 17.10.2026)
   const reporter = pool.filter((u) => u.is_reporter && u.qualified).map((u) => pick(u));
@@ -160,6 +162,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'approved': case 'rework':
       add(workshopUsers);
       if (kind === 'approved') add(reporter);
+      if (internalLock) { add(usersByRole(['dispatch']).map((u) => ({ ...u, kind: 'safety_lock' }))); add(assignedDrivers().map((u) => ({ ...u, kind: 'safety_lock' }))); }
       break;
     case 'acknowledged': case 'started': case 'waiting_parts': case 'resumed': case 'quality_check': case 'open_item_safety':
       add(usersByRole(['fleet', 'owner']));
@@ -180,6 +183,9 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(usersByRole(['dispatch', 'fleet', 'owner'])); add(workshopUsers);
       add(assignedDrivers());
+      // Freigabe/Aufhebung, während ein weiterer offener Vorgang das Fahrzeug bzw. das Gespann sperrt (18.10.2026: Fahrer bekam
+      // „Fahrzeug technisch freigegeben“, obwohl es gesperrt blieb) – alle erhalten stattdessen „bleibt gesperrt“ (dringend)
+      if (kind !== 'safety_lock' && ctxData.still_locked) for (let i = 0; i < list.length; i++) list[i] = { ...list[i], kind: 'still_locked' };
       break;
     case 'comment': {
       // Optional gezielt: payload.notify ⊆ ['reporter','fleet','workshop'] (Standard: alle Beteiligten)
@@ -192,7 +198,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     }
   }
   const actorId = ctxData.actor?.id;
-  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') ? false : urgent }; // Kostenhinweise nie dringend
+  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
 }
 
 // Hinweise anlegen (doppelte Ereignisse je Person werden ignoriert) und die tatsächlich neuen zurückgeben.
@@ -392,27 +398,37 @@ export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
   const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ? AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND n.push_hold_until IS NULL AND n.created_at < ?))
+    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ?1 AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND ((n.push_hold_until IS NULL AND n.created_at < ?2) OR n.push_hold_until < ?3)))
     ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
-    // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt
-    .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString()).all()).results;
+    // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt;
+    // ebenso eine vor > 5 Min. beanspruchte Ruhezeit-Freigabe, deren Zustellung abbrach (18.10.2026: blieb sonst für immer „pending“)
+    .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString(), QUIET_CLAIM_PREFIX + new Date(now - 5 * 60000).toISOString()).all()).results;
   await deliverPush(env, rows.map(forDelivery));
   return rows.length;
 }
 
 // Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
-const QUIET_CLAIMED = '0000-01-01T00:00:00.000Z';
+// Beanspruchte Zeilen tragen „0000|<Zeitpunkt>“ (sortiert vor jeder echten Zeit); ältere Fassung schrieb „0000-01-01…“ (gilt als alt beansprucht)
+const QUIET_CLAIM_PREFIX = '0000|';
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now(), userId = null) {
   const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ? AND (?3 IS NULL OR n.user_id=?3)
+    WHERE n.push_status='pending' AND n.push_hold_until >= '0001' AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ? AND (?3 IS NULL OR n.user_id=?3)
     ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString(), userId).all()).results;
   if (!rows.length) return 0;
   // Zeilen vor dem Senden atomar beanspruchen (18.10.2026: Ruhezeit ausgeschaltet + Cron gleichzeitig → zwei Pushs je Hinweis);
-  // beansprucht = Haltezeit auf einen festen Wert vor jeder echten Zeit, nur die selbst beanspruchten werden gesendet
+  // nur echte Haltezeiten (≥ „0001“) sind beanspruchbar, nur die selbst beanspruchten werden gesendet
+  const marker = QUIET_CLAIM_PREFIX + new Date(now).toISOString();
   const claimed = new Set((await env.DB.prepare(`UPDATE notifications SET push_hold_until=?1 WHERE id IN (SELECT value FROM json_each(?2)) AND push_status='pending'
-    AND push_hold_until > ?1 RETURNING id`).bind(QUIET_CLAIMED, JSON.stringify(rows.map((r) => r.id))).all()).results.map((r) => r.id));
+    AND push_hold_until >= '0001' RETURNING id`).bind(marker, JSON.stringify(rows.map((r) => r.id))).all()).results.map((r) => r.id));
   const mine = rows.filter((r) => claimed.has(r.id));
-  if (mine.length) await deliverPush(env, mine.map(forDelivery), { collapse: true });
+  if (!mine.length) return 0;
+  try {
+    await deliverPush(env, mine.map(forDelivery), { collapse: true });
+  } finally {
+    // Was die Zustellung nicht erledigt hat (Sendegrenze je Aufruf → verschoben), geht an die normale Wiederholung (Haltezeit leer)
+    await env.DB.prepare(`UPDATE notifications SET push_hold_until=NULL WHERE id IN (SELECT value FROM json_each(?1)) AND push_status='pending' AND push_hold_until=?2`)
+      .bind(JSON.stringify(mine.map((r) => r.id)), marker).run();
+  }
   return mine.length;
 }

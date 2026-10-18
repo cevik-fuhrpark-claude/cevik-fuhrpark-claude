@@ -1500,7 +1500,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
   eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
   // Neue Server-Texte fallen auf: jeder feste validation-Text ist übersetzt oder bewusst technisch (Integration/API)
-  const TECH = new Set(['request_key doppelt.', 'provider muss webfleet oder yellowfox sein.', 'items[] erforderlich.', 'driver_id oder vehicle_id angeben.', 'Ungültiger Push-Endpunkt.', 'Max. 500 Einträge je Aufruf.']);
+  const TECH = new Set(['request_key doppelt.', 'provider muss webfleet oder yellowfox sein.', 'items[] erforderlich.', 'driver_id oder vehicle_id angeben.', 'Ungültiger Push-Endpunkt.', 'Max. 500 Einträge je Aufruf.', 'environment muss test oder production sein.']);
   const lits = [...src.matchAll(/bad\('validation', '([^']+)'\)/g)].map((m) => m[1]);
   ok(lits.length >= 100, 'Server-Texte gefunden');
   for (const l of new Set(lits)) ok(TECH.has(l) || (tv('uk', l) && tv('en', l)), `validation-Text ohne Übersetzung (in V_MORE ergänzen oder TECH): ${l}`);
@@ -6080,7 +6080,7 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
   console.log('     Auftrag aus Prüftermin/Prüfung max. ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').map((w) => w.n)) + ' / ' + Math.max(...QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/events/:id/order').map((w) => w.n)) + ' Abfragen');
   ok(c.case.description.includes('Mängel aus UVV vom') && c.case.description.includes('verkehrsunsicher') && c.case.description.includes('UVV-Protokoll 4712') && c.case.description.includes('Bremsleitung'), 'Beschreibung mit Herkunft/Nachweis');
   eq(c.maintenance_event?.id, evBad.id, 'Vorgang zeigt Prüfung');
-  eq(c.case.safety_lock, 1, 'verkehrsunsicher → gesperrt'); eq(c.case.safety_lock_reason, 'Meldung Fuhrparkleitung: nicht fahrbereit (ungeprüft)', 'Sperrgrund nennt die Rolle');
+  eq(c.case.safety_lock, 1, 'verkehrsunsicher → gesperrt'); eq(c.case.safety_lock_reason, 'Auftrag Fuhrparkleitung: nicht fahrbereit', 'Sperrgrund nennt die Rolle, ohne „(ungeprüft)“ (Auftrag der Leitung)');
   ok(!c.maintenance_rule, 'kein Prüftermin-Auftrag (Prüfung selbst ist erledigt)');
   const dup = await users.fleet.post(`/api/maintenance/events/${evBad.id}/order`, { workshop_site: 'DORTMUND' });
   eq(dup.status, 409); eq(dup.data.error, 'order_exists');
@@ -6828,7 +6828,7 @@ await test('Empfängerermittlung: eine D1-Abfrage je Ereignis, gleiches Ergebnis
     const ws = site ? await byRole(c.environment, ['workshop'], 'AND workshop_site=?', [site]) : [];
     const lead = await byRole(c.environment, ['fleet', 'owner']); const dispo = await byRole(c.environment, ['dispatch']);
     const drv = (await db.prepare(`SELECT u.id FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=? AND u.role='driver' AND u.id<>?`).bind(c.vehicle_id, new Date().toISOString(), c.environment, c.reporter_id).all()).results.map((r) => r.id);
-    const urgent = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
+    const urgent = c.priority === 'kritisch' || (c.reported_driveability === 'nicht_fahrbereit' && !c.priority_reviewed) || !!c.safety_lock;
     // Gespann (17.10.2026): Sperre/Freigabe erreicht auch Fahrer des fest gekoppelten Fahrzeugs (Regel wie „Mein Fahrzeug“)
     const np = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
     const vs = (await db.prepare('SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1').all()).results; const cv = vs.find((x) => x.id === c.vehicle_id);
@@ -11615,10 +11615,83 @@ await test('Fehlersuche 18.10. (6): Bußgeld (Nummer erst nach Prüfung, Jahr vo
     w.e.pushLog.length = 0; addRandomLatency(w.e, 6);
     // Ruhezeit ausschalten (gibt sofort frei) und gleichzeitig Cron-Läufe
     const db0 = w.e.DB; const p0 = db0.prepare; let started = null;
-    db0.prepare = (q) => { if (!started && /push_hold_until IS NOT NULL AND n.push_hold_until <= \?/.test(q)) { started = true; started = Promise.all([retryFailedPush(w.e), releaseQuietPush(w.e)]); } return p0(q); };
-    eq((await w.U.fleet.put('/api/me/notify-prefs', { quiet: null })).status, 200); await started; db0.prepare = p0;
+    db0.prepare = (q) => { if (!started && /n.push_hold_until >= '0001' AND n.push_hold_until <= \?/.test(q)) { started = true; started = Promise.all([retryFailedPush(w.e), releaseQuietPush(w.e)]); } return p0(q); };
+    eq((await w.U.fleet.put('/api/me/notify-prefs', { quiet: null })).status, 200); ok(started, 'Wettlauf ausgelöst (Abfragetext der Freigabe)'); await started; db0.prepare = p0;
     eq(w.e.pushLog.filter((x) => x.url.includes('/ok/q' + i)).length, 1, 'ein Push, Lauf ' + i);
   }
+});
+await test('Fehlersuche 18.10. (7): Freigabe bei weiterer Sperre („bleibt gesperrt“), Ruhezeit-Freigabe über der Sendegrenze, interne Aufträge (ein Push, kein „ungeprüft“, Winterreifen ohne Sperre), Aufheben = Bewertung, Ausfallzeit nach Werkstattwechsel, Tausenderkomma, Einstellungen > 2 Stellen, Integration environment/Kennungen, Rufnummer (0), Unfallwort UK, Mängelstatistik ohne abgelehnte, Zeitraum bis 2000', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const inv = async (b) => { const x = await U.own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const dispo = await inv({ username: 'w.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const fleet2 = await inv({ username: 'w.fuhrpark2', display_name: 'Leitung 2', role: 'fleet', environment: 'test' });
+  // 1. Sperre aufheben, während ein weiterer Vorgang sperrt → „bleibt gesperrt“ (dringend), danach normal
+  const a = await newCase({ driveability: 'nicht_fahrbereit' }); const b = await newCase({ priority: 'kritisch', description: 'Bremse zieht' });
+  const last = (uid, cid) => db.prepare('SELECT kind, urgent FROM notifications WHERE user_id=? AND case_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(uid, cid);
+  eq((await cmd(U.fleet, a, 'lift_safety_lock', { confirm: true }, 'fahrbereit laut Werkstatt')).status, 200);
+  eq(JSON.stringify(last(U.driver.id, a)), JSON.stringify({ kind: 'still_locked', urgent: 1 }), 'Melder: bleibt gesperrt');
+  eq(db.prepare('SELECT priority_reviewed FROM cases WHERE id=?').get(a).priority_reviewed, 1, 'Aufheben ist Bewertung');
+  eq((await cmd(U.fleet, b, 'lift_safety_lock', { confirm: true }, 'geprüft')).status, 200);
+  eq(last(U.driver.id, b).kind, 'safety_lock_lifted', 'keine weitere Sperre → Sperre aufgehoben');
+  const { localizedTitle } = await import('../src/notify.js');
+  eq(localizedTitle({ kind: 'still_locked', case_id: 'x', title: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)' }, 'en'), 'Vehicle remains locked (another open case)');
+  // 2. Interner Auftrag „kritisch“ aus Prüftermin: Werkstatt nur „Neuer Werkstattauftrag“, Dispo erfährt die Sperre, Grund ohne „(ungeprüft)“
+  const rule = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: '2026-01-15', interval_months: 12, evidence: 'UVV-Protokoll (Test)' }); eq(rule.status, 201);
+  const o = await U.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', priority: 'kritisch', request_key: rk() }); eq(o.status, 201);
+  eq(db.prepare('SELECT group_concat(kind) k FROM notifications WHERE user_id=? AND case_id=?').get(U.ws.id, o.data.id).k, 'approved', 'Werkstatt: ein Hinweis');
+  eq(db.prepare('SELECT group_concat(kind) k FROM notifications WHERE user_id=? AND case_id=?').get(dispo.id, o.data.id).k, 'safety_lock', 'Dispo: Sperre');
+  eq(db.prepare('SELECT safety_lock_reason r FROM cases WHERE id=?').get(o.data.id).r, 'Auftrag Fuhrparkleitung: sicherheitskritisch');
+  // Winterreifen-Auftrag „kritisch“ (nur API): keine Sperre
+  const w = await U.fleet.post(`/api/vehicles/VIN:WDB9630051L917317/tires/winter-order`, { workshop_site: 'DORTMUND', priority: 'kritisch', request_key: rk() });
+  eq(w.status, 201, 'Winterauftrag ' + JSON.stringify(w.data)); eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(w.data.id).safety_lock, 0, 'Winterreifen ohne Sperre');
+  // 3. Ruhezeit-Freigabe mit Sendegrenze 1: der verschobene Hinweis wird vom Cron nachgeholt (blieb vorher für immer „pending“)
+  const { releaseQuietPush, retryFailedPush } = await import('../src/notify.js');
+  const keyOf = async () => { const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']); return { p256dh: Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url'), auth: Buffer.alloc(16, 3).toString('base64url') }; };
+  const hm = (ms) => new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ms));
+  for (const [c, t] of [[U.fleet, 'qa'], [fleet2, 'qb']]) {
+    eq((await c.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/' + t, keys: await keyOf() })).status, 200);
+    eq((await c.put('/api/me/notify-prefs', { quiet: { from: hm(Date.now() - 3600e3), to: hm(Date.now() + 2 * 3600e3) } })).status, 200);
+  }
+  e.pushLog.length = 0; await newCase({ description: 'Spiegel locker' });
+  const later = Date.now() + 3 * 3600e3; e.__pushMaxSends = 1;
+  try { await releaseQuietPush(e, later); } finally { e.__pushMaxSends = undefined; }
+  e.__nowMs = later + 600e3; try { await retryFailedPush(e); } finally { e.__nowMs = undefined; }
+  eq(['qa', 'qb'].map((t) => e.pushLog.filter((x) => x.url.endsWith('/' + t)).length).join(), '1,1', 'beide Leitungskonten je ein Push');
+  // 4. Ausfallzeit beginnt mit der ersten Übernahme, auch nach Werkstattwechsel
+  const { workshopIntervalOf } = await import('../src/reports.js');
+  eq(JSON.stringify(workshopIntervalOf({ first_ack_at: '2026-10-01T00:00:00Z', workshop_ack_at: null, status: 'in_reparatur' }, Date.parse('2026-10-02T00:00:00Z'))), JSON.stringify([Date.parse('2026-10-01T00:00:00Z'), Date.parse('2026-10-02T00:00:00Z')]));
+  const rc = await newCase({ description: 'Getriebe' }); eq((await cmd(U.fleet, rc, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200); eq((await cmd(U.ws, rc, 'acknowledge')).status, 200);
+  const ack = new Date(Date.now() - 2 * 86400e3).toISOString(); db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='acknowledge'`).run(ack, rc); db.prepare('UPDATE cases SET workshop_ack_at=? WHERE id=?').run(ack, rc);
+  eq((await cmd(U.fleet, rc, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  const ak = (await U.fleet.get(`/api/vehicles/${V1}`)).data; ok(ak.downtime && ak.downtime.total_h >= 47, 'Akte: Ausfall bleibt nach Wechsel ' + JSON.stringify(ak.downtime && ak.downtime.total_h));
+  // 5. Zahlen: englisches Tausenderkomma mehrdeutig, Einstellungen höchstens 2 Nachkommastellen
+  const { num } = await import('../src/util.js');
+  for (const x of ['15,000', '1,000', '120,500', '1,000,000']) { let err = null; try { num(x, { grouped: true }); } catch (er) { err = er; } ok(err && /mehrdeutig/.test(err.message), x); }
+  eq(num('0,500'), 0.5); eq(num('2,5'), 2.5); eq(num('1,25'), 1.25);
+  for (const [k, v] of [['maintenance_warn_km', '15,000'], ['repair_cost_limit_net', '1,000'], ['repair_cost_limit_net', '0,004'], ['repair_cost_limit_net', '12,345']]) eq((await U.own.put('/api/settings', { [k]: v })).status, 400, `${k}=${v}`);
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '12,34' })).status, 200);
+  // 6. Integration: environment streng, Geräte-ID gekürzt, Kennungen nur Text/Zahl, Geschwindigkeit ≥ 0
+  const anon = new Client(worker, e, 'anon3'); const H = { authorization: 'Bearer integration-token-xyz' };
+  eq((await anon.req('GET', '/api/integration/v1/availability?environment=tset', undefined, H)).status, 400);
+  eq((await anon.req('GET', '/api/integration/v1/availability?environment=TEST', undefined, H)).status, 200);
+  const tr = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'YF-7 ', plate: 'XX-1' }, { external_id: { a: 1 } }, { external_id: 'YF-8', vin: ['x'] }, { external_id: 'YF-9', vin: 'WMA15SZZ2HM722774', speed: '-80', gps_time: new Date().toISOString() }] }, H);
+  eq(tr.status, 200); eq(tr.data.rejected, 2, 'Objekt/Liste abgewiesen');
+  ok(db.prepare(`SELECT 1 FROM telematics_unmatched WHERE external_id='YF-7'`).get(), 'Geräte-ID gekürzt');
+  eq(db.prepare(`SELECT speed FROM telematics_latest WHERE external_id='YF-9'`).get().speed, null, 'negative Geschwindigkeit nicht übernommen');
+  eq((await U.fleet.post('/api/telematics/mappings', { provider: 'yellowfox', external_id: ' YF-7', vehicle_id: V1, evidence: 'Geräteliste' })).status, 201);
+  eq(db.prepare(`SELECT COUNT(*) n FROM telematics_unmatched WHERE external_id='YF-7'`).get().n, 0, 'bestätigt → kein Prüffall');
+  // 7. Rufnummer „+49 (0)…“: gleiche Nummer wie ohne (0), Anruf-Link ohne 0
+  eq((await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo', phone: '+49 (0)231 123456' })).status, 201);
+  eq((await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 2', phone: '+49 231 123456' })).status, 409, 'Dublette');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const telHref = new Function('return ' + app.match(/const telHref = (\(p\) => [^\n]+);/)[1])();
+  eq(telHref('+49 (0)231 123456'), 'tel:+49231123456'); eq(telHref('(0231) 456-7'), 'tel:02314567');
+  ok(/e\.vehicle_id && !vs\.some\(\(v\) => v\.id === e\.vehicle_id\)/.test(app), 'Notfall-Formular behält außer Betrieb genommenes Fahrzeug');
+  // 8. Datenqualität: „аварійна сигналізація“ ist kein Unfall; Zeitraum nur „Bis 2000-06“
+  const ua = await newCase({ description: 'Не працює аварійна сигналізація' }); const ub = await newCase({ description: 'Аварія на парковці' });
+  const dq = (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim').map((i) => i.case_id);
+  ok(!dq.includes(ua) && dq.includes(ub), 'Unfallwort UK nur als Substantiv');
+  for (const p of ['costs', 'kpi']) eq((await U.fleet.get(`/api/reports/${p}?to=2000-06`)).status, 200, p);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

@@ -2435,7 +2435,8 @@ async function viewScan(id) {
 }
 
 // ---------- Panne & Notfall: Rufnummern für unterwegs (vom Betrieb eingetragen; fest nur Notruf 112) ----------
-const telHref = (p) => 'tel:' + String(p).replace(/[^\d+]/g, '');
+// „+49 (0)231 …“ → tel:+49231… (die (0) wird international nicht gewählt; vorher wählte der Link +490231…, 18.10.2026)
+const telHref = (p) => 'tel:' + String(p).trim().replace(/^(\+[\d\s]*?)\s*\(0\)/, '$1').replace(/[^\d+]/g, '');
 const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle')) : c.scope === 'site' ? `${t('site')}: ${c.site}` : t('em_scope_all'));
 function emRows(list) {
   return `<div class="list">${list.map((c) => `<div class="row emrow"><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
@@ -2474,7 +2475,7 @@ async function viewEmergencyEdit() {
     <label>${esc(t('em_note'))}</label><input name="note" maxlength="200" value="${esc(e.note || '')}">
     <label>${esc(t('em_scope'))}</label><select name="scope" id="emscope">${['all', 'site', 'vehicle'].map((k) => opt(k, e.scope, t('em_scope_' + k))).join('')}</select>
     <div id="emsite"${e.scope === 'site' ? '' : ' hidden'}><label>${esc(t('site'))}</label><select name="site">${[...new Set([...sites, ...(e.site ? [e.site] : [])])].map((x) => opt(x, e.site, x)).join('')}</select></div>
-    <div id="emveh"${e.scope === 'vehicle' ? '' : ' hidden'}><label>${esc(t('vehicle'))}</label><select name="vehicle_id">${vs.slice().sort((a, b) => a.plate.localeCompare(b.plate, 'de')).map((v) => opt(v.id, e.vehicle_id, v.plate)).join('')}</select></div>
+    <div id="emveh"${e.scope === 'vehicle' ? '' : ' hidden'}><label>${esc(t('vehicle'))}</label><select name="vehicle_id">${vs.slice().sort((a, b) => a.plate.localeCompare(b.plate, 'de')).map((v) => opt(v.id, e.vehicle_id, v.plate)).join('')}${e.vehicle_id && !vs.some((v) => v.id === e.vehicle_id) ? opt(e.vehicle_id, e.vehicle_id, e.plate || e.vehicle_id) : ''}</select></div>
     <div class="actions"><button class="btn">${esc(t('save'))}</button>${edit ? `<button type="button" class="btn secondary" id="emcancel">${esc(t('cancel'))}</button>` : ''}</div></form></section>`;
   const rows = d.contacts.map((c) => `<div class="row emman"><span class="title"><b>${esc(c.label)}</b> · <a class="emphone" href="${esc(telHref(c.phone))}">${esc(c.phone)}</a> <span class="chip">${esc(t('em_kind_' + c.kind))}</span><br><span class="small">${esc(t('em_scope'))}: ${esc(emScope(c))}${c.note ? ' · ' + esc(c.note) : ''}</span><br><span class="small muted">${showArch ? `${esc(t('em_archived_at'))} ${fmtDT(c.archived_at)} · ${esc(c.archived_by_name || '')}` : `${fmtDT(c.updated_at)} · ${esc(c.changed_by_name || '')}`}</span></span>${showArch ? '' : `<span class="actions" style="margin:0"><button type="button" class="btn secondary" data-emedit="${esc(c.id)}">${esc(t('em_edit'))}</button><button type="button" class="btn secondary" data-emarch="${esc(c.id)}">${esc(t('em_archive'))}</button></span>`}</div>`).join('');
   render(`<p class="noprint"><a href="#/emergency">‹ ${esc(t('back'))}</a></p><h1>${esc(t('em_manage'))}</h1><p class="small muted">${esc(t('em_manage_hint'))}</p>

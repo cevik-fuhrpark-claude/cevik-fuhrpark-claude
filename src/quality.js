@@ -4,7 +4,8 @@ import { forbidden, nowIso, berlinDate, berlinDateTime, berlinDaySql, normPlate,
 
 // Unfall-Wortstämme auf Ukrainisch: lower() wirkt in SQLite/D1 nur auf A–Z – daher alle Schreibweisen (klein, GROSS, Anfang groß)
 // einzeln suchen („АВАРІЯ“, „Дтп“ wurden vorher nicht erkannt). Deutsch/Englisch genügt lower().
-const ACC_CYR = [...new Set(['аварі', 'дтп'].flatMap(caseVariants))];
+// nur Formen des Substantivs „аварія“ – „аварійн…“ (Warnblinkanlage, Notschalter) ist kein Unfall (18.10.2026)
+const ACC_CYR = [...new Set(['аварія', 'аварії', 'аварію', 'аварією', 'дтп'].flatMap(caseVariants))];
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 import { spRequired } from './inspection_rules.js';

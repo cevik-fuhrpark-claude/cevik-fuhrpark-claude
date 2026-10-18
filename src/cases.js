@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam } from './util.js';
+import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -359,6 +359,17 @@ export function warrantyDate(v) {
 // Kein Statuswechsel, keine Sperre – die Werkstatt sieht „Kostenfreigabe ausstehend“ (ohne Beträge).
 // Kontrolle nach Reparatur: jüngste überhaupt (latest) und ob sie nach der letzten Rückgabe zur Nacharbeit erfasst wurde (current).
 // Nach „Nacharbeit“ wurde erneut am Fahrzeug gearbeitet – die alte Kontrolle belegt diesen Stand nicht mehr.
+// Weiterer offener, gesperrter Vorgang am Fahrzeug oder am fest gekoppelten Gespann (Kopplung laut Stammliste) – Vorgangsnummer oder null
+async function otherLockCaseNo(env, c) {
+  const PK = PLATE_KEY_SQL;
+  const r = await env.DB.prepare(`SELECT x.case_no FROM cases x WHERE x.environment=?1 AND x.id<>?2 AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+    AND (x.vehicle_id=?3 OR x.vehicle_id IN (SELECT o.id FROM vehicles o JOIN vehicles v ON v.id=?3 WHERE o.active=1 AND o.id<>v.id AND (
+      (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
+      OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))))
+    ORDER BY x.created_at LIMIT 1`).bind(c.environment, c.id, c.vehicle_id).first();
+  return r ? r.case_no : null;
+}
+
 async function repairInspection(env, caseId) {
   const r = await env.DB.prepare(`SELECT
       (SELECT MAX(created_at) FROM inspections WHERE case_id=?1 AND kind='nach_reparatur') AS latest,
@@ -722,12 +733,15 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   const now = nowIso();
   const rows = []; const events = [];
   fresh.forEach(([i, x], n) => {
-    const safetyLock = x.reportedPriority === 'kritisch' || x.driveability === 'nicht_fahrbereit' ? 1 : 0;
+    // Winterreifen-Auftrag: Information, nie Sperre (auch nicht mit Priorität „kritisch“ über die API – 18.10.2026)
+    const safetyLock = !internal.tire_order && (x.reportedPriority === 'kritisch' || x.driveability === 'nicht_fahrbereit') ? 1 : 0;
     const caseNo = `${envName === 'test' ? 'T' : 'S'}-${year}-${String(counter.last_no - k + 1 + n).padStart(4, '0')}`;
     const id = uuid();
     // Text nennt die meldende Rolle zutreffend (vorher stand auch bei Meldungen der Leitung/Werkstatt „Fahrer meldet“)
     const by = user.role === 'driver' ? 'Fahrer meldet' : `Meldung ${ROLE_DE[user.role] || ''}`.trim();
-    const lockReason = safetyLock ? (x.driveability === 'nicht_fahrbereit' ? `${by}: nicht fahrbereit (ungeprüft)` : `${by}: sicherheitskritisch (ungeprüft)`) : null;
+    // Auftrag der Leitung aus Prüftermin/Prüfmangel ist bereits fachlich bewertet – kein „(ungeprüft)“ (18.10.2026)
+    const by2 = internal.origin === 'wartung' ? `Auftrag ${ROLE_DE[user.role] || ''}`.trim() : by; const unchecked = internal.origin === 'wartung' ? '' : ' (ungeprüft)';
+    const lockReason = safetyLock ? (x.driveability === 'nicht_fahrbereit' ? `${by2}: nicht fahrbereit${unchecked}` : `${by2}: sicherheitskritisch${unchecked}`) : null;
     rows.push({ id, case_no: caseNo, vehicle_id: x.vehicleId, reporter_name_note: x.reporterNote, description: x.description, location_note: x.location,
       priority: x.reportedPriority, driveability: x.driveability, safety_lock: safetyLock, lock_reason: lockReason, site: x.suggested, origin: x.origin,
       parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash,
@@ -773,7 +787,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   const created = (await env.DB.prepare('SELECT * FROM cases WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(rows.map((r) => r.id))).all()).results;
   const order = new Map(rows.map((r, n) => [r.id, n]));
   created.sort((a, b) => order.get(a.id) - order.get(b.id));
-  await notifyCasesCreated(env, ctx, created, { actor: user, vehicles });
+  // Interne Aufträge (Herkunft „wartung“) werden sofort freigegeben – die Freigabe benachrichtigt; vorher bekam die Werkstatt zusätzlich
+  // „KRITISCH: neue Meldung (ungeprüft)“ (zwei dringende Pushs je Auftrag, 18.10.2026)
+  if (internal.origin !== 'wartung') await notifyCasesCreated(env, ctx, created, { actor: user, vehicles });
   return results;
 }
 
@@ -842,6 +858,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const safetyOpen = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (safetyOpen.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
       set.safety_lock = 0; set.safety_lock_reason = null;
+      // begründete Aufhebung ist eine Bewertung: „nicht fahrbereit“ laut Melder macht spätere Hinweise nicht mehr dringend (18.10.2026)
+      set.priority_reviewed = 1;
       notifyKind = 'safety_lock_lifted';
       break;
     }
@@ -1112,7 +1130,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   // Kennzeichen gleich mitladen: spart der Benachrichtigung eine eigene Abfrage
   const updated = await env.DB.prepare('SELECT c.*, v.plate AS v_plate FROM cases c LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?').bind(c.id).first();
   const vPlate = updated.v_plate; delete updated.v_plate;
-  if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate } });
+  // Freigabe/Aufhebung: sperrt ein weiterer offener Vorgang das Fahrzeug oder das fest gekoppelte Gespann, keine „freigegeben“-Meldung
+  const still_locked = ['released', 'safety_lock_lifted'].includes(notifyKind) ? await otherLockCaseNo(env, updated) : null;
+  if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked });
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
   return { ok: true, version: newVersion, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}) };
 }
