@@ -12484,7 +12484,7 @@ await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenz
   eq(row.oldest_age_days, 91, 'Kalendertage'); eq(row.stale, true, 'älter als 90 Tage');
 });
 
-await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag gleicher Nummer, ruhende Fahrzeuge gekennzeichnet (CSV), Vertragsdokument nur aus der eigenen Umgebung', async () => {
+await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag gleicher Nummer, ruhende Fahrzeuge gekennzeichnet (CSV), Vertragsdokument nur aus der eigenen Umgebung; Protokoll-Ausdruck mit Hinweis auf ältere Einträge', async () => {
   const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const own = U.own;
   const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
   const a = await own.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Allianz', contract_no: 'P-1', start_date: '2024-01-01', end_date: '2025-01-01', evidence: 'Police 2024' }); eq(a.status, 201);
@@ -12508,6 +12508,8 @@ await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag 
   const inProd = (await own.get('/api/contracts?filter=alle')).data.contracts.find((x) => x.id === c.data.id);
   eq(inProd.file_id, null, 'Betrieb: nicht verknüpft'); eq(inProd.file_other_env, true);
   ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').some((l) => l.includes(';MietCo;') && l.endsWith(';nein;nein')), 'CSV Betrieb: nein');
+  // Protokoll-Ausdruck nennt weitere ältere Einträge (Knopf „Weitere laden“ wird nicht gedruckt)
+  ok(/id="amore">[^`]*<p class="print-only small" id="aumorep">\$\{esc\(t\('audit_more_print'\)\)\}/.test((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Druckhinweis Protokoll');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
