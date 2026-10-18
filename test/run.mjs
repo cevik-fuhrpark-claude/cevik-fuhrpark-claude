@@ -10483,9 +10483,13 @@ await test('Wettläufe und Importe: Vertragsimport parallel ohne Dubletten, Spal
   }
   // 3. km: gleichzeitig 100 000 (Fahrer) und 90 000 (Werkstatt) ohne Begründung → nur einer; Doppelklick → eine Zeile
   const [k1, k2] = await Promise.all([U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100000 }), U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 90000 })]);
-  eq([k1.status, k2.status].sort().join(), '201,409', 'zweite abgewiesen');
+  // Reihenfolge ist zufällig: kommt 90 000 zuerst an, ist 100 000 danach ein gültiger Anstieg (beide 201).
+  // Geprüft wird die Eigenschaft: gespeicherte Stände steigen in Messreihenfolge, nie ein unbegründeter Rücksprung.
   const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
-  eq(db.prepare('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=?').get(vid).n, 1, 'kein unbegründeter Rücksprung');
+  const kmSeq = db.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at, rowid').all(vid).map((x) => x.km);
+  const kmSt = [k1.status, k2.status].sort().join();
+  if (kmSt === '201,201') eq(kmSeq.join(), '90000,100000', 'beide angenommen nur als Anstieg');
+  else { eq(kmSt, '201,409', 'zweite abgewiesen'); eq(kmSeq.length, 1, 'kein unbegründeter Rücksprung'); }
   const [d1, d2] = await Promise.all([U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100500 }), U.driver.post(`/api/vehicles/${V1}/odometer`, { km: 100500 })]);
   eq(d1.status, 201); eq(d2.status, 201); ok(d1.data.duplicate || d2.data.duplicate, 'Wiederholung erkannt');
   eq(db.prepare('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=? AND km=100500').get(vid).n, 1, 'eine Zeile');
