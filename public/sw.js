@@ -39,7 +39,8 @@ async function fromCache(req) {
 }
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
-  if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.startsWith('/api/')) return;
+  // /werkstatt/ ist eine eigenständige Demo-Seite: nicht über die App-Hülle bedienen (offline zeigte sie sonst die Anmeldeseite der App, 18.10.2026)
+  if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.startsWith('/api/') || u.pathname.startsWith('/werkstatt/')) return;
   // Netz zuerst, damit Aktualisierungen sofort ankommen; ohne Verbindung (oder Fehlerantwort) die Hülle der zuletzt vollständig geladenen Fassung.
   // Neue Fassung (version.json online) → im Hintergrund vollständig laden; nur einwandfreie Antworten zählen.
   if (u.pathname === '/version.json') {

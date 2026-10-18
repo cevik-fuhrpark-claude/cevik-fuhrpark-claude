@@ -8498,10 +8498,14 @@ await test('Oberfläche: Formulare und Aktionsknöpfe werden nicht doppelt ausge
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   // Voraussetzung des Wächters: alle Formulare nutzen `.onsubmit = …` mit preventDefault, keine eigenen submit-Zuhörer
-  const re = /\.onsubmit *= *(async *)?\(?[a-z]*\)? *=> *\{/g; let m, n = 0; const noPd = [];
+  const re = /\.onsubmit *= *(async *)?\(?[a-z]*\)? *=> *\{/g; let m, n = 0; const noPd = [], noRet = [];
   while ((m = re.exec(app))) { n++; let i = m.index + m[0].length, d = 1;
     while (i < app.length && d) { const ch = app[i]; if (ch === '{') d++; else if (ch === '}') d--; i++; }
-    if (!app.slice(m.index + m[0].length, i - 1).includes('preventDefault')) noPd.push(app.slice(0, m.index).split('\n').length); }
+    if (!app.slice(m.index + m[0].length, i - 1).includes('preventDefault')) noPd.push(app.slice(0, m.index).split('\n').length);
+    // nicht-async Handler müssen das Promise einer Aktion zurückgeben – sonst gibt die zentrale Sperre sofort frei (18.10.2026: Doppelklick
+    // legte zwei Unterweisungen an)
+    if (!m[1] && /(^|[;{]\s*)(cmd|post|qsave|api)\(/.test(app.slice(m.index + m[0].length, i - 1))) noRet.push(app.slice(0, m.index).split('\n').length); }
+  eq(noRet.join(','), '', 'nicht-async Formular-Handler geben das Promise zurück (Zeilen)');
   ok(n >= 60, 'Formular-Handler gefunden: ' + n); eq(n, (app.match(/\.onsubmit *=/g) || []).length, 'alle onsubmit-Zuweisungen erfasst');
   eq(noPd.join(','), '', 'jeder Formular-Handler ruft preventDefault (Zeilen)');
   eq((app.match(/addEventListener\('submit'/g) || []).length, 1, 'nur der zentrale submit-Zuhörer');
@@ -12073,6 +12077,49 @@ await test('Lager-Buchungstexte in der Oberflächensprache (Anfangsbestand, Umla
   eq(stockNoteText('Vorgang T-2026-0001', 'en', o), 'Case T-2026-0001', 'Vorgangsnummer wie src/cases.js (T-/S-JJJJ-NNNN)');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('stNote(m.note)') && app.includes("esc(stNote(m.note || ''))") && app.includes("esc(stNote(m.document_ref || ''))"), 'Journal, Artikelverlauf, Inventurdifferenzen übersetzt');
+});
+await test('Fehlersuche 18.10. (12): Auslesungen-Import ohne Fälligkeitsspalte, Vorwarnung < Frist, Bemerkung mit Feldname, CSV-Größe ehrlich, Versicherungsfall-Wiederholung, Datenauskunft Bußgeld/Kontrollpunkte, Service Worker ohne /werkstatt/', async () => {
+  const { dayCol, tachoStatus } = await import('../src/tacho.js');
+  eq(dayCol(['art', 'personalnummer', 'datum letzte aktivität', 'nächster download', 'nachweis']), 2, '„Nächster Download“ ist kein Auslesedatum (nur „Datum letzte Aktivität“ bleibt)');
+  eq(dayCol(['art', 'personalnummer', 'download fällig am', 'downloaddatum']), 3);
+  eq(dayCol(['art', 'personalnummer', 'auslesefrist', 'datum nächste auslesung']), -1, 'nur Fälligkeiten → keine Datumsspalte');
+  eq(dayCol(['art', 'personalnummer', 'download', 'naechster download']), 2);
+  eq(tachoStatus('2026-10-01', 28, '2026-10-01', 30).status, 'ok', 'Auslesetag nie „bald“ trotz Vorwarnung ≥ Frist');
+  eq(tachoStatus('2026-10-01', 28, '2026-10-02', 30).status, 'bald');
+  eq(tachoStatus('2026-10-01', 90, '2026-10-01', 30).status, 'ok'); eq(tachoStatus('2026-10-01', 90, '2026-12-01', 30).status, 'bald');
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  // Bemerkung zu lang: Meldung nennt das Feld (übersetzt)
+  const did = (await F.post('/api/drivers', { display_name: 'Tacho Probe' })).data.id;
+  const long = await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: did, downloaded_on: BERLIN_TODAY, evidence: 'Datei', note: 'x'.repeat(501) });
+  eq(long.status, 400); ok(/^Bemerkung/.test(long.data.message), long.data.message);
+  const I = await import('../public/i18n.js');
+  ok(I.translateValidation('en', long.data.message).startsWith('Note'), I.translateValidation('en', long.data.message));
+  // CSV zu groß: eigener Code mit richtiger Grenze (vorher als „max. 5 MB“ übersetzt)
+  const big = await F.req('POST', '/api/tacho/import', 'a'.repeat(500001), { 'content-type': 'text/csv' });
+  eq(big.status, 413); eq(big.data.error || big.data.code, 'csv_too_large'); ok(/500 KB/.test(I.translateValidation('en', big.data.message)), I.translateValidation('en', big.data.message));
+  ok(!I.STRINGS.en.err_csv_too_large, 'kein Code-Text mit falscher Größe'); ok(!I.STRINGS.en.err_request_too_large);
+  // Versicherungsfall: Wiederholung nach verlorener Antwort = Erfolg, echte Änderung bleibt Konflikt
+  const cs = (await F.post('/api/cases', { vehicle_id: V1, description: 'Unfallschaden Tür', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const body = { insurer: 'Allianz', reported_on: '2026-10-01', evidence: 'Meldung', expected_updated_at: null };
+  eq((await F.req('PUT', `/api/cases/${cs}/claim`, body)).status, 200);
+  const again = await F.req('PUT', `/api/cases/${cs}/claim`, body);
+  eq(again.status, 200, 'Wiederholung ' + JSON.stringify(again.data)); eq(again.data.duplicate, true);
+  eq((await F.req('PUT', `/api/cases/${cs}/claim`, { ...body, claim_no: 'S-9' })).status, 409, 'anderer Inhalt auf altem Stand → Konflikt');
+  // Datenauskunft: Bußgeld mit Nachweis/Betrag/Frist und Verlauf der Leitung, Kontrollpunkte
+  const f = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt Z', amount_eur: 35, response_due: '2099-01-01' });
+  const fd = (await F.get(`/api/fines/${f.data.id}`)).data;
+  eq((await F.post(`/api/fines/${f.data.id}/commands`, { action: 'confirm_driver', expected_version: fd.fine.version, payload: { basis: 'manuell', evidence: 'Tourenplan KW 41', driver_id: U.driver.id } })).status, 200);
+  const { CHECKLIST } = await import('../src/cases.js');
+  const insp = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: CHECKLIST.map((i, n) => (n ? { key: i.key, result: 'ok' } : { key: i.key, result: 'mangel', note: 'Bremse hinten links schleift' })) });
+  const ex = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
+  const fx = ex.fines_as_driver.find((x) => x.authority === 'Stadt Z');
+  eq(fx.driver_evidence, 'Tourenplan KW 41'); eq(fx.amount_eur, 35); eq(fx.response_due, '2099-01-01'); ok(fx.driver_confirmed_at);
+  ok(ex.fine_events_as_driver.some((x) => x.action === 'confirm_driver'), 'Verlauf der Leitung zum eigenen Bußgeld');
+  eq(insp.status, 201, JSON.stringify(insp.data)); ok(ex.inspections.some((x) => String(x.items).includes('Bremse hinten links schleift')), 'Prüfpunkte der eigenen Kontrolle');
+  ok(!JSON.stringify(ex).includes('password_hash'), 'keine Hashes');
+  // Service Worker lässt die Demo-Seite /werkstatt/ aus
+  const sw = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  ok(sw.includes("u.pathname.startsWith('/werkstatt/')) return;"), 'sw.js überspringt /werkstatt/');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

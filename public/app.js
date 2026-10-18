@@ -1215,7 +1215,7 @@ async function viewCase(id) {
   if (S.openAct) actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true });
   finishRender();
   const clf = $('#clf'); if (clf) clf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(clf)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; try { await api('PUT', `/api/cases/${c.id}/claim`, b); toast('✓'); viewCase(c.id); } catch (err) { toast(err.message, true); } };
-  const cf = $('#cf'); if (cf) cf.onsubmit = (e) => { e.preventDefault(); const notify = $$('[data-nt]', cf).filter((x) => x.checked).map((x) => x.dataset.nt); cmd('comment', $('#ct').value, notify.length ? { notify } : {}); };
+  const cf = $('#cf'); if (cf) cf.onsubmit = (e) => { e.preventDefault(); const notify = $$('[data-nt]', cf).filter((x) => x.checked).map((x) => x.dataset.nt); return cmd('comment', $('#ct').value, notify.length ? { notify } : {}); };
   // Mehr gewählt als noch frei: nur die ersten freien hochladen, der Rest wird vorher genannt (kein Serverfehler je Datei);
   // Fehler gesammelt in einer Meldung nach dem Neuaufbau (sonst überdeckt eine Meldung die andere)
   const fi = $('#file'); if (fi) fi.onchange = async () => {
@@ -1384,7 +1384,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     // Zahlen unverändert senden – der Server liest deutsche Schreibweise („4,750“, „1.234,50“); vorher wurde „4,750“ zu „4.750“ und abgewiesen (18.10.2026)
     for (const k of ['hours', 'quantity', 'unit_price_net', 'amount_net']) if (k in p) p[k] = String(p[k]).trim();
     if (p.stock_item_id) { delete p.name; delete p.part_number; delete p.supplier; if (!fd.get('unit_price_net')) delete p.unit_price_net; } else delete p.stock_item_id;
-    cmd(action, fd.get('note') || null, p);
+    return cmd(action, fd.get('note') || null, p); // Promise zurück: zentrale Sperre bis zum Ende (Doppelklick)
   };
 }
 
@@ -2308,11 +2308,11 @@ async function viewFine(id) {
   if (cf) {
     try { const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active); $('#drv').innerHTML = `<option value="">–</option>` + us.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)}</option>`).join(''); } catch {}
     $$('input[name=cand]').forEach((r) => (r.onchange = () => { const c = d.candidates[r.value]; $('#drv').value = c.user_id; cf.basis.value = c.basis; cf.evidence.value = c.evidence; }));
-    cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; cmd('confirm_driver', b); };
+    cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; return cmd('confirm_driver', b); };
   }
   const inf = $('#inf'); if (inf) inf.onclick = () => cmd('inform_driver');
   const ack = $('#ack'); if (ack) ack.onclick = () => cmd('driver_ack');
-  const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); cmd('set_status', { status: sf.status.value }, sf.note.value); };
+  const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); return cmd('set_status', { status: sf.status.value }, sf.note.value); };
   const ff = $('#ff'); if (ff) ff.onchange = async () => { const file = ff.files[0]; if (!file) return; try { const blob = await prepareUpload(file); await api('POST', `/api/fines/${id}/files`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); viewFine(id); } catch (err) { toast(err.message, true); } };
 }
 
@@ -2418,9 +2418,9 @@ async function viewDriver(id) {
   $('#ddprt').onclick = () => window.print();
   const dx = $('#ddex'); if (dx) dx.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const r = await api('GET', `/api/drivers/${id}/data-export`); download(r instanceof Blob ? r : new Blob([JSON.stringify(r, null, 1)], { type: 'application/json' }), `datenauskunft_fahrer_${bDate()}.json`); } catch (err) { toast(err.message, true); } };
   const post = async (path, b) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', path, b); toast(r && r.older_than_current ? t('ddoc_older_saved') : '✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
-  const ddf = $('#ddf'); if (ddf) ddf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/documents`, Object.fromEntries(new FormData(ddf))); };
-  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
-  const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
+  const ddf = $('#ddf'); if (ddf) ddf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/documents`, Object.fromEntries(new FormData(ddf))); };
+  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
+  const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
     const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active };
@@ -2615,7 +2615,7 @@ async function viewTacho() {
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'ueberfaellig' ? 'p-kritisch' : x.status === 'bald' ? 'p-mittel' : ''}" href="${tab === 'drivers' ? '#/drivers/' + esc(x.id) : '#/vehicles/' + encodeURIComponent(x.id)}">${tab === 'drivers' ? '<span>🪪</span>' : plate(x.plate)}<span class="title">${tab === 'drivers' ? esc(x.display_name) : x.due ? `${esc(t('tacho_due'))} ${fmtD(x.due)}` : '–'}</span><span class="chip ${TST[x.status]}">${esc(t('tst_' + x.status))}</span><span class="sub">${[tab === 'drivers' && x.due && `${esc(t('tacho_due'))} ${fmtD(x.due)}`, `${esc(t('tacho_last'))}: ${x.last ? fmtD(x.last) : '–'}`, x.site && esc(x.site), tab === 'drivers' && x.personnel_no && esc(x.personnel_no)].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>
     ${tab === 'drivers' && r.without_card.length ? `<p class="small muted">${esc(t('tacho_without_card'))}: ${r.without_card.map((d) => esc(d.display_name)).join(', ')}</p>` : ''}
     ${list.length ? `<details class="panel"><summary>${esc(t('tacho_record'))}</summary><form id="tnf"><label>${esc(tab === 'drivers' ? t('role_driver') : t('vehicle'))}</label><select name="target" required>${opts}</select>
-      <label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${bDate()}"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"><label>${esc(t('note'))}</label><input name="note">
+      <label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${bDate()}"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"><label>${esc(t('note'))}</label><input name="note" maxlength="500">
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
     <div class="actions"><button type="button" class="btn secondary" id="tcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="tprt">${esc(t('print'))}</button></div>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('tacho_import'))}</h2><p class="small muted">${esc(t('tacho_import_hint'))}</p>
@@ -2678,7 +2678,7 @@ async function viewInbox() {
       const qsave = async (quiet) => {
         try { await api('PUT', '/api/me/notify-prefs', { quiet }); toast('✓'); await viewInbox(); const d = $('#np'); if (d) d.open = true; } catch (err) { toast(err.message, true); }
       };
-      $('#qf').onsubmit = (e) => { e.preventDefault(); qsave({ from: $('#qfrom').value.slice(0, 5), to: $('#qto').value.slice(0, 5) }); };
+      $('#qf').onsubmit = (e) => { e.preventDefault(); return qsave({ from: $('#qfrom').value.slice(0, 5), to: $('#qto').value.slice(0, 5) }); };
       const qoff = $('#qoff'); if (qoff) qoff.onclick = () => qsave(null);
       $$('[data-pk]', np).forEach((cb) => (cb.onchange = async () => {
         const muted = $$('[data-pk]', np).filter((x) => !x.checked).map((x) => x.dataset.pk);

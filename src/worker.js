@@ -261,7 +261,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/vehicles/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
-    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    if (text.length > 500000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 500 KB).');
     return json(await veh.importVehiclesCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)$/)) && m === 'GET') return json(await veh.vehicleDetail(env, user, envName, mm[1]));
@@ -296,7 +296,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/contracts/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
-    if (text.length > 300000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    if (text.length > 300000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 300 KB).');
     return json(await contracts.importContracts(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));
   }
   if ((mm = path.match(/^\/api\/contracts\/([\w-]+)$/)) && m === 'PATCH') return json(await contracts.updateContract(env, user, mm[1], await readJson(request), envName));
@@ -323,13 +323,13 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/maintenance/recalls/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
-    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    if (text.length > 500000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 500 KB).');
     return json(await maint.importRecallsCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if (path === '/api/maintenance/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
-    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    if (text.length > 500000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 500 KB).');
     return json(await maint.importMaintenanceCsv(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/complete$/)) && m === 'POST') return json(await veh.completeMaintenance(env, user, mm[1], await readJson(request), { ctx, envName }));
@@ -354,7 +354,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/tires/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
-    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    if (text.length > 500000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 500 KB).');
     return json(await tires.importTireSpecs(env, user, text, { dryRun: url.searchParams.get('dry_run') === '1' }));
   }
 
@@ -488,7 +488,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/tacho/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();
-    if (text.length > 500000) throw new HttpError(413, 'too_large', 'Datei zu groß.');
+    if (text.length > 500000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 500 KB).');
     return json(await tacho.importDownloads(env, user, envName, text, { dryRun: url.searchParams.get('dry_run') === '1', source: url.searchParams.get('source') || '' }));
   }
   if (path === '/api/tacho/downloads' && m === 'GET') return json({ downloads: await tacho.listDownloads(env, user, envName, Object.fromEntries(url.searchParams)) });

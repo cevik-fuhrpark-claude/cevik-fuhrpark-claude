@@ -165,7 +165,7 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
 
 export async function readJson(request, maxBytes = 64 * 1024) {
   const text = await request.text();
-  if (text.length > maxBytes) throw bad('too_large', 'Anfrage zu groß.');
+  if (text.length > maxBytes) throw bad('request_too_large', 'Anfrage zu groß.'); // eigener Code: „too_large“ wird in der App als „max. 5 MB“ übersetzt (18.10.2026)
   if (!text) return {};
   let v; try { v = JSON.parse(text); } catch { throw bad('invalid_json', 'Ungültiges JSON.'); }
   // Alle Endpunkte erwarten ein Objekt – „null“, Zahl, Text oder Liste führten sonst zu „Interner Fehler“ (Zugriff auf Felder von null)

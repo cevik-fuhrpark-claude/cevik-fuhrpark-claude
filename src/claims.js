@@ -51,7 +51,10 @@ export async function saveClaim(env, user, envName, caseId, body) {
   const ex = await env.DB.prepare('SELECT * FROM insurance_claims WHERE case_id=?').bind(c.id).first();
   // Stand beim Öffnen des Formulars (die App sendet ihn; leer = damals noch kein Versicherungsfall) – sonst überschrieb ein veraltetes Formular
   // z. B. Erstattung und Status „reguliert“ (17.10.2026); ohne Feld (ältere Aufrufer) wie bisher
-  if (body.expected_updated_at !== undefined && (body.expected_updated_at || null) !== (ex ? ex.updated_at : null)) throw conflict('version_conflict', ex ? 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.' : 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.');
+  // Ausnahme: der gesendete Stand ist genau der gespeicherte – Wiederholung nach verlorener Antwort ist dann Erfolg statt Konflikt (18.10.2026)
+  const stale = body.expected_updated_at !== undefined && (body.expected_updated_at || null) !== (ex ? ex.updated_at : null);
+  const staleErr = () => conflict('version_conflict', ex ? 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.' : 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.');
+  if (stale && !ex) throw staleErr();
   const f = readBody(body, ex || {});
   if (f.contract_id) {
     const k = await env.DB.prepare(`SELECT id, partner FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();
@@ -78,7 +81,8 @@ export async function saveClaim(env, user, envName, caseId, body) {
     return { id, created: true };
   }
   const changed = Object.keys(f).filter((k) => f[k] !== ex[k]);
-  if (!changed.length) return { id: ex.id, changed: [] };
+  if (!changed.length) return { id: ex.id, changed: [], ...(stale ? { duplicate: true } : {}) };
+  if (stale) throw staleErr();
   // nur auf dem gelesenen Stand (parallele Änderungen überschrieben sich sonst still, 17.10.2026)
   const r = await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=? AND updated_at=?`)
     .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, laterIso(ex.updated_at), ex.id, ex.updated_at).run();

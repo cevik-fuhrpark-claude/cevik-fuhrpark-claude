@@ -28,7 +28,9 @@ export function tachoStatus(last, periodDays, today, warnDays) {
   if (!last) return { last: null, due: null, days: null, status: 'keine' };
   const due = addDays(last, periodDays);
   const left = daysBetween(today, due);
-  return { last, due, days: left, status: left < 0 ? 'ueberfaellig' : left <= warnDays ? 'bald' : 'ok' };
+  // Vorwarnung höchstens Frist − 1 Tag: eine Einstellung ≥ 28 Tage (gilt auch für die 90-Tage-Frist des Massenspeichers) machte jede
+  // Fahrerkarte schon am Auslesetag „bald fällig“ (18.10.2026)
+  return { last, due, days: left, status: left < 0 ? 'ueberfaellig' : left <= Math.min(warnDays, periodDays - 1) ? 'bald' : 'ok' };
 }
 
 export async function warnDays(env) {
@@ -90,7 +92,7 @@ export async function addDownload(env, user, envName, body) {
   if (!ISO.test(on) || Number.isNaN(Date.parse(on + 'T00:00:00Z'))) throw bad('validation', 'Auslesedatum im Format JJJJ-MM-TT.');
   if (on > berlinDate()) throw bad('validation', 'Auslesedatum darf nicht in der Zukunft liegen.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
-  const note = str(body.note, { max: 500 });
+  const note = str(body.note, { max: 500, field: 'Bemerkung' });
   let driverId = null; let vehicleId = null; let label;
   if (kind === 'fahrerkarte') {
     const d = await env.DB.prepare('SELECT id, display_name FROM drivers WHERE id=? AND environment=?').bind(str(body.driver_id, { required: true, max: 40, field: 'Fahrer' }), envName).first();
@@ -165,10 +167,13 @@ export function dayCol(head) {
   const hd = head.map((h) => String(h || '').trim().toLowerCase());
   for (const n of DAY_EXACT) { const i = hd.indexOf(n); if (i >= 0) return i; }
   const person = /\b(von|durch|person|benutzer|user|mitarbeiter|name)\b/;
-  const hits = hd.map((h, i) => (/auslese|ausgelesen|download/.test(h) && !person.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
+  // Fälligkeits-/Planspalten („Nächster Download“, „Download fällig am“, „Auslesefrist“) sind kein Auslesedatum (18.10.2026: Fälligkeitstag
+  // wurde als Auslesung gespeichert → Frist 28 Tage später „ok“ statt überfällig)
+  const planned = /n(ä|ae)chst|f(ä|ae)llig|frist|\bsoll|geplant|\bplan/;
+  const hits = hd.map((h, i) => (/auslese|ausgelesen|download/.test(h) && !person.test(h) && !planned.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
   if (hits.length === 1) return hits[0];
   if (hits.length > 1) return -2;
-  const dates = hd.map((h, i) => (h.startsWith('datum') ? i : -1)).filter((i) => i >= 0);
+  const dates = hd.map((h, i) => (h.startsWith('datum') && !planned.test(h) ? i : -1)).filter((i) => i >= 0);
   if (dates.length === 1) return dates[0];
   return dates.length > 1 ? -2 : -1;
 }

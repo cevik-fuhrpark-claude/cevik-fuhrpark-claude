@@ -33,11 +33,13 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     reported_cases: q(`SELECT c.case_no, c.environment, c.status, c.priority, c.description, c.created_at, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.reporter_id=? ORDER BY c.created_at`, userId),
     case_events: q(`SELECT c.case_no, e.environment, e.action, e.note, e.created_at FROM case_events e JOIN cases c ON c.id=e.case_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
     work_entries: q(`SELECT c.case_no, w.* FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE w.user_id=? ORDER BY w.created_at`, userId),
-    inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.created_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),
+    inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.items, i.created_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),
     files_uploaded: q('SELECT filename, content_type, size, created_at, case_id, vehicle_id, doc_kind FROM files WHERE uploaded_by=? ORDER BY created_at', userId),
     notifications: q('SELECT environment, kind, title, body, created_at, push_status, opened_at, acknowledged_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
     odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
-    fines_as_driver: q('SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, status, driver_basis, driver_informed_at, driver_ack_at, created_at FROM fines WHERE driver_id=? ORDER BY offense_at', userId),
+    // 18.10.2026: Nachweis der Fahrerermittlung, Betrag, Frist und Verlauf (auch Einträge der Leitung) gehören zur Auskunft der betroffenen Person
+    fines_as_driver: q('SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, amount_eur, response_due, status, driver_basis, driver_evidence, driver_confirmed_at, driver_informed_at, driver_ack_at, created_at FROM fines WHERE driver_id=? ORDER BY offense_at', userId),
+    fine_events_as_driver: q(`SELECT f.fine_no, e.action, e.note, e.created_at FROM fine_events e JOIN fines f ON f.id=e.fine_id WHERE f.driver_id=? ORDER BY e.created_at`, userId),
     vehicle_notes_written: q(`SELECT n.environment, n.text, n.for_driver, n.created_at, n.valid_until, n.archived_at, v.plate FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.created_by=? ORDER BY n.created_at`, userId),
     // weitere Erfassungen dieser Person (17.10.2026 ergänzt – vorher fehlten u. a. Reifenmessungen und Teile in der Auskunft)
     tire_events_recorded: q(`SELECT t.environment, t.position, t.event_type, t.tread_mm, t.pressure_bar, t.dot, t.created_at, v.plate FROM tire_events t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.recorded_by=? ORDER BY t.created_at`, userId),
