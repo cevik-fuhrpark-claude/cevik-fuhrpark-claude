@@ -1082,8 +1082,14 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
   return { ok: true };
 }
 
-// Für den Fuhrparkagenten: je Fahrzeug und Dokumentart zählt das späteste Gültig-bis-Datum (neueres Dokument ersetzt älteres)
+// Für den Fuhrparkagenten: je Fahrzeug und Dokumentart zählt das späteste Gültig-bis-Datum (neueres Dokument ersetzt älteres).
+// „Sonstiges“ fasst verschiedenartige Dokumente zusammen (z. B. ADR-Bescheinigung und Gemeinschaftslizenz): dort gilt die Bemerkung
+// als Thema – je Thema das späteste Datum (vorher verdeckte ein gültiges Dokument ein abgelaufenes anderes, 18.10.2026).
+// `topic` = Bemerkung (für den Befundtext), `topic_key` = Gruppierungsschlüssel (getrimmt, ASCII-klein); ohne Bemerkung wie bisher eine Gruppe.
 export async function documentFindings(env, environment) {
-  return (await env.DB.prepare(`SELECT f.vehicle_id, f.doc_kind, MAX(f.doc_valid_until) AS valid_until, v.plate FROM files f JOIN vehicles v ON v.id=f.vehicle_id
-    WHERE f.environment=? AND f.case_id IS NULL AND f.doc_valid_until IS NOT NULL AND v.active=1 GROUP BY f.vehicle_id, f.doc_kind`).bind(environment).all()).results;
+  return (await env.DB.prepare(`SELECT f.vehicle_id, f.doc_kind, MAX(f.doc_valid_until) AS valid_until, v.plate,
+      CASE WHEN f.doc_kind='sonstiges' THEN lower(trim(COALESCE(f.doc_note,''))) ELSE '' END AS topic_key,
+      CASE WHEN f.doc_kind='sonstiges' THEN MAX(NULLIF(trim(COALESCE(f.doc_note,'')),'')) END AS topic
+    FROM files f JOIN vehicles v ON v.id=f.vehicle_id
+    WHERE f.environment=? AND f.case_id IS NULL AND f.doc_valid_until IS NOT NULL AND v.active=1 GROUP BY f.vehicle_id, f.doc_kind, topic_key`).bind(environment).all()).results;
 }

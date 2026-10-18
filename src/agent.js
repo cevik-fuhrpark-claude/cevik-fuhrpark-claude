@@ -337,11 +337,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const DOC_LABEL = { zulassung: 'Zulassung', pruefbericht: 'Prüfbericht', rechnung: 'Rechnung', versicherung: 'Versicherung', leasing: 'Leasing/Miete', rueckruf: 'Rückrufschreiben', foto: 'Foto', sonstiges: 'Dokument' };
     for (const d of await documentFindings(env, environment)) {
       const days = Math.round((Date.parse(d.valid_until) - Date.parse(today)) / 86400000);
-      const label = DOC_LABEL[d.doc_kind] || 'Dokument';
-      if (days < 0) add({ code: 'DOCUMENT_EXPIRED', subject: `${d.vehicle_id}|${d.doc_kind}`, vehicle_id: d.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        ...fm('DOCUMENT_EXPIRED', { plate: d.plate, doc: DOC_LABEL[d.doc_kind] ? d.doc_kind : 'sonstiges', date: d.valid_until }), next_action: 'Gültiges Dokument beschaffen und in der Fahrzeugakte hinterlegen.' });
-      else if (days <= warnDays) add({ code: 'DOCUMENT_EXPIRES_SOON', subject: `${d.vehicle_id}|${d.doc_kind}`, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('DOCUMENT_EXPIRES_SOON', { plate: d.plate, doc: DOC_LABEL[d.doc_kind] ? d.doc_kind : 'sonstiges', date: d.valid_until, days }), next_action: 'Verlängerung/Nachfolgedokument veranlassen.' });
+      const subject = `${d.vehicle_id}|${d.doc_kind}${d.topic_key ? '|' + d.topic_key : ''}`; // ohne Thema unverändert (bestehende Befunde)
+      if (days < 0) add({ code: 'DOCUMENT_EXPIRED', subject, vehicle_id: d.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
+        ...fm('DOCUMENT_EXPIRED', { plate: d.plate, doc: DOC_LABEL[d.doc_kind] ? d.doc_kind : 'sonstiges', topic: d.topic || null, date: d.valid_until }), next_action: 'Gültiges Dokument beschaffen und in der Fahrzeugakte hinterlegen.' });
+      else if (days <= warnDays) add({ code: 'DOCUMENT_EXPIRES_SOON', subject, vehicle_id: d.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
+        ...fm('DOCUMENT_EXPIRES_SOON', { plate: d.plate, doc: DOC_LABEL[d.doc_kind] ? d.doc_kind : 'sonstiges', topic: d.topic || null, date: d.valid_until, days }), next_action: 'Verlängerung/Nachfolgedokument veranlassen.' });
     }
 
     // Prüfung mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher (≤ 365 Tage), seitdem kein Vorgang zum Fahrzeug – keine Frist angenommen

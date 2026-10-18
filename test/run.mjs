@@ -12707,6 +12707,32 @@ await test('Fehlersuche 18.10. (21): Integrations-API (ruhend erkennbar, ohne GP
   ok(db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE finding_code='CONTRACT_ENDED' AND status='offen'`).get().n >= 1, 'Vertragsbefund bleibt');
 });
 
+await test('Fehlersuche 18.10. (22): Fahrzeugdokumente „Sonstiges“ je Bemerkung überwacht – gültiges ADR-Dokument verdeckt abgelaufene Gemeinschaftslizenz nicht', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const H = { 'content-type': 'application/pdf', 'x-filename': encodeURIComponent('Dok.pdf') };
+  const up = async (tag, q) => { const r = await U.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=sonstiges&${q}`, new TextEncoder().encode(`%PDF-1.4\n% ${tag}\n%%EOF`), H); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const past = new Date(Date.parse(BERLIN_TODAY) - 5 * 864e5).toISOString().slice(0, 10);
+  await up('lizenz', `valid_until=${past}&note=${encodeURIComponent('Gemeinschaftslizenz')}`);
+  await up('adr', `valid_until=2035-06-30&note=${encodeURIComponent('ADR-Bescheinigung')}`);
+  const run = async () => eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const open = () => db.prepare(`SELECT finding_code, subject_key, message, message_args FROM agent_findings WHERE finding_code LIKE 'DOCUMENT_%' AND status='offen'`).all();
+  await run(); let f = open();
+  eq(f.length, 1, 'genau ein Befund (abgelaufene Lizenz)'); eq(f[0].finding_code, 'DOCUMENT_EXPIRED');
+  ok(f[0].message.includes('„Gemeinschaftslizenz“'), f[0].message); eq(f[0].subject_key, `${V1}|sonstiges|gemeinschaftslizenz`);
+  const fm = await import('../public/finding-messages.js');
+  const a = JSON.parse(f[0].message_args); ok(fm.renderFindingMessage(a.k, a.a, 'en').includes('"Gemeinschaftslizenz"'), 'EN mit Thema');
+  // neueres Dokument mit gleicher Bemerkung (andere Schreibweise/Leerzeichen) erledigt den Befund
+  await up('lizenz neu', `valid_until=2031-01-31&note=${encodeURIComponent(' gemeinschaftslizenz ')}`);
+  await run(); eq(open().length, 0, 'durch Nachfolgedokument erledigt');
+  // ohne Bemerkung: Gruppe und Schlüssel wie bisher
+  await up('ohne', `valid_until=${past}`);
+  await run(); f = open(); eq(f.length, 1); eq(f[0].subject_key, `${V1}|sonstiges`); ok(!f[0].message.includes('„'), f[0].message);
+  // andere Arten bleiben je Art (Bemerkung trennt nicht)
+  const r = await U.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=${past}&note=A`, new TextEncoder().encode('%PDF-1.4\n% v1\n%%EOF'), H); eq(r.status, 201);
+  const r2 = await U.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=2034-01-01&note=B`, new TextEncoder().encode('%PDF-1.4\n% v2\n%%EOF'), H); eq(r2.status, 201);
+  await run(); ok(!open().some((x) => x.subject_key.startsWith(`${V1}|versicherung`)), 'Versicherung: neueres Dokument ersetzt älteres');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
