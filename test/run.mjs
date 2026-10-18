@@ -11858,6 +11858,20 @@ await test('Fehlersuche 18.10. (9): Auslesungen-Import Datumsspalte/NFD-Namen/Da
   ok(/Reported → Settled|Reported.*Settled/i.test(auditDetailText('en', { status: { from: 'gemeldet', to: 'reguliert' } })) || !/gemeldet|reguliert/.test(auditDetailText('en', { status: { from: 'gemeldet', to: 'reguliert' } })), auditDetailText('en', { status: { from: 'gemeldet', to: 'reguliert' } }));
   ok(!/werkstatt|leasing/.test(auditDetailText('en', { kind: 'werkstatt' }) + auditDetailText('de', { kind: 'leasing' })), auditDetailText('en', { kind: 'werkstatt' }));
   eq(auditDetailText('de', { kind: 'HU' }).includes('HU'), true, 'Prüfart unverändert');
+  // 9. Aufträge aus Prüftermin/Prüfmangel/Rückruf/Winterreifen: Rahmen in der Oberflächensprache, Freitexte unverändert, DE/CSV unverändert
+  const { caseDescText } = await import('../public/check-labels.js');
+  const opts = { kind: (k) => ({ 'Ölwechsel': 'Oil change' })[k], res: (c) => ({ gefaehrliche_maengel: 'dangerous defects' })[c] };
+  eq(caseDescText('Prüfung/Wartung Ölwechsel durchführen – bitte Filter mit', 'en', opts), 'Carry out inspection/maintenance: Oil change – bitte Filter mit');
+  eq(caseDescText('Prüfung/Wartung HU durchführen', 'uk'), 'Провести огляд/ТО: HU');
+  eq(caseDescText('Herstellerrückruf durchführen (Referenz: MAN 4711)', 'en'), 'Carry out manufacturer recall (reference: MAN 4711)');
+  eq(caseDescText('Mängel aus UVV vom 01.10.2026 beseitigen (Ergebnis: gefährliche Mängel; Nachweis: DEKRA 12) – eilig', 'en', opts), 'Rectify defects from UVV on 01/10/2026 (result: dangerous defects; evidence: DEKRA 12) – eilig');
+  eq(caseDescText('Umrüstung auf Winterreifen (Alpine-Symbol) – Positionen laut Reifenerfassung ohne Alpine-Symbol: VA-L, VA-R; nicht erfasst: HA-L. Wechsel mit Winterkennzeichnung in der Fahrzeugakte → Reifen erfassen.', 'en'),
+    'Change to winter tyres (Alpine symbol) – positions per tyre records without Alpine symbol: VA-L, VA-R; not recorded: HA-L. Record the change with winter marking in the vehicle file → Tyres.');
+  eq(caseDescText('Prüfung/Wartung Ölwechsel durchführen', 'de', opts), 'Prüfung/Wartung Ölwechsel durchführen', 'DE unverändert');
+  eq(caseDescText('Bremse quietscht. Prüfung/Wartung HU durchführen', 'en'), 'Bremse quietscht. Prüfung/Wartung HU durchführen', 'Freitext unverändert');
+  // Server-Texte und Anzeige-Muster bleiben gekoppelt (Wächter): Muster stehen wörtlich in src/cases.js
+  const csrc = (await import('node:fs')).readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  for (const frag of ['`Prüfung/Wartung ${rule.kind} durchführen', '`Herstellerrückruf durchführen (Referenz: ', '`Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ', "'Umrüstung auf Winterreifen (Alpine-Symbol)'", "'Winterreifen prüfen und Winterkennzeichnung erfassen'", '` – Positionen laut Reifenerfassung ${parts.join(\'; \')}. Wechsel mit Winterkennzeichnung in der Fahrzeugakte → Reifen erfassen.']) ok(csrc.includes(frag), 'cases.js: ' + frag);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

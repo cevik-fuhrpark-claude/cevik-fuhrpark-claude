@@ -1274,7 +1274,8 @@ async function viewClaims() {
 const wsName = (code) => (S.meta.workshops.find((w) => w.code === code) || {}).name || code || '–';
 const checkLabel = (k) => (CHECK_LABELS[S.lang] || CHECK_LABELS.de)[k] || k;
 // Vorgangstext: aus Kontrollen erzeugte Vorgänge zeigen den Prüfpunkt in der Oberflächensprache statt des Schlüssels
-const cDesc = (s) => caseDescText(s, S.lang);
+// … und Aufträge aus Prüftermin/Prüfmangel/Rückruf/Winterreifen mit Rahmen, Prüfart und Prüfergebnis in der Oberflächensprache (Freitexte unverändert)
+const cDesc = (s) => caseDescText(s, S.lang, { kind: mk, res: (c) => (c ? t('res_' + c) : null) });
 
 // Bilder vor dem Hochladen verkleinern (max. 1600 px, JPEG) – spart Datenvolumen unterwegs
 // Mehr als 10 Fotos gewählt: nur die ersten 10 werden angehängt (Server-Grenze je Vorgang) – sofort sichtbar sagen statt still weglassen
