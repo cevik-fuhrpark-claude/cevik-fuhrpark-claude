@@ -12174,6 +12174,9 @@ await test('Auslesungen-Import: Personalnummer ohne führende Nullen, Ersatzzuor
   const got = new Set(db.prepare('SELECT driver_id FROM tacho_downloads WHERE driver_id IS NOT NULL').all().map((x) => x.driver_id));
   ok(got.has(a), 'führende Nullen'); ok(got.has(b), 'Ersatz über Namen'); ok(!got.has(c), 'widersprüchliche Nummer nicht über Namen'); ok(!got.has(d1) && !got.has(d2), 'mehrdeutig');
   eq(r.data.counts.neu, 2); eq(r.data.counts.uebersprungen, 2);
+  // erste Fahrerkarten-Auslesung in der App auch ohne erfasste Fahrerkarte (Leitung)
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (!x.tacho && mgr) x.tacho = { last: null, due: null, days: null, status: 'keine' };"), 'Fahrerakte zeigt Auslese-Formular für die Leitung immer');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
