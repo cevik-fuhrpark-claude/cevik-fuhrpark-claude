@@ -32,6 +32,8 @@ export async function onHand(env, itemId) {
 }
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
+// Mindestbestand wie Mengen auf 3 Nachkommastellen (18.10.2026: 2,0004 ergab „unter Mindestbestand“ mit Fehlmenge 0)
+const r3n = (x) => (x === null || x === undefined ? x : r3(x));
 // Idempotenzschlüssel einer Buchung (App sendet ihn je Formular): Wiederholung → dieselbe Buchung, keine zweite
 function requestKey(body) {
   const k = body && body.request_key;
@@ -104,7 +106,7 @@ export async function createItem(env, user, envName, body) {
   try {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80 }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
-      str(body.unit, { max: 20 }) || 'Stk', num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true }), str(body.location, { max: 80 }),
+      str(body.unit, { max: 20 }) || 'Stk', r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true })), str(body.location, { max: 80 }),
       num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }), user.id, now, now).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
@@ -116,10 +118,13 @@ export async function createItem(env, user, envName, body) {
 
 export async function updateItem(env, user, envName, id, body) {
   const it = await loadItem(env, user, envName, id);
+  // Formular aus älterer Ansicht (18.10.2026): nur auf dem gelesenen Stand
+  const expected = body.expected_updated_at !== undefined && body.expected_updated_at !== null && body.expected_updated_at !== '' ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
+  if (expected && expected !== it.updated_at) throw conflict('version_conflict', 'Artikel wurde zwischenzeitlich geändert. Bitte neu laden.');
   const fields = {
     name: body.name !== undefined ? str(body.name, { required: true, max: 200, field: 'Bezeichnung' }) : it.name,
     part_number: body.part_number !== undefined ? str(body.part_number, { max: 80 }) : it.part_number,
-    min_qty: body.min_qty !== undefined ? num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true }) : it.min_qty,
+    min_qty: body.min_qty !== undefined ? r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true })) : it.min_qty,
     location: body.location !== undefined ? str(body.location, { max: 80 }) : it.location,
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
@@ -393,7 +398,8 @@ export async function journal(env, user, envName, query = {}) {
     FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
     WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${item ? 'AND m.item_id=?' : ''} ${typeSql}
     ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 1]).all()).results;
-  const r2 = (x) => Math.round(x * 100) / 100;
+  // kaufmännisch symmetrisch (18.10.2026: −0,125 wurde −0,12, +0,125 aber +0,13 – Rest 0,01 € bei Bestand 0)
+  const r2 = (x) => Math.sign(x) * Math.round(Math.abs(x) * 100) / 100;
   let list = rows.map((r) => ({ ...r, date: berlinDate(r.created_at), qty: r3(r.qty), value_net: r.unit_price_net === null ? null : r2(r.qty * r.unit_price_net) }))
     .filter((r) => r.date >= from && r.date <= to);
   const truncated = list.length > JOURNAL_MAX;

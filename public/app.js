@@ -2179,6 +2179,12 @@ async function viewStockItem(id) {
   $('#itedf').onsubmit = async (e) => { e.preventDefault(); const g = (k) => e.target.elements.namedItem(k);
     const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
     if (it.active && !b.active && it.on_hand !== 0 && !confirm(t('item_inactive_onhand').replace('{q}', fmtNum(it.on_hand)).replace('{u}', it.unit))) return;
+    // nur geänderte Felder auf dem gelesenen Stand (18.10.2026: älteres Formular setzte Preis aus Zugang/Mindestbestand der Leitung still zurück)
+    const nv = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+    const was = { name: it.name, part_number: it.part_number || '', min_qty: nv(it.min_qty), location: it.location || '', unit_price_net: nv(it.unit_price_net), active: !!it.active };
+    for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
+    if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
+    if (it.updated_at) b.expected_updated_at = it.updated_at;
     try { const r = await api('PATCH', `/api/stock/${id}`, b); toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).replace(',', '.'); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };

@@ -119,9 +119,13 @@ export async function createFine(env, user, envName, body) {
   const offenseAt = new Date(offenseRaw).toISOString();
   // Tippfehler im Jahr (2062): Fahrerermittlung „zum Tatzeitpunkt“ lieferte sonst die heutige Zuordnung (17.10.2026); 5 Min. Uhrenspiel
   if (Date.parse(offenseAt) > Date.now() + 5 * 60000) throw bad('validation', 'Tatzeit liegt in der Zukunft.');
+  if (offenseAt < '2000-01-01') throw bad('validation', 'Tatzeit vor 2000 – bitte Jahr prüfen.'); // Tippfehler 1926 (18.10.2026), wie Versicherungsfälle
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10 });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
+  if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
+  // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
+  const location = str(body.location, { max: 200 }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true }); const fnote = str(body.note, { max: 2000 });
   // bei gleichem Kennzeichen zählt das aktive bewertete vor dem ruhenden vor dem außer Betrieb genommenen, sonst mehrdeutig = keine Zuordnung
   // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
   // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
@@ -147,8 +151,8 @@ export async function createFine(env, user, envName, body) {
     env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17
       WHERE ?6 IS NULL OR NOT EXISTS (SELECT 1 FROM fines WHERE environment=?3 AND reference=?6 AND authority=?5)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
-      str(body.location, { max: 200 }), plate, veh ? veh.id : null, num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true }), due,
-      str(body.note, { max: 2000 }), user.id, now, now),
+      location, plate, veh ? veh.id : null, amount, due,
+      fnote, user.id, now, now),
     env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
   ]);
   if (!(res[0] && res[0].meta && res[0].meta.changes)) { await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
@@ -177,7 +181,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         const did = str(p.driver_id, { max: 64, field: 'Fahrer' }); // Liste/Objekt → 400 statt 500 (17.10.2026)
         if (did) {
           // ausgeschiedener (deaktivierter) Fahrer nur, wenn er zur Tatzeit zugeordnet war – genau so wird er als Kandidat angeboten (17.10.2026: Angebot ließ sich nicht bestätigen)
-          const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=? AND role='driver' AND environment=? AND (active=1
+          // Rolle inzwischen gewechselt: wer zur Tatzeit zugeordnet war, bleibt bestätigbar (18.10.2026: Kandidat angeboten, Bestätigen → 400)
+          const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=? AND environment=? AND ((active=1 AND role='driver')
             OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.vehicle_id IN (${fineVehiclesSql('?3')}) AND dv.valid_from <= ?4 AND (dv.valid_to IS NULL OR dv.valid_to > ?4)))`)
             .bind(did, envName, f.vehicle_id, f.offense_at).first();
           if (!d) throw bad('validation', 'Fahrer nicht gefunden.');
@@ -213,6 +218,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         if (p.response_due !== undefined) {
           const due = str(p.response_due, { max: 10 });
           if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
+  if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
+  // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
+  const location = str(body.location, { max: 200 }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true }); const fnote = str(body.note, { max: 2000 });
           set.response_due = due;
         }
         if (p.reference !== undefined) {

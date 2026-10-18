@@ -133,7 +133,9 @@ async function candidateUsers(env, c, site, withCoupled, oldSite) {
 }
 
 export async function recipientsFor(env, c, kind, ctxData = {}) {
-  const urgent = c.priority === 'kritisch' || c.reported_driveability === 'nicht_fahrbereit' || !!c.safety_lock;
+  // „nicht fahrbereit“ laut Melder zählt nur bis zur Bewertung durch die Leitung (18.10.2026: machte sonst alle späteren Hinweise dauerhaft
+  // dringend – Stummschaltung/Ruhezeit griffen nicht, Agent meldete „dringend nicht zugestellt“ zu Kommentaren)
+  const urgent = c.priority === 'kritisch' || (c.reported_driveability === 'nicht_fahrbereit' && !c.priority_reviewed) || !!c.safety_lock;
   const list = [];
   const add = (rows) => { for (const r of rows) if (!list.find((x) => x.id === r.id)) list.push(r); };
   const site = c.workshop_site || c.suggested_workshop_site;
@@ -400,10 +402,17 @@ export async function retryFailedPush(env) {
 
 // Ende der Ruhezeit: zurückgehaltene, noch nicht geöffnete/quittierte Hinweise der letzten 24 Std. gesammelt zustellen
 // (ein Push je Person mit „· +N“). Bereits in der App geöffnete Hinweise brauchen keinen Push mehr und bleiben „pending“ (Anzeige „zurückgehalten“).
+const QUIET_CLAIMED = '0000-01-01T00:00:00.000Z';
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now(), userId = null) {
   const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
     WHERE n.push_status='pending' AND n.push_hold_until IS NOT NULL AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ? AND (?3 IS NULL OR n.user_id=?3)
     ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString(), userId).all()).results;
-  if (rows.length) await deliverPush(env, rows.map(forDelivery), { collapse: true });
-  return rows.length;
+  if (!rows.length) return 0;
+  // Zeilen vor dem Senden atomar beanspruchen (18.10.2026: Ruhezeit ausgeschaltet + Cron gleichzeitig → zwei Pushs je Hinweis);
+  // beansprucht = Haltezeit auf einen festen Wert vor jeder echten Zeit, nur die selbst beanspruchten werden gesendet
+  const claimed = new Set((await env.DB.prepare(`UPDATE notifications SET push_hold_until=?1 WHERE id IN (SELECT value FROM json_each(?2)) AND push_status='pending'
+    AND push_hold_until > ?1 RETURNING id`).bind(QUIET_CLAIMED, JSON.stringify(rows.map((r) => r.id))).all()).results.map((r) => r.id));
+  const mine = rows.filter((r) => claimed.has(r.id));
+  if (mine.length) await deliverPush(env, mine.map(forDelivery), { collapse: true });
+  return mine.length;
 }

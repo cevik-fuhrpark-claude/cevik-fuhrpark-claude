@@ -4988,7 +4988,7 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
-  ok(rest.length === 5 && rest.every((l) => /value="|const money|const shown/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // const shown = Einstellungen-Formular
+  ok(rest.length === 6 && rest.every((l) => /value="|const money|const shown|const nv/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
   // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
   const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
   eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');
@@ -11556,6 +11556,69 @@ await test('Fehlersuche 18.10. (5): Oberfläche – Service Worker speichert nur
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].check_photos_repeat && STRINGS[l].rule_checked_on, l);
   const { computeHuSp } = await import('../src/inspection_rules.js');
   const h = computeHuSp({ kind: 'lkw', zgm_class: 'ueber_12' }, [], { today: BERLIN_TODAY }); eq(h.rule_checked, '2026-10-10'); ok(h.rule_ref && !/geprüft/.test(h.rule_ref));
+});
+await test('Fehlersuche 18.10. (6): Bußgeld (Nummer erst nach Prüfung, Jahr vor 2000, Kandidat nach Rollenwechsel bestätigbar), Lager (Journal symmetrisch gerundet, Mindestbestand 3 Stellen, Formular auf gelesenem Stand), Hinweise (vorgeschlagene Werkstatt ausgeblendet, „nicht fahrbereit“ nach Bewertung nicht mehr dringend, Ruhezeit-Freigabe einmal), Kostenmarkierung erhöht Version', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const year = BERLIN_TODAY.slice(0, 4);
+  const base = { kind: 'anhoerung', offense_type: 'parken', offense_at: `${new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 86400000))}T08:00`, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X' };
+  eq((await U.fleet.post('/api/fines', { ...base, amount_eur: 'abc' })).status, 400);
+  eq((await U.fleet.post('/api/fines', { ...base, location: 'x'.repeat(300) })).status, 400);
+  { const r = await U.fleet.post('/api/fines', { ...base, offense_at: '1926-10-01T10:00' }); eq(r.status, 400); eq(r.data.message, 'Tatzeit vor 2000 – bitte Jahr prüfen.'); }
+  eq((await U.fleet.post('/api/fines', { ...base, response_due: '1926-10-15' })).status, 400);
+  const f1 = await U.fleet.post('/api/fines', base); eq(f1.status, 201); eq(f1.data.fine_no, `TB-${year}-0001`, 'keine verbrauchten Nummern');
+  // Kandidat nach Rollenwechsel bestätigbar
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Plan' })).status, 201);
+  await new Promise((r) => setTimeout(r, 1100)); const tat = new Date(Date.now() - 200).toISOString(); await new Promise((r) => setTimeout(r, 300));
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { role: 'workshop', workshop_site: 'DORTMUND' })).status, 200);
+  const f2 = await U.fleet.post('/api/fines', { ...base, offense_at: tat, authority: 'Stadt Y' }); eq(f2.status, 201);
+  const d2 = (await U.fleet.get(`/api/fines/${f2.data.id}`)).data; const cand = d2.candidates.find((c) => c.user_id === U.driver.id); ok(cand, 'Kandidat angeboten');
+  eq((await U.fleet.post(`/api/fines/${f2.data.id}/commands`, { action: 'confirm_driver', expected_version: d2.fine.version, payload: { basis: 'zuordnung', evidence: cand.evidence, driver_id: cand.user_id } })).status, 200, 'bestätigbar');
+  // Lager
+  const k = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Kabel', unit: 'm', unit_price_net: 0.25 })).data.id;
+  eq((await U.ws.post(`/api/stock/${k}/movements`, { type: 'zugang', qty: 0.5, unit_price_net: 0.25, request_key: rk() })).status, 201);
+  eq((await U.ws.post(`/api/stock/${k}/movements`, { type: 'entnahme', qty: 0.5, request_key: rk() })).status, 201);
+  const j = (await U.ws.get('/api/stock/journal')).data; eq(j.movements.filter((m) => m.item_id === k).map((m) => m.value_net).sort().join(), '-0.13,0.13');
+  const sId = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Schraube', initial_qty: 2, min_qty: '2,0004' })).data.id;
+  eq(db.prepare('SELECT min_qty FROM stock_items WHERE id=?').get(sId).min_qty, 2);
+  const it = (await U.ws.get(`/api/stock/${sId}`)).data.item || (await U.ws.get(`/api/stock/${sId}`)).data;
+  eq((await U.fleet.patch(`/api/stock/${sId}`, { min_qty: 6 })).status, 200);
+  const st = await U.ws.patch(`/api/stock/${sId}`, { location: 'R2', expected_updated_at: it.updated_at }); eq(st.status, 409); eq(st.data.error, 'version_conflict');
+  eq(db.prepare('SELECT min_qty FROM stock_items WHERE id=?').get(sId).min_qty, 6);
+  const { e: e2, U: U2, cmd: cmd2, newCase: newCase2 } = await freshWorld(); const db2 = e2.DB.db; // Fahrer oben in Werkstatt gewechselt
+  // vorgeschlagene Werkstatt: Hinweise nach Freigabe an andere Werkstatt ausgeblendet
+  const cid = await newCase2({ priority: 'kritisch', workshop_site: 'MUENCHEN' });
+  ok(db2.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND case_id=?').get(U2.wsMuc.id, cid).n > 0, 'MUC informiert');
+  eq((await cmd2(U2.fleet, cid, 'approve_repair', { workshop_site: 'DORTMUND' }, 'nach DO')).status, 200);
+  eq(db2.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND case_id=? AND hidden_at IS NULL').get(U2.wsMuc.id, cid).n, 0);
+  // „nicht fahrbereit“ nach Bewertung: Kommentar nicht mehr dringend
+  const nf = await newCase2({ driveability: 'nicht_fahrbereit' });
+  eq((await cmd2(U2.fleet, nf, 'change_priority', { priority: 'mittel' }, 'geprüft')).status, 200);
+  if (db2.prepare('SELECT safety_lock FROM cases WHERE id=?').get(nf).safety_lock) eq((await cmd2(U2.fleet, nf, 'lift_safety_lock', { confirm: true }, 'fahrbereit laut Werkstatt')).status, 200);
+  eq((await cmd2(U2.driver, nf, 'comment', {}, 'Nachtrag')).status, 200);
+  const cn = db2.prepare(`SELECT urgent FROM notifications WHERE case_id=? AND kind='comment' ORDER BY created_at DESC LIMIT 1`).get(nf); ok(cn, 'Kommentar-Hinweis'); eq(cn.urgent, 0);
+  // Kostenmarkierung erhöht die Version
+  eq((await U2.own.put('/api/settings', { repair_cost_limit_net: '500' })).status, 200);
+  const rc = await newCase2(); eq((await cmd2(U2.fleet, rc, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Reparatur freigegeben')).status, 200); eq((await cmd2(U2.ws, rc, 'start_repair')).status, 200);
+  const v0 = db2.prepare('SELECT version FROM cases WHERE id=?').get(rc).version;
+  eq((await cmd2(U2.ws, rc, 'add_part', { name: 'Bremssattel', quantity: 1, unit_price_net: 900 })).status, 200);
+  const v1 = db2.prepare('SELECT version, cost_over_limit_at FROM cases WHERE id=?').get(rc); ok(v1.cost_over_limit_at); eq(v1.version, v0 + 2, 'Buchung + Markierung');
+  // Ruhezeit-Freigabe gleichzeitig mit Cron: genau ein Push
+  const { retryFailedPush, releaseQuietPush } = await import('../src/notify.js');
+  for (let i = 0; i < 4; i++) {
+    const w = await freshWorld();
+    const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    eq((await w.U.fleet.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/q' + i, keys: { p256dh: Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url'), auth: Buffer.alloc(16, 2).toString('base64url') } })).status, 200);
+    const hm = (ms) => new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ms));
+    eq((await w.U.fleet.put('/api/me/notify-prefs', { quiet: { from: hm(Date.now() - 3600e3), to: hm(Date.now() + 4 * 3600e3) } })).status, 200); // breit genug auch in der Nacht der Zeitumstellung
+    await w.newCase();
+    ok(w.e.DB.db.prepare(`SELECT COUNT(*) n FROM notifications WHERE user_id=? AND push_status='pending' AND push_hold_until IS NOT NULL`).get(w.U.fleet.id).n >= 1, 'zurückgehalten');
+    w.e.pushLog.length = 0; addRandomLatency(w.e, 6);
+    // Ruhezeit ausschalten (gibt sofort frei) und gleichzeitig Cron-Läufe
+    const db0 = w.e.DB; const p0 = db0.prepare; let started = null;
+    db0.prepare = (q) => { if (!started && /push_hold_until IS NOT NULL AND n.push_hold_until <= \?/.test(q)) { started = true; started = Promise.all([retryFailedPush(w.e), releaseQuietPush(w.e)]); } return p0(q); };
+    eq((await w.U.fleet.put('/api/me/notify-prefs', { quiet: null })).status, 200); await started; db0.prepare = p0;
+    eq(w.e.pushLog.filter((x) => x.url.includes('/ok/q' + i)).length, 1, 'ein Push, Lauf ' + i);
+  }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

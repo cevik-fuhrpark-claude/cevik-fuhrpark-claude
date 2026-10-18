@@ -376,7 +376,10 @@ async function checkCostLimit(env, ctx, user, envName, c) {
   const now = nowIso();
   const payload = { total_net: total, limit_net: limit, approved_net: c.cost_approved_net ?? null, unvalued_items: k.unvalued_items };
   const r = await env.DB.batch([
-    env.DB.prepare('UPDATE cases SET cost_over_limit_at=?, updated_at=? WHERE id=? AND cost_over_limit_at IS NULL').bind(now, now, c.id),
+    // Version erhöhen (18.10.2026): eine gleichzeitig auf dem Stand vor der Markierung gelesene technische Freigabe scheitert dann am
+    // Versions-Guard; ein schon freigegebener Vorgang wird nicht mehr markiert (kein Hinweis „Kostenfreigabe nötig“ zu einem abgeschlossenen)
+    env.DB.prepare(`UPDATE cases SET cost_over_limit_at=?, updated_at=?, version=version+1 WHERE id=? AND cost_over_limit_at IS NULL
+      AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(now, now, c.id),
     env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at)
       SELECT ?,?,?,?,?,'cost_limit_exceeded',?,?,NULL,?,? WHERE (SELECT cost_over_limit_at FROM cases WHERE id=?)=?`)
       .bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, JSON.stringify(payload), now, c.id, now),
@@ -776,6 +779,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
 
 // ---------- Befehle ----------
 
+const hideSuggestedSite = (env, now, c) => env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL AND user_id<>?
+  AND user_id IN (SELECT id FROM users WHERE role='workshop' AND workshop_site=?)`).bind(now, c.id, c.reporter_id || '', c.suggested_workshop_site);
+
 export async function runCommand(env, ctx, user, envName, caseId, body) {
   const action = str(body.action, { required: true, max: 40, field: 'Aktion' });
   const commandId = str(body.command_id, { required: true, max: 64, field: 'command_id' });
@@ -850,6 +856,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (p.planned_date) set.planned_date = planDate(p.planned_date);
       toStatus = 'werkstatt_freigegeben';
       payload.workshop_site = site;
+      // vorgeschlagene Werkstatt bekommt den Auftrag nicht: ihre Hinweise zum Vorgang ausblenden (18.10.2026: Link → 404; Melder ausgenommen)
+      if (c.suggested_workshop_site && c.suggested_workshop_site !== site) extra.push(hideSuggestedSite(env, now, c));
       notifyKind = 'approved';
       break;
     }
@@ -886,6 +894,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'reject':
+      if (c.suggested_workshop_site && !c.workshop_site) extra.push(hideSuggestedSite(env, now, c));
       // optional als Dublette eines anderen Vorgangs desselben Fahrzeugs (gleiche Umgebung); Grund wird dann vorbelegt
       if (p.duplicate_of) {
         const o = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of FROM cases WHERE id=? AND environment=?').bind(String(p.duplicate_of).slice(0, 40), envName).first();
