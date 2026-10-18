@@ -12893,7 +12893,7 @@ await test('Fehlersuche 18.10. (27): Datensicherung über der Zeilengrenze behä
   ok(/blob\.truncated\.length\) toast\(t\('backup_truncated'\)/.test(app), 'App warnt bei gekappter Sicherung');
 });
 
-await test('Fehlersuche 18.10. (28): Vertragsimport ohne zweiten laufenden Vertrag derselben Nummer; Mängelstatistik „letzte N Tage“ = Berliner Kalendertage', async () => {
+await test('Fehlersuche 18.10. (28): Vertragsimport ohne zweiten laufenden Vertrag derselben Nummer; Mängelstatistik, Datenqualität, Wiederholungsmängel „letzte N Tage“ = Berliner Kalendertage', async () => {
   const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
   const csv = 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Monatsrate;Nachweis\nSZ-YC 5513;Leasing;MAN Financial;L-100;01.01.2024;31.12.2026;1000;Vertrag A\nSZ-YC 5513;Leasing;MAN Financial;L-100;01.01.2025;31.12.2027;1000;Vertrag B\nSZ-YC 5513;Leasing;MAN Financial;L-100;;;1000;Vertrag C\nSZ-KC 5515;Leasing;MAN Financial;L-100;01.01.2025;;900;anderes Fahrzeug\n';
   const pre = await U.own.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(pre.status, 200);
@@ -12911,6 +12911,9 @@ await test('Fehlersuche 18.10. (28): Vertragsimport ohne zweiten laufenden Vertr
   ins.run('dq-in', envName, V1, uid, JSON.stringify([{ key: 'licht', result: 'mangel' }]), new Date(Date.parse(start) + 60000).toISOString());
   ins.run('dq-out', envName, V1, uid, JSON.stringify([{ key: 'licht', result: 'mangel' }]), new Date(Date.parse(start) - 60000).toISOString());
   const r = (await U.fleet.get('/api/reports/defects?days=30')).data;
+  const { berlinWindowStartIso } = await import('../src/util.js'); eq(berlinWindowStartIso(1), berlinDayStartIso(BERLIN_TODAY)); eq(berlinWindowStartIso(30), start);
+  const { readFileSync } = await import('node:fs');
+  for (const f of ['quality', 'vehicles', 'cases', 'reports']) ok(readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8').includes('berlinWindowStartIso('), f + ': Kalendertage-Fenster');
   eq(r.since, start, 'Beginn = Tagesanfang Berlin'); eq(r.totals.checks, 1, 'erste Minute des ersten Tages zählt, letzte Minute davor nicht');
 });
 

@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam, rateOf, roundCents } from './util.js';
+import { bad, forbidden, berlinWindowStartIso, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam, rateOf, roundCents } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -586,7 +586,7 @@ export async function defectReport(env, user, envName, query = {}) {
   if (kind && !['abfahrt', 'nach_reparatur'].includes(kind)) throw bad('invalid_kind', 'kind: abfahrt oder nach_reparatur');
   // letzte N Berliner Kalendertage einschließlich heute (wie `staleBefore`) – vorher 24-h-Schritte ab jetzt: Zahlen hingen von der Uhrzeit ab,
   // am Tag der Zeitumstellung fiel ein Kalendertag halb heraus (18.10.2026)
-  const since = berlinDayStartIso(new Date(Date.parse(berlinDate() + 'T00:00:00Z') - (days - 1) * 86400000).toISOString().slice(0, 10));
+  const since = berlinWindowStartIso(days);
   const kf = kind ? ' AND i.kind=?' : '';
   const args = kind ? [envName, since, kind] : [envName, since];
   const [checks, items, again] = await Promise.all([

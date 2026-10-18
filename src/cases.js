@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -104,8 +104,8 @@ export async function listCases(env, user, envName, query, meta = null) {
   if (query.repeat_days !== undefined && query.repeat_days !== '') {
     const d = Number(query.repeat_days);
     if (!Number.isInteger(d) || d < 1 || d > 30) throw bad('invalid_repeat_days', 'repeat_days: 1–30 Tage');
-    where.push(`EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding' AND e.created_at > ?)`);
-    args.push(new Date(Date.now() - d * 86400000).toISOString());
+    where.push(`EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding' AND e.created_at >= ?)`);
+    args.push(berlinWindowStartIso(d));
   }
   // Schalter-Filter nur bei „1“/„true“/„ja“ (17.10.2026: ?warranty=0 schaltete den Filter EIN, weil nur der Rohwert geprüft wurde)
   const on = (v) => typeof v === 'string' && /^(1|true|ja|yes)$/i.test(v.trim());

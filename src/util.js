@@ -241,6 +241,11 @@ export function berlinDaySql(col) {
   return `date(${t}, CASE WHEN ${t} >= datetime(${y}||'-03-25','weekday 0','+1 hour') AND ${t} < datetime(${y}||'-10-25','weekday 0','+1 hour') THEN '+2 hours' ELSE '+1 hour' END)`;
 }
 // Beginn eines Berliner Kalendertags als UTC-Zeitpunkt (ISO); Zeitumstellung liegt nie um Mitternacht (01:00/02:00 UTC)
+// Beginn des Fensters „letzte N Tage“ in Berliner Kalendertagen einschließlich heute (00:00 Berlin vor N−1 Tagen) – statt
+// N × 24 h ab jetzt (Ergebnis hing von der Uhrzeit ab; Zeitumstellung), 18.10.2026
+export function berlinWindowStartIso(days) {
+  return berlinDayStartIso(new Date(Date.parse(berlinDate() + 'T00:00:00Z') - (days - 1) * 86400000).toISOString().slice(0, 10));
+}
 export function berlinDayStartIso(dateStr) {
   const ms = Date.parse(dateStr + 'T00:00:00Z');
   return new Date(ms - berlinOffsetMs(ms - 7200000)).toISOString();
