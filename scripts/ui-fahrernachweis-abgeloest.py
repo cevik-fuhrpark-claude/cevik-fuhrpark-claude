@@ -22,8 +22,8 @@ with sync_playwright() as p:
         for d in docs: check(api('POST',f'/api/drivers/{did}/documents',d)['s'] in (200,201),f'{name}: Nachweis {d["kind"]} {d.get("title")} {d.get("valid_until")}')
         return did
     lic={'kind':'fuehrerschein','evidence':'Führerschein vorgelegt','valid_until':'2033-01-01'}
-    d1=driver('FA Abgelöst',[lic,{'kind':'unterweisung','title':'Ladungssicherung','valid_until':'2026-09-30','evidence':'Unterweisung 2025'},{'kind':'unterweisung','title':'ladungssicherung','valid_until':'2099-09-30','evidence':'Unterweisung 2026'}])
-    d2=driver('FA Anderes Thema',[lic,{'kind':'unterweisung','title':'Ladungssicherung','valid_until':'2026-09-30','evidence':'Unterweisung 2025'},{'kind':'unterweisung','title':'Gefahrgut','valid_until':'2099-09-30','evidence':'Unterweisung Gefahrgut'}])
+    d1=driver('FA Abgelöst',[lic,{'kind':'unterweisung','title':'Ladungssicherung','valid_until':'2026-09-30','evidence':'Unterweisung 2025'},{'kind':'unterweisung','title':'ladungssicherung','valid_until':'2040-09-30','evidence':'Unterweisung 2026'}])
+    d2=driver('FA Anderes Thema',[lic,{'kind':'unterweisung','title':'Ladungssicherung','valid_until':'2026-09-30','evidence':'Unterweisung 2025'},{'kind':'unterweisung','title':'Gefahrgut','valid_until':'2040-09-30','evidence':'Unterweisung Gefahrgut'}])
     dt=api('GET',f'/api/drivers/{d1}')['d']
     check(dt['status']['overall']!='kritisch' and len(dt['status']['replaced'])==1,f'API: abgelöst, nicht kritisch ({dt["status"]["overall"]})')
     check(api('GET',f'/api/drivers/{d2}')['d']['status']['overall']=='kritisch','API: anderes Thema bleibt kritisch')
@@ -35,7 +35,7 @@ with sync_playwright() as p:
         q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         q.goto(B+f'/#/drivers/{d1}'); q.reload(); q.wait_for_selector('[data-ddoc-replaced]'); q.wait_for_timeout(300)
         t1=q.inner_text('[data-ddoc-replaced]')
-        check(REPL[lang] in t1 and '30' in t1 and '2099' in t1,f'{lang} {w}px Akte: „{t1.strip()}“')
+        check(REPL[lang] in t1 and '30' in t1 and '2040' in t1,f'{lang} {w}px Akte: „{t1.strip()}“')
         check(q.locator('[data-ddoc-replaced]').count()==1,f'{lang} {w}px genau ein abgelöster Nachweis')
         check(q.evaluate("()=>document.documentElement.scrollWidth<=window.innerWidth+1"),f'{lang} {w}px Akte: kein Querscrollen')
         if SHOTS and w!=820: q.screenshot(path=f'{SHOTS}/fahrernachweis_{lang}_{w}.png',full_page=True)

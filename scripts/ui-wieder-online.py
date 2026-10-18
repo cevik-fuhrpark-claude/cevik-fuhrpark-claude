@@ -23,7 +23,7 @@ with sync_playwright() as p:
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'wo.inhaber','password':PW}])
         q.goto(B+'/#/new'); q.wait_for_selector('#d')   # online: Konto + Fahrzeuge werden für Offline gespeichert
         calls=[]
-        q.on('request', lambda r: calls.append(r.url.split('8787')[-1]) if '/api/' in r.url else None)
+        q.on('request', lambda r: calls.append(r.url.replace(B,'')) if '/api/' in r.url else None)
         loch=lambda route: route.abort()
         q.route('**/api/**', loch)
         q.reload(); q.wait_for_selector('#d')
