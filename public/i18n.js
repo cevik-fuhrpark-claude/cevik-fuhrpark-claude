@@ -54,7 +54,7 @@ export const STRINGS = {
     users: 'Benutzer', new_user: 'Benutzer anlegen', role: 'Rolle', environment: 'Umgebung', display_name: 'Name', invite_link: 'Einladungslink (7 Tage gültig) – an die Person senden:',
     new_invite: 'Neuer Einladungslink', active: 'aktiv', inactive: 'deaktiviert', deactivate: 'Deaktivieren', activate: 'Aktivieren', copy: 'Kopieren', copied: 'Kopiert',
     role_owner: 'Inhaber', role_fleet: 'Fuhrparkleitung', role_workshop: 'Werkstatt', role_dispatch: 'Disposition', role_driver: 'Fahrer', role_viewer: 'Leser',
-    settings: 'Einstellungen', hourly_rate: 'Interner Werkstatt-Stundensatz netto (€)', warn_days: 'Vorwarnung Prüftermine (Tage, Standard 30)', sla: 'Reaktionsfristen (Minuten, leer = nicht festgelegt)',
+    settings: 'Einstellungen', hourly_rate: 'Interner Werkstatt-Stundensatz netto (€)', warn_days: 'Vorwarnung Prüftermine und Fahrzeugdokumente (Tage, Standard 30)', sla: 'Reaktionsfristen (Minuten, leer = nicht festgelegt)',
     language: 'Sprache', change_password: 'Passwort ändern', old_password: 'Altes Passwort', import_csv: 'Fahrzeugstamm importieren (CSV)',
     last_check: 'Letzte Abfahrtskontrolle', last_check_none: 'noch keine erfasst', last_check_info: 'Nur Information – ob das Fahrzeug an diesem Tag gefahren ist, weiß die App nicht.',
     departure_check: 'Abfahrtskontrolle', check_saved: 'Kontrolle gespeichert', error: 'Fehler', retry: 'Erneut versuchen', offline: 'Keine Verbindung.',
@@ -115,7 +115,7 @@ export const STRINGS = {
     users: 'Користувачі', new_user: 'Створити користувача', role: 'Роль', environment: 'Середовище', display_name: 'Ім’я', invite_link: 'Посилання-запрошення (7 днів):',
     new_invite: 'Нове запрошення', active: 'активний', inactive: 'деактивовано', deactivate: 'Деактивувати', activate: 'Активувати', copy: 'Копіювати', copied: 'Скопійовано',
     role_owner: 'Власник', role_fleet: 'Керівник автопарку', role_workshop: 'Майстерня', role_dispatch: 'Диспетчер', role_driver: 'Водій', role_viewer: 'Перегляд',
-    settings: 'Налаштування', hourly_rate: 'Внутрішня ставка майстерні нетто (€)', warn_days: 'Попередження про огляди (днів, стандартно 30)', sla: 'Терміни реакції (хв, порожньо = не задано)',
+    settings: 'Налаштування', hourly_rate: 'Внутрішня ставка майстерні нетто (€)', warn_days: 'Попередження про огляди та документи транспорту (днів, стандартно 30)', sla: 'Терміни реакції (хв, порожньо = не задано)',
     language: 'Мова', change_password: 'Змінити пароль', old_password: 'Старий пароль', import_csv: 'Імпорт транспорту (CSV)',
     last_check: 'Остання перевірка перед виїздом', last_check_none: 'ще не зафіксовано', last_check_info: 'Лише інформація – застосунок не знає, чи транспорт їздив у цей день.',
     departure_check: 'Перевірка перед виїздом', check_saved: 'Перевірку збережено', error: 'Помилка', retry: 'Спробувати ще', offline: 'Немає з’єднання.',
@@ -176,7 +176,7 @@ export const STRINGS = {
     users: 'Users', new_user: 'Create user', role: 'Role', environment: 'Environment', display_name: 'Name', invite_link: 'Invite link (valid 7 days) – send to the person:',
     new_invite: 'New invite link', active: 'active', inactive: 'deactivated', deactivate: 'Deactivate', activate: 'Activate', copy: 'Copy', copied: 'Copied',
     role_owner: 'Owner', role_fleet: 'Fleet manager', role_workshop: 'Workshop', role_dispatch: 'Dispatch', role_driver: 'Driver', role_viewer: 'Viewer',
-    settings: 'Settings', hourly_rate: 'Internal workshop hourly rate net (€)', warn_days: 'Inspection pre-warning (days, default 30)', sla: 'Response times (minutes, empty = not set)',
+    settings: 'Settings', hourly_rate: 'Internal workshop hourly rate net (€)', warn_days: 'Pre-warning for inspections and vehicle documents (days, default 30)', sla: 'Response times (minutes, empty = not set)',
     language: 'Language', change_password: 'Change password', old_password: 'Old password', import_csv: 'Import vehicle master data (CSV)',
     last_check: 'Last pre-trip check', last_check_none: 'none recorded yet', last_check_info: 'For information only – the app does not know whether the vehicle was driven that day.',
     departure_check: 'Pre-trip check', check_saved: 'Check saved', error: 'Error', retry: 'Retry', offline: 'No connection.',
@@ -276,6 +276,9 @@ Object.assign(STRINGS.en, { reorder: 'Reorder list', reorder_hint: 'Items below 
 Object.assign(STRINGS.de, { data_export: 'Datenauskunft', data_export_hint: 'Alle zu dieser Person gespeicherten Daten als Datei (Auskunft nach Art. 15 DSGVO). Die Datei enthält personenbezogene Daten – nur an die Person selbst herausgeben, vorher auf Daten Dritter prüfen. Der Abruf wird protokolliert.' });
 Object.assign(STRINGS.uk, { data_export: 'Довідка про дані', data_export_hint: 'Усі дані, збережені про цю особу, у файлі (довідка за ст. 15 GDPR). Файл містить персональні дані – видавати лише самій особі, попередньо перевірити на дані третіх осіб. Запит протоколюється.' });
 Object.assign(STRINGS.en, { data_export: 'Data access export', data_export_hint: 'All data stored about this person as a file (access request, Art. 15 GDPR). The file contains personal data – hand it only to the person concerned and check for third-party data first. The export is logged.' });
+Object.assign(STRINGS.de, { docst_abgelaufen: 'abgelaufen', docst_laeuft_ab: 'läuft bald ab', docst_abgeloest: 'abgelöst', doc_file_hint: 'PDF, JPG, PNG, WEBP · max. 5 MB', doc_duplicate_differs: 'Diese Datei ist schon vorhanden – die neuen Angaben wurden nicht übernommen. Sie stehen jetzt unter „Dokumentangaben korrigieren“ – bitte dort speichern.' });
+Object.assign(STRINGS.uk, { docst_abgelaufen: 'прострочено', docst_laeuft_ab: 'скоро спливає', docst_abgeloest: 'замінено', doc_file_hint: 'PDF, JPG, PNG, WEBP · макс. 5 МБ', doc_duplicate_differs: 'Цей файл уже є – нові дані не збережено. Їх перенесено у «Виправити дані документа» – збережіть там.' });
+Object.assign(STRINGS.en, { docst_abgelaufen: 'expired', docst_laeuft_ab: 'expires soon', docst_abgeloest: 'superseded', doc_file_hint: 'PDF, JPG, PNG, WEBP · max. 5 MB', doc_duplicate_differs: 'This file already exists – the new details were not saved. They are now in “Correct document details” – please save there.' });
 Object.assign(STRINGS.de, { agent_stale: 'Der Fuhrparkagent ist länger nicht planmäßig gelaufen oder mit Fehler beendet – Hinweise und Erinnerungen können fehlen. Bitte Cloudflare-Cron (Worker → Trigger) prüfen.' });
 Object.assign(STRINGS.uk, { agent_stale: 'Агент автопарку давно не запускався за планом або завершився з помилкою – нагадування можуть бути відсутні. Перевірте Cloudflare-Cron (Worker → Triggers).' });
 Object.assign(STRINGS.en, { agent_stale: 'The fleet agent has not run as scheduled for a while or ended with an error – findings and reminders may be missing. Please check the Cloudflare cron (Worker → Triggers).' });

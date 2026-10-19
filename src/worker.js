@@ -399,7 +399,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/data-export$/)) && m === 'GET') {
     const x = await personExport(env, user, { driverId: mm[1] });
-    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_fahrer_${berlinDate(x.meta.generated_at)}.json"` } });
+    return new Response(JSON.stringify(x, null, 1), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="datenauskunft_fahrer_${driverFileTag(x.driver_record)}_${berlinDate(x.meta.generated_at)}.json"` } });
   }
   // Datensicherung (Inhaber)
   if (path === '/api/admin/backup' && m === 'GET') {
@@ -754,3 +754,9 @@ export default {
     }
   },
 };
+
+// Dateiname der Fahrer-Datenauskunft mit Personenbezug (Personalnummer bzw. Name ohne Sonderzeichen) – sonst hießen alle Auskünfte eines Tages gleich (19.10.2026)
+function driverFileTag(d) {
+  const raw = String((d && (d.personnel_no || d.display_name)) || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  return raw || String((d && d.id) || 'fahrer').slice(0, 8);
+}

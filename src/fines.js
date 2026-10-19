@@ -78,7 +78,7 @@ export async function driverCandidates(env, envName, f) {
   for (const a of assigned) {
     const via = a.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${a.plate}` : '';
     if (out.some((o) => o.user_id === a.user_id && o.basis === 'zuordnung')) continue;
-    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDate(a.valid_from)}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
+    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
   }
   const day = berlinDate(f.offense_at);
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at FROM inspections i JOIN users u ON u.id=i.performed_by

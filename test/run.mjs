@@ -660,8 +660,8 @@ await test('Integration: Telematik nur über FIN/bestätigtes Mapping; Token Pfl
     { external_id: 'WF-2', plate: 'SZ-KC 5515', gps_time: '2026-10-10T08:00:00Z', lat: 51.5, lon: 7.4, km: 10 },
   ] }, H);
   eq(r.status, 200); eq(r.data.matched, 1); eq(r.data.unmatched, 1, 'Nur Kennzeichen = Prüffall');
-  const old = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-09T08:00:00Z', km: 1 }] }, H);
-  eq(old.data.rejected, 1, 'Älterer GPS-Stand überschreibt nicht');
+  const old = await anon.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-09T08:00:00Z', lat: 1, lon: 1 }] }, H);
+  eq(old.data.rejected, 1, 'Älterer GPS-Stand ohne km überschreibt nicht (Nachlieferung mit km: eigener Test 19.10.2026)');
   const cs = await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, H);
   ok(cs.data.cases.length >= 3);
   const av = await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, H);
@@ -1270,7 +1270,7 @@ await test('Erfassung nur durch Fuhrpark; Kennzeichen-Zuordnung; Aktenzeichen-Du
 await test('Fahrerermittlung: Kandidat aus Fahrzeugzuordnung, Bestätigung nur mit Nachweis, Fahrer erst nach Information sichtbar', async () => {
   const d = await users.fleet.get(`/api/fines/${FINE}`);
   ok(d.data.candidates.some((c) => c.user_id === users.driver.id && c.basis === 'zuordnung'), 'Zugeordneter Fahrer als Kandidat');
-  { const c = d.data.candidates.find((x) => x.basis === 'zuordnung'); ok(/^\d{4}-\d{2}-\d{2}$/.test(c.since) && c.evidence.startsWith('Fahrzeugzuordnung seit ' + c.since), 'Kandidat: Zuordnungsdatum strukturiert, Nachweistext unverändert deutsch'); }
+  { const c = d.data.candidates.find((x) => x.basis === 'zuordnung'); ok(/^\d{4}-\d{2}-\d{2}$/.test(c.since) && c.evidence.startsWith('Fahrzeugzuordnung seit ' + c.since.split('-').reverse().join('.')), 'Kandidat: Zuordnungsdatum strukturiert, Nachweistext deutsch mit TT.MM.JJJJ'); }
   eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung' } })).status, 400, 'Ohne Nachweis');
   eq((await users.fleet.post(`/api/fines/${FINE}/commands`, { action: 'confirm_driver', payload: { driver_id: users.driver.id, basis: 'zuordnung', evidence: 'Fahrzeugzuordnung + Tourenplan KW 41' } })).status, 200);
   eq((await users.driver.get(`/api/fines/${FINE}`)).status, 404, 'Noch nicht informiert');
@@ -13982,6 +13982,55 @@ await test('Fehlersuche 19.10. (Postausgang/Kosten): Kontrolle an außer Betrieb
   // Erstattung „150,555“ in DE: Hinweis auf 2 Nachkommastellen statt „mehrdeutig“
   const cl = await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'X', reported_on: BERLIN_TODAY, evidence: 'x', reimbursed_net: '150,555' });
   eq(cl.status, 400); ok(/Nachkommastellen/.test(cl.data.message) && !/mehrdeutig/.test(cl.data.message), cl.data.message);
+});
+
+await test('Fehlersuche 19.10. (Telematik/Dokumente/Auskunft): Nachlieferung neueste zuerst und nach gespeichertem Stand übernimmt Tages-km, Dokument-Dublette mit anderen Angaben, Gültigkeit je Dokument, Datenauskunft in der Sprache der Person ohne Entwicklervermerk', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const odo = () => e.DB.db.prepare(`SELECT km, substr(measured_at,1,10) AS d FROM odometer_readings WHERE vehicle_id=? AND source='telematik:webfleet' ORDER BY measured_at`).all(V1).map((x) => `${x.d}:${x.km}`).join();
+  // 1. drei Tage, neueste zuerst → alle drei Tageswerte (vorher nur der neueste, 2 „rejected“)
+  const r1 = (await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [
+    { external_id: 'NL-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-08T10:00:00Z', km: 100300, lat: 51, lon: 7 },
+    { external_id: 'NL-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-07T10:00:00Z', km: 100200, lat: 51, lon: 7 },
+    { external_id: 'NL-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-06T10:00:00Z', km: 100100, lat: 51, lon: 7 } ] }, H)).data;
+  eq(`${r1.matched}/${r1.rejected}/${r1.odometer_written}/${r1.position_outdated}`, '3/0/3/0', JSON.stringify(r1));
+  eq(odo(), '2026-10-06:100100,2026-10-07:100200,2026-10-08:100300');
+  // 2. spätere Nachlieferung eines älteren Tages: Position bleibt, Tages-km übernommen; unplausibel (größer als später) → odometer_rejected
+  const r2 = (await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [
+    { external_id: 'NL-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-05T10:00:00Z', km: 100000, lat: 48, lon: 11 },
+    { external_id: 'NL-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-03T10:00:00Z', lat: 48, lon: 11 } ] }, H)).data;
+  eq(`${r2.matched}/${r2.rejected}/${r2.position_outdated}/${r2.odometer_written}/${r2.odometer_rejected}`, '1/1/1/1/0', JSON.stringify(r2));
+  const r3 = (await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'NL-1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-04T10:00:00Z', km: 200000 }] }, H)).data;
+  eq(`${r3.position_outdated}/${r3.odometer_written}/${r3.odometer_rejected}`, '1/0/1', 'größer als der spätere Stand → nicht übernommen');
+  eq(odo(), '2026-10-05:100000,2026-10-06:100100,2026-10-07:100200,2026-10-08:100300');
+  const lt = e.DB.db.prepare(`SELECT gps_time, lat FROM telematics_latest WHERE vehicle_id=?`).get(V1); eq(`${lt.gps_time.slice(0, 10)}/${lt.lat}`, '2026-10-08/51', 'letzter Stand unverändert');
+  // 3. Fahrzeugdokument: gleiche Datei mit anderen Angaben → duplicate + differs, Angaben unverändert; gleiche Angaben → differs false
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Versicherung 2026\n%%EOF'); const HD = { 'content-type': 'application/pdf', 'x-filename': 'vers.pdf' };
+  const up = (q) => U.fleet.req('POST', `/api/vehicles/${V1}/documents?${q}`, pdf, HD);
+  const a = await up('kind=versicherung&valid_until=2026-01-31'); eq(a.status, 201);
+  const b = (await up('kind=versicherung&valid_until=2027-01-31&note=neu')).data; eq(`${b.duplicate}/${b.differs}/${b.id === a.data.id}`, 'true/true/true');
+  eq((await up('kind=versicherung&valid_until=2026-01-31')).data.differs, false, 'gleiche Angaben');
+  // 4. Gültigkeit je Dokument wie der Agent: abgelaufen / läuft ab / abgelöst / gültig
+  const pdfN = (t) => new TextEncoder().encode(`%PDF-1.4\n% ${t}\n%%EOF`);
+  const addDoc = async (t, q) => (await U.fleet.req('POST', `/api/vehicles/${V1}/documents?${q}`, pdfN(t), HD)).data.id;
+  const plus = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const soon = await addDoc('Leasing', `kind=leasing&valid_until=${plus(5)}`);
+  const zulAlt = await addDoc('Zul alt', `kind=zulassung&valid_until=${plus(-40)}`); const zulNeu = await addDoc('Zul neu', `kind=zulassung&valid_until=${plus(400)}`);
+  const adr = await addDoc('ADR', `kind=sonstiges&note=ADR&valid_until=${plus(-1)}`);
+  const docs = (await U.fleet.get(`/api/vehicles/${V1}`)).data.documents; const st = (id) => docs.find((f) => f.id === id).doc_status;
+  eq([st(a.data.id), st(soon), st(zulAlt), st(zulNeu), st(adr)].join(), 'abgelaufen,laeuft_ab,abgeloest,gueltig,abgelaufen');
+  // 5. Datenauskunft: Titel/Erläuterung in der Sprache der Person, ohne „[CLAUDE]“ und ohne Prüfnotiz für den Inhaber; neue Abschnitte
+  eq((await U.driver.req('PATCH', '/api/me', { language: 'uk' })).status, 200);
+  const x = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
+  eq(x.meta.language, 'uk'); ok(!/CLAUDE/.test(JSON.stringify(x.meta)) && /GDPR/.test(x.meta.title) && !/Vor Herausgabe/.test(x.meta.note), JSON.stringify(x.meta));
+  const f = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data;
+  eq(f.meta.language, 'de'); ok(['vehicle_assignments_made', 'invites_created', 'stock_items_edited', 'settings_changed'].every((k) => Array.isArray(f[k])), 'neue Abschnitte');
+  ok(f.files_uploaded.some((r) => r.doc_valid_until === '2027-01-31' || r.doc_valid_until === '2026-01-31'), 'Dokumentangaben in der Auskunft');
+  const ownId = (await U.own.get('/api/me')).data.user.id; const inv = (await U.own.get(`/api/admin/users/${ownId}/data-export`)).data; ok(inv.invites_created.length >= 5, 'ausgestellte Einladungen');
+  // 6. Dateiname der Fahrer-Auskunft mit Personalnummer/Name
+  const dr = await U.own.post('/api/drivers', { display_name: 'Jürgen Öz', personnel_no: 'P 77/1' }); eq(dr.status, 201);
+  const res = await U.own.req('GET', `/api/drivers/${dr.data.id}/data-export`);
+  ok(/datenauskunft_fahrer_P_77_1_\d{4}-\d{2}-\d{2}\.json/.test(res.headers.get('content-disposition') || ''), res.headers.get('content-disposition'));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

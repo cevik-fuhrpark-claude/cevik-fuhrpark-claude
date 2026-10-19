@@ -242,6 +242,20 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   if (!tl) out.mileage = vehicleMileage(odoRows, mileageLo);
   // Vorwarnung Prüftermine (Tage) für die Fälligkeitsfarbe der Akte – gleiche Einstellung wie Übersicht/Server (18.10.2026; vorher fest 30)
   if (!tl) out.maintenance_warn_days = maintenanceWarnDays(sets.get('maintenance_warn_days'));
+  // Gültigkeit je Dokument wie der Agent (DOCUMENT_EXPIRED/…_EXPIRES_SOON, gleiche Vorwarnung): maßgeblich ist je Art (bei „sonstiges“ je Thema)
+  // das Dokument mit dem spätesten „gültig bis“; ältere derselben Art gelten als abgelöst (19.10.2026: Akte zeigte Ablauf nicht an)
+  if (documents.length) {
+    const today = berlinDate(); const w = maintenanceWarnDays(sets.get('maintenance_warn_days'));
+    const keyOf = (f) => `${f.doc_kind || 'sonstiges'}|${f.doc_kind === 'sonstiges' ? String(f.doc_note || '').trim().toLowerCase() : ''}`;
+    const maxBy = new Map();
+    for (const f of documents) if (f.doc_valid_until && (!maxBy.has(keyOf(f)) || f.doc_valid_until > maxBy.get(keyOf(f)))) maxBy.set(keyOf(f), f.doc_valid_until);
+    for (const f of documents) {
+      if (!f.doc_valid_until) { f.doc_status = null; continue; }
+      if (f.doc_valid_until < maxBy.get(keyOf(f))) { f.doc_status = 'abgeloest'; continue; }
+      const days = Math.round((Date.parse(f.doc_valid_until) - Date.parse(today)) / 86400000);
+      f.doc_status = !v.active ? null : days < 0 ? 'abgelaufen' : days <= w ? 'laeuft_ab' : 'gueltig';
+    }
+  }
   return out;
 }
 
@@ -1079,8 +1093,10 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
   const type = sniffType(buf);
   if (!type) throw bad('type', 'Nur PDF, JPG, PNG oder WEBP erlaubt.');
   const sha = await sha256Hex(buf);
-  const dup = await env.DB.prepare('SELECT id FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
-  if (dup) return { id: dup.id, duplicate: true };
+  // gleiche Datei schon vorhanden: nichts ändern; `differs` = Art/Bemerkung/„gültig bis“ weichen ab (Oberfläche öffnet die Korrektur, 19.10.2026)
+  const dupOut = (d) => ({ id: d.id, duplicate: true, differs: (d.doc_kind || 'sonstiges') !== kind || (d.doc_note || null) !== (note || null) || (d.doc_valid_until || null) !== (validUntil || null) });
+  const dup = await env.DB.prepare('SELECT id, doc_kind, doc_note, doc_valid_until FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
+  if (dup) return dupOut(dup);
   const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=?').bind(vehicleId, envName).first();
   if (cnt.n >= MAX_VEHICLE_DOCS) throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
   const id = uuid();
@@ -1095,8 +1111,8 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
     .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_VEHICLE_DOCS).run();
   if (!ins.meta || !ins.meta.changes) {
     await env.FILES.delete(key);
-    const d2 = await env.DB.prepare('SELECT id FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
-    if (d2) return { id: d2.id, duplicate: true };
+    const d2 = await env.DB.prepare('SELECT id, doc_kind, doc_note, doc_valid_until FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();
+    if (d2) return dupOut(d2);
     throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
   }
   await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length, valid_until: validUntil });

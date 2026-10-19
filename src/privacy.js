@@ -6,6 +6,12 @@ import { audit } from './auth.js';
 const LIMIT = 5000;
 
 // Aufruf mit App-Konto (userId) oder Fahrerakte (driverId); ist die Fahrerakte mit einem Konto verknüpft, gilt die volle Auskunft des Kontos
+const EXPORT_TEXT = {
+  de: { title: 'Datenauskunft (Art. 15 DSGVO) – Fuhrpark-App', note: 'Alle in der Fuhrpark-App gespeicherten Daten zu Ihrer Person (App-Konto und verknüpfte Fahrerakte), ohne Passwort-Hashes, Sitzungs-Token und Push-Schlüssel. Dateiinhalte (Fotos/PDF) sind nicht enthalten, nur ihre Angaben. Gespeicherte Texte und Werte stehen so in der Datei, wie sie erfasst wurden (meist Deutsch).' },
+  uk: { title: 'Довідка про персональні дані (ст. 15 GDPR) – застосунок автопарку', note: 'Усі дані про вас, збережені в застосунку автопарку (обліковий запис і пов’язана картка водія), без хешів паролів, токенів сеансів і ключів push. Вміст файлів (фото/PDF) не включено, лише їхні дані. Збережені тексти й значення наведено так, як їх було внесено (здебільшого німецькою).' },
+  en: { title: 'Data access export (Art. 15 GDPR) – fleet app', note: 'All data stored about you in the fleet app (app account and linked driver record), without password hashes, session tokens and push keys. File contents (photos/PDF) are not included, only their details. Stored texts and values appear as they were recorded (mostly German).' },
+};
+
 export async function personExport(env, actor, { userId = null, driverId = null }) {
   if (actor.role !== 'owner') throw forbidden('Datenauskunft nur durch den Inhaber.');
   let driver = null;
@@ -35,7 +41,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     case_events: q(`SELECT c.case_no, e.environment, e.action, e.note, e.created_at FROM case_events e JOIN cases c ON c.id=e.case_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
     work_entries: q(`SELECT c.case_no, w.* FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE w.user_id=? ORDER BY w.created_at`, userId),
     inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.items, i.created_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),
-    files_uploaded: q('SELECT filename, content_type, size, created_at, case_id, vehicle_id, doc_kind FROM files WHERE uploaded_by=? ORDER BY created_at', userId),
+    files_uploaded: q('SELECT filename, content_type, size, created_at, case_id, vehicle_id, doc_kind, doc_note, doc_valid_until FROM files WHERE uploaded_by=? ORDER BY created_at', userId),
     notifications: q('SELECT environment, kind, title, body, created_at, push_status, opened_at, acknowledged_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
     odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
     // 18.10.2026: Nachweis der Fahrerermittlung, Betrag, Frist und Verlauf (auch Einträge der Leitung) gehören zur Auskunft der betroffenen Person
@@ -78,18 +84,31 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     vehicle_notes_archived: q(`SELECT n.environment, n.text, n.archived_at, v.plate FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.archived_by=? ORDER BY n.archived_at`, userId),
     maintenance_rules_created: q(`SELECT m.kind, m.created_at, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.created_by=? ORDER BY m.created_at`, userId),
     telematics_mappings_confirmed: q('SELECT provider, external_id, evidence, confirmed_at FROM telematics_mappings WHERE confirmed_by=? ORDER BY confirmed_at', userId),
+    // 19.10.2026 ergänzt: Zuordnungen/Einladungen, die die Person vorgenommen hat, Lagerartikel (angelegt/bestellt), geänderte Einstellungen –
+    // in EINER Abfrage (Abfragebudget ≤ 50 je Aufruf), unten in Abschnitte aufgeteilt
+    _made_by: env.DB.prepare(`SELECT
+      (SELECT json_group_array(json_object('valid_from', valid_from, 'valid_to', valid_to, 'evidence', evidence, 'created_at', created_at, 'plate', plate, 'assigned_user', assigned_user)) FROM (SELECT d.valid_from, d.valid_to, d.evidence, d.created_at, v.plate, u2.display_name AS assigned_user FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id LEFT JOIN users u2 ON u2.id=d.user_id WHERE d.created_by=?1 ORDER BY d.created_at LIMIT ?2)) AS vehicle_assignments_made,
+      (SELECT json_group_array(json_object('created_at', created_at, 'expires_at', expires_at, 'used_at', used_at, 'invited_user', invited_user)) FROM (SELECT i.created_at, i.expires_at, i.used_at, u2.display_name AS invited_user FROM invites i LEFT JOIN users u2 ON u2.id=i.user_id WHERE i.created_by=?1 ORDER BY i.created_at LIMIT ?2)) AS invites_created,
+      (SELECT json_group_array(json_object('environment', environment, 'site', site, 'name', name, 'part_number', part_number, 'created_at', created_at, 'ordered_on', ordered_on, 'ordered_qty', ordered_qty, 'created', created, 'ordered', ordered)) FROM (SELECT environment, site, name, part_number, created_at, ordered_on, ordered_qty, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN ordered_by=?1 THEN 1 ELSE 0 END AS ordered FROM stock_items WHERE created_by=?1 OR ordered_by=?1 ORDER BY created_at LIMIT ?2)) AS stock_items_edited,
+      (SELECT json_group_array(json_object('key', key, 'updated_at', updated_at)) FROM (SELECT key, updated_at FROM settings WHERE updated_by=?1 ORDER BY updated_at LIMIT ?2)) AS settings_changed`).bind(userId, LIMIT + 1),
   };
   const names = Object.keys(stmts);
   const res = await env.DB.batch(names.map((n) => stmts[n]));
   const data = {};
   const truncated = [];
-  names.forEach((n, i) => { const r = res[i].results || []; if (r.length > LIMIT) truncated.push(n); data[n] = r.slice(0, LIMIT); });
+  names.forEach((n, i) => {
+    if (n === '_made_by') { const row = (res[i].results || [])[0] || {}; for (const [k, j] of Object.entries(row)) { const r = JSON.parse(j || '[]'); if (r.length > LIMIT) truncated.push(k); data[k] = r.slice(0, LIMIT); } return; }
+    const r = res[i].results || []; if (r.length > LIMIT) truncated.push(n); data[n] = r.slice(0, LIMIT);
+  });
   const generatedAt = nowIso();
-  await audit(env, actor.id, 'privacy.export', u ? u.id : driver.id, { sections: names.filter((n) => data[n].length).length, ...(u ? {} : { driver_only: true }) });
+  const lang = u && EXPORT_TEXT[u.language] ? u.language : 'de';
+  await audit(env, actor.id, 'privacy.export', u ? u.id : driver.id, { sections: Object.keys(data).filter((n) => data[n].length).length, ...(u ? {} : { driver_only: true }) });
   return {
     meta: {
-      title: 'Datenauskunft je Person ([CLAUDE] CEVIK Fuhrpark)', generated_at: generatedAt, generated_by: actor.display_name,
-      note: 'Alle in der Fuhrpark-App gespeicherten Daten zu dieser Person (App-Konto und verknüpfte Fahrerakte), ohne Passwort-Hashes, Sitzungs-Token und Push-Schlüssel. Dateiinhalte (Fotos/PDF) sind nicht enthalten, nur ihre Angaben. Vor Herausgabe prüfen (z. B. Daten Dritter in Freitexten).',
+      // Titel/Erläuterung in der Sprache der Person (die Datei geht an sie), ohne Entwicklervermerk; der Prüfhinweis für den Inhaber
+      // steht in der Oberfläche (data_export_hint), nicht in der Datei (19.10.2026). Gespeicherte Werte bleiben wie gespeichert.
+      language: lang, title: EXPORT_TEXT[lang].title, generated_at: generatedAt, generated_by: actor.display_name,
+      note: EXPORT_TEXT[lang].note,
       limit_per_section: LIMIT,
       truncated,
     },

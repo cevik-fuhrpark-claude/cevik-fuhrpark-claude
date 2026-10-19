@@ -242,7 +242,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const provider = String(body.provider || '').toLowerCase();
     if (!['webfleet', 'yellowfox'].includes(provider)) throw bad('validation', 'provider muss webfleet oder yellowfox sein.');
     const now = nowIso();
-    const res = { matched: 0, unmatched: 0, rejected: 0, odometer_written: 0, odometer_rejected: 0 };
+    const res = { matched: 0, unmatched: 0, rejected: 0, position_outdated: 0, odometer_written: 0, odometer_rejected: 0 };
     // Abfragebudget: Zuordnungen, Fahrzeuge und letzte Stände gesammelt laden, Schreibzugriffe gesammelt ausführen
     // (vorher bis zu 4 Abfragen je Eintrag – bei 500 Einträgen weit über der Grenze je Aufruf).
     // Einträge, die kein Objekt sind (null, Zahl, Text, Liste), werden wie leere Einträge abgewiesen statt die ganze Lieferung mit „Interner Fehler“ zu beenden
@@ -277,7 +277,11 @@ export async function integrationRouter(request, env, ctx, url) {
     // höchster km-Stand je Fahrzeug innerhalb dieses Aufrufs: ein späterer kleinerer Tageswert (Nachlieferung mehrerer Tage) wird verworfen –
     // die Plausibilität im Stapel sah nur den Stand vor dem Aufruf → unbegründeter Rücksprung 100 000 → 90 000 (18.10.2026)
     const kmMaxInCall = new Map(); let kmRejectedInCall = 0;
-    for (const { it, ext, vin, plate } of rows) {
+    // Nachlieferung mehrerer Tage in beliebiger Reihenfolge (19.10.2026: neueste zuerst → ältere Tage samt km-Stand verworfen):
+    // Einträge nach GPS-Zeit aufsteigend verarbeiten (stabil; ohne lesbare Zeit am Ende, wie bisher nach einem Stand mit Zeit abgewiesen)
+    const gpsKey = (it) => { const g = typeof it.gps_time === 'string' ? Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(it.gps_time) ? it.gps_time : it.gps_time + 'Z') : NaN; return Number.isFinite(g) ? g : Infinity; };
+    const ordered = rows.map((r, i) => ({ r, i, k: gpsKey(r.it) })).sort((a, b) => (a.k === b.k ? a.i - b.i : a.k < b.k ? -1 : 1)).map((x) => x.r);
+    for (const { it, ext, vin, plate } of ordered) {
       if (!ext) { res.rejected++; continue; }
       let vehicleId = null; let basis = null;
       if (mapOf.has(ext)) { vehicleId = mapOf.get(ext); basis = 'confirmed_mapping'; }
@@ -301,14 +305,22 @@ export async function integrationRouter(request, env, ctx, url) {
       // GPS-Zeit mehr als 10 Minuten in der Zukunft (Geräteuhr falsch): verwerfen, sonst blockiert sie spätere echte Stände
       if (gps && Date.parse(gps) > Date.now() + 600000) { res.rejected++; continue; }
       const prev = lastGps.get(vehicleId);
-      if (prev && gps && gps < prev) { res.rejected++; continue; }
+      // älter als der vorhandene Stand: Position/letzter Stand bleiben, der Tages-km-Stand wird trotzdem geprüft und übernommen
+      // (Nachlieferung nach Funkloch; Plausibilität gegen frühere/spätere Stände wie unten in SQL)
+      const outdated = !!(prev && gps && gps < prev);
+      const km = kmOf(it.km) !== null && kmOf(it.km) >= 0 && kmOf(it.km) <= 5000000 ? kmOf(it.km) : null;
+      if (outdated) {
+        if (km === null) { res.rejected++; continue; }
+        res.position_outdated++;
+      }
       // ohne gültige GPS-Zeit keinen vorhandenen Stand überschreiben (vorher: Position/km gelöscht, Fahrzeug „ohne Daten“, 17.10.2026)
       // gilt auch, wenn der vorhandene Stand selbst keine GPS-Zeit hat (18.10.2026: zweiter zeitloser Stand überschrieb den ersten, auch im selben Aufruf)
       if (!gps && lastGps.has(vehicleId)) { res.rejected++; continue; }
+      if (!outdated) {
       lastGps.set(vehicleId, gps || prev || null);
-      const km = kmOf(it.km) !== null && kmOf(it.km) >= 0 && kmOf(it.km) <= 5000000 ? kmOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
         speed: numOf(it.speed) !== null && numOf(it.speed) >= 0 && numOf(it.speed) <= 300 ? numOf(it.speed) : null /* > 300 km/h unplausibel (19.10.2026: 1e300 gespeichert) */, ign: ignOf(it.ignition) });
+      }
       if (km !== null && gps) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)
