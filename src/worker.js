@@ -691,7 +691,9 @@ async function dashboard(env, user, envName, vsiteRaw = null) {
   // Standard-Standort sah sonst flottenweite Zahlen über der Standort-Tafel (19.10.2026); Agentenbefunde bleiben flottenweit
   const vsite = vsiteRaw && !['driver', 'workshop'].includes(user.role) ? String(vsiteRaw).slice(0, 60) : null;
   // Zähler aus höchstens 500 offenen Vorgängen (kritische zuerst); darüber Kennzeichnung statt stiller Kappung (vorher 200 ohne Hinweis)
-  const om = {}; const open = await cases.listCases(env, user, envName, { status: 'open', limit: 500, __counts: true, ...(vsite ? { vsite } : {}) }, om);
+  const om = {}; const all = await cases.listCases(env, user, envName, { status: 'open', limit: 500, __counts: true, ...(vsite ? { vsite } : {}) }, om);
+  // Werkstatt: Zähler nur über ihren Arbeitsvorrat (eigene Meldung an einen Auftrag einer anderen Werkstatt zählte als „kritisch/gesperrt“ – 19.10.2026)
+  const open = user.role === 'workshop' ? all.filter((c) => c.access !== 'read') : all;
   const out = {
     environment: envName,
     open_cases: open.length,

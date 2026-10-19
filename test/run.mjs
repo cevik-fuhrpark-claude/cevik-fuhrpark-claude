@@ -1722,7 +1722,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   const pl = dec(p).trim().split('\r\n');
   ok(pl[0].startsWith('Dringlichkeit;Meldungen;'), 'Kopfzeile Dringlichkeit'); // trim() entfernt das BOM
   eq(pl.length, r.by_priority.length + 1);
-  const alle = pl.find((l) => l.startsWith('alle;')).split(';');
+  const alle = pl.find((l) => l.startsWith('Alle;')).split(';');
   const a = r.by_priority.find((x) => x.priority === 'alle');
   eq(Number(alle[1]), a.created, 'Meldungen wie JSON'); eq(Number(alle[5]), a.triage.n, 'Anzahl Erstbewertung');
   // Filter wirkt auch auf CSV
@@ -4947,7 +4947,7 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   eq((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.vehicles.find((v) => v.plate === 'DU-PL 1').duplicates, 2, 'je Fahrzeug: zwei Dubletten');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&format=csv&part=priority`)).data).trim().split('\r\n');
   ok(kcsv[0].endsWith(';davon Dubletten;davon interne Aufträge'), 'CSV-Spalte am Ende');
-  eq(Number(kcsv.find((l) => l.startsWith('alle;')).split(';').at(-2)), pick(k1, 'alle').duplicates, 'CSV = JSON');
+  eq(Number(kcsv.find((l) => l.startsWith('Alle;')).split(';').at(-2)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
   ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';')).length === 2, 'CSV-Spalte „Dublette von“');
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
@@ -14108,6 +14108,41 @@ await test('Fehlersuche 19.10. (Master/Benutzer/Reifen/Plan): wiederkehrender Be
   const wo = await U.fleet.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: 'wo-plan-x' });
   if (wo.status === 201 || wo.status === 200) { const pl = (await U.ws.get('/api/workshop/plan?days=14')).data; const all = [...pl.days.flatMap((d) => d.items), ...(pl.unplanned || []), ...(pl.overdue || [])];
     const it = all.find((i) => i.case_no === wo.data.case_no); if (it) { const full = e.DB.db.prepare('SELECT description FROM cases WHERE case_no=?').get(wo.data.case_no).description; eq(it.description, full.slice(0, 300)); } }
+});
+
+await test('Fehlersuche 19.10. (Vorgänge/Startseite): Wiedervorlage verschieben behält den Vermerk, fälliger Termin unverändert speicherbar, Kommentar „nur Werkstatt“ erreicht Vorschau-Werkstatt, Werkstatt-Zähler ohne fremde Aufträge, Kennzahlen-CSV mit Bezeichnung', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  // 1. Wiedervorlage: nur Datum ändern (ohne note) → Vermerk bleibt; ausdrücklich leer (null) → Vermerk weg
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'set_followup', { followup_on: day(2) }, 'Kosten nachfragen')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_followup', { followup_on: day(5) })).status, 200);
+  let c = e.DB.db.prepare('SELECT followup_on, followup_note, version FROM cases WHERE id=?').get(id); eq(c.followup_on, day(5)); eq(c.followup_note, 'Kosten nachfragen', 'Vermerk bleibt');
+  // fällig gewordener Termin: unverändert mit neuem Vermerk speicherbar, anderer vergangener Tag weiter abgewiesen
+  e.DB.db.prepare('UPDATE cases SET followup_on=? WHERE id=?').run(day(-1), id);
+  eq((await cmd(U.fleet, id, 'set_followup', { followup_on: day(-1) }, 'Werkstatt angerufen')).status, 200, 'unveränderter fälliger Termin');
+  eq((await cmd(U.fleet, id, 'set_followup', { followup_on: day(-2) }, 'x y z')).status, 400, 'anderer vergangener Tag');
+  c = e.DB.db.prepare('SELECT followup_on, followup_note, version FROM cases WHERE id=?').get(id); eq(c.followup_note, 'Werkstatt angerufen');
+  const clr = await U.fleet.post(`/api/cases/${id}/commands`, { action: 'set_followup', command_id: rk(), expected_version: c.version, payload: { followup_on: day(-1) }, note: null });
+  eq(clr.status, 200); eq(e.DB.db.prepare('SELECT followup_note FROM cases WHERE id=?').get(id).followup_note, null, 'leerer Vermerk entfernt ihn');
+  // 2. Kommentar bei „gemeldet“: gezielt an die vorgeschlagene Werkstatt → kommt an; ohne Auswahl nicht
+  const nWs = () => e.DB.db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND case_id=?').get(U.ws.id, id).n;
+  const n0 = nWs();
+  eq((await cmd(U.fleet, id, 'comment', {}, 'Allgemeiner Kommentar')).status, 200); eq(nWs(), n0, 'Standard: Vorschau-Werkstatt nicht');
+  eq((await cmd(U.fleet, id, 'comment', { notify: ['workshop'] }, 'Bitte Teil vorab prüfen')).status, 200); eq(nWs(), n0 + 1, 'gezielt: Werkstatt erreicht');
+  eq((await cmd(U.fleet, id, 'reject', {}, 'Testdaten')).status, 200);
+  eq((await cmd(U.fleet, id, 'comment', { notify: ['workshop'] }, 'nach Ablehnung')).status, 200); eq(nWs(), n0 + 1, 'abgelehnt: nicht');
+  // 3. Werkstatt-Startseite: eigene Meldung, die eine andere Werkstatt repariert, zählt nicht als Arbeitsvorrat
+  const own = await newCase({ priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'MUENCHEN' }, U.ws);
+  if (!e.DB.db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(own).safety_lock) eq((await cmd(U.fleet, own, 'set_safety_lock', {}, 'Sperre Test')).status, 200);
+  eq((await cmd(U.fleet, own, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'München')).status, 200);
+  eq((await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === own).access, 'read');
+  const dws = (await U.ws.get('/api/dashboard')).data; eq(dws.open_cases, 0); eq(dws.critical, 0); eq(dws.locked, 0); eq(dws.inbox, 0);
+  const dmu = (await U.wsMuc.get('/api/dashboard')).data; eq(dmu.critical, 1); eq(dmu.locked, 1); eq(dmu.inbox, 1);
+  // 4. Kennzahlen-CSV je Dringlichkeit: Bezeichnungen statt Codes
+  const ym = BERLIN_TODAY.slice(0, 7);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`)).data);
+  ok(/\r\nAlle;/.test(csv) && /\r\nKritisch;/.test(csv) && !/\r\n(alle|kritisch|niedrig|mittel);/.test(csv), csv.slice(0, 200));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

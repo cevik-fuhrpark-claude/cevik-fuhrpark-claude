@@ -922,8 +922,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     case 'set_followup': {
       // Wiedervorlage setzen/ändern/entfernen (leer) – ohne Statuswechsel, ohne Push; nur Inhaber/Fuhrparkleitung, nur offene Vorgänge
-      const d = p.followup_on ? followupDate(p.followup_on) : null;
-      const fnote = d ? (note || null) : null;
+      // Unveränderter (inzwischen fälliger) Termin bleibt zulässig – sonst ließ sich nur der Vermerk nicht ändern (19.10.2026)
+      const d = !p.followup_on ? null : String(p.followup_on) === (c.followup_on || '') ? c.followup_on : followupDate(p.followup_on);
+      // Ohne mitgeschickten Vermerk bleibt der bisherige (Datum verschieben löschte ihn still – 19.10.2026)
+      const fnote = d ? (body.note === undefined ? (c.followup_note || null) : (note || null)) : null;
       if (d === (c.followup_on || null) && fnote === (c.followup_note || null)) throw bad('validation', 'Wiedervorlage ist unverändert.');
       if (fnote && fnote.length > 300) throw bad('validation', 'Vermerk der Wiedervorlage ist zu lang (max. 300 Zeichen).'); // vorher still gekürzt
       set.followup_on = d; set.followup_note = fnote || null; payload = { from: c.followup_on || null, to: d };

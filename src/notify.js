@@ -213,8 +213,10 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       const want = Array.isArray(ctxData.payload?.notify) && ctxData.payload.notify.length ? new Set(ctxData.payload.notify) : null;
       if (!want || want.has('reporter')) add(reporter);
       if (!want || want.has('fleet')) add(usersByRole(['fleet', 'owner']));
-      // Werkstatt nur mit Zugriff (abgelehnte Meldung: Vorschlags-Werkstatt sah den Vorgang nicht – Hinweis führte ins Leere)
-      if ((!want || want.has('workshop')) && !['gemeldet', 'abgelehnt'].includes(c.status)) add(workshopUsers);
+      // Werkstatt nur mit Zugriff (abgelehnte Meldung: Vorschlags-Werkstatt sah den Vorgang nicht – Hinweis führte ins Leere);
+      // bei „gemeldet“ hat die vorgeschlagene Werkstatt Vorschauzugriff – „nur Werkstatt“ erreichte dort niemanden (19.10.2026)
+      // (dort nur bei ausdrücklicher Auswahl – Standard bleibt ohne Vorschau-Werkstatt)
+      if (c.status === 'gemeldet' ? want && want.has('workshop') : (!want || want.has('workshop')) && c.status !== 'abgelehnt') add(workshopUsers);
       break;
     }
   }
