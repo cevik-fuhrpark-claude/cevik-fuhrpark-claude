@@ -34,7 +34,7 @@ with sync_playwright() as p:
         q.goto(B+f'/#/stock/{iid}'); q.wait_for_selector('#itedp')
         check(q.inner_text('#itedp summary').strip()==EDIT[lang],f'{lang} {w}px: Bereich „{EDIT[lang]}“')
         q.click('#itedp summary')
-        check(q.input_value('#ie_price')=='3,5' and q.input_value('#ie_min')=='2' and q.input_value('#ie_loc')=='Regal A',f'{lang} {w}px: vorbelegt (Komma)')
+        check(q.input_value('#ie_price')==('3.5' if lang=='en' else '3,5') and q.input_value('#ie_min')=='2' and q.input_value('#ie_loc')=='Regal A',f'{lang} {w}px: vorbelegt (Komma, EN Punkt)')
         if SHOTS: q.screenshot(path=f'{SHOTS}/artikel_bearbeiten_{lang}_{w}.png',full_page=True)
         q.fill('#ie_name',nm+' neu'); q.fill('#ie_min',''); q.fill('#ie_price','4,20')
         q.click('#itedf button.btn'); q.wait_for_function(f"()=>document.querySelector('h1') && document.querySelector('h1').textContent.includes({repr(nm+' neu')})",timeout=10000)
