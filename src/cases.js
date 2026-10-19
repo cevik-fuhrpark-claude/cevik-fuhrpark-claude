@@ -1320,8 +1320,14 @@ export async function submitInspection(env, ctx, user, envName, body) {
     const stmts = [env.DB.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
       defects.length ? 'maengel' : 'ok', inspNote, performedAt)];
+    let kmIdx = -1;
     if (odo !== null && !kmRejected && !kmTestOnly) {
-      stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)`)
+      // Plausibilität auch im Einfügen selbst (wie „Kilometerstand erfassen“): eine zwischen Prüfung und Stapel erfasste Ablesung machte den
+      // km-Stand der Kontrolle sonst zum unbegründeten Rücksprung (19.10.2026)
+      kmIdx = stmts.length;
+      stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7
+        WHERE COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at <= ?4 ORDER BY measured_at DESC LIMIT 1), -1) <= ?3
+          AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at > ?4 ORDER BY measured_at ASC LIMIT 1), 9999999999) >= ?3`)
         .bind(uuid(), vehicleId, odo, performedAt, `kontrolle:${kind}`, user.id, now));
     }
     if (c) {
@@ -1341,9 +1347,19 @@ export async function submitInspection(env, ctx, user, envName, body) {
         .bind(envName, user.id, user.role, now, JSON.stringify(rep)));
       stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify(rep.map((r) => r.case_id))));
     }
-    try { await env.DB.batch(stmts); } catch (e) {
+    let batchRes;
+    try { batchRes = await env.DB.batch(stmts); } catch (e) {
       if (String(e && e.message).includes('UNIQUE')) { const a2 = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first(); if (a2) return asDuplicate(a2); }
       throw e;
+    }
+    if (kmIdx >= 0 && batchRes && batchRes[kmIdx] && batchRes[kmIdx].meta && batchRes[kmIdx].meta.changes === 0
+      && !(await env.DB.prepare('SELECT 1 AS x FROM odometer_readings WHERE vehicle_id=? AND measured_at=? AND km=? LIMIT 1').bind(vehicleId, performedAt, odo).first())) {
+      // inzwischen anderer Stand erfasst: km bleibt an der Kontrolle, Antwort meldet die Abweichung wie bei der Vorabprüfung
+      const [last, later] = await Promise.all([
+        env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId, performedAt).first(),
+        env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC LIMIT 1').bind(vehicleId, performedAt).first(),
+      ]);
+      kmRejected = last && odo < last.km ? { km: odo, previous_km: last.km, previous_at: last.measured_at } : later && odo > later.km ? { km: odo, next_km: later.km, next_at: later.measured_at } : { km: odo };
     }
   }
   return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt };

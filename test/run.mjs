@@ -13465,6 +13465,28 @@ await test('Fehlersuche 19.10. (46): Prüftermine – „erledigt“ setzt Herku
   eq(settingValue('repair_cost_limit_net', '0'), '0'); eq(settingValue('repair_cost_limit_net', '0,01'), '0.01');
 });
 
+await test('Fehlersuche 19.10. (47): km der Abfahrtskontrolle im Einfügen geprüft (gleichzeitige Ablesung → kein Rücksprung), Auslesungen-Import löst „0123“/„123“ über den Namen auf', async () => {
+  const { e, U, V1 } = await freshWorld(); const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const { CHECKLIST } = await import('../src/cases.js');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 50000, measured_on: day(-3) })).status, 201);
+  const orig = e.DB.batch.bind(e.DB); let fired = false;
+  e.DB.batch = async (stmts) => {
+    if (!fired && stmts.some((x) => /INSERT INTO inspections/.test(x.sql || x.query || x._sql || ''))) { fired = true; eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 100000, measured_on: day(-1) })).status, 201); }
+    return orig(stmts);
+  };
+  const r = await U.fleet.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, items: CHECKLIST.map((i) => ({ key: i.key, result: 'ok' })), odometer_km: 60000, request_key: rk() });
+  e.DB.batch = orig;
+  ok(fired, 'Wettlauf nachgestellt'); eq(r.status, 201); eq(r.data.km_rejected.previous_km, 100000, 'Abweichung gemeldet');
+  eq(e.DB.db.prepare('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=? AND km=60000').get(V1).n, 0, 'kein Rücksprung gespeichert');
+  eq(e.DB.db.prepare('SELECT odometer_km FROM inspections WHERE id=?').get(r.data.id).odometer_km, 60000, 'km bleibt an der Kontrolle');
+  // Personalnummern mit/ohne führende Null
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Anna A', personnel_no: '0123' })).status, 201);
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Bernd B', personnel_no: '123' })).status, 201);
+  const csv = `Art;Personalnummer;Name;Auslesedatum;Datei\r\nFahrerkarte;0123;Anna A;${day(-2)};a.ddd\r\nFahrerkarte;123;Bernd B;${day(-2)};b.ddd\r\nFahrerkarte;123;Unbekannt;${day(-2)};c.ddd\r\n`;
+  const im = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(im.status, 200); eq(im.data.counts.neu, 2, JSON.stringify(im.data.skipped)); eq(im.data.skipped.length, 1, 'ohne passenden Namen weiter mehrdeutig');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

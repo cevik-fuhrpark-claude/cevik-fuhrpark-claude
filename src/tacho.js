@@ -263,6 +263,9 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
       target = pno ? byPno.get(pnoKey(pno)) : nm ? byName.get(nm) : undefined;
       // Personalnummer unbekannt, Name eindeutig und in der App ohne Personalnummer erfasst → über den Namen (keine widersprüchliche Nummer)
       if (pno && !target && nm) { const n = byName.get(nm); if (n && n !== 'mehrdeutig' && !n.personnel_no) target = n; }
+      // Nummer nur ohne führende Nullen mehrdeutig („0123“/„123“): eindeutiger Name mit passender Nummer entscheidet (19.10.2026: beide Fahrer
+      // dauerhaft übersprungen). Nicht die exakte Schreibweise – Excel entfernt führende Nullen, „123“ kann „0123“ meinen.
+      if (target === 'mehrdeutig' && nm) { const n = byName.get(nm); if (n && n !== 'mehrdeutig' && n.personnel_no && pnoKey(n.personnel_no) === pnoKey(pno)) target = n; }
       if (target === 'mehrdeutig') return skip(`Fahrer nicht eindeutig: ${get(cells, ci.pno) || get(cells, ci.name)}`);
       if (!target) return skip(`Fahrer nicht gefunden: ${get(cells, ci.pno) || get(cells, ci.name) || '–'}`);
       label = target.display_name;
