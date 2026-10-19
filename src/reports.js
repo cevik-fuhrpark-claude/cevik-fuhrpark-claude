@@ -164,7 +164,8 @@ export async function costReport(env, user, envName, query = {}) {
     const k = kmOf.get(v.vehicle_id);
     const km = k ? k.km : null;
     const kmInfo = k ? { km_status: k.status, km_basis: k.basis, km_from_at: k.from_at, km_to_at: k.to_at } : { km_status: 'no_reading', km_basis: null, km_from_at: null, km_to_at: null };
-    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, ...kmInfo, cost_per_km: km && !(v.valued_items === 0 && v.unvalued_items > 0) ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 };
+    return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, ...kmInfo, // nur geschätzte/unbewertete Positionen → kein €/km (vorher „0,000 €/km“ ohne Hinweis); Schätzung im Zeitraum → €/km unvollständig (19.10.2026)
+    cost_per_km: km && !(v.valued_items === 0 && (v.unvalued_items > 0 || v.estimate_net > 0)) ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 && !(v.estimate_net > 0) };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;

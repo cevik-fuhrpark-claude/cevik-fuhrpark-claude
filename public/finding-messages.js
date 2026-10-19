@@ -3,7 +3,8 @@
 // Gespeichert wird je Befund `message_args` = {"k": Vorlagenschlüssel, "a": {Werte}}. Fehlt eine Vorlage, gilt der deutsche Text.
 // Platzhalter: {name} Wert unverändert · {name:km} Zahl mit Tausendertrennung der Sprache · {name|LISTE} Wert aus ENUMS[Sprache][LISTE]
 // [[ … ]] optionaler Abschnitt: entfällt, wenn ein Platzhalter darin leer ist (null/undefined/''). Keine Verschachtelung.
-// Werte, die Menschen eingegeben haben (Prüfart, Sperrgrund, Vermerk, Teilename, Reifenposition), bleiben unübersetzt.
+// Werte, die Menschen eingegeben haben (Sperrgrund, Vermerk, Teilename), bleiben unübersetzt. Feste Wertelisten (Prüfart, Reifenposition,
+// Einheit, Werkstatt-/Lagercode) übersetzt die Oberfläche vor dem Rendern (`fMsg` in public/app.js, 19.10.2026).
 // Nur Daten und reine Funktionen, keine Abhängigkeiten.
 export const FINDING_MESSAGES = {
   de: {
@@ -244,6 +245,12 @@ const pluralWord = (v, forms, lang) => {
 // wie die übrige Oberfläche (vorher z. B. „abgelaufen am 2027-01-05“ bzw. auf Englisch „on 05.01.2027“).
 // Nur Platzhalter, die laut Vorlagen Datumswerte tragen (Teilenummern o. Ä. wie „12.34.5678“ bleiben unverändert)
 export const DATE_ARGS = new Set(['date', 'due', 'end', 'eta', 'last', 'planned', 'hu', 'at', 'oon', 'by']);
+// Dezimalzahlen (Profiltiefe, Lagermengen) für die Anzeige im Zahlenformat der Sprache (DE „1,4“, EN „1.4“); gespeicherter deutscher Text unverändert
+export const NUM_ARGS = new Set(['mm', 'limit', 'stock', 'min', 'oq', 'open']);
+export function localNumArg(v, lang) {
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN);
+  return Number.isFinite(n) ? n.toLocaleString(LOCALE[lang] || 'de-DE', { maximumFractionDigits: 3 }) : v;
+}
 export function localDateArg(v, lang) {
   if (typeof v !== 'string') return v;
   const sep = lang === 'en' ? '/' : '.';
@@ -261,6 +268,7 @@ function fill(text, args, lang, dates = false) {
     if (forms) return pluralWord(v, forms, lang);
     if (fmt === 'km') return Number(v).toLocaleString(LOCALE[lang] || 'de-DE');
     if (list) { const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {}; return e[v] ?? FINDING_ENUMS.de[list]?.[v] ?? String(v); }
+    if (dates && NUM_ARGS.has(name)) return String(localNumArg(v, lang));
     return String(dates && DATE_ARGS.has(name) ? localDateArg(v, lang) : v);
   });
 }

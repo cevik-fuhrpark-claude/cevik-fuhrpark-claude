@@ -9,19 +9,25 @@ export function toCsv(header, rows) {
   return '﻿' + [header, ...rows].map((r) => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
 }
 // Datenqualität: Befunde mit Beschriftungen in der App-Sprache (t = Übersetzungsfunktion)
-export function dataQualityCsv(items, t, fmtD = null, mk = (k) => k) {
+// x = { km(n) → „200.000 km“ in der Sprache, src(code) → Herkunft eines km-Stands lesbar } (19.10.2026)
+export function dataQualityCsv(items, t, fmtD = null, mk = (k) => k, x = {}) {
   return toCsv([t('dq_col_severity'), t('dq_col_check'), t('dq_col_object'), t('dq_col_detail')],
-    items.map((i) => [t('dq_sev_' + i.severity), t('dq_' + i.check), i.plate || i.driver_name || '', fmtD ? dqDetailText(i, t, fmtD, mk) : i.detail || '']));
+    items.map((i) => [t('dq_sev_' + i.severity), t('dq_' + i.check), i.plate || i.driver_name || '', fmtD ? dqDetailText(i, t, fmtD, mk, x) : i.detail || '']));
 }
 // [CLAUDE] Datenqualität: Detail in der App-Sprache (Ansicht und CSV). Server liefert detail (deutsch, für Integrations-API)
 // und ggf. detail_args (sprachneutral); ohne detail_args werden ISO-Daten im Detail lokal formatiert.
-export function dqDetailText(i, t, fmtD, mk = (k) => k) {
+export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
   const a = i.detail_args;
+  const km = x.km || ((n) => `${n} km`); const src = x.src || ((v) => v);
   if (!i.detail) return '';
   if (i.check === 'km_stale') return fmtD(i.detail);
   if (i.check === 'telematics_vehicle_inactive') return a && a.since ? `${a.source}: ${fmtD(a.day)} ${a.time} · ${t('inactive_since')} ${fmtD(a.since)}` : i.detail.replace('außer Betrieb seit', t('inactive_since'));
   if (!a) return i.detail.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d));
   if (i.check === 'missing_inspection' && Array.isArray(a.kinds)) return a.kinds.map(mk).join(', ');
+  if (i.check === 'km_drop_unexplained' && a.day) return `${fmtD(a.day)}: ${km(a.prev_km)} → ${km(a.km)}${a.source ? ' · ' + src(a.source) : ''}${a.n > 1 ? ` · ${a.n}×` : ''}`;
+  if (i.check === 'km_rule_no_base' && a.kind) return `${mk(a.kind)} · ${km(a.interval_km)}`;
+  if ((i.check === 'km_inspection_rejected' || i.check === 'telematics_km_rejected') && a.cmp)
+    return `${a.source ? a.source + ': ' : ''}${km(a.km)} (${fmtD(a.day)}) ${a.cmp === 'lt' ? '<' : '>'} ${km(a.other_km)}${a.other_day ? ` (${fmtD(a.other_day)})` : ''}`;
   if (i.check === 'vin_similar' && a.pos) return `${a.other_plate} · ${a.other_vin} · ${t('dq_vin_pos').replace('{n}', a.pos)}`;
   if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}${a.start_km !== undefined ? ` · ${a.km} km < ${a.start_km} km` : ''}`;
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;

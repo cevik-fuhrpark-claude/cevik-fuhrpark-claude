@@ -182,7 +182,8 @@ export async function dataQuality(env, user, envName, query = {}) {
   // Rücksprung ohne Begründung (alle aktiven, bewerteten Fahrzeuge, auch Anhänger mit km-Ständen) – Datum/Werte des spätesten, Anzahl
   for (const r of kms.results) {
     const v = r.drop_at ? vs.find((x) => x.id === r.vehicle_id) : null;
-    if (v) add('km_drop_unexplained', v, `${berlinDate(r.drop_at)}: ${r.drop_prev_km} → ${r.drop_km} km · ${r.drop_source}${r.drop_n > 1 ? ` · ${r.drop_n}×` : ''}`);
+    if (v) addA('km_drop_unexplained', v, `${berlinDate(r.drop_at)}: ${r.drop_prev_km} → ${r.drop_km} km · ${r.drop_source}${r.drop_n > 1 ? ` · ${r.drop_n}×` : ''}`,
+      { day: berlinDate(r.drop_at), prev_km: r.drop_prev_km, km: r.drop_km, source: r.drop_source, n: r.drop_n }); // App: Herkunft/km in der Sprache (19.10.2026: „wartung:Ölwechsel“)
   }
   // gleiche Lückenregel wie die Prüftermin-Übersicht: HU/SP-Eintrag zählt auch ohne Datum (Frist ungeklärt bzw. erste SP künftig),
   // nicht SP-pflichtige Fahrzeuge brauchen keine SP (vorher „SP fehlt“ bei Lkw bis 7,5 t, 17.10.2026)
@@ -219,7 +220,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (missing.length) addA('missing_inspection', v, missing.join(', '), { kinds: missing }); // App übersetzt die Prüfarten (19.10.2026: UK/EN roh „Tachograph“)
   }
   const vAct = new Map(vs.map((v) => [v.id, v]));
-  for (const r of rules.results) if (r.interval_km && r.last_done_km === null && r.due_km === null && !['HU', 'SP'].includes(r.kind) && vAct.has(r.vehicle_id)) add('km_rule_no_base', vAct.get(r.vehicle_id), `${r.kind} · ${r.interval_km} km`);
+  for (const r of rules.results) if (r.interval_km && r.last_done_km === null && r.due_km === null && !['HU', 'SP'].includes(r.kind) && vAct.has(r.vehicle_id)) addA('km_rule_no_base', vAct.get(r.vehicle_id), `${r.kind} · ${r.interval_km} km`, { kind: r.kind, interval_km: r.interval_km });
   // Anhänger eines ruhenden Lkw ist gekoppelt (Akte zeigt die Kopplung) – kein „keinem Lkw zugeordnet“; Mehrfach-Kopplung zählt nur bewertete
   const pulledByResting = new Set();
   for (const v of veh.results) if (v.eval_excluded && v.kind === 'lkw' && v.trailer_plate) for (const x of byPlateAll.get(normPlate(v.trailer_plate)) || []) if (x.kind === 'anhaenger') pulledByResting.add(x.id);
@@ -229,7 +230,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!trucks.length && !pulledByResting.has(v.id)) add('trailer_without_truck', v);
   }
   const vById = new Map(vs.map((v) => [v.id, v]));
-  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) add('km_inspection_rejected', v, k.prev_km !== null && k.odometer_km < k.prev_km ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`); }
+  for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) { const lt = k.prev_km !== null && k.odometer_km < k.prev_km; addA('km_inspection_rejected', v, lt ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`,
+    { km: k.odometer_km, day: berlinDate(k.created_at), other_km: lt ? k.prev_km : k.next_km, cmp: lt ? 'lt' : 'gt' }); } }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
   const withVu = new Set(vu.results.map((r) => r.vehicle_id));
   for (const v of vs) if (v.kind === 'lkw' && !withVu.has(v.id)) add('vu_no_download', v);
@@ -271,10 +273,12 @@ export async function dataQuality(env, user, envName, query = {}) {
       { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), day: berlinDate(r.gps_time), time: berlinDateTime(r.gps_time).slice(-5), since: berlinDate(r.deact_at) });
     const v = vById.get(r.vehicle_id); if (!v) continue;
     if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
-    if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`);
+    if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`,
+      { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.gps_time), other_km: r.prev_km, other_day: berlinDate(r.prev_at), cmp: 'lt' });
     else if (r.km !== null && r.gps_time && r.next_json) {
       const n = JSON.parse(r.next_json);
-      if (n.km < Math.round(r.km) && !(n.note && String(n.note).trim())) add('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) > ${n.km} km (${berlinDate(n.at)})`);
+      if (n.km < Math.round(r.km) && !(n.note && String(n.note).trim())) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) > ${n.km} km (${berlinDate(n.at)})`,
+        { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.gps_time), other_km: n.km, other_day: berlinDate(n.at), cmp: 'gt' });
     }
   }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });

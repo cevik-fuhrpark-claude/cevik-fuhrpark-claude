@@ -4047,6 +4047,11 @@ await test('Nur unbewertete Positionen: „Belegt“ zeigt „–“ statt 0 €
     eq(r.totals.valued_items, 0, 'Summe'); eq(r.totals.unvalued_items, 1);
     eq(r.sites.length, 1); eq(r.sites[0].valued_items, 0, 'Standort');
     const v = r.vehicles.find((x) => x.vehicle_id === VID); eq(v.km, 500); eq(v.valued_items, 0); eq(v.cost_per_km, null, 'ohne belegten Betrag kein Wert je km'); eq(v.complete, false);
+    // nur Schätzung (19.10.2026: vorher „0,000 €/km“, complete true) → kein €/km, unvollständig
+    db.prepare(`UPDATE parts SET valuation='estimate', unit_price_net=800 WHERE id='tzuv-p'`).run();
+    { const r2 = (await users.fleet.get(`/api/reports/costs?from=${ym}&to=${ym}&site=Unbewertet-Test`)).data; const v2 = r2.vehicles.find((x) => x.vehicle_id === VID);
+      eq(v2.estimate_net, 800); eq(v2.cost_per_km, null, 'nur Schätzung → kein €/km'); eq(v2.complete, false, 'Schätzung → unvollständig'); }
+    db.prepare(`UPDATE parts SET valuation='unvalued', unit_price_net=NULL WHERE id='tzuv-p'`).run();
     const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
     eq(all.totals.valued_items, all.rows.reduce((s, x) => s + x.valued_items, 0), 'Summe = Zeilen');
     ok(all.rows.every((x) => x.valued_items > 0 || x.actual_net === 0), 'ohne belegte Position nie ein Ist-Betrag');
@@ -13782,7 +13787,7 @@ await test('Datenqualität 19.10.: fehlende Pflichtprüfungen und „FIN fast gl
   ok(dqDetailText(mi, tu, (x) => x, mkU).includes('Тахограф'), 'Prüfart übersetzt');
   eq(dqDetailText(vs, (k) => STRINGS.en[k] || k, (x) => x), 'SZ-YC 5513 · WMA15SZZ2HM722774 · differing character 17');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('dqDetailText(i, t, fmtD, mk)') && app.includes('dataQualityCsv(items, t, fmtD, mk)'), 'App reicht mk durch');
+  ok(app.includes('dqDetailText(i, t, fmtD, mk, {') && app.includes('dataQualityCsv(items, t, fmtD, mk, {'), 'App reicht mk durch');
 });
 
 await test('Vorgänge 19.10.: Suche „AUSSEN“ findet „Außenspiegel“; Verlauf alt → neu übersetzt (Priorität, Werkstattname, Datum, Wiedervorlage gesetzt/entfernt); Glocke zieht Zähler nach', async () => {
@@ -13805,8 +13810,8 @@ await test('Fahrzeugakte 19.10.: km-Herkunft lesbar, Rückruf-Durchführung übe
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const { STRINGS } = await import('../public/i18n.js');
   const src = app.slice(app.indexOf('function odoSrc(s)'), app.indexOf('function evFromTo(e)'));
-  const os = new Function('t', 'mk', src + '; return odoSrc;')((k) => STRINGS.en[k] || k, (k) => 'MK:' + k);
-  eq(os('manuell:fleet'), 'entered manually (' + STRINGS.en.role_fleet + ')'); eq(os('kontrolle'), STRINGS.en.departure_check); eq(os('kontrolle:abfahrt'), STRINGS.en.departure_check); eq(os('kontrolle:nach_reparatur'), STRINGS.en.inspection); eq(os('telematik:webfleet'), 'Telematics (webfleet)'); eq(os('wartung:HU'), 'MK:HU'); eq(os('webfleet'), 'webfleet');
+  const os = new Function('t', 'mk', 'provL', src + '; return odoSrc;')((k) => STRINGS.en[k] || k, (k) => 'MK:' + k, (p) => ({ webfleet: 'Webfleet' }[p] || p));
+  eq(os('manuell:fleet'), 'entered manually (' + STRINGS.en.role_fleet + ')'); eq(os('kontrolle'), STRINGS.en.departure_check); eq(os('kontrolle:abfahrt'), STRINGS.en.departure_check); eq(os('kontrolle:nach_reparatur'), STRINGS.en.inspection); eq(os('telematik:webfleet'), 'Telematics (Webfleet)'); eq(os('wartung:HU'), 'MK:HU'); eq(os('webfleet'), 'webfleet');
   ok(app.includes('esc(odoSrc(x.source))') && app.includes('esc(mEv(m.evidence))') && app.includes('esc(mEv(r.evidence))'), 'Zeitleiste/Prüftermine nutzen die Übersetzung');
   ok(/const reasonText = \(r\) => \{ const x = translateImportReason\(S\.lang, r\); return typeof x === 'string' \? x\.replace\(/.test(app), 'Import-Gründe mit Datum im Sprachformat');
   ok(app.includes('!(td.colSpan > 1)'), 'stackTables: Ganzzeilen ohne Spaltenname');
@@ -14250,6 +14255,32 @@ await test('Fehlersuche 19.10. (Fahrerakte/Protokoll/Werkstattplan): Fahrerakte 
   ok(/ohne Tausendertrennzeichen eingeben \(z\. B\. 158500\)/.test(msg) && !/Nachkommastellen/.test(msg), msg);
   eq(translateValidation('en', msg), 'Odometer: “158,500” – please enter without thousands separator (e.g. 158500).');
   eq(num('158.500', { grouped: true }), 158500, 'Tausenderpunkt (DE) weiter angenommen');
+});
+
+await test('Fehlersuche 19.10. (Agentenbefunde/Datenqualität/Telematik): Befund-Zahlen und feste Wertelisten in der Sprache, km-Herkunft/Wartungsart/km-Zahlen in Datenqualität übersetzt, Anbieter-Schreibweise, gemeldetes Kennzeichen nicht abgeschnitten', async () => {
+  const { findingMessage, renderFindingMessage } = await import('../public/finding-messages.js');
+  const st = { k: 'TIRE_TREAD', a: { plate: 'AC-T 1', pos: 'Reserve', mm: 1.4, limit: 1.6, date: '05.10.2026' } };
+  ok(findingMessage(st, '', 'de').includes('Profiltiefe 1,4 mm (Grenze 1,6 mm'), findingMessage(st, '', 'de'));
+  ok(findingMessage(st, '', 'en').includes('tread depth 1.4 mm (limit 1.6 mm'), 'EN Dezimalpunkt');
+  ok(renderFindingMessage('TIRE_TREAD', st.a, 'de').includes('1.4 mm'), 'gespeicherter Server-Text unverändert');
+  const sb = { k: 'STOCK_BELOW_MIN', a: { site: 'DORTMUND', name: 'Filter', stock: 2.5, unit: 'Stk', min: 10.5 } };
+  ok(findingMessage(sb, '', 'de').includes('Bestand 2,5 Stk, Mindestbestand 10,5'), findingMessage(sb, '', 'de'));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (typeof a.kind === 'string') a.kind = mk(a.kind);") && app.includes("a.pos = posL(a.pos)") && app.includes("a.unit = unitL(a.unit)") && app.includes("a.site = wsName(a.site)"), 'fMsg übersetzt Prüfart/Position/Einheit/Werkstatt');
+  ok(!/esc\([a-z]+\.provider\)/.test(app) && app.includes("`${t('area_telematics')} (${provL(v.slice(10))})`"), 'Anbieter als „YellowFox“');
+  const css = (await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(css.includes('#tmmism .row > .plate + .title { display: block; -webkit-line-clamp: unset;'), 'gemeldetes Kennzeichen nicht abgeschnitten');
+  // Datenqualität: Details aus detail_args
+  const { dqDetailText } = await import('../public/csv.js');
+  const fd = (d) => d.split('-').reverse().join('.'); const mk = (k) => (k === 'Ölwechsel' ? 'Oil change' : k);
+  const x = { km: (n) => n.toLocaleString('en-GB') + ' km', src: (v) => (v === 'wartung:Ölwechsel' ? 'Oil change' : v) };
+  eq(dqDetailText({ check: 'km_drop_unexplained', detail: 'd', detail_args: { day: '2026-10-20', prev_km: 200000, km: 150000, source: 'wartung:Ölwechsel', n: 2 } }, (k) => k, fd, mk, x), '20.10.2026: 200,000 km → 150,000 km · Oil change · 2×');
+  eq(dqDetailText({ check: 'km_rule_no_base', detail: 'd', detail_args: { kind: 'Ölwechsel', interval_km: 50000 } }, (k) => k, fd, mk, x), 'Oil change · 50,000 km');
+  eq(dqDetailText({ check: 'telematics_km_rejected', detail: 'd', detail_args: { source: 'YellowFox 7', km: 100, day: '2026-10-01', other_km: 200, other_day: '2026-09-30', cmp: 'lt' } }, (k) => k, fd, mk, x), 'YellowFox 7: 100 km (01.10.2026) < 200 km (30.09.2026)');
+  eq(dqDetailText({ check: 'km_inspection_rejected', detail: 'd', detail_args: { km: 5, day: '2026-10-01', other_km: 9, cmp: 'lt' } }, (k) => k, fd, mk, x), '5 km (01.10.2026) < 9 km');
+  eq(dqDetailText({ check: 'km_drop_unexplained', detail: '2026-10-20: 2 → 1 km · x' }, (k) => k, fd, mk, x), '20.10.2026: 2 → 1 km · x', 'ältere Antwort ohne detail_args');
+  const q = (await import('node:fs')).readFileSync(new URL('../src/quality.js', import.meta.url), 'utf8');
+  ok(!/\badd\('(km_drop_unexplained|km_rule_no_base|km_inspection_rejected|telematics_km_rejected)'/.test(q), 'Server liefert detail_args');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

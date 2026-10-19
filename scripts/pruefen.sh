@@ -49,6 +49,7 @@ UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log
 UI-Import-Hinweise in der App-Sprache|ui-importhinweise.py|/tmp/cfp-import.log
 UI-Werkstatt Winterreifen|ui-winter-werkstatt.py|/tmp/cfp-winter.log
 UI-Management-Panel in der App-Sprache|ui-panelsprache.py|/tmp/cfp-panel.log
+UI-Befundwerte und Datenqualität-km in der App-Sprache|ui-befundwerte.py|/tmp/cfp-befundwerte.log
 UI-Anmelde-Hinweis neues Gerät|ui-neues-geraet.py|/tmp/cfp-neugeraet.log
 UI-Protokoll je Person|ui-protokoll-person.py|/tmp/cfp-protperson.log
 UI-Hilfe Zugänge & Protokoll|ui-hilfe-zugang.py|/tmp/cfp-hilfezugang.log
