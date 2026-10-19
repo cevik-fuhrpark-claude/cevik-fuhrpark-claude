@@ -695,13 +695,16 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus „bald fällig“ nach Datum – die Datumsfälligkeit bleibt aber einzuplanen
   const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && DUE.includes(r.date_status);
   // Termin nach Fristende UND außerhalb des Plan-Zeitraums: bleibt hier mit Hinweis (vorher fehlte die überfällige Prüfung dann ganz im Plan, 18.10.2026)
+  // SP des Vorzyklus nicht belegt (spätere HU ersetzt sie nicht): Gesamtstatus „ungeklärt“, Datumsstufe nach dem aktuellen Zyklus oft „ok“ –
+  // fehlte damit im Plan, obwohl Nachweis oder SP fällig sind (19.10.2026). Anzeige mit Monat der offenen SP, nichts wird verschoben.
+  const prevOpen = (r) => !!r.prev_cycle_open;
   const lateBeyond = (r) => !!(r.planned_date && r.planned_date > to && r.next_due_date && r.planned_date > r.next_due_date);
-  const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || kmUnclearDateDue(r) || openRecall(r)) && (!(r.planned_date && r.planned_date >= today) || lateBeyond(r)) && !r.open_order)
+  const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || kmUnclearDateDue(r) || openRecall(r) || prevOpen(r)) && (!(r.planned_date && r.planned_date >= today) || lateBeyond(r)) && !r.open_order)
     .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: kmUnclearDateDue(r) ? r.date_status : r.status,
       next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null,
       ...(r.km_unclear ? { km_unclear: r.km_unclear, km_drop_at: r.km_drop_at || null } : {}),
       by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null, planned_after_due: lateBeyond(r) ? r.planned_date : null,
-      ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}) }))
+      ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}), ...(prevOpen(r) ? { prev_cycle_open: r.prev_cycle_open } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
   for (const i of maintenance_due) i.other_dates = others(i, null);
   return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned, maintenance_due, warn_km: ov.warn_km };

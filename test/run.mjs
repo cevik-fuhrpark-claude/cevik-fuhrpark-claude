@@ -1998,7 +1998,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -13316,6 +13316,25 @@ await test('Verbesserung 19.10. (39): Datenqualität meldet überschneidende lau
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_contract_overlap, l);
   const { dqDetailText } = await import('../public/csv.js');
   eq(dqDetailText({ check: 'contract_overlap', detail: 'x', detail_args: { contract_kind: 'leasing', partner: 'A / B' } }, (k) => STRINGS.en[k] || k, (x) => x), `${STRINGS.en.ck_leasing} · A / B`);
+});
+
+await test('Verbesserung 19.10. (40): Werkstattplan führt eine nicht belegte SP des Vorzyklus unter „Fällig – ohne Termin“ (Status ungeklärt, Monat der offenen SP), auch wenn der aktuelle Zyklus noch nicht fällig ist', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const { berlinDate, addMonths } = await import('../src/util.js'); const today = berlinDate(); const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,zgm_class,active,eval_excluded,created_at,updated_at) VALUES ('V-SPV','WDBSPV0000000001','SZ-SV 1','Dortmund','lkw','ueber_12',1,0,?,?)`).run(now, now);
+  const insE = db.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,evidence,source,created_at) VALUES (?,?,'V-SPV',?,?,'Beleg','erfasst',?)`);
+  insE.run('SPV-0', 'R-SPV-SP', 'SP', addMonths(today, -20), now); insE.run('SPV-1', 'R-SPV-HU', 'HU', addMonths(today, -14), now); insE.run('SPV-2', 'R-SPV-HU', 'HU', addMonths(today, -2), now);
+  const insR = db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,evidence,created_by,created_at,updated_at) VALUES (?,'V-SPV',?,?,'Beleg','u',?,?)`);
+  insR.run('R-SPV-HU', 'HU', 12, now, now); insR.run('R-SPV-SP', 'SP', 6, now, now);
+  const sp = (await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === 'V-SPV' && r.kind === 'SP');
+  eq(sp.status, 'ungeklaert'); eq(sp.date_status, 'ok', 'aktueller Zyklus nicht fällig'); ok(sp.prev_cycle_open && sp.prev_cycle_open.slice(0, 7) === addMonths(today, -8).slice(0, 7), 'offene Vorzyklus-SP: ' + sp.prev_cycle_open);
+  const md = (await U.fleet.get('/api/workshop/plan?days=7')).data.maintenance_due.find((x) => x.vehicle_id === 'V-SPV' && x.kind === 'SP');
+  ok(md, 'im Werkstattplan aufgeführt'); eq(md.status, 'ungeklaert'); eq(md.prev_cycle_open, sp.prev_cycle_open);
+  ok(!(await U.fleet.get('/api/workshop/plan?days=7')).data.maintenance_due.some((x) => x.vehicle_id === 'V-SPV' && x.kind === 'HU'), 'HU nicht');
+  // SP des Vorzyklus belegt → nicht mehr im Plan
+  insE.run('SPV-3', 'R-SPV-SP', 'SP', addMonths(today, -8), now);
+  ok(!(await U.fleet.get('/api/workshop/plan?days=7')).data.maintenance_due.some((x) => x.vehicle_id === 'V-SPV'), 'nach Beleg nicht mehr aufgeführt');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].wplan_sp_prev_open.includes('{m}'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

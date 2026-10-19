@@ -24,7 +24,7 @@ Druck/PDF, CSV- und Kalender-Exporte je Rolle · freiwillige Zwei-Faktor-Anmeldu
 | `docs/RUNDGANG.md` | Ablaufplan Testrundgang (Fahrer → Leitung → Werkstatt → Freigabe) mit erwarteten Ergebnissen |
 
 ```bash
-npm test                                            # 400 Abnahmetests (Node ≥ 22)
+npm test                                            # 401 Abnahmetests (Node ≥ 22)
 sh scripts/pruefen.sh [--schnell] [--nur <Name>]   # Tests + UI-Ablauf + Leerlauf + UI-Rauchtest (+ dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise/UI-Zeitreise)
 node --experimental-sqlite scripts/dev-server.mjs  # lokale Oberfläche auf :8787 (In-Memory-Daten)
 ```
