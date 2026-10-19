@@ -12,7 +12,13 @@ const AREA = { cases: 'cases', vehicles: 'vehicles', contracts: 'vehicles', tire
   files: 'cases', assignments: 'vehicles', integration: 'admin' };
 
 // Pfadsegmente, die Einzelobjekte bezeichnen (UUID, Vorgangsnummer, FIN, Token, Zahlen), werden zu ':id'
-export function featureOf(method, path, action) {
+export function featureOf(method, path, action, status = 200) {
+  // nicht gefunden (404/405): freie Wörter aus der Adresse nie speichern („cases/hans-mueller-krank“) – nach dem Bereich alles „:id“,
+  // unbekannter Bereich „…“ (19.10.2026)
+  if (status === 404 || status === 405) {
+    const segs = path.replace(/^\/api\//, '').split('/').filter(Boolean).slice(0, 5);
+    return `${method} ${Object.hasOwn(AREA, segs[0] || '') ? [segs[0], ...segs.slice(1).map(() => ':id')].join('/') : '…'}`;
+  }
   // Befehle: nur bekannte, kurze Befehlsnamen anhängen (keine freien Inhalte)
   const act = typeof action === 'string' && /^[a-z_]{2,32}$/.test(action) ? `:${action}` : '';
   const segs = path.replace(/^\/api\//, '').split('/').filter(Boolean).slice(0, 5)
@@ -24,7 +30,7 @@ export const areaOf = (feature) => AREA[feature.split(' ')[1]?.split('/')[0]] ||
 export function recordUsage(env, ctx, environment, method, path, status, action) {
   const job = env.DB.prepare(`INSERT INTO usage_daily(day, environment, feature, calls, errors) VALUES (?1, ?2, ?3, 1, ?4)
     ON CONFLICT(day, environment, feature) DO UPDATE SET calls = calls + 1, errors = errors + ?4`)
-    .bind(berlinDate(), environment, featureOf(method, path, action), status >= 400 ? 1 : 0).run().catch(() => {});
+    .bind(berlinDate(), environment, featureOf(method, path, action, status), status >= 400 ? 1 : 0).run().catch(() => {});
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else return job;
 }
 

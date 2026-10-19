@@ -59,6 +59,25 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     // Agentenbefunde zur Fahrerakte (Schlüssel „<Fahrer-ID>|…“, Text mit Name und Nachweisstand) und ihre Einträge im Master-Eingang (17.10.2026 ergänzt)
     agent_findings: q("SELECT environment, finding_code, severity, message, status, first_seen, last_seen, resolved_at FROM agent_findings WHERE substr(subject_key, 1, length(?1) + 1) = ?1 || '|' ORDER BY first_seen", did || ''),
     master_inbox: q("SELECT m.environment, m.received_at, m.decision_status, m.decision_note, m.decided_at FROM master_inbox m WHERE m.finding_id IN (SELECT id FROM agent_findings WHERE substr(subject_key, 1, length(?1) + 1) = ?1 || '|') ORDER BY m.received_at", did || ''),
+    // Erfassungen/Entscheidungen dieser Person als Leitung, Prüfer oder Werkstatt (19.10.2026 ergänzt – vorher fehlten u. a. Führerscheinkontrollen,
+    // Auslesungen, Master-Entscheidungen, Verträge, Versicherungsfälle, Bußgelder und Übernahmen von Vorgängen in der Auskunft)
+    license_checks_performed: q('SELECT c.checked_on, c.result, c.note, d.display_name AS driver FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id WHERE c.checked_by=? ORDER BY c.checked_on', userId),
+    tacho_downloads_recorded: q(`SELECT t.kind, t.downloaded_on, t.evidence, t.created_at, t.cancelled_at, t.cancel_reason, CASE WHEN t.created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN t.cancelled_by=?1 THEN 1 ELSE 0 END AS cancelled
+      FROM tacho_downloads t WHERE t.created_by=?1 OR t.cancelled_by=?1 ORDER BY t.created_at`, userId),
+    master_decisions: q('SELECT environment, received_at, decision_status, decision_note, decided_at FROM master_inbox WHERE decided_by=? ORDER BY decided_at', userId),
+    drivers_created: q('SELECT display_name, created_at FROM drivers WHERE created_by=? ORDER BY created_at', userId),
+    driver_documents_recorded: q('SELECT kind, valid_until, created_at FROM driver_documents WHERE created_by=? ORDER BY created_at', userId),
+    contracts_recorded: q(`SELECT k.kind, k.partner, k.contract_no, k.created_at, v.plate FROM vehicle_contracts k JOIN vehicles v ON v.id=k.vehicle_id WHERE k.created_by=? ORDER BY k.created_at`, userId),
+    claims_recorded: q(`SELECT c.case_no, i.insurer, i.status, i.created_at FROM insurance_claims i JOIN cases c ON c.id=i.case_id WHERE i.created_by=? ORDER BY i.created_at`, userId),
+    fines_recorded: q(`SELECT fine_no, environment, kind, created_at, driver_confirmed_at, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN driver_confirmed_by=?1 THEN 1 ELSE 0 END AS driver_confirmed
+      FROM fines WHERE created_by=?1 OR driver_confirmed_by=?1 ORDER BY created_at`, userId),
+    cases_received: q(`SELECT case_no, environment, created_at, CASE WHEN fleet_received_by=?1 THEN 1 ELSE 0 END AS fleet_received, CASE WHEN workshop_ack_by=?1 THEN workshop_ack_at END AS workshop_ack_at
+      FROM cases WHERE fleet_received_by=?1 OR workshop_ack_by=?1 ORDER BY created_at`, userId),
+    emergency_contacts_edited: q(`SELECT environment, kind, label, created_at, updated_at, archived_at, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN updated_by=?1 THEN 1 ELSE 0 END AS updated, CASE WHEN archived_by=?1 THEN 1 ELSE 0 END AS archived
+      FROM emergency_contacts WHERE created_by=?1 OR updated_by=?1 OR archived_by=?1 ORDER BY created_at`, userId),
+    vehicle_notes_archived: q(`SELECT n.environment, n.text, n.archived_at, v.plate FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.archived_by=? ORDER BY n.archived_at`, userId),
+    maintenance_rules_created: q(`SELECT m.kind, m.created_at, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.created_by=? ORDER BY m.created_at`, userId),
+    telematics_mappings_confirmed: q('SELECT provider, external_id, evidence, confirmed_at FROM telematics_mappings WHERE confirmed_by=? ORDER BY confirmed_at', userId),
   };
   const names = Object.keys(stmts);
   const res = await env.DB.batch(names.map((n) => stmts[n]));

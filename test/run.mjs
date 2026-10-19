@@ -13404,6 +13404,33 @@ await test('Fehlersuche 19.10. (44): kein neuer Versicherungsfall an einer abgel
   ok(e.DB.db.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND km=1000`).get(V2), 'km-Ablesung bleibt als Beleg');
 });
 
+await test('Fehlersuche 19.10. (45): Datenauskunft enthält Erfassungen als Leitung/Prüfer, Werkstattplan zeigt Prüftermin mit Auftrag einer anderen Werkstatt nicht als offen, Nutzungsstatistik ohne freie Pfadwörter', async () => {
+  const { U, V1 } = await freshWorld(); const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const d = await U.fleet.post('/api/drivers', { display_name: 'Dieter Fahrer' }); eq(d.status, 201);
+  eq((await U.fleet.post(`/api/drivers/${d.data.id}/license-checks`, { checked_on: day(-1), result: 'maengel', note: 'Klasse CE fehlt' })).status, 201);
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: d.data.id, downloaded_on: day(-1), evidence: 'Export X' })).status, 201);
+  const ex = await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`); eq(ex.status, 200);
+  eq(ex.data.license_checks_performed[0].note, 'Klasse CE fehlt'); eq(ex.data.license_checks_performed[0].driver, 'Dieter Fahrer');
+  eq(ex.data.tacho_downloads_recorded[0].evidence, 'Export X'); eq(ex.data.drivers_created[0].display_name, 'Dieter Fahrer');
+  // Werkstattplan
+  const rule = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', evidence: 'Plakette', interval_months: 12, last_done_date: day(-300) }); eq(rule.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  eq((await U.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'MUENCHEN' })).status, 201);
+  const its = (p) => p.data.days.flatMap((x) => x.items);
+  ok(!its(await U.ws.get('/api/workshop/plan')).some((i) => i.type === 'maintenance' && i.id === rule.data.id), 'Dortmund: kein offener Prüftermin');
+  ok(its(await U.wsMuc.get('/api/workshop/plan')).some((i) => i.type === 'case' && i.maintenance_rule_id === rule.data.id), 'München: Auftrag');
+  eq((await U.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(5) })).status, 200);
+  const m = its(await U.ws.get('/api/workshop/plan')).find((i) => i.type === 'maintenance' && i.id === rule.data.id);
+  ok(m && m.order && m.order.workshop_site === 'MUENCHEN', 'anderer Tag: Hinweis auf den Auftrag der anderen Werkstatt');
+  // Nutzungsstatistik
+  const { featureOf } = await import('../src/usage.js');
+  eq(featureOf('GET', '/api/cases/hans-mueller-krank', undefined, 404), 'GET cases/:id'); eq(featureOf('GET', '/api/hans-mueller', undefined, 404), 'GET …');
+  eq(featureOf('GET', '/api/cases/x1', undefined, 200), 'GET cases/:id');
+  eq((await U.driver.get('/api/cases/hans-mueller-krank')).status, 404);
+  U.own.envHeader = 'test'; const us = await U.own.get('/api/admin/usage'); eq(us.status, 200);
+  ok(!us.data.features.some((f) => f.feature.includes('hans')), 'kein freies Wort gespeichert');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

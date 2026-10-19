@@ -642,13 +642,16 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const site = user.role === 'workshop' ? user.workshop_site : (query.site ? String(query.site).slice(0, 20) : null);
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
-  const [cs, mt, vs] = await Promise.all([
+  const [cs, mt, vs, mo] = await Promise.all([
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,80) AS description, c.maintenance_rule_id, c.tire_order
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),
     env.DB.prepare(`SELECT site FROM vehicles WHERE active=1 AND eval_excluded=0`).all(),
+    // offene Aufträge aus Prüfterminen ALLER Werkstätten (ohne Standortfilter): ein Termin, dessen Auftrag bei einer anderen Werkstatt liegt,
+    // erschien sonst bei der eigenen Werkstatt als offener Prüftermin ohne Auftrag (Gefahr doppelter Prüfung, 19.10.2026)
+    env.DB.prepare(`SELECT id, case_no, planned_date, workshop_site, maintenance_rule_id FROM cases WHERE environment=? AND maintenance_rule_id IS NOT NULL AND status IN (${PLAN_STATUSES.map(() => '?').join(',')})`).bind(envName, ...PLAN_STATUSES).all(),
   ]);
   // Fahrzeug-Standort (laut Fahrzeugstamm, Schreibweise egal) – unabhängig vom Werkstatt-Standort; wirkt auf Aufträge und Prüftermine
   // Auslastung je Tag und Werkstatt aus ALLEN Aufträgen (vor dem Fahrzeug-Standortfilter) – Grundlage für den Terminvorschlag
@@ -667,11 +670,12 @@ export async function workshopPlan(env, user, envName, query = {}) {
     else if (c.planned_date <= to) put(c.planned_date, item);
   }
   // Werkstattauftrag aus diesem Prüftermin am selben Tag: nur der Auftrag erscheint (sonst doppelt); an anderem Tag Hinweis auf den Auftrag
-  const orders = new Map(cs.results.filter((c) => c.maintenance_rule_id).map((c) => [c.maintenance_rule_id, c]));
+  // Auftrag einer anderen Werkstatt am selben Tag: Termin hier nicht zeigen (Werkstatt sieht nur Aufträge ihres Standorts); an anderem Tag mit Hinweis
+  const orders = new Map(mo.results.map((c) => [c.maintenance_rule_id, c]));
   for (const m of mt.results) {
     const o = orders.get(m.id);
     if (o && o.planned_date === m.planned_date) continue;
-    put(m.planned_date, { type: 'maintenance', ...m, order: o ? { id: o.id, case_no: o.case_no } : null });
+    put(m.planned_date, { type: 'maintenance', ...m, order: o ? { id: o.id, case_no: o.case_no, workshop_site: o.workshop_site } : null });
   }
   // weitere geplante Tage desselben Fahrzeugs (ab heute, im Zeitraum): Hinweis zum Zusammenlegen – das Fahrzeug fiele sonst mehrfach aus
   const vDates = new Map();
