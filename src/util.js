@@ -150,6 +150,8 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     let t = v.trim().replace(/[\s\u00a0]/g, '');
     if (t === '') { if (nullable) return null; throw bad('validation', `${field}: ungültige Zahl.`); }
     if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(t)) t = t.replace(/\./g, '');
+    // englisches Format mit Tausenderkomma und Dezimalpunkt („1,234.50“) ist eindeutig (19.10.2026: in der EN-Oberfläche abgewiesen)
+    else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(t)) t = t.replace(/,/g, '');
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // englisches Tausenderkomma „15,000“/„1,000“ ebenso mehrdeutig (18.10.2026: wurde still als 15 bzw. 1 € gespeichert, km „120,500“ als 121)

@@ -4992,7 +4992,7 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
-  ok(rest.length === 7 && rest.every((l) => /value="|const money|const shown|const nv/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
+  ok(rest.length === 3 && rest.every((l) => /value="|const money|const shown|const nv|const decIn/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // decIn: Vorbelegung DE/UK mit Komma, EN mit Punkt (19.10.2026) // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
   // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
   const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
   eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');
@@ -13245,6 +13245,12 @@ await test('Fehlersuche 19.10. (36): CSV-Importe mit zerlegten Umlauten (NFD, Ma
   r = await U.fleet.req('POST', '/api/tacho/import', tcsv, { 'content-type': 'text/csv' });
   eq(r.data.counts.neu, 0, 'Storno bleibt'); ok(/storniert/.test(r.data.skipped.map((x) => x.reason).join()), 'Grund genannt');
   eq((await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V1, downloaded_on: BERLIN_TODAY, evidence: 'neu erfasst' })).status, 201, 'Einzelerfassung möglich');
+  // Zahlen: englisches Format mit Tausenderkomma und Dezimalpunkt eindeutig; mehrdeutige weiter abgewiesen
+  const { num } = await import('../src/util.js');
+  eq(num('1,234.50', { decimalComma: true, cents: true }), 1234.5); eq(num('1.234,50', { cents: true }), 1234.5); eq(num('12.5', { decimalComma: true }), 12.5);
+  let amb = null; try { num('1.500'); } catch (x) { amb = x; } ok(amb, '„1.500“ mehrdeutig');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/String\([a-z_.]+\)\.replace\('\.', ','\)\)?}"/.test(app) && /esc\(decIn\(f\.amount_eur\)\)/.test(app), 'Vorbelegung je Sprache (decIn)');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

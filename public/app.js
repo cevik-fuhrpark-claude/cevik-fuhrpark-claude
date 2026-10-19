@@ -47,6 +47,8 @@ const nDays = (n) => { let k = 'other'; try { k = new Intl.PluralRules(uiLoc()).
 // Varianten in PLURALS (i18n.js); fehlt Sprache/Form, gilt der Grundtext. Weitere Platzhalter ersetzt der Aufrufer.
 const tn = (k, n) => { let c = 'other'; try { c = new Intl.PluralRules(uiLoc()).select(Number(n)); } catch { /* alte Browser */ } const p = (PLURALS[S.lang] || {})[k]; return ((p && (p[c] || p.other || p.many)) || t(k)).replace('{n}', fmtNum(n)); };
 // Monat „JJJJ-MM“ als „Oktober 2026“ in der Oberflächensprache (ohne Tag – zweistellige Vorgabe betrifft nur Tagesdaten)
+// Zahl als Vorbelegung eines Eingabefelds: Dezimalkomma in DE/UK, Punkt in EN (19.10.2026: EN-Felder kamen mit Komma)
+const decIn = (x) => (S.lang === 'en' ? String(x) : String(x).replace('.', ','));
 const fmtMonth = (ym) => new Intl.DateTimeFormat(uiLoc(), { year: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(ym + '-15T12:00:00Z'));
 // Datum immer zweistellig (TT.MM.JJJJ bzw. TT/MM/JJJJ): „de-DE“ ohne Vorgabe schreibt „1.1.2027“ – fiel erst an Tagen/Monaten < 10 auf
 // (Zeitreise der Oberfläche 15.10.2026). Gleiche Optionen für den Fahrer-Aushang (`dateOpts`).
@@ -1916,7 +1918,7 @@ function ctForm(c = {}, docs = null) {
     <label>${esc(t('ct_partner'))}</label><input name="partner" required maxlength="120" value="${v('partner')}"><label>${esc(t('ct_no'))}</label><input name="contract_no" maxlength="60" value="${v('contract_no')}">
     <label>${esc(t('ct_start'))}</label><input type="date" name="start_date" value="${v('start_date')}"><label>${esc(t('ct_end'))}</label><input type="date" name="end_date" value="${v('end_date')}">
     <label>${esc(t('ct_notice'))}</label><input name="notice_months" inputmode="numeric" value="${v('notice_months')}"><label>${esc(t('ct_km_allow'))}</label><input name="km_allowance" inputmode="numeric" value="${v('km_allowance')}">
-    <label>${esc(t('ct_start_km'))}<span class="hint">${esc(t('ct_start_km_hint'))}</span></label><input name="start_km" inputmode="numeric" value="${v('start_km')}"><label>${esc(t('ct_rate'))}</label><input name="monthly_rate_net" inputmode="decimal" value="${c.monthly_rate_net === null || c.monthly_rate_net === undefined ? '' : esc(String(c.monthly_rate_net).replace('.', ','))}">
+    <label>${esc(t('ct_start_km'))}<span class="hint">${esc(t('ct_start_km_hint'))}</span></label><input name="start_km" inputmode="numeric" value="${v('start_km')}"><label>${esc(t('ct_rate'))}</label><input name="monthly_rate_net" inputmode="decimal" value="${c.monthly_rate_net === null || c.monthly_rate_net === undefined ? '' : esc(decIn(c.monthly_rate_net))}">
     <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" value="${v('evidence')}"><label>${esc(t('note'))}</label><input name="note" maxlength="1000" value="${v('note')}">${docSel}`;
 }
 const ctDocLine = (c) => (c.file_id ? `<div><a href="${fileUrl(c.file_id)}" target="_blank" rel="noopener">📎 ${esc(t('ct_doc'))}: ${esc(c.file_name)}</a></div>` : c.file_other_env ? `<div class="small muted">📎 ${esc(t('ct_doc_other_env'))}</div>` : c.ended_on ? '' : `<div class="small muted">${esc(t('ct_doc_missing'))}</div>`);
@@ -2232,9 +2234,9 @@ async function viewStockItem(id) {
     <details class="panel noprint" id="itedp"><summary>${esc(t('item_edit'))}</summary><form id="itedf">
       <label for="ie_name">${esc(t('part_name'))}</label><input id="ie_name" name="name" required maxlength="200" value="${esc(it.name)}">
       <label for="ie_pn">${esc(t('part_number'))}</label><input id="ie_pn" name="part_number" maxlength="80" value="${esc(it.part_number || '')}">
-      <label for="ie_min">${esc(t('min_qty'))} (${esc(unitL(it.unit))})</label><input id="ie_min" name="min_qty" inputmode="decimal" value="${it.min_qty === null || it.min_qty === undefined ? '' : esc(String(it.min_qty).replace('.', ','))}">
+      <label for="ie_min">${esc(t('min_qty'))} (${esc(unitL(it.unit))})</label><input id="ie_min" name="min_qty" inputmode="decimal" value="${it.min_qty === null || it.min_qty === undefined ? '' : esc(decIn(it.min_qty))}">
       <label for="ie_loc">${esc(t('storage'))}</label><input id="ie_loc" name="location" maxlength="80" value="${esc(it.location || '')}">
-      <label for="ie_price">${esc(t('price_net'))}</label><input id="ie_price" name="unit_price_net" inputmode="decimal" value="${it.unit_price_net === null || it.unit_price_net === undefined ? '' : esc(String(it.unit_price_net).replace('.', ','))}">
+      <label for="ie_price">${esc(t('price_net'))}</label><input id="ie_price" name="unit_price_net" inputmode="decimal" value="${it.unit_price_net === null || it.unit_price_net === undefined ? '' : esc(decIn(it.unit_price_net))}">
       <label class="check"><input type="checkbox" name="active" id="ie_act" ${it.active ? 'checked' : ''}> ${esc(t('item_active'))}</label>
       <p class="small muted">${esc(t('item_edit_hint'))}</p>
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
@@ -2262,7 +2264,7 @@ async function viewStockItem(id) {
     const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
     if (it.active && !b.active && it.on_hand !== 0 && !confirm(t('item_inactive_onhand').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)))) return;
     // nur geänderte Felder auf dem gelesenen Stand (18.10.2026: älteres Formular setzte Preis aus Zugang/Mindestbestand der Leitung still zurück)
-    const nv = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+    const nv = (x) => (x === null || x === undefined ? '' : decIn(x));
     const was = { name: it.name, part_number: it.part_number || '', min_qty: nv(it.min_qty), location: it.location || '', unit_price_net: nv(it.unit_price_net), active: !!it.active };
     for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
@@ -2335,7 +2337,7 @@ async function viewFine(id) {
   if (A.includes('driver_ack')) acts.push(`<button class="btn" id="ack">${esc(t('ack_fine'))}</button>`);
   if (acts.length) html += `<div class="actions">${acts.join('')}</div>`;
   // Frist/Betrag/Aktenzeichen laut neuem Schreiben ändern (Server konnte es, die App bot es nicht an – 18.10.2026; z. B. Fristverlängerung)
-  if (A.includes('update')) html += `<details class="panel noprint"><summary>${esc(t('fine_edit'))}</summary><form id="uf"><label>${esc(t('response_due'))}</label><input type="date" name="response_due" value="${esc(f.response_due || '')}"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal" value="${f.amount_eur === null || f.amount_eur === undefined ? '' : esc(String(f.amount_eur).replace('.', ','))}"><label>${esc(t('reference'))}</label><input name="reference" maxlength="80" value="${esc(f.reference || '')}"><p class="small muted">${esc(t('fine_edit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
+  if (A.includes('update')) html += `<details class="panel noprint"><summary>${esc(t('fine_edit'))}</summary><form id="uf"><label>${esc(t('response_due'))}</label><input type="date" name="response_due" value="${esc(f.response_due || '')}"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal" value="${f.amount_eur === null || f.amount_eur === undefined ? '' : esc(decIn(f.amount_eur))}"><label>${esc(t('reference'))}</label><input name="reference" maxlength="80" value="${esc(f.reference || '')}"><p class="small muted">${esc(t('fine_edit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (A.includes('set_status')) html += `<details class="panel"><summary>${esc(t('set_status'))}</summary><form id="sf"><label>${esc(t('status'))}</label><select name="status">${['beantwortet', 'bezahlt', 'eingestellt', 'erledigt', 'eingegangen'].map((x) => `<option value="${x}">${esc(t('fs_' + x))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note" required><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (d.events) html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(FINE_EV[e.action] ? t(FINE_EV[e.action]) : e.action)}</b>${e.actor_name ? ' · ' + esc(e.actor_name) : ''}${e.note ? `<div>${esc(e.note)}</div>` : ''}</li>`).join('')}</ol>`;
   render(html, 'more');
