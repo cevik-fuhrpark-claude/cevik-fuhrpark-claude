@@ -11,7 +11,7 @@ import * as vnotes from './vnotes.js';
 import * as emergency from './emergency.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, releaseQuietPush, PUSH_MAX_SENDS, notifyUsers, MUTABLE_KINDS, parseMuted, currentLangText, nt } from './notify.js';
+import { retryFailedPush, releaseQuietPush, PUSH_MAX_SENDS, notifyUsers, MUTABLE_KINDS, mutableKindsFor, parseMuted, currentLangText, nt } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -176,13 +176,16 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/me/notify-prefs' && m === 'GET') {
     const row = await env.DB.prepare('SELECT push_muted, push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
-    return json({ kinds: MUTABLE_KINDS, muted: parseMuted(row && row.push_muted), quiet: row && row.push_quiet_from ? { from: row.push_quiet_from, to: row.push_quiet_to } : null });
+    const kinds = mutableKindsFor(user.role);
+    return json({ kinds, muted: parseMuted(row && row.push_muted).filter((k) => kinds.includes(k)), quiet: row && row.push_quiet_from ? { from: row.push_quiet_from, to: row.push_quiet_to } : null });
   }
   if (path === '/api/me/notify-prefs' && m === 'PUT') {
     // muted und quiet getrennt änderbar: fehlt ein Feld, bleibt der gespeicherte Wert (Häkchen ändern nicht die Ruhezeit und umgekehrt)
     const b = await readJson(request);
     const row = await env.DB.prepare('SELECT push_muted, push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
-    const muted = 'muted' in b ? (Array.isArray(b.muted) ? [...new Set(b.muted.filter((k) => MUTABLE_KINDS.includes(k)))] : []) : parseMuted(row && row.push_muted);
+    // nur die Arten der eigenen Rolle ändern; gespeicherte andere (z. B. aus einer früheren Rolle) bleiben
+    const kinds = mutableKindsFor(user.role); const stored = parseMuted(row && row.push_muted);
+    const muted = 'muted' in b ? [...new Set([...(Array.isArray(b.muted) ? b.muted.filter((k) => kinds.includes(k)) : []), ...stored.filter((k) => !kinds.includes(k))])] : stored;
     let qf = row ? row.push_quiet_from : null; let qt = row ? row.push_quiet_to : null;
     if ('quiet' in b) {
       if (b.quiet === null || (b.quiet && !b.quiet.from && !b.quiet.to)) { qf = null; qt = null; } else {

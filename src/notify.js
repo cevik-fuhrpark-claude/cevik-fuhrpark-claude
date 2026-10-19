@@ -109,6 +109,16 @@ export function localizedBody(n, lang) {
   return `${core.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${test}`;
 }
 
+// Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
+// nötig“ und „Neuer Werkstattauftrag“). Inhaber/Leitung: alle. Melder-Arten (Eingang, Abgelehnt, Weitergeleitet …) bekommt jede meldende Rolle.
+const REPORTER_KINDS = ['received', 'rejected', 'priority_changed', 'forwarded', 'released', 'safety_lock_lifted', 'comment'];
+const KINDS_BY_ROLE = {
+  driver: REPORTER_KINDS,
+  dispatch: ['created', ...REPORTER_KINDS, 'waiting_parts'],
+  workshop: ['created', ...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away'],
+  viewer: [],
+};
+export function mutableKindsFor(role) { const k = KINDS_BY_ROLE[role]; return k ? MUTABLE_KINDS.filter((x) => k.includes(x)) : MUTABLE_KINDS; }
 export function parseMuted(v) { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.filter((k) => MUTABLE_KINDS.includes(k)) : []; } catch { return []; } }
 
 // Alle möglichen Empfänger eines Vorgangs in EINER Abfrage (Abfragebudget je Aufruf): Melder (nur aktiv), Leitung/Inhaber/Dispo

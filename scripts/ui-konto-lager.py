@@ -24,7 +24,7 @@ with sync_playwright() as p:
     env = api('GET', '/api/me')['d']['active_environment']; site = api('GET', '/api/meta')['d']['workshops'][0]['code']
     pid = os.getpid()
     users = {}
-    for un, role, lang, extra in [('kl.fleet%d' % pid, 'fleet', 'en', {}), ('kl.ws%d' % pid, 'workshop', 'uk', {'workshop_site': site}), ('kl.drv%d' % pid, 'driver', 'en', {})]:
+    for un, role, lang, extra in [('kl.fleet%d' % pid, 'fleet', 'en', {}), ('kl.ws%d' % pid, 'workshop', 'uk', {'workshop_site': site}), ('kl.drv%d' % pid, 'driver', 'en', {}), ('kl.view%d' % pid, 'viewer', 'uk', {})]:
         u = api('POST', '/api/users', {'username': un, 'display_name': un, 'role': role, 'environment': env, **extra})
         c = br.new_context(viewport={'width': 390, 'height': 844}); pg = c.new_page(); pg.goto(B)
         pg.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}])
@@ -60,6 +60,13 @@ with sync_playwright() as p:
     for h in ['#/stock/journal', '#/stock/asof']:
         d.goto(B + '/' + h); d.wait_for_timeout(800)
         check(d.locator('main form, #app form').count() == 0 and 'No permission' in d.inner_text('body'), f'Fahrer {h}: kein Formular, Hinweis')
+    # 4. Push-Arten je Rolle: Lesezugriff ohne abschaltbare Arten (Hinweis), Fahrer ohne Kostenfreigabe
+    for role, want_none in [('viewer', True), ('driver', False)]:
+        g = users[role]; g.goto(B + '/#/inbox'); g.wait_for_selector('#np', state='attached')
+        g.locator('#np > summary').click(); g.wait_for_function("() => document.querySelector('#np').dataset.loaded === '1'", timeout=8000)
+        n = g.locator('[data-pk]').count()
+        if want_none: check(n == 0 and g.locator('#npnone').count() == 1 and 'немає' in g.inner_text('#npnone'), 'Lesezugriff (UK): keine Arten, Hinweis')
+        else: check(n > 0 and g.locator('[data-pk=cost_limit]').count() == 0, 'Fahrer: Arten ohne Kostenfreigabe')
     br.close()
 print('FEHLER: ' + ' | '.join(fails) if fails else 'alles grün')
 raise SystemExit(1 if fails else 0)

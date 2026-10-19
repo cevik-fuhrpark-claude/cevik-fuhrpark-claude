@@ -13913,6 +13913,20 @@ await test('Fehlersuche 19.10. (Konto/Lager): Passwort zu lang eigener Code, Lag
   ok(translateValidation('uk', 'Menge: zulässig von 0.01 bis 100000.').includes('0,01'), 'UK');
 });
 
+await test('Push-Arten je Rolle (19.10.): Fahrer/Werkstatt/Lesezugriff sehen nur Arten, die sie bekommen können; Abschalten anderer Arten bleibt gespeichert', async () => {
+  const { U } = await freshWorld();
+  const k = async (c) => (await c.get('/api/me/notify-prefs')).data.kinds;
+  const all = await k(U.fleet); ok(all.includes('cost_limit') && all.includes('agent_reminder') && all.includes('approved'), 'Leitung: alle');
+  const drv = await k(U.driver); ok(drv.includes('received') && drv.includes('released') && drv.includes('comment'), 'Fahrer: Melder-Arten');
+  for (const x of ['cost_limit', 'cost_approved', 'approved', 'acknowledged', 'started', 'reassigned_away', 'agent_reminder', 'quality_check']) ok(!drv.includes(x), 'Fahrer ohne ' + x);
+  const ws = await k(U.ws); ok(ws.includes('approved') && ws.includes('cost_approved') && ws.includes('reassigned_away'), 'Werkstatt: Aufträge');
+  for (const x of ['cost_limit', 'acknowledged', 'agent_reminder']) ok(!ws.includes(x), 'Werkstatt ohne ' + x);
+  eq((await k(U.viewer)).length, 0, 'Lesezugriff: keine');
+  // Fahrer kann fremde Arten nicht setzen; gespeicherte fremde bleiben bei späterem Speichern erhalten
+  const r = await U.driver.put('/api/me/notify-prefs', { muted: ['received', 'cost_limit'] }); eq(r.status, 200);
+  eq((await U.driver.get('/api/me/notify-prefs')).data.muted.join(), 'received');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
