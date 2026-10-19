@@ -1666,6 +1666,8 @@ const kmFcHtml = (fc, short = false) => `<span class="km-fc" title="${esc(kmFcHi
 // HU/SP getrennt: letzte Prüfung, Fälligkeit (verbindlich/Prognose), Status, Nachweis, geplanter Termin (StVZO Anlage VIII, serverseitig berechnet)
 const HS_CLS = { ok: 'ok', bald_faellig: 'mittel', ueberfaellig: 'kritisch', ungeklaert: 'mittel', nicht_sp_pflichtig: '', erste_sp_kuenftig: '' };
 const mY = (d) => (d ? `${d.slice(5, 7)}/${d.slice(0, 4)}` : '–');
+// Fälligkeit laut Nachweis mit Tag (z. B. 15.11.): die App rechnet mit diesem Tag (vorsichtiger) – dann auch genau ihn anzeigen statt „bis Ende MM/JJJJ“ (Backlog 94, 19.10.2026)
+const isMonthEnd = (d) => { const [y, m, dd] = String(d).slice(0, 10).split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate() === dd; };
 // HU/SP-Hinweis in der App-Sprache (Server liefert deutschen Text + Code mit Werten; Deutsch = Servertext)
 function huNote(x, i) {
   const c = (x.note_codes || [])[i];
@@ -1714,7 +1716,7 @@ function huSpHtml(h, v, canEdit, orders) {
     const rid = h.rules[k] || (x.status !== 'nicht_sp_pflichtig' ? 'husp:' + k : null);
     return `<section class="panel"><h3 style="margin-top:0">${k === 'HU' ? esc(t('hu_long')) : esc(t('sp_long'))} <span class="chip ${HS_CLS[x.status] || ''}">${esc(t('hs_' + x.status))}</span></h3>
       <dl class="kv"><dt>${esc(t('last_done'))}</dt><dd>${fmtD(x.last_done)}${x.last_result ? ` · ${esc(t('res_' + x.last_result))}` : ''}</dd>
-      <dt>${esc(t('next_due'))}</dt><dd>${x.due ? `<b>${esc(t('due_until_end'))} ${mY(x.due)}</b> <span class="small muted">(${esc(t('db_' + x.due_basis))})</span>` : '–'}</dd>
+      <dt>${esc(t('next_due'))}</dt><dd data-hsdue="${esc(k)}">${x.due ? `<b>${isMonthEnd(x.due) ? `${esc(t('due_until_end'))} ${mY(x.due)}` : `${esc(t('due_until_day'))} ${fmtD(x.due)}`}</b> <span class="small muted">(${esc(t('db_' + x.due_basis))})</span>` : '–'}</dd>
       ${x.prognosis ? `<dt>${esc(t('prognosis'))}</dt><dd>${mY(x.prognosis)} <span class="small muted">(${esc(t('not_binding'))})</span></dd>` : ''}
       ${x.planned_date ? `<dt>${esc(t('planned_appt'))}</dt><dd>${fmtD(x.planned_date)}</dd>` : ''}
       <dt>${esc(t('evidence'))}</dt><dd>${esc(x.last_evidence || '–')}</dd></dl>

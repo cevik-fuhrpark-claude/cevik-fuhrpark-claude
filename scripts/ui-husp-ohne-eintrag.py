@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (19.10.2026) – HU/SP ohne eigenen Eintrag in der Fahrzeugakte:
 # SP-Frist nur aus der HU berechnet → Karte zeigt Hinweis „Noch kein eigener Eintrag …“ und die Formulare „Durchführung erfassen“/„Termin planen“;
 # Speichern legt den Eintrag an, danach verschwindet der Hinweis, Durchführung steht in der Karte.
+# Backlog 94: Fälligkeit laut Nachweis mit Tag → Karte nennt den Tag („fällig bis 15.03.“), Monatsende → „bis Ende MM/JJJJ“.
 # DE 390 px, UK 820 px, EN 1440 px. Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -49,7 +50,21 @@ with sync_playwright() as p:
         check(len(sp) == 1 and not sp[0].get('virtual') and sp[0].get('last_done_date') == today.isoformat(), f'{lang}: SP-Eintrag mit Durchführung angelegt')
         if SHOTS: q.screenshot(path=f'{SHOTS}/husp-{lang}-{w}-nach.png', full_page=False)
         c.close()
+    # Backlog 94: Fälligkeit laut Nachweis mit Tag (nicht Monatsende) → Karte nennt genau diesen Tag (so rechnet die App), Monatsende → „bis Ende MM/JJJJ“
     api('PATCH', '/api/me', {'language': 'de'})
+    y = today.year + 1
+    for i, (due, want) in enumerate([(f'{y}-03-15', f'fällig bis 15.03.{y}'), (f'{y}-03-31', f'fällig bis Ende 03/{y}')]):
+        vin = f'WDB96340311{pid:03d}{i:03d}'; vid = 'VIN:' + vin
+        api('POST', '/api/vehicles', {'plate': f'HS-D {pid}{i}', 'vin': vin, 'site': 'Dortmund'})
+        api('POST', f'/api/vehicles/{vid}/spec', {'zgm_class': 'ueber_12', 'spec_source': 'UI-Test F.2'})
+        r = api('POST', f'/api/vehicles/{vid}/maintenance', {'kind': 'HU', 'next_due_date': due, 'evidence': 'Plakette UI-Test'})
+        check(r['s'] == 201, f'HU mit Nachweis-Fälligkeit {due} angelegt')
+        c = br.new_context(viewport={'width': 390, 'height': 844}); q = c.new_page(); q.goto(B)
+        q.evaluate(JS, ['POST', '/api/login', {'username': 'hs.inhaber', 'password': PW}])
+        q.goto(B + '/#/vehicles/' + vid); q.wait_for_selector('[data-hsdue="HU"]', timeout=10000)
+        txt = q.locator('[data-hsdue="HU"]').inner_text()
+        check(want in txt, f'Karte HU zeigt „{want}“ (ist: {txt.strip()[:60]})')
+        c.close()
     br.close()
 print('FEHLER: ' + ' | '.join(fails) if fails else 'alles grün')
 raise SystemExit(1 if fails else 0)

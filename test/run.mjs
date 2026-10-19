@@ -13867,6 +13867,30 @@ await test('HU/SP ohne Eintrag (19.10.): Durchführung/Termin/Auftrag aus der Ak
   }
 });
 
+await test('Backlog 94 (19.10.): HU/SP-Fälligkeit laut Nachweis mit Tag – Agentenbefund nennt den Tag (DE/UK/EN), Monatsende weiter „bis Ende MM/JJJJ“', async () => {
+  const { U } = await freshWorld(); const F = U.fleet;
+  const shift = (d, n) => new Date(Date.parse(d + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const isME = (d) => new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7), 0)).getUTCDate() === +d.slice(8, 10);
+  let soon = shift(BERLIN_TODAY, 10); if (isME(soon)) soon = shift(soon, 1);
+  let past = shift(BERLIN_TODAY, -10); if (isME(past)) past = shift(past, -1);
+  const mkV = async (n, due) => { const V = `VIN:WSM0000000009400${n}`; ok([200, 201].includes((await U.own.post('/api/vehicles', { plate: `SZ-BL 94${n}`, vin: V.slice(4), site: 'Dortmund' })).status), 'Fahrzeug');
+    eq((await F.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test F.2' })).status, 200);
+    const r = await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', next_due_date: due, evidence: 'Plakette (Test)' }); eq(r.status, 201); return r.data.id; };
+  const meDate = (() => { const y = +BERLIN_TODAY.slice(0, 4) + 1; return `${y}-01-31`; })();
+  const idSoon = await mkV('1', soon); const idPast = await mkV('2', past); const idMe = await mkV('3', meDate);
+  eq((await F.post('/api/agent/run')).status, 200);
+  const fs = (await F.get('/api/master')).data.findings;
+  const fSoon = fs.find((f) => f.subject_key === idSoon || f.subject === idSoon); ok(fSoon, 'Befund bald fällig');
+  const dd = `${soon.slice(8, 10)}.${soon.slice(5, 7)}.${soon.slice(0, 4)}`;
+  ok(fSoon.message.includes(`fällig bis ${dd}`) && !fSoon.message.includes('Ende'), fSoon.message);
+  const fPast = fs.find((f) => f.subject_key === idPast || f.subject === idPast); ok(fPast, 'Befund überfällig');
+  ok(/überfällig \(fällig bis \d\d\.\d\d\.\d{4}\)/.test(fPast.message), fPast.message);
+  ok(!fs.some((f) => (f.subject_key === idMe || f.subject === idMe) && f.finding_code !== 'INSPECTION_UNCLEAR'), 'Monatsende in > 1 Jahr: kein Fälligkeitsbefund');
+  // Übersetzung: Vorlagen in allen Sprachen vorhanden
+  const { FINDING_MESSAGES } = await import('../public/finding-messages.js').catch(() => ({}));
+  if (FINDING_MESSAGES) for (const l of ['de', 'uk', 'en']) ok(FINDING_MESSAGES[l] && FINDING_MESSAGES[l].HUSP_DUE_DAY && FINDING_MESSAGES[l].HUSP_OVERDUE_DAY, 'Vorlage ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
