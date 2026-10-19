@@ -27,6 +27,9 @@ export const CHECKS = {
   contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke',
   // letzter km-Stand unter „km bei Übernahme“ (Tippfehler im Vertrag oder Zähler) – Kontingent wird sonst nie überwacht (17.10.2026)
   contract_km_below_start: 'fehler', leasing_doc_no_contract: 'hinweis', contract_no_document: 'hinweis',
+  // zwei laufende Leasing-/Miet-/Finanzierungsverträge desselben Fahrzeugs mit überschneidender Laufzeit – Raten zählen in Übersicht/Kostenbericht
+  // doppelt (z. B. Vorgänger nicht beendet). Versicherung/Wartung/Sonstiges ausgenommen (mehrere Policen nebeneinander üblich). 19.10.2026
+  contract_overlap: 'hinweis',
   // Versicherungsfälle
   accident_no_claim: 'hinweis',
   // Prüfergebnis mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, aber kein Vorgang zum Fahrzeug seit der Prüfung
@@ -124,7 +127,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
-    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.km_allowance, c.start_date, c.start_km, c.file_id, v.plate, v.active,
+    env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.contract_no, c.km_allowance, c.start_date, c.end_date, c.start_km, c.file_id, v.plate, v.active,
       (SELECT MAX(o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id) AS last_km_at,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.created_at DESC LIMIT 1) AS last_km
       FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND v.eval_excluded=0`).all(),
@@ -235,6 +238,16 @@ export async function dataQuality(env, user, envName, query = {}) {
     else if (c.km_allowance && c.start_km !== null && c.last_km !== null && c.last_km < c.start_km) addA('contract_km_below_start', v, `${CK_DE[c.kind]} · ${c.partner} · ${c.last_km} km < ${c.start_km} km`, { ...ca, km: c.last_km, start_km: c.start_km });
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
     if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) addA('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
+  }
+  // überschneidende laufende Verträge gleicher Art (je Paar ein Hinweis); fehlender Beginn/Ende = offen
+  const OVL = ['leasing', 'miete', 'finanzierung'];
+  const ctrOv = ctr.results.filter((c) => OVL.includes(c.kind)).sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')) || String(a.id).localeCompare(String(b.id)));
+  for (let i = 0; i < ctrOv.length; i++) for (let j = i + 1; j < ctrOv.length; j++) {
+    const a = ctrOv[i]; const b = ctrOv[j];
+    if (a.vehicle_id !== b.vehicle_id || a.kind !== b.kind) continue;
+    if ((a.start_date || '0000') > (b.end_date || '9999') || (b.start_date || '0000') > (a.end_date || '9999')) continue;
+    const nm = (c) => c.partner + (c.contract_no ? ` (${c.contract_no})` : '');
+    addA('contract_overlap', { id: a.vehicle_id, plate: a.plate }, `${CK_DE[a.kind]} · ${nm(a)} / ${nm(b)}`, { contract_kind: a.kind, partner: `${nm(a)} / ${nm(b)}` });
   }
   for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };

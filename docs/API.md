@@ -93,6 +93,7 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 | `contract_km_below_start` | `fehler` | Letzter km-Stand unter „km bei Übernahme“ des laufenden Vertrags mit km-Kontingent (Tippfehler im Vertrag oder km-Stand) – Kontingent sonst nicht überwacht |
 | `leasing_doc_no_contract` | `hinweis` | Leasing-/Mietdokument ohne erfassten Vertrag |
 | `contract_no_document` | `hinweis` | Leasing-/Miet-/Finanzierungsvertrag ohne verknüpftes Vertragsdokument |
+| `contract_overlap` | `hinweis` | Zwei laufende Leasing-/Miet-/Finanzierungsverträge desselben Fahrzeugs mit überschneidender Laufzeit (Raten zählen doppelt; je Paar ein Eintrag, Detail „Art · Partner (Nr.) / Partner (Nr.)“) |
 | `accident_no_claim` | `hinweis` | Vorgang nennt „Unfall“ – kein Versicherungsfall |
 | `inspection_defects_no_case` | `luecke` | Prüfung mit erheblichen/gefährlichen Mängeln – kein Vorgang seit der Prüfung |
 | `reinspection_defects_again` | `luecke` | Nachprüfung nach Mängelauftrag erneut mit erheblichen Mängeln |

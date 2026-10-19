@@ -13297,6 +13297,27 @@ await test('Verbesserung 19.10. (38): Reserverad unter 1,6 mm ist kein kritische
   ok(/aq\.length === 1 \? `<p class="small muted" id="aqmin"/.test(app), 'Protokollsuche: Hinweis bei 1 Zeichen');
 });
 
+await test('Verbesserung 19.10. (39): Datenqualität meldet überschneidende laufende Leasing-/Miet-/Finanzierungsverträge (Raten doppelt), nicht Versicherungen und nicht nach Beenden', async () => {
+  const { U, V1 } = await freshWorld();
+  const mk = async (b) => { const r = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { evidence: 'Vertrag.pdf', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'contract_overlap');
+  await mk({ kind: 'leasing', partner: 'Alt-Leasing', contract_no: 'A-1', start_date: '2023-01-01', end_date: '2025-12-31' });
+  await mk({ kind: 'leasing', partner: 'Neu-Leasing', start_date: '2026-01-01', end_date: '2029-12-31' });
+  eq((await dq()).length, 0, 'lückenlose Folge ohne Überschneidung');
+  const c3 = await mk({ kind: 'leasing', partner: 'Doppel-Leasing', contract_no: 'D-9', start_date: '2026-06-01' });
+  let d = await dq(); eq(d.length, 1, 'je Paar ein Eintrag'); eq(d[0].severity, 'hinweis'); eq(d[0].vehicle_id, V1);
+  eq(d[0].detail, 'Leasing · Neu-Leasing / Doppel-Leasing (D-9)'); eq(d[0].detail_args.contract_kind, 'leasing');
+  await mk({ kind: 'versicherung', partner: 'Haftpflicht AG', start_date: '2026-01-01' }); await mk({ kind: 'versicherung', partner: 'Kasko AG', start_date: '2026-01-01' });
+  eq((await dq()).length, 1, 'Versicherungen nebeneinander kein Hinweis');
+  await mk({ kind: 'miete', partner: 'Miet-GmbH', start_date: '2026-01-01' });
+  eq((await dq()).length, 1, 'andere Art kein Hinweis');
+  eq((await U.fleet.post(`/api/contracts/${c3}/end`, { ended_on: BERLIN_TODAY, end_note: 'doppelt erfasst' })).status, 200);
+  eq((await dq()).length, 0, 'nach Beenden kein Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_contract_overlap, l);
+  const { dqDetailText } = await import('../public/csv.js');
+  eq(dqDetailText({ check: 'contract_overlap', detail: 'x', detail_args: { contract_kind: 'leasing', partner: 'A / B' } }, (k) => STRINGS.en[k] || k, (x) => x), `${STRINGS.en.ck_leasing} · A / B`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
