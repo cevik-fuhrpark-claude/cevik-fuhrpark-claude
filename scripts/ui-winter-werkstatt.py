@@ -4,6 +4,8 @@
 # Reiterwechsel danach bleibt erhalten; kein JS-Fehler, kein waagrechtes Scrollen. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
 import os
 from playwright.sync_api import sync_playwright
+# Reifenposition VA-R je Sprache (UK/EN seit 19.10.2026 im Klartext, posL in public/app.js)
+VR={'de':'VA-R','uk':'Перед. П','en':'Front R'}
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
@@ -34,7 +36,7 @@ with sync_playwright() as p:
         q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         q.goto(B+'/#/'); q.wait_for_selector('#wswinter')
         txt=q.inner_text('#wswinter')
-        check(H[lang] in txt,'Überschrift'); check('SZ-YC 9901' in txt and 'VA-R' in txt,'Kennzeichen + Position'); check('SZ-YC 9902' not in txt,'nicht erfasster Lkw nicht als „nicht erfüllt“')
+        check(H[lang] in txt,'Überschrift'); check('SZ-YC 9901' in txt and VR[lang] in txt,'Kennzeichen + Position'); check('SZ-YC 9902' not in txt,'nicht erfasster Lkw nicht als „nicht erfüllt“')
         check(q.locator('#wswunk').count()==1,'Link „nicht erfasst“')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
         if SHOTS: q.locator('#wswinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wswinter_{lang}_{w}.png')
@@ -56,7 +58,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/'); q.wait_for_selector('#todowinter',state='attached')
         d=q.locator('details',has=q.locator('#todowinter'))
         check(lbl in d.locator('summary').inner_text(),'Gruppe „Heute zu tun“'); d.locator('summary').click()
-        check('SZ-YC 9901' in d.inner_text() and 'VA-R' in d.inner_text(),'Kennzeichen + Position')
+        check('SZ-YC 9901' in d.inner_text() and VR[lang] in d.inner_text(),'Kennzeichen + Position')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
         if SHOTS: d.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/todowinter_{lang}_{w}.png')
         q.click('#todowinter'); q.wait_for_selector('[data-tf="winter_bad"][aria-pressed="true"]'); check(True,'Direktsprung Reiter')
@@ -86,7 +88,7 @@ with sync_playwright() as p:
     check(cid is not None,'Werkstatt sieht Winterauftrag in der Liste')
     for lang,lbl in [('de','Auftrag Winterreifen'),('uk','Замовлення «Зимові шини»'),('en','Winter tyre order')]:
       q.evaluate(JS,['PATCH','/api/me',{'language':lang}]); q.goto(B+'/#/cases/'+cid); q.reload(); q.wait_for_function("l=>document.querySelector('#cwinter') && document.querySelector('#cwinter').innerText.includes(l)",arg=lbl)
-      tx=q.inner_text('#cwinter'); check(lbl in tx and 'VA-R' in tx,f'Vorgang zeigt Winterlage ({lang})')
+      tx=q.inner_text('#cwinter'); check(lbl in tx and VR[lang] in tx,f'Vorgang zeigt Winterlage ({lang})')
       check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'kein waagrechtes Scrollen')
       if SHOTS: q.locator('#cwinter').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/cwinter_{lang}_390.png')
     c.close()
