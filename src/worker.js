@@ -632,7 +632,7 @@ async function handleApi(request, env, ctx, url) {
   }
 
   // Dashboard / Management / Agent
-  if (path === '/api/dashboard' && m === 'GET') return json(await dashboard(env, user, envName));
+  if (path === '/api/dashboard' && m === 'GET') return json(await dashboard(env, user, envName, url.searchParams.get('vsite')));
   if (path === '/api/master' && m === 'GET') { requireRole(user, ['owner', 'fleet']); return json(await masterPanel(env, envName)); }
   if ((mm = path.match(/^\/api\/master\/([a-f0-9]{64})\/decision$/)) && m === 'POST') {
     requireRole(user, ['owner', 'fleet']);
@@ -663,9 +663,12 @@ async function handleApi(request, env, ctx, url) {
   throw notFound('Unbekannter API-Pfad.');
 }
 
-async function dashboard(env, user, envName) {
+async function dashboard(env, user, envName, vsiteRaw = null) {
+  // Fahrzeug-Standort (optional, nicht Fahrer/Werkstatt): Zähler und Fahrzeugleiste nur für diesen Standort – Disposition mit
+  // Standard-Standort sah sonst flottenweite Zahlen über der Standort-Tafel (19.10.2026); Agentenbefunde bleiben flottenweit
+  const vsite = vsiteRaw && !['driver', 'workshop'].includes(user.role) ? String(vsiteRaw).slice(0, 60) : null;
   // Zähler aus höchstens 500 offenen Vorgängen (kritische zuerst); darüber Kennzeichnung statt stiller Kappung (vorher 200 ohne Hinweis)
-  const om = {}; const open = await cases.listCases(env, user, envName, { status: 'open', limit: 500, __counts: true }, om);
+  const om = {}; const open = await cases.listCases(env, user, envName, { status: 'open', limit: 500, __counts: true, ...(vsite ? { vsite } : {}) }, om);
   const out = {
     environment: envName,
     open_cases: open.length,
@@ -676,11 +679,14 @@ async function dashboard(env, user, envName) {
   };
   if (user.role === 'workshop') {
     out.inbox = open.filter((c) => c.access === 'full' && c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at).length;
-    out.in_progress = open.filter((c) => c.access === 'full' && ['in_reparatur', 'wartet_teile'].includes(c.status)).length;
+    // „In Reparatur“ und „Wartet auf Teile“ getrennt (bis 19.10.2026 zählte in_progress beide – Kennzahl hieß aber „In Reparatur“)
+    out.in_progress = open.filter((c) => c.access === 'full' && c.status === 'in_reparatur').length;
+    out.waiting_parts = open.filter((c) => c.access === 'full' && c.status === 'wartet_teile').length;
     out.preview = open.filter((c) => c.access === 'preview').length;
   }
   if (['owner', 'fleet', 'dispatch'].includes(user.role)) {
-    const vs = await veh.listVehicles(env, user, envName);
+    let vs = await veh.listVehicles(env, user, envName);
+    if (vsite) { const sel = reports.siteSelection(vs, vsite); out.site = sel.site; vs = vs.filter((v) => sel.match(v.site)); }
     out.vehicles = { total: vs.length, gesperrt: vs.filter((v) => v.availability === 'gesperrt').length, werkstatt: vs.filter((v) => v.availability === 'werkstatt').length,
       meldung_offen: vs.filter((v) => v.availability === 'meldung_offen').length, einsatzbereit: vs.filter((v) => v.availability === 'einsatzbereit_lt_system').length };
   }

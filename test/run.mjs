@@ -13572,6 +13572,27 @@ await test('Fehlersuche 19.10. (50): Vertrag nach Tachotausch nachgetragen/impor
   void e;
 });
 
+await test('Startseite 19.10.: Werkstatt zählt „In Reparatur“ und „Wartet auf Teile“ getrennt; Disposition mit Standort sieht Zähler/Fahrzeugleiste nur dieses Standorts', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld();
+  const a = await toRepair(); await toRepair(); const b = await toRepair();
+  eq((await cmd(U.ws, b, 'wait_parts', {}, 'Bremsscheiben bestellt')).status, 200);
+  let d = (await U.ws.get('/api/dashboard')).data; eq(d.in_progress, 2, 'nur in Reparatur'); eq(d.waiting_parts, 1, 'wartet auf Teile getrennt');
+  eq((await cmd(U.ws, a, 'wait_parts', {}, 'Lampe bestellt')).status, 200);
+  d = (await U.ws.get('/api/dashboard')).data; eq(d.in_progress, 1); eq(d.waiting_parts, 2);
+  eq((await U.ws.get('/api/dashboard?vsite=Muenchen')).data.in_progress, 1, 'Werkstatt: Standortparameter ohne Wirkung');
+  // Disposition: München-Fahrzeug mit kritischer Meldung
+  const own = U.own; const x = await own.post('/api/users', { username: 'w.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'w.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340310555590', plate: 'M-KT 1', site: 'München' })).status, 201);
+  await newCase({ vehicle_id: 'VIN:WDB96340310555590', priority: 'kritisch', driveability: 'nicht_fahrbereit' }, U.fleet);
+  const all = (await D.get('/api/dashboard')).data; eq(all.open_cases, 4); eq(all.critical, 1); eq(all.vehicles.total, 3); eq(all.site, undefined);
+  const m = (await D.get('/api/dashboard?vsite=m%C3%BCnchen')).data; eq(m.open_cases, 1, 'nur München'); eq(m.critical, 1); eq(m.vehicles.total, 1); eq(m.site, 'München', 'Schreibweise laut Stamm');
+  const dt = (await D.get('/api/dashboard?vsite=Dortmund')).data; eq(dt.open_cases, 3); eq(dt.critical, 0); eq(dt.vehicles.total, 2);
+  eq((await D.get('/api/dashboard?vsite=Hamburg')).data.open_cases, 0, 'unbekannter Standort: nichts');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/'\/api\/dashboard' \+ \(dsite/.test(app), 'App fragt Startseite mit Standort ab'); ok(app.includes("d.waiting_parts ?? 0"), 'App zeigt „Wartet auf Teile“');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
