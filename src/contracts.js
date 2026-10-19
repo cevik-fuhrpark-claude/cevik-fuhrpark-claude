@@ -311,10 +311,16 @@ export async function contractFindings(env, settings) {
       ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days }), next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
     if (s.notice && s.notice.status === 'bald') out.push({ ...base, code: 'CONTRACT_NOTICE_DUE', subject: `${c.id}|notice`, severity: 'hinweis', requires_decision: 1,
       ...fm('CONTRACT_NOTICE_DUE', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, by: s.notice.by, months: c.notice_months, end: c.end_date }), next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
-    if (s.km && s.km.status === 'ueber') out.push({ ...base, code: 'CONTRACT_KM_OVER', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
+    // Schweregrad wie die Vertragsübersicht (Status „handeln“, bis 19.10.2026 hier nur „hinweis“)
+    if (s.km && s.km.status === 'ueber') out.push({ ...base, code: 'CONTRACT_KM_OVER', subject: `${c.id}|km`, severity: 'handeln', requires_decision: 0,
       ...fm('CONTRACT_KM_OVER', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, allow: c.km_allowance, driven: s.km.driven }), next_action: 'Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.' });
     else if (s.km && s.km.status === 'prognose_ueber') out.push({ ...base, code: 'CONTRACT_KM_FORECAST', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
       ...fm('CONTRACT_KM_FORECAST', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, fc: s.km.forecast_driven, allow: c.km_allowance }), next_action: 'Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.' });
+    // km-Kontingent nach Zähler-Rücksprung (Tachotausch) nicht berechenbar – analog INSPECTION_UNCLEAR; bis 19.10.2026 ohne Befund,
+    // eine echte Überschreitung blieb so unbemerkt, bis jemand die Akte öffnete
+    else if (s.km && s.km.status === 'zaehler') out.push({ ...base, code: 'CONTRACT_KM_UNCLEAR', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
+      ...fm('CONTRACT_KM_UNCLEAR', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, at: s.km.drop_at ? berlinDate(s.km.drop_at) : null }),
+      next_action: 'km-Stand bei Übernahme bzw. Tausch laut Beleg prüfen und im Vertrag „km bei Übernahme … geprüft“ bestätigen.' });
   }
   return out;
 }

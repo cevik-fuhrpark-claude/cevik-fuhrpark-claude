@@ -13593,6 +13593,35 @@ await test('Startseite 19.10.: Werkstatt zählt „In Reparatur“ und „Wartet
   ok(/'\/api\/dashboard' \+ \(dsite/.test(app), 'App fragt Startseite mit Standort ab'); ok(app.includes("d.waiting_parts ?? 0"), 'App zeigt „Wartet auf Teile“');
 });
 
+await test('Agent 19.10.: Vertrags-km nach Tachotausch nicht berechenbar → Hinweis CONTRACT_KM_UNCLEAR (DE/UK/EN), nach Bestätigung erledigt; CONTRACT_KM_OVER Schweregrad „handeln“ wie die Übersicht', async () => {
+  const { U } = await freshWorld(); const F = U.fleet;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const veh = async (vin, plate) => { eq((await F.post('/api/vehicles', { vin, plate, site: 'Dortmund' })).status, 201); const p = '/api/vehicles/VIN:' + vin; return { p, id: (await F.get(p)).data.vehicle.id }; };
+  const A = await veh('WDB96340310555581', 'DO-KU 1');
+  for (const b of [{ km: 290000, measured_on: day(-61) }, { km: 150000, measured_on: day(-60), note: 'Tachotausch laut Rechnung' }, { km: 160000 }]) eq((await F.post(`${A.p}/odometer`, b)).status, 201);
+  const c = await F.post(`${A.p}/contracts`, { kind: 'leasing', partner: 'KU-Leasing', contract_no: 'L-7', start_date: day(-200), end_date: day(900), km_allowance: 150000, start_km: 100000, evidence: 'Vertrag' }); eq(c.status, 201);
+  const B = await veh('WDB96340310555582', 'DO-KU 2');
+  eq((await F.post(`${B.p}/odometer`, { km: 130000 })).status, 201);
+  const c2 = await F.post(`${B.p}/contracts`, { kind: 'miete', partner: 'KU-Miete', start_date: day(-100), end_date: day(900), km_allowance: 20000, start_km: 100000, evidence: 'Vertrag' }); eq(c2.status, 201);
+  eq((await F.get(B.p)).data.contracts[0].status.overall, 'handeln', 'Übersicht: handeln');
+  eq((await F.post('/api/agent/run')).status, 200);
+  let fs = (await F.get('/api/master')).data.findings;
+  const u = fs.find((f) => f.vehicle_id === A.id && f.finding_code === 'CONTRACT_KM_UNCLEAR'); ok(u, 'Hinweis vorhanden'); eq(u.severity, 'hinweis');
+  ok(u.message.includes('DO-KU 1') && u.message.includes('nicht berechenbar') && u.message.includes('Nr. L-7'), u.message);
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const { findingLabel } = await import('../public/finding-labels.js');
+  const args = JSON.parse(u.message_args); eq(args.k, 'CONTRACT_KM_UNCLEAR'); eq(args.a.at, day(-60), 'Tag des Rücksprungs');
+  for (const lang of ['uk', 'en']) { const m = renderFindingMessage('CONTRACT_KM_UNCLEAR', args.a, lang, { dates: true }); ok(m && !m.includes('nicht berechenbar') && m.includes('DO-KU 1') && !m.includes(day(-60)), lang + ': ' + m); ok(findingLabel('CONTRACT_KM_UNCLEAR', lang) !== findingLabel('CONTRACT_KM_UNCLEAR', 'de'), lang + ' Bezeichnung'); }
+  const o = fs.find((f) => f.vehicle_id === B.id && f.finding_code === 'CONTRACT_KM_OVER'); ok(o, 'Überschreitung'); eq(o.severity, 'handeln', 'wie Übersicht');
+  ok(!fs.some((f) => f.vehicle_id === B.id && f.finding_code === 'CONTRACT_KM_UNCLEAR'), 'ohne Tausch kein Hinweis');
+  // bestätigt → Befund erledigt
+  const k = (await F.get(A.p)).data.contracts[0];
+  eq((await F.patch(`/api/contracts/${k.id}`, { start_km: 150000, confirm_km_basis: true, expected_updated_at: k.updated_at })).status, 200);
+  eq((await F.post('/api/agent/run')).status, 200);
+  fs = (await F.get('/api/master')).data.findings;
+  ok(!fs.some((f) => f.vehicle_id === A.id && f.finding_code === 'CONTRACT_KM_UNCLEAR' && f.status === 'offen'), 'nach Bestätigung erledigt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
