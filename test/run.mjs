@@ -9894,7 +9894,8 @@ await test('Integrations-API: Master-Eingang schwärzt den Fahrernamen auch nach
   const { ensureSchema } = await import('../src/worker.js'); const { integrationRouter } = await import('../src/integration.js');
   const e = makeEnv(); await ensureSchema(e); e.INTEGRATION_TOKEN = 'x'.repeat(32); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
   db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at) VALUES ('dr1','production','Anna Neuname',1,'x',?,?)`).run(now, now);
-  const args = { name: 'Anna Altname', ddoc: 'fuehrerschein', date: '2026-01-01' };
+  // gespeichertes Format wie findingText: {k, a: {…}} (19.10.2026: Test nutzte flache Werte und verdeckte, dass argName nur flach las)
+  const args = { k: 'DRIVER_DOC_EXPIRED', a: { name: 'Anna Altname', ddoc: 'fuehrerschein', date: '2026-01-01' } };
   db.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,severity,message,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen,message_args)
     VALUES ('f1','production','DRIVER_DOC_EXPIRED','dr1|fuehrerschein','kritisch','Fahrer Anna Altname: Führerschein abgelaufen','Nicht einsetzen','fleet',1,'offen','fp',?,?,?)`).run(now, now, JSON.stringify(args));
   db.prepare(`INSERT INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,finding_id,severity,payload,received_at,decision_status)
@@ -13743,6 +13744,23 @@ await test('Fehlersuche 19.10. (52): Mengen „1,500“ bei englischer Oberfläc
   for (const x of ['request_key', 'command_id', 'Version', 'endpoint']) names.delete(x);
   const miss = [...names].filter((n) => /^[a-z]/.test(n) ? false : (translateValidation('en', `${n} ist erforderlich.`) || '').includes(n) && !['Status', 'DOT', 'Position', 'Name'].includes(n)); // gleich geschrieben in EN
   eq(miss.join(', '), '', 'Feldnamen ohne Übersetzung');
+});
+
+await test('Integration/Agent 19.10.: since als Datum = Berliner Tagesbeginn, ohne Zone = UTC; Geschwindigkeit > 300 verworfen; gekappte Prüfungslisten halten keine Befunde ruhender/außer Betrieb genommener Fahrzeuge', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { integrationRouter } = await import('../src/integration.js');
+  const e = makeEnv(); await ensureSchema(e); e.INTEGRATION_TOKEN = 'x'.repeat(32); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const get = async (q) => { const url = new URL('https://h/api/integration/v1/cases' + q); return integrationRouter(new Request(url, { headers: { authorization: 'Bearer ' + e.INTEGRATION_TOKEN } }), e, { waitUntil() {} }, url); };
+  // Vorgang 00:30 Berliner Zeit am 17.10.2026 (= 16.10. 22:30 UTC)
+  db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at)
+    VALUES ('c1','S-2026-9001','production','v1','u1','x','niedrig','niedrig','fahrbereit','gemeldet','rk1','h','2026-10-16T22:30:00.000Z','2026-10-16T22:30:00.000Z')`).run();
+  let r = await (await get('?since=2026-10-17')).json(); ok(r.cases.some((c) => c.id === 'c1'), 'Datum: ab 00:00 Berlin');
+  r = await (await get('?since=2026-10-16T22:00:00')).json(); ok(r.cases.some((c) => c.id === 'c1'), 'ohne Zone = UTC');
+  r = await (await get('?since=2026-10-16T23:00:00')).json(); ok(!r.cases.some((c) => c.id === 'c1'), 'ohne Zone = UTC (danach)');
+  { let st = 0; try { st = (await get('?since=2026-02-30')).status; } catch (err) { st = err.status; } eq(st, 400, 'ungültiges Datum'); }
+  // Agent: gekappte Liste, Befund eines ruhenden Fahrzeugs wird erledigt
+  const ag = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
+  ok(/keepCodes\.has\(ex\.finding_code\) && !\(ex\.vehicle_id && gone\.has\(ex\.vehicle_id\)\)/.test(ag) && ag.includes("SELECT id FROM vehicles WHERE active=0"), 'gekappte Liste: ruhende/außer Betrieb ausgenommen');
+  const ig = (await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8'); ok(ig.includes('numOf(it.speed) <= 300'), 'Geschwindigkeit begrenzt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, sha256Hex, pickVehicleByPlate, isCalendarDate } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, berlinDayStartIso, sha256Hex, pickVehicleByPlate, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
@@ -68,7 +68,9 @@ function ignOf(v) {
 function argName(args) {
   let a = args;
   if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
-  return a && typeof a === 'object' && typeof a.name === 'string' ? a.name : null;
+  // gespeichert als {k, a: {name, …}} (findingText) – bis 19.10.2026 nur flach gelesen, der Name eines umbenannten Fahrers blieb so ungeschwärzt
+  const v = a && typeof a === 'object' ? (a.a && typeof a.a === 'object' ? a.a.name : a.name) : null;
+  return typeof v === 'string' ? v : null;
 }
 // `message_args` (Vorlagenwerte für die Oberflächensprache, public/finding-messages.js) bleibt in der App – die Schnittstelle liefert
 // den deutschen Text `message` wie bisher (Datensparsamkeit: keine zusätzlichen Einzelwerte, Schwärzung greift nur auf `message`).
@@ -122,7 +124,11 @@ export async function integrationRouter(request, env, ctx, url) {
   if (p === '/v1/cases' && m === 'GET') {
     const pageSize = Math.min(Math.max(Math.round(Number(url.searchParams.get('limit')) || 1000), 1), 1000);
     // since als Zeitpunkt lesen (auch mit Zeitzone, z. B. +02:00) und in UTC vergleichen – Textvergleich ließ Vorgänge stumm aus (17.10.2026)
-    const sinceRaw = url.searchParams.get('since');
+    // ohne Zeitzone: Uhrzeit = UTC (wie Telematik), reines Datum = Beginn des Berliner Kalendertags (19.10.2026: hing von der Laufzeitumgebung ab bzw.
+    // ein Datum galt als 00:00 UTC = 02:00 Berlin – Vorgänge zwischen 00:00 und 02:00 fehlten)
+    const sinceIn = url.searchParams.get('since');
+    const sinceRaw = sinceIn && /^\d{4}-\d{2}-\d{2}$/.test(sinceIn) && isCalendarDate(sinceIn) ? berlinDayStartIso(sinceIn)
+      : sinceIn && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(sinceIn) ? sinceIn + 'Z' : sinceIn;
     const sinceMs = sinceRaw ? Date.parse(sinceRaw) : 0;
     if (!Number.isFinite(sinceMs) || (sinceRaw && !validStamp(sinceRaw))) throw bad('validation', 'since: Zeitpunkt nach ISO 8601 (z. B. 2026-10-17T08:00:00Z).');
     const since = new Date(sinceMs).toISOString();
@@ -302,7 +308,7 @@ export async function integrationRouter(request, env, ctx, url) {
       lastGps.set(vehicleId, gps || prev || null);
       const km = kmOf(it.km) !== null && kmOf(it.km) >= 0 && kmOf(it.km) <= 5000000 ? kmOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
-        speed: numOf(it.speed) !== null && numOf(it.speed) >= 0 ? numOf(it.speed) : null, ign: ignOf(it.ignition) });
+        speed: numOf(it.speed) !== null && numOf(it.speed) >= 0 && numOf(it.speed) <= 300 ? numOf(it.speed) : null /* > 300 km/h unplausibel (19.10.2026: 1e300 gespeichert) */, ign: ignOf(it.ignition) });
       if (km !== null && gps) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)

@@ -463,7 +463,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // sie wurden nur nicht gelesen (19.10.2026; vorher erledigten sich ältere Prüfmängel still)
     const EV_CODE = { defects_without_case: 'INSPECTION_DEFECTS_NO_CASE', reinspection_pending: 'REINSPECTION_PENDING', result_missing: 'INSPECTION_RESULT_MISSING' };
     const keepCodes = new Set((evLists.truncated || []).map((n) => EV_CODE[n]).filter(Boolean));
-    if (keepCodes.size) for (const [key, ex] of existingMap) if (ex.status === 'offen' && keepCodes.has(ex.finding_code)) seen.add(key);
+    // … aber nicht für ruhende bzw. außer Betrieb genommene Fahrzeuge (19.10.2026: deren Befund blieb sonst dauerhaft offen)
+    if (keepCodes.size) {
+      const gone = new Set([...excludedVeh, ...(await env.DB.prepare('SELECT id FROM vehicles WHERE active=0').all()).results.map((r) => r.id)]);
+      for (const [key, ex] of existingMap) if (ex.status === 'offen' && keepCodes.has(ex.finding_code) && !(ex.vehicle_id && gone.has(ex.vehicle_id))) seen.add(key);
+    }
     // Nicht mehr zutreffende Befunde schließen (eine Anweisung)
     upserts.push(env.DB.prepare(`UPDATE agent_findings SET status='erledigt', resolved_at=?1 WHERE environment=?2 AND status='offen'
       AND (finding_code || '|' || subject_key) NOT IN (SELECT value FROM json_each(?3))`).bind(now, environment, JSON.stringify([...seen])));
