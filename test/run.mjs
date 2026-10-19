@@ -13221,7 +13221,7 @@ await test('Fehlersuche 19.10. (35): lange Suchtexte ohne D1-Mustergrenze (Proto
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_warn_saved && STRINGS[l].km_warn_below.includes('{km}'), l);
 });
 
-await test('Fehlersuche 19.10. (36): CSV-Importe mit zerlegten Umlauten (NFD, Mac-Export), Vertragsnummer aus Versicherungsköpfen', async () => {
+await test('Fehlersuche 19.10. (36): CSV-Importe mit zerlegten Umlauten (NFD, Mac-Export), Vertragsnummer aus Versicherungsköpfen, Storno einer Auslesung bleibt beim Re-Import', async () => {
   const { U, V1 } = await freshWorld();
   const nfd = (x) => x.normalize('NFD'); const imp = (c) => U.fleet.req('POST', '/api/contracts/import?dry_run=1', c, { 'content-type': 'text/csv' });
   let r = await imp(nfd('Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);Nachweis') + '\nSZ-YC 5513;Leasing;MAN;L1;01.01.2025;31.12.2027;6;x.pdf');
@@ -13237,6 +13237,14 @@ await test('Fehlersuche 19.10. (36): CSV-Importe mit zerlegten Umlauten (NFD, Ma
   }
   r = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', `Art;Kennzeichen;Datum;Datei\n${nfd('Kontrollgerät')};SZ-YC 5513;${BERLIN_TODAY};M.ddd`, { 'content-type': 'text/csv' });
   eq(r.status, 200); eq(r.data.counts.neu, 1, 'NFD-Art Kontrollgerät erkannt');
+  // stornierte Auslesung kommt durch erneuten Import desselben Exports nicht zurück; Einzelerfassung bleibt möglich
+  const tcsv = `Art;Kennzeichen;Datum;Datei\nMassenspeicher;SZ-YC 5513;${BERLIN_TODAY};M.ddd`;
+  r = await U.fleet.req('POST', '/api/tacho/import', tcsv, { 'content-type': 'text/csv' }); eq(r.data.counts.neu, 1);
+  const tid = (await U.fleet.get(`/api/vehicles/${V1}`)).data.tacho_downloads[0].id;
+  eq((await U.fleet.post(`/api/tacho/downloads/${tid}/cancel`, { reason: 'falscher Tag' })).status, 200);
+  r = await U.fleet.req('POST', '/api/tacho/import', tcsv, { 'content-type': 'text/csv' });
+  eq(r.data.counts.neu, 0, 'Storno bleibt'); ok(/storniert/.test(r.data.skipped.map((x) => x.reason).join()), 'Grund genannt');
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V1, downloaded_on: BERLIN_TODAY, evidence: 'neu erfasst' })).status, 201, 'Einzelerfassung möglich');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

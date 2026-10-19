@@ -905,6 +905,7 @@ const IMPORT_FIXED = [
   ['Letzte Prüfung liegt nach dem nächsten Termin', 'Остання перевірка пізніше наступного терміну', 'The last inspection is after the next due date'],
   ['Letzte Prüfung liegt in der Zukunft', 'Остання перевірка в майбутньому', 'The last inspection is in the future'],
   ['doppelt in der Datei', 'двічі у файлі', 'duplicate in the file'],
+  ['Auslesung wurde storniert – nicht erneut übernommen (bei Bedarf einzeln erfassen)', 'Зчитування скасовано – повторно не перенесено (за потреби внесіть окремо)', 'Download was cancelled – not imported again (record it individually if needed)'],
   ['Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung', '«Строк за км» не перевищує пробіг під час останньої перевірки', '“Due at km” is not above the mileage at the last inspection'],
   ['km-Intervall fehlt: „Intervall km“ oder „Fällig bei km“ angeben', 'Немає інтервалу в км: вкажіть «Intervall km» або «Faellig bei km»', 'Mileage interval missing: enter “Intervall km” or “Faellig bei km”'],
   ['Datum liegt in der Zukunft', 'Дата в майбутньому', 'The date is in the future'],

@@ -227,7 +227,11 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
 
   const drivers = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
   const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded FROM vehicles WHERE active=1`).all()).results;
-  const existing = new Set((await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k FROM tacho_downloads WHERE environment=? AND cancelled_at IS NULL`).bind(envName).all()).results.map((r) => r.k));
+  const existingRows = (await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k, evidence, cancelled_at FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results;
+  const existing = new Set(existingRows.filter((r) => !r.cancelled_at).map((r) => r.k));
+  // stornierte Auslesung (z. B. falscher Fahrer/Tag): derselbe Export (gleicher Nachweis) erneut importiert bringt sie nicht still zurück;
+  // ein anderer Nachweis für den Tag bleibt importierbar (Tag nach Storno neu erfassbar) – 19.10.2026
+  const cancelled = new Set(existingRows.filter((r) => r.cancelled_at).map((r) => `${r.k}|${String(r.evidence || '').trim().toLowerCase()}`));
   const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
   // Personalnummer ohne führende Nullen vergleichen (Excel macht aus „00123“ die Zahl 123, 18.10.2026); zwei Nummern, die dadurch gleich werden → mehrdeutig
   const pnoKey = (x) => { const k = String(x || '').normalize('NFC').trim().toLowerCase(); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k || null; };
@@ -272,6 +276,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     }
     const key = `${target.id}|${day}`;
     if (seen.has(key)) return skip('doppelt in der Datei');
+    if (cancelled.has(`${key}|${evidence.trim().toLowerCase()}`) && !existing.has(key)) return skip('Auslesung wurde storniert – nicht erneut übernommen (bei Bedarf einzeln erfassen)');
     seen.add(key);
     rows.push({ line, kind, target_id: target.id, label, downloaded_on: day, evidence, status: existing.has(key) ? 'vorhanden' : 'neu' });
   });
