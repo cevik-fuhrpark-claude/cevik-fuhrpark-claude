@@ -13623,6 +13623,18 @@ await test('Agent 19.10.: Vertrags-km nach Tachotausch nicht berechenbar → Hin
   ok(!fs.some((f) => f.vehicle_id === A.id && f.finding_code === 'CONTRACT_KM_UNCLEAR' && f.status === 'offen'), 'nach Bestätigung erledigt');
 });
 
+await test('Kostenbericht 19.10.: Vertrag mit Beginn nach heute (auch im laufenden Monat) zählt noch keine Rate, Beginn heute zählt', async () => {
+  const { U } = await freshWorld(); const F = U.fleet;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const now = BERLIN_TODAY.slice(0, 7);
+  for (const [vin, plate] of [['WDB96340310555591', 'DO-RT 1'], ['WDB96340310555592', 'DO-RT 2']]) eq((await F.post('/api/vehicles', { vin, plate, site: 'Dortmund' })).status, 201);
+  eq((await F.post('/api/vehicles/VIN:WDB96340310555591/contracts', { kind: 'leasing', partner: 'Spät', start_date: day(1), end_date: day(900), monthly_rate_net: 1000, evidence: 'Vertrag' })).status, 201);
+  eq((await F.post('/api/vehicles/VIN:WDB96340310555592/contracts', { kind: 'miete', partner: 'Heute', start_date: BERLIN_TODAY, end_date: day(900), monthly_rate_net: 700, evidence: 'Vertrag' })).status, 201);
+  const cc = (await F.get(`/api/reports/costs?from=${now}&to=${now}`)).data.contract_costs;
+  ok(!cc.vehicles.some((v) => v.plate === 'DO-RT 1'), 'Beginn morgen: keine Rate');
+  eq(cc.vehicles.find((v) => v.plate === 'DO-RT 2').net, 700, 'Beginn heute: eine Rate'); eq(cc.total_net, 700); eq(cc.without_start, 0);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

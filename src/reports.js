@@ -221,7 +221,7 @@ export const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0
 export async function contractCosts(env, from, to, vehicleFilter, plates) {
   const rows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, partner, start_date, end_date, ended_on, monthly_rate_net FROM vehicle_contracts${vehicleFilter ? ' WHERE vehicle_id=?' : ''}`)
     .bind(...(vehicleFilter ? [vehicleFilter] : [])).all()).results;
-  const nowM = berlinDate().slice(0, 7);
+  const today = berlinDate(); const nowM = today.slice(0, 7);
   const hiM = to < nowM ? to : nowM;
   const per = new Map(); let without_start = 0; let without_rate = 0; let total = 0;
   for (const c of rows) {
@@ -229,6 +229,8 @@ export async function contractCosts(env, from, to, vehicleFilter, plates) {
     if (!v || v.eval_excluded) continue;
     // vor Beginn beendet (Storno) – keine Rate (18.10.2026: im selben Monat zählte sonst eine volle Monatsrate)
     if (c.ended_on && c.start_date && c.ended_on < c.start_date) continue;
+    // Beginn erst nach heute (z. B. am 25. des laufenden Monats) – noch keine Rate (19.10.2026: zählte bisher eine volle Monatsrate)
+    if (c.start_date && c.start_date > today) continue;
     const endM = (c.ended_on || c.end_date || nowM).slice(0, 7);
     if (c.start_date && (c.start_date.slice(0, 7) > hiM || endM < from)) continue; // Laufzeit außerhalb des Zeitraums
     if (!c.start_date) { if (endM >= from) without_start++; continue; }
