@@ -714,6 +714,33 @@ export async function planMaintenance(env, user, ruleId, body) {
   return { ok: true, planned_date: d };
 }
 
+// HU/SP ohne eigenen Eintrag (Frist nur berechnet, Zeile `virtual` in der Prüftermin-Übersicht, Backlog 93): erst wenn jemand in der
+// Fahrzeugakte eine Durchführung erfasst, einen Termin plant oder einen Auftrag erstellt, wird der Eintrag angelegt (19.10.2026) – nie
+// automatisch. Ohne Nachweis-Datum/Fälligkeit: die Frist rechnet danach genauso wie vorher (syncHuSpDues). Vorhandener Eintrag → dessen id.
+export const HUSP_RULE_EVIDENCE = 'Frist nach StVZO Anlage VIII berechnet (aus der Fahrzeugakte angelegt)';
+export async function ensureHuSpRule(env, user, vehicleId, kind) {
+  if (!isManager(user) && user.role !== 'workshop') throw forbidden();
+  if (kind !== 'HU' && kind !== 'SP') throw notFound();
+  const existing = async () => (await env.DB.prepare('SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind=? ORDER BY created_at LIMIT 1').bind(vehicleId, kind).first() || {}).id || null;
+  const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!v) throw notFound();
+  const found = await existing();
+  if (found) return { id: found, created: false };
+  if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+  const x = (await loadHuSpInputs(env, [vehicleId])).get(vehicleId);
+  const st = x ? huSpFor(x, berlinDate(), 0)[kind === 'HU' ? 'hu' : 'sp'] : null;
+  if (st && st.status === 'nicht_sp_pflichtig') throw bad('validation', 'Für dieses Fahrzeug ist keine SP vorgeschrieben.');
+  try {
+    const id = (await addMaintenanceRule(env, user, vehicleId, { kind, evidence: HUSP_RULE_EVIDENCE })).id;
+    await audit(env, user.id, 'maintenance.husp_rule', vehicleId, { kind });
+    return { id, created: true };
+  } catch (e) {
+    // gleichzeitig angelegt (zweiter Klick/zweite Person) → den vorhandenen Eintrag verwenden
+    if (e instanceof HttpError && e.code === 'rule_exists') { const id = await existing(); if (id) return { id, created: false }; }
+    throw e;
+  }
+}
+
 // Prüfrelevante Fahrzeugdaten: zulässige Gesamtmasse (F.2), Erstzulassung (B) – nur mit Nachweis
 export async function setVehicleSpec(env, user, vehicleId, body) {
   if (!isManager(user)) throw forbidden();

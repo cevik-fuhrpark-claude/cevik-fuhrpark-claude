@@ -13824,6 +13824,49 @@ await test('Backlog 93 (19.10.): SP nur aus HU berechnet (kein SP-Eintrag) ersch
   eq((await e.DB.prepare("SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'").bind(vid).first()).n, 0, 'nichts angelegt');
 });
 
+await test('HU/SP ohne Eintrag (19.10.): Durchführung/Termin/Auftrag aus der Akte legen den Eintrag erst beim Speichern an; Frist unverändert, Rechte, Testkonto nur lesend, nicht SP-pflichtig', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
+  eq((await F.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', first_registration: `${Number(BERLIN_TODAY.slice(0, 4)) - 5}-03-01`, spec_source: 'Test: Fahrzeugschein F.2/B' })).status, 200);
+  const m = Number(BERLIN_TODAY.slice(5, 7)); const y = Number(BERLIN_TODAY.slice(0, 4)); const t = y * 12 + m - 1 - 8;
+  const hu = `${Math.floor(t / 12)}-${String(t % 12 + 1).padStart(2, '0')}-10`;
+  eq((await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', last_done_date: hu, interval_months: 12, evidence: 'Prüfbericht (Test)' })).status, 201);
+  const vid = (await F.get(`/api/vehicles/${V}`)).data.vehicle.id;
+  const nSp = async () => (await e.DB.prepare("SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'").bind(vid).first()).n;
+  const before = (await F.get(`/api/vehicles/${V}`)).data.hu_sp.sp; eq(before.status, 'ueberfaellig');
+  // Rechte und Pflichtangaben: nichts angelegt
+  eq((await U.driver.post(`/api/vehicles/${V}/husp/SP/plan`, { planned_date: BERLIN_TODAY })).status, 403);
+  eq((await U.viewer.post(`/api/vehicles/${V}/husp/SP/complete`, { done_date: BERLIN_TODAY, evidence: 'x' })).status, 403);
+  eq((await U.ws.post(`/api/vehicles/${V}/husp/SP/order`, { workshop_site: 'DORTMUND' })).status, 403, 'Auftrag nur Leitung');
+  eq((await F.post(`/api/vehicles/${V}/husp/SP/complete`, { done_date: '', evidence: 'x' })).status, 400);
+  eq((await F.post(`/api/vehicles/${V}/husp/SP/plan`, {})).status, 400);
+  eq((await F.post(`/api/vehicles/${V}/husp/XX/plan`, { planned_date: BERLIN_TODAY })).status, 404);
+  eq(await nSp(), 0, 'abgewiesene Formulare legen nichts an');
+  // Testkonto bei „gemeinsame Stammdaten nur lesen“
+  eq((await U.own.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  eq((await U.ws.post(`/api/vehicles/${V}/husp/SP/plan`, { planned_date: BERLIN_TODAY })).status, 403, 'Testkonto nur lesend');
+  eq((await U.own.put('/api/settings', { test_master_readonly: '0' })).status, 200);
+  eq(await nSp(), 0);
+  // Termin planen (Werkstatt darf): Eintrag angelegt, Frist und Status unverändert, Termin sichtbar
+  const p = await U.ws.post(`/api/vehicles/${V}/husp/SP/plan`, { planned_date: BERLIN_TODAY }); eq(p.status, 200); ok(p.data.rule_id, 'rule_id');
+  eq(await nSp(), 1);
+  const after = (await F.get(`/api/vehicles/${V}`)).data.hu_sp.sp; eq(after.status, before.status); eq(after.due, before.due); eq(after.planned_date, BERLIN_TODAY);
+  const ov = (await F.get('/api/maintenance')).data.rows.filter((r) => r.vehicle_id === vid && r.kind === 'SP'); eq(ov.length, 1); ok(!ov[0].virtual, 'jetzt echte Zeile'); eq(ov[0].id, p.data.rule_id);
+  // zweiter Aufruf nutzt den vorhandenen Eintrag (kein zweiter SP-Eintrag)
+  const o = await F.post(`/api/vehicles/${V}/husp/SP/order`, { workshop_site: 'DORTMUND', priority: 'mittel', request_key: 'husp-o-1' }); eq(o.status, 201); eq(o.data.rule_id, p.data.rule_id);
+  eq((await F.post(`/api/vehicles/${V}/husp/SP/order`, { workshop_site: 'DORTMUND', priority: 'mittel', request_key: 'husp-o-1' })).data.duplicate, true, 'Wiederholung = derselbe Auftrag');
+  const c = await F.post(`/api/vehicles/${V}/husp/SP/complete`, { done_date: BERLIN_TODAY, evidence: 'SP-Prüfprotokoll (Test)', result: 'ohne_maengel' }); eq(c.status, 200); eq(c.data.rule_id, p.data.rule_id);
+  eq(await nSp(), 1); eq((await F.get(`/api/vehicles/${V}`)).data.hu_sp.sp.last_done, BERLIN_TODAY);
+  ok((await U.own.get('/api/admin/audit?action=maintenance.husp_rule')).data.entries.some((x) => x.target === vid), 'Protokoll');
+  // Anhänger ≤ 10 t: keine SP vorgeschrieben → abgewiesen, nichts angelegt
+  ok([200, 201].includes((await U.own.post('/api/vehicles', { plate: 'SZ-AH 426', vin: 'WSM00000000000426', site: 'Dortmund', kind: 'anhaenger' })).status), 'Anhänger angelegt');
+  const tr = { id: 'VIN:WSM00000000000426' };
+  ok(tr, 'Anhänger im Testbestand'); {
+    eq((await F.post(`/api/vehicles/${tr.id}/spec`, { zgm_class: '3_5_10', spec_source: 'Test: F.2' })).status, 200);
+    const r = await F.post(`/api/vehicles/${tr.id}/husp/SP/plan`, { planned_date: BERLIN_TODAY }); eq(r.status, 400); ok(/keine SP/.test(r.data.message || r.data.error || JSON.stringify(r.data)));
+    eq((await e.DB.prepare("SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'").bind(tr.id).first()).n, 0);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

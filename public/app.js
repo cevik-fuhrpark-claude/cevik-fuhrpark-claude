@@ -1710,13 +1710,15 @@ function defectOrderHtml(h, orders, v, sinceCase, released, superseded) {
 }
 function huSpHtml(h, v, canEdit, orders) {
   const card = (k, x) => {
-    const rid = h.rules[k];
+    // ohne eigenen Eintrag (Frist berechnet bzw. ungeklärt): dieselben Formulare, der Server legt den Eintrag erst beim Speichern an (19.10.2026)
+    const rid = h.rules[k] || (x.status !== 'nicht_sp_pflichtig' ? 'husp:' + k : null);
     return `<section class="panel"><h3 style="margin-top:0">${k === 'HU' ? esc(t('hu_long')) : esc(t('sp_long'))} <span class="chip ${HS_CLS[x.status] || ''}">${esc(t('hs_' + x.status))}</span></h3>
       <dl class="kv"><dt>${esc(t('last_done'))}</dt><dd>${fmtD(x.last_done)}${x.last_result ? ` · ${esc(t('res_' + x.last_result))}` : ''}</dd>
       <dt>${esc(t('next_due'))}</dt><dd>${x.due ? `<b>${esc(t('due_until_end'))} ${mY(x.due)}</b> <span class="small muted">(${esc(t('db_' + x.due_basis))})</span>` : '–'}</dd>
       ${x.prognosis ? `<dt>${esc(t('prognosis'))}</dt><dd>${mY(x.prognosis)} <span class="small muted">(${esc(t('not_binding'))})</span></dd>` : ''}
       ${x.planned_date ? `<dt>${esc(t('planned_appt'))}</dt><dd>${fmtD(x.planned_date)}</dd>` : ''}
       <dt>${esc(t('evidence'))}</dt><dd>${esc(x.last_evidence || '–')}</dd></dl>
+      ${canEdit && rid && !h.rules[k] ? `<p class="small muted noprint" data-hsvirt="${esc(k)}">${esc(t('husp_virtual_hint'))}</p>` : ''}
       ${x.notes && x.notes.length ? `<ul class="small" style="margin:8px 0 0 18px">${x.notes.map((n, i) => `<li>${esc(huNote(x, i))}</li>`).join('')}</ul>` : ''}
       ${canEdit && rid && x.status !== 'nicht_sp_pflichtig' ? `<details><summary>${esc(t('record_done'))}</summary><form data-hsdone="${esc(rid)}"><label>${esc(t('date'))}</label><input type="date" name="done_date" required max="${esc(bDate())}"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('evidence_ph'))}">
         <label>${esc(t('result'))}</label><select name="result"><option value="">–</option>${['ohne_maengel', 'geringe_maengel', 'erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'].map((r) => `<option value="${r}">${esc(t('res_' + r))}</option>`).join('')}</select>
@@ -1874,11 +1876,13 @@ async function viewVehicle(id, focusEv = null) {
     try { doneToast(await api('POST', `/api/maintenance/${fm.dataset.mdone}/complete`, b)); viewVehicle(id); } catch (err) { fm.querySelector('button.btn').disabled = false; toast(err.message, true); }
   }));
   // HU/SP: Durchführung mit Prüfergebnis, Werkstatttermin planen, Fahrzeugdaten (zGM/Erstzulassung)
-  $$('form[data-hsdone]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { doneToast(await api('POST', `/api/maintenance/${fm.dataset.hsdone}/complete`, b)); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
+  // HU/SP ohne eigenen Eintrag („husp:SP“): Aktion über die Fahrzeugakte, der Server legt den Eintrag dabei an
+  const hsUrl = (r, act) => (r.startsWith('husp:') ? `/api/vehicles/${encodeURIComponent(v.id)}/husp/${r.slice(5)}/${act}` : `/api/maintenance/${r}/${act}`);
+  $$('form[data-hsdone]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { doneToast(await api('POST', hsUrl(fm.dataset.hsdone, 'complete'), b)); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   $$('form[data-resadd]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { await api('POST', `/api/maintenance/events/${fm.dataset.resadd}/result`, b); toast('✓'); viewVehicle(id); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   $$('form[data-mdef]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', `/api/maintenance/events/${fm.dataset.mdef}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
-  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
-  $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/maintenance/${fm.dataset.hsplan}/plan`, { planned_date: fm.planned_date.value || null }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
+  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', hsUrl(fm.dataset.mord, 'order'), { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => {
     e.preventDefault();

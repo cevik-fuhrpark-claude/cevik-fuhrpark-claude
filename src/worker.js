@@ -92,7 +92,7 @@ function requireRole(user, roles) {
 // Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
 const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
-  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/recalls\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
+  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/recalls\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/husp\/(HU|SP)\/(complete|plan|order)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
   /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
@@ -337,6 +337,18 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/result$/)) && m === 'POST') return json(await veh.addMaintenanceResult(env, user, mm[1], await readJson(request), { ctx, envName }));
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromInspectionDefect(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request)));
+  // HU/SP ohne eigenen Eintrag (nur berechnete Frist): Eintrag erst bei der Aktion anlegen, dann wie beim vorhandenen Eintrag (19.10.2026)
+  if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/husp\/(HU|SP)\/(complete|plan|order)$/)) && m === 'POST') {
+    const body = await readJson(request);
+    if (mm[3] === 'order' && user.role !== 'owner' && user.role !== 'fleet') throw forbidden();
+    // Pflichtangaben vorab prüfen, damit ein abgewiesenes Formular keinen Eintrag hinterlässt
+    if (mm[3] === 'complete' && (!String(body.done_date || '').trim() || !String(body.evidence || '').trim())) throw new HttpError(400, 'validation', 'Datum und Nachweis angeben.');
+    if (mm[3] === 'plan' && !String(body.planned_date || '').trim()) throw new HttpError(400, 'validation', 'Termin angeben.');
+    const rule = await veh.ensureHuSpRule(env, user, mm[1], mm[2]);
+    if (mm[3] === 'complete') return json({ ...(await veh.completeMaintenance(env, user, rule.id, body, { ctx, envName })), rule_id: rule.id });
+    if (mm[3] === 'plan') return json({ ...(await veh.planMaintenance(env, user, rule.id, body)), rule_id: rule.id });
+    return json({ ...(await cases.orderFromMaintenance(env, ctx, user, envName, rule.id, body)), rule_id: rule.id }, 201);
+  }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));
 
