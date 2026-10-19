@@ -30,7 +30,7 @@ UI-Baujahr-Hinweis, Lagerbuchung einmal|ui-baujahr-lager.py|/tmp/cfp-baujahr.log
 UI-Konflikt ohne Eingabeverlust (Kommentar, Fahrerakte)|ui-konflikt-eingaben.py|/tmp/cfp-konflikt.log
 UI-Postausgang Foto nachreichen, Rechte Fahrzeugakte, Verlauf übersetzt|ui-postausgang-foto.py|/tmp/cfp-postfoto.log
 UI-Postausgang nur unter der erfassenden Person (zwei Tabs)|ui-postausgang-fremder-name.py|/tmp/cfp-pa-person.log
-UI-Postausgang in der Umgebung der Erfassung|ui-postausgang-umgebung.py|/tmp/cfp-pa-umgebung.log
+UI-Postausgang in der Umgebung der Erfassung|ui-postausgang-ansicht.py|/tmp/cfp-pa-umgebung.log
 UI-Sprache offline gewählt bleibt|ui-sprache-offline.py|/tmp/cfp-sprache-offline.log
 UI-Fahrer-Auswahl (Suchfeld-Enter, Vorauswahl Kontrolle)|ui-fahrer-auswahl.py|/tmp/cfp-fahrer-auswahl.log
 UI-Leitung: Zeitraum-Fehler, km-Hinweis EN, außer Betrieb ohne Zuordnung|ui-leitung-ansichten.py|/tmp/cfp-leitung-ansichten.log
