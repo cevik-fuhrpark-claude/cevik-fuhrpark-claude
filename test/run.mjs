@@ -13348,6 +13348,25 @@ await test('Verbesserung 19.10. (41): Notfall-Rufnummern mit deutscher Vorwahl (
   eq(ch.status, 409, 'Ändern auf dieselbe Nummer: ' + JSON.stringify(ch.data));
 });
 
+await test('Verbesserung 19.10. (42): Fuhrparkagent schließt Prüfmangel-Befunde nicht, wenn die Prüfungsliste gekappt ist (> 200, ältere nicht gelesen)', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const { berlinDate, addMonths } = await import('../src/util.js'); const today = berlinDate(); const now = new Date().toISOString();
+  const insV = db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,zgm_class,active,eval_excluded,created_at,updated_at) VALUES (?,?,?,'Dortmund','lkw','ueber_12',1,0,?,?)`);
+  const insE = db.prepare(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,evidence,source,created_at,result) VALUES (?,'R-'||?2,?2,'UVV',?3,'Beleg','erfasst',?4,'erhebliche_maengel')`);
+  insV.run('V-TR0', 'WDBTRC0000000000', 'TR-C 0', now, now); insE.run('E-TR0', 'V-TR0', addMonths(today, -6), now);
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const open = () => db.prepare(`SELECT status FROM agent_findings WHERE finding_code='INSPECTION_DEFECTS_NO_CASE' AND subject_key='E-TR0'`).get();
+  eq(open().status, 'offen');
+  for (let i = 1; i <= 204; i++) { insV.run('V-TR' + i, 'WDBTRC' + String(i).padStart(10, '0'), 'TR-C ' + i, now, now); insE.run('E-TR' + i, 'V-TR' + i, addMonths(today, -1), now); }
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  eq(open().status, 'offen', 'älterer Prüfmangel jenseits der Grenze bleibt offen');
+  eq(db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE finding_code='INSPECTION_DEFECTS_NO_CASE' AND status='offen'`).get().n, 201);
+  // wieder unter der Grenze: echte Erledigung wirkt
+  db.prepare(`DELETE FROM maintenance_events WHERE id LIKE 'E-TR%' AND id<>'E-TR0'`).run(); db.prepare(`UPDATE maintenance_events SET result='ohne_maengel' WHERE id='E-TR0'`).run();
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  eq(open().status, 'erledigt', 'ohne Kappung normal erledigt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

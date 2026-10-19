@@ -459,6 +459,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         next_action=excluded.next_action, owner_role=excluded.owner_role, requires_decision=excluded.requires_decision, fingerprint=excluded.fingerprint, last_seen=excluded.last_seen,
         first_seen=CASE WHEN agent_findings.status='erledigt' THEN excluded.first_seen ELSE agent_findings.first_seen END, status='offen', resolved_at=NULL`)
       .bind(environment, now, JSON.stringify(part)));
+    // Gekappte Prüfungslisten (> 200 Einträge, nur die jüngsten gelesen): offene Befunde dieser Codes nicht als „erledigt“ schließen –
+    // sie wurden nur nicht gelesen (19.10.2026; vorher erledigten sich ältere Prüfmängel still)
+    const EV_CODE = { defects_without_case: 'INSPECTION_DEFECTS_NO_CASE', reinspection_pending: 'REINSPECTION_PENDING', result_missing: 'INSPECTION_RESULT_MISSING' };
+    const keepCodes = new Set((evLists.truncated || []).map((n) => EV_CODE[n]).filter(Boolean));
+    if (keepCodes.size) for (const [key, ex] of existingMap) if (ex.status === 'offen' && keepCodes.has(ex.finding_code)) seen.add(key);
     // Nicht mehr zutreffende Befunde schließen (eine Anweisung)
     upserts.push(env.DB.prepare(`UPDATE agent_findings SET status='erledigt', resolved_at=?1 WHERE environment=?2 AND status='offen'
       AND (finding_code || '|' || subject_key) NOT IN (SELECT value FROM json_each(?3))`).bind(now, environment, JSON.stringify([...seen])));
