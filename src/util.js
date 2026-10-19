@@ -162,7 +162,13 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     if (!/^[-+]?(\d+([.,]\d+)?|[.,]\d+)$/.test(t)) throw bad('validation', `${field}: ungültige Zahl.`);
     n = Number(t.replace(',', '.'));
   }
-  if (!Number.isFinite(n) || n < min || n > max) throw bad('validation', `${field}: ungültige Zahl.`);
+  if (!Number.isFinite(n)) throw bad('validation', `${field}: ungültige Zahl.`);
+  // außerhalb des Bereichs: Grenze nennen (19.10.2026: nur „ungültige Zahl“, z. B. km 9 999 999 oder 30 Stunden)
+  if (n < min || n > max) {
+    if (Number.isFinite(min) && Number.isFinite(max)) throw bad('validation', `${field}: zulässig von ${min} bis ${max}.`);
+    if (Number.isFinite(max)) throw bad('validation', `${field}: höchstens ${max}.`);
+    throw bad('validation', `${field}: mindestens ${min}.`);
+  }
   if (cents && Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw bad('validation', `${field}: höchstens 2 Nachkommastellen.`);
   return n;
 }

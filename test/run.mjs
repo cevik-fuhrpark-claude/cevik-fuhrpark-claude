@@ -1466,7 +1466,9 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     [msg(() => str('', { required: true, field: 'Fahrzeug' })), 'Транспорт: обов’язкове поле.', 'Vehicle is required.'],
     [msg(() => str('x'.repeat(30), { max: 20, field: 'Bemerkung' })), 'Примітка: занадто довго (макс. 20 символів).', 'Note is too long (max. 20 characters).'],
     [msg(() => oneOf('zzz', ['ok', 'mangel'], 'Prüfergebnis')), 'Результат перевірки: недійсне значення.', 'Check result: invalid value.'],
-    [msg(() => num('5', { min: 10, field: 'Sonderfeld' })), 'Sonderfeld: недійсне число.', 'Sonderfeld: invalid number.'],
+    [msg(() => num('5', { min: 10, field: 'Sonderfeld' })), 'Sonderfeld: не менше 10.', 'Sonderfeld: at least 10.'],
+    [msg(() => num('30', { min: 0, max: 24, field: 'Stunden' })), 'Години: допустимо від 0 до 24.', 'Hours: allowed from 0 to 24.'],
+    [msg(() => num('9999999', { max: 5000000, field: 'Kilometerstand' })), 'Пробіг: не більше 5000000.', 'Odometer: at most 5000000.'],
   ];
   for (const [m, uk, en] of cases) {
     ok(m, 'Server liefert einen Text');
@@ -1508,7 +1510,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   ok(lits.length >= 100, 'Server-Texte gefunden');
   for (const l of new Set(lits)) ok(TECH.has(l) || (tv('uk', l) && tv('en', l)), `validation-Text ohne Übersetzung (in V_MORE ergänzen oder TECH): ${l}`);
   const tpls = new Set([...src.matchAll(/bad\('validation', (`[^`]+`)\)/g)].map((m) => m[1]));
-  for (const t of tpls) ok(tpl.some(([code]) => code === t) || /^`\$\{field\} (ist erforderlich|ist zu lang)|^`\$\{field\}: (ungültiger Wert|„|ungültige Zahl)/.test(t), `validation-Vorlage ohne Übersetzung/Test: ${t}`);
+  for (const t of tpls) ok(tpl.some(([code]) => code === t) || /^`\$\{field\} (ist erforderlich|ist zu lang)|^`\$\{field\}: (ungültiger Wert|„|ungültige Zahl|zulässig von|höchstens \$|mindestens \$)/.test(t), `validation-Vorlage ohne Übersetzung/Test: ${t}`);
   // Nutzerseitige Fehlercodes haben eine Übersetzung (technische wie invalid_json/invalid_token bewusst nicht)
   const { STRINGS: STR } = await import('../public/i18n.js');
   for (const code of ['username_taken', 'setup_done', 'invalid_setup_code', 'wrong_file', 'invalid_session']) {
