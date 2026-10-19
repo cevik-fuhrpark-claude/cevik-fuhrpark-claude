@@ -4992,7 +4992,7 @@ await test('Zahlen, Beträge und Datumsangaben im Format der Oberflächensprache
   ok(!/toLocaleString\('de/.test(app.replace(/toLocaleLowerCase\('de'\)/g, '')), 'keine fest deutschen Zahlenformate');
   // fest „Komma statt Punkt“ nur noch für vorbelegte Eingabefelder (der Server liest Komma und Punkt)
   const rest = app.split('\n').filter((l) => l.includes(".replace('.', ',')"));
-  ok(rest.length === 3 && rest.every((l) => /value="|const money|const shown|const nv|const decIn/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // decIn: Vorbelegung DE/UK mit Komma, EN mit Punkt (19.10.2026) // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
+  ok(rest.length === 2 && rest.every((l) => /value="|const money|const shown|const nv|const decIn/.test(l)), 'nur Eingabe-Vorbelegung: ' + rest.length); // decIn: Vorbelegung DE/UK mit Komma, EN mit Punkt (19.10.2026) // const shown = Einstellungen-Formular, const nv = Vergleich mit der Vorbelegung (Artikel bearbeiten)
   // Formate wie im Browser (Intl): gleiche Zahl je Sprache verschieden, Euro-Zeichen je Sprache
   const fmt = (loc, x, o) => Number(x).toLocaleString(loc, o);
   eq(fmt('de-DE', 123456), '123.456'); eq(fmt('en-GB', 123456), '123,456'); eq(fmt('uk-UA', 1.6), '1,6'); eq(fmt('en-GB', 1.6), '1.6');
@@ -12764,7 +12764,7 @@ await test('Fehlersuche 18.10. (23): Anmeldung – 2FA-Einschalten gegen laufend
     // im angemeldeten Zustand: richtige Bestätigung zählt nicht, falsche zählt
     eq((await U.viewer.post('/api/me/totp/setup', { password: PW })).status, 200);
     eq(e.DB.db.prepare(`SELECT COALESCE(MAX(failures),0) f FROM login_attempts WHERE key='w.lesen'`).get().f, 0, 'Bestätigung ok → kein Fehlversuch');
-    eq((await U.viewer.post('/api/me/password', { old_password: 'falsch-falsch-1', new_password: 'Neues-Kennwort-2027x' })).status, 401);
+    eq((await U.viewer.post('/api/me/password', { old_password: 'falsch-falsch-1', new_password: 'Neues-Kennwort-2027x' })).status, 400, 'falsches altes Passwort: 400 (nicht abmelden)');
     eq(e.DB.db.prepare(`SELECT failures f FROM login_attempts WHERE key='w.lesen'`).get().f, 1, 'falsches altes Passwort zählt einmal');
   }
   // (3) Code-Schub über viele Anmeldevorgänge: höchstens 8 Codes geprüft, richtiger Code im Schub kein Erfolg
@@ -13659,6 +13659,29 @@ await test('Winterreifen 19.10.: Auftrag erfüllt abgeschlossen, später wieder 
   await new Promise((res) => setTimeout(res, 20));
   eq((await tire(B, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5', winter_mark: 'keine' })).status, 201);
   r = await view(B); eq(r.a.status, 'nicht_erfuellt'); eq(r.a.closed_order.case_no, o2.data.case_no, 'nie erfüllt → Hinweis bleibt'); eq(r.f.winter_closed_order.case_no, o2.data.case_no);
+});
+
+await test('Fehlersuche 19.10. (51): Bußgeld – Wiederholung meldet „mehrdeutig“, „Fahrer informieren“/„Status setzen“ wiederholbar; falsches altes Passwort meldet nicht ab (400)', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet;
+  for (const vin of ['WDB96340310555611', 'WDB96340310555612']) eq((await F.post('/api/vehicles', { vin, plate: 'DO-AM 1', site: 'Dortmund' })).status, 201);
+  const body = { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: 'AZ-AMB-1', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 864e5).toISOString(), plate_in_letter: 'DO-AM 1', request_key: 'fine-amb-1' };
+  const a = await F.post('/api/fines', body); eq(a.status, 201); eq(a.data.vehicle_ambiguous, true);
+  const b = await F.post('/api/fines', { ...body, amount_eur: '35' }); eq(b.data.duplicate, true); eq(b.data.id, a.data.id); eq(b.data.vehicle_ambiguous, true, 'Wiederholung: mehrdeutig');
+  // Fahrer bestätigen, informieren – doppelt
+  const id = a.data.id; const ver = async () => (await F.get(`/api/fines/${id}`)).data.fine.version;
+  eq((await F.post(`/api/fines/${id}/commands`, { action: 'confirm_driver', expected_version: await ver(), payload: { basis: 'manuell', evidence: 'Tourenplan', driver_id: U.driver.id } })).status, 200);
+  const v1 = await ver();
+  const i1 = await F.post(`/api/fines/${id}/commands`, { action: 'inform_driver', expected_version: v1 }); eq(i1.status, 200);
+  const i2 = await F.post(`/api/fines/${id}/commands`, { action: 'inform_driver', expected_version: v1 }); eq(i2.status, 200, 'Wiederholung informieren'); eq(i2.data.duplicate, true);
+  const v2 = await ver(); eq(v2, v1 + 1, 'nur eine neue Version');
+  const s1 = await F.post(`/api/fines/${id}/commands`, { action: 'set_status', expected_version: v2, payload: { status: 'beantwortet' }, note: 'Anhörungsbogen zurück' }); eq(s1.status, 200);
+  const s2 = await F.post(`/api/fines/${id}/commands`, { action: 'set_status', expected_version: v2, payload: { status: 'beantwortet' }, note: 'Anhörungsbogen zurück' }); eq(s2.status, 200, 'Wiederholung Status'); eq(s2.data.duplicate, true);
+  eq((await F.post(`/api/fines/${id}/commands`, { action: 'set_status', expected_version: v2, payload: { status: 'eingestellt' }, note: 'x' })).status, 409, 'anderes Ziel auf altem Stand: Konflikt');
+  const d = (await F.get(`/api/fines/${id}`)).data; eq(d.events.filter((x) => x.action === 'set_status').length, 1); eq(d.events.filter((x) => x.action === 'inform_driver').length, 1);
+  // falsches altes Passwort: 400 (App meldet bei 401 ab)
+  const r = await U.viewer.post('/api/me/password', { old_password: 'falsch-falsch-2', new_password: 'Neues-Kennwort-2027y' }); eq(r.status, 400); eq(r.data.error, 'wrong_password');
+  eq((await U.viewer.get('/api/me')).status, 200, 'weiter angemeldet');
+  void e;
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

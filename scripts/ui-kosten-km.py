@@ -11,7 +11,7 @@ VIN='WDB96340310777789'; VID='VIN:'+VIN; PLATE='KM-UI 1'
 SPAN={'de':'km-Stände','uk':'Показники км','en':'Odometer readings'}
 FIRST={'de':'ab erster Ablesung im Zeitraum','uk':'від першого показника в періоді','en':'from the first reading in the period'}
 RULE={'de':'Fahrleistung je Monat','uk':'Пробіг за місяць','en':'Mileage per month'}
-NUM={'de':r'3\.500 km','uk':r'3 ?500 km','en':r'3,500 km'}
+NUM={'de':r'3\.500 km','uk':r'3 ?500 (km|км)','en':r'3,500 km'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

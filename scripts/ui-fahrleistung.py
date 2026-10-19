@@ -9,7 +9,7 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 VIN='WDB96340310777788'; VID='VIN:'+VIN
 TITLE={'de':'Fahrleistung je Monat','uk':'Пробіг за місяць','en':'Mileage per month'}
 LAST={'de':'Letzter km-Stand','uk':'Останній показник км','en':'Latest odometer reading'}
-NUM={'de':r'3\.500 km','uk':r'3 ?500 km','en':r'3,500 km'}
+NUM={'de':r'3\.500 km','uk':r'3 ?500 (km|км)','en':r'3,500 km'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

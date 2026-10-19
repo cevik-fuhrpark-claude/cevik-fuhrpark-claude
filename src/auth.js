@@ -381,7 +381,7 @@ export async function changePassword(env, user, body) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   await reauthLocked(env, user);
   const { hash } = await hashPassword(String(body.old_password || ''), row.password_salt);
-  if (!timingSafeEqual(hash, row.password_hash || '')) { await reauthFailed(env, user); throw new HttpError(401, 'invalid_login', 'Altes Passwort falsch.'); }
+  if (!timingSafeEqual(hash, row.password_hash || '')) { await reauthFailed(env, user); throw bad('wrong_password', 'Altes Passwort falsch.'); } // 400 statt 401: die App wertete 401 als abgelaufene Sitzung und meldete ab (19.10.2026)
   await reauthOk(env, user);
   validatePassword(body.new_password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.new_password);

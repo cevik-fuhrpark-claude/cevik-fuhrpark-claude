@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test: Zahlen und Beträge im Format der Oberflächensprache – Fahrzeugakte mit km-Stand und Vertragsrate:
-# Deutsch „123.456 km“/„1.234,50 €“, Englisch „123,456 km“/„€1,234.50“, Ukrainisch „123 456 km“/„1 234,50 €“.
+# Deutsch „123.456 km“/„1.234,50 €“, Englisch „123,456 km“/„€1,234.50“, Ukrainisch „123 456 км“/„1 234,50 €“.
 # Fahrer-Aushang: Druckdatum in der Sprache des Aushangs (DE/UK „TT.MM.JJJJ“, EN „TT/MM/JJJJ“).
 # Eingabefeld „Rate“ bleibt mit Komma vorbelegt (Server liest Komma und Punkt). 390/820/1366 px, keine Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-EXP={'de':(r'123\.456 km',r'1\.234,50\s€'),'en':(r'123,456 km',r'€1,234\.50'),'uk':(r'123\s456 km',r'1\s234,50\s€')}
+EXP={'de':(r'123\.456 km',r'1\.234,50\s€'),'en':(r'123,456 km',r'€1,234\.50'),'uk':(r'123\s456 км',r'1\s234,50\s€')}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

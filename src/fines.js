@@ -156,7 +156,10 @@ export async function createFine(env, user, envName, body) {
     const prev = await env.DB.prepare('SELECT id, fine_no, vehicle_id, environment, created_by FROM fines WHERE request_key=?').bind(rkey).first();
     if (!prev) return null;
     if (prev.environment !== envName || prev.created_by !== user.id) throw conflict('fine_key_reused', 'request_key wurde bereits für einen anderen Bußgeldvorgang verwendet.');
-    return { id: prev.id, fine_no: prev.fine_no, vehicle_matched: !!prev.vehicle_id, duplicate: true };
+    // mehrdeutiges Kennzeichen auch bei der Wiederholung melden (19.10.2026: App zeigte sonst „Fahrzeug unbekannt“)
+    const ev = prev.vehicle_id ? null : await env.DB.prepare(`SELECT payload FROM fine_events WHERE fine_id=? AND action='create'`).bind(prev.id).first();
+    let amb = false; try { amb = !!(ev && JSON.parse(ev.payload || '{}').vehicle_ambiguous); } catch { /* alter Eintrag */ }
+    return { id: prev.id, fine_no: prev.fine_no, vehicle_matched: !!prev.vehicle_id, ...(amb ? { vehicle_ambiguous: true } : {}), duplicate: true };
   };
   const again = await byKey();
   if (again) return again;
@@ -204,6 +207,13 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     if (f.driver_ack_at) return { ok: true, version: f.version, duplicate: true };
     set.driver_ack_at = now;
   } else {
+    // Wiederholung (Doppeltipp/verlorene Antwort) von „Fahrer informieren“/„Status setzen“ auf den Stand davor: war der letzte Schritt genau
+    // diese Aktion derselben Person (bei Status mit demselben Ziel), Erfolg melden statt 403/409 (19.10.2026)
+    if (['inform_driver', 'set_status'].includes(action) && body.expected_version !== undefined && Number(body.expected_version) === f.version - 1) {
+      const last = await env.DB.prepare('SELECT action, actor_id, payload FROM fine_events WHERE fine_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1').bind(id).first();
+      let to = null; try { to = JSON.parse(last?.payload || '{}').to ?? null; } catch { /* alter Eintrag */ }
+      if (last && last.action === action && last.actor_id === user.id && (action !== 'set_status' || (to !== null && to === p.status))) return { ok: true, version: f.version, duplicate: true };
+    }
     if (!fineActions(user, f).includes(action)) throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`);
     if (body.expected_version !== undefined && Number(body.expected_version) !== f.version) throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
     switch (action) {
