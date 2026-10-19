@@ -3567,7 +3567,7 @@ async function viewFleetTires() {
 
 // ---------- Mehr / Benutzer / Einstellungen ----------
 function viewMore(open) {
-  render(`<h1>${esc(t('nav_more'))}</h1><div class="list">
+  render(`<h1>${esc(t('nav_more'))}</h1><div class="list morelist">
     ${S.me.role !== 'driver' ? `<a class="row" href="#/vehicles"><span>${ICON.truck}</span><span class="title">${esc(t('vehicles'))}</span><span></span></a>` : ''}
     ${mayCheck() ? `<a class="row" href="#/check"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>` : ''}
     <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
