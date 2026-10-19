@@ -1576,7 +1576,7 @@ await test('Import-Vorschauen: Zeilenhinweise (übersprungene Zeilen) auf Ukrain
   eq(r3.data.skipped_no_vehicle.length, 2, 'bisheriges Feld bleibt');
   eq(tr('uk', r3.data.skipped[1].reason), 'VIN недійсний/відсутній');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  eq((app.match(/reasonText\([xy]\.reason\)/g) || []).length, 5, 'alle fünf Import-Vorschauen (inkl. Reifen) nutzen die Übersetzung');
+  eq((app.match(/reasonText\([xy]\.reason\)/g) || []).length, 6, 'alle sechs Import-Vorschauen (inkl. Reifen, Lager) nutzen die Übersetzung');
   ok(!/esc\([xy]\.reason\)/.test(app), 'kein unübersetzter Grund mehr');
 });
 await test('CSV-Dateien aus Excel (Windows-1252) werden erkannt: Umlaute in Kopfzeile und Werten bleiben erhalten', async () => {
@@ -1609,8 +1609,8 @@ await test('CSV-Dateien aus Excel (Windows-1252) werden erkannt: Umlaute in Kopf
   eq(JSON.stringify(parseCsv('a,b\n1,2')), '[["a","b"],["1","2"]]', 'Komma');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!/await (file|f)\.text\(\)/.test(app), 'kein CSV-Import liest mehr nur UTF-8');
-  eq((app.match(/accept="\.csv,\.txt,text\/csv,text\/plain"/g) || []).length, 6, 'Dateiauswahl nimmt auch .txt (Unicode-Text)');
-  eq((app.match(/await readCsvFile\(/g) || []).length, 6, 'alle sechs CSV-Importe (Fahrzeugstamm, Reifen, Prüftermine, Rückrufe, Verträge, Auslesungen)');
+  eq((app.match(/accept="\.csv,\.txt,text\/csv,text\/plain"/g) || []).length, 7, 'Dateiauswahl nimmt auch .txt (Unicode-Text)');
+  eq((app.match(/await readCsvFile\(/g) || []).length, 7, 'alle sieben CSV-Importe (Fahrzeugstamm, Reifen, Prüftermine, Rückrufe, Verträge, Auslesungen, Lager)');
 });
 await test('Kostenbericht: Standortfilter (site=) wirkt auf Zeilen, Summen und CSV; Auswahlliste aller Standorte', async () => {
   const all = (await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`)).data;
@@ -13925,6 +13925,34 @@ await test('Push-Arten je Rolle (19.10.): Fahrer/Werkstatt/Lesezugriff sehen nur
   // Fahrer kann fremde Arten nicht setzen; gespeicherte fremde bleiben bei späterem Speichern erhalten
   const r = await U.driver.put('/api/me/notify-prefs', { muted: ['received', 'cost_limit'] }); eq(r.status, 200);
   eq((await U.driver.get('/api/me/notify-prefs')).data.muted.join(), 'received');
+});
+
+await test('Lager-Import (19.10.): Vorschau ohne Änderung, nur neue Artikel, vorhandene unverändert, Dubletten/Zahlen/Rechte, Anfangsbestand als Zugang, übersetzbare Gründe', async () => {
+  const { U } = await freshWorld();
+  const imp = (c, csv, q = '') => c.req('POST', '/api/stock/import' + q, csv, { 'content-type': 'text/csv' });
+  const ex = await U.ws.post('/api/stock', { name: 'Ölfilter', part_number: 'OF-1', initial_qty: 2, min_qty: 1 }); eq(ex.status, 201);
+  const csv = '﻿Artikelnummer;Bezeichnung;Einheit;Bestand;Mindestbestand;Lagerort;Preis netto\n' +
+    'OF-1;ölfilter;Stk;5;3;R1;12,50\n' + 'BB-9;Bremsbelag VA;Satz;2,5;1;R2;84,50 €\n' + ';;;;;;\n' + 'X-1;;Stk;1;;;\n' + 'BB-9;bremsbelag va;;1;;;\n' + 'K-1;Kühlmittel;l;1.000;;;\n' + 'D-1;Dichtung;Stk;;;;\n';
+  const dry = await imp(U.ws, csv, '?dry_run=1'); eq(dry.status, 200, JSON.stringify(dry.data).slice(0, 300));
+  eq(dry.data.dry_run, true); eq(dry.data.created, 2, 'BB-9 + D-1'); eq(dry.data.unchanged, 1, 'OF-1 vorhanden');
+  const reasons = Object.fromEntries(dry.data.skipped.map((x) => [x.line, x.reason]));
+  eq(reasons[5], 'Bezeichnung fehlt'); eq(reasons[6], 'doppelt in der Datei'); ok(/mehrdeutig/.test(reasons[7]), reasons[7]);
+  const of = dry.data.rows.find((r) => r.part_number === 'OF-1'); eq(of.action, 'unverändert'); ok(of.note, 'abweichende Angaben gemeldet');
+  eq((await U.ws.get('/api/stock')).data.items.length, 1, 'Vorschau ändert nichts');
+  const { translateImportReason: tr } = await import('../public/i18n.js');
+  for (const x of [...dry.data.skipped.map((y) => y.reason), of.note]) ok(tr('uk', x) !== x && tr('en', x) !== x, 'übersetzt: ' + x);
+  // Rechte: Fahrer/Lesezugriff nein, Werkstatt nur eigenes Lager, Leitung braucht Lager
+  eq((await imp(U.driver, csv, '?dry_run=1')).status, 403); eq((await imp(U.viewer, csv, '?dry_run=1')).status, 403);
+  eq((await imp(U.ws, csv, '?dry_run=1&site=MUENCHEN')).status, 403, 'fremdes Lager');
+  eq((await imp(U.fleet, csv, '?dry_run=1')).status, 400, 'Leitung ohne Lager');
+  eq((await imp(U.ws, 'Teilenummer;Menge\nA;1\n', '?dry_run=1')).status, 400, 'ohne Bezeichnung');
+  const done = await imp(U.ws, csv); eq(done.status, 200); eq(done.data.created, 2);
+  const items = (await U.ws.get('/api/stock')).data.items; eq(items.length, 3);
+  const bb = items.find((i) => i.part_number === 'BB-9'); eq(bb.on_hand, 2.5); eq(bb.unit, 'Satz'); eq(bb.min_qty, 1); eq(bb.unit_price_net, 84.5); eq(bb.location, 'R2');
+  eq(items.find((i) => i.part_number === 'OF-1').on_hand, 2, 'vorhandener Bestand unverändert'); eq(items.find((i) => i.part_number === 'D-1').on_hand, 0);
+  const again = await imp(U.ws, csv); eq(again.data.created, 0, 'zweiter Import legt nichts doppelt an'); eq(again.data.unchanged, 3);
+  ok((await U.own.get('/api/admin/audit?action=stock.import')).data.entries.length >= 1, 'Protokoll');
+  const imp2 = await imp(U.fleet, 'Bezeichnung;Bestand\nWischerblatt;4\n', '?site=DORTMUND'); eq(imp2.status, 200); eq(imp2.data.created, 1);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

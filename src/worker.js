@@ -449,6 +449,12 @@ async function handleApi(request, env, ctx, url) {
     if (url.searchParams.get('reorder') === '1') return json({ items });
     return json({ items, last_inventory: await stock.lastInventories(env, envName, [...new Set(items.map((i) => i.site))]) });
   }
+  if (path === '/api/stock/import' && m === 'POST') {
+    await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
+    const text = await request.text();
+    if (text.length > 500000) throw new HttpError(413, 'csv_too_large', 'Datei zu groß (max. 500 KB).');
+    return json(await stock.importStockCsv(env, user, envName, text, { dryRun: url.searchParams.get('dry_run') === '1', site: url.searchParams.get('site') }));
+  }
   if (path === '/api/stock/asof' && m === 'GET') {
     const rep = await stock.stockAsOf(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') return new Response(stock.stockAsOfCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lagerbestand-stichtag_${envName}_${rep.date}${siteSuffix(rep.site)}.csv"` } });

@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents, quoteCell , commaDec } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents, quoteCell , commaDec, parseCsv } from './util.js';
 import { audit } from './auth.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -523,4 +523,74 @@ export async function stockFindings(env, environment) {
     else if (i.ordered_eta && i.ordered_eta < today) out.push({ ...i, code: 'STOCK_ORDER_OVERDUE', open });
   }
   return out;
+}
+
+// Lagerartikel aus CSV (z. B. Bestandsliste der Werkstatt): Vorschau (dry_run), dann Übernehmen. Nur neue Artikel werden angelegt –
+// vorhandene (gleiche Bezeichnung + Teilenummer, Groß-/Kleinschreibung egal) bleiben unverändert (Bestand ändert nur Buchung/Inventur);
+// abweichende Angaben werden gemeldet. Bestand aus der Datei = Zugang „Anfangsbestand (Import)“. Nichts wird geschätzt (19.10.2026).
+export const STOCK_IMPORT_MAX = 1000;
+export async function importStockCsv(env, user, envName, text, { dryRun = false, site: siteParam = null } = {}) {
+  if (!isMgr(user) && user.role !== 'workshop') throw forbidden();
+  const site = siteScope(user, siteParam);
+  if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.');
+  if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
+  const table = parseCsv(text);
+  if (table.length < 2) throw bad('validation', 'CSV leer.');
+  const MAX_ROWS = STOCK_IMPORT_MAX;
+  if (table.length - 1 > MAX_ROWS) throw bad('validation', `Maximal ${MAX_ROWS} Zeilen je Import.`);
+  const head = table[0].map((h) => String(h || '').trim().toLowerCase());
+  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  const ci = { name: col(['bezeichnung', 'artikelbezeichnung', 'artikel', 'name', 'teil']), pn: col(['teilenummer', 'artikelnummer', 'art.-nr', 'art-nr', 'artnr', 'nummer', 'teile-nr']),
+    unit: head.findIndex((h) => h.startsWith('einheit') || h.startsWith('mengeneinheit') || h === 'me'), min: col(['mindest', 'meldebestand']), loc: col(['lagerort', 'ort', 'regal', 'lagerplatz']),
+    price: col(['preis', 'einkaufspreis', 'ek', 'netto']), qty: -1 };
+  ci.qty = head.findIndex((h, i) => i !== ci.unit && ['bestand', 'anfangsbestand', 'menge'].some((n) => h.startsWith(n)));
+  // „Teilenummer“ beginnt nicht mit „teil“-Spalte verwechseln: Bezeichnungsspalte darf nicht die Nummernspalte sein
+  if (ci.name >= 0 && ci.name === ci.pn) ci.name = head.findIndex((h, i) => i !== ci.pn && ['bezeichnung', 'artikelbezeichnung', 'artikel', 'name'].some((n) => h.startsWith(n)));
+  if (ci.name < 0) throw bad('validation', 'Spalte „Bezeichnung“ erforderlich.');
+  const existing = (await env.DB.prepare('SELECT id, name, part_number, unit, min_qty, location, unit_price_net, active FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;
+  const known = new Map(existing.map((r) => [itemKey(r.name, r.part_number), r]));
+  const result = { dry_run: !!dryRun, site, created: 0, unchanged: 0, skipped: [], rows: [] };
+  const seen = new Map(); const stmts = []; const now = nowIso(); const dec = commaDec(user);
+  const get = (cells, i) => (i >= 0 ? String(cells[i] ?? '').trim() : '');
+  const numOf = (v, field, max) => (v === '' ? null : r3(num(v, { min: 0, max, field, decimalComma: dec })));
+  table.slice(1).forEach((cells, idx) => {
+    const line = cells.line || idx + 2;
+    if (cells.every((c) => !String(c ?? '').trim())) return;
+    const name = get(cells, ci.name).replace(/\s+/g, ' '); const pn = get(cells, ci.pn) || null;
+    const skip = (reason) => result.skipped.push({ line, plate: name || pn || '', reason });
+    if (!name) return skip('Bezeichnung fehlt');
+    if (name.length > 200 || (pn && pn.length > 80)) return skip('Bezeichnung/Teilenummer zu lang');
+    let min; let price; let qty;
+    try { min = numOf(get(cells, ci.min), 'Mindestbestand', 1e6); price = get(cells, ci.price) === '' ? null : num(get(cells, ci.price).replace(/\s*€$/, ''), { min: 0, max: 1e7, field: 'Preis', decimalComma: dec }); qty = numOf(get(cells, ci.qty), 'Anfangsbestand', 1e6); }
+    catch (e) { if (e instanceof HttpError) return skip(e.message); throw e; }
+    const unit = stdUnit(get(cells, ci.unit).slice(0, 20) || null); const loc = get(cells, ci.loc).slice(0, 80) || null;
+    const key = itemKey(name, pn);
+    if (seen.has(key)) return skip('doppelt in der Datei');
+    seen.set(key, line);
+    const cur = known.get(key);
+    const row = { line, name, part_number: pn, unit, min_qty: min, location: loc, unit_price_net: price, initial_qty: qty };
+    if (cur) {
+      result.unchanged++; row.action = 'unverändert'; row.item_id = cur.id;
+      const diff = (min !== null && min !== cur.min_qty) || (price !== null && price !== cur.unit_price_net) || (loc && loc !== cur.location) || (get(cells, ci.unit) && unit !== cur.unit) || qty !== null;
+      if (diff) row.note = 'Artikel vorhanden – Angaben/Bestand aus der Datei nicht übernommen; in der Artikelakte prüfen bzw. Zugang/Inventur buchen';
+      if (!cur.active) row.inactive = true;
+    } else {
+      result.created++; row.action = 'neu';
+      const id = uuid(); row.item_id = id;
+      // gleichzeitig angelegt (zweiter Import/Formular): der eindeutige Index weist die Zeile ab → ganzer Stapel abgewiesen, Meldung unten
+      stmts.push(env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, pn, name, unit, min, loc, price, user.id, now, now));
+      if (qty) stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
+        VALUES (?,?,?,'zugang',?,NULL,?,NULL,NULL,'Anfangsbestand (Import)',?,?,NULL)`).bind(uuid(), envName, id, qty, price, user.id, now));
+    }
+    result.rows.push(row);
+  });
+  if (!dryRun && stmts.length) {
+    try { for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90)); } catch (e) {
+      if (String(e && e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
+      throw e;
+    }
+    await audit(env, user.id, 'stock.import', null, { site, created: result.created, unchanged: result.unchanged, skipped: result.skipped.length });
+  }
+  return result;
 }

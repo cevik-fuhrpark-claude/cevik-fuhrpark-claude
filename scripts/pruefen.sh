@@ -39,6 +39,7 @@ UI-Fahrernachweis stornieren|ui-fahrernachweis-storno.py|/tmp/cfp-ddoc-storno.lo
 UI-Startseite: Werkstatt-Zähler getrennt, Disposition je Standort|ui-startseite-standort.py|/tmp/cfp-startseite-standort.log
 UI-HU/SP ohne Eintrag: Durchführung aus der Akte legt Eintrag an|ui-husp-ohne-eintrag.py|/tmp/cfp-husp-ohne-eintrag.log
 UI-Konto/Lager: Passwortformular, 2FA-Chip, Bestand mit Menge, Fahrer ohne Lagerformulare|ui-konto-lager.py|/tmp/cfp-konto-lager.log
+UI-Lager-Import (CSV): Vorschau UK 390 px, Übernehmen, keine Doppelten|ui-lager-import.py|/tmp/cfp-lager-import.log
 UI-Foto nachreichen nach Netzabbruch beim direkten Senden|ui-foto-netzabbruch.py|/tmp/cfp-foto-netz.log
 UI-Auftragstexte (Prüftermin) in der App-Sprache|ui-auftragstexte.py|/tmp/cfp-auftragstexte.log
 UI-Aktionsformular bleibt offen, Vertrag km-Grundlage|ui-aktionsformular.py|/tmp/cfp-aktionsformular.log

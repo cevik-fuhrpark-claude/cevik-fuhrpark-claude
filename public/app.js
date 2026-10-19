@@ -2062,6 +2062,9 @@ async function viewStock() {
       <label>${esc(t('unit'))}</label><input name="unit" value="${esc(unitL('Stk'))}" maxlength="20"><label>${esc(t('initial_qty'))}</label><input name="initial_qty" inputmode="decimal">
       <label>${esc(t('min_qty'))}</label><input name="min_qty" inputmode="decimal"><label>${esc(t('storage'))}</label><input name="location">
       <label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+    <details class="panel noprint" id="simp"><summary>${esc(t('stock_import'))}</summary><p class="small muted">${esc(t('stock_import_hint'))}</p>
+      ${sites.length > 1 ? `<label for="simpsite">${esc(t('workshop'))}</label><select id="simpsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
+      <label for="simpf">${esc(t('csv_file'))}</label><input type="file" id="simpf" accept=".csv,.txt,text/csv,text/plain"><div id="simpr"></div></details>
     <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${nReorder ? ` <span class="chip mittel">${nReorder}</span>` : ''}</a></div>
     ${items.length ? `<details class="panel noprint" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
@@ -2125,6 +2128,23 @@ async function viewStock() {
       catch (err) { toast(err.message, true); if (err.code === 'inventory_changed') { invPrev = null; $('#invbook').disabled = true; $('#invres').innerHTML = `<p class="small muted">${esc(t('inventory_recheck'))}</p>`; } }
     };
   }
+  // Artikel-Import (CSV): Vorschau, dann Übernehmen – nur neue Artikel, vorhandene bleiben unverändert (19.10.2026)
+  const simpf = $('#simpf');
+  if (simpf) simpf.onchange = async () => {
+    const file = simpf.files[0]; if (!file) return;
+    const text = await readCsvFile(file); const sel = $('#simpsite'); const q = sel ? `&site=${encodeURIComponent(sel.value)}` : '';
+    const show = (r, applied) => {
+      const box = $('#simpr'); if (!box) return;
+      box.innerHTML = `<p id="simpsum"><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(wsName(r.site))} · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
+        ${r.rows.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('line'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('part_number'))}</th><th>${esc(t('initial_qty'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td data-label="${esc(t('line'))}">${x.line}</td><td data-label="${esc(t('part_name'))}">${esc(x.name)}${x.note ? `<br><span class="small muted">${esc(reasonText(x.note))}</span>` : ''}</td><td data-label="${esc(t('part_number'))}">${esc(x.part_number || '–')}</td><td data-label="${esc(t('initial_qty'))}">${x.initial_qty === null ? '–' : `${fmtNum(x.initial_qty)} ${esc(unitL(x.unit))}`}</td><td><span class="chip${x.action === 'neu' ? ' ok' : ''}">${esc(t('ia_' + x.action))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${r.skipped.length ? `<details ${applied ? '' : 'open'}><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : ''}
+        ${!applied && r.created ? `<div class="actions"><button type="button" class="btn" id="simpapply">${esc(t('apply_import'))}</button></div>` : ''}`;
+      const ap = $('#simpapply');
+      if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/stock/import' + (q ? '?' + q.slice(1) : ''), text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); S.simpDone = done; await viewStock(); } catch (err) { ap.disabled = false; toast(err.message, true); } };
+    };
+    try { show(await api('POST', '/api/stock/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+  };
+  if (S.simpDone && $('#simpr')) { const d = $('#simp'); d.open = true; const r = S.simpDone; S.simpDone = null; $('#simpr').innerHTML = `<p id="simpsum"><b>✓</b> · ${esc(wsName(r.site))} · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>`; }
   $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } try { await api('POST', '/api/stock', b); viewStock(); } catch (err) { toast(err.message, true); } };
 }
 
