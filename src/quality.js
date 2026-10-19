@@ -112,13 +112,14 @@ export async function dataQuality(env, user, envName, query = {}) {
       FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=1`).bind(envName).all(),
     env.DB.prepare(`SELECT u.id, u.display_name FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id)`).bind(envName).all(),
     env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL AND cancelled_at IS NULL`).bind(envName).all(),
+    // nur aktive, bewertete Fahrzeuge schon in SQL – ruhende/außer Betrieb verbrauchten sonst die Grenze (18.10.2026)
     // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung;
     // seit 17.10.2026 auch größer als ein später erfasster Stand (nachgereichte Offline-Kontrolle), sofern nicht übernommen
     env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at > i.created_at ORDER BY o.measured_at ASC LIMIT 1) AS next_km,
       EXISTS (SELECT 1 FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.km=i.odometer_km AND o.source LIKE 'kontrolle:%') AS taken
-      FROM inspections i WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ? ${VF})
+      FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.active=1 AND v.eval_excluded=0 WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ? ${VF})
       WHERE (prev_km IS NOT NULL AND odometer_km < prev_km) OR (next_km IS NOT NULL AND odometer_km > next_km AND NOT taken) ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore, ...(vf ? [vf] : [])).all(),
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),

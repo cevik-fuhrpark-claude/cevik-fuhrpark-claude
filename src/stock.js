@@ -245,7 +245,8 @@ export async function transfer(env, user, envName, id, body, retried = false) {
     stmts.push(env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?)`)
       .bind(target.id, envName, toSite, it.part_number, it.name, it.unit, it.unit_price_net, user.id, now, now));
   } else {
-    if (target.unit !== it.unit) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`);
+    // gleiche Standardeinheit (Altbestand „Stück“ gegen „Stk“) gilt als gleich (18.10.2026)
+    if (stdUnit(target.unit) !== stdUnit(it.unit)) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`);
     if (!target.active || (target.unit_price_net === null && it.unit_price_net !== null)) stmts.push(env.DB.prepare('UPDATE stock_items SET active=1, unit_price_net=COALESCE(unit_price_net, ?), updated_at=? WHERE id=?').bind(it.unit_price_net, now, target.id));
   }
   const ins = `INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,transfer_id,transfer_site,request_key) VALUES (?,?,?,?,?,NULL,?,NULL,?,?,?,?,?,?,?)`;

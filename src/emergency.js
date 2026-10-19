@@ -46,7 +46,7 @@ export async function emergencyView(env, user, envName, query = {}) {
     // auch nach QR-Scan (?vehicle_id=) – Lkw-Aufkleber zeigt die Hotline des Aufliegers (18.10.2026)
     // fest gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (wie „Mein Fahrzeug“) – z. B. Hotline des Kühlaufliegers (17.10.2026)
     if (vehicles.length) {
-      const pool = (await env.DB.prepare(`SELECT id, plate, site, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>''))`).all()).results;
+      const pool = (await env.DB.prepare(`SELECT id, plate, site, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>'')) ORDER BY COALESCE(eval_excluded,0), created_at`).all()).results; // bewertetes vor ruhendem Doppel (wie „Mein Fahrzeug“)
       const own = (await env.DB.prepare(`SELECT id, kind, trailer_plate FROM vehicles WHERE id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(vehicles.map((v) => v.id))).all()).results;
       for (const o of own) {
         const ov = vehicles.find((v) => v.id === o.id);

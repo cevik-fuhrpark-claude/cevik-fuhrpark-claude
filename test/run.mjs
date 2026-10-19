@@ -13062,6 +13062,39 @@ await test('Fehlersuche 18.10. (31): Sperrgrund nicht über Integrations-API, ze
     eq((await u.get('/api/me')).status, 401, 'Anmeldung beendet'); }
 });
 
+await test('Fehlersuche 19.10. (32): Datenqualität Kontroll-km ohne ruhende/außer Betrieb vor der Grenze, Notfall-Gespann bevorzugt bewerteten Auflieger, Umlagerung „Stück“ = „Stk“', async () => {
+  // 1. Datenqualität: ausgenommene Fahrzeuge verdrängen keine Befunde
+  { const { ensureSchema } = await import('../src/worker.js'); const { dataQuality } = await import('../src/quality.js');
+    const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString(); const run = (q, ...a) => db.prepare(q).run(...a);
+    const day = (d) => new Date(Date.now() - d * 86400000).toISOString();
+    for (const [id, ex, act] of [['vA', 0, 1], ['vB', 1, 1], ['vC', 0, 0]]) run(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES(?,?,?,'lkw','Dortmund',?,?,?,?)`, id, 'WDB0000000000000' + id.slice(1), 'DO-' + id, act, ex, now, now);
+    for (const v of ['vA', 'vB', 'vC']) run(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at) VALUES(?,?,100000,?,'x',?)`, 'o' + v, v, day(60), day(60));
+    const ins = (id, v, at) => run(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,odometer_km,items,result,created_at) VALUES(?,'production',?,'abfahrt',1,'u1',50,'[]','ok',?)`, id, v, at);
+    ins('iA', 'vA', day(30));
+    for (let i = 0; i < 120; i++) { ins('iB' + i, 'vB', day(1)); ins('iC' + i, 'vC', day(1)); }
+    const q = await dataQuality(e, { role: 'owner' }, 'production', {});
+    eq(q.items.filter((x) => x.check === 'km_inspection_rejected').map((x) => x.vehicle_id).join(), 'vA', 'Befund des bewerteten Fahrzeugs');
+    ok(!q.truncated_checks.includes('km_inspection_rejected'), 'keine Kappung durch ausgenommene Fahrzeuge'); }
+  // 2. Notfall: Gespann mit bewertetem Auflieger statt ruhendem Doppel; 3. Umlagerung Altbestand „Stück“
+  { const { e, U } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+    const ins = db.prepare(`INSERT INTO vehicles(id,vin,plate,site,trailer_plate,source,kind,active,created_at,updated_at,eval_excluded) VALUES (?,?,?,?,?,'import',?,1,?,?,?)`);
+    ins.run('VIN:R0', 'R0', 'SZ-AU 100', 'Dortmund', null, 'anhaenger', now, now, 1);
+    ins.run('VIN:A1', 'A1', 'SZ-AU 100', 'Dortmund', null, 'anhaenger', now, now, 0);
+    ins.run('VIN:L1', 'L1', 'SZ-LK 1', 'Dortmund', 'SZ-AU 100', 'lkw', now, now, 0);
+    eq((await U.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Kühlaggregat-Hotline', phone: '0800 111222', scope: 'vehicle', vehicle_id: 'VIN:A1' })).status, 201);
+    const v = await U.fleet.get('/api/emergency?vehicle_id=VIN:L1'); eq(v.status, 200);
+    ok(v.data.vehicles.some((x) => x.id === 'VIN:A1' && x.contacts.some((k) => k.label === 'Kühlaggregat-Hotline')), 'echter Auflieger gekoppelt');
+    ok(!v.data.vehicles.some((x) => x.id === 'VIN:R0'), 'ruhendes Doppel nicht gekoppelt');
+    const a = (await U.ws.post('/api/stock', { name: 'Birne H7', part_number: 'H7', unit: 'Stück', initial_qty: 5 })).data.id;
+    const b = (await U.wsMuc.post('/api/stock', { name: 'Birne H7', part_number: 'H7' })).data.id;
+    db.prepare("UPDATE stock_items SET unit='Stück' WHERE id=?").run(b); // Altbestand vor der Vereinheitlichung
+    const t2 = await U.ws.post(`/api/stock/${a}/transfer`, { to_site: 'MUENCHEN', qty: 1 });
+    eq(t2.status, 201, 'Umlagerung ' + JSON.stringify(t2.data)); eq(t2.data.target_item_id, b, 'bestehender Zielartikel');
+    const c = (await U.ws.post('/api/stock', { name: 'Öl', part_number: 'OEL1', unit: 'l', initial_qty: 5 })).data.id;
+    const d = (await U.wsMuc.post('/api/stock', { name: 'Öl', part_number: 'OEL1', unit: 'Kanister' })).data.id; ok(d);
+    eq((await U.ws.post(`/api/stock/${c}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 400, 'echte abweichende Einheit weiter abgewiesen'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
