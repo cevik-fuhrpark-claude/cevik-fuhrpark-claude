@@ -682,7 +682,9 @@ async function viewHome() {
   let d, cases;
   try {
     d = await api('GET', '/api/dashboard');
-    cases = (await api('GET', '/api/cases?status=open&limit=8')).cases;
+    // Disposition mit Standard-Standort: Standort schon serverseitig filtern – sonst verdrängen neuere Vorgänge anderer Standorte die eigenen aus den 8 (19.10.2026)
+    const dsite = S.me.role === 'dispatch' && S.me.home_site && !S.dispoAll ? '&vsite=' + encodeURIComponent(S.me.home_site) : '';
+    cases = (await api('GET', '/api/cases?status=open&limit=8' + dsite)).cases;
   } catch (err) {
     if (!err.offline || S.me.role !== 'driver') throw err;
     d = {}; cases = null; // Fahrer ohne Netz: Startseite mit zuletzt gespeicherten Fahrzeugdaten
@@ -830,7 +832,7 @@ async function fleetTodo() {
     ['todo_result_missing', ov && ov.result_missing ? ov.result_missing : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?ev=${encodeURIComponent(x.id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)}`, ''],
     ['todo_maint_unrecorded', ov ? ov.rows.filter((r) => r.unrecorded_order) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.unrecorded_order.case_no} ${t('released_short')} ${fmtD(r.unrecorded_order.closed_at)}`, 'mittel'],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.km_status === 'ueberfaellig' ? `${t('due_at_km')} ${fmtKm(r.next_due_km)} (${t('km_over')} ${fmtKm(-r.km_remaining)})` : r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')} · ${r.planned_date && r.planned_date >= today ? t('planned') + ' ' + fmtD(r.planned_date) : t('no_planned_date')}`, 'mittel'],
-    ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/tacho' }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald') : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
+    ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/vehicles/' + encodeURIComponent(x.id) }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald') : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
     ['todo_driver_docs', dr.filter((d) => d.status.overall === 'kritisch'), (d) => `#/drivers/${d.id}`, (d) => `${d.display_name} · ${[...d.status.items.filter((i) => i.status === 'abgelaufen').map((i) => t('dk2_' + i.kind)), d.status.check.status === 'mangel' ? t('license_check') : ''].filter(Boolean).join(', ')}`, 'kritisch'],
     ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
       (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
@@ -1186,9 +1188,9 @@ async function viewCase(id) {
 
   // Restarbeiten
   if (d.open_items.length) {
-    html += `<h2>${esc(t('open_items'))}</h2><div class="list">${d.open_items.map((o) => `<div class="row ${o.safety_relevant ? 'p-kritisch' : ''}"><span class="chip ${o.status === 'offen' ? (o.safety_relevant ? 'kritisch' : 'mittel') : 'ok'}">${esc(t('oi_' + o.status))}</span><span class="title" style="white-space:normal">${esc(o.description)}</span>${o.status === 'offen' && A.includes('resolve_open_item') ? `<button class="btn secondary" data-resolve="${esc(o.id)}">${esc(t('done'))}</button>` : '<span></span>'}<span class="sub">${o.safety_relevant ? esc(t('safety_relevant')) + ' · ' : ''}${esc((pnm(o.created_by_name, o.created_by_name_hidden) || t('role_' + o.created_by_name_role)))} · ${fmtDT(o.created_at)}${o.resolution_note ? ' · ' + esc(o.resolution_note) : ''}</span></div>`).join('')}</div>`;
+    html += `<h2>${esc(t('open_items'))}</h2><div class="list">${d.open_items.map((o) => `<div class="row ${o.safety_relevant ? 'p-kritisch' : ''}"><span class="chip ${o.status === 'offen' ? (o.safety_relevant ? 'kritisch' : 'mittel') : 'ok'}">${esc(t('oi_' + o.status))}</span><span class="title" style="white-space:normal">${esc(o.description)}</span>${o.status === 'offen' && A.includes('resolve_open_item') ? `<button class="btn secondary" data-resolve="${esc(o.id)}">${esc(t('done'))}</button>` : '<span></span>'}<span class="sub" style="white-space:normal">${o.safety_relevant ? esc(t('safety_relevant')) + ' · ' : ''}${esc((pnm(o.created_by_name, o.created_by_name_hidden) || t('role_' + o.created_by_name_role)))} · ${fmtDT(o.created_at)}${o.resolution_note ? ' · ' + esc(o.resolution_note) : ''}</span></div>`).join('')}</div>`;
   }
-  if (d.followups.length) html += `<h2>${esc(t('followups'))}</h2><div class="list">${d.followups.map((f) => `<a class="row p-${esc(f.priority)}" href="#/cases/${esc(f.id)}"><span class="chip">${esc(f.case_no)}</span><span class="title">${esc(cDesc(f.description))}</span><span class="chip">${esc(t('st_' + f.status))}</span></a>`).join('')}</div>`;
+  if (d.followups.length) html += `<h2>${esc(t('followups'))}</h2><div class="list">${d.followups.map((f) => `<a class="row p-${esc(f.priority)}" href="#/cases/${esc(f.id)}"><span class="chip">${esc(f.case_no)}</span><span class="title" style="white-space:normal">${esc(cDesc(f.description))}</span><span class="chip">${esc(t('st_' + f.status))}</span></a>`).join('')}</div>`;
   if (d.inspections.length) html += `<h2>${esc(t('inspections'))}</h2>${d.inspections.map((i) => `<details class="panel"><summary>${fmtDT(i.created_at)} · ${esc((pnm(i.performed_by_name, i.performed_by_name_hidden) || t('role_' + i.performed_by_name_role)))} · <span class="chip ${i.result === 'ok' ? 'ok' : 'kritisch'}">${i.result === 'ok' ? 'OK' : esc(t('defect'))}</span>${i.odometer_km ? ' · ' + fmtNum(i.odometer_km) + ' km' : ''}</summary><table>${i.items.map((it) => `<tr><td>${esc(checkLabel(it.key))}</td><td><span class="chip ${it.result === 'mangel' ? 'kritisch' : it.result === 'ok' ? 'ok' : ''}">${esc(t(it.result === 'mangel' ? 'defect' : it.result))}</span>${it.note ? ' ' + esc(it.note) : ''}${it.followup_case_no ? ` → <a href="#/cases/${esc(it.followup_case_id)}">${esc(it.followup_case_no)}</a>` : ''}</td></tr>`).join('')}</table></details>`).join('')}`;
 
   // Arbeiten, Teile, Kosten
@@ -1229,7 +1231,8 @@ async function viewCase(id) {
   // Neuaufbau derselben Seite (z. B. nach einem Kommentar): ein offenes, nicht abgeschicktes Aktionsformular bleibt offen samt Eingaben
   // (17.10.2026: „Teil erfassen“ halb ausgefüllt war danach weg); nur solange die Aktion noch erlaubt ist
   if (S.openAct && (S.openAct.caseId !== c.id || !S.renderSame || !A.includes(S.openAct.action))) S.openAct = null;
-  if (S.openAct) actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true });
+  // Lagerauswahl („Teil erfassen“) wird nachgeladen – erst danach Eingaben wiederherstellen, sonst passt die Formular-Signatur nicht (19.10.2026)
+  if (S.openAct) { try { await actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true }); } catch { /* Lagerliste nicht ladbar: Formular ohne Lager */ } }
   finishRender();
   const clf = $('#clf'); if (clf) clf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(clf)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; try { await api('PUT', `/api/cases/${c.id}/claim`, b); toast('✓'); viewCase(c.id); } catch (err) { toast(err.message, true); } };
   const cf = $('#cf'); if (cf) cf.onsubmit = (e) => { e.preventDefault(); const notify = $$('[data-nt]', cf).filter((x) => x.checked).map((x) => x.dataset.nt); return cmd('comment', $('#ct').value, notify.length ? { notify } : {}); };
@@ -1392,7 +1395,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; };
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
-  if (action === 'add_part') loadStockSelect(c);
+  const stockP = action === 'add_part' ? loadStockSelect(c) : null; // Promise erst am Ende zurückgeben – die Handler unten müssen gesetzt werden
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
   $('#af').onsubmit = (e) => {
     e.preventDefault();
@@ -1406,6 +1409,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     if (p.stock_item_id) { delete p.name; delete p.part_number; delete p.supplier; if (!fd.get('unit_price_net')) delete p.unit_price_net; } else delete p.stock_item_id;
     return cmd(action, fd.get('note') || null, p); // Promise zurück: zentrale Sperre bis zum Ende (Doppelklick)
   };
+  return stockP;
 }
 
 // ---------- Kontrollen ----------
@@ -1419,7 +1423,7 @@ const tmKmRej = (dir, km, at) => dir === 'above' ? t('tm_km_rejected_next').repl
 const kmWarn = (r) => (r.km_rejected && r.km_rejected.next_km !== undefined ? ' · ' + t('km_not_taken_next').replace('{km}', r.km_rejected.km).replace('{next}', r.km_rejected.next_km) : r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', r.km_rejected.km).replace('{prev}', r.km_rejected.previous_km) : r.km_test_only ? ' · ' + t('km_test_only') : '');
 function bindChecklist(form) {
   $$('.checkitem', form).forEach((row) => {
-    $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
+    $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); if (!$('.checkitem.missing', form)) document.querySelectorAll('.toast.err').forEach((x) => x.remove()); /* Meldung „Noch n Prüfpunkte …“ mit veralteter Zahl lag über „Speichern“ (19.10.2026) */ const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
   });
   // Unbeantwortete Punkte in der App-Sprache melden (statt Browser-Hinweis am unsichtbaren Radio in der Gerätesprache)
   let shown = false;
@@ -2046,7 +2050,7 @@ async function viewStock() {
     <div class="noprint"><input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
     <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select></div>
     <p class="small muted" id="sfsum" hidden></p>
-    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-id="${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
+    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
   const byId = new Map(items.map((i) => [i.id, i]));
   const applyStock = () => {
@@ -3147,7 +3151,7 @@ async function viewPlan(sec) {
   const subs = (...xs) => { const x = xs.filter(Boolean); return x.length ? `<span class="sub" style="white-space:normal">${x.join(' · ')}</span>` : ''; };
   const row = (i) => i.type === 'case'
     ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${woTag(i)}${esc(cDesc(i.description))}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(mgr && !site && esc(wsName(i.workshop_site)), partsEta(i, '', true), i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, other(i))}</a>`
-    : `<a class="row" href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(mk(i.kind))}</span><span class="chip">${i.next_due_date ? esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span>${subs(i.order && `🔧 ${esc(t('mo_open'))} ${esc(i.order.case_no)}`, kmTxt(i), other(i))}</a>`;
+    : `<a class="row" href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(mk(i.kind))}</span>${i.next_due_date ? `<span class="chip">${esc(t('next_due'))} ${fmtD(i.next_due_date)}</span>` : ''}${subs(i.order && `🔧 ${esc(t('mo_open'))} ${esc(i.order.case_no)}`, kmTxt(i), other(i))}</a>`;
   // km-Fälligkeit als Text (Rest bzw. überschritten); ohne km-Regel leer
   function kmTxt(i) {
     if (i.next_due_km === null || i.next_due_km === undefined) return '';
@@ -3357,7 +3361,7 @@ async function viewSearch() {
       box.innerHTML = `<h2>${esc(t('nav_vehicles'))} <span class="chip">${vAll.length}</span></h2>${more(vs.length, vAll.length)}${vs.length ? `<div class="list">${vs.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.site || '')}</span><span class="chip">${esc(t('av_' + v.availability))}</span><span class="sub">${esc(v.vin || '')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
         <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}${cr.truncated ? '+' : ''}</span></h2>${cr.truncated ? `<p class="small muted" data-more>${esc(t('search_more_cases').replace('{n}', cs.length))} <a href="#/cases" id="gcases">${esc(t('search_all_cases'))}</a></p>` : ''}${caseList(cs, '–')}`
         + (fs.length ? `<h2>${esc(t('fines'))} <span class="chip">${fAll.length}</span></h2>${more(fs.length, fAll.length)}<div class="list" id="gfines">${fs.map((f) => `<a class="row" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))}</span><span class="chip">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)}${f.reference ? ' · ' + esc(f.reference) : ''}${f.authority ? ' · ' + esc(f.authority) : ''}</span></a>`).join('')}</div>` : '')
-        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${sAll.length}</span></h2>${more(ss.length, sAll.length)}<div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(i.site)}</span><span class="title">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '')
+        + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${sAll.length}</span></h2>${more(ss.length, sAll.length)}<div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(wsName(i.site))}</span><span class="title">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '')
         + (hs.length ? `<h2>${esc(t('help'))} <span class="chip">${hs.length}</span></h2><div class="list" id="ghelp">${hs.map((h) => `<a class="row" href="#/help?s=${h.name}&q=${encodeURIComponent(q)}"><span>?</span><span class="title">${esc(t(`help_${h.name}_t`))}</span><span></span></a>`).join('')}</div>` : '');
       const gc = $('#gcases'); if (gc) gc.onclick = () => { S.caseQ = q; try { sessionStorage.setItem('cfp_cf', 'all'); } catch {} };
     } catch (err) { if (my === seq) box.innerHTML = `<div class="panel alert">${esc(err.message)}</div>`; }

@@ -13529,6 +13529,49 @@ await test('Fehlersuche 19.10. (48): Lager – gleichzeitig wiederverwendeter re
   eq((await F.put(`/api/stock/${A}/order`, { qty: '90', eta: day(1) })).status, 200, 'Liefertermin in einem Jahr möglich');
 });
 
+await test('Fehlersuche 19.10. (49): Meldung an gleichzeitig außer Betrieb genommenes Fahrzeug nennt „außer Betrieb“ statt „unbekannt“, kein Vorgang angelegt', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const orig = e.DB.batch.bind(e.DB); let fired = false;
+  e.DB.batch = async (st) => {
+    if (!fired && st.some((x) => /INSERT INTO cases/.test(x.sql || x.query || x._sql || ''))) { fired = true; await e.DB.prepare('UPDATE vehicles SET active=0 WHERE id=?').bind(V1).run(); }
+    return orig(st);
+  };
+  const r = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); e.DB.batch = orig;
+  ok(fired, 'Wettlauf nachgestellt'); eq(r.status, 400); eq(r.data.message, 'Fahrzeug ist außer Betrieb.');
+  eq((await e.DB.prepare('SELECT COUNT(*) AS n FROM cases WHERE vehicle_id=?').bind(V1).first()).n, 0, 'kein Vorgang');
+  eq((await U.fleet.post('/api/cases', { vehicle_id: 'VIN:GIBTESNICHT', description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.message, 'Fahrzeug unbekannt.');
+});
+
+await test('Fehlersuche 19.10. (50): Vertrag nach Tachotausch nachgetragen/importiert (Beginn vor dem Tausch) bleibt „km nicht berechenbar“, Kontingent-Änderung klärt keinen Tausch, Bestätigung rechnet wieder', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const veh = async (vin, plate) => { eq((await F.post('/api/vehicles', { vin, plate, site: 'Dortmund' })).status, 201); return '/api/vehicles/VIN:' + vin; };
+  const swap = async (vp) => { for (const b of [{ km: 290000, measured_on: day(-61) }, { km: 150000, measured_on: day(-60), note: 'Tachotausch laut Rechnung' }, { km: 160000 }]) eq((await F.post(`${vp}/odometer`, b)).status, 201); };
+  const km = async (vp, id) => (await F.get(vp)).data.contracts.find((x) => !id || x.id === id);
+  // Neuanlage nach dem Tausch, Beginn davor
+  const vp = await veh('WDB96340310555571', 'DO-KT 1'); await swap(vp);
+  const c = await F.post(`${vp}/contracts`, { kind: 'leasing', partner: 'L', start_date: day(-200), end_date: day(900), km_allowance: 150000, start_km: 100000, evidence: 'Vertrag' }); eq(c.status, 201);
+  let k = await km(vp, c.data.id); eq(k.status.km.status, 'zaehler', 'Neuanlage: nicht berechenbar');
+  // nur Kontingent geändert → bleibt
+  eq((await F.patch(`/api/contracts/${c.data.id}`, { km_allowance: 180000, expected_updated_at: k.updated_at })).status, 200);
+  k = await km(vp, c.data.id); eq(k.status.km.status, 'zaehler', 'Kontingent klärt keinen Tausch');
+  // Beginn geändert, weiter vor dem Tausch → bleibt; bestätigt → rechnet
+  eq((await F.patch(`/api/contracts/${c.data.id}`, { start_date: day(-190), expected_updated_at: k.updated_at })).status, 200);
+  k = await km(vp, c.data.id); eq(k.status.km.status, 'zaehler', 'Beginn vor Tausch');
+  eq((await F.patch(`/api/contracts/${c.data.id}`, { start_km: 150000, confirm_km_basis: true, expected_updated_at: k.updated_at })).status, 200);
+  k = await km(vp, c.data.id); eq(k.status.km.status, 'ok', 'bestätigt'); eq(k.status.km.driven, 10000);
+  // Beginn nach dem Tausch: wird sofort gerechnet
+  const vp2 = await veh('WDB96340310555572', 'DO-KT 2'); await swap(vp2);
+  const c2 = await F.post(`${vp2}/contracts`, { kind: 'miete', partner: 'M', start_date: day(-30), end_date: day(900), km_allowance: 150000, start_km: 152000, evidence: 'Vertrag' }); eq(c2.status, 201);
+  const k2 = (await km(vp2, c2.data.id)).status.km; ok(k2.status !== 'zaehler', 'Beginn nach Tausch wird gerechnet'); eq(k2.driven, 8000);
+  // Import nach dem Tausch, Beginn davor
+  const vp3 = await veh('WDB96340310555575', 'DO-KT 5'); await swap(vp3);
+  const csv = `FIN;Vertragsart;Vertragspartner;Beginn;Ende;km-Kontingent;km bei Übernahme;Nachweis\nWDB96340310555575;Leasing;IMP;${day(-200)};${day(900)};150000;100000;Vertrag`;
+  const im = await F.req('POST', '/api/contracts/import', csv, { 'content-type': 'text/csv' }); eq(im.status, 200); eq(im.data.counts.neu, 1);
+  eq((await km(vp3)).status.km.status, 'zaehler', 'Import: nicht berechenbar');
+  void e;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

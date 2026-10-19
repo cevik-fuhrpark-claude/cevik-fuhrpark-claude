@@ -779,7 +779,11 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   } catch (e) {
     if (String(e && e.message).includes('CHECK')) {
       const act = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first()).n;
-      if (act < new Set(specs.map((x) => x.vehicleId)).size) throw bad('validation', 'Fahrzeug unbekannt.');
+      if (act < new Set(specs.map((x) => x.vehicleId)).size) {
+        // gleichzeitig außer Betrieb genommen: dieselbe Meldung wie in der Vorprüfung (19.10.2026)
+        const off = await env.DB.prepare('SELECT 1 FROM vehicles WHERE active=0 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first();
+        throw bad('validation', off ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.');
+      }
     }
     if (oneOpen && String(e && e.message).includes('CHECK')) {
       const o = await env.DB.prepare(`SELECT id, case_no ${openSql} ORDER BY created_at LIMIT 1`).bind(envName, oneOpen[1]).first();
