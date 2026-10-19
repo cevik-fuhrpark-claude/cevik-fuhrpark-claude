@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-TXT={'de':'Frist, Betrag, Aktenzeichen ändern','uk':'Змінити строк, суму, номер справи','en':'Change deadline, amount, reference'}
+TXT={'de':'Angaben laut Schreiben ändern','uk':'Змінити дані згідно з листом','en':'Change details per letter'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

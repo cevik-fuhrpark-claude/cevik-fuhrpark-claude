@@ -13684,6 +13684,31 @@ await test('Fehlersuche 19.10. (51): Bußgeld – Wiederholung meldet „mehrdeu
   void e;
 });
 
+await test('Bußgeld 19.10. (Backlog 91): Kennzeichen/Behörde nachträglich korrigierbar – neue Zuordnung, mehrdeutig gemeldet, nur vor Fahrerermittlung, Dublettenprüfung mit neuer Behörde, Verlauf alt → neu', async () => {
+  const { U } = await freshWorld(); const F = U.fleet;
+  const at = new Date(Date.now() - 864e5).toISOString();
+  const a = await F.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt A', reference: 'AZ-91', offense_type: 'geschwindigkeit', offense_at: at, plate_in_letter: 'SZ-YC 5531' }); eq(a.status, 201); eq(a.data.vehicle_matched, false);
+  const id = a.data.id; const cur = async () => (await F.get(`/api/fines/${id}`)).data;
+  const up = async (payload) => F.post(`/api/fines/${id}/commands`, { action: 'update', expected_version: (await cur()).fine.version, payload });
+  let r = await up({ plate_in_letter: 'sz-yc 5513' }); eq(r.status, 200); eq(r.data.vehicle_matched, true);
+  let d = await cur(); eq(d.fine.plate_in_letter, 'SZ-YC 5513'); ok(d.fine.vehicle_id, 'zugeordnet'); ok(d.candidates.length >= 0);
+  const ev = d.events.filter((x) => x.action === 'update').pop(); const pl = JSON.parse(ev.payload); eq(pl.plate_in_letter, 'SZ-YC 5513');
+  // mehrdeutig
+  for (const vin of ['WDB96340310555621', 'WDB96340310555622']) eq((await F.post('/api/vehicles', { vin, plate: 'DO-MD 9', site: 'Dortmund' })).status, 201);
+  r = await up({ plate_in_letter: 'DO-MD 9' }); eq(r.status, 200); eq(r.data.vehicle_matched, false); eq(r.data.vehicle_ambiguous, true); eq((await cur()).fine.vehicle_id, null);
+  eq((await up({ plate_in_letter: '' })).status, 400, 'Kennzeichen Pflicht'); eq((await up({ authority: '' })).status, 400, 'Behörde Pflicht');
+  // Dublette über geänderte Behörde
+  eq((await F.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt B', reference: 'AZ-91', offense_type: 'geschwindigkeit', offense_at: at, plate_in_letter: 'SZ-YC 5513' })).status, 201);
+  r = await up({ authority: 'Stadt B' }); eq(r.status, 409); eq(r.data.error, 'duplicate_fine');
+  eq((await up({ authority: 'Stadt C' })).status, 200); eq((await cur()).fine.authority, 'Stadt C');
+  // nach Fahrerermittlung: Kennzeichen gesperrt, Behörde weiter änderbar
+  eq((await up({ plate_in_letter: 'SZ-YC 5513' })).status, 200);
+  eq((await F.post(`/api/fines/${id}/commands`, { action: 'confirm_driver', expected_version: (await cur()).fine.version, payload: { basis: 'manuell', evidence: 'Tourenplan', driver_name_note: 'Fremdfahrer' } })).status, 200);
+  r = await up({ plate_in_letter: 'SZ-KC 5515' }); eq(r.status, 409); eq(r.data.error, 'driver_confirmed');
+  eq((await up({ plate_in_letter: 'SZ-YC 5513', authority: 'Stadt D' })).status, 200, 'gleiches Kennzeichen + Behörde geht');
+  ok([403, 404].includes((await U.ws.post(`/api/fines/${id}/commands`, { action: 'update', payload: { plate_in_letter: 'X' } })).status), 'Werkstatt nicht');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

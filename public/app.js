@@ -2325,8 +2325,11 @@ function fineEvDetail(e) {
   if (!p || typeof p !== 'object') return '';
   if (e.action === 'set_status' && p.to) return ' → ' + esc(t('fs_' + p.to));
   if (e.action !== 'update') return '';
-  const lab = { amount_eur: (v) => `${t('amount')}: ${v === null ? '–' : eur(v)}`, response_due: (v) => `${t('response_due')}: ${v ? fmtD(v) : '–'}`, reference: (v) => `${t('reference')}: ${v || '–'}` };
-  const parts = Object.keys(lab).filter((k) => k in p).map((k) => lab[k](p[k]));
+  const fv = { amount_eur: (v) => (v === null || v === undefined ? '–' : eur(v)), response_due: (v) => (v ? fmtD(v) : '–') };
+  const val = (k, v) => (fv[k] ? fv[k](v) : v || '–');
+  const name = { amount_eur: 'amount', response_due: 'response_due', reference: 'reference', authority: 'authority', plate_in_letter: 'plate_letter' };
+  // seit 19.10.2026 mit bisherigem Wert (prev): „alt → neu“; ältere Einträge nur der neue Wert
+  const parts = Object.keys(name).filter((k) => k in p).map((k) => `${t(name[k])}: ${p.prev && k in p.prev ? val(k, p.prev[k]) + ' → ' : ''}${val(k, p[k])}${k === 'plate_in_letter' && p.vehicle_id === null ? ' (' + t(p.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown') + ')' : ''}`);
   return parts.length ? ' · ' + esc(parts.join(' · ')) : '';
 }
 const FINE_EV = { create: 'new_fine', confirm_driver: 'confirm_driver', inform_driver: 'inform_driver', set_status: 'set_status', driver_ack: 'ack_fine', update: 'fine_updated', upload: 'upload' };
@@ -2356,7 +2359,7 @@ async function viewFine(id) {
   if (A.includes('driver_ack')) acts.push(`<button class="btn" id="ack">${esc(t('ack_fine'))}</button>`);
   if (acts.length) html += `<div class="actions">${acts.join('')}</div>`;
   // Frist/Betrag/Aktenzeichen laut neuem Schreiben ändern (Server konnte es, die App bot es nicht an – 18.10.2026; z. B. Fristverlängerung)
-  if (A.includes('update')) html += `<details class="panel noprint"><summary>${esc(t('fine_edit'))}</summary><form id="uf"><label>${esc(t('response_due'))}</label><input type="date" name="response_due" value="${esc(f.response_due || '')}"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal" value="${f.amount_eur === null || f.amount_eur === undefined ? '' : esc(decIn(f.amount_eur))}"><label>${esc(t('reference'))}</label><input name="reference" maxlength="80" value="${esc(f.reference || '')}"><p class="small muted">${esc(t('fine_edit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
+  if (A.includes('update')) html += `<details class="panel noprint"><summary>${esc(t('fine_edit'))}</summary><form id="uf"><label>${esc(t('response_due'))}</label><input type="date" name="response_due" value="${esc(f.response_due || '')}"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal" value="${f.amount_eur === null || f.amount_eur === undefined ? '' : esc(decIn(f.amount_eur))}"><label>${esc(t('reference'))}</label><input name="reference" maxlength="80" value="${esc(f.reference || '')}"><label>${esc(t('authority'))}</label><input name="authority" required maxlength="200" value="${esc(f.authority || '')}"><label>${esc(t('plate_letter'))}</label><input name="plate_in_letter" required maxlength="20" value="${esc(f.plate_in_letter || '')}"${f.driver_confirmed_at ? ` disabled aria-describedby="ufplh"><p class="small muted" id="ufplh">${esc(t('fine_plate_locked'))}</p>` : '>'}<p class="small muted">${esc(t('fine_edit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (A.includes('set_status')) html += `<details class="panel"><summary>${esc(t('set_status'))}</summary><form id="sf"><label>${esc(t('status'))}</label><select name="status">${['beantwortet', 'bezahlt', 'eingestellt', 'erledigt', 'eingegangen'].map((x) => `<option value="${x}">${esc(t('fs_' + x))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note" required><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (d.events) html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(FINE_EV[e.action] ? t(FINE_EV[e.action]) : e.action)}</b>${fineEvDetail(e)}${e.actor_name ? ' · ' + esc(e.actor_name) : ''}${e.note ? `<div>${esc(e.note)}</div>` : ''}</li>`).join('')}</ol>`;
   render(html, 'more');
@@ -2379,7 +2382,12 @@ async function viewFine(id) {
   const inf = $('#inf'); if (inf) inf.onclick = () => cmd('inform_driver');
   const ack = $('#ack'); if (ack) ack.onclick = () => cmd('driver_ack');
   const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); return cmd('set_status', { status: sf.status.value }, sf.note.value); };
-  const uf = $('#uf'); if (uf) uf.onsubmit = (e) => { e.preventDefault(); return cmd('update', { response_due: uf.response_due.value || null, amount_eur: uf.amount_eur.value.trim() || null, reference: uf.reference.value.trim() || null }); };
+  // Behörde/Kennzeichen korrigierbar (19.10.2026); Kennzeichen nur senden, wenn geändert – Antwort meldet die neue Zuordnung
+  const uf = $('#uf'); if (uf) uf.onsubmit = async (e) => { e.preventDefault();
+    const b = { response_due: uf.response_due.value || null, amount_eur: uf.amount_eur.value.trim() || null, reference: uf.reference.value.trim() || null, authority: uf.authority.value.trim() };
+    if (!uf.plate_in_letter.disabled && uf.plate_in_letter.value.trim().toUpperCase() !== String(f.plate_in_letter || '')) b.plate_in_letter = uf.plate_in_letter.value.trim();
+    try { const r = await api('POST', `/api/fines/${id}/commands`, { action: 'update', payload: b, expected_version: f.version });
+      if (r.vehicle_matched === false) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); else toast('✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
   const ff = $('#ff'); if (ff) ff.onchange = async () => { const file = ff.files[0]; if (!file) return; try { const blob = await prepareUpload(file); await api('POST', `/api/fines/${id}/files`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); viewFine(id); } catch (err) { toast(err.message, true); } };
 }
 
