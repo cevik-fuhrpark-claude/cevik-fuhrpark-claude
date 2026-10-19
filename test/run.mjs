@@ -13215,7 +13215,8 @@ await test('Fehlersuche 19.10. (35): lange Suchtexte ohne D1-Mustergrenze (Proto
   ok([a.status, b.status].includes(409), 'einer abgewiesen: ' + a.status + '/' + b.status);
   ok(e.DB.db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n >= 1, 'mindestens ein aktiver Inhaber');
   // km-Nachtrag mit Begründung: Werte für die Anzeige je Sprache
-  eq((await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/odometer', { km: 100000 })).status, 201);
+  { const y = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10); // Vortag: kein Zusammenfallen mit der zweiten Ablesung
+    const k0 = await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/odometer', { km: 100000, measured_on: y }); eq(k0.status, 201, JSON.stringify(k0.data)); }
   const kw = await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/odometer', { km: 90000, note: 'Tachotausch' });
   eq(kw.status, 201); ok(kw.data.warning); eq(kw.data.warning_items.length, 1); eq(kw.data.warning_items[0].dir, 'below'); eq(kw.data.warning_items[0].km, 100000);
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_warn_saved && STRINGS[l].km_warn_below.includes('{km}'), l);
@@ -13251,6 +13252,20 @@ await test('Fehlersuche 19.10. (36): CSV-Importe mit zerlegten Umlauten (NFD, Ma
   let amb = null; try { num('1.500'); } catch (x) { amb = x; } ok(amb, '„1.500“ mehrdeutig');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!/String\([a-z_.]+\)\.replace\('\.', ','\)\)?}"/.test(app) && /esc\(decIn\(f\.amount_eur\)\)/.test(app), 'Vorbelegung je Sprache (decIn)');
+});
+
+await test('Fehlersuche 19.10. (37): Winterreifen „Auftrag abgeschlossen, Lage offen“ in Berliner Kalendertagen', async () => {
+  const { e, V1 } = await freshWorld(); const { winterOrders } = await import('../src/tires.js'); const { berlinDayStartIso } = await import('../src/util.js');
+  const vid = e.DB.db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const d = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+  const at = new Date(Date.parse(berlinDayStartIso(d(59))) - 3600000).toISOString(); // 23:00 Berlin am Tag heute−60
+  const uid = e.DB.db.prepare('SELECT id FROM users LIMIT 1').get().id;
+  e.DB.db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,safety_lock,status,origin,request_key,content_hash,version,created_at,updated_at,closed_at,tire_order)
+    VALUES ('wc','W-1','test',?,?,'x','niedrig','niedrig','fahrbereit',0,'fahrzeug_freigegeben','wartung','rk','h',1,?,?,?,'winter')`).run(vid, uid, at, at, at);
+  eq((await winterOrders(e, 'test', vid)).closedIfOpen(vid, 'unbekannt'), null, 'Freigabe vor 61 Kalendertagen: kein Hinweis');
+  e.DB.db.prepare('UPDATE cases SET closed_at=? WHERE id=?').run(berlinDayStartIso(d(59)), 'wc');
+  ok((await winterOrders(e, 'test', vid)).closedIfOpen(vid, 'unbekannt'), 'erster Fenstertag zählt');
+  ok(V1);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

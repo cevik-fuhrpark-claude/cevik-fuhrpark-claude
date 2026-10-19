@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam, berlinWindowStartIso } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -76,9 +76,9 @@ export function winterStatus(kind, { marks, seen }) {
 // nur aussagekräftig, solange die Winterlage danach nicht erfüllt ist und kein neuer Auftrag offen ist („Auftrag abgeschlossen, Lage offen“).
 export const WINTER_CLOSED_DAYS = 60;
 export async function winterOrders(env, envName, vehicleId = null) {
-  const since = new Date(Date.now() - WINTER_CLOSED_DAYS * 86400000).toISOString();
+  const since = berlinWindowStartIso(WINTER_CLOSED_DAYS); // 60 Berliner Kalendertage einschließlich heute (19.10.2026; vorher 24-h-Blöcke)
   const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no, status, closed_at FROM cases WHERE environment=? AND tire_order='winter'
-    AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at > ?))${vehicleId ? ' AND vehicle_id=?' : ''} ORDER BY closed_at DESC`)
+    AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at >= ?))${vehicleId ? ' AND vehicle_id=?' : ''} ORDER BY closed_at DESC`)
     .bind(...(vehicleId ? [envName, since, vehicleId] : [envName, since])).all()).results;
   const open = new Map(); const closed = new Map();
   for (const x of r) {
