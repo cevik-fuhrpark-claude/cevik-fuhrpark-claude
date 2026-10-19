@@ -94,7 +94,17 @@ export async function winterOrders(env, envName, vehicleId = null) {
     else if (!closed.has(x.vehicle_id)) closed.set(x.vehicle_id, { id: x.id, case_no: x.case_no, closed_at: x.closed_at });
   }
   // Hinweis nur bei offener Lage ohne neuen Auftrag
-  const closedIfOpen = (vid, status) => (['nicht_erfuellt', 'unbekannt'].includes(status) && !open.has(vid) ? closed.get(vid) || null : null);
+  // events/kind (optional; Ereignisse des Fahrzeugs mit created_at, neueste zuerst): war die Winterlage beim Abschluss oder danach schon
+  // einmal erfüllt (z. B. später wieder Sommerreifen montiert), war der Auftrag erledigt – die neue offene Lage gehört nicht mehr zu ihm,
+  // der alte Auftrag wird nicht genannt (19.10.2026; vorher „Auftrag abgeschlossen, Lage offen“ mit dem alten, erfüllten Auftrag)
+  const closedIfOpen = (vid, status, events = null, kind = null) => {
+    const c = ['nicht_erfuellt', 'unbekannt'].includes(status) && !open.has(vid) ? closed.get(vid) || null : null;
+    if (c && events && kind) {
+      const times = [c.closed_at, ...events.filter((e) => e.created_at > c.closed_at).map((e) => e.created_at)];
+      if (times.some((t) => winterStatus(kind, winterMarks(events.filter((e) => e.created_at <= t))).status === 'erfuellt')) return null;
+    }
+    return c;
+  };
   return { open, closedIfOpen };
 }
 const canWrite = (u) => ['owner', 'fleet', 'workshop'].includes(u.role);
@@ -150,7 +160,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: treadStatus(position, x.tread_mm, warn),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status) : null }; })() };
+  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null }; })() };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -355,7 +365,7 @@ export async function fleetTires(env, user, envName, query = {}) {
     // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
     const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));
     const oldestDot = ages.reduce((o, a) => (!o || a.dot_date < o.dot_date ? a : o), null);
-    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wo.open.get(v.id) || null, winter_closed_order: v.kind === 'anhaenger' ? null : wo.closedIfOpen(v.id, w.status),
+    return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wo.open.get(v.id) || null, winter_closed_order: v.kind === 'anhaenger' ? null : wo.closedIfOpen(v.id, w.status, evByV.get(v.id) || [], v.kind),
       dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, spare_below_min: spareBelow, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
@@ -371,11 +381,11 @@ export async function winterFleet(env, user, envName, query = {}) {
   const all = (await env.DB.prepare(`SELECT id, plate, kind, site FROM vehicles WHERE active=1 AND eval_excluded=0 ORDER BY plate`).all()).results;
   const sel = siteSelection(all, query.site);
   const trucks = all.filter((v) => v.kind !== 'anhaenger' && sel.match(v.site));
-  const ev = (await env.DB.prepare('SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? ORDER BY created_at DESC').bind(envName).all()).results;
+  const ev = (await env.DB.prepare('SELECT vehicle_id, position, event_type, winter_mark, created_at FROM tire_events WHERE environment=? ORDER BY created_at DESC').bind(envName).all()).results;
   const wo = await winterOrders(env, envName);
   const byV = new Map();
   for (const e of ev) { if (!byV.has(e.vehicle_id)) byV.set(e.vehicle_id, []); byV.get(e.vehicle_id).push(e); }
-  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing, open_order: wo.open.get(v.id) || null, closed_order: wo.closedIfOpen(v.id, w.status) }; });
+  const rows = trucks.map((v) => { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); return { vehicle_id: v.id, plate: v.plate, site: v.site, status: w.status, noncompliant: w.noncompliant, missing: w.missing, open_order: wo.open.get(v.id) || null, closed_order: wo.closedIfOpen(v.id, w.status, byV.get(v.id) || [], v.kind) }; });
   const count = (s) => rows.filter((r) => r.status === s).length;
   return { site: sel.site, totals: { vehicles: rows.length, nicht_erfuellt: count('nicht_erfuellt'), unbekannt: count('unbekannt'), erfuellt: count('erfuellt') },
     noncompliant: rows.filter((r) => r.status === 'nicht_erfuellt') };

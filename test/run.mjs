@@ -13635,6 +13635,32 @@ await test('Kostenbericht 19.10.: Vertrag mit Beginn nach heute (auch im laufend
   eq(cc.vehicles.find((v) => v.plate === 'DO-RT 2').net, 700, 'Beginn heute: eine Rate'); eq(cc.total_net, 700); eq(cc.without_start, 0);
 });
 
+await test('Winterreifen 19.10.: Auftrag erfüllt abgeschlossen, später wieder Sommerreifen → kein Hinweis „Auftrag abgeschlossen, Lage offen“ mit dem alten Auftrag; ohne Erfüllung bleibt der Hinweis', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet;
+  const close = (id, at) => e.DB.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).bind(at, id).run();
+  const view = async (V) => { const vh = (await F.get(`/api/vehicles/${V}`)).data.vehicle;
+    return { a: (await F.get(`/api/vehicles/${V}/tires`)).data.winter, w: (await F.get('/api/tires/winter')).data.noncompliant.find((x) => x.vehicle_id === vh.id) || null,
+      f: (await F.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === vh.id) }; };
+  const tire = (V, b) => U.ws.post(`/api/vehicles/${V}/tires/events`, b);
+  // A: Winterreifen montiert (erfüllt), Auftrag abgeschlossen, Wochen später Sommerreifen
+  eq((await F.post('/api/vehicles', { vin: 'WDB96340310555601', plate: 'DO-WS 1', site: 'Dortmund' })).status, 201); const A = 'VIN:WDB96340310555601';
+  const o = await F.post(`/api/vehicles/${A}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o.status, 201);
+  eq((await tire(A, { event_type: 'wechsel', position: 'VA-L', positions: ['VA-R', 'HA-L-aussen', 'HA-R-aussen'], size: '315/70 R22.5', winter_mark: '3pmsf' })).status, 201);
+  await close(o.data.id, new Date(Date.now() + 1000).toISOString());
+  let r = await view(A); eq(r.a.status, 'erfuellt'); eq(r.a.closed_order, null);
+  await new Promise((res) => setTimeout(res, 1100));
+  eq((await tire(A, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5', winter_mark: 'keine' })).status, 201);
+  r = await view(A); eq(r.a.status, 'nicht_erfuellt'); eq(r.a.closed_order, null, 'Akte: alter erfüllter Auftrag nicht genannt');
+  ok(r.w && r.w.closed_order === null, 'Winterliste ohne alten Auftrag'); eq(r.f.winter_closed_order, null, 'Reifen-Flotte ohne alten Auftrag');
+  // B: Auftrag abgeschlossen ohne Erfüllung, danach nur Sommerreifen erfasst → Hinweis bleibt (wie bisher)
+  eq((await F.post('/api/vehicles', { vin: 'WDB96340310555602', plate: 'DO-WS 2', site: 'Dortmund' })).status, 201); const B = 'VIN:WDB96340310555602';
+  const o2 = await F.post(`/api/vehicles/${B}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o2.status, 201);
+  await close(o2.data.id, new Date().toISOString());
+  await new Promise((res) => setTimeout(res, 20));
+  eq((await tire(B, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5', winter_mark: 'keine' })).status, 201);
+  r = await view(B); eq(r.a.status, 'nicht_erfuellt'); eq(r.a.closed_order.case_no, o2.data.case_no, 'nie erfüllt → Hinweis bleibt'); eq(r.f.winter_closed_order.case_no, o2.data.case_no);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
