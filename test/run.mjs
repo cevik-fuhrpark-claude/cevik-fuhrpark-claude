@@ -13795,6 +13795,19 @@ await test('Vorgänge 19.10.: Suche „AUSSEN“ findet „Außenspiegel“; Ver
   ok(app.includes(".then(() => refreshUnread(true))"), 'Glocke: Zähler nach Öffnen');
 });
 
+await test('Fahrzeugakte 19.10.: km-Herkunft lesbar, Rückruf-Durchführung übersetzt, Import-Daten im Sprachformat, Import-Hinweise korrekt, Karten-Tabellen ohne Spaltenname in Ganzzeilen', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const src = app.slice(app.indexOf('function odoSrc(s)'), app.indexOf('function evFromTo(e)'));
+  const os = new Function('t', 'mk', src + '; return odoSrc;')((k) => STRINGS.en[k] || k, (k) => 'MK:' + k);
+  eq(os('manuell:fleet'), 'entered manually (' + STRINGS.en.role_fleet + ')'); eq(os('kontrolle'), STRINGS.en.departure_check); eq(os('wartung:HU'), 'MK:HU'); eq(os('webfleet'), 'webfleet');
+  ok(app.includes('esc(odoSrc(x.source))') && app.includes('esc(mEv(m.evidence))') && app.includes('esc(mEv(r.evidence))'), 'Zeitleiste/Prüftermine nutzen die Übersetzung');
+  ok(/const reasonText = \(r\) => \{ const x = translateImportReason\(S\.lang, r\); return typeof x === 'string' \? x\.replace\(/.test(app), 'Import-Gründe mit Datum im Sprachformat');
+  ok(app.includes('!(td.colSpan > 1)'), 'stackTables: Ganzzeilen ohne Spaltenname');
+  ok(!/wieder aktiv/.test(STRINGS.de.imp_keep_hint) && /bleiben außer Betrieb/.test(STRINGS.de.imp_keep_hint), 'Import-Hinweis: außer Betrieb bleibt');
+  ok(app.includes("prompt(t('evx_reason'))") && STRINGS.uk.evx_reason && STRINGS.en.evx_reason, 'Ausnehmen fragt eigenen Grund');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
