@@ -1655,7 +1655,7 @@ function huNote(x, i) {
   const c = (x.note_codes || [])[i];
   if (!c || S.lang === 'de') return x.notes[i];
   const k = 'hn_' + c.code; const s = t(k);
-  return s === k ? x.notes[i] : s.replace(/\{(\w+)\}/g, (m, n) => (n in (c.p || {}) ? String(c.p[n]) : m));
+  return s === k ? x.notes[i] : s.replace(/\{(\w+)\}/g, (m, n) => (n in (c.p || {}) ? isoDay(c.p[n]) : m));
 }
 // Werkstattauftrag „Winterreifen“ (nur Leitung) im Reifenbereich der Fahrzeugakte: offener Auftrag als Link, sonst Formular
 function winterOrderHtml(d) {
@@ -2790,12 +2790,14 @@ const agentStale = (r) => !r || !!r.error || Date.now() - Date.parse(r.finished_
 // Kurzbezeichnung des Befundcodes in der Oberflächensprache (Meldungstext selbst kommt deutsch vom Server)
 // Meldungstext eines Agentenbefunds in der App-Sprache (Vorlagen public/finding-messages.js); HU/SP-Hinweis „Frist ungeklärt“
 // nutzt dieselben Übersetzungen wie die Fahrzeugakte (hn_<code>), sonst bleibt der deutsche Hinweistext.
+// Hinweis-Werte: ISO-Kalendertag (z. B. Datum der HU) im Datumsformat der Sprache, sonst unverändert (19.10.2026)
+const isoDay = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? fmtD(v) : String(v));
 function fMsg(stored, fallback) {
   let o = stored;
   if (typeof o === 'string') { try { o = JSON.parse(o); } catch { return fallback; } }
   if (o && o.k === 'INSPECTION_UNCLEAR' && o.a && o.a.nc && S.lang !== 'de') {
     const k = 'hn_' + o.a.nc.code; const s = t(k);
-    if (s !== k) o = { ...o, a: { ...o.a, note: s.replace(/\{(\w+)\}/g, (m, n) => (n in (o.a.nc.p || {}) ? String(o.a.nc.p[n]) : m)) } };
+    if (s !== k) o = { ...o, a: { ...o.a, note: s.replace(/\{(\w+)\}/g, (m, n) => (n in (o.a.nc.p || {}) ? isoDay(o.a.nc.p[n]) : m)) } };
   }
   return findingMessage(o, fallback, S.lang);
 }

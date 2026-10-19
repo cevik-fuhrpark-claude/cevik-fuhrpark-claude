@@ -483,7 +483,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       next = iv ? addMonths(p.last, iv) : p.husp ? null : (cur.next_due_date && cur.next_due_date > p.last ? cur.next_due_date : null);
       // HU/SP: ältere Rechnung als die belegte Plakette – Termin laut Nachweis bleibt, die Durchführung kommt nur in den Verlauf
       // (wurde sonst durch die Rechnung als „berechnet“ ersetzt und überfällig, 18.10.2026)
-      if (p.husp && cur.due_source === 'nachweis' && cur.next_due_date && dueMonthEnd(p.last, p.kind === 'HU' ? 12 : 6) < cur.next_due_date) {
+      if (p.husp && cur.due_source === 'nachweis' && cur.next_due_date && dueMonthEnd(p.last, p.kind === 'HU' ? 12 : 6).slice(0, 7) <= cur.next_due_date.slice(0, 7)) { // gleicher Monat: Rechnung bestätigt die Plakette, Nachweis bleibt (19.10.2026)
         next = cur.next_due_date; keepDoc = true;
       }
       // dieselbe Durchführung wie gespeichert: deren Termin bleibt (ein späterer Termin laut Nachweis wurde sonst durch „letzte + Intervall“ ersetzt, 17.10.2026)

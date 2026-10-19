@@ -13129,6 +13129,48 @@ await test('Fehlersuche 19.10. (33): Protokoll-Blättern ohne Verlust bei gleich
   x = await exp(); eq(x.audit_as_actor.length, 5000); ok(x.meta.truncated.includes('audit_as_actor'), '5001 = gekappt');
 });
 
+await test('Fehlersuche 19.10. (34): HU/SP – offene erste SP auch bei HU ab Vormonat bzw. nur einer belegten HU, Nachweis gegen erste SP-Frist = ungeklärt, Import-Rechnung bestätigt Plakette, keine falsche Klassen-Notiz', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const V = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2024-01-10' }; // erste SP 07/2026
+  const c = (ev, today, extra = {}) => computeHuSp(V, ev, { today, warnDays: 30, ...extra });
+  // 1. HU im Vormonat/Monat der ersten SP erledigt sie nicht
+  let r = c([{ kind: 'HU', done_date: '2025-11-10' }, { kind: 'HU', done_date: '2026-07-20' }], '2026-07-21');
+  eq(r.sp.prev_cycle_open, '2026-07-31'); eq(r.sp.status, 'ungeklaert');
+  r = c([{ kind: 'HU', done_date: '2025-11-10' }, { kind: 'HU', done_date: '2026-07-20' }, { kind: 'SP', done_date: '2026-07-20' }], '2026-07-21');
+  ok(!r.sp.prev_cycle_open, 'SP am HU-Tag belegt → erledigt');
+  // 2. nur eine HU belegt, nach der ersten SP-Frist
+  r = c([{ kind: 'HU', done_date: '2026-08-03' }], '2026-08-04');
+  eq(r.sp.prev_cycle_open, '2026-07-31'); eq(r.sp.status, 'ungeklaert');
+  // alte erste SP-Frist (Jahre vor der einzigen belegten HU) wird nicht gemeldet – Belege fehlen nur
+  r = computeHuSp({ ...V, first_registration: '2015-01-10' }, [{ kind: 'HU', done_date: '2026-08-03' }], { today: '2026-08-04', warnDays: 30 });
+  ok(!r.sp.prev_cycle_open, 'keine Meldung zu einer Jahre alten ersten SP'); eq(r.sp.due, '2027-02-28');
+  // 3. Nachweis widerspricht der ersten SP-Frist → ungeklärt, Nachweis bleibt Fälligkeit
+  r = c([{ kind: 'HU', done_date: '2025-11-10' }], '2026-10-19', { documented: { SP: { due: '2026-12-31' } } });
+  eq(r.sp.status, 'ungeklaert'); eq(r.sp.due, '2026-12-31'); eq(r.sp.due_basis, 'nachweis'); ok(r.sp.note_codes.some((x) => x.code === 'sp_first_conflict'));
+  r = c([{ kind: 'HU', done_date: '2025-11-10' }], '2026-06-19', { documented: { SP: { due: '2026-07-31' } } });
+  eq(r.sp.due, '2026-07-31'); eq(r.sp.due_basis, 'nachweis'); ok(r.sp.status !== 'ungeklaert', 'passender Nachweis gilt');
+  // 4. erste SP künftig + abweichender Nachweis → nicht übergangen
+  r = computeHuSp({ kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2025-01-10' }, [{ kind: 'HU', done_date: '2026-05-10' }], { today: '2026-10-19', warnDays: 30, documented: { SP: { due: '2026-11-30' } } });
+  eq(r.sp.status, 'ungeklaert'); eq(r.sp.due, '2026-11-30');
+  r = computeHuSp({ kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2025-01-10' }, [{ kind: 'HU', done_date: '2026-05-10' }], { today: '2026-10-19', warnDays: 30 });
+  eq(r.sp.status, 'erste_sp_kuenftig', 'ohne Nachweis wie bisher');
+  // Erstzulassung fehlt, keine SP, Nachweis passt nicht → Nachweis sichtbar, ungeklärt
+  r = computeHuSp({ kind: 'lkw', zgm_class: 'ueber_12', first_registration: null }, [{ kind: 'HU', done_date: '2026-05-10' }], { today: '2026-10-19', warnDays: 30, documented: { SP: { due: '2027-03-31' } } });
+  eq(r.sp.status, 'ungeklaert'); eq(r.sp.due, '2027-03-31'); eq(r.sp.due_basis, 'nachweis');
+  // 6. Lkw bis 3,5 t: keine Notiz „Klasse fehlt“
+  r = computeHuSp({ kind: 'lkw', zgm_class: 'bis_3_5' }, [{ kind: 'HU', done_date: '2026-05-10' }], { today: '2026-10-19', warnDays: 30 });
+  ok(!r.hu.note_codes.some((x) => x.code === 'hu_no_class'), 'Klasse bekannt'); ok(r.hu.note_codes.some((x) => x.code === 'hu_small_lkw'));
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].hn_sp_first_conflict, l);
+  // 5. Import: Rechnung im Monat der Plakette bestätigt sie, Nachweis bleibt
+  const { e, U } = await freshWorld();
+  e.DB.db.prepare(`UPDATE vehicles SET zgm_class='ueber_12'`).run();
+  const imp = (t) => U.own.req('POST', '/api/maintenance/import', t, { 'content-type': 'text/csv' });
+  eq((await imp('Kennzeichen;Art;Nächster Termin;Nachweis\nSZ-YC 5513;HU;03/2027;Plakette')).status, 200);
+  eq((await imp('Kennzeichen;Art;Letzte Prüfung;Nachweis\nSZ-YC 5513;HU;2026-03-15;Rechnung 4711')).status, 200);
+  const rule = e.DB.db.prepare(`SELECT m.* FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.plate='SZ-YC 5513' AND m.kind='HU'`).get();
+  eq(rule.due_source, 'nachweis'); ok(String(rule.evidence).includes('Plakette'), 'Plaketten-Nachweis bleibt: ' + rule.evidence); eq(rule.next_due_date, '2027-03-31');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
