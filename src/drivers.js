@@ -77,7 +77,8 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   else if (lastCheck && checkMonths) {
     check.due = addMonthsIso(lastCheck.checked_on, checkMonths);
     const left = days(today, check.due);
-    check.status = left < 0 ? 'faellig' : left <= warnDays ? 'bald' : 'ok';
+    // Vorwarnung höchstens Kontrollabstand − 1 Tag (wie Auslesungen, tachoStatus): sonst stand die Akte bei Vorwarnung ≥ Abstand schon am Kontrolltag auf „bald fällig“ (19.10.2026)
+    check.status = left < 0 ? 'faellig' : left <= Math.min(warnDays, days(lastCheck.checked_on, check.due) - 1) ? 'bald' : 'ok';
   }
   const hasLicense = docs.some((x) => !x.superseded && x.kind === 'fuehrerschein');
   const worst = items.some((i) => i.status === 'abgelaufen') || check.status === 'mangel' ? 'kritisch'
@@ -127,7 +128,9 @@ export async function driverDetail(env, user, envName, id) {
   const valid = downloads.find((x) => !x.cancelled_at);
   const tacho = hasCard || valid ? { ...tachoStatus(valid ? valid.downloaded_on : null, TACHO_RULE.card_days, berlinDate(), warnDaysOf(sm)), rule: TACHO_RULE } : null;
   const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)`).bind(d.user_id, nowIso()).all()).results : [];
-  return { driver: d, documents: docs, license_checks: checks, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: downloads, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
+  // Fahrer selbst: Kontrollverlauf ohne Vermerk/Prüfende der Leitung (wie der interne Vermerk der Akte; App zeigt ihn nur der Leitung, 19.10.2026)
+  const checksOut = isMgr(user) ? checks : checks.map(({ note, checked_by, checked_by_name, ...r }) => r);
+  return { driver: d, documents: docs, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: downloads, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
 }
 
 export async function createDriver(env, user, envName, body) {
@@ -288,13 +291,21 @@ export async function driverFindings(env, environment, settings = null) {
 export function driversCsv(list, tachoByDriver, cell) {
   const DOV = { ok: 'in Ordnung', hinweis: 'Hinweis', kritisch: 'kritisch' };
   const DCK = { ok: 'aktuell', faellig: 'fällig', bald: 'bald fällig', fehlt: 'keine erfasst', mangel: 'Mangel' };
-  const TST = { ueberfaellig: 'überfällig', bald: 'bald fällig', ok: 'in Ordnung', keine: 'keine Auslesung erfasst' };
+  const TST = { ueberfaellig: 'überfällig', bald: 'bald fällig', ok: 'in Ordnung', keine: 'keine erfasst' };
+  const DL = { fuehrerschein: 'Führerschein', fahrerkarte: 'Fahrerkarte', code95: 'Code 95', unterweisung: 'Unterweisung', sonstiges: 'Nachweis' };
+  // Status mit allen Gründen (19.10.2026: „Hinweis“ ohne Grund, z. B. kein Führerschein erfasst oder Nachweis läuft ab)
+  const reasons = (d, tc) => [
+    ...d.status.items.filter((i) => i.status === 'abgelaufen' || i.status === 'laeuft_ab').map((i) => `${DL[i.kind] || 'Nachweis'}${i.topic ? ' ' + (i.title || i.topic) : ''} ${i.status === 'abgelaufen' ? 'abgelaufen' : 'läuft ab'}`),
+    ...(d.status.has_license ? [] : ['kein Führerschein erfasst']),
+    ...(d.status.check.status !== 'ok' ? ['Kontrolle ' + DCK[d.status.check.status]] : []),
+    ...(tc && tc.status !== 'ok' ? ['Auslesung: ' + TST[tc.status]] : []),
+  ];
   const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status'];
   for (const d of list) {
     const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';
     const tc = tachoByDriver.get(d.id);
     lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
-      d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', `${DOV[d.status.overall]}${d.status.check.status !== 'ok' ? ' · Kontrolle ' + DCK[d.status.check.status] : ''}${tc && tc.status !== 'ok' ? ' · Auslesung ' + TST[tc.status] : ''}`].join(';'));
+      d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', cell([DOV[d.status.overall], ...reasons(d, tc)].join(' · '))].join(';'));
   }
   return lines.join('\r\n') + '\r\n';
 }

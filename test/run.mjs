@@ -14033,6 +14033,35 @@ await test('Fehlersuche 19.10. (Telematik/Dokumente/Auskunft): Nachlieferung neu
   ok(/datenauskunft_fahrer_P_77_1_\d{4}-\d{2}-\d{2}\.json/.test(res.headers.get('content-disposition') || ''), res.headers.get('content-disposition'));
 });
 
+await test('Fehlersuche 19.10. (Fahrerakte/Kosten): Vorwarnung Führerscheinkontrolle höchstens Abstand − 1, CSV-Status mit Gründen, Fahrer ohne Kontrollvermerk, Arbeitszeit über Monatsgrenze: Bericht = Akte auf den Cent', async () => {
+  const { U, cmd, toRepair, V1 } = await freshWorld();
+  // 1. Kontrolle monatlich, Vorwarnung 31 Tage: am Kontrolltag „ok“ (vorher „bald“)
+  eq((await U.own.put('/api/settings', { license_check_months: '1', driver_doc_warn_days: '31' })).status, 200);
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Kontrolle Monat', personnel_no: 'KM-1', user_id: U.driver.id }); eq(dr.status, 201);
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/license-checks`, { checked_on: BERLIN_TODAY, result: 'in_ordnung', note: 'INTERN Foto unscharf' })).status, 201);
+  const det = (await U.fleet.get(`/api/drivers/${dr.data.id}`)).data; eq(det.status.check.status, 'ok', JSON.stringify(det.status.check));
+  ok(det.license_checks[0].note, 'Leitung sieht Vermerk');
+  // 2. Fahrer: eigene Akte ohne Vermerk/Prüfende
+  const own = await U.driver.get(`/api/drivers/${dr.data.id}`); eq(own.status, 200);
+  ok(own.data.license_checks.length === 1 && !('note' in own.data.license_checks[0]) && !('checked_by_name' in own.data.license_checks[0]), JSON.stringify(own.data.license_checks[0]));
+  // 3. CSV: „Hinweis“ mit Grund (kein Führerschein erfasst)
+  const csv = new TextDecoder().decode((await U.fleet.req('GET', '/api/drivers?format=csv')).data);
+  const line = csv.split('\r\n').find((l) => l.startsWith('Kontrolle Monat')); ok(/Hinweis · kein Führerschein erfasst/.test(line), line);
+  // 4. Arbeitszeit am letzten Tag des Vormonats und heute, Satz 85,50: Kostenbericht (beide Monate) = Fahrzeugakte
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: '85.50' })).status, 200);
+  const id = await toRepair();
+  const prevEnd = new Date(Date.parse(BERLIN_TODAY.slice(0, 8) + '01T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 0.25, description: 'A', work_date: prevEnd })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 0.25, description: 'B', work_date: BERLIN_TODAY })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1.1, description: 'C', work_date: BERLIN_TODAY })).status, 200);
+  const akte = (await U.fleet.get(`/api/vehicles/${V1}`)).data.costs.actual_net; eq(akte, 136.8);
+  const rep = (await U.fleet.get(`/api/reports/costs?from=${prevEnd.slice(0, 7)}&to=${BERLIN_TODAY.slice(0, 7)}`)).data;
+  eq(rep.vehicles.find((v) => v.vehicle_id === V1).actual_net, 136.8, 'Bericht = Akte (vorher 136,81)');
+  // nur der laufende Monat: fortlaufende Rundung, Vormonat getrennt (21,38 + 115,42 = 136,80)
+  const cur = (await U.fleet.get(`/api/reports/costs?from=${BERLIN_TODAY.slice(0, 7)}&to=${BERLIN_TODAY.slice(0, 7)}`)).data;
+  eq(cur.vehicles.find((v) => v.vehicle_id === V1).actual_net, 115.42);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

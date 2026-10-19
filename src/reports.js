@@ -56,7 +56,8 @@ export async function costReport(env, user, envName, query = {}) {
   const covered = new Set((await env.DB.prepare(`SELECT DISTINCT e.case_id FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE c.environment=? AND e.covers_work_and_parts=1${vf}`)
     .bind(...bind(envName)).all()).results.map((x) => x.case_id));
   const work = (await env.DB.prepare(`SELECT w.case_id, w.hours, w.work_date AS d, c.vehicle_id FROM work_entries w JOIN cases c ON c.id=w.case_id
-    WHERE c.environment=? AND w.work_date >= ? AND w.work_date <= ?${vf}`).bind(...bind(envName, `${from}-01`, `${to}-31`)).all()).results;
+    WHERE c.environment=? AND w.work_date <= ?${vf} AND w.case_id IN (SELECT w2.case_id FROM work_entries w2 WHERE w2.work_date >= ? AND w2.work_date <= ?)`)
+    .bind(...(vehicleFilter ? [envName, `${to}-31`, vehicleFilter, `${from}-01`, `${to}-31`] : [envName, `${to}-31`, `${from}-01`, `${to}-31`])).all()).results; // auch Vormonate dieser Vorgänge (fortlaufende Rundung unten)
   const parts = (await env.DB.prepare(`SELECT p.case_id, p.quantity, p.unit_price_net, p.valuation, p.created_at AS d, c.vehicle_id FROM parts p JOIN cases c ON c.id=p.case_id
     WHERE c.environment=? AND p.created_at >= ? AND p.created_at < ?${vf}`).bind(...bind(envName, lo, hi)).all()).results;
   const ext = (await env.DB.prepare(`SELECT e.case_id, e.amount_net, e.valuation, e.created_at AS d, c.vehicle_id FROM external_costs e JOIN cases c ON c.id=e.case_id
@@ -74,18 +75,29 @@ export async function costReport(env, user, envName, query = {}) {
   const monthOf = (d) => (d.length === 10 ? d.slice(0, 7) : berlinDate(d).slice(0, 7));
   for (const c of caseMonths) { const m = monthOf(c.d); if (inRange(m)) row(c.vehicle_id, m).cases_opened++; }
   // Arbeitszeit zählt je Vorgang und Monat als EINE Position (wie computeCosts in Akte/Vorgang) – vorher je Zeiteintrag (17.10.2026)
-  const workItem = new Set(); const workHours = new Map(); // je Vorgang und Monat: Stunden × Satz, auf Cent gerundet (wie computeCosts)
+  // Betrag je Vorgang und Monat fortlaufend gerundet: Monat = rund(Stunden bis Monatsende × Satz) − rund(Stunden davor × Satz) – die Monate
+  // eines Vorgangs ergeben zusammen genau den Betrag der Akte/des Vorgangs (computeCosts: rund(alle Stunden × Satz)); vorher je Monat
+  // einzeln gerundet → Bericht und Akte wichen um Cent ab (19.10.2026)
+  const workItem = new Set(); const workHours = new Map(); // `${case}|${month}` → { vehicle_id, case_id, m, h } (alle Monate, auch außerhalb des Zeitraums)
+  for (const w of work) {
+    if (covered.has(w.case_id) || rate === null) continue;
+    const m = monthOf(w.d); const wk = `${w.case_id}|${m}`;
+    const x = workHours.get(wk) || { vehicle_id: w.vehicle_id, case_id: w.case_id, m, h: 0 }; x.h += w.hours; workHours.set(wk, x);
+  }
   for (const w of work) {
     if (covered.has(w.case_id)) continue;
     const m = monthOf(w.d); if (!inRange(m)) continue;
     const r = row(w.vehicle_id, m); r.hours += w.hours;
-    if (rate !== null) { const wk = `${w.case_id}|${m}`; const x = workHours.get(wk) || { r, h: 0 }; x.h += w.hours; workHours.set(wk, x); }
     const k = `${w.case_id}|${m}`;
     if (!(w.hours > 0) || workItem.has(k)) continue;
     workItem.add(k);
     if (rate === null) r.unvalued_items++; else r.valued_items++;
   }
-  for (const { r, h } of workHours.values()) r.work_net += r2(h * rate);
+  { const cum = new Map(); // je Vorgang: Stunden der Vormonate
+    for (const x of [...workHours.values()].sort((a, b) => (a.case_id === b.case_id ? (a.m < b.m ? -1 : 1) : a.case_id < b.case_id ? -1 : 1))) {
+      const before = cum.get(x.case_id) || 0; const after = before + x.h; cum.set(x.case_id, after);
+      if (inRange(x.m)) row(x.vehicle_id, x.m).work_net += r2(r2(after * rate) - r2(before * rate));
+    } }
   for (const p of parts) {
     if (covered.has(p.case_id)) continue;
     const m = monthOf(p.d); if (!inRange(m)) continue;
