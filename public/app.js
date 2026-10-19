@@ -115,7 +115,8 @@ function srvText(code, msg) {
 }
 
 // [CLAUDE] Zeilenhinweise der Import-Vorschauen in der App-Sprache (Server liefert Deutsch)
-const reasonText = (r) => { const x = translateImportReason(S.lang, r); return typeof x === 'string' ? x.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d)) : x; }; // ISO-Datum im Sprachformat (19.10.2026)
+const reasonText = (r) => { const x = translateImportReason(S.lang, r); return typeof x === 'string' ? x.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (d, y, m, dd) => (isCalDay(+y, +m, +dd) ? fmtD(d) : d)) : x; }; // ISO-Datum im Sprachformat (19.10.2026); ungültiges Datum (2026-02-30) bleibt wie in der Datei (vorher als 02.03.2026 angezeigt)
+const isCalDay = (y, m, d) => { const x = new Date(Date.UTC(y, m - 1, d)); return m >= 1 && m <= 12 && x.getUTCFullYear() === y && x.getUTCMonth() === m - 1 && x.getUTCDate() === d; };
 // Lange Import-Vorschauen zeigen nur die ersten Zeilen – dann ausdrücklich sagen, wie viele es insgesamt sind (nie still abschneiden)
 const impMore = (total, shown) => (total > shown ? `<p class="small" role="note" data-impmore>${esc(t('imp_first_n').replace('{n}', fmtNum(shown)).replace('{m}', fmtNum(total)))}</p>` : '');
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
@@ -2597,7 +2598,10 @@ async function viewDriver(id) {
 function odoSrc(s) {
   const v = String(s || ''); if (!v) return '';
   if (v.startsWith('manuell:')) return `${t('odo_src_manual')} (${t('role_' + v.slice(8))})`;
-  if (v === 'kontrolle') return t('departure_check');
+  // Server speichert „kontrolle:<art>“ und „telematik:<anbieter>“ (19.10.2026: Zeitleiste zeigte den Code)
+  if (v === 'kontrolle' || v === 'kontrolle:abfahrt') return t('departure_check');
+  if (v === 'kontrolle:nach_reparatur') return t('inspection');
+  if (v.startsWith('telematik:')) return `${t('area_telematics')} (${v.slice(10)})`;
   if (v === 'import') return t('odo_src_import');
   if (v.startsWith('wartung:')) return mk(v.slice(8));
   return v;

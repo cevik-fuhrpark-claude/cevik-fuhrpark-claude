@@ -13806,7 +13806,7 @@ await test('Fahrzeugakte 19.10.: km-Herkunft lesbar, Rückruf-Durchführung übe
   const { STRINGS } = await import('../public/i18n.js');
   const src = app.slice(app.indexOf('function odoSrc(s)'), app.indexOf('function evFromTo(e)'));
   const os = new Function('t', 'mk', src + '; return odoSrc;')((k) => STRINGS.en[k] || k, (k) => 'MK:' + k);
-  eq(os('manuell:fleet'), 'entered manually (' + STRINGS.en.role_fleet + ')'); eq(os('kontrolle'), STRINGS.en.departure_check); eq(os('wartung:HU'), 'MK:HU'); eq(os('webfleet'), 'webfleet');
+  eq(os('manuell:fleet'), 'entered manually (' + STRINGS.en.role_fleet + ')'); eq(os('kontrolle'), STRINGS.en.departure_check); eq(os('kontrolle:abfahrt'), STRINGS.en.departure_check); eq(os('kontrolle:nach_reparatur'), STRINGS.en.inspection); eq(os('telematik:webfleet'), 'Telematics (webfleet)'); eq(os('wartung:HU'), 'MK:HU'); eq(os('webfleet'), 'webfleet');
   ok(app.includes('esc(odoSrc(x.source))') && app.includes('esc(mEv(m.evidence))') && app.includes('esc(mEv(r.evidence))'), 'Zeitleiste/Prüftermine nutzen die Übersetzung');
   ok(/const reasonText = \(r\) => \{ const x = translateImportReason\(S\.lang, r\); return typeof x === 'string' \? x\.replace\(/.test(app), 'Import-Gründe mit Datum im Sprachformat');
   ok(app.includes('!(td.colSpan > 1)'), 'stackTables: Ganzzeilen ohne Spaltenname');
@@ -14143,6 +14143,31 @@ await test('Fehlersuche 19.10. (Vorgänge/Startseite): Wiedervorlage verschieben
   const ym = BERLIN_TODAY.slice(0, 7);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`)).data);
   ok(/\r\nAlle;/.test(csv) && /\r\nKritisch;/.test(csv) && !/\r\n(alle|kritisch|niedrig|mittel);/.test(csv), csv.slice(0, 200));
+});
+
+await test('Fehlersuche 19.10. (Verträge/Importe/Zeitleiste): Monatsrate je Sprache (DE Dezimalkomma, EN Dezimalpunkt), Import-Hinweise nennen die deutschen Spaltenköpfe, ungültiges Datum in der Vorschau unverändert', async () => {
+  const { U, V1 } = await freshWorld();
+  const { num } = await import('../src/util.js');
+  // EN: „150.555“ ist eine Zahl mit 3 Nachkommastellen (nicht „mehrdeutig“), „1.500“ = 1,5
+  let msg = ''; try { num('150.555', { cents: true, field: 'X', decimalPoint: true }); } catch (x) { msg = x.message; } ok(/höchstens 2 Nachkommastellen/.test(msg), msg);
+  eq(num('1.500', { cents: true, decimalPoint: true }), 1.5); msg = ''; try { num('1.500', { cents: true }); } catch (x) { msg = x.message; } ok(/mehrdeutig/.test(msg), 'ohne Sprache weiter mehrdeutig');
+  // Vertrag (DE): „2,500“ = 2,50 €, „150,555“ → höchstens 2 Nachkommastellen
+  const mk = (rate, u = U.fleet) => u.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'P ' + rate, evidence: 'V', monthly_rate_net: rate });
+  const a = await mk('2,500'); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await mk('150,555'); eq(b.status, 400); ok(/Nachkommastellen/.test(b.data.message || b.data.error || JSON.stringify(b.data)), JSON.stringify(b.data));
+  eq((await U.fleet.patch('/api/me', { language: 'en' })).status, 200);
+  const c = await mk('150.555'); eq(c.status, 400); ok(/Nachkommastellen/.test(JSON.stringify(c.data)), JSON.stringify(c.data));
+  eq((await mk('99.50')).status, 201, 'EN Dezimalpunkt');
+  // Import-Hinweise UK/EN nennen die Spaltenköpfe, die der Import erkennt
+  const { readFileSync } = await import('node:fs'); const src = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const [key, heads] of [['ct_import_hint', ['Kennzeichen', 'Vertragsart', 'Vertragspartner', 'Nachweis']], ['import_maint_hint', ['Kennzeichen', 'Art', 'Nachweis']], ['tacho_import_hint', ['Art', 'Personalnummer', 'Datum', 'Nachweis']], ['import_recalls_hint', ['Kennzeichen', 'Referenz']]]) {
+    const vals = [...src.matchAll(new RegExp(key + ": '([^']*)'", 'g'))].map((m) => m[1]); eq(vals.length, 3, key);
+    for (const v of vals) for (const h of heads) ok(v.includes(h), `${key}: ${h} fehlt in „${v.slice(0, 60)}…“`);
+  }
+  // Vorschau: ungültiges Datum bleibt wie in der Datei (vorher 2026-02-30 → 02.03.2026)
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const isCal = new Function(app.slice(app.indexOf('const isCalDay ='), app.indexOf('\n', app.indexOf('const isCalDay ='))) + '; return isCalDay;')();
+  eq(isCal(2026, 2, 30), false); eq(isCal(2026, 13, 1), false); eq(isCal(2028, 2, 29), true); eq(isCal(2026, 10, 19), true);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

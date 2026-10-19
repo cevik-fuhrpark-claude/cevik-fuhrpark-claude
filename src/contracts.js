@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -72,7 +72,7 @@ export function contractStatus(c, latest, today, warnDays) {
   return { overall: handeln ? 'handeln' : hinweis ? 'hinweis' : 'ok', end, notice, km };
 }
 
-function readBody(body, existing = {}) {
+function readBody(body, existing = {}, user = null) {
   const pick = (k) => (body[k] !== undefined ? body[k] : existing[k]);
   const f = {
     kind: oneOf(pick('kind'), CONTRACT_KINDS, 'Vertragsart'),
@@ -83,7 +83,7 @@ function readBody(body, existing = {}) {
     notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
     km_allowance: intOrNull(pick('km_allowance'), 'km-Kontingent', 5000000),
     start_km: intOrNull(pick('start_km'), 'km bei Übernahme', 9999999),
-    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, cents: true }),
+    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, cents: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
   };
@@ -128,7 +128,7 @@ export async function createContract(env, user, vehicleId, body, envName) {
   if (!isMgr(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
-  const f = readBody(body);
+  const f = readBody(body, {}, user);
   const fileId = await checkFile(env, v.id, envName, body.file_id);
   const id = uuid(); const now = nowIso();
   const same = (await env.DB.prepare('SELECT kind, contract_no, partner, start_date, ended_on FROM vehicle_contracts WHERE vehicle_id=?').bind(v.id).all()).results;
@@ -159,7 +159,7 @@ export async function updateContract(env, user, id, body, envName) {
   if (c.ended_on) throw bad('contract_ended', 'Beendete Verträge werden nicht mehr geändert (Nachweis bleibt erhalten).');
   // Stand beim Öffnen des Formulars (die App sendet ihn): ein länger offenes Formular überschrieb sonst inzwischen gespeicherte Änderungen
   if (body.expected_updated_at && String(body.expected_updated_at) !== c.updated_at) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
-  const f = readBody(body, c);
+  const f = readBody(body, c, user);
   // Vertragsdokument nur ändern, wenn das Feld mitgeschickt wird (Import/ältere Oberflächen lassen es unverändert)
   f.file_id = body.file_id !== undefined ? await checkFile(env, c.vehicle_id, envName, body.file_id) : c.file_id;
   const changed = Object.keys(f).filter((k) => f[k] !== c[k]);

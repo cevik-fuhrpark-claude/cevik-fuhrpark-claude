@@ -2,7 +2,7 @@
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec } from './util.js';
 import { audit } from './auth.js';
 import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -24,7 +24,7 @@ function day(v, field, required = false) {
 }
 
 function readBody(body, existing = {}, user = null) {
-  const dc = user ? commaDec(user) : undefined; // Dezimalkomma je Sprache der Person (19.10.2026: „150,555“ in DE hieß „mehrdeutig“ statt „höchstens 2 Nachkommastellen“)
+  const dc = user ? commaDec(user) : undefined; const dp = pointDec(user); // Dezimalkomma je Sprache der Person (19.10.2026: „150,555“ in DE hieß „mehrdeutig“ statt „höchstens 2 Nachkommastellen“)
   const pick = (k) => (body[k] !== undefined ? body[k] : existing[k]);
   const f = {
     insurer: str(pick('insurer'), { max: 120, field: 'Versicherer' }),
@@ -33,8 +33,8 @@ function readBody(body, existing = {}, user = null) {
     reported_on: day(pick('reported_on'), 'Gemeldet am', true),
     // leerer/fehlender Status behält den gespeicherten (18.10.2026: setzte einen regulierten Fall still auf „gemeldet“ zurück)
     status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status'),
-    deductible_net: num(pick('deductible_net'), { min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, cents: true, decimalComma: dc }),
-    reimbursed_net: num(pick('reimbursed_net'), { min: 0, max: 10000000, field: 'Erstattung', nullable: true, cents: true, decimalComma: dc }),
+    deductible_net: num(pick('deductible_net'), { min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    reimbursed_net: num(pick('reimbursed_net'), { min: 0, max: 10000000, field: 'Erstattung', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     reimbursed_on: day(pick('reimbursed_on'), 'Erstattet am'),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),

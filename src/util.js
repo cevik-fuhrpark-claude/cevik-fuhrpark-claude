@@ -141,8 +141,10 @@ export function oneOf(v, allowed, field) {
 // cents: Geldbetrag – höchstens 2 Nachkommastellen (18.10.2026: „100,0051“ wurde ungerundet gespeichert, Summen wichen ab)
 // Komma als Dezimalzeichen für Mengenfelder – nicht bei englischer Oberfläche: „1,500“ meint dort 1500 (19.10.2026: wurde still 1,5)
 export const commaDec = (user) => !(user && user.language === 'en');
+// Punkt als Dezimalzeichen (englische Oberfläche): „150.555“ ist 150,555 → „höchstens 2 Nachkommastellen“ statt „mehrdeutig“ (19.10.2026)
+export const pointDec = (user) => !!(user && user.language === 'en');
 // decimalComma: Mengenfeld (Lager, Teile) – „4,750“ ist 4,75 (3 Nachkommastellen), nicht das englische Tausenderkomma
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, decimalComma = false } = {}) {
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
@@ -155,7 +157,7 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     // englisches Format mit Tausenderkomma und Dezimalpunkt („1,234.50“) ist eindeutig (19.10.2026: in der EN-Oberfläche abgewiesen)
     else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(t)) t = t.replace(/,/g, '');
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
-    else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
+    else if (!decimalPoint && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // englisches Tausenderkomma „15,000“/„1,000“ ebenso mehrdeutig (18.10.2026: wurde still als 15 bzw. 1 € gespeichert, km „120,500“ als 121)
     else if (!decimalComma && /^-?[1-9]\d{0,2}(,\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausendertrennzeichen (z. B. 15000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // nur Dezimalzahlen (kein „0x1E240“, „0b101“, „1e5“ – Number() verstünde sie)
