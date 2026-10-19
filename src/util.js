@@ -139,6 +139,8 @@ export function oneOf(v, allowed, field) {
 // Zahlen aus Formularen: Dezimalkomma; deutsches Format mit Tausenderpunkt und Komma („1.234,50“) wird verstanden.
 // Bei ganzzahligen Feldern (grouped: km, km-Kontingent) gilt „120.000“ als 120000. Sonst ist „2.000“ ohne Komma mehrdeutig (2 oder 2000?) und wird abgewiesen, statt still als 2 gespeichert zu werden.
 // cents: Geldbetrag – höchstens 2 Nachkommastellen (18.10.2026: „100,0051“ wurde ungerundet gespeichert, Summen wichen ab)
+// Komma als Dezimalzeichen für Mengenfelder – nicht bei englischer Oberfläche: „1,500“ meint dort 1500 (19.10.2026: wurde still 1,5)
+export const commaDec = (user) => !(user && user.language === 'en');
 // decimalComma: Mengenfeld (Lager, Teile) – „4,750“ ist 4,75 (3 Nachkommastellen), nicht das englische Tausenderkomma
 export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, decimalComma = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;

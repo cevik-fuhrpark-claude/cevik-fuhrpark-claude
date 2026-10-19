@@ -1427,7 +1427,7 @@ const tmKmRej = (dir, km, at) => dir === 'above' ? t('tm_km_rejected_next').repl
 const kmWarn = (r) => (r.km_rejected && r.km_rejected.next_km !== undefined ? ' · ' + t('km_not_taken_next').replace('{km}', fmtNum(r.km_rejected.km)).replace('{next}', fmtNum(r.km_rejected.next_km)) : r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', fmtNum(r.km_rejected.km)).replace('{prev}', fmtNum(r.km_rejected.previous_km)) : r.km_test_only ? ' · ' + t('km_test_only') : '');
 function bindChecklist(form) {
   $$('.checkitem', form).forEach((row) => {
-    $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); if (!$('.checkitem.missing', form)) document.querySelectorAll('.toast.err').forEach((x) => x.remove()); /* Meldung „Noch n Prüfpunkte …“ mit veralteter Zahl lag über „Speichern“ (19.10.2026) */ const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
+    $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); document.querySelectorAll('.toast.err').forEach((x) => x.remove()); /* jede Antwort entfernt die Meldung – sonst blieb „Noch 18 …“ nach 17 Antworten stehen (19.10.2026); beim Speichern wird neu gezählt */ /* Meldung „Noch n Prüfpunkte …“ mit veralteter Zahl lag über „Speichern“ (19.10.2026) */ const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
   });
   // Unbeantwortete Punkte in der App-Sprache melden (statt Browser-Hinweis am unsichtbaren Radio in der Gerätesprache)
   let shown = false;
@@ -2013,7 +2013,7 @@ async function renderTires(id, el) {
     const fd = new FormData(tf); const b = Object.fromEntries(fd);
     for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
     b.positions = fd.getAll('positions'); if (!b.positions.length) delete b.positions;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : '')).filter(Boolean) : r.warnings || []).forEach((w) => toast(w, true)); if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.join(', ') : '✓'); renderTires(id, el); }
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : '')).filter(Boolean) : r.warnings || []).forEach((w) => toast(w, true)); if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓'); renderTires(id, el); }
     catch (err) { toast(err.message, true); }
   };
   if ($('#woform', el)) $('#woform', el).onsubmit = async (e) => { e.preventDefault(); const fm = e.target; const b = Object.fromEntries(new FormData(fm)); if (!b.planned_date) delete b.planned_date; fm.querySelector('button').disabled = true;

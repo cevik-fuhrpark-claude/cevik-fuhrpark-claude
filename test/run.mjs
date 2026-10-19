@@ -13724,6 +13724,27 @@ await test('Oberfläche 19.10.: Druck ohne Bedienelemente (Foto-/Datei-Knopf, Zu
   eq(mk('uk')('VA-L'), 'Перед. Л'); eq(mk('uk')('XYZ'), 'XYZ', 'Unbekanntes bleibt');
 });
 
+await test('Fehlersuche 19.10. (52): Mengen „1,500“ bei englischer Oberfläche mehrdeutig (nicht still 1,5), Deutsch weiter 1,5; alle Feldnamen der Prüfmeldungen übersetzt', async () => {
+  const { U } = await freshWorld(); const W = U.ws;
+  const it = await W.post('/api/stock', { name: 'Filter EN', initial_qty: '2' }); eq(it.status, 201); const id = it.data.id;
+  const onHand = async () => (await W.get(`/api/stock/${id}`)).data.item.on_hand;
+  eq((await W.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: '1,500' })).status, 201, 'Deutsch: Dezimalkomma');
+  eq(await onHand(), 3.5);
+  eq((await W.patch('/api/me', { language: 'en' })).status, 200);
+  const r = await W.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: '1,500' }); eq(r.status, 400, 'EN: 1,500 mehrdeutig'); ok(/mehrdeutig/.test(r.data.message), r.data.message);
+  eq((await W.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: '1.5' })).status, 201, 'EN: Punkt'); eq(await onHand(), 5);
+  eq((await W.post(`/api/vehicles/VIN:WMA15SZZ2HM722774/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: '8,500' })).status, 400, 'EN Profiltiefe 8,500 mehrdeutig');
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation('en', 'Menge: „1,500“ ist mehrdeutig – bitte ohne Tausendertrennzeichen (z. B. 15000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.').includes('point for decimals'), 'EN-Hinweis nennt Dezimalpunkt');
+  // Wächter: jedes Feld aus field:/oneOf(…) hat UK/EN-Namen
+  const fs = await import('node:fs');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  const names = new Set(); for (const m of src.matchAll(/field: '([^'$`]+)'/g)) names.add(m[1]); for (const m of src.matchAll(/oneOf\([^()]*?,\s*[^,()]+,\s*'([^']+)'\)/g)) names.add(m[1]);
+  for (const x of ['request_key', 'command_id', 'Version', 'endpoint']) names.delete(x);
+  const miss = [...names].filter((n) => /^[a-z]/.test(n) ? false : (translateValidation('en', `${n} ist erforderlich.`) || '').includes(n) && !['Status', 'DOT', 'Position', 'Name'].includes(n)); // gleich geschrieben in EN
+  eq(miss.join(', '), '', 'Feldnamen ohne Übersetzung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
