@@ -13709,6 +13709,21 @@ await test('Bußgeld 19.10. (Backlog 91): Kennzeichen/Behörde nachträglich kor
   ok([403, 404].includes((await U.ws.post(`/api/fines/${id}/commands`, { action: 'update', payload: { plate_in_letter: 'X' } })).status), 'Werkstatt nicht');
 });
 
+await test('Oberfläche 19.10.: Druck ohne Bedienelemente (Foto-/Datei-Knopf, Zurück, Hilfelinks), Druckkopf der Akte unter dem Titel, Reifenpositionen UK/EN im Klartext', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(app.includes('<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t(\'add_photos\'))}'), 'Fotos hinzufügen nicht im Druck');
+  ok(app.includes('<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t(\'upload\'))}'), 'Bußgeld-Upload nicht im Druck');
+  ok(app.includes('<p class="noprint"><a href="#/fines">') && app.includes('<p class="noprint"><a href="#/drivers">'), 'Zurück-Links nicht im Druck');
+  ok(/data-title="\$\{esc\(v\.plate\)\} · \$\{esc\(t\('vehicle_file'\)\)\}">\$\{esc\(t\('vehicle_file'\)\)\}<\/h1><p class="print-only small">/.test(app), 'Akte: Druckkopf unter dem Titel');
+  ok(/h1, h2, h3 \{ break-after: avoid; \}/.test(css) && css.includes('@page guide') && css.includes('page: guide;'), 'Druck-CSS');
+  ok(!/(noncompliant|missing)\.join\(', '\)/.test(app), 'Winterpositionen immer über posL');
+  // posL wie in der App (ohne Browser): Funktion aus dem Quelltext auswerten
+  const src = app.slice(app.indexOf('const POS_WORDS'), app.indexOf('const fmtKm'));
+  const mk = (lang) => new Function('S', src + '; return posL;')({ lang });
+  eq(mk('de')('HA-L-aussen'), 'HA-L-aussen'); eq(mk('en')('HA-L-aussen'), 'Rear L outer'); eq(mk('en')('AH2-R'), 'Trailer 2 R'); eq(mk('en')('Reserve'), 'Spare wheel');
+  eq(mk('uk')('VA-L'), 'Перед. Л'); eq(mk('uk')('XYZ'), 'XYZ', 'Unbekanntes bleibt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
