@@ -94,13 +94,17 @@ async function api(method, path, body, extra = {}) {
   if (!res.ok) {
     // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch): erst Code (err_*), sonst bekannter Text (Prüf- und Konfliktmeldungen); unbekannt: Server-Text
     const code = data && data.error;
-    const tr = code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, data.message));
+    const tr = srvText(code, data && data.message);
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
     // inzwischen andere Person angemeldet (anderer Tab): Stand neu laden – Eingaben/Postausgang bleiben auf dem Gerät erhalten
     if (code === 'user_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
   }
   return data;
+}
+// Server-Meldung (deutsch) in der aktuellen Oberflächensprache: erst Code (err_*), sonst bekannter Text; unbekannt → null
+function srvText(code, msg) {
+  return (code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, msg))) || null;
 }
 
 // [CLAUDE] Zeilenhinweise der Import-Vorschauen in der App-Sprache (Server liefert Deutsch)
@@ -954,7 +958,8 @@ async function flushOutbox() {
         if (err.code === 'user_mismatch') { kept++; break; } // andere Person angemeldet: nichts senden, Eintrag bleibt
         // Vom Server abgewiesen (z. B. Fahrzeug inzwischen außer Betrieb): nicht still verwerfen, sondern als „nicht gesendet“
         // auf dem Gerät behalten – Text zum Kopieren, erneut senden oder bewusst verwerfen (17.10.2026). Fotos bleiben bis dahin.
-        failedNow.set(item.body.request_key, { status: err.status || 0, message: String(err.message || ''), at: new Date().toISOString() });
+        // Code und Server-Text mit speichern: der Grund wird bei der Anzeige in der dann gewählten Sprache übersetzt (19.10.2026)
+        failedNow.set(item.body.request_key, { status: err.status || 0, message: String(err.message || ''), code: err.code || null, raw: (err.data && err.data.message) || null, at: new Date().toISOString() });
         toast(`${t('outbox_failed')}: ${err.message}`, true);
       }
     }
@@ -987,7 +992,7 @@ function outboxBanner() {
     html += `<div class="panel alert" id="outbox_failed" role="alert"><h2>${esc(tn('outbox_failed_n', bad.length))}</h2><p class="small">${esc(t('outbox_failed_hint'))}</p>${bad.map((x) => {
       const k = esc(x.body.request_key);
       return `<div class="obx-item"><p><b>${esc(x.path === '/api/inspections' ? t('departure_check') : t('report_damage'))}</b> · ${esc(outboxPlate(x.body.vehicle_id))} · ${esc(t('outbox_saved_at'))} ${fmtDT(x.saved_at)}</p>
-        <p class="small">${esc(t('outbox_reason'))}: ${esc(x.failed.message || '')}</p>
+        <p class="small">${esc(t('outbox_reason'))}: ${esc((x.failed.raw ? srvText(x.failed.code, x.failed.raw) || x.failed.raw : x.failed.message) || '')}</p>
         <label for="obx_${k}">${esc(t('outbox_text'))}</label><textarea id="obx_${k}" readonly rows="3">${esc(outboxText(x))}</textarea>
         <div class="actions"><button type="button" class="btn secondary" data-obx-retry="${k}">${esc(t('outbox_retry'))}</button><button type="button" class="btn secondary" data-obx-del="${k}">${esc(t('outbox_discard'))}</button></div></div>`;
     }).join('')}</div>`;
@@ -1075,7 +1080,10 @@ async function viewNew(preId) {
   $('#d').addEventListener('input', () => { $('#acc').hidden = !ACC.test($('#d').value); });
   photoLimitWatch($('#ph'));
   const key = uid();
-  $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => (l.hidden = q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q))); if (q) $$('details').forEach((d) => (d.open = true)); };
+  // Suchfeld: Enter („Los“ am Handy) filtert nur – sendet nicht ab; ein ausgeblendetes gewähltes Fahrzeug wird abgewählt (19.10.2026:
+  // Meldung ging sonst an das vorausgewählte, durch den Filter verdeckte Fahrzeug)
+  $('#vq').onkeydown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
+  $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => { l.hidden = !!q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q); const r = $('input', l); if (l.hidden && r && r.checked) r.checked = false; }); if (q) $$('details').forEach((d) => (d.open = true)); };
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const veh = $('input[name=veh]:checked');
@@ -1457,7 +1465,7 @@ async function viewInspection(caseId) {
 async function viewDepartureCheck(preId) {
   if (!mayCheck()) { render(`<h1>${esc(t('departure_check'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'check'); return; }
   const vs = await vehiclesCached();
-  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select><div id="known"></div>
+  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select><div id="known"></div>
     ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p>`, 'check');
@@ -1497,7 +1505,7 @@ async function viewDepartureCheck(preId) {
         if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/inspections', body, stored);
         const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
-        render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}${files.length && !hasDefect ? `<p class="small">${esc(t('check_photos_skipped'))}</p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
+        render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}${files.length && !hasDefect ? `<p class="small">${esc(t('check_photos_skipped'))}</p>` : files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}</div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
         return;
       }
       toast(err.message, true);
@@ -3018,12 +3026,13 @@ async function viewAudit(more, uArg, vArg) {
   const aq = S.auditQ || ''; const au = S.auditUntil || '';
   const extra = `${aq.length >= 2 ? '&q=' + encodeURIComponent(aq) : ''}${au ? '&until=' + encodeURIComponent(au) : ''}${pu ? '&user=' + encodeURIComponent(pu) : ''}${pv ? '&vehicle=' + encodeURIComponent(pv) : ''}`;
   let r;
-  try { r = await api('GET', `/api/admin/audit?limit=100${f ? '&action=' + encodeURIComponent(f) : ''}${before ? '&before=' + encodeURIComponent(before) : ''}${extra}`); }
+  try { r = await api('GET', `/api/admin/audit?limit=100${f ? '&action=' + encodeURIComponent(f) : ''}${before ? '&before=' + encodeURIComponent(before) + (S.auditBeforeId ? '&before_id=' + encodeURIComponent(S.auditBeforeId) : '') : ''}${extra}`); }
   catch (err) { if ((pu || pv) && err.status === 404) { S.auditUser = null; S.auditVeh = null; toast(err.message, true); return viewAudit(); } throw err; }
   if (r.person) S.auditUserName = r.person.display_name || r.person.username;
   if (r.vehicle) S.auditVehName = r.vehicle.plate || r.vehicle.id;
   S.auditRows = more ? [...(S.auditRows || []), ...r.entries] : r.entries;
   S.auditBefore = r.entries.length ? r.entries[r.entries.length - 1].created_at : null;
+  S.auditBeforeId = r.entries.length ? r.entries[r.entries.length - 1].id : null;
   const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.', t('export_csv')], ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')], ['invite.,password.,session.,totp.,setup.,integration.', t('au_access')], ['tires.', t('tires')], ['telematics.', t('telematics')], ['emergency.', t('em_title')], ['master.', t('nav_master')]];
   const det = (d, refs) => auditDetailText(S.lang, d, refs); // Schlüssel in der Oberflächensprache, Werte unverändert (Rohtext in CSV/Suche)
   const gl = (groups.find(([k]) => k === f) || [])[1];

@@ -1516,7 +1516,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     for (const l of ['de', 'uk', 'en']) ok(STR[l]['err_' + code], `err_${code} (${l})`);
   }
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/STRINGS\[S\.lang\]\['err_' \+ code\]\) \|\| translateValidation\(S\.lang, data\.message\)/.test(app), 'api() nutzt die Übersetzung (Code, sonst bekannter Text – auch bei Konflikten)');
+  ok(/STRINGS\[S\.lang\]\['err_' \+ code\]\) \|\| translateValidation\(S\.lang, msg\)/.test(app) && /const tr = srvText\(code, data && data\.message\)/.test(app), 'api() nutzt die Übersetzung (Code, sonst bekannter Text – auch bei Konflikten)');
   // Konflikt-Meldungen (409): jeder Code hat err_*-Übersetzung oder sein Text wird übersetzt (Vorlagen mit Beispielwert)
   const conf = [...src.matchAll(/conflict\('([a-z_]+)', (?:'([^']+)'|`([^`]+)`)/g)];
   ok(conf.length >= 15, 'Konflikt-Meldungen gefunden: ' + conf.length);
@@ -13093,6 +13093,32 @@ await test('Fehlersuche 19.10. (32): Datenqualität Kontroll-km ohne ruhende/au�
     const c = (await U.ws.post('/api/stock', { name: 'Öl', part_number: 'OEL1', unit: 'l', initial_qty: 5 })).data.id;
     const d = (await U.wsMuc.post('/api/stock', { name: 'Öl', part_number: 'OEL1', unit: 'Kanister' })).data.id; ok(d);
     eq((await U.ws.post(`/api/stock/${c}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 400, 'echte abweichende Einheit weiter abgewiesen'); }
+});
+
+await test('Fehlersuche 19.10. (33): Protokoll-Blättern ohne Verlust bei gleichem Zeitpunkt, Meldung an außer Betrieb genommenes Fahrzeug nennt den Grund, UK-Pluralformen Fotos', async () => {
+  const { e, U } = await freshWorld();
+  const ins = e.DB.db.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)');
+  for (let i = 0; i < 120; i++) ins.run('same-' + String(i).padStart(3, '0'), null, 'maintenance.husp_recalc', 'VIN:X' + i, '{}', '2026-10-01T03:00:00.000Z');
+  ins.run('older-1', null, 'maintenance.husp_recalc', 'VIN:Y', '{}', '2026-09-30T03:00:00.000Z');
+  const seen = []; let before = null; let bid = null;
+  for (let p = 0; p < 5; p++) {
+    const r = await U.own.get(`/api/admin/audit?limit=100&action=maintenance.husp_recalc${before ? `&before=${encodeURIComponent(before)}&before_id=${encodeURIComponent(bid)}` : ''}`);
+    eq(r.status, 200); if (!r.data.entries.length) break;
+    for (const x of r.data.entries) seen.push(x.id);
+    before = r.data.entries.at(-1).created_at; bid = r.data.entries.at(-1).id;
+  }
+  eq(seen.filter((id) => id.startsWith('same-')).length, 120, 'alle 120 Einträge desselben Zeitpunkts erreichbar');
+  eq(new Set(seen).size, seen.length, 'keine doppelt'); ok(seen.includes('older-1'), 'ältere danach');
+  // ohne before_id wie bisher (ältere Fassung der App)
+  eq((await U.own.get(`/api/admin/audit?limit=100&before=2026-10-01T03:00:00.000Z&action=maintenance.husp_recalc`)).data.entries.map((x) => x.id).join(), 'older-1');
+  // Meldung an außer Betrieb genommenes Fahrzeug
+  const vid = e.DB.db.prepare(`SELECT id FROM vehicles WHERE vin='WDB9630051L917317'`).get().id;
+  e.DB.db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(vid);
+  const r = await U.driver.post('/api/cases', { vehicle_id: vid, description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(r.status, 400); eq(r.data.message, 'Fahrzeug ist außer Betrieb.');
+  eq((await U.driver.post('/api/cases', { vehicle_id: 'VIN:GIBTESNICHT', description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.message, 'Fahrzeug unbekannt.');
+  const { PLURALS } = await import('../public/i18n.js');
+  for (const k of ['photos_stored', 'photos_failed']) { ok(PLURALS.uk[k] && PLURALS.uk[k].one && PLURALS.uk[k].few && PLURALS.uk[k].many, k); ok(!PLURALS.uk[k].one.includes('їх'), k + ': Einzahl'); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

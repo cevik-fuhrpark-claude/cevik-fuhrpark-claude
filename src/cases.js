@@ -694,7 +694,11 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   }
   const J = (a) => JSON.stringify([...new Set(a)]);
   const vehicles = new Map((await env.DB.prepare('SELECT * FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).all()).results.map((v) => [v.id, v]));
-  if (specs.some((x) => !vehicles.has(x.vehicleId))) throw bad('validation', 'Fahrzeug unbekannt.');
+  // außer Betrieb genommen (z. B. Offline-Meldung nach Stilllegung): eigene Meldung statt „unbekannt“ (19.10.2026)
+  if (specs.some((x) => !vehicles.has(x.vehicleId))) {
+    const known = await env.DB.prepare('SELECT 1 FROM vehicles WHERE active=0 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId).filter((id) => !vehicles.has(id)))).first();
+    throw bad('validation', known ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.');
+  }
   // Ursprungsvorgang (Folgeauftrag): muss in derselben Umgebung zum selben Fahrzeug existieren – sonst würde die Akte fremde Vorgangsnummern zeigen
   const parentIds = specs.map((x) => x.parentId).filter(Boolean);
   if (parentIds.length) {

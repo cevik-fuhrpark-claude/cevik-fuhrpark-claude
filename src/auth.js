@@ -722,15 +722,18 @@ export async function listAudit(env, user, query = {}) {
   const prefix = auditPrefix(query);
   let before = query.before && /^\d{4}-\d{2}-\d{2}T/.test(query.before) ? query.before : '9999';
   // „bis Datum“ (Berliner Kalendertag einschließlich) – nur wenn kein späterer Blätter-Zeitpunkt gesetzt ist
+  // Blättern mit eindeutigem Gleichstand-Kriterium (before_id): Sammel-Einträge mit gleichem Zeitpunkt (z. B. HU/SP-Neuberechnung der Flotte)
+  // gingen sonst jenseits der Seitengrenze verloren (19.10.2026)
+  let beforeId = before !== '9999' && typeof query.before_id === 'string' && query.before_id ? query.before_id.slice(0, 64) : null;
   if (query.until !== undefined && query.until !== '') {
     if (!isCalendarDate(query.until)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
     const end = berlinDayStartIso(new Date(Date.parse(query.until + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10));
-    if (end < before) before = end;
+    if (end < before) { before = end; beforeId = null; }
   }
   // Suche in Kennung (target), Details und handelnder Person (Name/Benutzername), z. B. Kennzeichen, FIN; Platzhalter wirkungslos
   const qs = String(query.q || '').trim().slice(0, 60);
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
-  const where = ['a.created_at < ?']; const args = [before];
+  const where = [beforeId ? '(a.created_at < ? OR (a.created_at = ? AND a.id < ?))' : 'a.created_at < ?']; const args = beforeId ? [before, before, beforeId] : [before];
   if (prefix) auditPrefixWhere(prefix, where, args, esc);
   if (qs.length >= 2) auditQ(qs, where, args);
   const person = await auditPerson(env, auditUser(query, where, args));
@@ -738,7 +741,7 @@ export async function listAudit(env, user, query = {}) {
   // Betroffenes Konto bzw. Fahrzeug (target) zur Anzeige auflösen – je Eintrag zwei Primärschlüssel-Zugriffe, keine Zusatzabfrage
   const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username,
     tu.display_name AS target_name, tu.username AS target_username, tv.plate AS target_plate
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ?`)
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`)
     .bind(...args, limit).all()).results;
   const entries = rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
   await auditDetailRefs(env, entries);
