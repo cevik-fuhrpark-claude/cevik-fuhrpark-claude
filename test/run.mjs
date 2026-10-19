@@ -1998,7 +1998,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -13266,6 +13266,35 @@ await test('Fehlersuche 19.10. (37): Winterreifen „Auftrag abgeschlossen, Lage
   e.DB.db.prepare('UPDATE cases SET closed_at=? WHERE id=?').run(berlinDayStartIso(d(59)), 'wc');
   ok((await winterOrders(e, 'test', vid)).closedIfOpen(vid, 'unbekannt'), 'erster Fenstertag zählt');
   ok(V1);
+});
+
+await test('Verbesserung 19.10. (38): Reserverad unter 1,6 mm ist kein kritischer Befund (Minimum gilt für montierte Reifen), eigener Status/Hinweis; Protokollsuche mit 1 Zeichen meldet sich', async () => {
+  const { U, V1 } = await freshWorld();
+  const { treadStatus } = await import('../src/tires.js');
+  eq(treadStatus('Reserve', 1.2, null), 'reserve_unter_minimum'); eq(treadStatus('VA-L', 1.2, null), 'unter_minimum'); eq(treadStatus('Reserve', 3, 4), 'warnung'); eq(treadStatus('Reserve', null, 4), 'unbekannt');
+  let r = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'Reserve', tread_mm: '1,0' });
+  eq(r.status, 201); eq(JSON.stringify(r.data.warning_items.map((w) => w.code)), '["spare_below_min"]', 'Hinweis Reserverad statt gesetzliches Minimum');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 8 })).status, 201);
+  const vt = (await U.fleet.get(`/api/vehicles/${V1}/tires`)).data;
+  eq(vt.positions.find((p) => p.position === 'Reserve').status, 'reserve_unter_minimum'); eq(vt.positions.find((p) => p.position === 'VA-L').status, 'ok');
+  const fr = (await U.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1);
+  eq(fr.status, 'warnung', 'Fahrzeug: wie Warnung, nicht „unter Minimum“'); eq(fr.below_min, 0); eq(fr.spare_below_min, 1); eq(fr.min_tread_mm, 8, 'kleinste Profiltiefe der montierten Reifen');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
+  ok(csv[0].endsWith(';Reserverad unter 1,6 mm'), 'CSV-Spalte'); ok(csv.some((l) => l.startsWith('SZ-YC 5513;') && l.endsWith(';ja')), 'CSV ja');
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const fs1 = (await U.fleet.get('/api/master')).data.findings;
+  ok(!fs1.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'kein kritischer Befund');
+  const sp = fs1.find((f) => f.finding_code === 'TIRE_SPARE_BELOW_MINIMUM'); ok(sp, 'eigener Befund'); eq(sp.severity, 'handeln');
+  // zusammen mit einem montierten Reifen: beide Hinweise, montierter bleibt kritisch
+  r = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'HA-L-aussen', positions: ['Reserve'], tread_mm: 1.1 });
+  eq(JSON.stringify(r.data.warning_items.map((w) => w.code).sort()), '["spare_below_min","tread_below_min"]');
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  ok((await U.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM' && f.message.includes('HA-L')), 'montierter Reifen kritisch');
+  eq((await U.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1).status, 'unter_minimum');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ts_reserve_unter_minimum && STRINGS[l].spare_below_min.includes('{mm}') && STRINGS[l].tires_spare_below.includes('{min}') && STRINGS[l].audit_search_min.includes('{q}'), l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/aq\.length === 1 \? `<p class="small muted" id="aqmin"/.test(app), 'Protokollsuche: Hinweis bei 1 Zeichen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

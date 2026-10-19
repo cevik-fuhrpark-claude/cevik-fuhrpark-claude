@@ -374,6 +374,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
 
     // Reifen: letzte Profilmessung unter gesetzlichem Minimum bzw. konfigurierter Warnschwelle
     for (const t of await tireFindings(env, environment, settings)) {
+      // Reserverad unter 1,6 mm: kein Fahrverbot (Minimum gilt für montierte Reifen), aber vor Montage ersetzen – eigener Code, keine Entscheidung
+      if (t.spare) { add({ code: 'TIRE_SPARE_BELOW_MINIMUM', subject: `${t.vehicle_id}|${t.position}`, vehicle_id: t.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 0,
+        ...fm('TIRE_TREAD', { plate: t.plate, pos: t.position, mm: t.tread_mm, limit: t.limit, date: berlinDate(t.created_at) }), next_action: 'Reserverad nicht montieren – ersetzen lassen.' }); continue; }
       add({ code: t.severity === 'kritisch' ? 'TIRE_BELOW_MINIMUM' : 'TIRE_WARN', subject: `${t.vehicle_id}|${t.position}`, vehicle_id: t.vehicle_id,
         severity: t.severity, owner_role: 'fleet', requires_decision: t.severity === 'kritisch' ? 1 : 0,
         ...fm('TIRE_TREAD', { plate: t.plate, pos: t.position, mm: t.tread_mm, limit: t.limit, date: berlinDate(t.created_at) }),

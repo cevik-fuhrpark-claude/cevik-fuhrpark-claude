@@ -13,6 +13,14 @@ export function positionsForKind(kind) {
 export const TIRE_EVENTS = ['messung', 'wechsel', 'reparatur', 'sichtpruefung'];
 // Gesetzliche Mindestprofiltiefe in Deutschland (StVZO § 36) für Lkw-Reifen: 1,6 mm
 export const LEGAL_MIN_TREAD_MM = 1.6;
+// Status eines Profil-Messwerts je Position. Reserverad: das gesetzliche Minimum gilt für montierte Reifen (§ 36 StVZO) –
+// ein abgefahrenes Reserverad ist kein Fahrverbot, darf aber nicht montiert werden → eigener Status (wie „Warnung“), kein kritischer Befund (19.10.2026).
+export const SPARE_POSITION = 'Reserve';
+export function treadStatus(position, tread, warn) {
+  if (tread === undefined || tread === null) return 'unbekannt';
+  if (tread < LEGAL_MIN_TREAD_MM) return position === SPARE_POSITION ? 'reserve_unter_minimum' : 'unter_minimum';
+  return warn !== null && warn !== undefined && tread < warn ? 'warnung' : 'ok';
+}
 // Winterkennzeichnung (StVO § 2 Abs. 3a): bei Glätte/Schnee nur mit Alpine-Symbol (3PMSF); reine M+S-Reifen genügen seit 01.10.2024 nicht mehr.
 // Lkw (N2/N3): Antriebsachsen und vordere Lenkachsen; Anhänger sind keine Kfz und nicht betroffen.
 export const WINTER_MARKS = ['3pmsf', 'ms', 'keine'];
@@ -140,7 +148,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const dots = currentDots(allEv); const today = berlinDate();
   const positions = Object.entries(latest).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
-    status: x.tread_mm === undefined || x.tread_mm === null ? 'unbekannt' : x.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && x.tread_mm < warn ? 'warnung' : 'ok',
+    status: treadStatus(position, x.tread_mm, warn),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
   return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status) : null }; })() };
 }
@@ -188,7 +196,11 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter)));
   const id = ids[0];
   const warnings = []; const warningItems = [];
-  if (tread !== null && tread < LEGAL_MIN_TREAD_MM) {
+  if (tread !== null && tread < LEGAL_MIN_TREAD_MM && positions.includes(SPARE_POSITION)) {
+    warnings.push(`Reserverad: Profiltiefe ${tread} mm unter ${LEGAL_MIN_TREAD_MM} mm – nicht montieren, Reserverad ersetzen.`);
+    warningItems.push({ code: 'spare_below_min', tread_mm: tread, min_mm: LEGAL_MIN_TREAD_MM });
+  }
+  if (tread !== null && tread < LEGAL_MIN_TREAD_MM && positions.some((p) => p !== SPARE_POSITION)) {
     warnings.push(`Profiltiefe ${tread} mm liegt unter dem gesetzlichen Minimum von ${LEGAL_MIN_TREAD_MM} mm.`);
     warningItems.push({ code: 'tread_below_min', tread_mm: tread, min_mm: LEGAL_MIN_TREAD_MM }); // App zeigt den Text in der Oberflächensprache
   }
@@ -291,7 +303,7 @@ export async function tireFindings(env, environment, settings = null) {
   const out = [];
   for (const r of rows) {
     if (r.tread_mm === null) continue;
-    if (r.tread_mm < LEGAL_MIN_TREAD_MM) out.push({ severity: 'kritisch', ...r, limit: LEGAL_MIN_TREAD_MM });
+    if (r.tread_mm < LEGAL_MIN_TREAD_MM) out.push({ severity: r.position === SPARE_POSITION ? 'handeln' : 'kritisch', spare: r.position === SPARE_POSITION, ...r, limit: LEGAL_MIN_TREAD_MM });
     else if (warn !== null && r.tread_mm < warn) out.push({ severity: 'hinweis', ...r, limit: warn });
   }
   return out;
@@ -323,24 +335,28 @@ export async function fleetTires(env, user, envName, query = {}) {
   for (const e of ev) { if (!evByV.has(e.vehicle_id)) evByV.set(e.vehicle_id, []); evByV.get(e.vehicle_id).push(e); }
   const wo = await winterOrders(env, envName);
   const now = Date.now();
-  const rank = { unter_minimum: 3, warnung: 2, ok: 1, unbekannt: 0 };
+  const rank = { unter_minimum: 3, warnung: 2, reserve_unter_minimum: 2, ok: 1, unbekannt: 0 };
   const rows = vehicles.map((v) => {
     const pos = [...latest.values()].filter((x) => x.vehicle_id === v.id && x.tread_mm !== null);
-    let status = 'unbekannt'; let minTread = null; let oldest = null; let below = 0; let warned = 0;
+    let status = 'unbekannt'; let minTread = null; let oldest = null; let below = 0; let warned = 0; let spareBelow = 0;
     for (const p of pos) {
-      const st = p.tread_mm < LEGAL_MIN_TREAD_MM ? 'unter_minimum' : warn !== null && p.tread_mm < warn ? 'warnung' : 'ok';
-      if (st === 'unter_minimum') below++; if (st === 'warnung') warned++;
-      if (rank[st] > rank[status]) status = st;
-      if (minTread === null || p.tread_mm < minTread) minTread = p.tread_mm;
+      const st = treadStatus(p.position, p.tread_mm, warn);
+      if (st === 'unter_minimum') below++; if (st === 'warnung') warned++; if (st === 'reserve_unter_minimum') spareBelow++;
+      // Fahrzeugstatus: abgefahrenes Reserverad zählt wie „Warnung“ (Fahrzeug fahrbereit, Reserverad ersetzen)
+      const vst = st === 'reserve_unter_minimum' ? 'warnung' : st;
+      if (rank[vst] > rank[status]) status = vst;
+      // kleinste Profiltiefe der montierten Reifen (Reserverad nur, wenn sonst nichts gemessen ist)
+      if (p.position !== SPARE_POSITION && (minTread === null || p.tread_mm < minTread)) minTread = p.tread_mm;
       if (!oldest || p.at < oldest) oldest = p.at;
     }
+    if (minTread === null) for (const p of pos) if (minTread === null || p.tread_mm < minTread) minTread = p.tread_mm;
     const ageDays = oldest ? Math.round((Date.parse(today) - Date.parse(berlinDate(new Date(oldest)))) / 86400000) : null; // Berliner Kalendertage (18.10.2026: vorher 24-h-Blöcke – Messung 23:59 galt einen Tag jünger)
     const w = winterStatus(v.kind, winterMarks(evByV.get(v.id) || []));
     // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
     const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));
     const oldestDot = ages.reduce((o, a) => (!o || a.dot_date < o.dot_date ? a : o), null);
     return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wo.open.get(v.id) || null, winter_closed_order: v.kind === 'anhaenger' ? null : wo.closedIfOpen(v.id, w.status),
-      dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
+      dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, spare_below_min: spareBelow, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
   return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, stale_days: staleDays, site: sel.site, site_options: sel.options, rows,
@@ -377,7 +393,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
   for (const s of specs) { if (!byV.has(s.vehicle_id)) byV.set(s.vehicle_id, {}); byV.get(s.vehicle_id)[s.axle] = s; }
   const mm = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const head = ['Kennzeichen', 'Fahrzeugart', 'Standort', 'Status', 'Kleinste Profiltiefe (mm)', 'Gemessene Positionen', `Unter ${mm(ov.legal_min_tread_mm)} mm`, 'Unter Warnschwelle',
-    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} ${ov.stale_days === 1 ? 'Tag' : 'Tage'}`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen'];
+    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} ${ov.stale_days === 1 ? 'Tag' : 'Tage'}`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen', `Reserverad unter ${mm(ov.legal_min_tread_mm)} mm`];
   const lines = [head.join(';')];
   for (const r of ov.rows) {
     const sp = byV.get(r.vehicle_id) || {};
@@ -385,7 +401,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
     const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
     lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
       r.oldest_measure_at ? berlinDate(r.oldest_measure_at) : '', r.oldest_age_days ?? '', r.measured_positions ? (r.stale ? 'ja' : 'nein') : '',
-      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn, r.winter_closed_order ? r.winter_closed_order.case_no : ''].join(';'));
+      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn, r.winter_closed_order ? r.winter_closed_order.case_no : '', r.spare_below_min ? 'ja' : ''].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

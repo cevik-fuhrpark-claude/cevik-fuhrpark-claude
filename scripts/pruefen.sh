@@ -34,6 +34,7 @@ UI-Postausgang in der Umgebung der Erfassung|ui-postausgang-umgebung.py|/tmp/cfp
 UI-Sprache offline gewählt bleibt|ui-sprache-offline.py|/tmp/cfp-sprache-offline.log
 UI-Fahrer-Auswahl (Suchfeld-Enter, Vorauswahl Kontrolle)|ui-fahrer-auswahl.py|/tmp/cfp-fahrer-auswahl.log
 UI-Leitung: Zeitraum-Fehler, km-Hinweis EN, außer Betrieb ohne Zuordnung|ui-leitung-ansichten.py|/tmp/cfp-leitung-ansichten.log
+UI-Reserverad und Protokollsuche 1 Zeichen|ui-reserverad.py|/tmp/cfp-reserverad.log
 UI-Foto nachreichen nach Netzabbruch beim direkten Senden|ui-foto-netzabbruch.py|/tmp/cfp-foto-netz.log
 UI-Auftragstexte (Prüftermin) in der App-Sprache|ui-auftragstexte.py|/tmp/cfp-auftragstexte.log
 UI-Aktionsformular bleibt offen, Vertrag km-Grundlage|ui-aktionsformular.py|/tmp/cfp-aktionsformular.log
