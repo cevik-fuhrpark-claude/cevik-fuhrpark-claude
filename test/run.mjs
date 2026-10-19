@@ -13808,6 +13808,22 @@ await test('Fahrzeugakte 19.10.: km-Herkunft lesbar, Rückruf-Durchführung übe
   ok(app.includes("prompt(t('evx_reason'))") && STRINGS.uk.evx_reason && STRINGS.en.evx_reason, 'Ausnehmen fragt eigenen Grund');
 });
 
+await test('Backlog 93 (19.10.): SP nur aus HU berechnet (kein SP-Eintrag) erscheint überfällig in Prüftermine, Werkstattplan und Kalender, keine Lücke „SP“, nichts angelegt', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
+  eq((await F.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', first_registration: `${Number(BERLIN_TODAY.slice(0, 4)) - 5}-03-01`, spec_source: 'Test: Fahrzeugschein F.2/B' })).status, 200);
+  const m = Number(BERLIN_TODAY.slice(5, 7)); const y = Number(BERLIN_TODAY.slice(0, 4)); const t = y * 12 + m - 1 - 8; // HU vor 8 Monaten → SP (HU + 6) überfällig
+  const hu = `${Math.floor(t / 12)}-${String(t % 12 + 1).padStart(2, '0')}-10`;
+  eq((await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', last_done_date: hu, interval_months: 12, evidence: 'Prüfbericht (Test)' })).status, 201);
+  const vid = (await F.get(`/api/vehicles/${V}`)).data.vehicle.id;
+  const ov = (await F.get('/api/maintenance')).data;
+  const sp = ov.rows.find((r) => r.vehicle_id === vid && r.kind === 'SP'); ok(sp, 'SP-Zeile vorhanden'); eq(sp.virtual, true); eq(sp.status, 'ueberfaellig'); eq(sp.id, `husp:${vid}:SP`);
+  ok(!ov.gaps.some((g) => g.vehicle_id === vid && g.missing.includes('SP')), 'keine Lücke SP');
+  const ics = new TextDecoder().decode((await F.get('/api/maintenance?format=ics')).data); ok(ics.includes(`husp:${vid}:SP`), 'Kalender');
+  const plan = (await F.get('/api/workshop/plan?days=7')).data; ok((plan.maintenance_due || []).some((i) => i.vehicle_id === vid && i.kind === 'SP' && i.status === 'ueberfaellig'), 'Werkstattplan');
+  const dq = (await U.own.get('/api/admin/data-quality')).data; ok(!dq.items.some((i) => i.check === 'missing_inspection' && i.vehicle_id === vid && /SP/.test(i.detail)), 'Datenqualität: keine Lücke SP');
+  eq((await e.DB.prepare("SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'").bind(vid).first()).n, 0, 'nichts angelegt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

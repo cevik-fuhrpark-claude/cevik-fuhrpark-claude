@@ -258,7 +258,15 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   const huspBy = new Map();
   for (const [vid, x] of huspIn) if (vmap.has(vid)) huspBy.set(vid, huSpFor(x, today, warnDays));
   const HUSP_MAP = { ok: 'ok', bald_faellig: 'faellig', ueberfaellig: 'ueberfaellig', ungeklaert: 'ungeklaert', nicht_sp_pflichtig: 'nicht_pflichtig', erste_sp_kuenftig: 'erste_sp' };
-  const rows = rules.map((r) => {
+  // HU/SP ohne eigenen Eintrag, deren Frist sich berechnen lässt (z. B. SP aus HU bzw. Erstzulassung): als Zeile ohne Regel (`virtual`) wie in der
+  // Fahrzeugakte und beim Agenten (19.10.2026, Backlog 93: überfällige SP fehlte in Übersicht, Werkstattplan und Kalender). Es wird nichts angelegt.
+  const ruleKeys = new Set(rules.map((r) => `${r.vehicle_id}|${r.kind}`));
+  const virt = [];
+  for (const [vid, h] of huspBy) for (const kind of ['HU', 'SP']) {
+    const x = kind === 'HU' ? h.hu : h.sp;
+    if (!ruleKeys.has(`${vid}|${kind}`) && x && x.due && x.status !== 'nicht_sp_pflichtig') virt.push({ id: `husp:${vid}:${kind}`, vehicle_id: vid, kind, virtual: true, evidence: null, updated_at: null, last_done_km: null });
+  }
+  const rows = [...rules, ...virt].map((r) => {
     const v = vmap.get(r.vehicle_id) || {};
     const hs = (r.kind === 'HU' || r.kind === 'SP') && huspBy.get(r.vehicle_id) ? huspBy.get(r.vehicle_id)[r.kind === 'HU' ? 'hu' : 'sp'] : null;
     if (hs) {
@@ -268,7 +276,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
         interval_months: r.kind === 'HU' ? hs.interval_months : null, days: due ? daysUntil(due, today) : null, status: HUSP_MAP[hs.status] || 'ungeklaert', husp_status: hs.status, notes: hs.notes, note_codes: hs.note_codes, prev_cycle_open: hs.prev_cycle_open || null,
         // Datumsstufe getrennt: „Frist ungeklärt“ (z. B. SP-Vorzyklus ohne Beleg) mit bekanntem Termin bleibt einzuplanen (18.10.2026: fehlte im Werkstattplan bis zur Überfälligkeit)
         date_status: !due ? 'ohne_termin' : daysUntil(due, today) < 0 ? 'ueberfaellig' : daysUntil(due, today) <= warnDays ? 'faellig' : 'ok',
-        evidence: r.evidence, updated_at: r.updated_at, interval_km: null, last_done_km: r.last_done_km, next_due_km: null, km_remaining: null, km_status: null };
+        evidence: r.evidence, updated_at: r.updated_at, interval_km: null, last_done_km: r.last_done_km, next_due_km: null, km_remaining: null, km_status: null, ...(r.virtual ? { virtual: true } : {}) };
     }
     const days = r.next_due_date ? daysUntil(r.next_due_date, today) : null;
     // Einmalige Aktion (Rückruf) erledigt und keine neue Frist laut Schreiben → „erledigt“ statt „ohne Termin“
@@ -280,7 +288,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
       next_due_date: r.next_due_date, planned_date: r.planned_date || null, interval_months: r.interval_months, days, status, date_status: dateStatus, evidence: r.evidence, updated_at: r.updated_at,
       interval_km: r.interval_km, last_done_km: r.last_done_km, due_km: r.due_km ?? null, ...(kmd || { next_due_km: null, km_remaining: null, km_status: null }) };
   }).sort((a, b) => (RANK[b.status] >= 3 ? RANK[b.status] : 0) - (RANK[a.status] >= 3 ? RANK[a.status] : 0) || (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
-  const has = new Set(rules.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP').map((r) => `${r.vehicle_id}|${r.kind}`));
+  const has = new Set([...rules.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP'), ...virt].map((r) => `${r.vehicle_id}|${r.kind}`));
   // Nicht SP-pflichtige Fahrzeuge brauchen keinen SP-Eintrag
   for (const [vid, h] of huspBy) if (h.sp.status === 'nicht_sp_pflichtig') has.add(`${vid}|SP`);
   const gaps = [];

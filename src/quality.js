@@ -8,7 +8,7 @@ import { forbidden, nowIso, berlinDate, berlinWindowStartIso, berlinDateTime, be
 const ACC_CYR = [...new Set(['аварія', 'аварії', 'аварію', 'аварією', 'дтп'].flatMap(caseVariants))];
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
-import { spRequired } from './inspection_rules.js';
+import { spRequired, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
@@ -188,6 +188,12 @@ export async function dataQuality(env, user, envName, query = {}) {
   // nicht SP-pflichtige Fahrzeuge brauchen keine SP (vorher „SP fehlt“ bei Lkw bis 7,5 t, 17.10.2026)
   const hasRule = new Set(rules.results.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP').map((r) => `${r.vehicle_id}|${r.kind}`));
   for (const v of vs) if (spRequired(v) === false) hasRule.add(`${v.id}|SP`);
+  // HU/SP ohne Eintrag, aber mit berechenbarer Frist (Backlog 93): zählt wie in der Prüftermin-Übersicht nicht als Lücke (3 Abfragen, nur wenn nötig)
+  const needHs = vs.filter((v) => ['HU', 'SP'].some((k) => !hasRule.has(`${v.id}|${k}`)));
+  if (needHs.length) {
+    const today = berlinDate();
+    for (const [vid, x] of await loadHuSpInputs(env, needHs.map((v) => v.id))) { const h = huSpFor(x, today, 30); if (h.hu && h.hu.due) hasRule.add(`${vid}|HU`); if (h.sp && h.sp.due) hasRule.add(`${vid}|SP`); }
+  }
   const pulledBy = new Map();
   const siteLabel = siteLabels(vs);
   for (const v of vs) {
