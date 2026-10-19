@@ -985,6 +985,11 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   for (const pv of result.preview) { const r = rows.get('VIN:' + pv.vin); if (r && r._yearBad) pv.year_unrecognized = r._yearBad; }
   result.preview.sort((a, b) => a.line - b.line); result.skipped.sort((a, b) => a.line - b.line);
   result.inactive_kept = result.preview.filter((p) => p.inactive_kept).map((p) => p.plate);
+  // Hinweis (keine Automatik): Stammstatus „verkauft/abgemeldet/stillgelegt/verschrottet/ausgemustert“, Fahrzeug wird aber aktiv angelegt bzw. bleibt aktiv –
+  // außer Betrieb nehmen nur bewusst in der Fahrzeugakte (mit Datum/Grund im Protokoll). 19.10.2026
+  const GONE = /verkauft|abgemeldet|stillgelegt|verschrottet|ausgemustert|außer betrieb|ausser betrieb/i;
+  for (const pv of result.preview) { const r = rows.get('VIN:' + pv.vin); const ex = existing.get('VIN:' + pv.vin); if (r && GONE.test(String(r.master_status || '').normalize('NFC')) && (!ex || ex.active)) pv.status_says_inactive = r.master_status; }
+  result.status_says_inactive = result.preview.filter((p) => p.status_says_inactive).map((p) => p.plate);
   // Hinweis (keine Sperre): Kennzeichen nach dem Import an mehreren Fahrzeugen (Schreibweise egal) – meist Tippfehler in der FIN
   // oder Doppelanlage (vgl. SZ-YC 5539). Maßgeblich ist das Kennzeichen nach dem Import: Datei vor Bestand.
   const effPlate = new Map((await env.DB.prepare('SELECT id, plate FROM vehicles').all()).results.map((v) => [v.id, v.plate]));

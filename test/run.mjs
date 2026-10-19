@@ -13367,6 +13367,21 @@ await test('Verbesserung 19.10. (42): Fuhrparkagent schließt Prüfmangel-Befund
   eq(open().status, 'erledigt', 'ohne Kappung normal erledigt');
 });
 
+await test('Verbesserung 19.10. (43): Fahrzeugimport-Vorschau nennt Zeilen mit Status „verkauft/abgemeldet“, die aktiv angelegt würden bzw. aktiv bleiben (keine Automatik)', async () => {
+  const { U, e } = await freshWorld();
+  const imp = (csv, dry = true) => U.own.req('POST', `/api/vehicles/import${dry ? '?dry_run=1' : ''}`, csv, { 'content-type': 'text/csv' });
+  let r = (await imp('Kennzeichen;FIN;Status\nSZ-VK 1;WMA15SZZ2HM700011;verkauft 09/2026\nSZ-VK 2;WMA15SZZ2HM700012;in Betrieb\nSZ-YC 5513;WMA15SZZ2HM722774;Abgemeldet')).data;
+  eq(r.status_says_inactive.join(), 'SZ-VK 1,SZ-YC 5513', 'neu und bestehend aktiv');
+  eq(r.preview.find((p) => p.plate === 'SZ-VK 1').status_says_inactive, 'verkauft 09/2026');
+  ok(!r.preview.find((p) => p.plate === 'SZ-VK 2').status_says_inactive);
+  e.DB.db.prepare(`UPDATE vehicles SET active=0 WHERE vin='WMA15SZZ2HM722774'`).run();
+  r = (await imp('Kennzeichen;FIN;Status\nSZ-YC 5513;WMA15SZZ2HM722774;Abgemeldet')).data;
+  eq(r.status_says_inactive.length, 0, 'schon außer Betrieb: kein Hinweis'); eq(r.inactive_kept.join(), 'SZ-YC 5513');
+  eq((await imp('Kennzeichen;FIN;Status\nSZ-VK 1;WMA15SZZ2HM700011;verkauft', false)).status, 200);
+  eq(e.DB.db.prepare(`SELECT active FROM vehicles WHERE vin='WMA15SZZ2HM700011'`).get().active, 1, 'Übernahme unverändert (aktiv)');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_status_inactive.includes('{n}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
