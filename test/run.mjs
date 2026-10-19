@@ -13511,6 +13511,24 @@ await test('Fahrernachweis stornieren (19.10.2026): Tippfehler „gültig bis“
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ddoc_cancel_reason, l);
 });
 
+await test('Fehlersuche 19.10. (48): Lager – gleichzeitig wiederverwendeter request_key an anderem Artikel ergibt 409 statt still „duplicate“, Bestellvermerk mit Jahres-Tippfehler abgewiesen', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet;
+  const A = (await F.post('/api/stock', { site: 'DORTMUND', name: 'Filter A', unit: 'l', initial_qty: '20', unit_price_net: '5' })).data.id;
+  const B = (await F.post('/api/stock', { site: 'DORTMUND', name: 'Filter B', initial_qty: '10' })).data.id;
+  const orig = e.DB.batch.bind(e.DB); let fired = false;
+  e.DB.batch = async (st) => {
+    if (!fired && st.some((x) => /INSERT INTO stock_movements/.test(x.sql || x.query || x._sql || ''))) { fired = true; eq((await F.post(`/api/stock/${A}/movements`, { type: 'zugang', qty: '3', request_key: 'k-race-1' })).status, 201); }
+    return orig(st);
+  };
+  const rb = await F.post(`/api/stock/${B}/movements`, { type: 'zugang', qty: '4', request_key: 'k-race-1' }); e.DB.batch = orig;
+  ok(fired); eq(rb.status, 409); eq(rb.data.error, 'request_key_reused');
+  eq((await F.post(`/api/stock/${A}/movements`, { type: 'zugang', qty: '3', request_key: 'k-race-1' })).data.duplicate, true, 'echte Wiederholung weiter „duplicate“');
+  const day = (y) => String(Number(BERLIN_TODAY.slice(0, 4)) + y) + BERLIN_TODAY.slice(4);
+  eq((await F.put(`/api/stock/${A}/order`, { qty: '90', ordered_on: '1926-10-01' })).status, 400, 'Bestelldatum 1926');
+  eq((await F.put(`/api/stock/${A}/order`, { qty: '90', eta: day(36) })).status, 400, 'Liefertermin Jahrzehnte später');
+  eq((await F.put(`/api/stock/${A}/order`, { qty: '90', eta: day(1) })).status, 200, 'Liefertermin in einem Jahr möglich');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

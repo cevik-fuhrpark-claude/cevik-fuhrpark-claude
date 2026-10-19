@@ -825,6 +825,8 @@ const V_MORE = [
   ['Datei zu groß (max. 300 KB).', 'Файл завеликий (макс. 300 КБ).', 'File too large (max. 300 KB).'],
   ['Anfrage zu groß.', 'Запит завеликий.', 'Request too large.'],
   ['Begründung ist zu kurz.', 'Обґрунтування закоротке.', 'Reason is too short.'],
+  ['Bestelldatum liegt mehr als 5 Jahre zurück – bitte prüfen.', 'Дата замовлення понад 5 років тому – перевірте.', 'Order date is more than 5 years ago – please check.'],
+  ['Liefertermin liegt mehr als 2 Jahre nach dem Bestelldatum – bitte prüfen.', 'Дата постачання більш ніж через 2 роки після замовлення – перевірте.', 'Delivery date is more than 2 years after the order date – please check.'],
   ['Nachweis nicht gefunden.', 'Документ не знайдено.', 'Record not found.'],
   ['Auslesung nicht gefunden.', 'Зчитування не знайдено.', 'Download not found.'],
   ['Frist vor 2000 – bitte Jahr prüfen.', 'Строк до 2000 року – перевірте рік.', 'Deadline before 2000 – please check the year.'],

@@ -183,7 +183,12 @@ export async function addMovement(env, user, envName, id, body) {
   if (type === 'zugang' && it.ordered_on) stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id));
   if (qty < 0) stmts.push(...stockGuardNonNegative(env, id));
   try { await env.DB.batch(stmts); } catch (e) {
-    if (rkey && String(e && e.message).includes('UNIQUE')) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
+    if (rkey && String(e && e.message).includes('UNIQUE')) {
+      // gleichzeitig derselbe Schlüssel an einem anderen Artikel/als Umlagerung: 409 statt still „duplicate“ (Buchung ging verloren, 19.10.2026)
+      const d2 = await env.DB.prepare('SELECT item_id, transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first();
+      if (d2 && (d2.item_id !== id || d2.transfer_id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
+      return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
+    }
     if (isCheck(e)) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(await onHand(env, id))} ${it.unit}).`);
     throw e;
   }
@@ -211,6 +216,11 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
   if (!isCalendarDate(on) || on > today) throw bad('validation', 'Bestelldatum: gültiges Datum, nicht in der Zukunft.');
   const eta = body.eta ? String(body.eta) : null;
   if (eta && (!isCalendarDate(eta) || eta < on)) throw bad('validation', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.');
+  // Jahres-Tippfehler (1926/2062): Bestellung höchstens 5 Jahre zurück, Liefertermin höchstens 2 Jahre nach der Bestellung – sonst blieb
+  // „Bestellung überfällig“ jahrzehntelang aus und der Vermerk unterdrückte „unter Mindestbestand“ (19.10.2026)
+  const shiftY = (d, y) => String(Number(d.slice(0, 4)) + y).padStart(4, '0') + d.slice(4);
+  if (on < shiftY(today, -5)) throw bad('validation', 'Bestelldatum liegt mehr als 5 Jahre zurück – bitte prüfen.');
+  if (eta && eta > shiftY(on, 2)) throw bad('validation', 'Liefertermin liegt mehr als 2 Jahre nach dem Bestelldatum – bitte prüfen.');
   const r = await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=? AND ordered_on IS NULL AND active=1')
     .bind(qty, on, eta, str(body.note, { max: 200, field: 'Bemerkung' }), user.id, nowIso(), id).run();
   if (!(r.meta && r.meta.changes)) throw conflict('stock_order_exists', 'Für diesen Artikel ist bereits eine Bestellung vermerkt. Bitte neu laden.');
