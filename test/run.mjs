@@ -13763,6 +13763,20 @@ await test('Integration/Agent 19.10.: since als Datum = Berliner Tagesbeginn, oh
   const ig = (await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8'); ok(ig.includes('numOf(it.speed) <= 300'), 'Geschwindigkeit begrenzt');
 });
 
+await test('Datenqualität 19.10.: fehlende Pflichtprüfungen und „FIN fast gleich“ mit Werten (detail_args) – App zeigt Prüfarten übersetzt und „abweichende Stelle n“ statt „#n“', async () => {
+  const { U } = await freshWorld();
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WMA15SZZ2HM722775', plate: 'DO-VS 1', site: 'Dortmund' })).status, 201);
+  const q = (await U.own.get('/api/admin/data-quality')).data;
+  const vs = q.items.find((i) => i.check === 'vin_similar' && i.plate === 'DO-VS 1'); ok(vs, 'FIN fast gleich'); eq(vs.detail_args.pos, 17); eq(vs.detail_args.other_plate, 'SZ-YC 5513');
+  const mi = q.items.find((i) => i.check === 'missing_inspection' && i.plate === 'DO-VS 1'); ok(mi && Array.isArray(mi.detail_args.kinds) && mi.detail_args.kinds.includes('Tachograph'), JSON.stringify(mi));
+  const { dqDetailText } = await import('../public/csv.js'); const { STRINGS } = await import('../public/i18n.js');
+  const tu = (k) => STRINGS.uk[k] || k; const mkU = (k) => (k === 'Tachograph' ? 'Тахограф' : k);
+  ok(dqDetailText(mi, tu, (x) => x, mkU).includes('Тахограф'), 'Prüfart übersetzt');
+  eq(dqDetailText(vs, (k) => STRINGS.en[k] || k, (x) => x), 'SZ-YC 5513 · WMA15SZZ2HM722774 · differing character 17');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('dqDetailText(i, t, fmtD, mk)') && app.includes('dataQualityCsv(items, t, fmtD, mk)'), 'App reicht mk durch');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

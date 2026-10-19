@@ -9,22 +9,24 @@ export function toCsv(header, rows) {
   return '﻿' + [header, ...rows].map((r) => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
 }
 // Datenqualität: Befunde mit Beschriftungen in der App-Sprache (t = Übersetzungsfunktion)
-export function dataQualityCsv(items, t, fmtD = null) {
+export function dataQualityCsv(items, t, fmtD = null, mk = (k) => k) {
   return toCsv([t('dq_col_severity'), t('dq_col_check'), t('dq_col_object'), t('dq_col_detail')],
-    items.map((i) => [t('dq_sev_' + i.severity), t('dq_' + i.check), i.plate || i.driver_name || '', fmtD ? dqDetailText(i, t, fmtD) : i.detail || '']));
+    items.map((i) => [t('dq_sev_' + i.severity), t('dq_' + i.check), i.plate || i.driver_name || '', fmtD ? dqDetailText(i, t, fmtD, mk) : i.detail || '']));
 }
 // [CLAUDE] Datenqualität: Detail in der App-Sprache (Ansicht und CSV). Server liefert detail (deutsch, für Integrations-API)
 // und ggf. detail_args (sprachneutral); ohne detail_args werden ISO-Daten im Detail lokal formatiert.
-export function dqDetailText(i, t, fmtD) {
+export function dqDetailText(i, t, fmtD, mk = (k) => k) {
   const a = i.detail_args;
   if (!i.detail) return '';
   if (i.check === 'km_stale') return fmtD(i.detail);
   if (i.check === 'telematics_vehicle_inactive') return a && a.since ? `${a.source}: ${fmtD(a.day)} ${a.time} · ${t('inactive_since')} ${fmtD(a.since)}` : i.detail.replace('außer Betrieb seit', t('inactive_since'));
   if (!a) return i.detail.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d));
+  if (i.check === 'missing_inspection' && Array.isArray(a.kinds)) return a.kinds.map(mk).join(', ');
+  if (i.check === 'vin_similar' && a.pos) return `${a.other_plate} · ${a.other_vin} · ${t('dq_vin_pos').replace('{n}', a.pos)}`;
   if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}${a.start_km !== undefined ? ` · ${a.km} km < ${a.start_km} km` : ''}`;
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
-  if (i.check === 'inspection_no_result' && a.done_date) return `${a.kind} ${fmtD(a.done_date)}`;
-  if (a.result) return `${a.kind} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
+  if (i.check === 'inspection_no_result' && a.done_date) return `${mk(a.kind)} ${fmtD(a.done_date)}`;
+  if (a.result) return `${mk(a.kind)} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
   return i.detail;
 }
 // Agentenbefunde (Management-Panel) in der App-Sprache – zum Abarbeiten in Excel. msg(f) = Meldungstext in der App-Sprache,

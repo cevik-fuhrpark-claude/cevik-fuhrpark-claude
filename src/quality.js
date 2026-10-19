@@ -177,7 +177,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const byPlate = new Map();
   for (const v of vs) { const k = normPlate(v.plate); byPlate.set(k, [...(byPlate.get(k) || []), v]); }
   for (const [, list] of byPlate) if (list.length > 1) for (const v of list) add('duplicate_plate', v, list.filter((x) => x !== v).map((x) => x.id).join(', '));
-  for (const [v, other, pos] of similarVins(vins.results)) add('vin_similar', v, `${other.plate} · ${other.vin} · #${pos}`);
+  for (const [v, other, pos] of similarVins(vins.results)) addA('vin_similar', v, `${other.plate} · ${other.vin} · #${pos}`, { other_plate: other.plate, other_vin: other.vin, pos }); // App: „abweichende Stelle 17“ statt „#17“ (19.10.2026)
   const lastKm = new Map(kms.results.map((r) => [r.vehicle_id, r.last]));
   // Rücksprung ohne Begründung (alle aktiven, bewerteten Fahrzeuge, auch Anhänger mit km-Ständen) – Datum/Werte des spätesten, Anzahl
   for (const r of kms.results) {
@@ -210,7 +210,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     }
     const required = v.kind === 'anhaenger' ? REQUIRED_KINDS_TRAILER : REQUIRED_KINDS;
     const missing = required.filter((k) => !hasRule.has(`${v.id}|${k}`));
-    if (missing.length) add('missing_inspection', v, missing.join(', '));
+    if (missing.length) addA('missing_inspection', v, missing.join(', '), { kinds: missing }); // App übersetzt die Prüfarten (19.10.2026: UK/EN roh „Tachograph“)
   }
   const vAct = new Map(vs.map((v) => [v.id, v]));
   for (const r of rules.results) if (r.interval_km && r.last_done_km === null && r.due_km === null && !['HU', 'SP'].includes(r.kind) && vAct.has(r.vehicle_id)) add('km_rule_no_base', vAct.get(r.vehicle_id), `${r.kind} · ${r.interval_km} km`);
