@@ -882,6 +882,8 @@ export async function addOdometer(env, user, vehicleId, body) {
   const de = (iso) => berlinDate(iso).split('-').reverse().join('.'); // Berliner Tag (Ablesung kurz nach Mitternacht ≠ UTC-Vortag)
   if (prev && km < prev.km) problems.push(`kleiner als ${prev.km} km vom ${de(prev.measured_at)}`);
   if (next && km > next.km) problems.push(`größer als ${next.km} km vom ${de(next.measured_at)}`);
+  // Werte für die Anzeige in der Oberflächensprache (19.10.2026: Hinweis kam in UK/EN deutsch)
+  const warningItems = [...(prev && km < prev.km ? [{ dir: 'below', km: prev.km, at: prev.measured_at }] : []), ...(next && km > next.km ? [{ dir: 'above', km: next.km, at: next.measured_at }] : [])];
   if (problems.length && !note) {
     throw conflict('km_not_plausible', `Kilometerstand ${km} km ist ${problems.join(' und ')}. Bitte prüfen oder Begründung angeben (z. B. Tachotausch).`, { previous: prev, next });
   }
@@ -919,7 +921,7 @@ export async function addOdometer(env, user, vehicleId, body) {
     }
   }
   measuredAt = at;
-  return { ok: true, measured_at: measuredAt, warning: problems.length ? `Abweichung mit Begründung gespeichert: ${problems.join(' und ')}.` : null };
+  return { ok: true, measured_at: measuredAt, warning: problems.length ? `Abweichung mit Begründung gespeichert: ${problems.join(' und ')}.` : null, ...(warningItems.length ? { warning_items: warningItems } : {}) };
 }
 
 // Stammdatenimport (CSV mit Kopfzeile: Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Anhänger)

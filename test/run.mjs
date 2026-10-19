@@ -7646,7 +7646,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
   { const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(/async function fleetTodo[\s\S]*?\/api\/vehicles'\)\.then\(\(r\) => r\.vehicles\.filter\(\(v\) => v\.agent_findings_critical > 0\)\)[\s\S]*?\['todo_vfind_crit', af,/.test(app), '„Heute zu tun“: Gruppe kritische Agentenbefunde');
     ok(app.includes('href="#/vehicles?f=with_findings"') && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
-    ok(/printHead\(\[`\$\{t\('period'\)\}: \$\{from\} – \$\{to\}`[\s\S]*?id="costprt"[\s\S]*?class="list print-summary"[\s\S]*?\$\('#costprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Kosten je Fahrzeug druckbar (Zeitraum/Standort im Vermerk, Fahrzeugzeilen zusammengefasst)');
+    ok(/printHead\(\[`\$\{t\('period'\)\}: \$\{fmtMonth\(from\)\} – \$\{fmtMonth\(to\)\}`[\s\S]*?id="costprt"[\s\S]*?class="list print-summary"[\s\S]*?\$\('#costprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Kosten je Fahrzeug druckbar (Zeitraum/Standort im Vermerk, Fahrzeugzeilen zusammengefasst)');
     ok(/async function viewKpi[\s\S]*?printHead\(\[`\$\{t\('period'\)\}[\s\S]*?id="kpiprt"[\s\S]*?\$\('#kpiprt'\)\.onclick = async \(\) => \{[^\n]*window\.print\(\)/.test(app), 'Kennzahlen druckbar');
     ok(/@media print[\s\S]*?\.print-summary details:not\(\[open\]\) \{ display: block !important; \}/.test((await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Druck-CSS: zugeklappte Zeilen als Zusammenfassung');
     ok(/const PRINT_OPEN = '#mhist, #vaf[^']*';/.test(app) && /addEventListener\('beforeprint'[^\n]*PRINT_OPEN/.test(app) && /addEventListener\('afterprint'[^\n]*PRINT_OPEN/.test(app), 'Druck: Prüfhistorie und Agentenbefunde der Akte werden mitgedruckt');
@@ -13214,6 +13214,11 @@ await test('Fehlersuche 19.10. (35): lange Suchtexte ohne D1-Mustergrenze (Proto
   e.DB.batch = orig;
   ok([a.status, b.status].includes(409), 'einer abgewiesen: ' + a.status + '/' + b.status);
   ok(e.DB.db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n >= 1, 'mindestens ein aktiver Inhaber');
+  // km-Nachtrag mit Begründung: Werte für die Anzeige je Sprache
+  eq((await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/odometer', { km: 100000 })).status, 201);
+  const kw = await U.ws.post('/api/vehicles/VIN:WDB9630051L917317/odometer', { km: 90000, note: 'Tachotausch' });
+  eq(kw.status, 201); ok(kw.data.warning); eq(kw.data.warning_items.length, 1); eq(kw.data.warning_items[0].dir, 'below'); eq(kw.data.warning_items[0].km, 100000);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_warn_saved && STRINGS[l].km_warn_below.includes('{km}'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
