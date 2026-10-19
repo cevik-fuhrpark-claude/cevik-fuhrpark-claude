@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
 import { caseDescText, stockNoteText } from './check-labels.js';
-import { STRINGS, PLURALS, CHECK_LABELS, translateValidation, translateImportReason, translateNextAction, translateLockReason, auditActionLabel, auditDetailText } from './i18n.js';
+import { STRINGS, PLURALS, CHECK_LABELS, translateValidation, deLimitText, translateImportReason, translateNextAction, translateLockReason, auditActionLabel, auditDetailText } from './i18n.js';
 import { findingMessage } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile } from './csv.js';
@@ -96,7 +96,9 @@ async function api(method, path, body, extra = {}) {
   if (!res.ok) {
     // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch): erst Code (err_*), sonst bekannter Text (Prüf- und Konfliktmeldungen); unbekannt: Server-Text
     const code = data && data.error;
-    const tr = srvText(code, data && data.message);
+    let tr = srvText(code, data && data.message);
+    // Lagerbestand: verfügbare Menge auch in UK/EN nennen (Server liefert sie als Zahl, 19.10.2026)
+    if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
     // inzwischen andere Person angemeldet (anderer Tab): Stand neu laden – Eingaben/Postausgang bleiben auf dem Gerät erhalten
     if (code === 'user_mismatch') setTimeout(() => location.reload(), 2500);
@@ -106,6 +108,7 @@ async function api(method, path, body, extra = {}) {
 }
 // Server-Meldung (deutsch) in der aktuellen Oberflächensprache: erst Code (err_*), sonst bekannter Text; unbekannt → null
 function srvText(code, msg) {
+  if (code === 'validation' && S.lang === 'de') return deLimitText(msg); // Zahlgrenzen im deutschen Format („0,01“, „100.000“)
   return (code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, msg))) || null;
 }
 
@@ -2048,6 +2051,8 @@ async function loadStockSelect(c) {
 async function viewStock() {
   try { sessionStorage.removeItem('cfp_sj_item'); } catch { /* egal */ } // Artikelfilter des Journals gilt nur für den Weg aus der Artikelakte
   const stockResp = await api('GET', '/api/stock'); const items = stockResp.items; const lastInv = stockResp.last_inventory || {};
+  // Zahl am „Bestellvorschlag“: nur Artikel mit noch offener Fehlmenge (voll bestellte nicht – wie der Agent, 19.10.2026)
+  const nReorder = items.filter((i) => i.below_min && !(i.ordered_on && i.min_qty - i.on_hand - (i.ordered_qty || 0) <= 1e-9)).length;
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
   // Ausdruck der Lagerliste: genau die angezeigten Artikel (Suche/Filter) samt Lagerwert-Zeile; Auswahl im Vermerk (#sprsel)
   render(`<h1>${esc(t('stock'))}</h1>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
@@ -2057,7 +2062,7 @@ async function viewStock() {
       <label>${esc(t('unit'))}</label><input name="unit" value="${esc(unitL('Stk'))}" maxlength="20"><label>${esc(t('initial_qty'))}</label><input name="initial_qty" inputmode="decimal">
       <label>${esc(t('min_qty'))}</label><input name="min_qty" inputmode="decimal"><label>${esc(t('storage'))}</label><input name="location">
       <label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
-    <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${items.some((i) => i.below_min) ? ` <span class="chip mittel">${items.filter((i) => i.below_min).length}</span>` : ''}</a></div>
+    <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${nReorder ? ` <span class="chip mittel">${nReorder}</span>` : ''}</a></div>
     ${items.length ? `<details class="panel noprint" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(w.name)}</option>`).join('')}</select>` : ''}
       <p class="small" id="invlast"></p><p class="noprint actions"><a class="btn secondary" href="#/stock/count" id="invsheet">${esc(t('count_sheet'))}</a><a class="btn secondary" href="#/stock/journal" id="invdiffs">${esc(t('inventory_diffs'))}</a></p><div id="invdraft"></div><div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
@@ -2179,6 +2184,7 @@ async function viewReorder() {
 
 // Bestand zum Stichtag (Jahresabschluss): Menge aus allen Buchungen bis Tagesende, zwei Preisangaben, Bewertung legt die Buchhaltung fest
 async function viewStockAsOf() {
+  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
   const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
   const today = bDate();
@@ -2208,6 +2214,7 @@ async function viewStockAsOf() {
 
 // Lagerjournal: alle Buchungen eines Zeitraums (Berliner Datum), Wert nur mit Preis, ohne buchende Person
 async function viewStockJournal() {
+  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
   const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
   const today = bDate();
@@ -3589,8 +3596,8 @@ function viewMore(open) {
   </div>
   <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
   ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t('home_site_hint'))}</p></div>` : ''}
-  <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
-  <details id="tfa"><summary>${esc(t('tf_title'))}${S.me.totp_enabled ? ` <span class="chip ok">${esc(t('tf_chip'))}</span>` : ''}</summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
+  <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" maxlength="200" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
+  <details id="tfa"><summary>${esc(t('tf_title'))} <span class="chip ok" id="tfchip"${S.me.totp_enabled ? '' : ' hidden'}>${esc(t('tf_chip'))}</span></summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
   <details id="sess"><summary>${esc(t('my_sessions'))}</summary><p class="small muted">${esc(t('new_login_hint'))}</p><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div><h3>${esc(t('kd_title'))}</h3><p class="small muted">${esc(t('kd_hint'))}</p><div id="kdlist" class="list"></div></details>
   <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
   bindLang(true);
@@ -3617,7 +3624,7 @@ function viewMore(open) {
     box.innerHTML = list.map((x) => `<div class="row"><span>${x.current ? '●' : '○'}</span><span class="title">${esc(x.device === 'Unbekanntes Gerät' ? t('unknown_device_l') : x.device)}${x.current ? ` <span class="chip ok">${esc(t('this_device'))}</span>` : ''}</span>${x.current ? '<span></span>' : `<button type="button" class="btn secondary" data-sid="${esc(x.id)}">${esc(t('sign_out_device'))}</button>`}<span class="sub" style="white-space:normal">${esc(t('last_active'))}: ${fmtDT(x.last_seen)} · ${esc(t('signed_in_at'))}: ${fmtDT(x.created_at)}</span></div>`).join('')
       + (list.length > 1 ? `<div class="actions"><button type="button" class="btn secondary" id="sessall">${esc(t('sign_out_others'))}</button></div>` : '');
     $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`); toast('✓'); await loadSessions(); } catch (err) { toast(err.message, true); } }));
-    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(`✓ ${r.revoked}`); await loadSessions(); } catch (err) { toast(err.message, true); } };
+    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(t('sessions_ended_n').replace('{n}', r.revoked)); await loadSessions(); } catch (err) { toast(err.message, true); } };
     await loadKnown();
   };
   // Bekannte Geräte: „dieses Gerät“ über die Gerätekennung (Header, wird serverseitig nur gehasht verglichen); dieses Gerät kann nicht vergessen werden
@@ -3636,7 +3643,9 @@ function viewMore(open) {
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
   $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
-  $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target))); toast('✓'); } catch (err) { toast(err.message, true); } };
+  $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)));
+    // Passwörter nicht im offenen Formular stehen lassen; der Server meldet andere Geräte ab (19.10.2026)
+    e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast('✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };
 }
 
 // Mein Konto → Zwei-Faktor-Anmeldung: Status, Einrichten (QR + Schlüssel), Ersatzcodes einmalig, neue Ersatzcodes, Ausschalten
@@ -3646,10 +3655,12 @@ const rcBlock = (codes, extra = '') => `<div class="panel good" id="rcbox"><h3>$
 function wireRc(codes) {
   const cp = $('#rccp'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(codes.join('\n')); toast(t('copied')); } catch { toast(codes.join(' ')); } };
 }
+// Chip „2FA“ in der Überschrift folgt dem Zustand (vorher erst nach erneutem Öffnen von „Mehr“, 19.10.2026)
+function tfChip() { const c = $('#tfchip'); if (c) c.hidden = !S.me.totp_enabled; }
 async function loadTotp() {
   const box = $('#tfabox'); if (!box) return;
   const st = await api('GET', '/api/me/totp');
-  S.me.totp_enabled = st.enabled;
+  S.me.totp_enabled = st.enabled; tfChip();
   if (!box.isConnected) return; // Ansicht inzwischen gewechselt
   if (!st.enabled) {
     box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
@@ -3668,7 +3679,7 @@ async function loadTotp() {
           ev.preventDefault();
           try {
             const x = await api('POST', '/api/me/totp/enable', { code: $('#tfc').value.trim() });
-            S.me.totp_enabled = true;
+            S.me.totp_enabled = true; tfChip();
             box.innerHTML = rcBlock(x.recovery_codes, t('tf_others_ended')) + `<div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
             wireRc(x.recovery_codes);
             $('#tfdone').onclick = () => loadTotp();
@@ -3689,7 +3700,7 @@ async function loadTotp() {
   };
   $('#tfd').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }); S.me.totp_enabled = false; toast('✓'); loadTotp(); }
+    try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }); S.me.totp_enabled = false; tfChip(); toast('✓'); loadTotp(); }
     catch (err) { toast(err.message, true); }
   };
 }

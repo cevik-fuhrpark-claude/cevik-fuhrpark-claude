@@ -92,6 +92,14 @@ export async function itemDetail(env, user, envName, id) {
   return { item: { ...it, on_hand: await onHand(env, id) }, movements, movements_truncated, movements_max: ITEM_HISTORY_MAX };
 }
 
+// Gleiche Bezeichnung + Teilenummer ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen (der eindeutige Index unterscheidet
+// „Bremsbelag/A-1“ und „bremsbelag/a-1“ – Bestand verteilte sich auf zwei Artikel, 19.10.2026). Auch deaktivierte zählen (wie der Index).
+const itemKey = (name, pn) => `${String(pn || '').trim().toLocaleLowerCase('de')}\u0000${String(name || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de')}`;
+async function assertNoTwin(env, envName, site, name, pn, exceptId = null) {
+  const k = itemKey(name, pn);
+  const rows = (await env.DB.prepare('SELECT id, name, part_number FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;
+  if (rows.some((r) => r.id !== exceptId && itemKey(r.name, r.part_number) === k)) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
+}
 export async function createItem(env, user, envName, body) {
   const site = siteScope(user, body.site);
   if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.');
@@ -102,6 +110,7 @@ export async function createItem(env, user, envName, body) {
   const initial = num(body.initial_qty, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true, decimalComma: commaDec(user) });
   // 0,0004 rundet beim Buchen auf 0 → Buchung abgelehnt, Artikel aber schon angelegt (17.10.2026) – vorher prüfen
   if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  await assertNoTwin(env, envName, site, str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }));
   const id = uuid();
   const now = nowIso();
   try {
@@ -133,6 +142,7 @@ export async function updateItem(env, user, envName, id, body) {
   // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
   const changed = Object.keys(fields).filter((k) => fields[k] !== it[k]);
   if (!changed.length) return { ok: true, changed: [] };
+  if (changed.includes('name') || changed.includes('part_number')) await assertNoTwin(env, envName, it.site, fields.name, fields.part_number, id);
   try {
     // Deaktivieren beendet einen offenen Bestellvermerk (sonst lebte er nach einer Reaktivierung wieder auf: Vorschlag 0, „Bestellung überfällig“)
     // Nur die geänderten Spalten schreiben (17.10.2026): vorher schrieb jede Änderung alle Stammfelder aus dem gelesenen Stand zurück –
@@ -171,7 +181,7 @@ export async function addMovement(env, user, envName, id, body) {
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
   if (type === 'korrektur' && !str(body.note, { max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.');
   if (type === 'entnahme') qty = -qty;
-  if (qty < 0 && (await onHand(env, id)) + qty < 0) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(await onHand(env, id))} ${it.unit}).`);
+  if (qty < 0 && (await onHand(env, id)) + qty < 0) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
   const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user) });
   // Entnahme: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
   const price = type === 'entnahme' && it.unit_price_net !== null ? it.unit_price_net : entered;
@@ -189,7 +199,7 @@ export async function addMovement(env, user, envName, id, body) {
       if (d2 && (d2.item_id !== id || d2.transfer_id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
       return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
     }
-    if (isCheck(e)) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(await onHand(env, id))} ${it.unit}).`);
+    if (isCheck(e)) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
     throw e;
   }
   return { ok: true, on_hand: await onHand(env, id) };
@@ -245,7 +255,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   if (prevT && (!prevT.transfer_id || prevT.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, on_hand: await onHand(env, id) };
   const avail = await onHand(env, id);
-  if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(avail)} ${it.unit}).`);
+  if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
   const note = str(body.note, { max: 300, field: 'Bemerkung' });
   const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=? AND (name=? OR (part_number IS NOT NULL AND part_number<>\'\' AND part_number=?))')
     .bind(envName, toSite, it.name, it.part_number || '\u0000').all()).results;
@@ -272,7 +282,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
       if (p2 && (!p2.transfer_id || p2.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
       if (p2) return { ok: true, duplicate: true, transfer_id: p2.transfer_id, on_hand: await onHand(env, id) };
     }
-    if (isCheck(e)) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(await onHand(env, id))} ${it.unit}).`);
+    if (isCheck(e)) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
     // gleichzeitig angelegter Zielartikel (eindeutiger Index): einmal neu – dann wird er gefunden (vorher „Interner Fehler“)
     if (created && !retried && String(e && e.message).includes('UNIQUE')) return transfer(env, user, envName, id, body, true);
     throw e;
@@ -288,7 +298,7 @@ export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, 
   if (it.site !== c.workshop_site) throw bad('validation', 'Lagerartikel gehört nicht zur zuständigen Werkstatt.');
   if (user.role === 'workshop' && it.site !== user.workshop_site) throw forbidden();
   const avail = await onHand(env, itemId);
-  if (avail < qty) throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(avail)} ${it.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
+  if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}). Zugang buchen oder Teil ohne Lager erfassen.`, { available: av, unit: it.unit, no_stock_hint: true }); }
   const stmt = env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,part_id,unit_price_net,note,user_id,created_at)
     VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net ?? price, `Vorgang ${c.case_no}`, user.id, nowIso());
   // Prüfung im Stapel des Vorgangsbefehls (zwei Vorgänge am selben Artikel); cases.js erkennt den Fall über guardItemId

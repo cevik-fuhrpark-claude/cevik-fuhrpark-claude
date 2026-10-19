@@ -1012,7 +1012,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'add_part': {
-      const qty = Math.round(num(p.quantity ?? 1, { min: 0.01, max: 100000, field: 'Menge', decimalComma: commaDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
+      const qty = Math.round(num(p.quantity ?? 1, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
@@ -1143,7 +1143,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       && await env.DB.prepare('SELECT 1 FROM case_events WHERE case_id=? AND command_id=? AND action=?').bind(c.id, commandId, action).first()) return { ok: true, duplicate: true };
     // Lagerentnahme im selben Stapel: parallel anderweitig entnommen → Bestand reicht nicht (statt „Vorgang geändert“)
     if (String(e && e.message).includes('CHECK') && stockGuardItem && (await onHand(env, stockGuardItem.id)) < stockGuardItem.qty) {
-      throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(await onHand(env, stockGuardItem.id))} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
+      { const av = await onHand(env, stockGuardItem.id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`, { available: av, unit: stockGuardItem.unit, no_stock_hint: true }); }
     }
     if (String(e && e.message).includes('CHECK') && workGuard) {
       const dayH = await workHoursOn(env, user.id, workGuard.date);

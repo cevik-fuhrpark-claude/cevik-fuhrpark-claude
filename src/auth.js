@@ -307,7 +307,7 @@ export function passwordCore(pw, names = []) {
 
 export function validatePassword(pw, names = []) {
   if (typeof pw !== 'string' || pw.length < 10) throw bad('weak_password', 'Passwort muss mindestens 10 Zeichen haben.');
-  if (pw.length > 200) throw bad('weak_password', 'Passwort ist zu lang.');
+  if (pw.length > 200) throw bad('password_too_long', 'Passwort ist zu lang (höchstens 200 Zeichen).');
   if (!/[A-Za-zÄÖÜäöüßА-Яа-яІіЇїЄєҐґ]/.test(pw) || !/[0-9]/.test(pw)) {
     throw bad('weak_password', 'Passwort braucht Buchstaben und Ziffern.');
   }

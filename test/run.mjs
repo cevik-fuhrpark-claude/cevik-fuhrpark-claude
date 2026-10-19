@@ -1468,7 +1468,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     [msg(() => oneOf('zzz', ['ok', 'mangel'], 'Prüfergebnis')), 'Результат перевірки: недійсне значення.', 'Check result: invalid value.'],
     [msg(() => num('5', { min: 10, field: 'Sonderfeld' })), 'Sonderfeld: не менше 10.', 'Sonderfeld: at least 10.'],
     [msg(() => num('30', { min: 0, max: 24, field: 'Stunden' })), 'Години: допустимо від 0 до 24.', 'Hours: allowed from 0 to 24.'],
-    [msg(() => num('9999999', { max: 5000000, field: 'Kilometerstand' })), 'Пробіг: не більше 5000000.', 'Odometer: at most 5000000.'],
+    [msg(() => num('9999999', { max: 5000000, field: 'Kilometerstand' })), 'Пробіг: не більше 5\u00a0000\u00a0000.', 'Odometer: at most 5,000,000.'], // Grenzen im Zahlformat der Sprache (19.10.2026)
   ];
   for (const [m, uk, en] of cases) {
     ok(m, 'Server liefert einen Text');
@@ -1518,7 +1518,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     for (const l of ['de', 'uk', 'en']) ok(STR[l]['err_' + code], `err_${code} (${l})`);
   }
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/STRINGS\[S\.lang\]\['err_' \+ code\]\) \|\| translateValidation\(S\.lang, msg\)/.test(app) && /const tr = srvText\(code, data && data\.message\)/.test(app), 'api() nutzt die Übersetzung (Code, sonst bekannter Text – auch bei Konflikten)');
+  ok(/STRINGS\[S\.lang\]\['err_' \+ code\]\) \|\| translateValidation\(S\.lang, msg\)/.test(app) && /(?:const|let) tr = srvText\(code, data && data\.message\)/.test(app), 'api() nutzt die Übersetzung (Code, sonst bekannter Text – auch bei Konflikten)');
   // Konflikt-Meldungen (409): jeder Code hat err_*-Übersetzung oder sein Text wird übersetzt (Vorlagen mit Beispielwert)
   const conf = [...src.matchAll(/conflict\('([a-z_]+)', (?:'([^']+)'|`([^`]+)`)/g)];
   ok(conf.length >= 15, 'Konflikt-Meldungen gefunden: ' + conf.length);
@@ -13889,6 +13889,28 @@ await test('Backlog 94 (19.10.): HU/SP-Fälligkeit laut Nachweis mit Tag – Age
   // Übersetzung: Vorlagen in allen Sprachen vorhanden
   const { FINDING_MESSAGES } = await import('../public/finding-messages.js').catch(() => ({}));
   if (FINDING_MESSAGES) for (const l of ['de', 'uk', 'en']) ok(FINDING_MESSAGES[l] && FINDING_MESSAGES[l].HUSP_DUE_DAY && FINDING_MESSAGES[l].HUSP_OVERDUE_DAY, 'Vorlage ' + l);
+});
+
+await test('Fehlersuche 19.10. (Konto/Lager): Passwort zu lang eigener Code, Lagerartikel ohne Groß-/Kleinschreibung eindeutig, Entnahme < 0,01, Bestand reicht nicht mit Menge, Zahlgrenzen je Sprache', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const pw = await U.fleet.post('/api/me/password', { old_password: 'Sicheres-Passwort-2026', new_password: 'Ab1' + 'x'.repeat(250) }); eq(pw.status, 400); eq(pw.data.error, 'password_too_long');
+  const a = await U.ws.post('/api/stock', { name: 'Bremsbelag', part_number: 'A-1', initial_qty: 1 }); eq(a.status, 201);
+  for (const [n, p] of [['bremsbelag', 'A-1'], ['Bremsbelag', 'a-1'], ['BREMSBELAG ', ' a-1']]) eq((await U.ws.post('/api/stock', { name: n, part_number: p })).status, 409, `Dublette ${n}/${p}`);
+  const b = await U.ws.post('/api/stock', { name: 'Bremsbelag vorn', part_number: 'A-1' }); eq(b.status, 201, 'andere Bezeichnung bleibt möglich');
+  eq((await U.ws.patch(`/api/stock/${b.data.id}`, { name: 'BremsBelag' })).status, 409, 'Umbenennen auf Zwilling');
+  eq((await U.ws.patch(`/api/stock/${a.data.id}`, { name: 'BREMSBELAG' })).status, 200, 'eigene Schreibweise ändern');
+  const k = await U.ws.post('/api/stock', { name: 'Kühlmittel', unit: 'l', initial_qty: '0,005' }); eq(k.status, 201);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: k.data.id, quantity: '0,005' })).status, 200, 'Entnahme 0,005 l');
+  const no = await cmd(U.ws, id, 'add_part', { stock_item_id: a.data.id, quantity: 5 }); eq(no.status, 400); eq(no.data.error, 'insufficient_stock'); eq(no.data.available, 1); ok(no.data.unit !== undefined, 'Einheit');
+  const out = await U.ws.post(`/api/stock/${a.data.id}/movements`, { type: 'entnahme', qty: 3 });
+  if (out.status === 400) { eq(out.data.error, 'insufficient_stock'); eq(out.data.available, 1); }
+  const { translateValidation, deLimitText } = await import('../public/i18n.js');
+  eq(deLimitText('Menge: zulässig von 0.01 bis 100000.'), 'Menge: zulässig von 0,01 bis 100.000.');
+  eq(deLimitText('Baujahr: zulässig von 1950 bis 2027.'), 'Baujahr: zulässig von 1950 bis 2027.', 'Jahreszahlen ohne Trenner');
+  eq(deLimitText('Kilometerstand: höchstens 5000000.'), 'Kilometerstand: höchstens 5.000.000.');
+  ok(translateValidation('en', 'Menge: zulässig von 0.01 bis 100000.').includes('0.01') && translateValidation('en', 'Menge: zulässig von 0.01 bis 100000.').includes('100,000'), 'EN');
+  ok(translateValidation('uk', 'Menge: zulässig von 0.01 bis 100000.').includes('0,01'), 'UK');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
