@@ -263,8 +263,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // Verlauf: Beträge/Stunden nur für Rollen, die sie auch in der Akte sehen (Kosten: Leitung; Arbeiten/Teile: Leitung + ausführende Werkstatt)
   const seesWork = user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch' && (user.role !== 'workshop' || access === 'full');
   // Vermerke zu Kosten-Aktionen enthalten oft Beträge („Freigabe bis 1.450 €“) – ohne Kostenrecht ausgeblendet (17.10.2026)
-  const hiddenNotes = canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'approve_costs', 'add_external_cost'];
-  const hiddenPayloads = [...(canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'approve_costs', 'add_external_cost']), ...(seesWork ? [] : ['add_part', 'record_work'])];
+  const hiddenNotes = canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'];
+  const hiddenPayloads = [...(canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost']), ...(seesWork ? [] : ['add_part', 'record_work'])];
   const detail = {
     case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
@@ -374,6 +374,28 @@ async function repairInspection(env, caseId) {
       (SELECT MAX(created_at) FROM inspections WHERE case_id=?1 AND kind='nach_reparatur') AS latest,
       (SELECT MAX(created_at) FROM case_events WHERE case_id=?1 AND action='return_for_rework') AS rework`).bind(caseId).first();
   return { latest: r.latest || null, current: !!r.latest && (!r.rework || r.latest > r.rework) };
+}
+// Markierung „Kostenfreigabe ausstehend“ nach Änderung der Einstellungen neu bewerten (19.10.2026: Grenze entfernt/erhöht bzw. Stundensatz
+// gesenkt – die Freigabe blieb blockiert): liegen die bewerteten Kosten nicht mehr über max(Grenze, freigegebener Betrag) bzw. ist die
+// Grenze aus, wird die Markierung aufgehoben und im Verlauf vermerkt. Nur offene Vorgänge; ohne erteilte Freigabe (kein Betrag erfunden).
+export async function revalidateCostMarks(env, actorId, caseIds = null) {
+  const limit = await costLimit(env);
+  const rows = (await env.DB.prepare(`SELECT id, environment, status, cost_over_limit_at, cost_approved_net FROM cases WHERE cost_over_limit_at IS NOT NULL
+    AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')${caseIds ? ' AND id IN (SELECT value FROM json_each(?))' : ''} LIMIT 200`).bind(...(caseIds ? [JSON.stringify(caseIds)] : [])).all()).results;
+  const cleared = [];
+  for (const c of rows) {
+    const k = await caseCosts(env, c.id);
+    const total = round2(k.actual_net + k.estimate_net);
+    if (limit !== null && total > Math.max(limit, c.cost_approved_net || 0)) continue;
+    const now = nowIso();
+    const r = await env.DB.batch([
+      env.DB.prepare(`UPDATE cases SET cost_over_limit_at=NULL, updated_at=?, version=version+1 WHERE id=? AND cost_over_limit_at=?`).bind(now, c.id, c.cost_over_limit_at),
+      env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at)
+        SELECT ?,?,?,?,NULL,'cost_limit_cleared',?,?,NULL,?,? WHERE changes()>0`).bind(uuid(), c.id, c.environment, actorId, c.status, c.status, JSON.stringify({ total_net: total, limit_net: limit, approved_net: c.cost_approved_net ?? null }), now),
+    ]);
+    if (r[0].meta && r[0].meta.changes) cleared.push(c.id);
+  }
+  return cleared;
 }
 async function checkCostLimit(env, ctx, user, envName, c) {
   if (c.cost_over_limit_at) return false;
@@ -1105,6 +1127,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (!flag(p.confirm, 'Bestätigung')) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
       // Grenze erst nach der letzten Buchung überschritten (Stundensatz erhöht, Grenze gesenkt, Satz nachgetragen – 18.10.2026: Freigabe
       // ohne Kostenfreigabe möglich): jetzt markieren (Hinweis an die Leitung) und die Freigabe abweisen
+      // Markierung aus einer früheren Grenze/einem höheren Stundensatz: erst neu bewerten (Versions-Guard: neu laden, dann freigeben)
+      if (c.cost_over_limit_at && (await revalidateCostMarks(env, user.id, [c.id])).length) throw conflict('version_conflict', 'Kostenfreigabe nach geänderter Grenze nicht mehr nötig – bitte neu laden und erneut freigeben.');
       if (c.cost_over_limit_at || await checkCostLimit(env, ctx, user, envName, c)) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten – keine Freigabe möglich.');
@@ -1213,8 +1237,9 @@ export async function submitInspection(env, ctx, user, envName, body) {
   } else {
     if (!['driver', 'fleet', 'owner', 'workshop'].includes(user.role)) throw forbidden();
     vehicleId = str(body.vehicle_id, { required: true, max: 40, field: 'Fahrzeug' });
-    const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=? AND active=1').bind(vehicleId).first();
-    if (!v) throw bad('validation', 'Fahrzeug unbekannt.');
+    const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
+    // inzwischen außer Betrieb genommen (Offline-Kontrolle): eigene Meldung wie bei Schadensmeldungen (19.10.2026)
+    if (!v || !v.active) throw bad('validation', v ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.');
   }
   const keys = new Set(CHECKLIST.map((i) => i.key));
   const items = Array.isArray(body.items) ? body.items : [];

@@ -678,7 +678,9 @@ async function handleApi(request, env, ctx, url) {
         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs)).run();
     }
     await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
-    return json({ ok: true });
+    // Grenze/Stundensatz geändert: offene Markierungen „Kostenfreigabe ausstehend“ neu bewerten (19.10.2026)
+    const costs_revalidated = pairs.some(([k]) => k === 'repair_cost_limit_net' || k === 'workshop_hourly_rate_net') ? (await cases.revalidateCostMarks(env, user.id)).length : 0;
+    return json({ ok: true, ...(costs_revalidated ? { costs_revalidated } : {}) });
   }
 
   throw notFound('Unbekannter API-Pfad.');

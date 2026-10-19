@@ -5961,7 +5961,10 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
-  ok(kcsv.split('\r\n')[1].endsWith(';ja;Meldung;;'), 'CSV: Kostenfreigabe ausstehend');
+  ok(kcsv.split('\r\n')[1].endsWith(';;Meldung;;'), 'CSV: Grenze entfernt → Kostenfreigabe nicht mehr ausstehend (seit 19.10.2026 aufgehoben)');
+  // seit 19.10.2026: Grenze entfernt → Markierung aufgehoben; für die folgenden Prüfungen Grenze wieder setzen und erneut überschreiten
+  eq((await owner.put('/api/settings', { repair_cost_limit_net: '1000' })).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Getriebedienst', amount_net: 900, valuation: 'estimate' }, 'Angebot 2')).data.cost_limit_exceeded, true);
   eq((await anon.req('GET', '/api/integration/v1/cases?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.cases.find((c) => c.id === id).cost_approval_pending, 1, 'Integrations-API: Kostenfreigabe offen');
   // Fuhrparkagent: offene Kostenfreigabe als Befund (ohne Beträge), verschwindet nach Freigabe
   eq((await users.fleet.post('/api/agent/run')).status, 200);
@@ -10661,7 +10664,10 @@ await test('Wettläufe Konten & Lager: Benutzer-Bearbeiten auf gelesenem Stand, 
   // 1. Deaktivierung + gleichzeitige Namensänderung: Deaktivierung bleibt (vorher still rückgängig), zweiter Aufruf 409
   { const { e, U } = await freshWorld(); addLatency(e);
     const [a, b] = await Promise.all([U.own.patch(`/api/users/${U.driver.id}`, { active: false }), U.fleet.patch(`/api/users/${U.driver.id}`, { display_name: 'Fahrer Neu' })]);
-    eq(a.status, 200); eq(b.status, 409); eq(b.data.error, 'version_conflict');
+    // reihenfolgeunabhängig (19.10.2026: kam die Namensänderung zuerst an, war sie der Gewinner – Test war gelegentlich rot): genau einer gewinnt,
+    // der andere bekommt 409; nie still überschrieben
+    eq([a.status, b.status].sort().join(), '200,409'); eq((a.status === 409 ? a : b).data.error, 'version_conflict');
+    if (a.status === 409) eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).status, 200, 'Deaktivierung nach Neuladen');
     eq(e.DB.db.prepare('SELECT active FROM users WHERE id=?').get(U.driver.id).active, 0, 'bleibt deaktiviert');
     eq((await new Client(worker, e, 'x').post('/api/login', { username: 'w.fahrer', password: PW })).status, 401);
     eq((await U.fleet.patch(`/api/users/${U.driver.id}`, { display_name: 'Fahrer Neu' })).status, 200, 'danach normal'); }
@@ -13953,6 +13959,29 @@ await test('Lager-Import (19.10.): Vorschau ohne Änderung, nur neue Artikel, vo
   const again = await imp(U.ws, csv); eq(again.data.created, 0, 'zweiter Import legt nichts doppelt an'); eq(again.data.unchanged, 3);
   ok((await U.own.get('/api/admin/audit?action=stock.import')).data.entries.length >= 1, 'Protokoll');
   const imp2 = await imp(U.fleet, 'Bezeichnung;Bestand\nWischerblatt;4\n', '?site=DORTMUND'); eq(imp2.status, 200); eq(imp2.data.created, 1);
+});
+
+await test('Fehlersuche 19.10. (Postausgang/Kosten): Kontrolle an außer Betrieb genommenem Fahrzeug, Kostenfreigabe nach entfernter Grenze aufgehoben, Erstattung mit 3 Nachkommastellen', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  // Abfahrtskontrolle (z. B. aus dem Postausgang) an inzwischen außer Betrieb genommenem Fahrzeug
+  const own = U.own; const V = 'VIN:WSM00000000000431';
+  ok([200, 201].includes((await own.post('/api/vehicles', { plate: 'SZ-OX 431', vin: V.slice(4), site: 'Dortmund' })).status));
+  eq((await U.fleet.post(`/api/vehicles/${V}/active`, { active: false, reason: 'Verkauf (Test)' })).status, 200);
+  const keys = (await U.ws.get('/api/meta')).data.checklist.map((i) => i.key);
+  const ck = await U.ws.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V, request_key: 'ox-431', items: keys.map((k) => ({ key: k, result: 'ok' })) });
+  eq(ck.status, 400); eq(ck.data.message, 'Fahrzeug ist außer Betrieb.');
+  eq((await U.ws.post('/api/inspections', { kind: 'abfahrt', vehicle_id: 'VIN:WSM00000000009999', request_key: 'ox-432', items: keys.map((k) => ({ key: k, result: 'ok' })) })).data.message, 'Fahrzeug unbekannt.');
+  // Kostenfreigabe: Grenze 100 €, Teil 150 € → markiert; Grenze entfernt → Markierung aufgehoben, Verlauf, Freigabe möglich
+  eq((await own.put('/api/settings', { repair_cost_limit_net: '100' })).status, 200);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Turbolader', quantity: 1, unit_price_net: 150 })).status, 200);
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.cost_over_limit_at, 'markiert');
+  eq((await own.put('/api/settings', { repair_cost_limit_net: '1000' })).data.costs_revalidated, 1, 'Grenze erhöht → aufgehoben');
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.cost_over_limit_at, null); ok(d.events.some((e) => e.action === 'cost_limit_cleared'), 'Verlauf');
+  eq((await own.put('/api/settings', { repair_cost_limit_net: '100' })).data.costs_revalidated, undefined, 'nichts mehr markiert');
+  // Erstattung „150,555“ in DE: Hinweis auf 2 Nachkommastellen statt „mehrdeutig“
+  const cl = await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'X', reported_on: BERLIN_TODAY, evidence: 'x', reimbursed_net: '150,555' });
+  eq(cl.status, 400); ok(/Nachkommastellen/.test(cl.data.message) && !/mehrdeutig/.test(cl.data.message), cl.data.message);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
