@@ -415,7 +415,7 @@ function vehicleRow(user, body) {
   return {
     id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60, field: 'Standort' }), manufacturer: str(body.manufacturer, { max: 60, field: 'Hersteller' }), model: str(body.model, { max: 60, field: 'Modell' }),
     build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
-    trailer_plate: str(body.trailer_plate, { max: 20, field: 'Anhänger-Kennzeichen' }), trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
+    trailer_plate: str(body.trailer_plate, { max: 20, field: 'Anhänger-Kennzeichen' })?.toUpperCase() ?? null, trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
       const t = str(body.trailer_vin, { max: 30, field: 'Anhänger-FIN' }); if (!t) return null;
       const n = normalizeVin(t); if (!isValidVin(n)) throw bad('validation', 'Anhänger-FIN muss 17 Zeichen haben (ohne I, O, Q).'); return n; })(),
     master_status: str(body.master_status, { max: 40, field: 'Stammstatus' }), source: str(body.source, { max: 200, field: 'Quelle' }) || `manuell durch ${user.username}`,
@@ -986,7 +986,7 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   const col = (names, skip = () => false) => { const x = head.findIndex((h) => names.includes(h) && !skip(h)); return x >= 0 ? x : head.findIndex((h) => !skip(h) && names.some((n) => h.startsWith(n))); };
   // Kennzeichen-/Anhänger-/Art-Spalte nicht über den Anfang allein (18.10.2026: „Kennzeichen Anhänger“ wurde Fahrzeugkennzeichen bzw. ging
   // still verloren, „Art km-Fälligkeit“ des eigenen Exports galt ohne Spalte „Fahrzeugart“ als Fahrzeugart)
-  const isTrailerHead = (h) => /anh(ä|ae)nger|auflieger/.test(h) && !/fin|fahrgestell|gekoppelt/.test(h);
+  const isTrailerHead = (h) => /anh(ä|ae)nger|auflieger/.test(h) && !/fin|fahrgestell|gekoppelt/.test(h) && !h.startsWith('fahrzeugart'); // „Fahrzeugart (Lkw/Anhänger)“ aus dem Hinweis ist die Art-Spalte
   const plateIdx = head.findIndex((h) => h.startsWith('kennzeichen') && !isTrailerHead(h));
   const kindIdx = head.findIndex((h) => h.startsWith('fahrzeugart')) >= 0 ? head.findIndex((h) => h.startsWith('fahrzeugart')) : head.findIndex((h) => h.startsWith('art') && !/km|f(ä|ae)llig|prüf|pruef/.test(h));
   const ci = { plate: plateIdx, site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin', 'fahrgestellnummer', 'fahrgestell', 'vin'], (h) => /anh(ä|ae)nger|auflieger|finanz/.test(h)), trailer: head.findIndex(isTrailerHead), kind: kindIdx, src: col(['quelle', 'nachweis']) };

@@ -291,7 +291,7 @@ await test('T15: abgemeldetes Gerät wird entwertet, Fehler sichtbar statt „zu
   const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)));
   await users.dispatch.post('/api/push/subscribe', { endpoint: 'https://push.example/gone/1', keys: { p256dh: pub, auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } });
   const t = await users.dispatch.post('/api/push/test');
-  eq(t.data.push_status, 'failed');
+  eq(t.data.push_status, 'failed'); eq(t.data.device_gone, true, 'als abgemeldet erkennbar (App zeigt pst_gone statt Rohtext)');
   eq((await users.dispatch.get('/api/push/devices')).data.devices.length, 0, 'Gerät entfernt');
   const t2 = await users.driver2.post('/api/push/test');
   eq(t2.data.push_status, 'no_subscription');
@@ -5691,7 +5691,7 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
   eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen)\r\n'), 'CSV-Spalte');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet\r\n'), 'CSV-Spalte');
   eq((await users.fleet.put(P, { file_id: null })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.put(P, { file_id: fid })).status, 200);
@@ -5704,7 +5704,7 @@ await test('Zahlen aus Formularen: „2.000“ nie still als 2; deutsches Format
   eq(num('', { nullable: true }), null);
   // Oberfläche meldet dasselbe Muster schon am Feld (gleicher Ausdruck wie der Server)
   const fs = await import('node:fs'); const appSrc = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const utilSrc = fs.readFileSync(new URL('../src/util.js', import.meta.url), 'utf8');
-  ok(appSrc.includes('const AMBIG_NUM = /^-?[1-9]\\d{0,2}(\\.\\d{3})+$/;') && utilSrc.includes('/^-?[1-9]\\d{0,2}(\\.\\d{3})+$/.test(t)'), 'gleiches Muster App/Server');
+  ok(appSrc.includes('const AMBIG_RE = /^-?[1-9]\\d{0,2}(\\.\\d{3})+$/;') && appSrc.includes("S.lang !== 'en' && AMBIG_RE.test(x)") && utilSrc.includes('/^-?[1-9]\\d{0,2}(\\.\\d{3})+$/.test(t)'), 'gleiches Muster App/Server');
   // Ende-zu-Ende: km-Stand mit Tausenderpunkt wird richtig übernommen
   eq((await owner.post('/api/vehicles', { plate: 'VT-NUM 1', vin: 'WDB96340310555641', site: 'Dortmund' })).status, 201);
   eq((await users.fleet.post('/api/vehicles/VIN:WDB96340310555641/odometer', { km: '123.456' })).status, 201);
@@ -8159,7 +8159,7 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   eq(auditDetailText('de', { from: { a: { b: 1 } } }), 'von: {"a":{"b":1}}', 'tief verschachtelt bleibt JSON');
   eq(auditDetailText('de', 'freier Text'), 'freier Text', 'Text unverändert');
   eq(auditDetailText('de', null), '', 'leer');
-  for (const k of AUDIT_DETAIL_KEY_CODES) ok(/^[а-яіїєґ’ ()]+: 1$/i.test(auditDetailText('uk', { [k]: 1 })), `${k} uk übersetzt`);
+  for (const k of AUDIT_DETAIL_KEY_CODES) ok((k === 'active' ? /^[а-яіїєґ’ ()]+: так$/i : /^[а-яіїєґ’ ()]+: 1$/i).test(auditDetailText('uk', { [k]: 1 })), `${k} uk übersetzt`); // active 0/1 (ältere Einträge) = ja/nein
   const fs = await import('node:fs');
   ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('auditDetailText(S.lang, d, refs)') && fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('det(e.detail, e.refs)'), 'Ansicht nutzt Detailtext mit aufgelösten Kennungen');
   // aufgelöste Kennungen ersetzen nur die Anzeige des jeweiligen Schlüssels
@@ -11689,7 +11689,7 @@ await test('Fehlersuche 18.10. (7): Freigabe bei weiterer Sperre („bleibt gesp
   const ak = (await U.fleet.get(`/api/vehicles/${V1}`)).data; ok(ak.downtime && ak.downtime.total_h >= 47, 'Akte: Ausfall bleibt nach Wechsel ' + JSON.stringify(ak.downtime && ak.downtime.total_h));
   // 5. Zahlen: englisches Tausenderkomma mehrdeutig, Einstellungen höchstens 2 Nachkommastellen
   const { num } = await import('../src/util.js');
-  for (const x of ['15,000', '1,000', '120,500', '1,000,000']) { let err = null; try { num(x, { grouped: true }); } catch (er) { err = er; } ok(err && /mehrdeutig/.test(err.message), x); }
+  for (const x of ['15,000', '1,000', '120,500', '1,000,000']) { let err = null; try { num(x, { grouped: true }); } catch (er) { err = er; } ok(err && /ohne Tausendertrennzeichen eingeben/.test(err.message), x); }
   eq(num('0,500'), 0.5); eq(num('2,5'), 2.5); eq(num('1,25'), 1.25);
   for (const [k, v] of [['maintenance_warn_km', '15,000'], ['repair_cost_limit_net', '1,000'], ['repair_cost_limit_net', '0,004'], ['repair_cost_limit_net', '12,345']]) eq((await U.own.put('/api/settings', { [k]: v })).status, 400, `${k}=${v}`);
   eq((await U.own.put('/api/settings', { repair_cost_limit_net: '12,34' })).status, 200);
@@ -12458,7 +12458,7 @@ await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Na
   eq(ov.reimbursed_sum_net, null, 'nicht in der Summe'); eq(ov.reimbursed_sum_excluded_net, 750.5, 'eigene Zeile');
   eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen)\r\n'), 'CSV-Kopf'); ok(/;ja\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
+  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|)\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
 });
 
 await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenze, Frist-Obergrenze; Lagerpreis mit Dezimalkomma, Umlagerungs-Schlüssel je Artikel; Profiltiefe gerundet, Messalter in Berliner Kalendertagen', async () => {
@@ -14168,6 +14168,88 @@ await test('Fehlersuche 19.10. (Verträge/Importe/Zeitleiste): Monatsrate je Spr
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const isCal = new Function(app.slice(app.indexOf('const isCalDay ='), app.indexOf('\n', app.indexOf('const isCalDay ='))) + '; return isCalDay;')();
   eq(isCal(2026, 2, 30), false); eq(isCal(2026, 13, 1), false); eq(isCal(2028, 2, 29), true); eq(isCal(2026, 10, 19), true);
+});
+
+await test('Fehlersuche 19.10. (Fahrzeugimport/Lager/Push/Versicherung): Anhänger-Kennzeichen groß, Hinweis-Spalten importierbar, Zählmenge übersetzt, Lagermengen EN mit Dezimalpunkt, Import-Anfangsbestand/Einheit übersetzt, deaktivierter Artikel markiert, Push-Test Ruhezeit, Versicherungsfall unvollständig', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const imp = (csv, q = '') => U.own.req('POST', '/api/vehicles/import' + q, csv, { 'content-type': 'text/csv' });
+  // 1. Anhänger-Kennzeichen in Großbuchstaben; Fahrzeugart in der Vorschau als Code (App übersetzt über vk_)
+  eq((await imp('Kennzeichen;FIN;Anhänger\nSZ-YC 5513;WMA15SZZ2HM722774;sz-yc 5514\n')).status, 200);
+  eq(e.DB.db.prepare('SELECT trailer_plate FROM vehicles WHERE id=?').get('VIN:WMA15SZZ2HM722774').trailer_plate, 'SZ-YC 5514');
+  const again = await imp('Kennzeichen;FIN;Anhänger\nSZ-YC 5513;WMA15SZZ2HM722774;SZ-YC 5514\n', '?dry_run=1'); eq(again.data.counts.unveraendert, 1, 'keine Scheinänderung');
+  // Spaltenköpfe aus dem Hinweis (DE) werden erkannt – auch „Fahrzeugart (Lkw/Anhänger)“ ist die Art-, nicht die Anhängerspalte
+  const hint = await imp('Kennzeichen;Standort;Status;Hersteller;Modell;Baujahr;FIN;Fahrzeugart (Lkw/Anhänger);Anhänger\nSZ-YC 5520;Dortmund;in Betrieb;MAN;TGX;2018;WMA15SZZ2HM722775;Anhänger;\n', '?dry_run=1');
+  eq(hint.status, 200, JSON.stringify(hint.data).slice(0, 200)); eq(hint.data.counts.neu, 1);
+  eq((await imp('Kennzeichen;Standort;Status;Hersteller;Modell;Baujahr;FIN;Fahrzeugart (Lkw/Anhänger);Anhänger\nSZ-YC 5520;Dortmund;in Betrieb;MAN;TGX;2018;WMA15SZZ2HM722775;Anhänger;\n')).status, 200);
+  eq(e.DB.db.prepare('SELECT kind, trailer_plate FROM vehicles WHERE id=?').get('VIN:WMA15SZZ2HM722775').kind, 'anhaenger');
+  const kp = await imp('Kennzeichen;FIN;Fahrzeugart\nSZ-YC 5520;WMA15SZZ2HM722775;Lkw\n', '?dry_run=1');
+  const ch = kp.data.preview[0].changes.find((c) => c.field === 'kind'); eq(ch.from, 'anhaenger'); eq(ch.to, 'lkw');
+  const { readFileSync } = await import('node:fs'); const src = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("c.field === 'kind' ? t('vk_' + c.to)"), 'Fahrzeugart in der Vorschau übersetzt');
+  for (const key of ['import_vehicle_cols', 'import_trailer_hint']) { const vals = [...src.matchAll(new RegExp(key + ": '([^']*)'", 'g'))].map((m) => m[1]); eq(vals.length, 3, key); for (const v of vals) for (const h of ['Kennzeichen', 'FIN', 'Fahrzeugart']) ok(v.includes(h), `${key}: ${h}`); }
+  // 2. Inventur: Feldname „Zählmenge <Artikel>“ übersetzt
+  const { translateValidation } = await import('../public/i18n.js');
+  const it = (await U.ws.post('/api/stock', { name: 'AdBlue', unit: 'l', initial_qty: 5, unit_price_net: 1 })).data;
+  const bad1 = await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: 'abc' }] }); eq(bad1.status, 400);
+  const msg = bad1.data.message || bad1.data.error; ok(/^Zählmenge AdBlue/.test(msg), msg);
+  eq(translateValidation('en', msg), 'Counted quantity AdBlue: invalid number.'); ok(/^Підрахована кількість AdBlue/.test(translateValidation('uk', msg)), translateValidation('uk', msg));
+  // 3. EN: Punkt = Dezimaltrennzeichen bei Lagermengen, Teilen, Stunden, Bußgeld-Betrag; DE unverändert
+  eq((await U.ws.post(`/api/stock/${it.id}/movements`, { type: 'zugang', qty: '1.500' })).status, 400, 'DE: „1.500“ mehrdeutig');
+  eq((await U.ws.patch('/api/me', { language: 'en' })).status, 200);
+  const mv = await U.ws.post(`/api/stock/${it.id}/movements`, { type: 'zugang', qty: '2.125', unit_price_net: '1.659' }); eq(mv.status, 201, JSON.stringify(mv.data));
+  eq((await U.ws.get(`/api/stock/${it.id}`)).data.item.on_hand, 7.125);
+  eq((await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it.id, counted: '7.125' }] })).status, 200, 'Zählmenge EN');
+  const cid = await toRepair();
+  eq((await cmd(U.ws, cid, 'record_work', { hours: '1.500', description: 'x' })).status, 200, 'Stunden EN');
+  eq(e.DB.db.prepare('SELECT hours FROM work_entries WHERE case_id=?').get(cid).hours, 1.5);
+  // 4. Versicherungsfall mit unbewerteter Position: „unvollständig“ statt still ohne Kosten; CSV-Spalte
+  eq((await cmd(U.ws, cid, 'add_part', { name: 'Spiegel ohne Preis', quantity: 1 })).status, 200);
+  eq((await U.fleet.put(`/api/cases/${cid}/claim`, { insurer: 'Allianz', reported_on: BERLIN_TODAY, evidence: 'Meldung', status: 'reguliert', reimbursed_net: 500, reimbursed_on: BERLIN_TODAY })).status, 200);
+  const cl = (await U.fleet.get('/api/claims?filter=alle')).data.claims.find((c) => c.case_id === cid);
+  eq(cl.case_cost_net, null); eq(cl.cost_incomplete, true);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?filter=alle&format=csv')).data);
+  ok(/;Kosten vollständig bewertet\r\n/.test(csv) && /;nein\r\n$/.test(csv), csv.slice(-120));
+  ok(app.includes("c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} –"), 'Übersicht zeigt „unvollständig“');
+  // 5. Lager-Buchungstexte: Import-Anfangsbestand und Einheit übersetzt; deaktivierter Artikel im Import markiert
+  const { stockNoteText } = await import('../public/check-labels.js');
+  eq(stockNoteText('Anfangsbestand (Import)', 'en'), 'Opening stock (import)'); eq(stockNoteText('Anfangsbestand (Import)', 'uk'), 'Початковий залишок (імпорт)'); eq(stockNoteText('Anfangsbestand (Import)', 'de'), 'Anfangsbestand (Import)');
+  eq(stockNoteText('Inventur 2026-10-19: gezählt 3 Stk, Buchbestand 5 Stk', 'en', { unit: (u) => (u === 'Stk' ? 'pcs' : u) }), 'Stocktake 2026-10-19: counted 3 pcs, book stock 5 pcs');
+  ok(app.includes('unit: unitL });') && app.includes("x.inactive ? ` <span class=\"chip mittel\">${esc(t('item_inactive_badge'))}"), 'Einheit im Buchungstext, deaktivierter Artikel im Import');
+  // 6. Push-Test während der Ruhezeit: zurückgehalten mit Zeitpunkt (App: pst_held, nicht rot); Antwort der Push-Auswahl nur Arten der Rolle
+  const kpair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  eq((await U.driver.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/q1', keys: { p256dh: b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kpair.publicKey))), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  const q = await U.driver.put('/api/me/notify-prefs', { quiet: { from: '00:00', to: '23:59' } }); eq(q.status, 200);
+  eq(JSON.stringify(q.data.kinds), JSON.stringify((await U.driver.get('/api/me/notify-prefs')).data.kinds), 'gleiche Arten wie GET');
+  const pt = await U.driver.post('/api/push/test'); eq(pt.data.push_status, 'pending'); ok(pt.data.hold_until && Date.parse(pt.data.hold_until) > Date.now(), JSON.stringify(pt.data)); eq(pt.data.device_gone, false);
+  ok(app.includes("r.hold_until ? t('pst_held')") && /pst_gone: '/.test(src), 'App: Ruhezeit/abgemeldet übersetzt');
+});
+
+await test('Fehlersuche 19.10. (Fahrerakte/Protokoll/Werkstattplan): Fahrerakte mit App-Konto nachträglich verknüpfen/lösen, Protokoll „aktiv“/Zwei-Faktor-Verfahren als Bezeichnung, km mit Tausenderkomma verständlich abgewiesen', async () => {
+  const { e, U } = await freshWorld();
+  // 1. Akte ohne Konto anlegen, später verknüpfen und wieder lösen (Oberfläche: Auswahl „App-Konto“ in „Stammdaten bearbeiten“)
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Später verknüpft' }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const did = dr.data.id;
+  const upd = async (b) => { const cur = (await U.fleet.get(`/api/drivers/${did}`)).data.driver; return U.fleet.patch(`/api/drivers/${did}`, { ...b, expected_updated_at: cur.updated_at }); };
+  eq((await upd({ user_id: U.driver.id })).status, 200); eq((await U.driver.get('/api/drivers')).status, 200);
+  eq(e.DB.db.prepare('SELECT user_id FROM drivers WHERE id=?').get(did).user_id, U.driver.id);
+  eq((await upd({ user_id: '' })).status, 200, 'lösen'); eq(e.DB.db.prepare('SELECT user_id FROM drivers WHERE id=?').get(did).user_id, null);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("user_id: d.user_id || '' };") && app.includes('linkUsers.map((u) =>'), 'Formular „Stammdaten bearbeiten“ mit App-Konto');
+  ok(app.includes("(!ve || !u.environment || u.environment === ve) && !linked.has(u.id)"), '„Fahrer anlegen“: nur wählbare Konten');
+  ok(app.includes("<h2>${esc(t('driver_docs'))}</h2>${cur.length ? `<div class=\"scroll\"><table class=\"stack\">"), 'Nachweise am Handy gestapelt');
+  ok(app.includes("toLocaleDateString(loc, { weekday: 'long', timeZone: 'UTC' })"), 'Wochentag einzeln (UK Nominativ)');
+  // 2. Protokoll: „aktiv“ als Wahrheitswert, Zwei-Faktor-Verfahren als Bezeichnung (auch ältere Einträge mit 0/1)
+  eq((await U.own.patch(`/api/users/${U.viewer.id}`, { active: false })).status, 200);
+  const det = JSON.parse(e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='user.update' AND target=? ORDER BY rowid DESC`).get(U.viewer.id).detail); eq(det.active, false);
+  const { auditDetailText } = await import('../public/i18n.js');
+  eq(auditDetailText('en', { active: 1 }).split(': ')[1], 'yes'); eq(auditDetailText('de', { active: 0 }).split(': ')[1], 'nein');
+  eq(auditDetailText('en', { by: 'totp' }).split(': ')[1], 'App code'); eq(auditDetailText('uk', { by: 'recovery' }).split(': ')[1], 'Резервний код');
+  // 3. km mit Tausenderkomma: verständliche Meldung (ohne „Nachkommastellen“), übersetzt
+  const { num } = await import('../src/util.js'); const { translateValidation } = await import('../public/i18n.js');
+  let msg = ''; try { num('158,500', { grouped: true, field: 'Kilometerstand' }); } catch (x) { msg = x.message; }
+  ok(/ohne Tausendertrennzeichen eingeben \(z\. B\. 158500\)/.test(msg) && !/Nachkommastellen/.test(msg), msg);
+  eq(translateValidation('en', msg), 'Odometer: “158,500” – please enter without thousands separator (e.g. 158500).');
+  eq(num('158.500', { grouped: true }), 158500, 'Tausenderpunkt (DE) weiter angenommen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

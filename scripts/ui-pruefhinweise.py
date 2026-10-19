@@ -32,7 +32,9 @@ with sync_playwright() as p:
         check(q.eval_on_selector('#ctf [name=partner]','e=>e.validity.valid'),'nach Eingabe wieder gültig')
         # mehrdeutig bleibt erhalten
         q.fill('#ctf [name=monthly_rate_net]','2.000')
-        check('2000' in q.eval_on_selector('#ctf [name=monthly_rate_net]','e=>e.validationMessage'),'„mehrdeutig“-Hinweis bleibt eigener Text')
+        # EN: Punkt = Dezimaltrennzeichen („2.000“ = 2,00 €, Server pointDec) – kein Hinweis (19.10.2026)
+        vm=q.eval_on_selector('#ctf [name=monthly_rate_net]','e=>e.validationMessage')
+        check(vm=='' if lang=='en' else '2000' in vm,'„mehrdeutig“-Hinweis bleibt eigener Text' if lang!='en' else 'EN: „2.000“ ohne Mehrdeutig-Hinweis')
         # Fehlermeldungen: nur eine gleichzeitig, Antippen schließt
         q.fill('#ctf [name=monthly_rate_net]',''); q.fill('#ctf [name=evidence]','Test')
         q.fill('#ctf [name=start_date]','2026-05-01'); q.fill('#ctf [name=end_date]','2026-01-01')

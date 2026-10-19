@@ -37,7 +37,7 @@ export function maintenanceWarnDays(v) {
 export const SETTINGS_KEYS = ['test_master_readonly', ...Object.keys(SETTING_RULES)];
 
 // Ein Wert → gespeicherter Text ('' = aus). Ungültig → 400 setting_invalid mit Schlüssel und Grenzen (die App nennt das Feld in ihrer Sprache).
-export function settingValue(key, v) {
+export function settingValue(key, v, { decimalPoint = false } = {}) {
   if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return '';
   if (key === 'test_master_readonly') {
     if (v === true || v === 1 || v === '1') return '1';
@@ -47,7 +47,7 @@ export function settingValue(key, v) {
   const r = SETTING_RULES[key];
   if (typeof v !== 'number' && typeof v !== 'string') throw invalid(key, r);
   let n;
-  try { n = num(v, { min: r.min, max: r.max, grouped: !!r.int }); } catch { throw invalid(key, r); }
+  try { n = num(v, { min: r.min, max: r.max, grouped: !!r.int, decimalPoint: decimalPoint && !r.int }); } catch { throw invalid(key, r); }
   if (r.int && !Number.isInteger(n)) throw invalid(key, r);
   // höchstens 2 Nachkommastellen (Euro, mm) – mehr wird abgewiesen statt gerundet (18.10.2026: „0,004“ € wurde still zu 0 = Grenze aus)
   if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw invalid(key, r);
@@ -61,9 +61,9 @@ function invalid(key, r) {
 }
 
 // Alle Felder prüfen, bevor etwas gespeichert wird (sonst halb gespeichertes Formular). Unbekannte Schlüssel werden ignoriert.
-export function settingPairs(body) {
+export function settingPairs(body, { decimalPoint = false } = {}) { // decimalPoint: EN-Oberfläche („1.500“ € = 1,50 €)
   const pairs = [];
-  for (const [k, v] of Object.entries(body)) if (SETTINGS_KEYS.includes(k)) pairs.push([k, settingValue(k, v)]);
+  for (const [k, v] of Object.entries(body)) if (SETTINGS_KEYS.includes(k)) pairs.push([k, settingValue(k, v, { decimalPoint })]);
   return pairs;
 }
 

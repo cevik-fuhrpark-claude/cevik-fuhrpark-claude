@@ -159,6 +159,8 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
     else if (!decimalPoint && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // englisches Tausenderkomma „15,000“/„1,000“ ebenso mehrdeutig (18.10.2026: wurde still als 15 bzw. 1 € gespeichert, km „120,500“ als 121)
+    // ganze Zahlen (km): Tausenderkomma ohne Nachkommastellen-Hinweis melden (19.10.2026: „158,500“ km nannte „Punkt für Nachkommastellen“)
+    else if (grouped && /^-?[1-9]\d{0,2}(,\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ – bitte ohne Tausendertrennzeichen eingeben (z. B. ${t.replace(/,/g, '')}).`);
     else if (!decimalComma && /^-?[1-9]\d{0,2}(,\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausendertrennzeichen (z. B. 15000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // nur Dezimalzahlen (kein „0x1E240“, „0b101“, „1e5“ – Number() verstünde sie)
     if (!/^[-+]?(\d+([.,]\d+)?|[.,]\d+)$/.test(t)) throw bad('validation', `${field}: ungültige Zahl.`);

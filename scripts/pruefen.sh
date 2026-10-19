@@ -92,6 +92,8 @@ UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aender
 UI-Dokumentangaben korrigieren|ui-dokument-korrigieren.py|/tmp/cfp-dokument-korrigieren.log
 UI-Dokument-Gültigkeit (Chips), Dublette mit anderen Angaben öffnet Korrektur|ui-dokument-status.py|/tmp/cfp-dokument-status.log
 UI-Wiedervorlage behält Vermerk, Suche findet außer Betrieb, Chip-Zeilen 390 px|ui-wiedervorlage-suche.py|/tmp/cfp-wiedervorlage-suche.log
+UI-Fahrzeugimport-Art/-Spalten, Versicherungsfall unvollständig, EN-Dezimalpunkt|ui-import-lager-versicherung.py|/tmp/cfp-import-lager-versicherung.log
+UI-Fahrerakte: Nachweise gestapelt, App-Konto verknüpfen, nur freie Konten|ui-fahrerakte-konto.py|/tmp/cfp-fahrerakte-konto.log
 UI-Offline-Postausgang (Fotos, Wiederholung, keine Verluste)|ui-postausgang.py|/tmp/cfp-postausgang.log
 UI-Offline-Postausgang abgewiesen (sichtbar, erneut senden, verwerfen)|ui-postausgang-abgewiesen.py|/tmp/cfp-postausgang-abgewiesen.log
 UI-Konflikt-Meldungen in der Sprache|ui-konfliktsprache.py|/tmp/cfp-konfliktsprache.log

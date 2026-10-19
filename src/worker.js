@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix } from './util.js';
+import { b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, pointDec } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -11,7 +11,7 @@ import * as vnotes from './vnotes.js';
 import * as emergency from './emergency.js';
 import { runFleetAgent, masterPanel, decideMasterItem } from './agent.js';
 import { getVapid } from './push.js';
-import { retryFailedPush, releaseQuietPush, PUSH_MAX_SENDS, notifyUsers, MUTABLE_KINDS, mutableKindsFor, parseMuted, currentLangText, nt } from './notify.js';
+import { retryFailedPush, releaseQuietPush, PUSH_MAX_SENDS, notifyUsers, mutableKindsFor, parseMuted, currentLangText, nt } from './notify.js';
 import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
@@ -209,7 +209,7 @@ async function handleApi(request, env, ctx, url) {
       const r = await env.DB.prepare(`UPDATE notifications SET push_hold_until=? WHERE user_id=? AND push_status='pending' AND push_hold_until > ?`).bind(ni, user.id, ni).run();
       if (r.meta && r.meta.changes) { const job = releaseQuietPush(env, nowMs, user.id); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }
     }
-    return json({ kinds: MUTABLE_KINDS, muted: parseMuted(after && after.push_muted), quiet: after && after.push_quiet_from ? { from: after.push_quiet_from, to: after.push_quiet_to } : null });
+    return json({ kinds, muted: parseMuted(after && after.push_muted), quiet: after && after.push_quiet_from ? { from: after.push_quiet_from, to: after.push_quiet_to } : null });
   }
   if (path === '/api/me/inspections-without-result' && m === 'GET') return json(await myInspectionsWithoutResult(env, user));
   if (path === '/api/me/vehicles' && m === 'GET') return json(await veh.myVehicles(env, user, envName));
@@ -648,8 +648,10 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/push/test' && m === 'POST') {
     const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}`, langOf: new Map([[user.id, user.language]]) });
-    const row = await env.DB.prepare('SELECT push_status, push_last_error FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
-    return json({ created: n, push_status: row?.push_status, error: row?.push_last_error });
+    const row = await env.DB.prepare('SELECT push_status, push_last_error, push_hold_until FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
+    // hold_until: wegen persönlicher Ruhezeit zurückgehalten; device_gone: Gerät vom Push-Dienst abgemeldet (keine Wiederholung) – die App zeigt beides übersetzt (19.10.2026)
+    const hold = row?.push_status === 'pending' && row.push_hold_until && Date.parse(row.push_hold_until) > (env.__nowMs || Date.now()) ? row.push_hold_until : null;
+    return json({ created: n, push_status: row?.push_status, error: row?.push_last_error, hold_until: hold, device_gone: /^Gerät abgemeldet/.test(row?.push_last_error || '') });
   }
 
   // Dashboard / Management / Agent
@@ -672,7 +674,7 @@ async function handleApi(request, env, ctx, url) {
     requireRole(user, ['owner']);
     const b = await readJson(request);
     // Eine Anweisung für alle Schlüssel (vorher eine je Schlüssel – das volle Formular hat > 30 Felder); erst alle Werte prüfen (src/settings.js)
-    const pairs = settingPairs(b);
+    const pairs = settingPairs(b, { decimalPoint: pointDec(user) });
     if (pairs.length) {
       await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs)).run();

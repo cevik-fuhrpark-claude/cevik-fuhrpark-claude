@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -1014,7 +1014,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       notifyKind = 'resumed';
       break;
     case 'record_work': {
-      const hours = num(p.hours, { min: 0.05, max: 24, field: 'Stunden' });
+      const hours = num(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user) });
       const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
       const date = str(p.work_date, { max: 10 }) || berlinDate();
       if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
@@ -1036,12 +1036,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'add_part': {
-      const qty = Math.round(num(p.quantity ?? 1, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
+      const qty = Math.round(num(p.quantity ?? 1, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
       // (18.10.2026: Eingabe landete nur im Teil, Journal blieb „unbewertet“ bzw. beim Artikelpreis; Regel wie die Entnahme im Lager)
-      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, decimalComma: commaDec(user) });
+      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
       if (p.stock_item_id) {
         const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice);
         stockItem = w.item;
@@ -1079,7 +1079,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     case 'add_external_cost': {
       const supplier = str(p.supplier, { required: true, max: 120, field: 'Lieferant' });
-      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, cents: true });
+      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);

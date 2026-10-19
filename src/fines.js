@@ -1,7 +1,7 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, PLATE_KEY_SQL, quoteCell } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -137,7 +137,7 @@ export async function createFine(env, user, envName, body) {
   // Frist vor der Tat: Tippfehler im Jahr – Agent meldete sofort „überfällig“ (18.10.2026)
   if (due && due < berlinDate(offenseAt)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
   // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
-  const location = str(body.location, { max: 200, field: 'Ort' }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true }); const fnote = str(body.note, { max: 2000, field: 'Bemerkung' });
+  const location = str(body.location, { max: 200, field: 'Ort' }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) }); const fnote = str(body.note, { max: 2000, field: 'Bemerkung' });
   // bei gleichem Kennzeichen zählt das aktive bewertete vor dem ruhenden vor dem außer Betrieb genommenen, sonst mehrdeutig = keine Zuordnung
   // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
   // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
@@ -257,7 +257,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         break;
       }
       case 'update':
-        if (p.amount_eur !== undefined) set.amount_eur = num(p.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true });
+        if (p.amount_eur !== undefined) set.amount_eur = num(p.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) });
         if (p.response_due !== undefined) {
           const due = str(p.response_due, { max: 10 });
           if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
