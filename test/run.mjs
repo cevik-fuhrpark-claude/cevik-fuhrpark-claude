@@ -13129,7 +13129,7 @@ await test('Fehlersuche 19.10. (33): Protokoll-Blättern ohne Verlust bei gleich
   x = await exp(); eq(x.audit_as_actor.length, 5000); ok(x.meta.truncated.includes('audit_as_actor'), '5001 = gekappt');
 });
 
-await test('Fehlersuche 19.10. (34): HU/SP – offene erste SP auch bei HU ab Vormonat bzw. nur einer belegten HU, Nachweis gegen erste SP-Frist = ungeklärt, Import-Rechnung bestätigt Plakette, keine falsche Klassen-Notiz', async () => {
+await test('Fehlersuche 19.10. (34): HU/SP – offene erste SP auch bei HU ab Vormonat bzw. nur einer belegten HU, Nachweis gegen erste SP-Frist = ungeklärt, Import-Rechnung bestätigt Plakette, keine falsche Klassen-Notiz, Lagermenge mit Dezimalkomma', async () => {
   const { computeHuSp } = await import('../src/inspection_rules.js');
   const V = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2024-01-10' }; // erste SP 07/2026
   const c = (ev, today, extra = {}) => computeHuSp(V, ev, { today, warnDays: 30, ...extra });
@@ -13168,7 +13168,10 @@ await test('Fehlersuche 19.10. (34): HU/SP – offene erste SP auch bei HU ab Vo
   eq((await imp('Kennzeichen;Art;Nächster Termin;Nachweis\nSZ-YC 5513;HU;03/2027;Plakette')).status, 200);
   eq((await imp('Kennzeichen;Art;Letzte Prüfung;Nachweis\nSZ-YC 5513;HU;2026-03-15;Rechnung 4711')).status, 200);
   const rule = e.DB.db.prepare(`SELECT m.* FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.plate='SZ-YC 5513' AND m.kind='HU'`).get();
-  eq(rule.due_source, 'nachweis'); ok(String(rule.evidence).includes('Plakette'), 'Plaketten-Nachweis bleibt: ' + rule.evidence); eq(rule.next_due_date, '2027-03-31');
+  eq(rule.due_source, 'nachweis'); ok(String(rule.evidence).includes('Plakette'), 'Plaketten-Nachweis bleibt: ' + rule.evidence); eq(rule.next_due_date, '2027-03-31');  // Lager: „Bestand reicht nicht“ mit Dezimalkomma (DE)
+  const sid = (await U.ws.post('/api/stock', { name: 'Öl', part_number: 'OL-9', unit: 'l', initial_qty: '17,5' })).data.id;
+  const w = await U.ws.post(`/api/stock/${sid}/transfer`, { to_site: 'MUENCHEN', qty: 99 });
+  eq(w.status, 400); ok(w.data.message.includes('verfügbar: 17,5 l'), w.data.message);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

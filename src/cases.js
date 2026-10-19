@@ -3,7 +3,7 @@ import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
 import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
-import { prepareCaseWithdrawal, onHand } from './stock.js';
+import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile } from './fines.js';
 import { siteSelection } from './reports.js';
 import { winterMarks, winterStatus } from './tires.js';
@@ -1137,7 +1137,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       && await env.DB.prepare('SELECT 1 FROM case_events WHERE case_id=? AND command_id=? AND action=?').bind(c.id, commandId, action).first()) return { ok: true, duplicate: true };
     // Lagerentnahme im selben Stapel: parallel anderweitig entnommen → Bestand reicht nicht (statt „Vorgang geändert“)
     if (String(e && e.message).includes('CHECK') && stockGuardItem && (await onHand(env, stockGuardItem.id)) < stockGuardItem.qty) {
-      throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${await onHand(env, stockGuardItem.id)} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
+      throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(await onHand(env, stockGuardItem.id))} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`);
     }
     if (String(e && e.message).includes('CHECK') && workGuard) {
       const dayH = await workHoursOn(env, user.id, workGuard.date);
