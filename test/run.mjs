@@ -13095,7 +13095,7 @@ await test('Fehlersuche 19.10. (32): Datenqualität Kontroll-km ohne ruhende/au�
     eq((await U.ws.post(`/api/stock/${c}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 400, 'echte abweichende Einheit weiter abgewiesen'); }
 });
 
-await test('Fehlersuche 19.10. (33): Protokoll-Blättern ohne Verlust bei gleichem Zeitpunkt, Meldung an außer Betrieb genommenes Fahrzeug nennt den Grund, UK-Pluralformen Fotos', async () => {
+await test('Fehlersuche 19.10. (33): Protokoll-Blättern ohne Verlust bei gleichem Zeitpunkt, Meldung an außer Betrieb genommenes Fahrzeug nennt den Grund, UK-Pluralformen Fotos, Datenauskunft gekappt erst über der Grenze', async () => {
   const { e, U } = await freshWorld();
   const ins = e.DB.db.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)');
   for (let i = 0; i < 120; i++) ins.run('same-' + String(i).padStart(3, '0'), null, 'maintenance.husp_recalc', 'VIN:X' + i, '{}', '2026-10-01T03:00:00.000Z');
@@ -13119,6 +13119,14 @@ await test('Fehlersuche 19.10. (33): Protokoll-Blättern ohne Verlust bei gleich
   eq((await U.driver.post('/api/cases', { vehicle_id: 'VIN:GIBTESNICHT', description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.message, 'Fahrzeug unbekannt.');
   const { PLURALS } = await import('../public/i18n.js');
   for (const k of ['photos_stored', 'photos_failed']) { ok(PLURALS.uk[k] && PLURALS.uk[k].one && PLURALS.uk[k].few && PLURALS.uk[k].many, k); ok(!PLURALS.uk[k].one.includes('їх'), k + ': Einzahl'); }
+  // Datenauskunft: „gekappt“ erst über 5000 Zeilen je Abschnitt (vorher schon bei genau 5000)
+  const exp = async () => { const x = await U.own.get(`/api/admin/users/${U.viewer.id}/data-export`); eq(x.status, 200); return typeof x.data === 'string' ? JSON.parse(x.data) : x.data instanceof Uint8Array || x.data instanceof ArrayBuffer ? JSON.parse(new TextDecoder().decode(x.data)) : x.data; };
+  const n0 = e.DB.db.prepare('SELECT COUNT(*) n FROM audit_log WHERE actor_id=?').get(U.viewer.id).n;
+  const ia = e.DB.db.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)');
+  e.DB.db.exec('BEGIN'); for (let i = n0; i < 5000; i++) ia.run('pv-' + i, U.viewer.id, 'test.x', null, null, '2026-01-01T00:00:00.000Z'); e.DB.db.exec('COMMIT');
+  let x = await exp(); eq(x.audit_as_actor.length, 5000); ok(!x.meta.truncated.includes('audit_as_actor'), 'genau 5000 = vollständig');
+  ia.run('pv-x', U.viewer.id, 'test.x', null, null, '2026-01-02T00:00:00.000Z');
+  x = await exp(); eq(x.audit_as_actor.length, 5000); ok(x.meta.truncated.includes('audit_as_actor'), '5001 = gekappt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

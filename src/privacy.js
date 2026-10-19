@@ -23,7 +23,8 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     if (!driver) driver = await env.DB.prepare('SELECT * FROM drivers WHERE user_id=?').bind(userId).first();
   } else userId = '\u0000'; // Fahrer ohne App-Konto: nur Fahrerakte
   const did = driver ? driver.id : '\u0000';
-  const q = (sql, ...args) => env.DB.prepare(`${sql} LIMIT ${LIMIT}`).bind(...args);
+  // eine Zeile mehr lesen: „gekappt“ nur, wenn wirklich mehr als LIMIT Zeilen vorhanden sind (19.10.2026: schon bei genau LIMIT gemeldet)
+  const q = (sql, ...args) => env.DB.prepare(`${sql} LIMIT ${LIMIT + 1}`).bind(...args);
   const stmts = {
     sessions: q('SELECT created_at, last_seen, expires_at, user_agent FROM sessions WHERE user_id=? ORDER BY last_seen DESC', userId),
     known_devices: q('SELECT label, first_seen, last_seen FROM known_devices WHERE user_id=? ORDER BY first_seen', userId),
@@ -62,7 +63,8 @@ export async function personExport(env, actor, { userId = null, driverId = null 
   const names = Object.keys(stmts);
   const res = await env.DB.batch(names.map((n) => stmts[n]));
   const data = {};
-  names.forEach((n, i) => { data[n] = res[i].results || []; });
+  const truncated = [];
+  names.forEach((n, i) => { const r = res[i].results || []; if (r.length > LIMIT) truncated.push(n); data[n] = r.slice(0, LIMIT); });
   const generatedAt = nowIso();
   await audit(env, actor.id, 'privacy.export', u ? u.id : driver.id, { sections: names.filter((n) => data[n].length).length, ...(u ? {} : { driver_only: true }) });
   return {
@@ -70,7 +72,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
       title: 'Datenauskunft je Person ([CLAUDE] CEVIK Fuhrpark)', generated_at: generatedAt, generated_by: actor.display_name,
       note: 'Alle in der Fuhrpark-App gespeicherten Daten zu dieser Person (App-Konto und verknüpfte Fahrerakte), ohne Passwort-Hashes, Sitzungs-Token und Push-Schlüssel. Dateiinhalte (Fotos/PDF) sind nicht enthalten, nur ihre Angaben. Vor Herausgabe prüfen (z. B. Daten Dritter in Freitexten).',
       limit_per_section: LIMIT,
-      truncated: names.filter((n) => data[n].length >= LIMIT),
+      truncated,
     },
     user: u, // null = Fahrer ohne App-Konto
     driver_record: driver || null,
