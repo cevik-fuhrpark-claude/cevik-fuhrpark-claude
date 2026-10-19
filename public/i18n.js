@@ -628,6 +628,9 @@ Object.assign(STRINGS.uk, { csort_priority: 'терміновість', csort_ol
 Object.assign(STRINGS.en, { csort_priority: 'urgency', csort_oldest: 'oldest first', csort_updated: 'recently changed' });
 Object.assign(STRINGS.de, { audit_search: 'Suche (Person, Kennzeichen, Kennung, Details)', audit_search_ph: 'z. B. SZ-YC 5539 oder FIN', audit_until: 'bis Datum', audit_search_min: 'Suche ab 2 Zeichen – „{q}“ wurde nicht gesucht, angezeigt werden alle Einträge.' });
 Object.assign(STRINGS.uk, { audit_search: 'Пошук (особа, номер, ідентифікатор, деталі)', audit_search_ph: 'напр. SZ-YC 5539 або VIN', audit_until: 'до дати', audit_search_min: 'Пошук від 2 символів – «{q}» не шукали, показано всі записи.' });
+Object.assign(STRINGS.de, { ddoc_cancel_reason: 'Begründung für das Storno (z. B. „Tippfehler, richtig ist 01.10.2026“). Der Nachweis bleibt im Verlauf sichtbar, zählt aber nicht mehr; danach gilt der neueste verbliebene – den richtigen ggf. neu erfassen.' });
+Object.assign(STRINGS.uk, { ddoc_cancel_reason: 'Причина анулювання (напр. «помилка, правильно 01.10.2026»). Документ залишається в історії, але більше не враховується; далі діє найновіший з решти – правильний за потреби внесіть знову.' });
+Object.assign(STRINGS.en, { ddoc_cancel_reason: 'Reason for the cancellation (e.g. “typo, correct is 01.10.2026”). The record stays visible in the history but no longer counts; the newest remaining one applies – re-enter the correct one if needed.' });
 Object.assign(STRINGS.de, { wplan_sp_prev_open: 'SP fällig {m} nicht belegt – Nachweis nachtragen oder SP durchführen' });
 Object.assign(STRINGS.uk, { wplan_sp_prev_open: 'SP зі строком {m} не підтверджено – внесіть підтвердження або проведіть SP' });
 Object.assign(STRINGS.en, { wplan_sp_prev_open: 'SP due {m} not evidenced – add the evidence or carry out the SP' });
@@ -822,6 +825,7 @@ const V_MORE = [
   ['Datei zu groß (max. 300 KB).', 'Файл завеликий (макс. 300 КБ).', 'File too large (max. 300 KB).'],
   ['Anfrage zu groß.', 'Запит завеликий.', 'Request too large.'],
   ['Begründung ist zu kurz.', 'Обґрунтування закоротке.', 'Reason is too short.'],
+  ['Nachweis nicht gefunden.', 'Документ не знайдено.', 'Record not found.'],
   ['Auslesung nicht gefunden.', 'Зчитування не знайдено.', 'Download not found.'],
   ['Frist vor 2000 – bitte Jahr prüfen.', 'Строк до 2000 року – перевірте рік.', 'Deadline before 2000 – please check the year.'],
   ['Durchführungszeitpunkt ungültig.', 'Неправильний час проведення.', 'Time of completion is invalid.'],
@@ -1310,6 +1314,7 @@ const AUDIT_ACTIONS = {
   'driver.create': ['Fahrerakte angelegt', 'Картку водія створено', 'Driver file created'],
   'driver.update': ['Fahrerakte geändert', 'Картку водія змінено', 'Driver file changed'],
   'driver.document': ['Fahrernachweis erfasst', 'Документ водія внесено', 'Driver record entered'],
+  'driver.document_cancel': ['Fahrernachweis storniert', 'Документ водія анульовано', 'Driver record cancelled'],
   'driver.license_check': ['Führerscheinkontrolle erfasst', 'Перевірку посвідчення внесено', 'Licence check entered'],
   'tacho.download': ['Auslesung erfasst', 'Зчитування внесено', 'Download recorded'],
   'tacho.cancel': ['Auslesung storniert', 'Зчитування анульовано', 'Download cancelled'],

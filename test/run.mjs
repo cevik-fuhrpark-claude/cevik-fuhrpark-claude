@@ -13487,6 +13487,30 @@ await test('Fehlersuche 19.10. (47): km der Abfahrtskontrolle im Einfügen gepr�
   eq(im.status, 200); eq(im.data.counts.neu, 2, JSON.stringify(im.data.skipped)); eq(im.data.skipped.length, 1, 'ohne passenden Namen weiter mehrdeutig');
 });
 
+await test('Fahrernachweis stornieren (19.10.2026): Tippfehler „gültig bis“ korrigierbar – der neueste verbliebene Nachweis gilt wieder, Storno mit Begründung im Verlauf, nur Leitung', async () => {
+  const { U } = await freshWorld(); const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const d = await U.fleet.post('/api/drivers', { display_name: 'Tippfehler Test' }); eq(d.status, 201); const D = d.data.id;
+  const typo = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(3650), evidence: 'Karte (Tippfehler)' }); eq(typo.status, 201);
+  const right = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(-5), evidence: 'Karte richtig' }); eq(right.data.older_than_current, true, 'richtiger zunächst nur Verlauf');
+  let x = (await U.fleet.get(`/api/drivers/${D}`)).data; eq(x.status.items.find((i) => i.kind === 'fahrerkarte').status, 'ok', 'Tippfehler gilt');
+  eq((await U.driver.post(`/api/drivers/${D}/documents/${typo.data.id}/cancel`, { reason: 'Tippfehler' })).status, 403);
+  eq((await U.fleet.post(`/api/drivers/${D}/documents/${typo.data.id}/cancel`, { reason: 'x' })).status, 400, 'Begründung zu kurz');
+  eq((await U.fleet.post(`/api/drivers/${D}/documents/gibtsnicht/cancel`, { reason: 'Tippfehler' })).status, 404);
+  eq((await U.fleet.post(`/api/drivers/${D}/documents/${typo.data.id}/cancel`, { reason: 'Tippfehler im Jahr' })).status, 200);
+  eq((await U.fleet.post(`/api/drivers/${D}/documents/${typo.data.id}/cancel`, { reason: 'Tippfehler im Jahr' })).data.duplicate, true, 'Wiederholung');
+  x = (await U.fleet.get(`/api/drivers/${D}`)).data;
+  const it = x.status.items.find((i) => i.kind === 'fahrerkarte'); eq(it.id, right.data.id, 'richtiger Nachweis gilt wieder'); eq(it.status, 'abgelaufen');
+  const c = x.documents.find((o) => o.id === typo.data.id); ok(c.cancelled_at && c.superseded && c.cancel_reason === 'Tippfehler im Jahr', 'Storno im Verlauf');
+  // neuer Nachweis nach Storno: wird wieder der gültige
+  eq((await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(1500), evidence: 'Neue Karte' })).data.older_than_current, undefined);
+  // Unterweisung: gleiches Thema, Tippfehler storniert → der andere zählt
+  const u1 = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'unterweisung', title: 'Ladungssicherung', valid_until: day(3000), evidence: 'Tippfehler' });
+  const u2 = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'unterweisung', title: 'Ladungssicherung', valid_until: day(-1), evidence: 'richtig' });
+  eq((await U.fleet.post(`/api/drivers/${D}/documents/${u1.data.id}/cancel`, { reason: 'Tippfehler' })).status, 200);
+  x = (await U.fleet.get(`/api/drivers/${D}`)).data; eq(x.status.items.find((i) => i.kind === 'unterweisung').id, u2.data.id);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ddoc_cancel_reason, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -223,6 +223,29 @@ export async function addDriverDocument(env, user, envName, id, body) {
   return { id: docId, ...(older ? { older_than_current: true } : {}) };
 }
 
+// Nachweis stornieren (Tippfehler, falsche Person): bleibt mit Begründung im Verlauf, zählt nicht mehr. War er der gültige Nachweis einer
+// Einzelart (Führerschein/Fahrerkarte/Code 95), gilt wieder der neueste verbliebene – im selben Stapel (19.10.2026).
+export async function cancelDriverDocument(env, user, envName, id, docId, body = {}) {
+  if (!isMgr(user)) throw forbidden();
+  await loadDriver(env, user, envName, id);
+  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');
+  const d = await env.DB.prepare('SELECT id, kind, valid_until, superseded, cancelled_at FROM driver_documents WHERE id=? AND driver_id=?').bind(str(docId, { max: 40 }), id).first();
+  if (!d) throw notFound('Nachweis nicht gefunden.');
+  if (d.cancelled_at) return { ok: true, duplicate: true };
+  const now = nowIso();
+  const single = ['fuehrerschein', 'fahrerkarte', 'code95'].includes(d.kind);
+  const [r] = await env.DB.batch([
+    env.DB.prepare('UPDATE driver_documents SET superseded=2, cancelled_at=?, cancelled_by=?, cancel_reason=? WHERE id=? AND cancelled_at IS NULL').bind(now, user.id, reason, d.id),
+    ...(single ? [env.DB.prepare(`UPDATE driver_documents SET superseded=0 WHERE id=(SELECT id FROM driver_documents WHERE driver_id=?1 AND kind=?2 AND cancelled_at IS NULL
+        ORDER BY COALESCE(valid_until,'0000') DESC, COALESCE(issued_on, substr(created_at,1,10)) DESC, created_at DESC LIMIT 1)
+      AND NOT EXISTS (SELECT 1 FROM driver_documents WHERE driver_id=?1 AND kind=?2 AND superseded=0)`).bind(id, d.kind)] : []),
+  ]);
+  if (!(r.meta && r.meta.changes)) return { ok: true, duplicate: true };
+  await audit(env, user.id, 'driver.document_cancel', id, { kind: d.kind, valid_until: d.valid_until, reason });
+  return { ok: true };
+}
+
 export async function addLicenseCheck(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);

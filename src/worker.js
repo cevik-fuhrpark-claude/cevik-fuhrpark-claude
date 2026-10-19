@@ -474,6 +474,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') return json(await drivers.driverDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'PATCH') return json(await drivers.updateDriver(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/documents$/)) && m === 'POST') return json(await drivers.addDriverDocument(env, user, envName, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/documents\/([\w-]+)\/cancel$/)) && m === 'POST') return json(await drivers.cancelDriverDocument(env, user, envName, mm[1], mm[2], await readJson(request)));
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/license-checks$/)) && m === 'POST') return json(await drivers.addLicenseCheck(env, user, envName, mm[1], await readJson(request)), 201);
 
   // Auslese-Fristen Fahrerkarte / Massenspeicher (FPersV § 2 Abs. 5)
