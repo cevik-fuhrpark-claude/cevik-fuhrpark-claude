@@ -201,9 +201,14 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   const now = nowIso();
   const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)
+  const rk = str(body.request_key, { max: 80, field: 'request_key' }) || null;
+  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position FROM tire_events WHERE vehicle_id=? AND request_key=? ORDER BY created_at, rowid').bind(vehicleId, rk).all()).results : []);
+  { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
   const ids = positions.map(() => uuid());
-  await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter)));
+  const res = await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark,request_key)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter, rk)));
+  if (rk && res.every((r) => !(r.meta && r.meta.changes))) { const k = await known(); return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
   const id = ids[0];
   const warnings = []; const warningItems = [];
   if (tread !== null && tread < LEGAL_MIN_TREAD_MM && positions.includes(SPARE_POSITION)) {

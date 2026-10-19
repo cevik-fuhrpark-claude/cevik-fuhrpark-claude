@@ -563,7 +563,7 @@ export async function masterPanel(env, environment) {
   // has_newer: es gibt eine neuere Übergabe desselben Befunds – unabhängig von deren Entscheidung (18.10.2026: nach Entscheidung der neuesten
   // zählte die ältere, nie entschiedene wieder als offene Entscheidung)
   const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id
-      AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id
+      AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer, du.display_name AS decided_by_name FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id LEFT JOIN users du ON du.id=m.decided_by
     WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC, m.rowid DESC
     LIMIT (SELECT COUNT(*) FROM master_inbox WHERE environment=?1 AND decision_status IN ('offen','gesehen')) + ${MASTER_INBOX_DONE_MAX}`).bind(environment).all()).results
     .map((m) => ({ ...m, payload: JSON.parse(m.payload) }));
@@ -599,15 +599,21 @@ export async function decideMasterItem(env, user, environment, eventId, body) {
   // Gleiche Stufe erneut nur „gesehen“ oder durch dieselbe Person (17.10.2026: zwei Leitungen entschieden gleichzeitig mit verschiedenen
   // Vermerken – der zweite überschrieb den ersten still); optional expected_status = gelesener Stand (die App sendet ihn). Protokoll master.decision.
   const exp = body.expected_status === undefined || body.expected_status === null ? null : oneOf(body.expected_status, ['offen', 'gesehen', 'entschieden', 'erledigt'], 'Stand');
-  const before = await env.DB.prepare('SELECT decision_status, decided_by, decision_note FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first();
+  const before = await env.DB.prepare('SELECT decision_status, decided_by, decision_note, finding_id FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first();
   if (!before) throw notFound('Eintrag nicht gefunden.');
+  // „gesehen“ auf schon gesehenem Eintrag: nichts ändern (19.10.2026: zweite Person überschrieb Person/Zeitpunkt ohne Protokoll)
+  if (st === 'gesehen' && before.decision_status === 'gesehen' && !note && (exp === null || exp === 'gesehen')) return { ok: true, unchanged: true };
   const r = await env.DB.prepare(`UPDATE master_inbox SET decision_status=?1, decided_by=?2, decision_note=COALESCE(?3, decision_note), decided_at=?4 WHERE event_id=?5 AND environment=?6
     AND ((CASE decision_status WHEN 'offen' THEN 0 WHEN 'gesehen' THEN 1 WHEN 'entschieden' THEN 2 ELSE 3 END) < ?7 OR (decision_status=?1 AND (?1='gesehen' OR decided_by=?2)))
     AND (?8 IS NULL OR decision_status=?8)`)
     .bind(st, user.id, note, nowIso(), String(eventId), environment, RANK[st], exp).run();
   if (r.meta.changes === 1) {
-    if (st !== 'gesehen' || before.decision_status === 'offen') await audit(env, user.id, 'master.decision', String(eventId), { environment, from: before.decision_status, to: st, ...(note ? { note } : {}), ...(before.decision_note && note && before.decision_note !== note ? { note_before: before.decision_note } : {}) });
-    return { ok: true };
+    // ältere, noch offene Einträge desselben Befunds (wiederkehrender Befund, in der App als „ersetzt“ ausgeblendet) mit entscheiden (19.10.2026)
+    let older = 0;
+    if (st !== 'gesehen' && before.finding_id) older = (await env.DB.prepare(`UPDATE master_inbox SET decision_status=?1, decided_by=?2, decided_at=?3 WHERE environment=?4 AND finding_id=?5 AND event_id<>?6
+      AND decision_status IN ('offen','gesehen') AND received_at <= (SELECT received_at FROM master_inbox WHERE event_id=?6 AND environment=?4)`).bind(st, user.id, nowIso(), environment, before.finding_id, String(eventId)).run()).meta.changes || 0;
+    if (st !== 'gesehen' || before.decision_status === 'offen') await audit(env, user.id, 'master.decision', String(eventId), { environment, from: before.decision_status, to: st, ...(note ? { note } : {}), ...(before.decision_note && note && before.decision_note !== note ? { note_before: before.decision_note } : {}), ...(older ? { older_entries: older } : {}) });
+    return { ok: true, ...(older ? { older_entries: older } : {}) };
   }
   if (!(await env.DB.prepare('SELECT 1 FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first())) throw notFound('Eintrag nicht gefunden.');
   throw conflict('version_conflict', 'Eintrag wurde zwischenzeitlich weiter bearbeitet. Bitte neu laden.');

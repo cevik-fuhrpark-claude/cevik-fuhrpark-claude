@@ -543,6 +543,8 @@ export async function updateUser(env, actor, userId, body) {
   // neue/geänderte Werkstatt wie beim Anlegen prüfen (vorher beliebiger Code gespeichert → Werkstattkonto sah keine Aufträge)
   if (role === 'workshop' && (site !== target.workshop_site || target.role !== 'workshop')
     && !(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
+  // nichts geändert (z. B. leerer Aufruf an ein deaktiviertes Konto): kein Protokoll, keine erneute Entwertung von Sitzungen/Einladungen (19.10.2026)
+  if (role === target.role && environment === target.environment && !!active === !!target.active && display === target.display_name && (site || null) === (target.workshop_site || null)) return { ok: true, changed: [], sessions_ended: false };
   const now = nowIso();
   // nur auf dem gelesenen Stand schreiben (Muster cmd_guard): vorher machte eine gleichzeitige Namensänderung eine Deaktivierung oder einen
   // Rollenwechsel still rückgängig (alle Felder absolut aus dem alten Stand zurückgeschrieben) – 17.10.2026
@@ -592,6 +594,8 @@ export async function resetInvite(env, actor, userId) {
   if (!target) throw new HttpError(404, 'not_found', 'Benutzer nicht gefunden.');
   if (actor.role === 'fleet' && (target.environment !== actor.environment || !FLEET_MAY_CREATE.includes(target.role))) throw forbidden();
   if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
+  // deaktiviertes Konto: Link wäre nicht einlösbar (inviteInfo → 410) – nicht erzeugen (19.10.2026: App zeigte Link + QR eines toten Links)
+  if (!target.active) throw bad('user_inactive', 'Konto ist deaktiviert – erst aktivieren, dann neuen Einladungslink erzeugen.');
   const token = await createInvite(env, userId, actor.id);
   await audit(env, actor.id, 'user.invite_reset', userId, null);
   return { invite_token: token };
@@ -606,7 +610,8 @@ export async function listUsers(env, actor) {
     (SELECT COUNT(*) FROM push_subscriptions p WHERE p.user_id=u.id AND p.revoked_at IS NULL) AS push_devices,
     (SELECT COUNT(*) FROM known_devices k WHERE k.user_id=u.id AND k.last_seen >= ?3) AS known_devices,
     (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=u.id AND a.action IN ('login', 'invite.accept')) AS last_login,
-    CASE WHEN u.password_hash IS NULL THEN (SELECT MAX(i.expires_at) FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL) END AS invite_expires_at`;
+    CASE WHEN u.password_hash IS NULL THEN (SELECT MAX(i.expires_at) FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL
+      AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND c.role IN ('owner','fleet')))) END AS invite_expires_at`;
   const q = actor.role === 'owner'
     ? env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username ORDER BY u.environment, u.role, u.display_name`).bind(nowIso(), null, kdSince)
     : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=?2 ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment, kdSince);

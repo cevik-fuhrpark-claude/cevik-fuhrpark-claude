@@ -68,8 +68,8 @@ export function filterUsers(us, f, unusedDays) {
   const pick = {
     unused: (u) => isUnusedUser(u, unusedDays),
     active: (u) => u.has_password && u.active,
-    inactive: (u) => u.has_password && !u.active,
-    invite: (u) => !u.has_password,
+    inactive: (u) => !u.active, // auch nie eingerichtete Konten (19.10.2026)
+    invite: (u) => !u.has_password && !!u.active,
     locked: (u) => !!u.locked_until && String(u.locked_until) > now,
   }[f] || (String(f || '').startsWith('r_') ? (u) => u.role === f.slice(2) : () => true);
   return us.filter(pick);
@@ -77,13 +77,13 @@ export function filterUsers(us, f, unusedDays) {
 
 // Offene Einladung, deren neuester Link abgelaufen ist (Server: invite_expires_at nur ohne Passwort) → „Neue Einladung“ nötig
 export function inviteExpired(u, nowIso = new Date().toISOString()) {
-  return !u.has_password && !!u.invite_expires_at && String(u.invite_expires_at) < nowIso;
+  return !u.has_password && !!u.active && (!u.invite_expires_at || String(u.invite_expires_at) < nowIso); // kein gültiger Link (entwertet/Aussteller ausgeschieden) wie abgelaufen (19.10.2026)
 }
 
 export function usersCsv(us, t, ws, d) {
   return toCsv([t('display_name'), t('username'), t('role'), t('workshop'), t('environment'), t('status'), t('tf_chip'), t('uc_push'), t('last_login')],
     us.map((u) => [u.display_name, u.username, t('role_' + u.role), u.workshop_site ? ws(u.workshop_site) : '', u.environment === 'test' ? t('env_testname') : t('env_prod'),
-      !u.has_password ? t('dq_invite_pending') + (inviteExpired(u) ? ` (${t('inv_expired')})` : '') : u.active ? t('active') : t('inactive'), u.has_totp ? t('uc_yes') : t('uc_no'), u.push_devices || 0, u.last_login ? d(u.last_login) : '']));
+      !u.active ? t('inactive') : !u.has_password ? t('dq_invite_pending') + (inviteExpired(u) ? ` (${t('inv_expired')})` : '') : u.active ? t('active') : t('inactive'), u.has_totp ? t('uc_yes') : t('uc_no'), u.push_devices || 0, u.last_login ? d(u.last_login) : '']));
 }
 // Mängelstatistik: je Prüfpunkt bzw. je Fahrzeug (alle Fahrzeuge mit Kontrollen im Zeitraum, auch ohne Mangel).
 // label(k) = Prüfpunkt-Bezeichnung in der App-Sprache, d(iso) = Datum; leere Zelle = kein Wert.

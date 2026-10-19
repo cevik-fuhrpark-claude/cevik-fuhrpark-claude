@@ -14062,6 +14062,54 @@ await test('Fehlersuche 19.10. (Fahrerakte/Kosten): Vorwarnung Führerscheinkont
   eq(cur.vehicles.find((v) => v.vehicle_id === V1).actual_net, 115.42);
 });
 
+await test('Fehlersuche 19.10. (Master/Benutzer/Reifen/Plan): wiederkehrender Befund entscheidet ältere mit, „gesehen“ überschreibt nicht, kein Link für deaktivierte, Einladung herabgestufter Leitung nicht gültig, leere Änderung ohne Wirkung, Reifen idempotent, Plantext vollständig', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld();
+  // 1. Befund wiederkehrend: zwei offene Einträge desselben Befunds → älterer „superseded“; Entscheidung am neuesten erledigt beide
+  const id = await newCase({ priority: 'mittel' });
+  const lock = async (a) => eq((await cmd(U.fleet, id, a, a === 'lift_safety_lock' ? { confirm: true } : {}, 'Test Sperre')).status, 200, a);
+  await lock('set_safety_lock'); await U.fleet.post('/api/agent/run');
+  await lock('lift_safety_lock'); await U.fleet.post('/api/agent/run');
+  await lock('set_safety_lock'); await U.fleet.post('/api/agent/run');
+  let p = (await U.fleet.get('/api/master')).data;
+  const open = p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.payload.finding_code === 'CRITICAL_UNTRIAGED');
+  if (open.length >= 2) {
+    eq(open.filter((m) => !m.superseded).length, 1, 'nur der neueste zählt');
+    const newest = open.find((m) => !m.superseded);
+    const d = await U.fleet.post(`/api/master/${newest.event_id}/decision`, { decision_status: 'erledigt', expected_status: newest.decision_status }); eq(d.status, 200); eq(d.data.older_entries, open.length - 1);
+    p = (await U.fleet.get('/api/master')).data; eq(p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.payload.finding_code === 'CRITICAL_UNTRIAGED').length, 0, 'ältere mit erledigt');
+  } else ok(false, 'Befund kam nicht wiederholt: ' + open.length);
+  // 2. „gesehen“ zweimal: Person/Zeitpunkt bleiben
+  const any = (await U.fleet.get('/api/master')).data.inbox.find((m) => m.decision_status === 'offen');
+  if (any) {
+    eq((await U.fleet.post(`/api/master/${any.event_id}/decision`, { decision_status: 'gesehen' })).status, 200);
+    const r2 = await U.own.req('POST', `/api/master/${any.event_id}/decision`, { decision_status: 'gesehen' }, { 'x-cfp-env': 'test' }); eq(r2.data.unchanged, true);
+    const row = e.DB.db.prepare('SELECT decided_by FROM master_inbox WHERE event_id=?').get(any.event_id); eq(row.decided_by, U.fleet.id, 'erste Person bleibt');
+    ok((await U.fleet.get('/api/master')).data.inbox.find((m) => m.event_id === any.event_id).decided_by_name, 'Name für die Anzeige');
+  }
+  // 3. deaktiviertes Konto: kein neuer Einladungslink; leere Änderung ohne Protokoll/Wirkung
+  eq((await U.own.patch(`/api/users/${U.viewer.id}`, { active: false })).status, 200);
+  const ri = await U.own.post(`/api/users/${U.viewer.id}/invite`); eq(ri.status, 400); eq(ri.data.error, 'user_inactive');
+  const nAudit = () => e.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='user.update' AND target=?`).get(U.viewer.id).n; const a0 = nAudit();
+  const up = await U.own.patch(`/api/users/${U.viewer.id}`, {}); eq(up.status, 200); eq(up.data.sessions_ended, false); eq(nAudit(), a0, 'kein Protokolleintrag');
+  // 4. Einladung einer inzwischen herabgestuften Leitung gilt in der Liste nicht mehr als gültig
+  const lead = await U.own.post('/api/users', { username: 'lead.zwei', display_name: 'Leitung Zwei', role: 'fleet', environment: 'test' });
+  const leadC = new Client(worker, e, 'lead.zwei'); await leadC.post('/api/invite/accept', { token: lead.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const pend = await leadC.post('/api/users', { username: 'pend.zwei', display_name: 'Pend Zwei', role: 'driver', environment: 'test' }); eq(pend.status, 201);
+  const exp = async () => (await U.own.get('/api/users')).data.users.find((u) => u.id === pend.data.id).invite_expires_at;
+  ok(await exp(), 'vorher gültig');
+  eq((await U.own.patch(`/api/users/${lead.data.id}`, { role: 'viewer' })).status, 200);
+  eq(await exp(), null, 'Link des herabgestuften Ausstellers gilt nicht');
+  // 5. Reifen: gleicher request_key → keine Doppelten
+  const tb = { event_type: 'messung', position: 'VA-L', positions: ['VA-R'], tread_mm: 8, request_key: 'tire-rk-1' };
+  const t1 = await U.ws.post(`/api/vehicles/${V1}/tires/events`, tb); eq(t1.status, 201);
+  const t2 = await U.ws.post(`/api/vehicles/${V1}/tires/events`, tb); eq(t2.data.duplicate, true); eq(t2.data.ids.sort().join(), t1.data.ids.sort().join());
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM tire_events WHERE vehicle_id=? AND request_key='tire-rk-1'`).get(V1).n, 2);
+  // 6. Werkstattplan liefert Systemtexte vollständig (Übersetzung erkennt sie nur ganz)
+  const wo = await U.fleet.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: 'wo-plan-x' });
+  if (wo.status === 201 || wo.status === 200) { const pl = (await U.ws.get('/api/workshop/plan?days=14')).data; const all = [...pl.days.flatMap((d) => d.items), ...(pl.unplanned || []), ...(pl.overdue || [])];
+    const it = all.find((i) => i.case_no === wo.data.case_no); if (it) { const full = e.DB.db.prepare('SELECT description FROM cases WHERE case_no=?').get(wo.data.case_no).description; eq(it.description, full.slice(0, 300)); } }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
