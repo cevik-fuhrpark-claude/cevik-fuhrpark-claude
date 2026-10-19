@@ -1876,7 +1876,7 @@ await test('Kennzahlen: technische Verfügbarkeit – Vorgänge aus dem Vormonat
   ok(av.vehicles >= 1 && av.vehicle_h > 0 && av.pct >= 0 && av.pct <= 100, 'Flottenwerte plausibel');
   ok(Math.abs(av.pct - 100 * (1 - av.downtime_h / av.vehicle_h)) < 0.2 + (100 * 0.1) / av.vehicle_h, 'Quote = 1 − Ausfall/Fahrzeugstunden (Rundung auf 0,1 h, kurz nach Monatsbeginn sehr wenige Stunden)');
   ok(av.downtime_h + 0.1 >= (span * 0.75) / 3600000, 'Flottenausfall enthält das Fahrzeug');
-  ok(!('by_vehicle' in av) && av.lowest.length <= 5 && av.lowest.every((x) => x.downtime_h > 0), 'nur die geringsten mit Ausfall, höchstens 5');
+  ok(!('by_vehicle' in av) && av.lowest.length <= 5 && av.lowest.every((x) => x.downtime_h > 0 || x.pct < 100), 'nur die geringsten mit Ausfall (auch < 0,05 h bei Quote < 100 %), höchstens 5');
   for (let i = 1; i < av.lowest.length; i++) ok(av.lowest[i - 1].pct <= av.lowest[i].pct, 'aufsteigend');
   const n0 = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND eval_excluded=0').first()).n;
   eq(av.vehicles, n0, 'alle aktiven, nicht ruhenden Fahrzeuge');
