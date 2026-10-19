@@ -711,6 +711,7 @@ const V_MORE = [
   ['Vertragsende muss nach dem Vertragsbeginn liegen.', 'Кінець договору має бути після його початку.', 'The contract end must be after the contract start.'],
   ['Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.', 'Документ договору: виберіть документ з архіву документів цього транспорту.', 'Contract document: please choose a document from this vehicle’s documents.'],
   ['Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.', 'Договір страхування: виберіть договір страхування цього транспорту.', 'Insurance contract: please choose an insurance contract of this vehicle.'],
+  ['Vorgang ist als Dublette abgelehnt – Versicherungsfall beim ursprünglichen Vorgang erfassen.', 'Заявку відхилено як дублікат – оформіть страховий випадок в початковій заявці.', 'This case was rejected as a duplicate – record the insurance claim on the original case.'],
   ['Versicherer angeben (oder Versicherungsvertrag wählen).', 'Вкажіть страховика (або виберіть договір страхування).', 'Enter the insurer (or choose an insurance contract).'],
   ['Ursprünglicher Vorgang nicht gefunden.', 'Початкову заявку не знайдено.', 'Original case not found.'],
   ['Ungültiger Benutzername.', 'Недійсне ім’я користувача.', 'Invalid username.'],

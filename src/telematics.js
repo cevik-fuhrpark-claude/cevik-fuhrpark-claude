@@ -111,6 +111,9 @@ export async function confirmMapping(env, user, body) {
   const [ins] = await env.DB.batch([
     env.DB.prepare('INSERT INTO telematics_mappings(provider,external_id,vehicle_id,evidence,confirmed_by,confirmed_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING').bind(provider, ext, v.id, evidence, user.id, nowIso()),
     env.DB.prepare('DELETE FROM telematics_unmatched WHERE provider=? AND external_id=? AND changes()=1').bind(provider, ext),
+    // Gerätestand dieses Geräts bei einem anderen Fahrzeug (Zuordnung über eine falsch eingerichtete FIN) entfernen – blieb sonst dauerhaft als
+    // „Daten vorhanden“/Kennzeichen-Abweichung beim falschen Fahrzeug stehen (19.10.2026); km-Ablesungen bleiben als Beleg in der Akte
+    env.DB.prepare(`DELETE FROM telematics_latest WHERE provider=? AND external_id=? AND vehicle_id<>? AND EXISTS (SELECT 1 FROM telematics_mappings WHERE provider=? AND external_id=? AND vehicle_id=?)`).bind(provider, ext, v.id, provider, ext, v.id),
   ]);
   if (!ins.meta.changes) throw conflict('mapping_exists', 'Für dieses Gerät gibt es bereits eine bestätigte Zuordnung – zuerst aufheben.');
   await audit(env, user.id, 'telematics.map', v.id, { provider, external_id: ext, plate: v.plate });

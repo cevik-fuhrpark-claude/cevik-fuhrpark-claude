@@ -47,9 +47,12 @@ function readBody(body, existing = {}) {
 // Versicherungsfall anlegen oder ändern (je Vorgang höchstens einer). Versicherer wird – wenn leer – aus dem gewählten Versicherungsvertrag übernommen.
 export async function saveClaim(env, user, envName, caseId, body) {
   if (!isMgr(user)) throw forbidden();
-  const c = await env.DB.prepare('SELECT id, case_no, vehicle_id FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
+  const c = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
   if (!c) throw notFound('Vorgang nicht gefunden.');
   const ex = await env.DB.prepare('SELECT * FROM insurance_claims WHERE case_id=?').bind(c.id).first();
+  // als Dublette abgelehnter Vorgang: neuen Versicherungsfall beim ursprünglichen Vorgang erfassen (19.10.2026: sonst zwei Fälle für einen Schaden,
+  // Ursprung blieb „Unfall ohne Versicherungsfall“); ein vorhandener (Altbestand) bleibt bearbeitbar
+  if (!ex && c.duplicate_of) throw bad('validation', 'Vorgang ist als Dublette abgelehnt – Versicherungsfall beim ursprünglichen Vorgang erfassen.');
   // Stand beim Öffnen des Formulars (die App sendet ihn; leer = damals noch kein Versicherungsfall) – sonst überschrieb ein veraltetes Formular
   // z. B. Erstattung und Status „reguliert“ (17.10.2026); ohne Feld (ältere Aufrufer) wie bisher
   // Ausnahme: der gesendete Stand ist genau der gespeicherte – Wiederholung nach verlorener Antwort ist dann Erfolg statt Konflikt (18.10.2026)

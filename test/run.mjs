@@ -13382,6 +13382,28 @@ await test('Verbesserung 19.10. (43): Fahrzeugimport-Vorschau nennt Zeilen mit S
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_status_inactive.includes('{n}'), l);
 });
 
+await test('Fehlersuche 19.10. (44): kein neuer Versicherungsfall an einer abgelehnten Dublette; bestätigte Telematik-Zuordnung entfernt den FIN-Stand des Geräts beim anderen Fahrzeug', async () => {
+  const { e, U, cmd, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  const mk = async (d) => (await U.fleet.post('/api/cases', { vehicle_id: V1, description: d, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const orig = await mk('Unfall: Stoßstange vorne'); const dup = await mk('Unfall Stoßstange (zweite Meldung)');
+  eq((await cmd(U.fleet, dup, 'reject', { duplicate_of: orig })).status, 200);
+  const r = await U.fleet.put(`/api/cases/${dup}/claim`, { insurer: 'X AG', reported_on: BERLIN_TODAY, evidence: 'Meldung' });
+  eq(r.status, 400); ok(/Dublette/.test(r.data.message));
+  eq((await U.fleet.put(`/api/cases/${orig}/claim`, { insurer: 'X AG', reported_on: BERLIN_TODAY, evidence: 'Meldung' })).status, 200, 'am Ursprung möglich');
+  const { translateValidation } = await import('../public/i18n.js'); ok(translateValidation('en', r.data.message) !== r.data.message, 'übersetzt');
+  // Telematik: Gerät sendet FIN von V2, Leitung bestätigt Zuordnung zu V1
+  const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const t0 = new Date(Date.now() - 3 * 3600000).toISOString(); const t1 = new Date(Date.now() - 2 * 3600000).toISOString();
+  eq((await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'DEV-X', vin: 'WDB9630051L917317', plate: 'SZ-YC 5513', gps_time: t0, lat: 51, lon: 7, km: 1000 }] }, H)).status, 200);
+  const rows = () => e.DB.db.prepare(`SELECT vehicle_id FROM telematics_latest WHERE external_id='DEV-X' ORDER BY vehicle_id`).all().map((x) => x.vehicle_id).join();
+  eq(rows(), V2);
+  eq((await U.fleet.post('/api/telematics/mappings', { provider: 'webfleet', external_id: 'DEV-X', vehicle_id: V1, evidence: 'Einbau geprüft' })).status, 201);
+  eq(rows(), '', 'alter FIN-Stand beim anderen Fahrzeug entfernt');
+  eq((await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'DEV-X', vin: 'WDB9630051L917317', plate: 'SZ-YC 5513', gps_time: t1, lat: 51, lon: 7, km: 1100 }] }, H)).status, 200);
+  eq(rows(), V1, 'neue Daten beim zugeordneten Fahrzeug');
+  ok(e.DB.db.prepare(`SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND km=1000`).get(V2), 'km-Ablesung bleibt als Beleg');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
