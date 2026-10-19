@@ -23,7 +23,11 @@ export function normPhone(v) {
 
 // Rufnummern-Vergleich nach Ziffern: „0231 123456“, „0231/123456“, „0231-123456“ sind dieselbe Nummer (17.10.2026: viermal angelegt)
 // „+49 (0)231 …“: die (0) wird international nicht gewählt – gilt als dieselbe Nummer wie „+49 231 …“ (18.10.2026)
-const PK = (x) => [' ', '/', '-', '.', '(', ')'].reduce((a, ch) => `REPLACE(${a},'${ch}','')`, `REPLACE(${x},'(0)','')`);
+const PK0 = (x) => [' ', '/', '-', '.', '(', ')'].reduce((a, ch) => `REPLACE(${a},'${ch}','')`, `REPLACE(${x},'(0)','')`);
+// deutsche Vorwahl: „+49 231 …“ / „0049 231 …“ = „0231 …“ (19.10.2026: wurden als zwei Nummern angelegt); andere Ländervorwahlen bleiben wie erfasst
+const PK = (x) => { const p = PK0(x); return `(CASE WHEN substr(${p},1,3)='+49' THEN '0'||substr(${p},4) WHEN substr(${p},1,4)='0049' THEN '0'||substr(${p},5) ELSE ${p} END)`; };
+// dieselbe Regel in JS (für Abfragen mit unnummerierten Parametern – PK wiederholt seinen Ausdruck)
+export const phoneKey = (x) => { const p = String(x).replaceAll('(0)', '').replace(/[ /.()-]/g, ''); return p.startsWith('+49') ? '0' + p.slice(3) : p.startsWith('0049') ? '0' + p.slice(4) : p; };
 const pub = (r) => ({ id: r.id, kind: r.kind, label: r.label, phone: r.phone, note: r.note || null, scope: r.vehicle_id ? 'vehicle' : r.site ? 'site' : 'all', site: r.site || null });
 
 async function activeContacts(env, envName) {
@@ -128,7 +132,7 @@ export async function addContact(env, user, envName, body) {
     .bind(id, envName, f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, now, now, EMERGENCY_MAX_ACTIVE).run();
   if (!(r.meta && r.meta.changes)) {
     // dieselbe Rufnummer mit derselben Art und Geltung ist bereits aktiv (Doppelklick/parallel ergab sonst zwei gleiche Einträge, 17.10.2026)
-    if (await env.DB.prepare(`SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND ${PK('phone')}=${PK('?')} AND kind=? AND site IS ? AND vehicle_id IS ?`).bind(envName, f.phone, f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
+    if (await env.DB.prepare(`SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND ${PK('phone')}=? AND kind=? AND site IS ? AND vehicle_id IS ?`).bind(envName, phoneKey(f.phone), f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
     throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
   }
   await audit(env, user.id, 'emergency.add', id, { environment: envName, ...f });
@@ -151,7 +155,7 @@ export async function updateContact(env, user, envName, id, body) {
   const r = await env.DB.prepare(`UPDATE emergency_contacts SET kind=?1, label=?2, phone=?3, note=?4, site=?5, vehicle_id=?6, updated_by=?7, updated_at=?8 WHERE id=?9 AND archived_at IS NULL AND updated_at=?10
       AND NOT EXISTS (SELECT 1 FROM emergency_contacts d WHERE d.environment=?11 AND d.archived_at IS NULL AND d.id<>?9 AND ${PK('d.phone')}=${PK('?3')} AND d.kind=?1 AND d.site IS ?5 AND d.vehicle_id IS ?6)`)
     .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, laterIso(ex.updated_at), id, ex.updated_at, envName).run();
-  if ((!r.meta || r.meta.changes !== 1) && await env.DB.prepare(`SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND id<>? AND ${PK('phone')}=${PK('?')} AND kind=? AND site IS ? AND vehicle_id IS ?`).bind(envName, id, f.phone, f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
+  if ((!r.meta || r.meta.changes !== 1) && await env.DB.prepare(`SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND id<>? AND ${PK('phone')}=? AND kind=? AND site IS ? AND vehicle_id IS ?`).bind(envName, id, phoneKey(f.phone), f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
   if (!r.meta || r.meta.changes !== 1) throw conflict('version_conflict', 'Rufnummer wurde zwischenzeitlich geändert oder archiviert. Bitte neu laden.');
   await audit(env, user.id, 'emergency.update', id, Object.fromEntries(changed.map((k) => [k, { from: ex[k] ?? null, to: f[k] ?? null }])));
   return { ok: true, changed };

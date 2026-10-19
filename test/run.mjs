@@ -13337,6 +13337,17 @@ await test('Verbesserung 19.10. (40): Werkstattplan führt eine nicht belegte SP
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].wplan_sp_prev_open.includes('{m}'), l);
 });
 
+await test('Verbesserung 19.10. (41): Notfall-Rufnummern mit deutscher Vorwahl (+49/0049) und nationaler Schreibweise gelten als dieselbe Nummer (Anlegen und Ändern); andere Ländervorwahlen bleiben getrennt', async () => {
+  const { U } = await freshWorld(); const F = U.fleet;
+  eq((await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst', phone: '0231 123456' })).status, 201);
+  for (const ph of ['+49 231 123456', '+49 (0)231 123456', '0049 231 123456', '+49-231-123456']) { const r = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst 2', phone: ph }); eq(r.status, 409, ph); eq(r.data.error, 'duplicate_contact', ph); }
+  eq((await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Österreich', phone: '+43 231 123456' })).status, 201, 'andere Ländervorwahl');
+  eq((await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Polen', phone: '0048 231 123456' })).status, 201, 'andere Ländervorwahl (00)');
+  const b = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Andere', phone: '+49 30 999' }); eq(b.status, 201);
+  const ch = await F.req('PATCH', `/api/emergency/contacts/${b.data.id}`, { phone: '00 49 231 123456' });
+  eq(ch.status, 409, 'Ändern auf dieselbe Nummer: ' + JSON.stringify(ch.data));
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
