@@ -13221,6 +13221,24 @@ await test('Fehlersuche 19.10. (35): lange Suchtexte ohne D1-Mustergrenze (Proto
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_warn_saved && STRINGS[l].km_warn_below.includes('{km}'), l);
 });
 
+await test('Fehlersuche 19.10. (36): CSV-Importe mit zerlegten Umlauten (NFD, Mac-Export), Vertragsnummer aus Versicherungsköpfen', async () => {
+  const { U, V1 } = await freshWorld();
+  const nfd = (x) => x.normalize('NFD'); const imp = (c) => U.fleet.req('POST', '/api/contracts/import?dry_run=1', c, { 'content-type': 'text/csv' });
+  let r = await imp(nfd('Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);Nachweis') + '\nSZ-YC 5513;Leasing;MAN;L1;01.01.2025;31.12.2027;6;x.pdf');
+  eq(r.status, 200); eq(r.data.rows[0].notice_months, 6, 'NFD-Kopf Kündigungsfrist');
+  r = await imp('Kennzeichen;Vertragsart;Vertragspartner;Beginn;Ende;' + nfd('Laufleistung jährlich') + ';km-Stand bei Beginn;Nachweis\nSZ-YC 5513;Leasing;MAN;01.01.2025;31.12.2027;20000;1000;x.pdf');
+  eq(r.status, 400, 'NFD-Jahreswert abgewiesen');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Württembergische', start_date: '2026-01-01', evidence: 'P.pdf' })).status, 201);
+  r = await imp(`Kennzeichen;Vertragsart;Vertragspartner;Beginn;Nachweis\nSZ-YC 5513;Versicherung;${nfd('Württembergische')};01.01.2026;p.pdf`);
+  eq(r.data.rows[0].status, 'vorhanden', 'NFD-Partner = vorhandener Vertrag');
+  for (const h of ['Policennummer', 'Versicherungsscheinnummer', 'Vertrag Nr.']) {
+    r = await imp(`Kennzeichen;Vertragsart;Versicherer;${h};Beginn;Nachweis\nSZ-YC 5513;Haftpflicht;Allianz;KH-1;01.01.2025;p.pdf\nSZ-YC 5513;Vollkasko;Allianz;VK-2;01.01.2025;p.pdf`);
+    eq(r.status, 200, h); eq(JSON.stringify(r.data.rows.map((x) => x.contract_no)), '["KH-1","VK-2"]', h);
+  }
+  r = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', `Art;Kennzeichen;Datum;Datei\n${nfd('Kontrollgerät')};SZ-YC 5513;${BERLIN_TODAY};M.ddd`, { 'content-type': 'text/csv' });
+  eq(r.status, 200); eq(r.data.counts.neu, 1, 'NFD-Art Kontrollgerät erkannt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

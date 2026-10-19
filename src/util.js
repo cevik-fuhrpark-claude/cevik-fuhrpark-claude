@@ -365,7 +365,8 @@ export async function csvResponseDatesDe(res) {
 }
 
 export function parseCsv(text) {
-  const src = String(text || '').replace(/^\uFEFF/, '');
+  // NFC: zerlegte Umlaute (z. B. Mac-Export „Ku\u0308ndigungsfrist“) wie zusammengesetzte behandeln – Spalten/Werte/Dubletten (19.10.2026)
+  const src = String(text || '').replace(/^\uFEFF/, '').normalize('NFC');
   const firstLine = src.split(/\r?\n/, 1)[0] || '';
   // Trenner aus der Kopfzeile: Semikolon (Excel DE), Tabulator (Excel „Unicode-Text“), sonst Komma
   const sep = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
