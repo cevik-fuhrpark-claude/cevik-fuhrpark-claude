@@ -13591,6 +13591,7 @@ await test('Startseite 19.10.: Werkstatt zählt „In Reparatur“ und „Wartet
   eq((await D.get('/api/dashboard?vsite=Hamburg')).data.open_cases, 0, 'unbekannter Standort: nichts');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/'\/api\/dashboard' \+ \(dsite/.test(app), 'App fragt Startseite mit Standort ab'); ok(app.includes("d.waiting_parts ?? 0"), 'App zeigt „Wartet auf Teile“');
+  ok(app.includes('esc(supplierLabel(w.supplier))') && /part_from_stock: 'Lager \{ws\}'/.test(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Gewährleistung: Lagerentnahme mit Werkstattnamen statt Code');
 });
 
 await test('Agent 19.10.: Vertrags-km nach Tachotausch nicht berechenbar → Hinweis CONTRACT_KM_UNCLEAR (DE/UK/EN), nach Bestätigung erledigt; CONTRACT_KM_OVER Schweregrad „handeln“ wie die Übersicht', async () => {
