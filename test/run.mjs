@@ -13431,6 +13431,40 @@ await test('Fehlersuche 19.10. (45): Datenauskunft enthält Erfassungen als Leit
   ok(!us.data.features.some((f) => f.feature.includes('hans')), 'kein freies Wort gespeichert');
 });
 
+await test('Fehlersuche 19.10. (46): Prüftermine – „erledigt“ setzt Herkunft „berechnet“, erfasste Durchführung am Importtag übernimmt Herkunft, km nicht unter letzter Durchführung, Intervalle ganzzahlig, Auftrag aus Prüftermin idempotent, Einstellung Kleinstbetrag', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet; const V2 = 'VIN:WDB9630051L917317'; const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const r1 = await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', evidence: 'Plakette UVV', interval_months: 12, last_done_date: day(-400), next_due_date: day(-35) }); eq(r1.status, 201);
+  eq((await F.post(`/api/maintenance/${r1.data.id}/complete`, { done_date: day(-30), evidence: 'UVV-Bericht 1' })).status, 200);
+  eq(db.prepare('SELECT due_source FROM maintenance_rules WHERE id=?').get(r1.data.id).due_source, 'berechnet');
+  const lines = new TextDecoder().decode((await F.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '').split('\r\n');
+  const cells = lines.find((l) => l.includes(';UVV;')).split(';'); cells[4] = day(-5).split('-').reverse().join('.');
+  eq((await F.req('POST', '/api/maintenance/import', [lines[0], cells.join(';')].join('\r\n'), { 'content-type': 'text/csv' })).status, 200);
+  const exp = (() => { const d = new Date(day(-5) + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 12); return d.toISOString().slice(0, 10); })();
+  eq(db.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').get(r1.data.id).next_due_date, exp, 'Re-Import des eigenen Exports mit neuerer Prüfung');
+  // km nicht unter der letzten Durchführung (ohne Ablesungen am Fahrzeug)
+  const r2 = await F.post(`/api/vehicles/${V2}/maintenance`, { kind: 'Ölwechsel', evidence: 'Serviceheft', interval_km: 100000, last_done_km: 300000, last_done_date: day(-100) }); eq(r2.status, 201);
+  const c2 = await F.post(`/api/maintenance/${r2.data.id}/complete`, { done_date: day(-1), evidence: 'Rechnung', done_km: 30000 }); eq(c2.status, 400);
+  eq((await F.post(`/api/maintenance/${r2.data.id}/complete`, { done_date: day(-1), evidence: 'Rechnung', done_km: 330000 })).status, 200, 'plausibler Stand');
+  // Intervalle ganzzahlig
+  for (const b of [{ interval_months: '1,5' }, { interval_km: '100,4', last_done_km: 1000 }]) eq((await F.post(`/api/vehicles/${V2}/maintenance`, { kind: 'Bremsen', evidence: 'x', ...b })).status, 400, JSON.stringify(b));
+  // Auftrag aus Prüftermin: Wiederholung mit gleichem request_key
+  const r5 = await F.post(`/api/vehicles/${V2}/maintenance`, { kind: 'Tachograph', evidence: 'Plakette', next_due_date: day(20) });
+  const o1 = await F.post(`/api/maintenance/${r5.data.id}/order`, { workshop_site: 'DORTMUND', request_key: 'rk-mo-1' }); eq(o1.status, 201);
+  const o2 = await F.post(`/api/maintenance/${r5.data.id}/order`, { workshop_site: 'DORTMUND', request_key: 'rk-mo-1' }); eq(o2.data.id, o1.data.id); eq(o2.data.duplicate, true);
+  eq((await F.post(`/api/maintenance/${r5.data.id}/order`, { workshop_site: 'DORTMUND', request_key: 'rk-mo-2' })).status, 409, 'anderer Schlüssel: Auftrag besteht');
+  // Import, dann „erledigt“ am selben Tag → Herkunft „erledigt“, erfassende Person
+  const r6 = await F.post(`/api/vehicles/${V2}/maintenance`, { kind: 'HU', evidence: 'Plakette', next_due_date: day(300) });
+  eq((await F.req('POST', '/api/maintenance/import', `FIN;Art;Letzte Prüfung;Nachweis\r\nWDB9630051L917317;HU;${day(-3).split('-').reverse().join('.')};Liste\r\n`, { 'content-type': 'text/csv' })).status, 200);
+  eq((await F.post(`/api/maintenance/${r6.data.id}/complete`, { done_date: day(-3), evidence: 'DEKRA-Bericht 4711' })).status, 200);
+  const ev = db.prepare('SELECT source, recorded_by, evidence FROM maintenance_events WHERE rule_id=? AND done_date=?').get(r6.data.id, day(-3));
+  eq(ev.source, 'erledigt'); eq(ev.recorded_by, F.id); eq(ev.evidence, 'DEKRA-Bericht 4711');
+  // Einstellung: Kleinstbetrag nicht still „0 = aus“
+  const { settingValue } = await import('../src/settings.js');
+  for (const v of [1e-9, '0,00000001']) { let er = null; try { settingValue('repair_cost_limit_net', v); } catch (x) { er = x; } ok(er, String(v)); }
+  eq(settingValue('repair_cost_limit_net', '0'), '0'); eq(settingValue('repair_cost_limit_net', '0,01'), '0.01');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

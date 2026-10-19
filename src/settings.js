@@ -51,6 +51,7 @@ export function settingValue(key, v) {
   if (r.int && !Number.isInteger(n)) throw invalid(key, r);
   // höchstens 2 Nachkommastellen (Euro, mm) – mehr wird abgewiesen statt gerundet (18.10.2026: „0,004“ € wurde still zu 0 = Grenze aus)
   if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw invalid(key, r);
+  if (n !== 0 && Math.round(n * 100) === 0) throw invalid(key, r); // 1e-9 lag innerhalb der Toleranz und wurde still zu „0 = aus“ (19.10.2026)
   return String(Math.round(n * 100) / 100);
 }
 

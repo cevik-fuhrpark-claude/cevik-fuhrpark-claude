@@ -556,12 +556,14 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   if (!isManager(user)) throw forbidden();
   // Prüftermin, offener Auftrag und Werkstatt in einer Abfrage (Abfragebudget je Aufruf); Prüfreihenfolge der Fehler unverändert
   const rule = await env.DB.prepare(`SELECT m.id, m.kind, m.vehicle_id, m.planned_date, m.last_done_date, m.evidence, v.active, v.plate,
-      (SELECT json_object('id', c.id, 'case_no', c.case_no) FROM cases c WHERE c.maintenance_rule_id=m.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
+      (SELECT json_object('id', c.id, 'case_no', c.case_no, 'request_key', c.request_key, 'reporter_id', c.reporter_id) FROM cases c WHERE c.maintenance_rule_id=m.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
       (SELECT code FROM workshops WHERE code=?3 AND active=1) AS ws_code
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?1`).bind(ruleId, envName, wsParam(body)).first();
   if (!rule) throw notFound('Prüftermin nicht gefunden.');
   if (!rule.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   const open = rule.open_case ? JSON.parse(rule.open_case) : null;
+  // Wiederholung desselben Absendens (Doppelklick/Netzabbruch) → derselbe Auftrag statt 409 (wie Winterreifen; 19.10.2026)
+  if (open && body.request_key && open.request_key === String(body.request_key) && open.reporter_id === user.id) return { id: open.id, case_no: open.case_no, duplicate: true };
   if (rule.kind === 'Rückruf' && rule.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
@@ -590,13 +592,14 @@ const DEFECT_RES = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maen
 export async function orderFromInspectionDefect(env, ctx, user, envName, eventId, body = {}) {
   if (!isManager(user)) throw forbidden();
   const ev = await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result, e.evidence, e.vehicle_id, v.active, v.plate,
-      (SELECT json_object('id', c.id, 'case_no', c.case_no) FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
+      (SELECT json_object('id', c.id, 'case_no', c.case_no, 'request_key', c.request_key, 'reporter_id', c.reporter_id) FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1) AS open_case,
       (SELECT code FROM workshops WHERE code=?3 AND active=1) AS ws_code
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id WHERE e.id=?1`).bind(eventId, envName, wsParam(body)).first();
   if (!ev) throw notFound('Prüfung nicht gefunden.');
   if (!DEFECT_RES[ev.result]) throw bad('validation', 'Die Prüfung hat kein Ergebnis mit erheblichen/gefährlichen Mängeln.');
   if (!ev.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   const open = ev.open_case ? JSON.parse(ev.open_case) : null;
+  if (open && body.request_key && open.request_key === String(body.request_key) && open.reporter_id === user.id) return { id: open.id, case_no: open.case_no, duplicate: true };
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
   if (!ev.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');

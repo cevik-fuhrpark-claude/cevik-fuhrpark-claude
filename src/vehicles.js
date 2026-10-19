@@ -640,7 +640,11 @@ export function maintEventStmt(env, e, { ifRule = false } = {}) {
     WHERE ${ifRule ? 'EXISTS (SELECT 1 FROM maintenance_rules WHERE id=?2)' : '1'}
     ON CONFLICT(rule_id, done_date) DO UPDATE SET
       done_km=CASE WHEN excluded.source='import' AND maintenance_events.source<>'import' THEN COALESCE(maintenance_events.done_km, excluded.done_km) ELSE COALESCE(excluded.done_km, maintenance_events.done_km) END,
-      evidence=CASE WHEN excluded.source='import' AND maintenance_events.source<>'import' AND COALESCE(maintenance_events.evidence,'')<>'' THEN maintenance_events.evidence ELSE excluded.evidence END`)
+      evidence=CASE WHEN excluded.source='import' AND maintenance_events.source<>'import' AND COALESCE(maintenance_events.evidence,'')<>'' THEN maintenance_events.evidence ELSE excluded.evidence END,
+      -- in der App erfasste Durchführung am Tag einer importierten: Herkunft/erfassende Person übernehmen (19.10.2026: blieb „import“ –
+      -- fehlte dann bei „Prüfergebnis fehlt“ und auf der Startseite der erfassenden Person)
+      source=CASE WHEN excluded.source<>'import' THEN excluded.source ELSE maintenance_events.source END,
+      recorded_by=CASE WHEN excluded.source<>'import' THEN COALESCE(excluded.recorded_by, maintenance_events.recorded_by) ELSE maintenance_events.recorded_by END`)
     // Import ersetzt nie den Nachweis/km-Stand einer erfassten Durchführung am selben Tag (17.10.2026: „DEKRA-Prüfbericht 4711“ → Listentext)
     .bind(uuid(), e.rule_id, e.vehicle_id, e.kind, e.done_date, e.done_km ?? null, e.evidence, e.source, e.user_id ?? null, nowIso());
 }
@@ -651,8 +655,10 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (!v) throw notFound();
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
-  const months = body.interval_months ? Math.round(num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' })) : null;
-  const km = body.interval_km ? Math.round(num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true })) : null;
+  // ganze Zahlen (19.10.2026: „1,5“ Monate wurde still zu 2 – Frist verschoben; der Import weist das schon ab)
+  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
+  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
+  if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
   const lastDate = str(body.last_done_date, { max: 10, field: 'Letzte Prüfung' });
   const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   const husp = kind === 'HU' || kind === 'SP';
@@ -776,6 +782,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (r.interval_km && km === null && r.kind !== 'HU' && r.kind !== 'SP') throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   // Plausibilität wie „Kilometerstand erfassen“: nicht kleiner als der zuletzt davor erfasste km-Stand (Tippfehler würde km-Fälligkeiten
   // und €/km verfälschen). Tachotausch: zuerst den km-Stand des neuen Zählers mit Begründung in der Fahrzeugakte erfassen.
+  const drop = parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(r.vehicle_id).first() || {}).d);
   if (km !== null) {
     const at = date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`;
     const prev = await env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC, rowid DESC LIMIT 1').bind(r.vehicle_id, at).first();
@@ -785,6 +792,10 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
     const nextR = await env.DB.prepare('SELECT km, note FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC, rowid ASC LIMIT 1').bind(r.vehicle_id, at).first();
     if (nextR && km > nextR.km && !(nextR.note && String(nextR.note).trim())) throw bad('validation', 'Kilometerstand bei Durchführung ist größer als ein später erfasster km-Stand. Bitte prüfen.');
   }
+  // nicht kleiner als der km-Stand der letzten Durchführung dieser Regel (ohne Ablesungen am Fahrzeug griff die Prüfung oben nicht: Tippfehler
+  // 30 000 statt 330 000 → km-Fälligkeit viel zu früh, 19.10.2026); nach einem km-Rücksprung (Tachotausch) gilt der alte Stand nicht
+  if (km !== null && r.last_done_km !== null && r.last_done_km !== undefined && km < r.last_done_km && (!r.last_done_date || date >= r.last_done_date) && !kmCounterDropAfter(r, drop))
+    throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als der km-Stand der letzten Durchführung. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.');
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
   // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
@@ -809,13 +820,13 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const guard = (sql, ...a) => [env.DB.prepare(`INSERT INTO cmd_guard(ok) ${sql}`).bind(...a), env.DB.prepare('DELETE FROM cmd_guard')];
   // km-Grundlage nur erneuern, wenn die Durchführung nicht vor dem letzten km-Rücksprung (Tachotausch) liegt (18.10.2026: nachgetragene
   // Durchführung vom alten Zähler hob „ungeklärt“ auf, danach Rest-km aus gemischten Zählern)
-  const drop = parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(r.vehicle_id).first() || {}).d);
   const basisAt = kmBasisForDone(drop, date, r.km_basis_at, nowIso());
   const stmts = [
     ...(result ? guard('SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM maintenance_events WHERE rule_id=? AND done_date=? AND result IS NOT NULL AND result<>?', ruleId, date, result) : []),
     env.DB.prepare(`UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL
       WHERE id=? AND ${oneTime ? 'last_done_date IS NULL' : '(last_done_date IS NULL OR last_done_date <= ?)'}`)
-      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}` : evidence, nowIso(), basisAt, docNext ? 'nachweis' : (husp ? 'berechnet' : r.due_source || null), ruleId, ...(oneTime ? [] : [date])),
+      // ohne Beleg berechnet (19.10.2026: Herkunft „Nachweis“ der alten Plakette blieb – Import des eigenen Exports mit neuerer Prüfung griff dann nicht)
+      .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}` : evidence, nowIso(), basisAt, docNext ? 'nachweis' : (husp || next ? 'berechnet' : null), ruleId, ...(oneTime ? [] : [date])),
     ...(oneTime ? guard('SELECT changes()') : []),
     maintEventStmt(env, { rule_id: ruleId, vehicle_id: r.vehicle_id, kind: r.kind, done_date: date, done_km: km, evidence, source: 'erledigt', user_id: user.id }),
     ...(result ? [env.DB.prepare('UPDATE maintenance_events SET result=? WHERE rule_id=? AND done_date=? AND result IS NULL').bind(result, ruleId, date)] : []),
