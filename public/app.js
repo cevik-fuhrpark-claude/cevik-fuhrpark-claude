@@ -1218,7 +1218,7 @@ async function viewCase(id) {
     if (Object.keys(sum).length > 1 || closed) html += `<h2>${esc(t('time_per_status'))}</h2><dl class="kv">${Object.entries(sum).map(([st, ms]) => `<dt>${esc(t('st_' + st))}${!closed && st === cur ? ` (${esc(t('current'))})` : ''}</dt><dd>${dur(ms)}</dd>`).join('')}</dl>`;
   }
   // Verlauf + Kommentar
-  html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap">${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t('cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : e.payload && e.payload.from && e.payload.to ? `<div class="small muted">${esc(e.payload.from)} → ${esc(e.payload.to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
+  html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap">${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t('cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : evFromTo(e)}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
   if (A.includes('comment')) html += `<form id="cf"><label for="ct">${esc(t('act_comment'))}</label><textarea id="ct" required minlength="3"></textarea>${S.me.role !== 'driver' ? `<fieldset style="border:0;padding:0;margin:8px 0"><legend class="small muted">${esc(t('notify_only'))}</legend><div style="display:flex;gap:14px;flex-wrap:wrap">${[['fleet', t('role_fleet')], ['workshop', t('role_workshop')], ['reporter', t('reported_by')]].map(([k, l]) => `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-nt="${k}"> ${esc(l)}</label>`).join('')}</div></fieldset>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>`;
   render(html, 'cases', { defer: true });
   $('#cprt').onclick = () => window.print();
@@ -2519,6 +2519,20 @@ async function viewDriver(id) {
 
 // Vom Server erzeugte Verlaufsvermerke (Kontrolle, erneut festgestellt) in der Oberflächensprache (17.10.2026: blieben deutsch);
 // Freitext unverändert. Muster wie in src/cases.js (createInspection).
+// Verlauf „alt → neu“ in der App-Sprache: Priorität übersetzt, Werkstattname statt Code, Datum im Sprachformat; Wiedervorlage/Termin auch
+// beim ersten Setzen bzw. Entfernen (19.10.2026: „mittel → niedrig“, „DORTMUND → MUENCHEN“, ISO-Datum; Wiedervorlage ohne Inhalt)
+function evFromTo(e) {
+  const p = e.payload; if (!p || typeof p !== 'object' || !('from' in p) || !('to' in p)) return '';
+  const oneSide = ['set_followup', 'set_planned_date'].includes(e.action) || /^\d{4}-\d{2}-\d{2}$/.test(String(p.from || p.to || ''));
+  if (!(p.from && p.to) && !oneSide) return '';
+  if (!p.from && !p.to) return '';
+  const v = (x) => { if (x === null || x === undefined || x === '') return '–';
+    if (e.action === 'change_priority') return t('prio_' + x);
+    if (e.action === 'reassign_workshop') return wsName(x);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(x))) return fmtD(x);
+    return String(x); };
+  return `<div class="small muted">${esc(v(p.from))} → ${esc(v(p.to))}</div>`;
+}
 function evNote(e) {
   const n = String(e.note || '');
   const p = e.payload || {};
@@ -2778,7 +2792,7 @@ async function viewInbox() {
   // Nach Quittieren/„Alle gelesen“/Filterwechsel: aufgeklappter Bereich „Push für diese Hinweise“ bleibt offen; Fehler (z. B. kein Netz) als Meldung statt stillem Abbruch
   const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
   $$('[data-ack]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
-  $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).catch(() => {})));
+  $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
   const ra = $('#ra'); if (ra) ra.onclick = async () => { try { await api('POST', '/api/notifications/read-all'); S.unread = 0; paintBadge(); again(); } catch (err) { toast(err.message, true); } };
   $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; again().catch((err) => toast(err.message, true)); }));
 }

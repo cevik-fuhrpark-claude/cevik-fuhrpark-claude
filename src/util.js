@@ -476,7 +476,10 @@ export function pickVehicleByPlate(vehicles, plate) {
 export const likeEsc = (x) => '%' + String(x).replace(/[\\%_]/g, (ch) => '\\' + ch) + '%';
 export function caseVariants(w) {
   const lo = w.toLocaleLowerCase('de');
-  return [...new Set([w, lo, w.toLocaleUpperCase('de'), lo.charAt(0).toLocaleUpperCase('de') + lo.slice(1)])];
+  const cap = (x) => x.charAt(0).toLocaleUpperCase('de') + x.slice(1);
+  // „AUSSEN“ (ß hat keine Großform im Alltag) soll „Außenspiegel“ finden: zusätzlich ss → ß (19.10.2026)
+  const sz = lo.includes('ss') ? lo.replace(/ss/g, 'ß') : null;
+  return [...new Set([w, lo, w.toLocaleUpperCase('de'), cap(lo), ...(sz ? [sz, cap(sz)] : [])])];
 }
 
 // Dateinamen-Teil (Content-Disposition, nur ASCII): Umlaute ausgeschrieben, Akzente entfernt, sonst nur Buchstaben/Ziffern/_/-.

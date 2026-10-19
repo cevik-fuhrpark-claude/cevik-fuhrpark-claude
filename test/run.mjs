@@ -13777,6 +13777,22 @@ await test('Datenqualität 19.10.: fehlende Pflichtprüfungen und „FIN fast gl
   ok(app.includes('dqDetailText(i, t, fmtD, mk)') && app.includes('dataQualityCsv(items, t, fmtD, mk)'), 'App reicht mk durch');
 });
 
+await test('Vorgänge 19.10.: Suche „AUSSEN“ findet „Außenspiegel“; Verlauf alt → neu übersetzt (Priorität, Werkstattname, Datum, Wiedervorlage gesetzt/entfernt); Glocke zieht Zähler nach', async () => {
+  const { U, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Außenspiegel lose' });
+  for (const q of ['AUSSEN', 'aussen', 'Außen', 'außenspiegel']) ok((await U.fleet.get('/api/cases?status=open&q=' + encodeURIComponent(q))).data.cases.some((c) => c.id === id), 'Suche ' + q);
+  const { caseVariants } = await import('../src/util.js'); ok(caseVariants('AUSSEN').includes('außen') && caseVariants('AUSSEN').includes('Außen'), 'ss → ß-Variante');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('function evFromTo(e)'), app.indexOf('function evNote(e)'));
+  const ev = new Function('t', 'wsName', 'fmtD', 'esc', src + '; return evFromTo;')((k) => 'T:' + k, (c) => 'WS:' + c, (d) => 'D:' + d, (x) => x);
+  ok(ev({ action: 'change_priority', payload: { from: 'mittel', to: 'niedrig' } }).includes('T:prio_mittel → T:prio_niedrig'), 'Priorität');
+  ok(ev({ action: 'reassign_workshop', payload: { from: 'DORTMUND', to: 'MUENCHEN' } }).includes('WS:DORTMUND → WS:MUENCHEN'), 'Werkstatt');
+  ok(ev({ action: 'set_followup', payload: { from: null, to: '2026-10-22' } }).includes('– → D:2026-10-22'), 'Wiedervorlage gesetzt');
+  ok(ev({ action: 'set_followup', payload: { from: '2026-10-22', to: null } }).includes('D:2026-10-22 → –'), 'Wiedervorlage entfernt');
+  eq(ev({ action: 'comment', payload: {} }), '', 'ohne from/to nichts');
+  ok(app.includes(".then(() => refreshUnread(true))"), 'Glocke: Zähler nach Öffnen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
