@@ -3789,6 +3789,9 @@ async function checkVersion() {
   document.body.appendChild(el);
 }
 checkVersion();
+// Enter in einem Mangel-Vermerk der Prüfliste (Abfahrtskontrolle, Kontrolle nach Reparatur) sendet nicht die ganze Kontrolle ab –
+// Fotos/km fehlten sonst (19.10.2026, wie Enter im Fahrzeug-Suchfeld)
+document.addEventListener('keydown', (e) => { const el = e.target; if (e.key === 'Enter' && el && el.tagName === 'INPUT' && /__note$/.test(el.name || '')) e.preventDefault(); }, true);
 // Browser-Prüfhinweise (Pflichtfeld, Mindestlänge, Format, Bereich) in der App-Sprache statt in der Gerätesprache.
 // Eigene Meldungen (setCustomValidity, z. B. „mehrdeutig“) bleiben unangetastet; nach der nächsten Eingabe wird neu geprüft.
 function nativeValidityText(el) {
@@ -3806,9 +3809,6 @@ function nativeValidityText(el) {
   if (v.stepMismatch) return t('v_step').replace('{n}', () => el.step);
   return '';
 }
-// Enter in einem Mangel-Vermerk der Prüfliste (Abfahrtskontrolle, Kontrolle nach Reparatur) sendet nicht die ganze Kontrolle ab –
-// Fotos/km fehlten sonst (19.10.2026, wie Enter im Fahrzeug-Suchfeld)
-document.addEventListener('keydown', (e) => { const el = e.target; if (e.key === 'Enter' && el && el.tagName === 'INPUT' && /__note$/.test(el.name || '')) e.preventDefault(); }, true);
 document.addEventListener('invalid', (e) => {
   const el = e.target; if (!el || typeof el.setCustomValidity !== 'function') return;
   const msg = nativeValidityText(el); if (!msg) return;
