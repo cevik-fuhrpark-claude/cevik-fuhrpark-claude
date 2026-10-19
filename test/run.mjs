@@ -12999,6 +12999,69 @@ await test('Fehlersuche 18.10. (30): Abmelden meldet Push-Gerät der Anmeldung a
     eq(L1[H.indexOf('Teile netto')], '600', 'bewertetes Teil mit Betrag'); }
 });
 
+await test('Fehlersuche 18.10. (31): Sperrgrund nicht über Integrations-API, zeitloser Telematik-Stand überschreibt keinen zeitlosen, Fahrzeugimport exakte Spalte/Fahrgestellnummer/VIN, Zeitleiste Erstattung/Tacho nach Ereignis begrenzt, 2FA-Einschalten mit Fehlversuchssperre', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  // 1. Sperrgrund (Freitext der Leitung) bleibt in der App
+  { const { e, U, cmd, newCase } = await freshWorld(); const an = new Client(worker, e, 'anon');
+    const id = await newCase();
+    eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Fahrer W klagt über Rückenschmerzen')).status, 200);
+    eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+    for (const p of ['findings', 'master']) {
+      const r = await an.get(`/api/integration/v1/${p}?environment=test`, H); eq(r.status, 200, p);
+      const s2 = JSON.stringify(r.data);
+      ok(s2.includes('VEHICLE_LOCKED'), p + ': Befund vorhanden');
+      ok(!s2.includes('Rückenschmerzen') && !s2.includes('Fahrer W'), p + ': ohne Sperrgrund-Freitext');
+    }
+  }
+  // 2. Telematik ohne GPS-Zeit
+  { const { e } = await freshWorld(); const an = new Client(worker, e, 'anon');
+    const send = (...its) => an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: its.map((it) => ({ external_id: 'G1', vin: 'WMA15SZZ2HM722774', ...it })) }, H);
+    eq((await send({ lat: 51.1, lon: 7.1, speed: 10 })).data.matched, 1, 'erster Stand ohne Zeit angenommen');
+    eq((await send({ lat: 52.2, lon: 8.2, speed: 99 })).data.rejected, 1, 'zweiter ohne Zeit abgewiesen');
+    eq((await send({ lat: 53, lon: 9 }, { lat: 54, lon: 10 })).data.rejected, 2, 'auch im selben Aufruf');
+    let row = e.DB.db.prepare('SELECT lat, speed FROM telematics_latest').get();
+    eq(row.lat, 51.1); eq(row.speed, 10);
+    const gt = new Date(Date.now() - 60000).toISOString();
+    eq((await send({ lat: 50, lon: 6, speed: 5, gps_time: gt })).data.rejected, 0, 'Stand mit Zeit ersetzt den zeitlosen');
+    row = e.DB.db.prepare('SELECT lat, gps_time FROM telematics_latest').get(); eq(row.lat, 50); eq(row.gps_time, gt);
+    eq((await send({ lat: 49, lon: 5 })).data.rejected, 1, 'danach ohne Zeit abgewiesen'); }
+  // 3. Fahrzeugimport: exakte Spalte vor Wortanfang, Fahrgestellnummer/VIN
+  { const { e, U } = await freshWorld(); const db = e.DB.db;
+    let r = await U.own.req('POST', '/api/vehicles/import', 'Kennzeichen;FIN;Statusdatum;Status\nSZ-AB 1;WMA15SZZ2HM722775;2026-01-01;in Betrieb', { 'content-type': 'text/csv' });
+    eq(r.status, 200, JSON.stringify(r.data)); eq(db.prepare(`SELECT master_status FROM vehicles WHERE vin='WMA15SZZ2HM722775'`).get().master_status, 'in Betrieb', 'Status');
+    r = await U.own.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;Finanzierung;FIN\nSZ-AB 2;Leasing;WMA15SZZ2HM722776', { 'content-type': 'text/csv' });
+    eq(r.status, 200); eq(r.data.skipped.length, 0, 'FIN-Spalte'); eq(r.data.counts.neu, 1);
+    for (const h of ['Fahrgestellnummer', 'VIN']) { r = await U.own.req('POST', '/api/vehicles/import?dry_run=1', `Kennzeichen;${h}\nSZ-AB 3;WMA15SZZ2HM722777`, { 'content-type': 'text/csv' }); eq(r.status, 200, h); eq(r.data.counts.neu, 1, h); }
+    r = await U.own.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;Fahrgestellnummer Anhänger\nSZ-AB 3;WMA15SZZ2HM722777', { 'content-type': 'text/csv' });
+    eq(r.status, 400, 'Anhänger-Fahrgestellnummer ist nicht die FIN'); }
+  // 4. Zeitleiste: Erstattung nach Erstattungsdatum, stornierte Auslesungen verdrängen keine gültige
+  { const { e, U, newCase } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+    const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+    const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+    const ids = [await newCase(), await newCase({ description: 'Spiegel defekt' }), await newCase({ description: 'Blinker defekt' })];
+    const ins = db.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,insurer,reported_on,status,reimbursed_net,reimbursed_on,evidence,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    ins.run(rk(), ids[0], 'test', vid, 'A', day(200), 'reguliert', 500, day(5), 'x', U.fleet.id, now, now);
+    ins.run(rk(), ids[1], 'test', vid, 'B', day(100), 'gemeldet', null, null, 'x', U.fleet.id, now, now);
+    ins.run(rk(), ids[2], 'test', vid, 'C', day(50), 'gemeldet', null, null, 'x', U.fleet.id, now, now);
+    let r = await U.fleet.get(`/api/vehicles/${vid}/timeline?types=claim&limit=1`);
+    eq(r.status, 200); eq(r.data.items[0].claim_event, 'reimbursed', 'neueste Erstattung'); eq(r.data.items[0].insurer, 'A');
+    const tz = db.prepare(`INSERT INTO tacho_downloads(id,environment,kind,vehicle_id,downloaded_on,evidence,created_by,created_at,cancelled_at,cancel_reason) VALUES(?,?,?,?,?,?,?,?,?,?)`);
+    tz.run(rk(), 'test', 'massenspeicher', vid, day(30), 'gültig', U.fleet.id, now, null, null);
+    tz.run(rk(), 'test', 'massenspeicher', vid, day(10), 's1', U.fleet.id, now, now, 'x');
+    tz.run(rk(), 'test', 'massenspeicher', vid, day(9), 's2', U.fleet.id, now, now, 'x');
+    r = await U.fleet.get(`/api/vehicles/${vid}/timeline?types=tacho&limit=1`);
+    eq(r.data.items.length, 1, 'gültige Auslesung trotz neuerer stornierter'); eq(r.data.items[0].at, day(30)); }
+  // 5. 2FA einschalten: falsche Codes zählen als Fehlversuche (Sperre wie bei anderen Bestätigungen)
+  { const { U } = await freshWorld(); const u = U.viewer; const T = await import('../src/totp.js');
+    const su = await u.post('/api/me/totp/setup', { password: 'Sicheres-Passwort-2026' }); eq(su.status, 200);
+    const wrong = async () => { for (const c of ['000000', '111111', '222222']) if (c !== await T.totpAt(su.data.secret)) return c; };
+    const st = [];
+    for (let i = 0; i < 9; i++) { const r = await u.post('/api/me/totp/enable', { code: await wrong() }); st.push(r.status); if (r.status !== 400) break; }
+    ok(st.includes(429), 'Sperre nach wiederholten falschen Codes: ' + st.join());
+    ok(st.filter((x) => x === 400).length <= 8, 'höchstens 8 Versuche');
+    eq((await u.get('/api/me')).status, 401, 'Anmeldung beendet'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

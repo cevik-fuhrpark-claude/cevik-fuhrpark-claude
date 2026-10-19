@@ -233,7 +233,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
       out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
-        WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT ?`).bind(vehicleId, envName, cap || 20).all()).results;
+        WHERE t.vehicle_id=? AND t.environment=?${tl ? ' AND t.cancelled_at IS NULL' : ''} ORDER BY t.downloaded_on DESC LIMIT ?`).bind(vehicleId, envName, cap || 20).all()).results;
       const validVu = out.tacho_downloads.find((x) => !x.cancelled_at); // stornierte zählen nicht (18.10.2026)
       out.tacho = { ...tachoStatus(validVu ? validVu.downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
     }
@@ -353,7 +353,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     }
     // Versicherungsfälle (nur Leitung): Meldung an den Versicherer und Erstattung laut Abrechnung – nur gespeicherte Daten
     const claims = (await env.DB.prepare(`SELECT ic.case_id, c.case_no, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.reimbursed_net, ic.reimbursed_on
-      FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.vehicle_id=? AND ic.environment=? ORDER BY ic.reported_on DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results;
+      FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.vehicle_id=? AND ic.environment=? ORDER BY MAX(COALESCE(ic.reported_on, ''), COALESCE(ic.reimbursed_on, '')) DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results; // jüngstes Ereignis (Meldung oder Erstattung) zählt für die Grenze
     for (const c of claims) {
       add('claim', c.reported_on, { claim_event: 'reported', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, status: c.status });
       add('claim', c.reimbursed_on, { claim_event: 'reimbursed', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, reimbursed_net: c.reimbursed_net });
@@ -928,13 +928,14 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   const table = parseCsv(text);
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   const head = table[0].map((h) => h.trim().toLowerCase());
-  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  // exakte Spalte vor Wortanfang (18.10.2026: „Statusdatum“ vor „Status“ wurde Status, „Finanzierung“ vor „FIN“ wurde FIN)
+  const col = (names, skip = () => false) => { const x = head.findIndex((h) => names.includes(h) && !skip(h)); return x >= 0 ? x : head.findIndex((h) => !skip(h) && names.some((n) => h.startsWith(n))); };
   // Kennzeichen-/Anhänger-/Art-Spalte nicht über den Anfang allein (18.10.2026: „Kennzeichen Anhänger“ wurde Fahrzeugkennzeichen bzw. ging
   // still verloren, „Art km-Fälligkeit“ des eigenen Exports galt ohne Spalte „Fahrzeugart“ als Fahrzeugart)
   const isTrailerHead = (h) => /anh(ä|ae)nger|auflieger/.test(h) && !/fin|fahrgestell|gekoppelt/.test(h);
   const plateIdx = head.findIndex((h) => h.startsWith('kennzeichen') && !isTrailerHead(h));
   const kindIdx = head.findIndex((h) => h.startsWith('fahrzeugart')) >= 0 ? head.findIndex((h) => h.startsWith('fahrzeugart')) : head.findIndex((h) => h.startsWith('art') && !/km|f(ä|ae)llig|prüf|pruef/.test(h));
-  const ci = { plate: plateIdx, site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin']), trailer: head.findIndex(isTrailerHead), kind: kindIdx, src: col(['quelle', 'nachweis']) };
+  const ci = { plate: plateIdx, site: col(['standort']), status: col(['status']), man: col(['hersteller']), model: col(['modell', 'typ']), year: col(['baujahr']), vin: col(['fin', 'fahrgestellnummer', 'fahrgestell', 'vin'], (h) => /anh(ä|ae)nger|auflieger|finanz/.test(h)), trailer: head.findIndex(isTrailerHead), kind: kindIdx, src: col(['quelle', 'nachweis']) };
   if (ci.plate < 0 || ci.vin < 0) throw bad('validation', 'Spalten Kennzeichen und FIN erforderlich.');
   // Reifen-/Prüftermin-Dateien abweisen; der eigene Fahrzeug-Export („Letzter km-Stand“, „Letzte Abfahrtskontrolle“) bleibt importierbar
   if (head.some((h) => h.startsWith('reifen') || h === 'art' || /^(prüfart|pruefart|letzte prüf|letzte pruef|nächster termin|naechster termin)/.test(h))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');

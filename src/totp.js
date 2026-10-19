@@ -106,8 +106,11 @@ export async function totpEnable(env, user, body, auditFn) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   if (row.totp_enabled_at) throw bad('totp_already', 'Zwei-Faktor-Anmeldung ist bereits eingeschaltet.');
   if (!row.totp_pending) throw bad('totp_no_setup', 'Bitte zuerst „Einrichten“ wählen.');
+  // Fehlversuche zählen wie bei anderen Bestätigungen (18.10.2026: der 6-stellige Code ließ sich in einer übernommenen Sitzung unbegrenzt durchprobieren)
+  await reauthLocked(env, user);
   const step = await verifyTotp(row.totp_pending, body.code);
-  if (step === null) throw bad('totp_invalid', 'Code falsch oder abgelaufen. Bitte den aktuellen Code aus der App eingeben (Uhrzeit des Handys prüfen).');
+  if (step === null) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen. Bitte den aktuellen Code aus der App eingeben (Uhrzeit des Handys prüfen).'); }
+  await reauthOk(env, user);
   const { codes, hashes } = await makeRecovery();
   const now = nowIso();
   // nur einschalten, wenn noch aus und dasselbe Geheimnis vorliegt (Muster cmd_guard): zwei gleichzeitige Aufrufe (Doppelklick, zwei Tabs)

@@ -73,9 +73,11 @@ function argName(args) {
 // `message_args` (Vorlagenwerte für die Oberflächensprache, public/finding-messages.js) bleibt in der App – die Schnittstelle liefert
 // den deutschen Text `message` wie bisher (Datensparsamkeit: keine zusätzlichen Einzelwerte, Schwärzung greift nur auf `message`).
 // Wiedervorlage-Vermerk (Freitext der Leitung) bleibt in der App – wie /v1/cases (Backlog 76, 17.10.2026: ging über Befunde/Master-Eingang hinaus)
+// ebenso der Sperrgrund (Vermerk der Leitung bei „Fahrzeug sperren“, z. B. Namen/Gesundheitsangaben) – Befund ohne Grund (18.10.2026)
 function withoutFollowupNote(code, message, args) {
-  if (code !== 'CASE_FOLLOWUP_DUE') return message;
+  if (code !== 'CASE_FOLLOWUP_DUE' && code !== 'VEHICLE_LOCKED') return message;
   let a = args; if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
+  if (code === 'VEHICLE_LOCKED') return a && a.a && a.a.reason ? renderFindingMessage('VEHICLE_LOCKED_DEFAULT', { ...a.a, reason: null }, 'de') : message;
   return a && a.a && a.a.note ? renderFindingMessage(a.k || code, { ...a.a, note: null }, 'de') : message;
 }
 function redactFinding(row, names) {
@@ -295,8 +297,9 @@ export async function integrationRouter(request, env, ctx, url) {
       const prev = lastGps.get(vehicleId);
       if (prev && gps && gps < prev) { res.rejected++; continue; }
       // ohne gültige GPS-Zeit keinen vorhandenen Stand überschreiben (vorher: Position/km gelöscht, Fahrzeug „ohne Daten“, 17.10.2026)
-      if (!gps && prev) { res.rejected++; continue; }
-      if (gps) lastGps.set(vehicleId, gps);
+      // gilt auch, wenn der vorhandene Stand selbst keine GPS-Zeit hat (18.10.2026: zweiter zeitloser Stand überschrieb den ersten, auch im selben Aufruf)
+      if (!gps && lastGps.has(vehicleId)) { res.rejected++; continue; }
+      lastGps.set(vehicleId, gps || prev || null);
       const km = kmOf(it.km) !== null && kmOf(it.km) >= 0 && kmOf(it.km) <= 5000000 ? kmOf(it.km) : null;
       latestRows.set(vehicleId, { v: vehicleId, ext, basis, sp: plate, gps, lat: validPos ? lat : null, lon: validPos ? lon : null, km,
         speed: numOf(it.speed) !== null && numOf(it.speed) >= 0 ? numOf(it.speed) : null, ign: ignOf(it.ignition) });
@@ -327,7 +330,7 @@ export async function integrationRouter(request, env, ctx, url) {
       SELECT ${X('v')}, ?1, ${X('ext')}, ${X('basis')}, ${X('sp')}, ${X('gps')}, ?2, ${X('lat')}, ${X('lon')}, ${X('km')}, ${X('speed')}, ${X('ign')} FROM json_each(?3) WHERE 1
       ON CONFLICT(vehicle_id,provider) DO UPDATE SET external_id=excluded.external_id, match_basis=excluded.match_basis, source_plate=excluded.source_plate, gps_time=excluded.gps_time, received_at=excluded.received_at,
         lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition
-      WHERE telematics_latest.gps_time IS NULL OR (excluded.gps_time IS NOT NULL AND excluded.gps_time >= telematics_latest.gps_time)`)
+      WHERE excluded.gps_time IS NOT NULL AND (telematics_latest.gps_time IS NULL OR excluded.gps_time >= telematics_latest.gps_time)`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)
     const NEXT_SMALLER = `COALESCE((SELECT o.km < ${X('km')} AND (o.note IS NULL OR trim(o.note) = '') FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at > ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at ASC LIMIT 1), 0)`;
