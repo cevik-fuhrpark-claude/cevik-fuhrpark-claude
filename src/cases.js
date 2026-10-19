@@ -134,9 +134,7 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
   const q = String(query.q || '').trim().slice(0, 60);
   if (q.length >= 2) {
-    const like = likeEsc;
     const plateKey = q.toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
-    const plateLike = plateKey.length >= 2 ? '%' + plateKey + '%' : '\u0000';
     // LIKE in SQLite/D1 ignoriert Groß-/Kleinschreibung nur für A–Z: „гальма“ fände „Гальма …“ nicht, „öl“ nicht „Ölwechsel“.
     // Deshalb je Suchwort Schreibweisen-Varianten (wie eingegeben, klein, GROSS, Wortanfang groß); mehrere Wörter: alle müssen
     // in der Beschreibung vorkommen (Reihenfolge egal, höchstens 5) – eine Abfrage, keine Schemaänderung.
@@ -146,10 +144,11 @@ export async function listCases(env, user, envName, query, meta = null) {
       // aus Kontrollen erzeugte Vorgänge speichern den Prüfpunkt-Schlüssel („… blinker_warnblinker: …“) und zeigen die Bezeichnung je Sprache:
       // passt das Suchwort (ab 3 Zeichen) zu einer Bezeichnung in DE/UK/EN, wird der Schlüssel mitgesucht (höchstens 3)
       const vs = [...caseVariants(w), ...checkKeysFor(w)];
-      wordSql.push(`(${vs.map(() => `c.description LIKE ? ESCAPE '\\'`).join(' OR ')})`); wordArgs.push(...vs.map(like));
+      // instr statt LIKE (D1: Muster über 50 Byte → Fehler, 19.10.2026); lower() wie LIKE für A–Z, Varianten für andere Buchstaben
+      wordSql.push(`(${vs.map(() => `instr(lower(c.description), lower(?)) > 0`).join(' OR ')})`); wordArgs.push(...vs);
     }
-    where.push(`((${wordSql.join(' AND ')}) OR c.case_no LIKE ? ESCAPE '\\' OR REPLACE(REPLACE(UPPER(v.plate),' ',''),'-','') LIKE ?)`);
-    args.push(...wordArgs, like(q), plateLike);
+    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(REPLACE(REPLACE(UPPER(v.plate),' ',''),'-',''), ?) > 0)`);
+    args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000');
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`

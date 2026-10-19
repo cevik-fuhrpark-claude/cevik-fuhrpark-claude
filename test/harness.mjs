@@ -24,7 +24,11 @@ if (QPLAN) process.on('exit', () => {
 });
 class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
-  bind(...args) { return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a))); }
+  bind(...args) {
+    // D1 lehnt LIKE-/GLOB-Muster über 50 Byte ab („LIKE or GLOB pattern too complex“) – node:sqlite nicht; hier nachgebildet (19.10.2026)
+    if (/\b(LIKE|GLOB)\b/i.test(this.sql)) for (const a of args) if (typeof a === 'string' && /[%*]/.test(a) && Buffer.byteLength(a) > 50) throw new Error('LIKE or GLOB pattern too complex: SQLITE_ERROR');
+    return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a)));
+  }
   _prep() { QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
   async first(col) {
     const r = this._prep().get(...this.args);

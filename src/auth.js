@@ -334,7 +334,10 @@ export async function createInvite(env, userId, createdBy) {
 export async function inviteInfo(env, token) {
   const h = await sha256Hex(String(token || ''));
   const row = await env.DB.prepare(
-    'SELECT i.*, u.username, u.display_name, u.role, u.environment, u.active FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?'
+    // Aussteller muss noch aktive Leitung/Inhaber sein: Links einer ausgeschiedenen bzw. herabgestuften Fuhrparkleitung verfallen (19.10.2026:
+    // sonst konnte sie Fahrerkonten mit zuvor erzeugten Links übernehmen); Ersteinrichtung ohne Aussteller bleibt gültig
+    `SELECT i.*, u.username, u.display_name, u.role, u.environment, u.active FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?
+      AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND c.role IN ('owner','fleet')))`
   ).bind(h).first();
   // deaktiviertes Konto: Einladung nicht einlösbar (vorher Passwort gesetzt + „Letzte Anmeldung“ trotz Deaktivierung)
   if (!row || row.used_at || row.expires_at < nowIso() || !row.active) throw new HttpError(410, 'invite_invalid', 'Einladung ungültig oder abgelaufen.');
@@ -437,7 +440,9 @@ async function noteLoginDevice(env, ctx, userRow, request, deviceId) {
 // Vorher zählten Benutzerliste/„Meine Geräte“ nach Leerlauf abgemeldete Sitzungen bis zu 30 Tage als aktiv (17.10.2026).
 export function sessionAliveSql(now) {
   return `(s.expires_at > ${now} AND NOT EXISTS (SELECT 1 FROM settings st WHERE st.key = CASE WHEN u.role='workshop' THEN 'idle_logout_workshop_min' ELSE 'idle_logout_other_min' END
-    AND CAST(st.value AS REAL) > 0 AND s.last_seen < strftime('%Y-%m-%dT%H:%M:%fZ', ${now}, '-' || (MAX(CAST(st.value AS REAL), 5) * 60) || ' seconds')))`;
+    AND CAST(st.value AS REAL) > 0 AND s.last_seen < strftime('%Y-%m-%dT%H:%M:%fZ', ${now}, '-' || (MAX(CAST(st.value AS REAL), 5) * 60 + 60) || ' seconds')))`;
+  // + 60 s = Schreibabstand von last_seen (wie getSessionUser: Leerlauf + writeEvery, bei ≥ 5 Min. immer 60 s) – sonst löschte der Cron
+  // eine noch gültige Sitzung bis zu ⅓ zu früh und die Benutzerliste zählte sie nicht (19.10.2026)
 }
 const SID_LEN = 16; // Kurzkennung = Anfang des Token-Hashes (aus ihr lässt sich kein Token ableiten)
 export async function listOwnSessions(env, user) {
@@ -544,6 +549,11 @@ export async function updateUser(env, actor, userId, body) {
   const stmts = [env.DB.prepare('UPDATE users SET role=?, environment=?, active=?, display_name=?, workshop_site=?, updated_at=? WHERE id=? AND updated_at=?')
     .bind(role, environment, active, display, site, laterIso(target.updated_at), userId, target.updated_at),
   env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard')];
+  // Inhaber deaktivieren/herabstufen: Handelnde Person muss noch aktiv in ihrer Rolle sein und danach mindestens ein aktiver Inhaber
+  // übrig bleiben (19.10.2026: zwei Inhaber, die sich gleichzeitig gegenseitig deaktivierten, ließen keinen Inhaber zurück)
+  if (target.role === 'owner' && (role !== 'owner' || !active)) stmts.push(
+    env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT EXISTS (SELECT 1 FROM users WHERE id=? AND active=1 AND role=?) AND EXISTS (SELECT 1 FROM users WHERE role='owner' AND active=1)`).bind(actor.id, actor.role),
+    env.DB.prepare('DELETE FROM cmd_guard'));
   // Rollen-/Umgebungswechsel oder Deaktivierung entwertet Sitzungen und Push-Geräte
   // Werkstatt-Standortwechsel wie Rollenwechsel: alte Hinweise/Pushs betrafen Vorgänge des bisherigen Standorts (17.10.2026)
   const siteChanged = role === 'workshop' && target.role === 'workshop' && (site || null) !== (target.workshop_site || null);
@@ -702,8 +712,11 @@ async function auditPerson(env, id) {
 function auditQ(qs, where, args) {
   const vs = caseVariants(qs);
   // auch im betroffenen Konto (Name/Benutzername) und Fahrzeug (Kennzeichen) – z. B. HU/SP-Neuberechnung ohne Kennzeichen im Detail
-  where.push('(' + vs.map(() => "a.target LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR tu.username LIKE ? ESCAPE '\\' OR tu.display_name LIKE ? ESCAPE '\\' OR tv.plate LIKE ? ESCAPE '\\'").join(' OR ') + ')');
-  for (const v of vs) args.push(...Array(7).fill(likeEsc(v)));
+  // instr statt LIKE: D1 lehnt LIKE-Muster über 50 Byte ab (Suchfeld 60 Zeichen → 500, 19.10.2026); lower() = LIKE-Verhalten für A–Z,
+  // Varianten (caseVariants) für andere Buchstaben
+  const IN = (col) => `instr(lower(${col}), lower(?)) > 0`;
+  where.push('(' + vs.map(() => ['a.target', 'a.detail', 'u.username', 'u.display_name', 'tu.username', 'tu.display_name', 'tv.plate'].map(IN).join(' OR ')).join(' OR ') + ')');
+  for (const v of vs) args.push(...Array(7).fill(v));
 }
 // Bereich: ein Aktions-Präfix oder mehrere, durch Komma getrennt (z. B. „invite.,password.,totp.“ für Zugang & Sicherheit), höchstens 8 × 40 Zeichen
 function auditPrefix(query) {
@@ -713,8 +726,9 @@ function auditPrefix(query) {
 }
 function auditPrefixWhere(prefix, where, args, esc) {
   const list = prefix.split(',');
-  where.push('(' + list.map(() => "a.action LIKE ? ESCAPE '\\'").join(' OR ') + ')');
-  for (const p of list) args.push(esc(p) + '%');
+  // Präfix ohne LIKE (D1-Grenze 50 Byte für Muster; Unterstriche in Aktionen mussten sonst maskiert werden)
+  where.push('(' + list.map(() => 'substr(a.action, 1, length(?)) = ?').join(' OR ') + ')');
+  for (const p of list) args.push(p, p);
 }
 export async function listAudit(env, user, query = {}) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');

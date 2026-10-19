@@ -13174,6 +13174,48 @@ await test('Fehlersuche 19.10. (34): HU/SP – offene erste SP auch bei HU ab Vo
   eq(w.status, 400); ok(w.data.message.includes('verfügbar: 17,5 l'), w.data.message);
 });
 
+await test('Fehlersuche 19.10. (35): lange Suchtexte ohne D1-Mustergrenze (Protokoll, CSV, Vorgänge), Leerlauf-Grenze im Cron wie bei der Anmeldung, Links ausgeschiedener Leitung verfallen, letzter Inhaber bleibt', async () => {
+  const { e, U, newCase } = await freshWorld(); const an = new Client(worker, e, 'anon');
+  // 1. lange Suchtexte (Harness bildet die D1-Grenze von 50 Byte für LIKE-Muster nach)
+  for (const q of ['a'.repeat(55), 'гальма '.repeat(8).trim(), 'Rück_leuchte%'.repeat(4)]) {
+    eq((await U.own.get('/api/admin/audit?q=' + encodeURIComponent(q))).status, 200, 'Protokoll ' + q.length);
+    eq((await U.own.get('/api/admin/audit?format=csv&q=' + encodeURIComponent(q))).status, 200, 'Protokoll-CSV');
+    eq((await U.fleet.get('/api/cases?f=all&q=' + encodeURIComponent(q))).status, 200, 'Vorgänge');
+  }
+  const id = await newCase({ description: 'Gurt_Schloss 100% defekt' });
+  const no = (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  const hits = async (q) => (await U.fleet.get('/api/cases?f=all&q=' + encodeURIComponent(q))).data.cases.map((c) => c.id);
+  ok((await hits('gurt_schloss')).includes(id), 'Groß-/Kleinschreibung A–Z wie LIKE'); ok((await hits('100%')).includes(id), 'Prozent wörtlich');
+  ok(!(await hits('Gurt%Schloss')).includes(id), 'Platzhalter wirkungslos'); ok((await hits(no.toLowerCase())).includes(id), 'Vorgangsnummer');
+  ok((await hits('yc 5513')).includes(id) && (await hits('SZ-YC5513')).includes(id), 'Kennzeichen ohne Leerzeichen/Bindestrich');
+  ok((await U.own.get('/api/admin/audit?action=user.,invite.')).data.entries.every((x) => /^(user\.|invite\.)/.test(x.action)), 'Bereichsfilter als Präfix');
+  // 2. Leerlauf: Cron löscht nicht vor Leerlauf + Schreibabstand
+  const { cleanupShortLived } = await import('../src/auth.js');
+  eq((await U.own.put('/api/settings', { idle_logout_other_min: '6' })).status, 200);
+  e.DB.db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(new Date(Date.now() - 390000).toISOString(), U.driver.id);
+  ok((await U.fleet.get('/api/users')).data.users.find((u) => u.id === U.driver.id).sessions >= 1, 'Benutzerliste zählt die noch gültige Sitzung');
+  await cleanupShortLived(e); eq((await U.driver.get('/api/me')).status, 200, 'Cron gleich lang wie Anmeldung');
+  e.DB.db.prepare('UPDATE sessions SET last_seen=? WHERE user_id=?').run(new Date(Date.now() - 425000).toISOString(), U.driver.id);
+  await cleanupShortLived(e); eq((await U.driver.get('/api/me')).status, 401, 'danach abgemeldet');
+  eq((await U.own.put('/api/settings', { idle_logout_other_min: '' })).status, 200);
+  // 3. Links einer ausgeschiedenen Fuhrparkleitung verfallen
+  const link = await U.fleet.post(`/api/users/${U.viewer.id}/invite`); eq(link.status, 200);
+  const nu = await U.fleet.post('/api/users', { username: 'neu.fahrer', display_name: 'Neu', role: 'driver', environment: 'test' }); eq(nu.status, 201);
+  eq((await U.own.patch('/api/users/' + U.fleet.id, { active: false })).status, 200);
+  eq((await an.post('/api/invite/accept', { token: link.data.invite_token, password: 'Uebernahme-Konto-9183' })).status, 410, 'Zurücksetzen-Link verfallen');
+  eq((await an.post('/api/invite/accept', { token: nu.data.invite_token, password: 'Uebernahme-Konto-9183' })).status, 410, 'Einladung verfallen');
+  // 4. zwei Inhaber deaktivieren sich gleichzeitig gegenseitig → einer bleibt
+  const o2 = await U.own.post('/api/users', { username: 'zweit.inhaber', display_name: 'Zweit', role: 'owner', environment: 'production' }); eq(o2.status, 201);
+  const own2 = new Client(worker, e, 'zweit.inhaber'); eq((await own2.post('/api/invite/accept', { token: o2.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const ownId = e.DB.db.prepare(`SELECT id FROM users WHERE username='yilmaz'`).get().id;
+  const orig = e.DB.batch.bind(e.DB); let waiting = []; let n = 0;
+  e.DB.batch = async (st) => { if (st.length > 3 && n < 2) { n++; await new Promise((r) => { waiting.push(r); if (waiting.length === 2) waiting.forEach((f) => f()); setTimeout(r, 200); }); } return orig(st); };
+  const [a, b] = await Promise.all([U.own.patch('/api/users/' + o2.data.id, { active: false }), own2.patch('/api/users/' + ownId, { active: false })]);
+  e.DB.batch = orig;
+  ok([a.status, b.status].includes(409), 'einer abgewiesen: ' + a.status + '/' + b.status);
+  ok(e.DB.db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n >= 1, 'mindestens ein aktiver Inhaber');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
