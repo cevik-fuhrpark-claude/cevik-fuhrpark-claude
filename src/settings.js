@@ -69,18 +69,29 @@ export function settingPairs(body, { decimalPoint = false } = {}) { // decimalPo
 
 // Gespeicherte Werte gegen die Regeln prüfen (Werte von vor der Werteprüfung am 16.10.2026 oder aus einer eingespielten Sicherung):
 // die App markiert sie beim Öffnen der Einstellungen, statt dass sie erst beim nächsten Speichern auffallen. Nichts wird geändert.
+const FORMAT = 'format'; // mehrdeutige/anders wirkende Schreibweise (eigener Name: kein Import-Zeilengrund)
 export function storedInvalid(values) {
   const out = [];
   for (const k of SETTINGS_KEYS) {
     const v = values[k];
     if (v === null || v === undefined || v === '') continue;
-    try { settingValue(k, v); } catch (e) {
+    if (/_kritisch_min$/.test(k)) continue; // wird nie gelesen (Agent meldet „kritisch“ sofort) und ist im Formular nicht mehr sichtbar (20.10.2026)
+    let norm;
+    try { norm = settingValue(k, v); } catch (e) {
       // Grund nennen (20.10.2026: „1.000“ liegt im Bereich, ist aber mehrdeutig – Meldung „außerhalb des Bereichs“ widersprach sich);
       // effective = so wertet die App den gespeicherten Text heute aus (Number(), wie die Leser der Einstellung)
       const r = SETTING_RULES[k]; let reason = 'format';
       if (r) { try { const n = num(String(v), { grouped: !!r.int }); reason = n < r.min || n > r.max ? 'range' : r.int && !Number.isInteger(n) ? 'integer' : 'decimals'; } catch { reason = 'format'; } }
       const eff = Number(v);
       out.push({ setting: k, value: String(v), reason, ...(Number.isFinite(eff) ? { effective: eff } : {}), ...(e.extra || {}) });
+      continue;
+    }
+    // gültig nach der Werteprüfung („15.000“, „85,50“), aber die Leser rechnen mit Number() → wirkt anders als angezeigt (20.10.2026)
+    const r = SETTING_RULES[k];
+    if (r && Number(v) !== Number(norm)) {
+      let eff = Number(v);
+      if (/^idle_logout_/.test(k) && eff > 0) eff = Math.max(eff, 5); // Leerlauf wirkt mindestens 5 Min. (src/auth.js)
+      out.push({ setting: k, value: String(v), reason: FORMAT, ...(Number.isFinite(eff) ? { effective: eff } : {}), min: r.min, max: r.max, integer: !!r.int });
     }
   }
   return out;

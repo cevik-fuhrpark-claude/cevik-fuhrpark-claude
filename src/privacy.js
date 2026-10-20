@@ -4,6 +4,8 @@ import { nowIso, forbidden, notFound } from './util.js';
 import { audit } from './auth.js';
 
 const LIMIT = 5000;
+// neutrale Detail-Angaben eigener Protokolleinträge (keine Namen, Vermerke, Begründungen, Benutzernamen)
+const AUDIT_KEEP = new Set(['kind', 'valid_until', 'checked_on', 'result', 'environment', 'role', 'count', 'sessions', 'from', 'to', 'downloaded_on', 'rows', 'site', 'status', 'sections', 'driver_only', 'active', 'size']);
 
 // Aufruf mit App-Konto (userId) oder Fahrerakte (driverId); ist die Fahrerakte mit einem Konto verknüpft, gilt die volle Auskunft des Kontos
 const EXPORT_TEXT = {
@@ -30,7 +32,13 @@ export async function personExport(env, actor, { userId = null, driverId = null 
   } else userId = '\u0000'; // Fahrer ohne App-Konto: nur Fahrerakte
   const did = driver ? driver.id : '\u0000';
   // eine Zeile mehr lesen: „gekappt“ nur, wenn wirklich mehr als LIMIT Zeilen vorhanden sind (19.10.2026: schon bei genau LIMIT gemeldet)
-  const q = (sql, ...args) => env.DB.prepare(`${sql} LIMIT ${LIMIT + 1}`).bind(...args);
+  // Gekappt bleiben die NEUESTEN Einträge (20.10.2026: vorher die ältesten 5000 – wie bei der Sicherung seit 18.10.): innen absteigend
+  // lesen, außen wieder in der Reihenfolge der Abfrage ausgeben; die überzählige älteste Zeile entfällt unten (`slice(-LIMIT)`).
+  const q = (sql, ...args) => {
+    const m = sql.match(/^([\s\S]*)ORDER BY ([\w.]+)\s*$/); // absteigend sortierte (Sitzungen) behalten ohnehin die neuesten
+    if (!m) return env.DB.prepare(`${sql} LIMIT ${LIMIT + 1}`).bind(...args);
+    return env.DB.prepare(`SELECT * FROM (${m[1]}ORDER BY ${m[2]} DESC LIMIT ${LIMIT + 1}) ORDER BY ${m[2].split('.').pop()}`).bind(...args);
+  };
   const stmts = {
     sessions: q('SELECT created_at, last_seen, expires_at, user_agent FROM sessions WHERE user_id=? ORDER BY last_seen DESC', userId),
     known_devices: q('SELECT label, first_seen, last_seen FROM known_devices WHERE user_id=? ORDER BY first_seen', userId),
@@ -58,7 +66,9 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     maintenance_recorded: q(`SELECT e.kind, e.done_date, e.result, e.created_at, v.plate FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id WHERE e.recorded_by=? ORDER BY e.created_at`, userId),
     fine_events: q(`SELECT f.fine_no, e.action, e.note, e.created_at FROM fine_events e JOIN fines f ON f.id=e.fine_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
     audit_as_actor: q('SELECT action, target, detail, created_at FROM audit_log WHERE actor_id=? ORDER BY created_at', userId),
-    audit_about: q('SELECT actor_id, action, detail, created_at FROM audit_log WHERE target IN (?, ?) ORDER BY created_at', userId, did),
+    // auch Fahrzeugzuordnungen der Person (Ziel = Fahrzeug, Person nur im Detail; gleiche Regel wie Protokoll je Person, 20.10.2026)
+    audit_about: q(`SELECT actor_id, action, detail, created_at FROM audit_log WHERE target IN (?1, ?2) OR (target IN (SELECT vehicle_id FROM driver_vehicles WHERE user_id = ?1)
+      AND action IN ('vehicle.assign_driver', 'vehicle.end_assignment') AND CASE WHEN json_valid(detail) THEN json_extract(detail, '$.driver') END = ?1) ORDER BY created_at`, userId, did),
     driver_documents: q('SELECT * FROM driver_documents WHERE driver_id=? ORDER BY created_at', did),
     license_checks: q('SELECT * FROM driver_license_checks WHERE driver_id=? ORDER BY checked_on', did),
     card_downloads: q('SELECT kind, downloaded_on, evidence, created_at, cancelled_at, cancel_reason FROM tacho_downloads WHERE driver_id=? ORDER BY downloaded_on', did),
@@ -74,7 +84,8 @@ export async function personExport(env, actor, { userId = null, driverId = null 
       FROM tacho_downloads t WHERE t.created_by=?1 OR t.cancelled_by=?1 ORDER BY t.created_at`, userId),
     master_decisions: q('SELECT environment, received_at, decision_status, decision_note, decided_at FROM master_inbox WHERE decided_by=? ORDER BY decided_at', userId),
     drivers_created: q('SELECT created_at FROM drivers WHERE created_by=? ORDER BY created_at', userId),
-    driver_documents_recorded: q('SELECT kind, valid_until, created_at FROM driver_documents WHERE created_by=? ORDER BY created_at', userId),
+    driver_documents_recorded: q(`SELECT kind, valid_until, created_at, cancelled_at, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN cancelled_by=?1 THEN 1 ELSE 0 END AS cancelled
+      FROM driver_documents WHERE created_by=?1 OR cancelled_by=?1 ORDER BY created_at`, userId), // auch Stornos (Migration 0063, wie Auslesungen; 20.10.2026)
     contracts_recorded: q(`SELECT k.kind, k.partner, k.contract_no, k.created_at, v.plate FROM vehicle_contracts k JOIN vehicles v ON v.id=k.vehicle_id WHERE k.created_by=? ORDER BY k.created_at`, userId),
     claims_recorded: q(`SELECT c.case_no, i.insurer, i.status, i.created_at FROM insurance_claims i JOIN cases c ON c.id=i.case_id WHERE i.created_by=? ORDER BY i.created_at`, userId),
     fines_recorded: q(`SELECT fine_no, environment, kind, created_at, driver_confirmed_at, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN driver_confirmed_by=?1 THEN 1 ELSE 0 END AS driver_confirmed
@@ -100,7 +111,14 @@ export async function personExport(env, actor, { userId = null, driverId = null 
   const truncated = [];
   names.forEach((n, i) => {
     if (n === '_made_by') { const row = (res[i].results || [])[0] || {}; for (const [k, j] of Object.entries(row)) { const r = JSON.parse(j || '[]'); if (r.length > LIMIT) truncated.push(k); data[k] = r.slice(0, LIMIT); } return; }
-    const r = res[i].results || []; if (r.length > LIMIT) truncated.push(n); data[n] = r.slice(0, LIMIT);
+    const r = res[i].results || []; if (r.length > LIMIT) truncated.push(n); data[n] = r.length > LIMIT ? (n === 'sessions' ? r.slice(0, LIMIT) : r.slice(-LIMIT)) /* nur Sitzungen sind absteigend sortiert */ : r;
+  });
+  // Art. 15 Abs. 4 DSGVO: eigene Protokolleinträge ohne Namen/Vermerke Dritter (20.10.2026: `detail` enthielt z. B. Namen angelegter Fahrer,
+  // Storno-Begründungen und Benutzernamen) – nur neutrale Angaben bleiben; bei Handlungen an Personen entfällt auch die Ziel-Kennung.
+  data.audit_as_actor = data.audit_as_actor.map((r) => {
+    let d = null; try { d = JSON.parse(r.detail); } catch { d = null; }
+    const keep = d && typeof d === 'object' && !Array.isArray(d) ? Object.fromEntries(Object.entries(d).filter(([k]) => AUDIT_KEEP.has(k))) : null;
+    return { action: r.action, target: /^(driver|user|tacho|privacy|fine)\./.test(r.action) ? null : r.target, detail: keep && Object.keys(keep).length ? keep : null, created_at: r.created_at };
   });
   const generatedAt = nowIso();
   const lang = u && EXPORT_TEXT[u.language] ? u.language : 'de';

@@ -546,8 +546,10 @@ function keepRestore() {
   }, 0);
 }
 
+// Antwort aus der vorherigen Umgebung (Wechsel während der Abfrage) nicht übernehmen (20.10.2026)
 async function refreshUnread(bg = false) {
-  try { const n = await api('GET', '/api/notifications?count=1', undefined, { bg }); S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge(); } catch {}
+  const ev = S.viewEnv;
+  try { const n = await api('GET', '/api/notifications?count=1', undefined, { bg }); if (S.viewEnv !== ev) return; S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge(); } catch {}
 }
 // Zahl am Glockensymbol an Ort und Stelle aktualisieren – ohne die Seite neu aufzubauen (halb ausgefüllte Formulare bleiben erhalten)
 function paintBadge() {
@@ -1294,7 +1296,10 @@ async function viewCase(id) {
       ${d.external_costs && d.external_costs.length ? `<table>${d.external_costs.map((x) => `<tr><td style="overflow-wrap:anywhere">${esc(x.supplier)} ${esc(x.invoice_no || '')}${warrChip(x.warranty_until)}</td><td>${x.amount_net === null ? esc(t('unvalued')) : eur(x.amount_net) + (x.valuation === 'estimate' ? ' (' + esc(t('estimate')) + ')' : '')}</td></tr>`).join('')}</table>` : ''}</section>`;
   }
 
-  if (d.insurance_contracts) html += claimSection(d.claim, d.insurance_contracts, d.files || []);
+  // Als Dublette abgelehnt ohne eigenen Fall: kein Formular (Server lehnt ab), Hinweis auf den Ursprungsvorgang (20.10.2026)
+  if (d.insurance_contracts) html += d.duplicate_of && !d.claim
+    ? `<section class="panel"><h3>${esc(t('claim_title'))}</h3><p class="small muted">${esc(t('claim_dup_hint'))}${d.duplicate_of.id ? ` <a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>` : ''}</p></section>`
+    : claimSection(d.claim, d.insurance_contracts, d.files || []);
   // Dauer je Status (aus dem Verlauf: gespeicherte Statuswechsel, aktueller Status bis jetzt)
   {
     const spans = []; let cur = 'gemeldet'; let since = c.created_at;
@@ -2781,7 +2786,7 @@ async function viewScan(id) {
 
 // ---------- Panne & Notfall: Rufnummern für unterwegs (vom Betrieb eingetragen; fest nur Notruf 112) ----------
 // „+49 (0)231 …“ → tel:+49231… (die (0) wird international nicht gewählt; vorher wählte der Link +490231…, 18.10.2026)
-const telHref = (p) => 'tel:' + String(p).trim().replace(/^(\+[\d\s]*?)\s*\(0\)/, '$1').replace(/[^\d+]/g, '');
+const telHref = (p) => 'tel:' + String(p).trim().replace(/^((?:\+|00)[\d\s]*?)\s*\(0\)/, '$1').replace(/[^\d+]/g, '');
 const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle')) : c.scope === 'site' ? `${t('site')}: ${c.site}` : t('em_scope_all'));
 function emRows(list) {
   return `<div class="list">${list.map((c) => `<div class="row emrow"><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
@@ -2990,7 +2995,7 @@ async function viewInbox() {
   const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
   $$('[data-ack]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
   $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
-  const ra = $('#ra'); if (ra) ra.onclick = async () => { try { await api('POST', '/api/notifications/read-all'); S.unread = 0; paintBadge(); again(); } catch (err) { toast(err.message, true); } };
+  const ra = $('#ra'); if (ra) ra.onclick = async () => { try { await api('POST', '/api/notifications/read-all', n.as_of ? { before: n.as_of } : {}); S.unread = 0; paintBadge(); again(); } catch (err) { toast(err.message, true); } };
   $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; again().catch((err) => toast(err.message, true)); }));
 }
 

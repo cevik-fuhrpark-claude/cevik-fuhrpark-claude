@@ -387,23 +387,42 @@ async function repairInspection(env, caseId) {
 // gesenkt – die Freigabe blieb blockiert): liegen die bewerteten Kosten nicht mehr über max(Grenze, freigegebener Betrag) bzw. ist die
 // Grenze aus, wird die Markierung aufgehoben und im Verlauf vermerkt. Nur offene Vorgänge; ohne erteilte Freigabe (kein Betrag erfunden).
 export async function revalidateCostMarks(env, actorId, caseIds = null) {
+  // Sammelweg (20.10.2026): vorher je markiertem Vorgang eine Kostenabfrage + ein Stapel – 30 Markierungen = 96 D1-Abfragen beim Speichern
+  // der Einstellungen (Budget 50). Jetzt: eine Abfrage (Vorgänge + Positionen), ein Stapel (Ereignisse + Freigabe mit Stand-Prüfung).
   const limit = await costLimit(env);
-  const rows = (await env.DB.prepare(`SELECT id, environment, status, cost_over_limit_at, cost_approved_net FROM cases WHERE cost_over_limit_at IS NOT NULL
-    AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')${caseIds ? ' AND id IN (SELECT value FROM json_each(?))' : ''} LIMIT 200`).bind(...(caseIds ? [JSON.stringify(caseIds)] : [])).all()).results;
-  const cleared = [];
+  const r = await env.DB.prepare(`WITH m AS (SELECT id, environment, status, cost_over_limit_at, cost_approved_net FROM cases WHERE cost_over_limit_at IS NOT NULL
+      AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')${caseIds ? ' AND id IN (SELECT value FROM json_each(?1))' : ''} LIMIT 200)
+    SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
+      (SELECT json_group_array(json_object('id', id, 'environment', environment, 'status', status, 'at', cost_over_limit_at, 'approved', cost_approved_net)) FROM m) AS c,
+      (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours)) FROM work_entries x WHERE x.case_id IN (SELECT id FROM m)) AS w,
+      (SELECT json_group_array(json_object('case_id', x.case_id, 'quantity', x.quantity, 'unit_price_net', x.unit_price_net, 'valuation', x.valuation)) FROM parts x WHERE x.case_id IN (SELECT id FROM m)) AS p,
+      (SELECT json_group_array(json_object('case_id', x.case_id, 'amount_net', x.amount_net, 'valuation', x.valuation, 'covers_work_and_parts', x.covers_work_and_parts)) FROM external_costs x WHERE x.case_id IN (SELECT id FROM m)) AS e`)
+    .bind(...(caseIds ? [JSON.stringify(caseIds)] : [])).first();
+  const rows = JSON.parse(r.c || '[]');
+  if (!rows.length) return [];
+  const rate = rateOf(r.rate);
+  const by = (txt) => { const m = new Map(); for (const x of JSON.parse(txt || '[]')) { if (!m.has(x.case_id)) m.set(x.case_id, []); m.get(x.case_id).push(x); } return m; };
+  const work = by(r.w); const parts = by(r.p); const ext = by(r.e);
+  const clear = [];
   for (const c of rows) {
-    const k = await caseCosts(env, c.id);
+    const k = computeCosts(rate, work.get(c.id) || [], parts.get(c.id) || [], ext.get(c.id) || []);
     const total = round2(k.actual_net + k.estimate_net);
-    if (limit !== null && total > Math.max(limit, c.cost_approved_net || 0)) continue;
-    const now = nowIso();
-    const r = await env.DB.batch([
-      env.DB.prepare(`UPDATE cases SET cost_over_limit_at=NULL, updated_at=?, version=version+1 WHERE id=? AND cost_over_limit_at=?`).bind(now, c.id, c.cost_over_limit_at),
-      env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at)
-        SELECT ?,?,?,?,NULL,'cost_limit_cleared',?,?,NULL,?,? WHERE changes()>0`).bind(uuid(), c.id, c.environment, actorId, c.status, c.status, JSON.stringify({ total_net: total, limit_net: limit, approved_net: c.cost_approved_net ?? null }), now),
-    ]);
-    if (r[0].meta && r[0].meta.changes) cleared.push(c.id);
+    if (limit !== null && total > Math.max(limit, c.approved || 0)) continue;
+    clear.push({ id: c.id, at: c.at, ev: uuid(), env: c.environment, status: c.status, payload: JSON.stringify({ total_net: total, limit_net: limit, approved_net: c.approved ?? null }) });
   }
-  return cleared;
+  if (!clear.length) return [];
+  const now = nowIso();
+  const J = JSON.stringify(clear);
+  // nur Vorgänge, deren Markierung noch dieselbe ist (gleichzeitige Änderung → unverändert); Ereignis und Freigabe im selben Stapel
+  const MATCH = `SELECT json_extract(j.value, '$.id') AS id, json_extract(j.value, '$.at') AS at FROM json_each(?1) j`;
+  const res = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,payload,created_at)
+      SELECT json_extract(j.value, '$.ev'), c.id, c.environment, ?2, NULL, 'cost_limit_cleared', c.status, c.status, NULL, json_extract(j.value, '$.payload'), ?3
+      FROM json_each(?1) j JOIN cases c ON c.id = json_extract(j.value, '$.id') AND c.cost_over_limit_at = json_extract(j.value, '$.at')`).bind(J, actorId, now),
+    env.DB.prepare(`UPDATE cases SET cost_over_limit_at=NULL, updated_at=?2, version=version+1
+      WHERE id IN (SELECT id FROM (${MATCH}) WHERE id = cases.id AND at = cases.cost_over_limit_at) RETURNING id`).bind(J, now),
+  ]);
+  return (res[1].results || []).map((x) => x.id);
 }
 async function checkCostLimit(env, ctx, user, envName, c) {
   if (c.cost_over_limit_at) return false;
@@ -978,6 +997,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         // das Original als „Unfall ohne Versicherungsfall“ → zweiter Fall für denselben Schaden); haben beide einen, erst klären
         const cl = (await env.DB.prepare('SELECT case_id FROM insurance_claims WHERE case_id IN (?, ?) AND environment=?').bind(c.id, o.id, envName).all()).results;
         if (cl.length === 2) throw conflict('claim_on_both', 'Beide Vorgänge haben einen Versicherungsfall – bitte zuerst klären, welcher gilt.');
+        // gelesener Stand im Stapel geprüft (20.10.2026): ein gleichzeitig angelegter Fall hätte das Umhängen still verhindert („moved_claim“ trotzdem gemeldet)
+        const nO = cl.filter((x) => x.case_id === o.id).length; const nC = cl.length - nO;
+        extra.push(env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN (SELECT COUNT(*) FROM insurance_claims WHERE case_id=?)=? AND (SELECT COUNT(*) FROM insurance_claims WHERE case_id=?)=? THEN 1 ELSE 0 END').bind(o.id, nO, c.id, nC), env.DB.prepare('DELETE FROM cmd_guard'));
         if (cl.length === 1 && cl[0].case_id === c.id) {
           payload.moved_claim = true;
           extra.push(env.DB.prepare('UPDATE insurance_claims SET case_id=?, updated_at=? WHERE case_id=? AND environment=? AND NOT EXISTS (SELECT 1 FROM insurance_claims x WHERE x.case_id=?)').bind(o.id, now, c.id, envName, o.id));

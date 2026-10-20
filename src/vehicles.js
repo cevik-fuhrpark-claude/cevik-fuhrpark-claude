@@ -259,7 +259,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
       if (!f.doc_valid_until) { f.doc_status = null; continue; }
       if (f.doc_valid_until < maxBy.get(keyOf(f))) { f.doc_status = 'abgeloest'; continue; }
       const days = Math.round((Date.parse(f.doc_valid_until) - Date.parse(today)) / 86400000);
-      f.doc_status = !v.active ? null : days < 0 ? 'abgelaufen' : days <= w ? 'laeuft_ab' : 'gueltig';
+      f.doc_status = (!v.active || v.eval_excluded) ? null : days < 0 ? 'abgelaufen' : days <= w ? 'laeuft_ab' : 'gueltig';
     }
   }
   return out;
@@ -1154,7 +1154,8 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
     SELECT ?1,NULL,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
     WHERE (SELECT COUNT(*) FROM files WHERE vehicle_id=?2 AND case_id IS NULL AND environment=?6) < ?14
       AND NOT EXISTS (SELECT 1 FROM files WHERE vehicle_id=?2 AND case_id IS NULL AND environment=?6 AND sha256=?11)`)
-    .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_VEHICLE_DOCS).run();
+    .bind(id, vehicleId, kind, note, validUntil, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_VEHICLE_DOCS).run()
+    .catch(async (e) => { await env.FILES.delete(key); throw e; }); // keine verwaiste Datei bei D1-Fehler (wie Vorgangsdateien, 20.10.2026)
   if (!ins.meta || !ins.meta.changes) {
     await env.FILES.delete(key);
     const d2 = await env.DB.prepare('SELECT id, doc_kind, doc_note, doc_valid_until FROM files WHERE vehicle_id=? AND case_id IS NULL AND environment=? AND sha256=?').bind(vehicleId, envName, sha).first();

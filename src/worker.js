@@ -618,18 +618,20 @@ async function handleApi(request, env, ctx, url) {
     // Zähler immer über ALLE Hinweise der Person (nicht nur die angezeigten) – sonst fehlt im Zähler/Reiter, was älter als die neuesten NOTIF_MAX ist.
     // ?filter=unread|urgent filtert serverseitig (ältere ungelesene erscheinen so auch bei vielen Hinweisen); ?count=1 nur die Zähler (Kennzahl am Menü).
     // nur Hinweise der aktuellen Umgebung der Person (nach Wechsel Test→Betrieb erschienen sonst Test-Hinweise, 17.10.2026)
+    // Sicherheitshinweis „Neue Anmeldung“ betrifft das Konto, nicht die Umgebung: in Test- und Betriebsansicht (20.10.2026: Inhaber in „Test“ sah ihn nicht)
     const UNREAD = 'n.opened_at IS NULL AND n.acknowledged_at IS NULL';
     const c = await env.DB.prepare(`SELECT COUNT(*) AS all_n, COALESCE(SUM(CASE WHEN ${UNREAD} THEN 1 ELSE 0 END), 0) AS unread_n, COALESCE(SUM(CASE WHEN n.urgent=1 THEN 1 ELSE 0 END), 0) AS urgent_n
-      FROM notifications n WHERE n.user_id=? AND n.environment=? AND n.hidden_at IS NULL`).bind(user.id, envName).first();
+      FROM notifications n WHERE n.user_id=? AND (n.environment=? OR n.kind='new_login') AND n.hidden_at IS NULL`).bind(user.id, envName).first();
+    const listAsOf = nowIso(); // „Alle gelesen“ markiert nur bis zu diesem Stand (danach eingetroffene bleiben ungelesen)
     const counts = { all: c.all_n, unread: c.unread_n, urgent: c.urgent_n };
     if (url.searchParams.get('count') === '1') return json({ unread: counts.unread, counts });
     const filter = { unread: UNREAD, urgent: 'n.urgent=1' }[url.searchParams.get('filter') || ''] || null;
     const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, n.ref, u.language AS lang
-      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? AND n.environment=? AND n.hidden_at IS NULL ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, envName, NOTIF_MAX + 1).all()).results;
+      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? AND (n.environment=? OR n.kind='new_login') AND n.hidden_at IS NULL ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, envName, NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
     for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
-    return json({ notifications: rows, unread: counts.unread, counts, filter: filter ? url.searchParams.get('filter') : 'all', truncated, max: NOTIF_MAX, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
+    return json({ as_of: listAsOf, notifications: rows, unread: counts.unread, counts, filter: filter ? url.searchParams.get('filter') : 'all', truncated, max: NOTIF_MAX, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
   }
   if ((mm = path.match(/^\/api\/notifications\/([\w-]+)\/(received|opened|ack)$/)) && m === 'POST') {
     const col = { received: 'device_received_at', opened: 'opened_at', ack: 'acknowledged_at' }[mm[2]];
@@ -641,7 +643,12 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/notifications/read-all' && m === 'POST') {
     // nur die angezeigte Umgebung (wie Liste/Zähler) – vorher wurden aus der Test-Ansicht auch kritische Betriebs-Hinweise „gelesen“ (17.10.2026)
-    await env.DB.prepare('UPDATE notifications SET opened_at=COALESCE(opened_at, ?) WHERE user_id=? AND environment=? AND hidden_at IS NULL').bind(nowIso(), user.id, envName).run();
+    // optional `before` (Stand der angezeigten Liste, `as_of`): später eingetroffene – z. B. eine Sperre – bleiben ungelesen,
+    // sonst endete auch die Eskalation „dringend nicht geöffnet“ des Agenten, ohne dass der Hinweis gesehen wurde (20.10.2026)
+    const rb = await readJson(request).catch(() => ({}));
+    const before = rb && typeof rb.before === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(rb.before) && Number.isFinite(Date.parse(rb.before)) ? rb.before : null;
+    await env.DB.prepare(`UPDATE notifications SET opened_at=COALESCE(opened_at, ?) WHERE user_id=? AND (environment=? OR kind='new_login') AND hidden_at IS NULL${before ? ' AND created_at <= ?' : ''}`)
+      .bind(...[nowIso(), user.id, envName, ...(before ? [before] : [])]).run();
     return json({ ok: true });
   }
   if (path === '/api/push/subscribe' && m === 'POST') {
@@ -675,8 +682,10 @@ async function handleApi(request, env, ctx, url) {
     // optional: Endpunkt des eigenen Geräts – dann nur an dieses Gerät (fehlt es am Server, Status no_subscription)
     const tb = await readJson(request);
     const onlyEndpoint = str(tb && tb.endpoint, { max: 1000, field: 'endpoint' }) || null;
-    const n = await notifyUsers(env, null, envName, [user.id], { onlyEndpoint, kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}`, langOf: new Map([[user.id, user.language]]) });
-    const row = await env.DB.prepare('SELECT push_status, push_last_error, push_hold_until FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
+    const ek = `test:${user.id}:${Date.now()}:${uuid().slice(0, 8)}`;
+    const n = await notifyUsers(env, null, envName, [user.id], { onlyEndpoint, kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: ek, langOf: new Map([[user.id, user.language]]) });
+    // genau dieser Testhinweis (vorher der neueste Hinweis der Person – ein gleichzeitig entstandener anderer lieferte dessen Status, 20.10.2026)
+    const row = await env.DB.prepare('SELECT push_status, push_last_error, push_hold_until FROM notifications WHERE user_id=? AND event_key=?').bind(user.id, ek).first();
     // hold_until: wegen persönlicher Ruhezeit zurückgehalten; device_gone: Gerät vom Push-Dienst abgemeldet (keine Wiederholung) – die App zeigt beides übersetzt (19.10.2026)
     const hold = row?.push_status === 'pending' && row.push_hold_until && Date.parse(row.push_hold_until) > (env.__nowMs || Date.now()) ? row.push_hold_until : null;
     return json({ created: n, push_status: row?.push_status, error: row?.push_last_error, hold_until: hold, device_gone: /^Gerät abgemeldet/.test(row?.push_last_error || '') });

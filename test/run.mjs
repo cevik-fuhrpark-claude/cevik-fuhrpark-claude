@@ -15077,6 +15077,76 @@ await test('Fehlersuche 20.10. (14): Lager (Import-Spalten, Inventurdifferenzen 
   ok(sw.includes("!new URL(c.url).pathname.startsWith('/werkstatt/')") && sw.includes('await Promise.all([ack, open]);'), 'sw.js');
 });
 
+await test('Fehlersuche 20.10. (15): Einstellungen (Schreibweise/Wirkung, „kritisch“ ohne Altwert-Meldung, Kostenfreigaben gesammelt), Hinweise („Neue Anmeldung“ in beiden Ansichten, „Alle gelesen“ bis zum Listenstand, Push-Test genau dieser Hinweis), Anruf-Link 0049 (0), Datenauskunft (Protokoll ohne Dritte, neueste bei Kappung, Stornos, Zuordnungen), Dokumentstatus ruhend, Versicherungsfall bei Dublette', async () => {
+  const { e, U, newCase } = await freshWorld(); const db = e.DB.db;
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const app = rd('public/app.js'), i18n = rd('public/i18n.js');
+  // 1. Einstellungen: gültige, aber anders wirkende Schreibweise wird gemeldet; „kritisch“-Fristen nicht (nie gelesen, nicht im Formular)
+  const { storedInvalid } = await import('../src/settings.js');
+  eq(storedInvalid({ maintenance_warn_km: '15000', tire_warn_tread_mm: '1.6', workshop_hourly_rate_net: '85.5', repair_cost_limit_net: '0', test_master_readonly: '1', sla_test_ack_kritisch_min: '0' }).length, 0);
+  const si = storedInvalid({ maintenance_warn_km: '15.000', idle_logout_other_min: '1.500', workshop_hourly_rate_net: '85,50' });
+  eq(si.map((x) => `${x.setting}:${x.reason}:${x.effective}`).sort().join(','), 'idle_logout_other_min:format:5,maintenance_warn_km:format:15,workshop_hourly_rate_net:format:undefined');
+  // 2. Kostenfreigaben nach geänderter Grenze gesammelt (vorher 3 Abfragen je Vorgang)
+  for (let i = 0; i < 30; i++) await newCase({ description: 'Defekt ' + i }, U.fleet);
+  db.prepare("UPDATE cases SET cost_over_limit_at='2026-10-01T00:00:00.000Z'").run();
+  const v0 = db.prepare('SELECT SUM(version) s FROM cases').get().s;
+  const ps = await U.own.put('/api/settings', { repair_cost_limit_net: '5000' });
+  eq(ps.status, 200, JSON.stringify(ps.data)); eq(ps.data.costs_revalidated, 30, JSON.stringify(ps.data));
+  ok(QSTAT.perRequest.at(-1).n <= 20, 'Abfragen ' + QSTAT.perRequest.at(-1).n);
+  eq(db.prepare('SELECT COUNT(*) n FROM cases WHERE cost_over_limit_at IS NOT NULL').get().n, 0);
+  eq(db.prepare("SELECT COUNT(*) n FROM case_events WHERE action='cost_limit_cleared'").get().n, 30);
+  eq(db.prepare('SELECT SUM(version) s FROM cases').get().s, v0 + 30);
+  // Grenze unter den Kosten: Markierung bleibt
+  const { revalidateCostMarks } = await import('../src/cases.js');
+  const one = db.prepare('SELECT id FROM cases LIMIT 1').get().id;
+  db.prepare("INSERT INTO external_costs(id,case_id,supplier,amount_net,valuation,user_id,created_at) VALUES ('x1',?,'Lieferant',9000,'actual',?,'2026-10-01T00:00:00Z')").run(one, U.fleet.id);
+  db.prepare("UPDATE cases SET cost_over_limit_at='2026-10-02T00:00:00.000Z' WHERE id=?").run(one);
+  eq((await revalidateCostMarks(e, U.own.id)).length, 0, 'Kosten über Grenze');
+  // 3. „Neue Anmeldung“ erscheint auch in der Test-Ansicht des Inhabers
+  for (const dv of ['ab'.repeat(16), 'cd'.repeat(16)]) eq((await new Client(worker, e, 'o-' + dv).post('/api/login', { username: 'yilmaz', password: 'Sicheres-Passwort-2026', device_id: dv })).status, 200);
+  const prodN = (await U.own.get('/api/notifications?count=1')).data.unread; ok(prodN >= 1, 'Betrieb ' + prodN);
+  U.own.envHeader = 'test'; eq((await U.own.get('/api/notifications?count=1')).data.unread, prodN, 'Test-Ansicht'); U.own.envHeader = null;
+  // 4. „Alle gelesen“ nur bis zum Listenstand
+  const lst = (await U.fleet.get('/api/notifications')).data; ok(/Z$/.test(lst.as_of), 'as_of');
+  db.prepare(`INSERT INTO notifications(id,user_id,environment,case_id,kind,urgent,title,body,event_key,push_status,created_at) VALUES ('nlate',?, 'test', NULL, 'agent', 1, 'Sperre', 'x', 'late:1', 'pending', '2999-01-01T00:00:00.000Z')`).run(U.fleet.id);
+  eq((await U.fleet.post('/api/notifications/read-all', { before: lst.as_of })).status, 200);
+  eq(db.prepare("SELECT opened_at FROM notifications WHERE id='nlate'").get().opened_at, null, 'später eingetroffener Hinweis bleibt ungelesen');
+  eq((await U.fleet.post('/api/notifications/read-all')).status, 200);
+  ok(db.prepare("SELECT opened_at FROM notifications WHERE id='nlate'").get().opened_at, 'ohne before alle');
+  ok(app.includes("api('POST', '/api/notifications/read-all', n.as_of ? { before: n.as_of } : {})") && app.includes('if (S.viewEnv !== ev) return; S.unread = n.unread;'), 'App');
+  ok(rd('src/worker.js').includes("WHERE user_id=? AND event_key=?').bind(user.id, ek)"), 'Push-Test liest genau seinen Hinweis');
+  // 5. Anruf-Link: „0049 (0)231 …“ ohne die (0)
+  const th = app.match(/const telHref = (.*);\n/)[1]; const telHref = eval(th);
+  eq(telHref('0049 (0)231 123456'), 'tel:0049231123456'); eq(telHref('+49 (0)231 1'), 'tel:+492311'); eq(telHref('0231 (0)1'), 'tel:023101');
+  // 6. Datenauskunft der Leitung: eigene Protokolleinträge ohne Namen/Vermerke Dritter; Stornos; Zuordnungen in „audit_about“
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Dieter Geheimname', personnel_no: 'P-4711' }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const doc = await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2030-01-01', evidence: 'Kopie', license_classes: 'CE' }); eq(doc.status, 201, JSON.stringify(doc.data));
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents/${doc.data.id}/cancel`, { reason: 'Falsche Person Dieter verwechselt' })).status, 200);
+  eq((await U.fleet.post('/api/users', { username: 'max.mustermann', display_name: 'Max Mustermann', role: 'driver', environment: 'test' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: U.driver.id, evidence: 'Dienstplan' })).status, 201);
+  const ex = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data; const sx = JSON.stringify(ex.audit_as_actor);
+  ok(!sx.includes('Geheimname') && !sx.includes('verwechselt') && !sx.includes('max.mustermann'), sx);
+  ok(ex.audit_as_actor.some((r) => r.action === 'driver.create' && r.target === null), 'Ziel-Kennung bei Handlungen an Personen entfällt');
+  ok(ex.driver_documents_recorded.some((r) => r.cancelled === 1 && r.created === 1 && r.cancelled_at), JSON.stringify(ex.driver_documents_recorded));
+  const exd = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
+  ok(exd.audit_about.some((r) => r.action === 'vehicle.assign_driver'), JSON.stringify(exd.audit_about.map((r) => r.action)));
+  // Kappung: die neuesten bleiben
+  const ins = db.prepare("INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,'x.test',NULL,NULL,?)");
+  for (let i = 0; i < 5001; i++) ins.run('al' + i, U.viewer.id, new Date(Date.UTC(2020, 0, 1) + i * 60000).toISOString());
+  const ev = (await U.own.get(`/api/admin/users/${U.viewer.id}/data-export`)).data.audit_as_actor;
+  ok(ex.meta && ev.length === 5000 && ev[0].created_at < ev[4999].created_at && ev[4999].created_at > '2020-01-04', 'neueste 5000 aufsteigend');
+  ok(!ev.some((r) => r.created_at === '2020-01-01T00:00:00.000Z'), 'älteste entfällt');
+  // 7. Fahrzeugdokument eines ruhenden Fahrzeugs: kein „abgelaufen“ (wie Agent)
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% ruhend\n%%EOF');
+  const up = await U.fleet.req('POST', '/api/vehicles/VIN:WDB9630051L917317/documents?kind=versicherung&valid_until=2020-01-01', pdf, { 'content-type': 'application/pdf', 'x-filename': 'v.pdf' }); eq(up.status, 201, JSON.stringify(up.data));
+  eq((await U.fleet.get('/api/vehicles/VIN:WDB9630051L917317')).data.documents[0].doc_status, 'abgelaufen');
+  db.prepare("UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WDB9630051L917317'").run();
+  eq((await U.fleet.get('/api/vehicles/VIN:WDB9630051L917317')).data.documents[0].doc_status, null, 'ruhend');
+  ok(rd('src/vehicles.js').includes(".catch(async (e) => { await env.FILES.delete(key); throw e; })"), 'keine verwaiste Datei bei D1-Fehler');
+  // 8. Versicherungsfall bei Dublette: Hinweis statt Formular
+  ok(app.includes("d.duplicate_of && !d.claim") && (i18n.match(/claim_dup_hint: '/g) || []).length === 3, 'Hinweis DE/UK/EN');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
