@@ -73,10 +73,15 @@ self.addEventListener('notificationclick', (e) => {
   const m = /^(vehicle|fine):(.+)$/.exec(d.ref || '');
   const hash = d.case_id ? `#/cases/${encodeURIComponent(d.case_id)}` : m ? `#/${m[1] === 'vehicle' ? 'vehicles' : 'fines'}/${encodeURIComponent(m[2])}` : d.kind === 'new_login' ? '#/more?o=sess' : '#/push';
   e.waitUntil((async () => {
-    if (d.id) fetch(`/api/notifications/${d.id}/opened`, { method: 'POST', headers: { 'x-cfp': '1' }, credentials: 'include' }).catch(() => {});
-    const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of cs) { if ('focus' in c) { c.postMessage({ type: 'navigate', hash }); return c.focus(); } }
-    return self.clients.openWindow('/' + hash);
+    // Quittung „geöffnet“ abwarten (sonst kann sie nach focus/openWindow mit dem Service Worker verloren gehen; 20.10.2026)
+    const ack = d.id ? fetch(`/api/notifications/${d.id}/opened`, { method: 'POST', headers: { 'x-cfp': '1' }, credentials: 'include' }).catch(() => {}) : null;
+    const open = (async () => {
+      // nur App-Fenster – nicht die Werkstatt-Demo unter /werkstatt/ (kennt „navigate“ nicht; 20.10.2026)
+      const cs = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter((c) => { try { return !new URL(c.url).pathname.startsWith('/werkstatt/'); } catch { return true; } });
+      for (const c of cs) { if ('focus' in c) { c.postMessage({ type: 'navigate', hash }); return c.focus(); } }
+      return self.clients.openWindow('/' + hash);
+    })();
+    await Promise.all([ack, open]);
   })());
 });
 // Vom Browser/Push-Dienst erneuertes Abo sofort melden (20.10.2026): vorher erst beim nächsten App-Start (pushRebind) –

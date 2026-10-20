@@ -688,8 +688,9 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de'
   const I = icsLang(lang);
   // HU/SP: fachliche UID je Fahrzeug und Prüfart – eine berechnete Zeile (ohne Eintrag) behält beim späteren Anlegen des Eintrags ihre UID,
   // ein erneuter Import ersetzt den Termin statt ihn zu verdoppeln; berechnete Zeile ohne leeren „Nachweis:“ (20.10.2026)
+  // erledigter Rückruf: gespeicherte Frist zählt nicht mehr (wie Übersicht/Agent; 20.10.2026)
   const uidOf = (r) => (r.kind === 'HU' || r.kind === 'SP' ? `husp-${r.vehicle_id}-${r.kind}` : r.id);
-  const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
+  const events = ov.rows.filter((r) => r.next_due_date && r.date_status !== 'erledigt').map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
     description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence || '–' })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();

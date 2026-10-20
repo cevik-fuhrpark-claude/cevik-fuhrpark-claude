@@ -1718,7 +1718,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   const vt = dec(v); ok(vt.startsWith('\ufeffKennzeichen;FIN-Schlüssel;Art;Standort;'), 'BOM + Kopfzeile');
   const vl = vt.trim().split('\r\n');
   eq(vl.length, r.vehicles.length + 1, 'alle Fahrzeuge (nicht nur 20)');
-  ok(vl.slice(1).every((l) => l.split(';').length === 12), 'gleiche Spaltenzahl (inkl. Ausfallzeit, Verfügbarkeit)');
+  ok(vl.slice(1).every((l) => l.split(';').length === 13), 'gleiche Spaltenzahl (inkl. Ausfallzeit, Verfügbarkeit, Ausfall der Verfügbarkeit)');
   ok(r.vehicles.every((x) => 'site' in x), 'Standort je Fahrzeug in der JSON-Antwort');
   const p = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`);
   const pl = dec(p).trim().split('\r\n');
@@ -1737,7 +1737,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok((await owner.get('/api/admin/audit?action=reports.kpi.export')).data.entries.length >= 3, 'protokolliert');
   const { kpiReportCsv } = await import('../src/reports.js');
   const inj = kpiReportCsv({ vehicles: [{ plate: '=X()', vehicle_id: 'VIN:X', kind: 'lkw', site: 'A;B', cases: 2, released: 1, workshop_h: 1.5, parts_wait_h: 0, locked_h: null }] });
-  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
+  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;;;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
 });
 
 await test('Standortauswahl (siteSelection): Schreibweisen zusammengefasst, „ohne“ zuletzt, Auswahl ohne Groß-/Kleinschreibung', async () => {
@@ -1834,7 +1834,7 @@ await test('Kennzahlen: Werkstattzeit paralleler Aufträge einmal, Ausfallzeit a
   ok(Math.abs(v2.downtime_h - 9) < 0.05, 'Ausfall [9 h, 2 h] ∪ [3 h, jetzt] = 9 h: ' + v2.downtime_h);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${from}&to=${BERLIN_YM}&format=csv`)).data).trim().split('\r\n');
   const head = csv[0].split(';'); const row = csv.find((l) => l.startsWith('KP-AF 1;')).split(';');
-  eq(head[head.length - 2], 'Ausfallzeit h'); eq(head[head.length - 1], 'Verfügbarkeit %'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
+  eq(head[head.length - 3], 'Ausfallzeit h'); eq(head[head.length - 2], 'Verfügbarkeit %'); eq(head[head.length - 1], 'Ausfall h (Verfügbarkeit)'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
   const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${from}&to=${BERLIN_YM}&environment=${await envOf(a)}`, undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(ig.status, 200); ok(Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).downtime_h - 9) < 0.05, 'Integration liefert Ausfallzeit');
   // Fahrzeugakte: Ausfall je Berliner Monat (letzte 12), gleiche Regel; Summe = Kennzahl; nur Leitung
@@ -2101,7 +2101,7 @@ await test('Sperre/Aufhebung erreicht die dem Fahrzeug zugeordneten Fahrer (ohne
   { const nn = (await users.driver.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'safety_lock'); ok(nn.some((n) => n.title === 'Vehicle locked'), 'Titel in der aktuellen Sprache ' + JSON.stringify(nn.map((n) => [n.title, n.case_id]))); }
   eq((await users.driver.patch('/api/me', { language: 'de' })).status, 200);
   c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
-  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Halter getauscht', payload: { confirm: true } })).status, 200);
+  { const lr = await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'lift_safety_lock', command_id: rk(), expected_version: c.version, note: 'Halter getauscht', payload: { confirm: true } }); eq(lr.status, 200, JSON.stringify(lr.data)); }
   eq((await mine('safety_lock_lifted')).length, 1, 'Aufhebung ebenfalls');
   c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
   await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, note: 'Testdaten' });
@@ -8505,7 +8505,7 @@ await test('Oberfläche: jede Aktion mit API-Aufruf hat eine Fehlerbehandlung; n
   // Einzelfälle, die vorher still abbrachen
   ok(app.includes("try { await api('POST', `/api/master/${a.dataset.dec}/decision`"), 'Master-Eingang: Entscheidung mit Fehlerbehandlung');
   ok(app.includes("if (a.dataset.busy) return;"), 'Master-Eingang: Doppeltippen sendet nicht zweimal');
-  ok(app.includes("try { const r = await api('POST', '/api/push/test');"), 'Push-Test mit Fehlerbehandlung');
+  ok(app.includes("if (pt) pt.onclick = async () => { pt.disabled = true; try {") && app.includes("const r = await api('POST', '/api/push/test', ep ? { endpoint: ep } : undefined);"), 'Push-Test mit Fehlerbehandlung');
 });
 
 await test('Oberfläche: Formulare und Aktionsknöpfe werden nicht doppelt ausgelöst (Doppelklick/zweimal Enter), Sperre endet auch bei Fehlern', async () => {
@@ -14982,6 +14982,99 @@ await test('Fehlersuche 20.10. (13): Auslesungen (Fahrer ohne Vermerk, Akte-Verl
   // 7. Reifengrößen-Import: „importiert“ = neu + geändert (wie Vorschau)
   ok(rd('src/tires.js').includes('res.imported = res.counts.neu + res.counts.geaendert;'), 'Zähler');
   ok(i18n.includes('(„Heute zu tun“ und die Winterlisten nennen nur Fahrzeuge mit „nicht erfüllt“)'), 'Hilfe Winterlage');
+});
+
+await test('Fehlersuche 20.10. (14): Lager (Import-Spalten, Inventurdifferenzen nur aus Inventur, Teilinventur, CSV mit Auswahl, Bemerkung mit Komma, Bestellvermerk beim Zugang), Kennzahlen (Werkstattzeit bis Zeitraumende, Ausfall der Verfügbarkeit), Kalender ohne erledigten Rückruf, Telematik-FIN begrenzt, Push-Test je Gerät, Aktualisierung/Service Worker', async () => {
+  const { e, U } = await freshWorld(); const W = U.ws; const db = e.DB.db;
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const app = rd('public/app.js'), i18n = rd('public/i18n.js'), sw = rd('public/sw.js');
+  const dec = (d) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(d);
+  // 1. Artikel-Import: „Bestandswert“ ist kein Bestand, „Mindestbestellmenge“ kein Mindestbestand
+  const imp = async (csv) => (await W.req('POST', '/api/stock/import?dry_run=1', csv, { 'content-type': 'text/csv' })).data;
+  const i1 = await imp('Bezeichnung;Bestandswert;Bestand (Stk)\nFilter;125,50;3'); eq(i1.rows[0].initial_qty, 3, JSON.stringify(i1)); ok(i1.ignored_columns.includes('Bestandswert'));
+  const i2 = await imp('Bezeichnung;Bestand;Mindestbestellmenge;Mindestbestand\nFilter;3;50;5'); eq(i2.rows[0].min_qty, 5, JSON.stringify(i2)); eq(i2.rows[0].initial_qty, 3);
+  // 2. Inventurdifferenzen: nur Buchungen aus „Inventur buchen“, keine Korrektur mit Beleg „Inventur Nachtrag“
+  const a = (await W.post('/api/stock', { name: 'Öl 5W30', unit: 'l', initial_qty: '17,5', unit_price_net: '0,125' })).data.id;
+  const b = (await W.post('/api/stock', { name: 'Kabelbinder', initial_qty: 10 })).data.id;
+  eq((await W.post(`/api/stock/${b}/movements`, { type: 'korrektur', qty: -1, note: 'Bruch', document_ref: 'Inventur Nachtrag' })).status, 201);
+  // 3. Teilinventur: nur gezählte Zeilen (leere Liste = Vorschau „0 gezählt“)
+  eq((await W.post('/api/stock/inventory?dry_run=1', { counts: [] })).data.counted, 0);
+  const pv = (await W.post('/api/stock/inventory?dry_run=1', { counts: [{ item_id: a, counted: '16,25' }] })).data; eq(pv.differences.length, 1);
+  eq((await W.post('/api/stock/inventory', { counts: [{ item_id: a, counted: '16,25' }], preview: pv.differences })).data.booked, 1);
+  ok(app.includes("counts: $$('[data-inv]').filter((x) => x.value.trim() !== '')"), 'App sendet nur gezählte Zeilen');
+  const today = BERLIN_TODAY;
+  const inv = (await W.get(`/api/stock/journal?type=inventur&from=${today}&to=${today}`)).data;
+  eq(inv.movements.length, 1, JSON.stringify(inv.movements.map((m) => m.document_ref))); eq(inv.movements[0].item_id, a);
+  // 5. CSV: Bemerkung mit Dezimalkomma wie die Mengenspalten
+  const jc = dec((await W.get(`/api/stock/journal?from=${today}&to=${today}&format=csv`)).data);
+  ok(jc.includes('gezählt 16,25 l, Buchbestand 17,5 l'), jc);
+  const ic = dec((await W.get(`/api/stock/journal?type=inventur&from=${today}&to=${today}&format=csv`)).data);
+  ok(ic.includes('gezählt 16,25 l, Buchbestand 17,5 l') && !ic.includes('Nachtrag'), ic);
+  // 4. Lager-CSV mit Auswahl (POST, viele Kennungen) – unbekannte übergangen, Reihenfolge wie angezeigt; Lesezugriff/Fahrer nicht
+  const sc = dec((await W.post('/api/stock/export', { ids: [b, 'gibt-es-nicht'] })).data).trim().split('\r\n');
+  eq(sc.length, 2, sc.join('|')); ok(sc[1].includes('Kabelbinder'));
+  eq(dec((await W.get('/api/stock?format=csv')).data).trim().split('\r\n').length, 3, 'ohne Auswahl alle');
+  eq((await U.driver.post('/api/stock/export', { ids: [b] })).status, 403);
+  eq((await W.post('/api/stock/export', { ids: 'x' })).status, 400);
+  ok(app.includes("api('POST', '/api/stock/export', { ids: vis })") && app.includes('`fuhrpark-lager_${envFn()}_'), 'App: Auswahl + Umgebung');
+  // 6. Stückpreise mit drei Nachkommastellen
+  ok(app.includes('eur3(i.unit_price_net)') && app.includes('eur3(it.unit_price_net)') && app.includes('eur3(m.unit_price_net)') && app.includes('eur3(m.item_price_net)'), 'eur3');
+  // 7. Zugang beendet einen gleichzeitig gesetzten Bestellvermerk
+  const orig = e.DB.batch.bind(e.DB);
+  e.DB.batch = async (st) => { e.DB.batch = orig; db.prepare('UPDATE stock_items SET ordered_qty=5, ordered_on=? WHERE id=?').run(today, b); return orig(st); };
+  eq((await W.post(`/api/stock/${b}/movements`, { type: 'zugang', qty: 5 })).status, 201);
+  eq(db.prepare('SELECT ordered_on FROM stock_items WHERE id=?').get(b).ordered_on, null, 'Vermerk beendet');
+  // 8. Kennzahlen: Werkstattzeit höchstens bis Zeitraumende; Ausfall der Verfügbarkeit je Fahrzeug
+  const { kpiReport, kpiReportCsv } = await import('../src/reports.js');
+  const e2 = makeEnv(); await worker.fetch(new Request('http://x/api/setup/status'), e2, makeCtx()); const d2 = e2.DB.db; d2.exec('PRAGMA foreign_keys = OFF');
+  d2.prepare(`INSERT INTO vehicles(id,vin,plate,site,active,created_at,updated_at) VALUES ('VIN:A','A','SZ-A 1','Dortmund',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`).run();
+  const mk = (id, created, status, ack, closed) => d2.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,workshop_site,workshop_ack_at,request_key,content_hash,created_at,updated_at,closed_at)
+    VALUES (?,?,'production','VIN:A','u1','x','mittel','mittel','unbekannt',?,'DORTMUND',?,?,?,?,?,?)`).run(id, 'S-' + id, status, ack, id, id, created, created, closed);
+  const ev = (c, act, to, at) => d2.prepare(`INSERT INTO case_events(id,case_id,environment,action,to_status,created_at) VALUES (?,?,'production',?,?,?)`).run(c + act + at, c, act, to, at);
+  mk('C', '2026-09-05T08:00:00.000Z', 'fahrzeug_freigegeben', '2026-09-06T08:00:00.000Z', '2026-10-15T08:00:00.000Z');
+  for (const [x, to, at] of [['create', 'gemeldet', '2026-09-05T08:00:00.000Z'], ['approve', 'werkstatt_freigegeben', '2026-09-05T09:00:00.000Z'], ['acknowledge', 'in_reparatur', '2026-09-06T08:00:00.000Z'], ['release', 'fahrzeug_freigegeben', '2026-10-15T08:00:00.000Z']]) ev('C', x, to, at);
+  const k1 = await kpiReport(e2, { role: 'owner' }, 'production', { from: '2026-09', to: '2026-09' });
+  ok(k1.vehicles[0].workshop_h <= 720, 'Werkstattzeit ' + k1.vehicles[0].workshop_h); eq(k1.vehicles[0].availability_downtime_h, k1.vehicles[0].downtime_h);
+  const e3 = makeEnv(); await worker.fetch(new Request('http://x/api/setup/status'), e3, makeCtx()); const d3 = e3.DB.db; d3.exec('PRAGMA foreign_keys = OFF');
+  d3.prepare(`INSERT INTO vehicles(id,vin,plate,site,active,created_at,updated_at) VALUES ('VIN:A','A','SZ-A 1','Dortmund',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`).run();
+  const mk3 = (id, created, status, ack, closed) => d3.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,workshop_site,workshop_ack_at,request_key,content_hash,created_at,updated_at,closed_at)
+    VALUES (?,?,'production','VIN:A','u1','x','mittel','mittel','unbekannt',?,'DORTMUND',?,?,?,?,?,?)`).run(id, 'S-' + id, status, ack, id, id, created, created, closed);
+  const ev3 = (c, act, to, at) => d3.prepare(`INSERT INTO case_events(id,case_id,environment,action,to_status,created_at) VALUES (?,?,'production',?,?,?)`).run(c + act + at, c, act, to, at);
+  mk3('A', '2026-08-20T08:00:00.000Z', 'in_reparatur', '2026-08-21T08:00:00.000Z', null);
+  ev3('A', 'create', 'gemeldet', '2026-08-20T08:00:00.000Z'); ev3('A', 'approve', 'werkstatt_freigegeben', '2026-08-20T09:00:00.000Z'); ev3('A', 'acknowledge', 'in_reparatur', '2026-08-21T08:00:00.000Z');
+  mk3('B', '2026-09-10T08:00:00.000Z', 'abgelehnt', null, '2026-09-10T09:00:00.000Z');
+  ev3('B', 'create', 'gemeldet', '2026-09-10T08:00:00.000Z'); ev3('B', 'reject', 'abgelehnt', '2026-09-10T09:00:00.000Z');
+  const k2 = await kpiReport(e3, { role: 'owner' }, 'production', { from: '2026-09', to: '2026-09' });
+  eq(k2.vehicles[0].availability_pct, 0); eq(k2.vehicles[0].availability_downtime_h, 720); eq(k2.vehicles[0].downtime_h, 0);
+  const kc = kpiReportCsv(k2); ok(kc.includes(';Ausfall h (Verfügbarkeit)') && kc.includes(';0;0;720'), kc);
+  ok(app.includes('(v.downtime_h || v.availability_pct < 100)'), 'App zeigt Verfügbarkeit auch ohne Ausfallzeit aus dem Zeitraum');
+  ok(['höchstens bis Zeitraumende', 'щонайбільше до кінця періоду', 'at most until the end of the period'].every((x) => i18n.includes(x)), 'kpi_rules');
+  ok(app.includes('`fuhrpark-kennzahlen-${name}_${envFn()}_') && app.includes('`werkstattplan_${envFn()}_') && app.includes('`werkstatt-auslastung_${envFn()}_'), 'Dateinamen mit Umgebung');
+  // 9. Kalender: erledigter Rückruf mit gespeicherter Altfrist erscheint nicht
+  const { maintenanceIcs } = await import('../src/maintenance.js');
+  const ics = maintenanceIcs({ rows: [{ id: 'r1', vehicle_id: 'VIN:A', plate: 'SZ-A 1', kind: 'Rückruf', last_done_date: '2026-09-01', next_due_date: '2026-12-31', status: 'erledigt', date_status: 'erledigt', evidence: 'KBA' }], warn_days: 30, today: '2026-10-20' }, '2026-10-20T10:00:00Z');
+  ok(!/SUMMARY/.test(ics), ics);
+  // 10. Telematik: FIN > 40 Zeichen abgewiesen
+  const tr = await new Client(worker, e, 'anon').req('POST', '/api/integration/v1/telematics?environment=test', { provider: 'webfleet', items: [{ external_id: 'G1', vin: 'A'.repeat(5000), gps_time: new Date(Date.now() - 6e4).toISOString() }] }, { authorization: 'Bearer integration-token-xyz' });
+  eq(tr.status, 200, JSON.stringify(tr.data)); eq(tr.data.rejected, 1, JSON.stringify(tr.data));
+  eq(db.prepare('SELECT COUNT(*) n FROM telematics_unmatched').get().n, 0);
+  ok(rd('docs/API.md').includes('umgebungsunabhängig'), 'Doku');
+  // 11. Push-Test nur an dieses Gerät
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)));
+  const sub = (ep) => U.fleet.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: pub, auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } });
+  eq((await sub('https://push.example/ok/w1')).status, 200); eq((await sub('https://push.example/gone/w2')).status, 200);
+  e.pushLog.length = 0;
+  const pt = await U.fleet.post('/api/push/test', { endpoint: 'https://push.example/gone/w2' });
+  eq(pt.data.push_status, 'failed', JSON.stringify(pt.data)); eq(pt.data.device_gone, true);
+  ok(e.pushLog.length === 1 && e.pushLog[0].url === 'https://push.example/gone/w2', JSON.stringify(e.pushLog.map((x) => x.url)));
+  eq((await U.fleet.post('/api/push/test', { endpoint: 'https://push.example/unbekannt' })).data.push_status, 'no_subscription');
+  eq((await U.fleet.post('/api/push/test')).data.push_status, 'accepted', 'ohne Endpunkt alle Geräte');
+  ok(app.includes("api('POST', '/api/push/test', ep ? { endpoint: ep } : undefined)"), 'App sendet eigenes Gerät');
+  // 12. Aktualisierungsleiste fragt bei ungespeicherten Eingaben; Service Worker: Klickziel ohne Werkstatt-Demo, Quittung abgewartet
+  ok(app.includes("now.onclick = () => { if (viewDirty() && !confirm(t('update_unsaved'))) return; location.reload(); };"), 'Rückfrage');
+  ok((i18n.match(/update_unsaved: '/g) || []).length === 3, 'Text DE/UK/EN');
+  ok(sw.includes("!new URL(c.url).pathname.startsWith('/werkstatt/')") && sw.includes('await Promise.all([ack, open]);'), 'sw.js');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

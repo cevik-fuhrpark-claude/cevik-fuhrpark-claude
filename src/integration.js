@@ -260,7 +260,10 @@ export async function integrationRouter(request, env, ctx, url) {
       if (e0 === null || v0 === null || p0 === null) return { it, ext: '', vin: null, plate: null };
       // Geräte-ID länger als 80 Zeichen: abgewiesen statt still gekürzt (zwei lange IDs mit gleichem Anfang galten sonst als ein Gerät, 20.10.2026)
       if (e0.length > 80) return { it, ext: '', vin: null, plate: null };
-      return { it, ext: e0, vin: v0 ? normalizeVin(v0) : null, plate: p0 ? p0.toUpperCase().slice(0, 20) : null };
+      // FIN länger als 40 Zeichen (bereinigt): abgewiesen statt in beliebiger Länge gespeichert (Prüffall-Liste wuchs unbegrenzt, 20.10.2026)
+      const vn = v0 ? normalizeVin(v0) : null;
+      if (vn && vn.length > 40) return { it, ext: '', vin: null, plate: null };
+      return { it, ext: e0, vin: vn, plate: p0 ? p0.toUpperCase().slice(0, 20) : null };
     });
     const J = (a) => JSON.stringify([...new Set(a.filter(Boolean))]);
     const [maps, byVin, plates, latest] = await Promise.all([

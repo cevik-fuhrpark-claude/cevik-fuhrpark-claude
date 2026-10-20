@@ -24,6 +24,9 @@ import { exportBackup } from './backup.js';
 // Hinweisliste: neueste 100 je Abruf (eine Zeile mehr gelesen → truncated); Zähler immer über alle
 export const NOTIF_MAX = 100;
 import * as maint from './maintenance.js';
+// Lager-CSV: Auswahl der Liste in angezeigter Reihenfolge (unbekannte Kennungen werden übergangen)
+const stockCsvResponse = (items, envName) => new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
+const stockSel = (items, ids) => { const pos = new Map(ids.slice(0, 5000).map((x, i) => [x, i])); return items.filter((i) => pos.has(i.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); };
 import { recordUsage, usageReport } from './usage.js';
 import { dataQuality, myInspectionsWithoutResult } from './quality.js';
 import * as telem from './telematics.js';
@@ -451,10 +454,20 @@ async function handleApi(request, env, ctx, url) {
   }
 
   // Ersatzteillager
+  // Lager-CSV mit Auswahl als POST (viele Artikel: Kennungen sprengen sonst die URL-Länge; 20.10.2026)
+  if (path === '/api/stock/export' && m === 'POST') {
+    const body = await readJson(request);
+    if (!Array.isArray(body.ids) || body.ids.length > 5000) throw bad('validation', 'Auswahl ungültig.');
+    const items = await stock.listStock(env, user, envName, {});
+    return stockCsvResponse(stockSel(items, body.ids.map(String)), envName);
+  }
   if (path === '/api/stock' && m === 'GET') {
     const items = await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${berlinDate()}.csv"` } });
-    if (url.searchParams.get('format') === 'csv') return new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
+    // Auswahl der Liste (Filter/Suche) wie der Druck (20.10.2026); ohne „ids“ alle Artikel
+    const sids = url.searchParams.get('ids');
+    const sel = sids === null ? items : stockSel(items, sids.split(','));
+    if (url.searchParams.get('format') === 'csv') return stockCsvResponse(sel, envName);
     if (url.searchParams.get('reorder') === '1') return json({ items });
     return json({ items, last_inventory: await stock.lastInventories(env, envName, [...new Set(items.map((i) => i.site))]) });
   }
@@ -659,7 +672,10 @@ async function handleApi(request, env, ctx, url) {
     return json({ devices: (await env.DB.prepare('SELECT id, device_label, created_at, last_success_at FROM push_subscriptions WHERE user_id=? AND revoked_at IS NULL').bind(user.id).all()).results });
   }
   if (path === '/api/push/test' && m === 'POST') {
-    const n = await notifyUsers(env, null, envName, [user.id], { kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}`, langOf: new Map([[user.id, user.language]]) });
+    // optional: Endpunkt des eigenen Geräts – dann nur an dieses Gerät (fehlt es am Server, Status no_subscription)
+    const tb = await readJson(request);
+    const onlyEndpoint = str(tb && tb.endpoint, { max: 1000, field: 'endpoint' }) || null;
+    const n = await notifyUsers(env, null, envName, [user.id], { onlyEndpoint, kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: `test:${user.id}:${Date.now()}`, langOf: new Map([[user.id, user.language]]) });
     const row = await env.DB.prepare('SELECT push_status, push_last_error, push_hold_until FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 1').bind(user.id).first();
     // hold_until: wegen persönlicher Ruhezeit zurückgehalten; device_gone: Gerät vom Push-Dienst abgemeldet (keine Wiederholung) – die App zeigt beides übersetzt (19.10.2026)
     const hold = row?.push_status === 'pending' && row.push_hold_until && Date.parse(row.push_hold_until) > (env.__nowMs || Date.now()) ? row.push_hold_until : null;

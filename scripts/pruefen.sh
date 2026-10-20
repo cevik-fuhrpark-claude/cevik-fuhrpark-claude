@@ -56,6 +56,7 @@ UI-Protokoll je Person|ui-protokoll-person.py|/tmp/cfp-protperson.log
 UI-Hilfe Zugänge & Protokoll|ui-hilfe-zugang.py|/tmp/cfp-hilfezugang.log
 UI-Benutzer bearbeiten|ui-benutzer-bearbeiten.py|/tmp/cfp-ubearb.log
 UI-Inventur (Rückfrage, erneut prüfen)|ui-inventur.py|/tmp/cfp-inventur.log
+UI-Lager-CSV mit Auswahl, Stückpreis 3 Stellen|ui-lager-csv-auswahl.py|/tmp/cfp-lagercsv.log
 UI-Artikelverlauf (Hinweis, Journal je Artikel)|ui-artikelverlauf.py|/tmp/cfp-artverlauf.log
 UI-Kosten nur unbewertet (– statt 0 €)|ui-kosten-unbewertet.py|/tmp/cfp-kostenuv.log
 UI-Zeitleiste Hinweis bei Kürzung|ui-zeitleiste-hinweis.py|/tmp/cfp-zlhinweis.log

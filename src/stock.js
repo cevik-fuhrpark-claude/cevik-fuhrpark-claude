@@ -1,6 +1,7 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
 import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents, quoteCell , commaDec, pointDec, parseCsv } from './util.js';
 import { audit } from './auth.js';
+import { stockNoteText } from '../public/check-labels.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 
@@ -190,7 +191,8 @@ export async function addMovement(env, user, envName, id, body) {
     str(body.note, { max: 500, field: 'Bemerkung' }), user.id, nowIso(), rkey)];
   if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
   // Lieferung eingegangen: Bestellvermerk endet (Teillieferung → neu vermerken, falls noch offen)
-  if (type === 'zugang' && it.ordered_on) stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=?').bind(nowIso(), id));
+  // unabhängig vom vorher gelesenen Stand (20.10.2026: Vermerk zwischen Lesen und Buchen gesetzt → blieb nach der Lieferung stehen)
+  if (type === 'zugang') stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=? AND ordered_on IS NOT NULL').bind(nowIso(), id));
   if (qty < 0) stmts.push(...stockGuardNonNegative(env, id));
   try { await env.DB.batch(stmts); } catch (e) {
     if (rkey && String(e && e.message).includes('UNIQUE')) {
@@ -331,7 +333,8 @@ export function reorderCsv(items, csvCell) {
 export async function inventory(env, user, envName, body, { dryRun = false } = {}) {
   const site = siteScope(user, body.site);
   if (!site) throw bad('validation', 'Lager (Werkstatt) angeben.');
-  if (!Array.isArray(body.counts) || !body.counts.length) throw bad('validation', 'Keine Zählmengen übermittelt.');
+  if (!Array.isArray(body.counts)) throw bad('validation', 'Keine Zählmengen übermittelt.');
+  // leere Liste erlaubt: die App sendet nur gezählte Zeilen (Vorschau „0 gezählt“; Buchen unten „nichts eingetragen“)
   if (body.counts.length > 2000) throw bad('validation', 'Maximal 2000 Artikel je Inventur.');
   const items = new Map((await listStock(env, user, envName, { site })).map((i) => [i.id, i]));
   const note = str(body.note, { max: 300, field: 'Bemerkung' });
@@ -425,7 +428,7 @@ export async function journal(env, user, envName, query = {}) {
   // am Vortag (z. B. Inventur am Monatsletzten) verdrängten Buchungen des Zeitraums, ohne Hinweis „gekürzt“
   const lo = berlinDayStartIso(from);
   const hi = berlinDayStartIso(new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10));
-  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : inv ? "AND m.type='korrektur' AND m.transfer_id IS NULL AND substr(m.document_ref,1,9)='Inventur '" : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
+  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : inv ? "AND m.type='korrektur' AND m.transfer_id IS NULL AND m.document_ref GLOB 'Inventur [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND m.note GLOB 'Inventur *: gezählt *'" : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
   // Inventur: Buchbestand unmittelbar vor der Korrektur (Summe aller früheren Buchungen des Artikels) und heutiger Artikelpreis
   const invSql = inv ? ', (SELECT COALESCE(SUM(p.qty),0) FROM stock_movements p WHERE p.item_id=m.item_id AND p.created_at < m.created_at) AS book_before, i.unit_price_net AS item_price_net' : '';
   const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id, m.transfer_id, m.transfer_site,
@@ -494,13 +497,15 @@ export function stockAsOfCsv(rep, csvCell) {
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
+// Buchungstexte in der CSV mit Dezimalkomma wie die Mengenspalten (gespeichert bleibt „16.25“ für das Erkennungsmuster; 20.10.2026)
+const csvNote = (note) => stockNoteText(note, 'de', { num: deQty });
 const TYPE_DE = { zugang: 'Zugang', entnahme: 'Entnahme', korrektur: 'Korrektur' };
 // Inventurdifferenzen als CSV: Buchbestand vor der Korrektur, gezählt, Differenz, Wert zum heutigen Artikelpreis (leer ohne Preis)
 export function inventoryDiffCsv(rep, csvCell) {
   const head = ['Datum', 'Uhrzeit', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Buchbestand', 'Gezählt', 'Differenz', 'Artikelpreis netto (heute)', 'Wert Differenz netto', 'Beleg', 'Bemerkung'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
-  for (const r of rep.movements) lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), quoteCell(csvCell(r.part_number)), csvCell(r.name), csvCell(r.unit), n(r.book), n(r.counted), n(r.qty), n(r.item_price_net), n(r.diff_value_net), quoteCell(csvCell(r.document_ref)), csvCell(r.note)].join(';'));
+  for (const r of rep.movements) lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), quoteCell(csvCell(r.part_number)), csvCell(r.name), csvCell(r.unit), n(r.book), n(r.counted), n(r.qty), n(r.item_price_net), n(r.diff_value_net), quoteCell(csvCell(r.document_ref)), csvCell(csvNote(r.note))].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 export function journalCsv(rep, csvCell) {
@@ -509,7 +514,7 @@ export function journalCsv(rep, csvCell) {
   const lines = [head.join(';')];
   for (const r of rep.movements) {
     lines.push([r.date, berlinDateTime(r.created_at).slice(-5), csvCell(r.site), quoteCell(csvCell(r.part_number)), csvCell(r.name), r.transfer_id ? `Umlagerung ${r.qty < 0 ? 'nach' : 'von'} ${r.transfer_site}` : TYPE_DE[r.type], n(r.qty), csvCell(r.unit),
-      n(r.unit_price_net), n(r.value_net), csvCell(r.case_no), csvCell(r.plate), csvCell(r.supplier), quoteCell(csvCell(r.document_ref)), csvCell(r.note)].join(';'));
+      n(r.unit_price_net), n(r.value_net), csvCell(r.case_no), csvCell(r.plate), csvCell(r.supplier), quoteCell(csvCell(r.document_ref)), csvCell(csvNote(r.note))].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
@@ -544,18 +549,20 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   // Spalten nach Vorrang der Namen statt nach Spaltenreihenfolge (20.10.2026: „Artikel-Nr“ wurde Bezeichnung, „Stückpreis“ vor
   // „Bestand“ wurde als Menge gebucht): erst genaue Treffer, dann Anfang des Namens; jede Spalte nur einmal vergeben
   const taken = new Set();
-  const col = (names, exact = []) => {
+  // excl: beim Namensanfang auszuschließende Überschriften (20.10.2026: „Bestandswert“ wurde Anfangsbestand, „Mindestbestellmenge“ Mindestbestand)
+  const col = (names, exact = [], excl = null) => {
     let i = head.findIndex((h, j) => !taken.has(j) && (names.includes(h) || exact.includes(h)));
-    if (i < 0) for (const n of names) { i = head.findIndex((h, j) => !taken.has(j) && h.startsWith(n)); if (i >= 0) break; }
+    if (i < 0) for (const n of names) { i = head.findIndex((h, j) => !taken.has(j) && h.startsWith(n) && !(excl && excl.test(h))); if (i >= 0) break; }
     if (i >= 0) taken.add(i);
     return i;
   };
   const ci = { pn: col(['teilenummer', 'artikelnummer', 'artikel-nr', 'artikelnr', 'art.-nr', 'art-nr', 'art.nr', 'artnr', 'teile-nr', 'teilenr', 'nummer']) };
   ci.unit = col(['einheit', 'mengeneinheit'], ['me']);
-  ci.min = col(['mindest', 'meldebestand']);
+  const QTY_EXCL = /wert|preis|bestell|€|eur/;
+  ci.min = col(['mindestbestand', 'mindestmenge', 'meldebestand', 'mindest'], [], QTY_EXCL);
   ci.price = col(['preis', 'einkaufspreis', 'einzelpreis', 'stückpreis', 'stueckpreis', 'ek', 'netto']);
   ci.loc = col(['lagerort', 'lagerplatz', 'regal', 'ort']);
-  ci.qty = col(['bestand', 'anfangsbestand', 'lagerbestand', 'istbestand', 'menge', 'stück', 'stueck', 'anzahl']);
+  ci.qty = col(['bestand', 'anfangsbestand', 'lagerbestand', 'istbestand', 'menge', 'stück', 'stueck', 'anzahl'], [], QTY_EXCL);
   ci.name = col(['bezeichnung', 'artikelbezeichnung', 'artikel', 'name', 'teil']);
   if (ci.name < 0) throw bad('validation', 'Spalte „Bezeichnung“ erforderlich.');
   const existing = (await env.DB.prepare('SELECT id, name, part_number, unit, min_qty, location, unit_price_net, active FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;

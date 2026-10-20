@@ -290,7 +290,7 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
 
 // localize(lang) → { title?, body? } je Sprache der Person (langOf: Map Benutzer-ID → Sprache); ohne Angabe gilt title/body für alle
 // ref: Bezug ohne Vorgang ('vehicle:<id>', 'fine:<id>') – Ziel beim Tippen auf Hinweis/Push
-export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null, ref = null }) {
+export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null, ref = null, onlyEndpoint = null }) {
   const now = nowIso();
   const langFor = (uid) => (langOf && LANGS.includes(langOf.get(uid)) ? langOf.get(uid) : 'de');
   const text = (uid) => {
@@ -299,7 +299,7 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
   };
   // Sprache des Textes (für die Vorlesefunktion des Geräts) nur, wenn sie feststeht: übersetzt (localize) oder vom Aufrufer genannt (langOf)
   const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now, lang: localize || langOf ? langFor(uid) : null, ref: NOTIF_REF.test(ref || '') ? ref : null }));
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at, ref: r.ref }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at, ref: r.ref, ...(onlyEndpoint ? { only_endpoint: onlyEndpoint } : {}) }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -362,7 +362,8 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   for (const n of notifications) {
     if (isMuted(n)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
     if (!n.urgent && holdByUser.has(n.user_id)) { states.push({ id: n.id, s: 'pending', a: 0, h: holdByUser.get(n.user_id) }); continue; }
-    const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id));
+    // only_endpoint: „Test senden“ prüft genau dieses Gerät (20.10.2026: Test vom abgemeldeten Tablet meldete „angenommen“, weil das Handy annahm)
+    const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id) && (!n.only_endpoint || s.endpoint === n.only_endpoint));
     if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
     if (subs.length > room()) { deferred.add(n.id); continue; } // bleibt pending → Cron
     let accepted = false; let lastErr = null;
