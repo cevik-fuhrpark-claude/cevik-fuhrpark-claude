@@ -14549,6 +14549,24 @@ await test('Fehlersuche 20.10. (5): Anlegen mit vorhandener FIN 409 statt Übers
   ok(!STRINGS.uk.help_check_s.includes('«не стосується»') && STRINGS.uk.help_check_s.includes('«' + STRINGS.uk.na + '»'), 'UK-Hilfe nennt den Knopf');
 });
 
+await test('Disposition „seit“ = Beginn der Sperre bzw. des Status (Backlog 98): Vorgangsliste liefert lock_since/status_since', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const cid = (await F.post('/api/cases', { vehicle_id: V1, description: 'Spiegel locker (seit-Test)', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  db.prepare(`UPDATE cases SET created_at='2026-10-01T05:00:00.000Z' WHERE id=?`).run(cid);
+  const c = (await F.get(`/api/cases/${cid}`)).data.case;
+  eq((await F.post(`/api/cases/${cid}/commands`, { action: 'set_safety_lock', command_id: rk(), expected_version: c.version, note: 'Spiegelhalter gebrochen' })).status, 200);
+  db.prepare(`UPDATE case_events SET created_at='2026-10-02T06:00:00.000Z' WHERE case_id=? AND action='set_safety_lock'`).run(cid);
+  const row = () => F.get('/api/cases?status=open&limit=500').then((r) => r.data.cases.find((x) => x.id === cid));
+  let r = await row(); eq(r.lock_since, '2026-10-02T06:00:00.000Z', 'Sperrbeginn statt Meldezeitpunkt');
+  // späterer Kommentar ändert updated_at, nicht den Statusbeginn
+  const sinceBefore = r.status_since;
+  const c2 = (await F.get(`/api/cases/${cid}`)).data.case;
+  await F.post(`/api/cases/${cid}/commands`, { action: 'comment', command_id: rk(), expected_version: c2.version, note: 'Rückfrage (Test)' });
+  r = await row(); eq(r.status_since, sinceBefore, 'Kommentar verschiebt „seit“ nicht'); ok(r.updated_at >= (sinceBefore || ''), 'updated_at weiter');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('fmtDT(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at)'), 'Tafel nutzt lock_since/status_since');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

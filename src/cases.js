@@ -156,6 +156,9 @@ export async function listCases(env, user, envName, query, meta = null) {
       (SELECT COUNT(*) FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen') AS open_items,
       (SELECT COUNT(*) FROM files f WHERE f.case_id=c.id) AS file_count,
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding') AS last_repeat_at,
+      -- Disposition „seit“: Beginn der aktuellen Sperre bzw. des aktuellen Status (20.10.2026, Backlog 98; vorher Meldezeitpunkt/letzte Änderung)
+      CASE WHEN c.safety_lock=1 THEN COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock'), c.created_at) END AS lock_since,
+      (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status AND (e.from_status IS NULL OR e.from_status<>e.to_status)) AS status_since,
       (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
