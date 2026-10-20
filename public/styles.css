@@ -205,6 +205,8 @@ th { color: var(--steel); font-weight: 600; }
   table.stack td { border: 0; padding: 3px 0; display: flex; flex-wrap: wrap; column-gap: 10px; align-items: baseline; }
   table.stack td > div { flex-basis: 100%; }
   table.stack td > * { min-width: 0; }
+  /* gestapelt scrollt nichts – lange Einträge (Reifengröße/Marke ohne Leerzeichen) umbrechen (20.10.2026) */
+  #app table.stack td { overflow-wrap: anywhere; }
   table.stack td[data-label]::before { content: attr(data-label); flex: 0 0 38%; color: var(--steel); font-size: 0.85em; }
   table.stack td:empty { display: none; }
 }

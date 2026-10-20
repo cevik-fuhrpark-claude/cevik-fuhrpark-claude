@@ -238,7 +238,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
-    .filter((e) => e.action !== 'set_followup' || !['driver', 'workshop'].includes(user.role)); // Wiedervorlage nur für Leitung/Lesende
+    .filter((e) => e.action !== 'set_followup' || !['driver', 'workshop'].includes(user.role)) // Wiedervorlage nur für Leitung/Lesende
+    // Kosten-Ereignisse sind interne Abläufe der Leitung/Werkstatt – Fahrer sehen sie nicht (wie cost_over_limit_at; 20.10.2026)
+    .filter((e) => user.role !== 'driver' || !['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'].includes(e.action));
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at, uploaded_by FROM files WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
   // Fahrer sehen wie im Verlauf keine Namen anderer Personen, nur deren Rolle (17.10.2026: Restarbeiten/Kontrollen zeigten Namen von Werkstatt/Leitung)
   const ownName = (o, by, nameK) => (user.role === 'driver' && o[by] !== user.id ? { ...o, [nameK]: null, [nameK + '_role']: o[nameK.replace('_name', '_role')] } : o);

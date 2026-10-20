@@ -1,7 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { nowIso, uuid, bad, forbidden, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell } from './util.js';
+import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt } from './vehicles.js';
@@ -23,7 +23,7 @@ const KIND_ALIASES = new Map([
   ['uvv', 'UVV'], ['uvv-prüfung', 'UVV'], ['uvv-pruefung', 'UVV'],
   ['feuerloescher', 'Feuerlöscher'], ['feuerlöscherprüfung', 'Feuerlöscher'], ['verbandskasten', 'Verbandkasten'], ['erste-hilfe-kasten', 'Verbandkasten'], ['spanngurte', 'Ladungssicherung'], ['zurrgurte', 'Ladungssicherung'],
   ['rückrufaktion', 'Rückruf'], ['rueckruf', 'Rückruf'], ['rueckrufaktion', 'Rückruf'], ['werkstattaktion', 'Rückruf'], ['herstelleraktion', 'Rückruf'], ['recall', 'Rückruf'],
-  ['tachograph', 'Tachograph'], ['tacho', 'Tachograph'], ['tachoprüfung', 'Tachograph'], ['tachopruefung', 'Tachograph'], ['fahrtenschreiber', 'Tachograph'], ['kontrollgerät', 'Tachograph'],
+  ['tachograph', 'Tachograph'], ['tacho', 'Tachograph'], ['tachoprüfung', 'Tachograph'], ['tachopruefung', 'Tachograph'], ['fahrtenschreiber', 'Tachograph'], ['kontrollgerät', 'Tachograph'], ['kontrollgeraet', 'Tachograph'],
 ]);
 
 export function normalizeKind(raw) {
@@ -300,7 +300,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   if (envName) {
     // + technisch freigegebene Aufträge der letzten 60 Tage, deren Prüfung danach nicht in der Akte eingetragen wurde (Nachweis fehlt)
     const all = (await env.DB.prepare(`SELECT maintenance_rule_id AS rid, id, case_no, status, created_at, closed_at FROM cases WHERE maintenance_rule_id IS NOT NULL AND environment=?
-      AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at > ?)) ORDER BY closed_at DESC`).bind(envName, new Date(Date.now() - 60 * 86400000).toISOString()).all()).results;
+      AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at > ?)) ORDER BY closed_at DESC`).bind(envName, berlinWindowStartIso(60)).all()).results; // Berliner Kalendertage wie Winteraufträge (20.10.2026)
     const orders = new Map(); const released = new Map();
     for (const o of all) {
       if (o.status !== 'fahrzeug_freigegeben') orders.set(o.rid, { id: o.id, case_no: o.case_no, status: o.status });

@@ -2,6 +2,8 @@
 import { FINDING_LABELS } from './finding-labels.js';
 export const STRINGS = {
   de: {
+    fine_prev_driver: "bisher: {n}",
+    ev_plaque_month: "(Plakette {m}: fällig bis Monatsende)",
     // Fuhrparkagent: Schweregrad und Kurzbezeichnung je Befundcode (Management-Panel)
     asev_kritisch: 'Kritisch', asev_handeln: 'Handeln', asev_hinweis: 'Hinweis', asev_info: 'Info', 
     filter_warranty: 'Gewährleistung prüfen', warranty_until: 'Gewährleistung bis (optional)', warranty_hint: 'nur wenn auf Rechnung/vom Lieferanten angegeben', warranty_until_d: 'Gewährleistung bis {d}', vi_warranty: 'Laufende Gewährleistung', vi_warranty_hint: 'Aus früheren Vorgängen dieses Fahrzeugs, am Meldedatum noch gültig – Rückgriff beim Lieferanten/der Werkstatt prüfen, bevor neu bezahlt wird.', vnotes: 'Hinweise zum Fahrzeug', vnotes_none: 'Keine aktiven Hinweise.', vnotes_n: '{n} Hinweis(e)', vnotes_with: 'Mit Hinweisen', vnotes_with_veh: 'Fahrzeuge mit Hinweisen', vnote_add: 'Hinweis hinzufügen', vnote_text: 'Hinweis (z. B. „Ladeetage oben hakt – bekannt“, „Ersatzschlüssel im Büro“)', vnote_for_driver: 'auch für zugeordnete Fahrer auf „Mein Fahrzeug“ anzeigen', vnote_valid: 'Gültig bis (optional)', vnote_valid_hint: 'danach automatisch ausgeblendet (Archiv)', vnote_until: 'bis {d}', vnote_expired: 'abgelaufen am {d}', vnote_driver_chip: 'für Fahrer sichtbar', vnote_archive: 'Erledigt – archivieren', vnote_show_archive: 'Archiv anzeigen', vnote_hide_archive: 'Archiv ausblenden', vnote_archived: 'archiviert', 
@@ -63,6 +65,8 @@ export const STRINGS = {
     open_items_count: 'Restarbeiten offen', crit_open: 'kritisch', overdue: 'überfällig',
   },
   uk: {
+    fine_prev_driver: "раніше: {n}",
+    ev_plaque_month: "(наліпка {m}: до кінця місяця)",
     // Fuhrparkagent: Schweregrad und Kurzbezeichnung je Befundcode (Management-Panel)
     asev_kritisch: 'Критично', asev_handeln: 'Діяти', asev_hinweis: 'Підказка', asev_info: 'Інфо', 
     filter_warranty: 'Перевірити гарантію', warranty_until: 'Гарантія до (необов’язково)', warranty_hint: 'лише якщо вказано в рахунку/постачальником', warranty_until_d: 'Гарантія до {d}', vi_warranty: 'Діюча гарантія', vi_warranty_hint: 'З попередніх заявок цього авто, дійсна на дату повідомлення – перевірте гарантійну вимогу до постачальника/майстерні, перш ніж платити знову.', vnotes: 'Примітки до авто', vnotes_none: 'Немає активних приміток.', vnotes_n: 'Приміток: {n}', vnotes_with: 'З примітками', vnotes_with_veh: 'Авто з примітками', vnote_add: 'Додати примітку', vnote_text: 'Примітка (напр. «верхній ярус заїдає – відомо», «запасний ключ в офісі»)', vnote_for_driver: 'також показувати закріпленим водіям у «Мій транспорт»', vnote_valid: 'Дійсно до (необов’язково)', vnote_valid_hint: 'після цього автоматично приховується (архів)', vnote_until: 'до {d}', vnote_expired: 'завершилося {d}', vnote_driver_chip: 'видно водієві', vnote_archive: 'Виконано – в архів', vnote_show_archive: 'Показати архів', vnote_hide_archive: 'Сховати архів', vnote_archived: 'в архіві', 
@@ -124,6 +128,8 @@ export const STRINGS = {
     open_items_count: 'залишкових робіт', crit_open: 'критично', overdue: 'прострочено',
   },
   en: {
+    fine_prev_driver: "previously: {n}",
+    ev_plaque_month: "(sticker {m}: due by end of month)",
     // Fuhrparkagent: Schweregrad und Kurzbezeichnung je Befundcode (Management-Panel)
     asev_kritisch: 'Critical', asev_handeln: 'Act', asev_hinweis: 'Note', asev_info: 'Info', 
     filter_warranty: 'Check warranty', warranty_until: 'Warranty until (optional)', warranty_hint: 'only if stated on the invoice/by the supplier', warranty_until_d: 'Warranty until {d}', vi_warranty: 'Active warranty', vi_warranty_hint: 'From earlier cases of this vehicle, still valid on the report date – check a warranty claim with the supplier/workshop before paying again.', vnotes: 'Vehicle notes', vnotes_none: 'No active notes.', vnotes_n: '{n} note(s)', vnotes_with: 'With notes', vnotes_with_veh: 'Vehicles with notes', vnote_add: 'Add note', vnote_text: 'Note (e.g. “upper deck sticks – known”, “spare key in the office”)', vnote_for_driver: 'also show to assigned drivers on “My vehicle”', vnote_valid: 'Valid until (optional)', vnote_valid_hint: 'hidden automatically afterwards (archive)', vnote_until: 'until {d}', vnote_expired: 'expired on {d}', vnote_driver_chip: 'visible to drivers', vnote_archive: 'Done – archive', vnote_show_archive: 'Show archive', vnote_hide_archive: 'Hide archive', vnote_archived: 'archived', 
@@ -801,6 +807,7 @@ const V_MORE = [
   ['DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).', 'DOT: останні 4 цифри = тиждень і рік (напр. 2324).', 'DOT: last 4 digits = week and year (e.g. 2324).'],
   ['DOT: Herstellwoche liegt in der Zukunft.', 'DOT: тиждень виготовлення в майбутньому.', 'DOT: production week is in the future.'],
   ['Benutzername: 3–64 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.', 'Ім’я користувача: 3–64 символи, лише a–z, 0–9, крапка, дефіс, підкреслення.', 'Username: 3–64 characters, only a–z, 0–9, dot, hyphen, underscore.'],
+  ['Reifengröße unplausibel (z. B. 315/80 R22.5).', 'Неправдоподібний розмір шини (напр. 315/80 R22.5).', 'Implausible tyre size (e.g. 315/80 R22.5).'],
   ['Beim Reifenwechsel ist die Reifengröße Pflicht.', 'При заміні шини розмір шини обов’язковий.', 'The tyre size is mandatory for a tyre change.'],
   ['Bei „abgelehnt“/„zurückgezogen“ keine Erstattung eintragen.', 'При «відхилено»/«відкликано» не вносьте відшкодування.', 'Do not enter a reimbursement for “rejected”/“withdrawn”.'],
   ['Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.', 'При дефектах або ненаданому посвідченні водія додайте примітку.', 'Please add a note for defects or a licence not presented.'],

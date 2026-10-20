@@ -79,3 +79,18 @@ self.addEventListener('notificationclick', (e) => {
     return self.clients.openWindow('/' + hash);
   })());
 });
+// Vom Browser/Push-Dienst erneuertes Abo sofort melden (20.10.2026): vorher erst beim nächsten App-Start (pushRebind) –
+// bis dahin scheiterte jede Zustellung am alten Endpunkt. Ohne gültige Anmeldung lehnt der Server ab (dann beim nächsten Start).
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil((async () => {
+    try {
+      const sub = e.newSubscription || (e.oldSubscription && e.oldSubscription.options ? await self.registration.pushManager.subscribe(e.oldSubscription.options) : null);
+      if (!sub) return;
+      const j = sub.toJSON();
+      const ua = self.navigator.userAgent || '';
+      const label = /Android/.test(ua) ? 'Android' : /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Windows/.test(ua) ? 'Windows-PC' : /Mac/.test(ua) ? 'Mac' : null;
+      await fetch('/api/push/subscribe', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-cfp': '1' },
+        body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys, ...(label ? { device_label: label } : {}) }) });
+    } catch {}
+  })());
+});

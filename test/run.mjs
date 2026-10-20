@@ -7663,7 +7663,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/const PRINT_OPEN = '#mhist, #vaf[^']*';/.test(app) && /addEventListener\('beforeprint'[^\n]*PRINT_OPEN/.test(app) && /addEventListener\('afterprint'[^\n]*PRINT_OPEN/.test(app), 'Druck: Prüfhistorie und Agentenbefunde der Akte werden mitgedruckt');
     ok(/VEH_AV_LINK\.includes\(hf\) && \(hf !== 'with_findings' \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
-    ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
+    ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
     ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
     ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && /\[\/\^#\\\/master\(\?:\\\?q=\(\[\^&\]\*\)\)\?\$\/, \(q\) => viewMaster\(q\)\]/.test(app) && /async function viewMaster\(q\) \{[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
     ok(app.includes('href="#/vehicles?f=with_notes" id="dnotes"') && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
@@ -10946,7 +10946,9 @@ await test('Fehlersuche 17.10. (5): Telematik älter nie über neuer, Rufnummer-
   eq(db.prepare('SELECT covers_work_and_parts c FROM external_costs WHERE case_id=?').get(rid).c, 0);
   // 5. Kosten-Vermerke ohne Kostenrecht ausgeblendet (Fahrer/Werkstatt/Lesen), Leitung sieht sie
   eq((await cmd(F, rid, 'add_external_cost', { supplier: 'Lack', amount_net: 1450 }, 'Rechnung RE-77 über 1.450 € netto')).status, 200);
-  for (const c of [U.driver, U.ws, U.viewer]) {
+  // Fahrer sehen Kosten-Ereignisse gar nicht (20.10.2026)
+  eq((await U.driver.get(`/api/cases/${rid}`)).data.events.filter((x) => x.action === 'add_external_cost').length, 0, 'Fahrer ohne Kosten-Ereignisse');
+  for (const c of [U.ws, U.viewer]) {
     const ev = (await c.get(`/api/cases/${rid}`)).data.events.filter((x) => x.action === 'add_external_cost');
     ok(ev.length && ev.every((x) => x.note === null && x.payload === null), 'Vermerk ausgeblendet'); ok(ev.some((x) => x.note_hidden));
   }
@@ -14677,6 +14679,59 @@ await test('Fehlersuche 20.10. (8): Einladungslink der Fuhrparkleitung nie für 
   ok(app.includes('rc2(Number(p.quantity) * p.unit_price_net)') && !app.includes('Number.EPSILON) * 100) / 100'), 'Teilezeile gerundet wie der Server');
   ok(app.includes("else if (err.code === 'cost_approval_open') viewCase(c.id);"), 'Kostenfreigabe offen → neu laden');
   ok(app.includes("display_name: $('#uen').value.trim() || ' '"), 'leerer Name wird geprüft');
+});
+
+await test('Fehlersuche 20.10. (9): berechnete SP auf der Fahrer-Startseite, Bußgeld-Verlauf mit Fahrernamen, Fahrer ohne Kosten-Ereignisse, übernommenes Push-Abo ohne alte Zeitstempel, Reifengröße plausibel, Reifen-CSV Reserverad, Prüfart „Kontrollgeraet“, Druck/Toast/Übersetzungen', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet;
+  // 1. Fahrer: SP aus HU + Erstzulassung berechnet (ohne SP-Eintrag) erscheint in „Mein Fahrzeug“
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  eq((await F.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2015-03-01', spec_source: 'Fahrzeugschein' })).status, 200);
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: '2026-01-15', interval_months: 12, evidence: 'Bericht' })).status, 201);
+  const ov = (await F.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === V1 && r.kind === 'SP'); ok(ov && ov.virtual && ov.next_due_date, 'Übersicht: berechnete SP');
+  const mv = (await U.driver.get('/api/me/vehicles')).data.vehicles[0];
+  const sp = mv.next_inspections.find((x) => x.kind === 'SP'); ok(sp, 'Fahrer sieht SP: ' + JSON.stringify(mv.next_inspections)); eq(sp.next_due_date, ov.next_due_date);
+  ok(mv.next_inspections.every((x, i, a) => !i || a[i - 1].next_due_date <= x.next_due_date), 'nach Datum sortiert');
+  // 2. Bußgeld: bestätigter und beim Zurücksetzen abgelöster Fahrer mit Namen im Verlauf (nur Leitung)
+  const fb = { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: 'AZ-2010-9', offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', response_due: BERLIN_TODAY };
+  const fr = await F.post('/api/fines', fb); eq(fr.status, 201); const fid = fr.data.id;
+  const fcmd = async (action, payload = {}, note = null) => { const v = (await F.get(`/api/fines/${fid}`)).data.fine.version; return F.post(`/api/fines/${fid}/commands`, { action, payload, note, expected_version: v }); };
+  eq((await fcmd('confirm_driver', { driver_id: U.driver.id, basis: 'zuordnung', evidence: 'Plan' })).status, 200);
+  eq((await fcmd('set_status', { status: 'eingegangen' }, 'falscher Fahrer')).status, 200);
+  eq((await fcmd('confirm_driver', { driver_name_note: 'Aushilfe Extern', basis: 'manuell', evidence: 'Anruf' })).status, 200);
+  const fd = (await F.get(`/api/fines/${fid}`)).data; eq(fd.event_driver_names[U.driver.id], 'Fahrer W', 'Name zum Verlauf');
+  ok(fd.events.some((x) => x.action === 'set_status' && JSON.parse(x.payload).driver_reset.driver_id === U.driver.id), 'Zurücksetzen nennt bisherigen Fahrer');
+  ok(!('event_driver_names' in (await U.viewer.get(`/api/fines/${fid}`)).data), 'Lesezugriff ohne Namen');
+  // 3. Fahrer: keine Kosten-Ereignisse im Vorgangsverlauf (geprüft in „Fehlersuche 17.10. (5)“) – hier die Liste
+  const cs = (await import('node:fs')).readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(/user\.role !== 'driver' \|\| !\['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'\]\.includes\(e\.action\)/.test(cs), 'Fahrer-Filter Kosten-Ereignisse');
+  // 4. Push-Abo von anderer Person übernommen: created_at neu, last_success_at leer
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const auth = () => b64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  const ep = 'https://push.example/ok/takeover-1';
+  eq((await U.driver.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: await key(), auth: auth() } })).status, 200);
+  e.DB.db.prepare(`UPDATE push_subscriptions SET last_success_at='2026-01-01T10:00:00.000Z', created_at='2026-01-01T09:00:00.000Z' WHERE endpoint=?`).run(ep);
+  eq((await U.driver.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: await key(), auth: auth() } })).status, 200);
+  eq(e.DB.db.prepare('SELECT last_success_at FROM push_subscriptions WHERE endpoint=?').get(ep).last_success_at, '2026-01-01T10:00:00.000Z', 'gleiche Person: bleibt');
+  eq((await U.viewer.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: await key(), auth: auth() } })).status, 200);
+  const ps = e.DB.db.prepare('SELECT user_id, created_at, last_success_at FROM push_subscriptions WHERE endpoint=?').get(ep);
+  eq(ps.user_id, U.viewer.id); eq(ps.last_success_at, null, 'keine Zustellung der Vorperson'); ok(ps.created_at > '2026-01-02', 'neu angemeldet');
+  // 5. Reifengröße ohne Ziffer abgewiesen (Größe festlegen und Wechsel)
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: 'x', verified: true })).status, 400);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: 'neu' })).status, 400);
+  // 6. Reifen-CSV: nur Reserverad abgefahren, keine Warnschwelle → „Reserverad abgefahren“
+  const tr = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'Reserve', tread_mm: 1 }); eq(tr.status, 201, JSON.stringify(tr.data));
+  const tcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/tires/fleet?format=csv')).data); ok(/SZ-YC 5513;[^\n]*Reserverad abgefahren/.test(tcsv), 'CSV-Status');
+  // 7. Prüfart „Kontrollgeraet“ (ae)
+  const { normalizeKind } = await import('../src/maintenance.js'); eq(normalizeKind('Kontrollgeraet'), 'Tachograph');
+  // 8. Oberfläche: Druck öffnet Kontrollen/„Zum Fahrzeug“/Auslesungen, Reifenwarnungen in einem Toast, Import-Zusatz übersetzt, Kandidat-Nachweis übersetzt, SW meldet erneuertes Abo
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/const PRINT_OPEN = '[^']*#vthist, details\.cinsp, details\.vinfo'/.test(app) && app.includes('<details class="panel cinsp">') && app.includes('<details class="small vinfo"'), 'Druck vollständig');
+  ok(app.includes("if (wl.length) toast(wl.join(' · '), true);"), 'Reifenwarnungen in einem Toast');
+  ok(app.includes('<div class="scroll"><table class="stack" id="tirehist">'), 'Reifenverlauf scrollt im Rahmen (Tablet, lange Größe)');
+  ok(app.includes("cf.evidence.value = candEv(c); cf.dataset.evShown") && app.includes('b.evidence = cf.dataset.evDe'), 'Kandidat-Nachweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ev_plaque_month.includes('{m}') && STRINGS[l].fine_prev_driver.includes('{n}'), l);
+  ok(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("addEventListener('pushsubscriptionchange'"), 'SW: erneuertes Abo');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

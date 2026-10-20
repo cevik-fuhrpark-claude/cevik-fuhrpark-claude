@@ -618,6 +618,24 @@ export async function myVehicles(env, user, envName) {
     // Winterkennzeichnung der Reifen (nur eigene Lkw, ohne Personen) – gleiche Regel wie Fahrzeugakte
     env.DB.prepare(`SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC`).bind(envName, JSON.stringify(vs.map((v) => v.id))).all(),
   ]);
+  // HU/SP ohne eigenen Eintrag, deren Frist sich berechnen lässt (z. B. SP aus HU + Erstzulassung): wie Übersicht/Akte als Zeile ohne Regel
+  // (20.10.2026: überfällige berechnete SP fehlte auf der Fahrer-Startseite). Es wird nichts angelegt.
+  const virtBy = new Map();
+  {
+    const hin = await loadHuSpInputs(env, vs.map((v) => v.id));
+    const wd = maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value);
+    const today0 = berlinDate();
+    for (const [vid, x] of hin) {
+      const h = huSpFor(x, today0, wd);
+      for (const kind of ['HU', 'SP']) {
+        const y = kind === 'HU' ? h.hu : h.sp;
+        if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
+        if (rules.results.some((r) => r.vehicle_id === vid && r.kind === kind && r.next_due_date)) continue;
+        if (!virtBy.has(vid)) virtBy.set(vid, []);
+        virtBy.get(vid).push({ vehicle_id: vid, kind, next_due_date: y.due, planned_date: y.planned_date || null });
+      }
+    }
+  }
   const tiresBy = new Map();
   for (const e of tireEv.results) { if (!tiresBy.has(e.vehicle_id)) tiresBy.set(e.vehicle_id, []); tiresBy.get(e.vehicle_id).push(e); }
   // Wartung nach km für den Fahrer: nur überschritten bzw. innerhalb der eingestellten Vorwarnung (ohne Schwelle nur überschritten),
@@ -638,7 +656,7 @@ export async function myVehicles(env, user, envName) {
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
         parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null })),
-      next_inspections: rules.results.filter((r) => r.vehicle_id === v.id && r.next_due_date).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null })),
+      next_inspections: [...rules.results.filter((r) => r.vehicle_id === v.id && r.next_due_date), ...(virtBy.get(v.id) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null })),
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),

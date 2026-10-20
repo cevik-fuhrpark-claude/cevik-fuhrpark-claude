@@ -189,6 +189,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
   const size = str(body.size, { max: 40, field: 'Reifengröße' });
   if (type === 'wechsel' && !size) throw bad('validation', 'Beim Reifenwechsel ist die Reifengröße Pflicht.');
+  if (size && !/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).');
   const dot = str(body.dot, { max: 20, field: 'DOT' });
   if (dot && !dotDate(dot)) throw bad('validation', 'DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).');
   if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.');
@@ -226,6 +227,7 @@ export async function setTireSpec(env, user, vehicleId, body) {
   if (!canWrite(user)) throw forbidden();
   const axle = oneOf(body.axle, AXLES, 'Achse');
   const size = str(body.size, { required: true, max: 40, field: 'Reifengröße' });
+  if (!/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).'); // wie der Import (20.10.2026)
   const verified = flag(body.verified, 'Geprüft') ? 1 : 0;
   // unbekanntes Fahrzeug → 404 (vorher Fremdschlüssel-Fehler = „Interner Fehler“, Fuzz 15.10.2026)
   if (!(await env.DB.prepare('SELECT 1 FROM vehicles WHERE id=?').bind(vehicleId).first())) throw notFound();
@@ -414,7 +416,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
     const sp = byV.get(r.vehicle_id) || {};
     const list = Object.values(sp);
     const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
-    lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
+    lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), r.status === 'warnung' && !r.below_warn && r.spare_below_min ? 'Reserverad abgefahren' : TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
       r.oldest_measure_at ? berlinDate(r.oldest_measure_at) : '', r.oldest_age_days ?? '', r.measured_positions ? (r.stale ? 'ja' : 'nein') : '',
       ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn, r.winter_closed_order ? r.winter_closed_order.case_no : '', r.spare_below_min ? 'ja' : ''].join(';'));
   }

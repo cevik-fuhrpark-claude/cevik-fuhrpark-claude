@@ -100,6 +100,10 @@ export async function fineDetail(env, user, envName, id) {
   const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
   if (isMgr(user)) {
     out.events = events;
+    // bestätigte bzw. beim Zurücksetzen abgelöste Fahrer im Verlauf mit Namen (20.10.2026: „bisheriger Fahrer bleibt im Verlauf“ galt nur in der Datenbank)
+    const evIds = new Set();
+    for (const e of events) { let p = null; try { p = e.payload ? JSON.parse(e.payload) : null; } catch {} if (p && p.driver_id) evIds.add(p.driver_id); if (p && p.driver_reset && p.driver_reset.driver_id) evIds.add(p.driver_reset.driver_id); }
+    out.event_driver_names = evIds.size ? Object.fromEntries((await env.DB.prepare('SELECT id, display_name FROM users WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify([...evIds])).all()).results.map((u) => [u.id, u.display_name])) : {};
     out.candidates = await driverCandidates(env, envName, f);
     out.allowed_actions = fineActions(user, f);
   } else {
