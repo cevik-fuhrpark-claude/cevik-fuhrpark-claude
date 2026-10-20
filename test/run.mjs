@@ -1525,6 +1525,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   const confTpl = {
     '`Aktenzeichen bereits erfasst (${dup.fine_no}).`': ['Aktenzeichen bereits erfasst (TB-2026-0007).', 'Номер справи вже внесено (TB-2026-0007).', 'Case reference already recorded (TB-2026-0007).'],
     '`Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`': ['Fahrzeug hat noch offene Vorgänge (3, alle Umgebungen) – zuerst abschließen.', 'Транспорт ще має відкриті заявки (3, усі середовища) – спочатку закрийте їх.', 'Vehicle still has open cases (3, all environments) – close them first.'],
+    '`Fahrzeug mit dieser FIN besteht bereits (${before.plate}) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden.`': ['Fahrzeug mit dieser FIN besteht bereits (SZ-YC 5501) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden.', 'Транспорт із цим VIN уже існує (SZ-YC 5501) – скористайтеся «Редагувати дані» в картці транспорту.', 'A vehicle with this VIN already exists (SZ-YC 5501) – please use “Edit master data” in the vehicle file.'],
     '`${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`': ['Olena $& K. ist diesem Fahrzeug bereits zugeordnet.', 'Olena $& K. уже призначено цьому транспорту.', 'Olena $& K. is already assigned to this vehicle.'],
   };
   for (const [, code, lit, tplc] of conf) {
@@ -14513,6 +14514,39 @@ await test('Fehlersuche 20.10. (4): Kontroll-Wiederholung vor Zustandsprüfungen
   const { maintenanceIcs } = await import('../src/maintenance.js');
   const ics = maintenanceIcs({ rows: [{ id: 'husp:V9:SP', vehicle_id: 'V9', kind: 'SP', virtual: true, next_due_date: '2026-12-31', plate: 'T-X 1' }, { id: 'r1', vehicle_id: 'V9', kind: 'UVV', next_due_date: '2026-12-30', plate: 'T-X 1', evidence: '' }], warn_days: 7, today: '2026-10-20' }, '2026-10-20T00:00:00Z', 'de');
   ok(ics.includes('UID:husp-V9-SP') && !ics.includes('husp:V9'), 'UID'); ok(ics.includes('berechnet nach StVZO') && !/Nachweis: \r\n/.test(ics), 'kein leerer Nachweis'); ok(ics.includes('Nachweis: –'), 'leerer Nachweis als –');
+});
+
+await test('Fehlersuche 20.10. (5): Anlegen mit vorhandener FIN 409 statt Überschreiben, Wieder-in-Betrieb-Nahme behält Stammdaten, Kennzeichen ohne Zeichen abgewiesen, Integrations-API (Bearer klein, since streng, Vergleich längenunabhängig), Hilfe Disposition ohne Kontrolle, Push „zurückgehalten – geöffnet“, Aushang-Titel je Sprache, Standortfilter „ohne Standort“', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const vin = 'WDB96340310774401';
+  eq((await F.post('/api/vehicles', { vin, plate: 'TT-FN 1', site: 'Köln', manufacturer: 'MAN', create_only: true })).status, 201);
+  const dup = await F.post('/api/vehicles', { vin, plate: 'TT-FN 2', create_only: true }); eq(dup.status, 409); eq(dup.data.error, 'vin_exists');
+  const v = db.prepare('SELECT plate, site, manufacturer FROM vehicles WHERE id=?').get('VIN:' + vin); eq(v.plate, 'TT-FN 1'); eq(v.site, 'Köln'); eq(v.manufacturer, 'MAN');
+  // außer Betrieb → erneut anlegen: wieder in Betrieb, leere Felder behalten die Werte
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run('VIN:' + vin);
+  eq((await F.post('/api/vehicles', { vin, plate: 'TT-FN 3', create_only: true })).status, 201);
+  const v2 = db.prepare('SELECT plate, site, manufacturer, active FROM vehicles WHERE id=?').get('VIN:' + vin); eq(v2.active, 1); eq(v2.plate, 'TT-FN 3'); eq(v2.site, 'Köln'); eq(v2.manufacturer, 'MAN');
+  // Kennzeichen ohne Buchstaben/Ziffern, Tabulator
+  for (const plate of ['-', ' . ', 'AB\t1']) eq((await F.post('/api/vehicles', { vin: 'WDB96340310774402', plate })).status, 400, JSON.stringify(plate));
+  // timingSafeEqual längenunabhängig korrekt
+  const { timingSafeEqual } = await import('../src/util.js');
+  ok(timingSafeEqual('abcdefgh', 'abcdefgh') && !timingSafeEqual('abc', 'abcdefgh') && !timingSafeEqual('abcdefghX', 'abcdefgh') && !timingSafeEqual('', 'a') && timingSafeEqual('', '') && !timingSafeEqual('abcdefgi', 'abcdefgh'), 'Vergleich');
+  // Integrations-API: Bearer in Kleinschreibung, since nur ISO
+  const { default: worker } = await import('../src/worker.js');
+  e.INTEGRATION_TOKEN = 'tok-0123456789abcdef-test';
+  const call = (path, auth) => worker.fetch(new Request('https://x.example' + path, { headers: { authorization: auth } }), e, { waitUntil() {} });
+  eq((await call('/api/integration/v1/cases', 'bearer ' + e.INTEGRATION_TOKEN)).status, 200, 'bearer klein');
+  for (const since of ['2026-10-17 08:00:00', '2026-10-17,12:00', '2026-10-17T08:00 PST']) eq((await call('/api/integration/v1/cases?since=' + encodeURIComponent(since), 'Bearer ' + e.INTEGRATION_TOKEN)).status, 400, since);
+  for (const since of ['2026-10-17', '2026-10-17T08:00:00Z', '2026-10-17T08:00:00.123+02:00']) eq((await call('/api/integration/v1/cases?since=' + encodeURIComponent(since), 'Bearer ' + e.INTEGRATION_TOKEN)).status, 200, since);
+  // Oberfläche (Quelltext): Hilfe Disposition ohne „check“, Push-Status, Aushang-Titel, Standortfilter
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("...(r === 'dispatch' ? [] : ['check'])"), 'Hilfe Disposition');
+  ok(app.includes("(x.opened_at || x.acknowledged_at) ? t('pst_held_opened')"), 'Push zurückgehalten/geöffnet');
+  ok(app.includes(`<h1 data-title="\${esc(t('guide'))} – `), 'Aushang-Titel je Sprache');
+  ok(app.includes(`<option value="ohne"\${site === 'ohne' ? ' selected' : ''}>`), 'Standort „ohne“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pst_held_opened, l);
+  ok(!STRINGS.uk.help_check_s.includes('«не стосується»') && STRINGS.uk.help_check_s.includes('«' + STRINGS.uk.na + '»'), 'UK-Hilfe nennt den Knopf');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

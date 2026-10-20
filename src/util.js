@@ -91,9 +91,10 @@ export async function hashPassword(password, saltB64) {
 }
 
 export function timingSafeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  let r = 0;
-  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  // Laufzeit hängt nur von der Länge des erwarteten Werts ab, nicht vom Treffer oder der Länge der Eingabe (20.10.2026: vorher Abbruch bei ungleicher Länge)
+  let r = a.length ^ b.length;
+  for (let i = 0; i < b.length; i++) r |= (a.charCodeAt(i % (a.length || 1)) || 0) ^ b.charCodeAt(i);
   return r === 0;
 }
 

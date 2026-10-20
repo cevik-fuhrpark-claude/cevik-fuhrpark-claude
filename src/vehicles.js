@@ -411,7 +411,8 @@ function vehicleRow(user, body) {
   if (!isValidVin(vin)) throw bad('validation', 'FIN muss 17 Zeichen haben (ohne I, O, Q).');
   const plate = str(body.plate, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   // nur lateinische Buchstaben (kyrillisches „С“/„А“ von ukrainischer Tastatur sieht gleich aus, Kopplung und Dublettenprüfung griffen still nicht, 18.10.2026)
-  const plateOk = (x) => /^[A-Z0-9ÄÖÜ \-.\/_\u00a0\u202f\t\u2010\u2011\u2013\u2014]+$/.test(x);
+  // mindestens ein Buchstabe/eine Ziffer, kein Tabulator (20.10.2026: „-“ wurde angelegt, alle solchen galten als gleiches Kennzeichen)
+  const plateOk = (x) => /^[A-Z0-9ÄÖÜ \-.\/_\u00a0\u202f\u2010\u2011\u2013\u2014]+$/.test(x) && /[A-Z0-9ÄÖÜ]/.test(x);
   if (!plateOk(plate)) throw bad('validation', 'Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   if (body.trailer_plate && typeof body.trailer_plate === 'string' && body.trailer_plate.trim() && !plateOk(body.trailer_plate.trim().toUpperCase())) throw bad('validation', 'Anhänger-Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   return {
@@ -438,7 +439,7 @@ export function normalizeVehicleKind(raw) {
 // keepExisting (Import): leere/fehlende Felder überschreiben vorhandene Werte nicht – ein Import löscht nie Stammdaten
 // Wechsel der Fahrzeugart (Lkw ↔ Anhänger): die Gewichtsklasse gehört zur alten Art (andere Klassen/SP-Pflicht) – sie wird aus der
 // belegten Gesamtmasse neu bestimmt bzw. ohne Masse „unbekannt“ (SP-Frist dann „ungeklärt“ statt still entfallen), HU/SP neu berechnet (17.10.2026)
-async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false, actorId = null } = {}) {
+async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false, reactivate = false, actorId = null } = {}) {
   const now = nowIso();
   const known = new Map((await env.DB.prepare('SELECT id, kind, zgm_class, zgm_kg FROM vehicles WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(rows.map((r) => r.id))).all()).results.map((v) => [v.id, v]));
   for (const r of rows) if (!r.kind) r.kind = known.get(r.id)?.kind || 'lkw';
@@ -453,7 +454,7 @@ async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive =
       SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, ${J('kind')}, 1, ?1, ?1
       FROM json_each(?2) WHERE 1
       ON CONFLICT(id) DO UPDATE SET ${['plate', 'site', 'manufacturer', 'model', 'build_year', 'trailer_plate', 'trailer_vin', 'master_status', 'source', 'kind']
-        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=${keepExisting || keepActive ? 'vehicles.active' : '1'}, updated_at=excluded.updated_at`)
+        .map((f) => (keepExisting ? `${f}=COALESCE(excluded.${f}, vehicles.${f})` : `${f}=excluded.${f}`)).join(', ')}, active=${reactivate ? '1' : keepExisting || keepActive ? 'vehicles.active' : '1'}, updated_at=excluded.updated_at`)
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
   if (kindChanged.length) stmts.push(env.DB.prepare(`UPDATE vehicles SET zgm_class=json_extract(value,'$.to') FROM json_each(?) WHERE vehicles.id=json_extract(value,'$.id')`).bind(JSON.stringify(kindChanged)));
@@ -470,9 +471,15 @@ export async function upsertVehicle(env, user, body) {
   const row = vehicleRow(user, body);
   // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
   // in Betrieb – dann mit Protokoll `vehicle.activate` (vorher still, 17.10.2026)
-  const before = await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(row.id).first();
+  const before = await env.DB.prepare('SELECT active, plate FROM vehicles WHERE id=?').bind(row.id).first();
+  const createOnly = flag(body.create_only, 'Nur anlegen');
   const keepActive = flag(body.keep_active, 'Aktiv lassen'); // einmal auswerten (18.10.2026: "0"/"false" nahm still ohne Protokoll in Betrieb)
-  await upsertVehicleRows(env, [row], { keepActive, actorId: user.id });
+  // „Fahrzeug anlegen“ mit der FIN eines Fahrzeugs in Betrieb: abweisen statt still alle leeren Felder (Standort, Hersteller, Anhänger …) zu
+  // überschreiben (20.10.2026). Wieder-in-Betrieb-Nahme eines außer Betrieb genommenen Fahrzeugs: leere Felder behalten die bisherigen Werte.
+  // nur für das Formular „Fahrzeug anlegen“ (`create_only`); andere Aufrufer nutzen den Endpunkt weiter als Upsert
+  if (before && before.active && !keepActive && createOnly) throw conflict('vin_exists', `Fahrzeug mit dieser FIN besteht bereits (${before.plate}) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden.`, { id: row.id });
+  const recreate = !!(before && !before.active && !keepActive && createOnly);
+  await upsertVehicleRows(env, [row], recreate ? { keepExisting: true, reactivate: true, actorId: user.id } : { keepActive, actorId: user.id });
   if (before && !before.active && !keepActive) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
   // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
   // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.

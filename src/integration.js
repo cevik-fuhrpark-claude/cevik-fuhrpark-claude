@@ -25,7 +25,7 @@ async function checkToken(request, env) {
   const row = await env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(key, win).first();
   if (row && row.count >= TOKEN_FAIL_LIMIT.max) throw new HttpError(429, 'rate_limited', 'Zu viele ungültige Token-Versuche von dieser Adresse. Bitte in 15 Minuten erneut versuchen.');
   const h = request.headers.get('authorization') || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+  const token = (/^Bearer\s+(.+)$/i.exec(h) || [])[1] || ''; // Schema ohne Groß-/Kleinschreibung (RFC 7235, 20.10.2026)
   // alle Vergleiche ausführen (gleiche Laufzeit unabhängig vom Treffer)
   let scope = null;
   for (const t of full) if (timingSafeEqual(token, t)) scope = 'write';
@@ -101,7 +101,8 @@ function redactInbox(row, names) {
 
 // Umgebung: test | production (Groß-/Kleinschreibung egal), fehlend = production; anderes → 400 (18.10.2026: „tset“ lieferte still Betriebsdaten)
 // ISO-Zeitpunkt mit echtem Kalendertag und gültiger Uhrzeit (Date.parse rechnet 30.02. bzw. 24:00 still auf den Folgetag um, 18.10.2026)
-const validStamp = (x) => { const mm = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(x)); return !!mm && isCalendarDate(mm[1]) && (mm[2] === undefined || (+mm[2] < 24 && +mm[3] < 60 && (mm[4] === undefined || +mm[4] < 60))); };
+// verankert (20.10.2026: „2026-10-17 08:00 PST“ wurde über Date.parse still angenommen); nur ISO mit optionalen Sekunden/Bruchteilen und Zeitzone
+const validStamp = (x) => { const mm = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/i.exec(String(x)); return !!mm && isCalendarDate(mm[1]) && (mm[2] === undefined || (+mm[2] < 24 && +mm[3] < 60 && (mm[4] === undefined || +mm[4] < 60))); };
 const envParam = (url) => {
   const raw = url.searchParams.get('environment'); if (raw === null || raw.trim() === '') return 'production';
   const v = raw.trim().toLowerCase(); if (v === 'test' || v === 'production') return v;
