@@ -374,7 +374,12 @@ export async function acceptInvite(env, request, body, ctx = null) {
   }
   const user = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(row.user_id).first();
   // Neues Passwort ersetzt nicht den zweiten Faktor: mit eingeschalteter Zwei-Faktor-Anmeldung erst nach dem Code anmelden
-  if (user.totp_enabled_at) return { second_factor: 'totp', challenge: await createChallenge(env, user.id, ph) };
+  // Passwort ist schon gesetzt und alle Anmeldungen beendet – auch ohne eingegebenen Code protokollieren (vorher fehlte der Eintrag, 20.10.2026);
+  // eigene Aktion, weil invite.accept als Anmeldung zählt
+  if (user.totp_enabled_at) {
+    await audit(env, user.id, 'password.set_by_invite', user.id, null);
+    return { second_factor: 'totp', challenge: await createChallenge(env, user.id, ph) };
+  }
   const cookie = await createSession(env, row.user_id, request, ph, true);
   await audit(env, user.id, 'invite.accept', user.id, null); // zählt als Anmeldung (Benutzerliste „Letzte Anmeldung“)
   await noteLoginDevice(env, ctx, user, request, body.device_id);

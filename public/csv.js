@@ -89,7 +89,8 @@ export function inviteExpired(u, nowIso = new Date().toISOString()) {
 export function usersCsv(us, t, ws, d) {
   return toCsv([t('display_name'), t('username'), t('role'), t('workshop'), t('environment'), t('status'), t('tf_chip'), t('uc_push'), t('last_login')],
     us.map((u) => [u.display_name, u.username, t('role_' + u.role), u.workshop_site ? ws(u.workshop_site) : '', u.environment === 'test' ? t('env_testname') : t('env_prod'),
-      !u.active ? t('inactive') : !u.has_password ? t('dq_invite_pending') + (inviteExpired(u) ? ` (${t('inv_expired')})` : '') : u.active ? t('active') : t('inactive'), u.has_totp ? t('uc_yes') : t('uc_no'), u.push_devices || 0, u.last_login ? d(u.last_login) : '']));
+      (!u.active ? t('inactive') : !u.has_password ? t('dq_invite_pending') + (inviteExpired(u) ? ` (${t('inv_expired')})` : '') : t('active'))
+        + (u.active && u.locked_until && String(u.locked_until) > new Date().toISOString() ? ` (${t('locked_until')} ${d(u.locked_until)})` : ''), u.has_totp ? t('uc_yes') : t('uc_no'), u.push_devices || 0, u.last_login ? d(u.last_login) : '']));
 }
 // Mängelstatistik: je Prüfpunkt bzw. je Fahrzeug (alle Fahrzeuge mit Kontrollen im Zeitraum, auch ohne Mangel).
 // label(k) = Prüfpunkt-Bezeichnung in der App-Sprache, d(iso) = Datum; leere Zelle = kein Wert.

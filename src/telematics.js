@@ -14,8 +14,9 @@ export async function telematicsOverview(env, user, query = {}) {
       FROM telematics_unmatched t LEFT JOIN vehicles v ON v.id=t.candidate_vehicle_id ORDER BY t.last_seen DESC LIMIT 501`).all(),
     env.DB.prepare(`SELECT m.provider, m.external_id, m.vehicle_id, v.plate, m.evidence, m.confirmed_at, u.display_name AS confirmed_by_name
       FROM telematics_mappings m JOIN vehicles v ON v.id=m.vehicle_id LEFT JOIN users u ON u.id=m.confirmed_by ORDER BY v.plate`).all(),
-    // Fahrzeuge, nicht Zeilen (ein Fahrzeug mit zwei Anbietern zählte doppelt, 18.10.2026); nur aktive, bewertete wie `positions`
-    env.DB.prepare(`SELECT COUNT(DISTINCT t.vehicle_id) AS vehicles, MAX(t.received_at) AS last_received FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id AND v.active=1 AND v.eval_excluded=0`).first(),
+    // Fahrzeuge, nicht Zeilen (ein Fahrzeug mit zwei Anbietern zählte doppelt, 18.10.2026); nur aktive, bewertete wie `positions`;
+    // nur mit GPS-Zeit (Stand ohne gps_time erscheint in der Liste als „keine Telematikdaten“ – Kachel zählte ihn mit, 20.10.2026)
+    env.DB.prepare(`SELECT COUNT(DISTINCT CASE WHEN t.gps_time IS NOT NULL THEN t.vehicle_id END) AS vehicles, MAX(t.received_at) AS last_received FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id AND v.active=1 AND v.eval_excluded=0`).first(),
     // Zugeordnete Geräte, die zuletzt ein anderes Kennzeichen gemeldet haben (gleiche Regel wie Datenqualität telematics_plate_mismatch),
     // und Geräte, deren letzter km-Stand kleiner ist als der davor erfasste oder größer als ein später erfasster ohne Begründung
     // (gleiche Regel wie Datenqualität telematics_km_rejected, beide Richtungen seit 18.10.2026) – eine Abfrage;

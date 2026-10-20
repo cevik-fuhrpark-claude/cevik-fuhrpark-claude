@@ -114,8 +114,9 @@ export function localizedBody(n, lang) {
 const REPORTER_KINDS = ['received', 'rejected', 'priority_changed', 'forwarded', 'released', 'safety_lock_lifted', 'comment'];
 const KINDS_BY_ROLE = {
   driver: REPORTER_KINDS,
-  dispatch: ['created', ...REPORTER_KINDS, 'waiting_parts'],
-  workshop: ['created', ...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away'],
+  // „Neue Meldung“ erreicht Disposition/Werkstatt nur dringend (nicht abschaltbar) – die Abwahl war wirkungslos (20.10.2026)
+  dispatch: [...REPORTER_KINDS, 'waiting_parts'],
+  workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away'],
   viewer: [],
 };
 export function mutableKindsFor(role) { const k = KINDS_BY_ROLE[role]; return k ? MUTABLE_KINDS.filter((x) => k.includes(x)) : MUTABLE_KINDS; }

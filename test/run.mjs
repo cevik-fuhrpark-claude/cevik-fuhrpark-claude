@@ -12227,7 +12227,8 @@ await test('Fehlersuche 18.10. (13): Telematik-Nachlieferung mehrerer Tage ohne 
   // 3. Fahrzeug mit zwei Anbietern zählt einmal
   await an.req('POST', '/api/integration/v1/telematics', { provider: 'yellowfox', items: [{ external_id: 'YF-9', vin: 'WMA15SZZ2HM722774', gps_time: new Date().toISOString(), km: 100500 }] }, H);
   const ov = (await U.fleet.get('/api/telematics')).data;
-  eq(ov.latest.vehicles, 2, 'zwei Fahrzeuge, nicht drei Zeilen ' + JSON.stringify(ov.latest));
+  // seit 20.10.2026 zählt die Kachel nur Stände mit GPS-Zeit (WDB…317 hat nur einen zeitlosen Stand → in der Liste „keine Telematikdaten“)
+  eq(ov.latest.vehicles, 1, 'ein Fahrzeug mit GPS-Zeit, nicht zwei Zeilen ' + JSON.stringify(ov.latest));
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!app.includes("b.dataset.unmap.split('|')"), 'Zuordnung aufheben trennt nur am ersten „|“');
   // 4. Befundtexte
@@ -14847,6 +14848,72 @@ await test('Fehlersuche 20.10. (11): durchgeführter Rückruf ohne Frist, Fahrer
   ok(app.includes("if (sev && !r.items.some((i) => i.severity === sev)) { S.dqSev = ''; sev = ''; }"), 'Schweregrad verworfen');
   ok(app.includes(".filter((k) => k !== 'driver' || isMgr() || S.me.role === 'dispatch')"), 'Zeitleiste ohne Fahrer-Filter für Werkstatt/Lesezugriff');
   ok((await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8').includes('const sinceNr = berlinDate('), 'Akte: Berliner Tag');
+});
+
+await test('Fehlersuche 20.10. (12): Leerlauf mehrere Tabs/Minutentakt, Einladung in Datenqualität wie Benutzerliste, Passwort per Link mit 2FA protokolliert, Telematik (Prüffall erledigt, lange Geräte-ID, Kachel), Agent „nicht zugestellt“ erledigt, Kontrolle/Datei = Bewegung, Hilfe-Korrekturen', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const app = rd('public/app.js'), i18n = rd('public/i18n.js');
+  // 1. Leerlauf: Ping höchstens minütlich (Server-Spielraum 60 s), Bedienung tab-übergreifend geteilt
+  ok(app.includes("now - lastApiAt > Math.min(60000, ms / 3)) api('GET', '/api/me')") && !app.includes('Math.min(10 * 60000, ms / 3)'), 'Minutentakt');
+  ok(app.includes("localStorage.setItem('cfp_last_activity'") && (app.match(/if \(ms\) syncActivity\(\);/g) || []).length === 2, 'gemeinsamer Zeitpunkt');
+  // 2. Datenqualität: entwerteter Link (Deaktivieren/Aktivieren) gilt als abgelaufen wie in der Benutzerliste
+  const nu = await F.post('/api/users', { username: 'dq.einl', display_name: 'DQ Einladung', role: 'driver', environment: 'test' }); eq(nu.status, 201, JSON.stringify(nu.data));
+  const dqInv = async () => (await F.get('/api/admin/data-quality')).data.items.find((i) => i.check === 'invite_pending' && i.detail_args && i.detail_args.name === 'DQ Einladung');
+  eq((await dqInv()).detail_args.expired, false, 'gültiger Link');
+  eq((await U.own.patch(`/api/users/${nu.data.id}`, { active: false })).status, 200); eq((await U.own.patch(`/api/users/${nu.data.id}`, { active: true })).status, 200);
+  eq((await dqInv()).detail_args.expired, true, 'entwertet = abgelaufen');
+  eq((await F.get('/api/users')).data.users.find((u) => u.id === nu.data.id).invite_expires_at ?? null, null, 'Benutzerliste ebenso');
+  // 3. Passwort per Einladungslink bei eingeschalteter 2FA: eigener Protokolleintrag (kein invite.accept = keine Anmeldung)
+  ok(rd('src/auth.js').includes("await audit(env, user.id, 'password.set_by_invite', user.id, null);"), 'Protokoll');
+  const I = await import('../public/i18n.js'); ok(I.auditActionLabel('en', 'password.set_by_invite').startsWith('Password set'), 'Bezeichnung EN');
+  // 4. Telematik: über FIN erkanntes Gerät erledigt Prüffall auch bei abgewiesenem Stand; Geräte-ID > 80 Zeichen abgewiesen; Kachel nur mit GPS-Zeit
+  const H = { authorization: 'Bearer integration-token-xyz' }; const an = U.own;
+  const post = (items) => an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items }, H);
+  eq((await post([{ external_id: 'D3', plate: 'XX-YY 1', gps_time: new Date(Date.now() - 6e4).toISOString() }])).data.unmatched, 1);
+  const fut = await post([{ external_id: 'D3', vin: 'WMA15SZZ2HM722774', gps_time: new Date(Date.now() + 3600e3).toISOString(), lat: 51, lon: 7 }]);
+  eq(fut.data.rejected, 1, JSON.stringify(fut.data));
+  ok(!(await F.get('/api/telematics')).data.unmatched.some((u) => u.external_id === 'D3'), 'Prüffall erledigt');
+  const long = 'L'.repeat(80); const lr = await post([{ external_id: long + 'A', plate: 'XX-YY 2' }, { external_id: long + 'B', plate: 'XX-YY 3' }]);
+  eq(lr.data.rejected, 2, JSON.stringify(lr.data)); eq(db.prepare("SELECT COUNT(*) AS n FROM telematics_unmatched WHERE external_id LIKE 'LLLL%'").get().n, 0, 'nicht gekürzt gespeichert');
+  eq((await post([{ external_id: 'D4', vin: 'WDB9630051L917317' }])).data.matched, 1, 'Stand ohne GPS-Zeit');
+  const ov = (await F.get('/api/telematics')).data;
+  ok(ov.positions.some((p) => p.plate === 'SZ-KC 5515' && !p.gps_time), 'Liste: keine Daten'); eq(ov.latest.vehicles, 0, 'Kachel zählt ihn nicht');
+  // 5. Agent: „dringend nicht zugestellt“ erledigt, sobald die Person den Vorgang bearbeitet hat bzw. der Vorgang abgeschlossen ist
+  const { agentBasics } = await import('../src/agent.js');
+  const cid = await newCase(); eq((await cmd(F, cid, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  const t0 = new Date(Date.now() - 6e4).toISOString();
+  db.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status) VALUES ('nz1','test',?,?,'k-nz1','approved',1,'T','B',?,'no_subscription')`).run(U.ws.id, cid, t0);
+  ok((await agentBasics(e, 'test')).undelivered.some((x) => x.case_id === cid), 'vorher gemeldet');
+  eq((await cmd(U.ws, cid, 'start_repair')).status, 200);
+  ok(!(await agentBasics(e, 'test')).undelivered.some((x) => x.case_id === cid), 'nach eigener Bearbeitung erledigt');
+  // 6. Kontrolle nach Reparatur und Datei-Upload ändern „zuletzt geändert“
+  const rid = await toRepair(); const old = '2026-01-01T00:00:00.000Z';
+  db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(old, rid);
+  const keys = (await U.ws.get('/api/meta')).data.checklist.map((i) => i.key);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: rid, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })) })).status, 201);
+  ok(db.prepare('SELECT updated_at FROM cases WHERE id=?').get(rid).updated_at > old, 'Kontrolle');
+  db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(old, rid);
+  const png = concatBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.getRandomValues(new Uint8Array(200)));
+  eq((await U.ws.req('POST', `/api/cases/${rid}/files`, png, { 'content-type': 'image/png', 'x-filename': 'a.png' })).status, 201);
+  ok(db.prepare('SELECT updated_at FROM cases WHERE id=?').get(rid).updated_at > old, 'Datei');
+  // 7. Push-Abwahl „Neue Meldung“ nur, wo sie wirkt; Reaktionsfrist „kritisch“ = sofort
+  const { mutableKindsFor } = await import('../src/notify.js');
+  ok(!mutableKindsFor('workshop').includes('created') && !mutableKindsFor('dispatch').includes('created') && mutableKindsFor('fleet').includes('created'), 'Abwahl');
+  ok(app.includes("p === 'kritisch' ? `<td class=\"small muted\">${esc(t('sla_immediate'))}</td>`"), 'kritisch sofort');
+  // 8. Zeitleiste: künftiger Vertragsbeginn erst ab dem Tag; Vorgangstext 300 Zeichen (Übersetzung), Kürzung in der App
+  const fd = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + 30 * 864e5).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Zukunft-Leasing', evidence: 'v', start_date: fd })).status, 201);
+  ok(!(await F.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`)).data.items.some((i) => i.type === 'contract' && i.partner === 'Zukunft-Leasing'), 'kein künftiger Beginn');
+  ok(rd('src/vehicles.js').includes('text: c.description.slice(0, 300), origin') && app.includes('esc(clipTxt(cDesc(x.text), 140))'), 'Zeitleiste übersetzt');
+  // 9. Oberfläche/Hilfe
+  ok(app.includes("'dqSite', 'claimSite', 'ctSite', 'drvSite', 'tachoSite']) delete S[k];"), 'Standard-Standort für alle Filter');
+  ok(app.includes('const rep = open.filter((c) => recentRepeat(c));'), 'Werkstatt-Zähler wie Liste');
+  ok(i18n.includes('Im Reiter „Management“ lassen sich die Befunde') && i18n.includes('In the “Management” tab, findings'), 'Befund-Filter-Ort');
+  ok(!i18n.includes('„Aktivieren“ macht es rückgängig') && !i18n.includes('“Activate” reverses it'), 'Aktivieren nicht voll umkehrbar');
+  ok(i18n.includes('Konten der Disposition oder Fuhrparkleitung: den Inhaber'), 'Passwort vergessen');
+  const { usersCsv } = await import('../public/csv.js'); const tl = (k) => I.STRINGS.de[k] || k;
+  ok(usersCsv([{ display_name: 'A', username: 'a', role: 'driver', environment: 'test', has_password: 1, active: 1, locked_until: '2999-01-01T00:00:00Z' }], tl, (x) => x, (x) => x).includes('gesperrt bis'), 'CSV nennt Sperre');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -332,7 +332,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   const items = [];
   const add = (type, at, data) => { if (at && (!want.size || want.has(type))) items.push({ type, at, ...data }); };
   for (const c of d.cases) {
-    add('case', c.created_at, { case_id: c.id, case_no: c.case_no, priority: c.priority, status: c.status, text: c.description.slice(0, 140), origin: c.origin });
+    add('case', c.created_at, { case_id: c.id, case_no: c.case_no, priority: c.priority, status: c.status, text: c.description.slice(0, 300), origin: c.origin });
     if (c.closed_at) add('case_closed', c.closed_at, { case_id: c.id, case_no: c.case_no, status: c.status });
   }
   for (const i of d.inspections) add('inspection', i.created_at, { inspection_kind: i.kind, result: i.result, km: i.odometer_km, case_id: i.case_id, by: i.performed_by_name, ...(i.performed_by_name_hidden ? { by_hidden: true } : {}) });
@@ -364,7 +364,8 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
       .bind(vehicleId, envName, cap).all()).results;
     for (const x of (d.tacho_downloads || []).filter((y) => !y.cancelled_at)) add('tacho', x.downloaded_on, { evidence: x.evidence, by: x.created_by_name });
     for (const c of d.contracts || []) {
-      add('contract', c.start_date || c.created_at, { contract_event: 'start', contract_kind: c.kind, partner: c.partner, evidence: c.evidence });
+      // künftiger Vertragsbeginn erst ab dem Tag selbst (stand sonst über heutigen Ereignissen; Hinweis-Ablauf ebenso nur vergangen)
+      if (!c.start_date || c.start_date <= berlinDate()) add('contract', c.start_date || c.created_at, { contract_event: 'start', contract_kind: c.kind, partner: c.partner, evidence: c.evidence });
       add('contract', c.ended_on, { contract_event: 'end', contract_kind: c.kind, partner: c.partner, evidence: c.end_note });
     }
     // Versicherungsfälle (nur Leitung): Meldung an den Versicherer und Erstattung laut Abrechnung – nur gespeicherte Daten

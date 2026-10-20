@@ -402,11 +402,22 @@ function clearOfflineData() {
 // nächsten Aufruf ab – bis dahin stünde auf einem geteilten Tablet die Ansicht der vorherigen Person. Die App leert den Bildschirm
 // nach derselben Zeit ohne Bedienung selbst. Umgekehrt hält Bedienung ohne Serveraufruf (z. B. langes Tippen) die Anmeldung wach.
 const idleLimitMs = () => { const m = S.me ? Number(S.me.idle_logout_min) : 0; return m > 0 ? m * 60000 : 0; };
+// Mehrere Tabs teilen sich die Sitzung: Bedienung in einem Tab hält auch die anderen wach (sonst meldet ein ungenutzter zweiter Tab
+// nach Ablauf die gemeinsame Sitzung ab, während im ersten gearbeitet wird). Gedrosselt gespiegelt in localStorage.
+let sharedActivityAt = 0;
+function syncActivity() {
+  try { const v = Number(localStorage.getItem('cfp_last_activity')) || 0; if (v > lastActivity && v <= Date.now() + 5000) lastActivity = v; } catch {}
+}
+function shareActivity(now) {
+  if (now - sharedActivityAt < 5000) return; sharedActivityAt = now;
+  try { localStorage.setItem('cfp_last_activity', String(now)); } catch {}
+}
 function noteActivity(ev) {
   const ms = idleLimitMs(), now = Date.now();
+  if (ms) syncActivity();
   if (ms && now - lastActivity > ms) { checkIdle(); return; } // abgelaufen: nicht mehr verlängern
-  lastActivity = now; if (ms && !(ev && ev.target && ev.target.closest && ev.target.closest('#idlebar'))) idleWarn(null); // Leiste selbst: Knopf soll klickbar bleiben
-  if (ms && !S.offlineStart && navigator.onLine !== false && now - lastApiAt > Math.min(10 * 60000, ms / 3)) api('GET', '/api/me').catch(() => {});
+  lastActivity = now; if (ms) shareActivity(now); if (ms && !(ev && ev.target && ev.target.closest && ev.target.closest('#idlebar'))) idleWarn(null); // Leiste selbst: Knopf soll klickbar bleiben
+  if (ms && !S.offlineStart && navigator.onLine !== false && now - lastApiAt > Math.min(60000, ms / 3)) api('GET', '/api/me').catch(() => {});
 }
 // Vorwarnung 60 s vor der Abmeldung mit „Angemeldet bleiben“ (WCAG 2.2.1: Zeitbegrenzung ankündigen und verlängern lassen)
 function idleWarn(left) {
@@ -422,6 +433,7 @@ function idleWarn(left) {
 }
 async function checkIdle() {
   const ms = idleLimitMs();
+  if (ms) syncActivity();
   const left = ms ? ms - (Date.now() - lastActivity) : Infinity;
   idleWarn(left > 0 && left <= 60000 && !idleBusy ? left : null);
   if (!ms || idleBusy || left > 0) return;
@@ -684,7 +696,8 @@ async function workshopBoard() {
   const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= bDate(1));
   if (partsDue.length) lanes.unshift(['ws_parts_due', partsDue]);
   if (passed.length) lanes.unshift(['todo_plan_passed', passed]);
-  const rep = open.filter((c) => c.status !== 'gemeldet' && recentRepeat(c));
+  // wie die verlinkte Liste (repeat_days=3) inkl. Vorab-Info („gemeldet“ mit Vorschlag dieser Werkstatt) – vorher zählte die Startseite n, die Liste n+1 (20.10.2026)
+  const rep = open.filter((c) => recentRepeat(c));
   if (rep.length) lanes.unshift(['ws_repeat', rep]);
   let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
@@ -3335,7 +3348,7 @@ async function viewTimeline(id, fArg) {
   const caseLink = (x) => (x.case_id ? ` · <a href="#/cases/${esc(x.case_id)}">${esc(x.case_no || t('details'))}</a>` : '');
   const line = (x) => {
     switch (x.type) {
-      case 'case': return [x.priority === 'kritisch' ? 'p-kritisch' : '', `${esc(t('tl_case'))}: ${esc(cDesc(x.text))}`, `<span class="chip ${esc(x.priority)}">${esc(t('prio_' + x.priority))}</span> ${esc(t('st_' + x.status))}${caseLink(x)}`];
+      case 'case': return [x.priority === 'kritisch' ? 'p-kritisch' : '', `${esc(t('tl_case'))}: ${esc(clipTxt(cDesc(x.text), 140))}`, `<span class="chip ${esc(x.priority)}">${esc(t('prio_' + x.priority))}</span> ${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'case_closed': return ['', `${esc(t('tl_case_closed'))}`, `${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'inspection': return [x.result === 'maengel' ? 'p-mittel' : '', `${esc(t(x.inspection_kind === 'abfahrt' ? 'departure_check' : 'inspection'))}: ${esc(t(x.result === 'ok' ? 'ok' : 'defect'))}`, `${esc(pnm(x.by, x.by_hidden) || '')}${km(x.km)}${caseLink(x)}`];
       case 'odometer': return [x.note ? 'p-mittel' : '', `${esc(t('km'))}${km(x.km)}`, `${esc(odoSrc(x.source))}${x.note ? ' · ' + esc(x.note) : ''}`];
@@ -3801,7 +3814,7 @@ function viewMore(open) {
         await api('PATCH', '/api/me', { home_site: hs.value });
         S.me.home_site = hs.value || null;
         // neue Voreinstellung gilt sofort für alle Standortfilter dieser Sitzung
-        for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite']) delete S[k];
+        for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'claimSite', 'ctSite', 'drvSite', 'tachoSite']) delete S[k];
         toast('✓');
       } catch (err) { toast(err.message, true); }
     };
@@ -3981,7 +3994,7 @@ async function viewSettings() {
   // Kommazahlen nur bei Euro/mm (Prüfung „2.000 mehrdeutig“ am Feld); ganze Zahlen (Tage, km, Minuten) numerisch – „15.000“ km = 15000 (Server)
   const DEC = ['workshop_hourly_rate_net', 'tire_warn_tread_mm', 'repair_cost_limit_net'];
   const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="${DEC.includes(k) ? 'decimal' : 'numeric'}"${s.defaults && s.defaults[k] !== undefined ? ` placeholder="${esc(fmtNum(s.defaults[k]))}"` : ''} value="${esc(shown(v[k]))}">`; // Platzhalter = Standard bei leerem Feld (Server)
-  const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
+  const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr>${['triage', 'ack'].map((k) => `<tr><td>${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => p === 'kritisch' ? `<td class="small muted">${esc(t('sla_immediate'))}</td>` /* Agent meldet kritische Vorgänge sofort – eine Frist wirkte nie (20.10.2026) */ : `<td><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</table></div>`).join('');
   render(`<h1>${esc(t('settings'))}</h1>${helpLink('settings')}<div id="sinv"></div><form id="sf" class="panel"><label class="check"><input type="checkbox" id="tmr"${v.test_master_readonly === '1' ? ' checked' : ''}> ${esc(t('test_master_readonly'))}</label><p class="small muted">${esc(t('test_master_readonly_hint'))}</p>${field('idle_logout_workshop_min', t('idle_ws'))}${field('idle_logout_other_min', t('idle_other'))}<p class="small muted">${esc(t('idle_hint'))}</p>${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('tire_warn_age_years', t('tire_warn_age'))}<p class="small muted">${esc(t('tire_age_hint'))}</p>${field('fine_warn_days', t('fine_warn'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}${field('tacho_warn_days', t('tacho_warn'))}${field('contract_warn_days', t('ct_warn'))}<p class="small muted">${esc(t('warn_zero_hint'))}</p>${field('claim_followup_days', t('claim_followup'))}${field('case_stale_days', t('case_stale_setting'))}${field('user_unused_days', t('unused_setting'))}<p class="small muted">${esc(t('unused_setting_hint'))}</p>${field('repair_cost_limit_net', t('cost_limit_setting'))}<p class="small muted">${esc(t('cost_limit_setting_hint'))}</p><h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">${esc(t('import_vehicle_cols'))} · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted" id="tirecols">${esc(t('import_tire_cols'))}</p><input type="file" id="tcsv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>

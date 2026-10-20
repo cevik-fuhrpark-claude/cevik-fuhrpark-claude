@@ -258,7 +258,9 @@ export async function integrationRouter(request, env, ctx, url) {
       const txt = (x) => (typeof x === 'string' ? x.trim() : typeof x === 'number' && Number.isFinite(x) ? String(x) : x === undefined || x === null ? '' : null);
       const e0 = txt(it.external_id); const v0 = txt(it.vin); const p0 = txt(it.plate);
       if (e0 === null || v0 === null || p0 === null) return { it, ext: '', vin: null, plate: null };
-      return { it, ext: e0.slice(0, 80), vin: v0 ? normalizeVin(v0) : null, plate: p0 ? p0.toUpperCase().slice(0, 20) : null };
+      // Geräte-ID länger als 80 Zeichen: abgewiesen statt still gekürzt (zwei lange IDs mit gleichem Anfang galten sonst als ein Gerät, 20.10.2026)
+      if (e0.length > 80) return { it, ext: '', vin: null, plate: null };
+      return { it, ext: e0, vin: v0 ? normalizeVin(v0) : null, plate: p0 ? p0.toUpperCase().slice(0, 20) : null };
     });
     const J = (a) => JSON.stringify([...new Set(a.filter(Boolean))]);
     const [maps, byVin, plates, latest] = await Promise.all([
@@ -300,6 +302,9 @@ export async function integrationRouter(request, env, ctx, url) {
         res.unmatched++;
         continue;
       }
+      // Gerät ist über FIN/bestätigte Zuordnung erkannt: Prüffall erledigt, auch wenn dieser Stand gleich wegen der Zeit abgewiesen wird
+      // (vorher blieb der Prüffall stehen und bot weiter „Zuordnung bestätigen“ an, 20.10.2026)
+      matchedExt.add(ext);
       const gpsGiven = it.gps_time !== undefined && it.gps_time !== null && it.gps_time !== '';
       if (gpsGiven && !gps) { res.rejected++; continue; } // ungültige GPS-Zeit: nicht ohne Zeit speichern
       // Keine Rückschritte: ältere GPS-Zeit überschreibt keinen neueren Stand (auch innerhalb desselben Aufrufs)
@@ -330,7 +335,6 @@ export async function integrationRouter(request, env, ctx, url) {
         if (maxSoFar !== undefined && Math.round(km) < maxSoFar) kmRejectedInCall++;
         else { kmMaxInCall.set(vehicleId, Math.round(km)); if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps }); }
       }
-      matchedExt.add(ext);
       res.matched++;
     }
     const X = (k) => `json_extract(value,'$.${k}')`;

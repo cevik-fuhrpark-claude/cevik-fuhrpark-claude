@@ -106,8 +106,11 @@ export async function dataQuality(env, user, envName, query = {}) {
       OR (interval_km IS NOT NULL AND last_done_km IS NULL AND due_km IS NULL AND kind NOT IN ('HU','SP'))`).all(),
     env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, u.display_name, u.active FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles v ON v.id=d.vehicle_id
       WHERE u.environment=? AND v.active=1 AND v.eval_excluded=0 AND (d.valid_to IS NULL OR d.valid_to > ?)`).bind(envName, nowIso()).all(),
-    env.DB.prepare(`SELECT u.id, u.display_name, u.role, MAX(i.expires_at) AS expires_at FROM users u JOIN invites i ON i.user_id=u.id
-      WHERE u.environment=? AND u.active=1 AND u.password_hash IS NULL GROUP BY u.id`).bind(envName).all(),
+    // gültiger Link nach derselben Regel wie die Benutzerliste (nicht entwertet, Aussteller darf dieses Konto noch einladen) – vorher zählte
+    // auch ein beim Deaktivieren entwerteter Link, die Datenqualität zeigte ihn bis zu 7 Tage als offen, die Benutzerliste „abgelaufen“ (20.10.2026)
+    env.DB.prepare(`SELECT u.id, u.display_name, u.role, (SELECT MAX(i.expires_at) FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL
+        AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND (c.role='owner' OR (c.role='fleet' AND u.role IN ('driver','workshop','viewer') AND u.environment=c.environment))))) AS expires_at
+      FROM users u WHERE u.environment=? AND u.active=1 AND u.password_hash IS NULL AND EXISTS (SELECT 1 FROM invites i WHERE i.user_id=u.id)`).bind(envName).all(),
     env.DB.prepare(`SELECT d.id, d.display_name, d.user_id, u.active AS u_active,
       EXISTS(SELECT 1 FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fuehrerschein' AND x.superseded=0) AS has_license,
       EXISTS(SELECT 1 FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0) AS has_card,
@@ -292,8 +295,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (d.has_card && !d.has_download) addD('driver_card_no_download', d);
   }
   for (const u of acc.results) items.push({ check: 'driver_account_no_file', severity: CHECKS.driver_account_no_file, vehicle_id: null, plate: null, detail: u.display_name });
-  for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}`,
-    detail_args: { name: u.display_name, role: u.role, expired: u.expires_at < nowIso() } });
+  for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${!u.expires_at || u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}`,
+    detail_args: { name: u.display_name, role: u.role, expired: !u.expires_at || u.expires_at < nowIso() } });
   const rank = { fehler: 0, luecke: 1, hinweis: 2 };
   items.sort((a, b) => rank[a.severity] - rank[b.severity] || a.check.localeCompare(b.check) || String(a.plate || a.driver_name).localeCompare(String(b.plate || b.driver_name)));
   // optional nur ein Standort laut Fahrzeugstamm: fahrzeugbezogene Befunde dieses Standorts; Personen-/Konto-/Einladungsbefunde

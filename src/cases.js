@@ -1381,6 +1381,8 @@ export async function submitInspection(env, ctx, user, envName, body) {
         // Backlog 89 (18.10.2026): Vermerk zusätzlich als Code/Werte, damit die App ihn ohne Textmuster übersetzt (note bleibt für Suche/CSV/Protokoll)
         JSON.stringify({ inspection_id: id, followups: followups.map((f) => f.case_no), code: defects.length ? 'inspection_defects' : 'inspection_ok', defects: defects.length,
           ...(kmRejected ? { km_rejected: kmRejected.next_km !== undefined ? { km: odo, next_km: kmRejected.next_km } : { km: odo, previous_km: kmRejected.previous_km } } : {}) }), now));
+      // Kontrolle ist Bewegung am Vorgang („Ohne Bewegung“, Sortierung „zuletzt geändert“) – vorher blieb updated_at stehen (20.10.2026)
+      stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(now, c.id));
     }
     if (repeats.length) { // zwei Anweisungen unabhängig von der Anzahl
       const rep = repeats.map(({ open, d }) => ({ id: uuid(), case_id: open.id, status: open.status, version: open.version, note: `Erneut festgestellt (Abfahrtskontrolle): ${d.note}`,
@@ -1459,6 +1461,8 @@ export async function uploadFile(env, user, envName, caseId, request) {
     await env.FILES.delete(key);
     throw e;
   }
+  // neue Datei ist Bewegung am Vorgang („Ohne Bewegung“, „zuletzt geändert“ – 20.10.2026)
+  await env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(nowIso(), c.id).run();
   return { id, duplicate: false, content_type: type, size: buf.length };
 }
 

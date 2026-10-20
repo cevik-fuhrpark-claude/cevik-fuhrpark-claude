@@ -111,7 +111,12 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(DISTINCT n.user_id) AS n FROM notifications n
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
      AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 AND n.hidden_at IS NULL
-     AND n.user_id IN (SELECT id FROM users WHERE active=1) GROUP BY n.case_id)) AS undelivered,
+     AND n.user_id IN (SELECT id FROM users WHERE active=1)
+     -- erledigt, wenn der Vorgang abgeschlossen ist oder die Person ihn seitdem selbst bearbeitet hat (vorher meldete der Agent bis 48 h
+     -- „nicht zugestellt – telefonisch informieren“, obwohl die Werkstatt den Auftrag längst übernommen/erledigt hatte, 20.10.2026)
+     AND NOT EXISTS (SELECT 1 FROM cases x WHERE x.id=n.case_id AND x.status IN ('fahrzeug_freigegeben','abgelehnt'))
+     AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=n.case_id AND e.actor_id=n.user_id AND e.created_at >= n.created_at)
+     GROUP BY n.case_id)) AS undelivered,
   (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded`;
 
 export async function agentBasics(env, environment) {
