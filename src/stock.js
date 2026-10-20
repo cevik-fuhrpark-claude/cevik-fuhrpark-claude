@@ -380,9 +380,12 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   if (!diffs.length) { try { await env.DB.batch([markCounted, ...allGuard]); } catch (e) { if (isCheck(e)) throw changed(); throw e; } await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
   // je Korrektur: danach muss der Bestand genau der Zählmenge entsprechen – sonst (parallele Inventur/Entnahme) nichts buchen
   try {
-    await env.DB.batch([markCounted, ...diffs.flatMap((d) => [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
-      VALUES (?,?,?,'korrektur',?,NULL,NULL,NULL,?,?,?,?)`).bind(uuid(), envName, d.item_id, d.delta, `Inventur ${date}`,
-      `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}`, user.id, now)]), ...allGuard]);
+    // alle Korrekturen in EINER Anweisung (21.10.2026: vorher eine je Abweichung – 60 Abweichungen = 67 D1-Abfragen, Budget 50)
+    const dj = JSON.stringify(diffs.map((d) => ({ id: uuid(), item: d.item_id, q: d.delta,
+      n: `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}` })));
+    await env.DB.batch([markCounted, env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
+      SELECT json_extract(j.value,'$.id'),?,json_extract(j.value,'$.item'),'korrektur',json_extract(j.value,'$.q'),NULL,NULL,NULL,?,json_extract(j.value,'$.n'),?,?
+      FROM json_each(?) j`).bind(envName, `Inventur ${date}`, user.id, now, dj), ...allGuard]);
   } catch (e) {
     if (isCheck(e)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
     throw e;
@@ -560,7 +563,11 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   ci.unit = col(['einheit', 'mengeneinheit'], ['me']);
   const QTY_EXCL = /wert|preis|bestell|€|eur/;
   ci.min = col(['mindestbestand', 'mindestmenge', 'meldebestand', 'mindest'], [], QTY_EXCL);
-  ci.price = col(['preis', 'einkaufspreis', 'einzelpreis', 'stückpreis', 'stueckpreis', 'ek', 'netto']);
+  // Netto-Spalten zuerst, Brutto-/MwSt.-Spalten nie als Preis (21.10.2026: „Preis brutto“ vor „Preis netto“ wurde als Nettopreis gebucht, +19 %)
+  const GROSS = /brutto|inkl|mwst|ust/;
+  ci.price = head.findIndex((h, j) => !taken.has(j) && /netto/.test(h) && !GROSS.test(h) && !/wert|summe|gesamt/.test(h) && (/preis/.test(h) || /^ek\b/.test(h) || h === 'netto'));
+  if (ci.price >= 0) taken.add(ci.price);
+  else ci.price = col(['preis', 'einkaufspreis', 'einzelpreis', 'stückpreis', 'stueckpreis', 'ek', 'netto'], [], GROSS);
   ci.loc = col(['lagerort', 'lagerplatz', 'regal', 'ort']);
   ci.qty = col(['bestand', 'anfangsbestand', 'lagerbestand', 'istbestand', 'menge', 'stück', 'stueck', 'anzahl'], [], QTY_EXCL);
   ci.name = col(['bezeichnung', 'artikelbezeichnung', 'artikel', 'name', 'teil']);
@@ -571,7 +578,7 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   const used = new Set(Object.values(ci).filter((i) => i >= 0));
   const ignored = table[0].map((h, i) => (used.has(i) || !String(h || '').trim() ? null : String(h).trim().slice(0, 60))).filter(Boolean);
   const result = { dry_run: !!dryRun, site, created: 0, unchanged: 0, skipped: [], rows: [], ignored_columns: ignored };
-  const seen = new Map(); const stmts = []; const now = nowIso(); const dec = commaDec(user);
+  const seen = new Map(); const newItems = []; const newStock = []; const now = nowIso(); const dec = commaDec(user);
   const get = (cells, i) => (i >= 0 ? String(cells[i] ?? '').trim() : '');
   const pdec = pointDec(user);
   const numOf = (v, field, max) => (v === '' ? null : r3(num(v, { min: 0, max, field, decimalComma: dec, decimalPoint: pdec })));
@@ -603,15 +610,20 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
       result.created++; row.action = 'neu';
       const id = uuid(); row.item_id = id;
       // gleichzeitig angelegt (zweiter Import/Formular): der eindeutige Index weist die Zeile ab → ganzer Stapel abgewiesen, Meldung unten
-      stmts.push(env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, pn, name, unit, min, loc, price, user.id, now, now));
-      if (qty) stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
-        VALUES (?,?,?,'zugang',?,NULL,?,NULL,NULL,'Anfangsbestand (Import)',?,?,NULL)`).bind(uuid(), envName, id, qty, price, user.id, now));
+      newItems.push({ id, pn, name, unit, min, loc, price });
+      if (qty) newStock.push({ id: uuid(), item: id, q: qty, price });
     }
     result.rows.push(row);
   });
-  if (!dryRun && stmts.length) {
-    // ein einziger Stapel = alles oder nichts (20.10.2026: Teilstapel blieben bei späterem UNIQUE-Fehler gebucht, ohne Protokoll)
+  if (!dryRun && newItems.length) {
+    // ein einziger Stapel = alles oder nichts (20.10.2026: Teilstapel blieben bei späterem UNIQUE-Fehler gebucht, ohne Protokoll);
+    // Artikel und Anfangsbestände je in EINER Anweisung (21.10.2026: vorher je Zeile – 100 Artikel mit Bestand = 206 D1-Abfragen, Budget 50)
+    const stmts = [env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
+      SELECT json_extract(j.value,'$.id'),?,?,json_extract(j.value,'$.pn'),json_extract(j.value,'$.name'),json_extract(j.value,'$.unit'),json_extract(j.value,'$.min'),
+        json_extract(j.value,'$.loc'),json_extract(j.value,'$.price'),?,?,? FROM json_each(?) j`).bind(envName, site, user.id, now, now, JSON.stringify(newItems))];
+    if (newStock.length) stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
+      SELECT json_extract(j.value,'$.id'),?,json_extract(j.value,'$.item'),'zugang',json_extract(j.value,'$.q'),NULL,json_extract(j.value,'$.price'),NULL,NULL,'Anfangsbestand (Import)',?,?,NULL
+      FROM json_each(?) j`).bind(envName, user.id, now, JSON.stringify(newStock)));
     try { await env.DB.batch(stmts); } catch (e) {
       if (String(e && e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
       throw e;

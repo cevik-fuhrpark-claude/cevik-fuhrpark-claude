@@ -5,6 +5,7 @@ export const STRINGS = {
   de: {
     fine_prev_driver: "bisher: {n}",
     ev_plaque_month: "(Plakette {m}: fällig bis Monatsende)",
+    ev_husp_rule: "Frist nach StVZO Anlage VIII berechnet (aus der Fahrzeugakte angelegt)",
     // Fuhrparkagent: Schweregrad und Kurzbezeichnung je Befundcode (Management-Panel)
     asev_kritisch: 'Kritisch', asev_handeln: 'Handeln', asev_hinweis: 'Hinweis', asev_info: 'Info', 
     filter_warranty: 'Gewährleistung prüfen', warranty_until: 'Gewährleistung bis (optional)', warranty_hint: 'nur wenn auf Rechnung/vom Lieferanten angegeben', warranty_until_d: 'Gewährleistung bis {d}', vi_warranty: 'Laufende Gewährleistung', vi_warranty_hint: 'Aus früheren Vorgängen dieses Fahrzeugs, am Meldedatum noch gültig – Rückgriff beim Lieferanten/der Werkstatt prüfen, bevor neu bezahlt wird.', vnotes: 'Hinweise zum Fahrzeug', vnotes_none: 'Keine aktiven Hinweise.', vnotes_n: '{n} Hinweis(e)', vnotes_with: 'Mit Hinweisen', vnotes_with_veh: 'Fahrzeuge mit Hinweisen', vnote_add: 'Hinweis hinzufügen', vnote_text: 'Hinweis (z. B. „Ladeetage oben hakt – bekannt“, „Ersatzschlüssel im Büro“)', vnote_for_driver: 'auch für zugeordnete Fahrer auf „Mein Fahrzeug“ anzeigen', vnote_valid: 'Gültig bis (optional)', vnote_valid_hint: 'danach automatisch ausgeblendet (Archiv)', vnote_until: 'bis {d}', vnote_expired: 'abgelaufen am {d}', vnote_driver_chip: 'für Fahrer sichtbar', vnote_archive: 'Erledigt – archivieren', vnote_show_archive: 'Archiv anzeigen', vnote_hide_archive: 'Archiv ausblenden', vnote_archived: 'archiviert', 
@@ -68,6 +69,7 @@ export const STRINGS = {
   uk: {
     fine_prev_driver: "раніше: {n}",
     ev_plaque_month: "(наліпка {m}: до кінця місяця)",
+    ev_husp_rule: "Строк розраховано за StVZO, додаток VIII (створено з картки ТЗ)",
     // Fuhrparkagent: Schweregrad und Kurzbezeichnung je Befundcode (Management-Panel)
     asev_kritisch: 'Критично', asev_handeln: 'Діяти', asev_hinweis: 'Підказка', asev_info: 'Інфо', 
     filter_warranty: 'Перевірити гарантію', warranty_until: 'Гарантія до (необов’язково)', warranty_hint: 'лише якщо вказано в рахунку/постачальником', warranty_until_d: 'Гарантія до {d}', vi_warranty: 'Діюча гарантія', vi_warranty_hint: 'З попередніх заявок цього авто, дійсна на дату повідомлення – перевірте гарантійну вимогу до постачальника/майстерні, перш ніж платити знову.', vnotes: 'Примітки до авто', vnotes_none: 'Немає активних приміток.', vnotes_n: 'Приміток: {n}', vnotes_with: 'З примітками', vnotes_with_veh: 'Авто з примітками', vnote_add: 'Додати примітку', vnote_text: 'Примітка (напр. «верхній ярус заїдає – відомо», «запасний ключ в офісі»)', vnote_for_driver: 'також показувати закріпленим водіям у «Мій транспорт»', vnote_valid: 'Дійсно до (необов’язково)', vnote_valid_hint: 'після цього автоматично приховується (архів)', vnote_until: 'до {d}', vnote_expired: 'завершилося {d}', vnote_driver_chip: 'видно водієві', vnote_archive: 'Виконано – в архів', vnote_show_archive: 'Показати архів', vnote_hide_archive: 'Сховати архів', vnote_archived: 'в архіві', 
@@ -131,6 +133,7 @@ export const STRINGS = {
   en: {
     fine_prev_driver: "previously: {n}",
     ev_plaque_month: "(sticker {m}: due by end of month)",
+    ev_husp_rule: "Due date calculated per StVZO Annex VIII (created from the vehicle file)",
     // Fuhrparkagent: Schweregrad und Kurzbezeichnung je Befundcode (Management-Panel)
     asev_kritisch: 'Critical', asev_handeln: 'Act', asev_hinweis: 'Note', asev_info: 'Info', 
     filter_warranty: 'Check warranty', warranty_until: 'Warranty until (optional)', warranty_hint: 'only if stated on the invoice/by the supplier', warranty_until_d: 'Warranty until {d}', vi_warranty: 'Active warranty', vi_warranty_hint: 'From earlier cases of this vehicle, still valid on the report date – check a warranty claim with the supplier/workshop before paying again.', vnotes: 'Vehicle notes', vnotes_none: 'No active notes.', vnotes_n: '{n} note(s)', vnotes_with: 'With notes', vnotes_with_veh: 'Vehicles with notes', vnote_add: 'Add note', vnote_text: 'Note (e.g. “upper deck sticks – known”, “spare key in the office”)', vnote_for_driver: 'also show to assigned drivers on “My vehicle”', vnote_valid: 'Valid until (optional)', vnote_valid_hint: 'hidden automatically afterwards (archive)', vnote_until: 'until {d}', vnote_expired: 'expired on {d}', vnote_driver_chip: 'visible to drivers', vnote_archive: 'Done – archive', vnote_show_archive: 'Show archive', vnote_hide_archive: 'Hide archive', vnote_archived: 'archived', 

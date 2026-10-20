@@ -7,6 +7,7 @@ import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile } from './fines.js';
 import { siteSelection } from './reports.js';
 import { winterMarks, winterStatus } from './tires.js';
+import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
 export const WARR_CASE_MAX = 20;
 export const WARR_VEH_MAX = 50;
@@ -300,7 +301,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
       AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results
       .map(({ recall_ref, ...m }) => (recall_ref ? { ...m, recall_ref } : m));
     // mehr als 10 fällige Prüfungen/Rückrufe: Gesamtzahl nur dann nachzählen (seltener Fall, keine Zusatzabfrage im Normalfall)
-    const dueTotal = due.length < 10 ? due.length : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=?
+    let dueTotal = due.length < 10 ? due.length : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=?
       AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
@@ -310,9 +311,26 @@ export async function getCaseDetail(env, user, envName, caseId) {
           (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at FROM cases x JOIN
             (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
              UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
-           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT ${WARR_CASE_MAX + 1}) w) AS warranties
+           WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT ${WARR_CASE_MAX + 1}) w) AS warranties,
+        ${HUSP_ONE_SQL}
       FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
+    // HU/SP ohne eigenen Eintrag mit berechenbarer Frist (z. B. SP aus HU + Erstzulassung) wie Übersicht/Werkstattplan/Fahrer-Startseite
+    // (21.10.2026: überfällige berechnete SP fehlte im Vorgang – Werkstatt erfuhr nicht, dass sie beim selben Aufenthalt fällig ist). Nichts angelegt;
+    // Eingaben aus derselben Abfrage (Abfragebudget Vorgangsdetail)
+    {
+      const x = huSpInputFromRow(kmn);
+      if (x && x.v.active && !x.v.eval_excluded) {
+        const h = huSpFor(x, berlinDate(), 0); let added = false;
+        for (const kind of ['HU', 'SP']) {
+          const y = kind === 'HU' ? h.hu : h.sp;
+          if (!y || !y.due || y.status === 'nicht_sp_pflichtig' || y.due > soon) continue;
+          if (x.rules.some((r) => r.kind === kind && r.next_due_date)) continue;
+          due.push({ kind, next_due_date: y.due, computed: true }); dueTotal++; added = true;
+        }
+        if (added) due.sort((a, b) => (a.next_due_date == null) - (b.next_due_date == null) || String(a.next_due_date).localeCompare(String(b.next_due_date)));
+      }
+    }
     const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver })) : [];
     // Laufende Gewährleistung aus früheren Vorgängen dieses Fahrzeugs (am Meldedatum noch gültig) – Hinweis: Rückgriff beim Lieferanten prüfen
     const warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : [];

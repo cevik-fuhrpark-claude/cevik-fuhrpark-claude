@@ -233,11 +233,24 @@ export async function loadHuSpInputs(env, vehicleIds = null) {
   const byV = new Map(vehicles.map((v) => [v.id, { v, rules: [], events: [] }]));
   for (const r of rules) byV.get(r.vehicle_id)?.rules.push(r);
   for (const e of events) byV.get(e.vehicle_id)?.events.push(e);
-  // Altbestand ohne Ereignis: letzte Durchführung aus der Regel übernehmen (keine erfundenen Daten)
-  for (const x of byV.values()) for (const r of x.rules) {
+  for (const x of byV.values()) addRuleEvents(x);
+  return byV;
+}
+// Altbestand ohne Ereignis: letzte Durchführung aus der Regel übernehmen (keine erfundenen Daten)
+function addRuleEvents(x) {
+  for (const r of x.rules) {
     if (r.last_done_date && !x.events.some((e) => e.kind === r.kind && e.done_date === r.last_done_date)) x.events.push({ vehicle_id: r.vehicle_id, kind: r.kind, done_date: r.last_done_date, evidence: r.evidence, result: null });
   }
-  return byV;
+  return x;
+}
+// Eingaben eines Fahrzeugs als Spalten einer bestehenden Abfrage (Vorgangsdetail, Abfragebudget – 21.10.2026): SQL-Teile und Auswertung.
+// ?1 = Fahrzeug-ID. Gleiche Felder wie loadHuSpInputs.
+export const HUSP_ONE_SQL = `(SELECT json_object('id', v.id, 'plate', v.plate, 'kind', v.kind, 'zgm_class', v.zgm_class, 'zgm_kg', v.zgm_kg, 'first_registration', v.first_registration, 'active', v.active, 'eval_excluded', v.eval_excluded) FROM vehicles v WHERE v.id=?1) AS husp_v,
+  (SELECT json_group_array(json_object('id', m.id, 'vehicle_id', m.vehicle_id, 'kind', m.kind, 'next_due_date', m.next_due_date, 'due_source', m.due_source, 'planned_date', m.planned_date, 'last_done_date', m.last_done_date, 'evidence', m.evidence)) FROM maintenance_rules m WHERE m.vehicle_id=?1 AND m.kind IN ('HU','SP')) AS husp_rules,
+  (SELECT json_group_array(json_object('vehicle_id', e.vehicle_id, 'kind', e.kind, 'done_date', e.done_date, 'evidence', e.evidence, 'result', e.result)) FROM maintenance_events e WHERE e.vehicle_id=?1 AND e.kind IN ('HU','SP')) AS husp_events`;
+export function huSpInputFromRow(row) {
+  if (!row || !row.husp_v) return null;
+  return addRuleEvents({ v: JSON.parse(row.husp_v), rules: JSON.parse(row.husp_rules || '[]'), events: JSON.parse(row.husp_events || '[]') });
 }
 
 export function huSpFor(x, today, warnDays) {

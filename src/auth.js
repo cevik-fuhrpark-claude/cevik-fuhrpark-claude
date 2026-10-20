@@ -154,6 +154,7 @@ async function reserveAttempt(env, username) {
       const u = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
       if (u) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(u.id).run();
       await audit(env, null, 'login.locked', u ? u.id : null, { username, minutes: LOCK_MINUTES });
+      const e = lockedErr(); e.newLock = true; throw e; // Sperre entsteht durch diesen Aufruf
     }
     throw lockedErr();
   }
@@ -192,8 +193,10 @@ export async function reauthLocked(env, user) {
 }
 async function reauthReserve(env, user, username) {
   try { await reserveAttempt(env, username); } catch (e) {
-    // Sperre durch zu viele gleichzeitige Versuche: wie bei reauthFailed alle Anmeldungen beenden
-    if (e instanceof HttpError && e.status === 429) await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id), pushOrphanStmt(env, user.id)]);
+    // Sperre durch zu viele gleichzeitige Versuche: wie bei reauthFailed alle Anmeldungen beenden – nur wenn DIESER Aufruf die Sperre auslöst.
+    // Eine schon bestehende Sperre (z. B. von Fremden per Fehlanmeldungen ausgelöst) beendet keine Sitzungen (21.10.2026: sonst warf jeder
+    // Passwortwechsel-/Zwei-Faktor-Versuch während einer fremden Sperre die Person von allen Geräten)
+    if (e instanceof HttpError && e.status === 429 && e.newLock) await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id), pushOrphanStmt(env, user.id)]);
     throw e;
   }
 }
@@ -208,7 +211,7 @@ export async function reauthFailed(env, user) {
   if (!locked) return;
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id),
-    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+      env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
     pushOrphanStmt(env, user.id),
   ]);
   await audit(env, null, 'login.locked', user.id, { username, minutes: LOCK_MINUTES });
@@ -323,11 +326,19 @@ export async function createInvite(env, userId, createdBy) {
   const now = nowIso();
   // in einem Stapel: neue Einladung anlegen, alle anderen offenen entwerten – zwei gleichzeitige „Neue Einladung“ ergaben sonst zwei gültige
   // Links (17.10.2026); der zuletzt ausgeführte Stapel gilt
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO invites(token_hash,user_id,created_by,created_at,expires_at) VALUES (?,?,?,?,?)')
-      .bind(h, userId, createdBy, now, new Date(Date.now() + INVITE_DAYS * 86400000).toISOString()),
-    env.DB.prepare('UPDATE invites SET used_at = ? WHERE user_id = ? AND used_at IS NULL AND token_hash <> ?').bind(now, userId, h),
-  ]);
+  // nur für ein aktives Konto (21.10.2026: ein gleichzeitig mit „Deaktivieren“ erzeugter Link galt nach Reaktivierung wieder) – Muster cmd_guard
+  try {
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO invites(token_hash,user_id,created_by,created_at,expires_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM users WHERE id=? AND active=1)')
+        .bind(h, userId, createdBy, now, new Date(Date.now() + INVITE_DAYS * 86400000).toISOString(), userId),
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
+      env.DB.prepare('DELETE FROM cmd_guard'),
+      env.DB.prepare('UPDATE invites SET used_at = ? WHERE user_id = ? AND used_at IS NULL AND token_hash <> ?').bind(now, userId, h),
+    ]);
+  } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw bad('user_inactive', 'Konto ist deaktiviert – erst aktivieren, dann neuen Einladungslink erzeugen.');
+    throw e;
+  }
   return token;
 }
 
@@ -394,15 +405,25 @@ export async function changePassword(env, user, body) {
   await reauthOk(env, user);
   validatePassword(body.new_password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.new_password);
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, nowIso(), user.id),
-    env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
-    // begonnene Anmeldungen mit dem alten Passwort (Zwei-Faktor-Schritt offen) verfallen ebenfalls
-    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
-    // offener Einladungs-/Zurücksetzen-Link verfällt (18.10.2026: ließ sich danach noch einlösen und überschrieb das neue Passwort)
-    env.DB.prepare('UPDATE invites SET used_at=? WHERE user_id=? AND used_at IS NULL').bind(nowIso(), user.id),
-    pushOrphanStmt(env, user.id),
-  ]);
+  // nur, wenn das geprüfte alte Passwort noch gilt, das Konto aktiv ist und diese Anmeldung noch besteht (21.10.2026: ein gleichzeitig
+  // eingelöster Zurücksetzen-Link wurde sonst von einer bereits beendeten, kopierten Sitzung überschrieben) – Muster cmd_guard
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=? AND active=1 AND password_hash=?
+        AND EXISTS (SELECT 1 FROM sessions WHERE token_hash=? AND user_id=?)`).bind(ph, salt, nowIso(), user.id, row.password_hash, user._session, user.id),
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
+      env.DB.prepare('DELETE FROM cmd_guard'),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
+      // begonnene Anmeldungen mit dem alten Passwort (Zwei-Faktor-Schritt offen) verfallen ebenfalls
+      env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+      // offener Einladungs-/Zurücksetzen-Link verfällt (18.10.2026: ließ sich danach noch einlösen und überschrieb das neue Passwort)
+      env.DB.prepare('UPDATE invites SET used_at=? WHERE user_id=? AND used_at IS NULL').bind(nowIso(), user.id),
+      pushOrphanStmt(env, user.id),
+    ]);
+  } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw new HttpError(401, 'unauthenticated', 'Bitte anmelden.');
+    throw e;
+  }
   await audit(env, user.id, 'password.change', user.id, null);
   return { ok: true };
 }

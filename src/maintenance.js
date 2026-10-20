@@ -4,7 +4,7 @@ import { icsLang } from '../public/ics-texts.js';
 import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
-import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt } from './vehicles.js';
+import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt, HUSP_RULE_EVIDENCE } from './vehicles.js';
 import { siteSelection } from './reports.js';
 import { CASE_STATUS_DE } from './cases.js';
 import { maintenanceWarnDays } from './settings.js';
@@ -469,6 +469,18 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 
   const now = nowIso();
   const stmts = []; const creates = []; const updates = []; const rowOf = new Map(); // Anweisung → Zeile der Vorschau (gleichzeitig geändert)
+  // HU/SP ohne eigenen Eintrag: der eigene Export schreibt die nur berechnete Frist (Zeile „virtual“) in „Nächster Termin“. Entspricht der Wert
+  // genau dieser Berechnung, ist er kein Nachweis (21.10.2026: wurde als Nachweis gespeichert und später nie neu berechnet → „Frist ungeklärt“
+  // nach der nächsten HU bzw. verspätete SP als „Letzte Prüfung nach dem Termin“ abgewiesen)
+  const virtCand = [...planned.values()].filter((p) => p.husp && p.next && !ruleOf.get(`${p.vehicle_id}|${p.kind}`));
+  if (virtCand.length) {
+    const hin = await loadHuSpInputs(env, [...new Set(virtCand.map((p) => p.vehicle_id))]); const today0 = berlinDate();
+    for (const p of virtCand) {
+      const x = hin.get(p.vehicle_id); if (!x) continue;
+      const h = huSpFor(x, today0, 0); const y = p.kind === 'HU' ? h.hu : h.sp;
+      if (y && y.due === p.next && y.due_basis === 'berechnet') { p.next = null; p.dueSource = 'berechnet'; }
+    }
+  }
   for (const p of [...planned.values()].sort((a, b) => a.line - b.line)) {
     const cur = ruleOf.get(`${p.vehicle_id}|${p.kind}`);
     const skipRow = (reason) => result.skipped.push({ line: p.line, plate: p.plate, reason });
@@ -691,7 +703,7 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de'
   // erledigter Rückruf: gespeicherte Frist zählt nicht mehr (wie Übersicht/Agent; 20.10.2026)
   const uidOf = (r) => (r.kind === 'HU' || r.kind === 'SP' ? `husp-${r.vehicle_id}-${r.kind}` : r.id);
   const events = ov.rows.filter((r) => r.next_due_date && r.date_status !== 'erledigt').map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
-    description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence || '–' })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
+    description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence === HUSP_RULE_EVIDENCE ? I.tx('ev_husp_rule') : (r.evidence || '–') })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();
   for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${uidOf(r)}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),

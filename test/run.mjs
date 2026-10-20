@@ -14420,7 +14420,7 @@ await test('Fehlersuche 20.10. (3): Umlagerung findet Ziel-Artikel ohne Groß-/K
   const wsUser = await e.DB.prepare("SELECT * FROM users WHERE username='w.werkstatt'").first();
   const rows = Array.from({ length: 120 }, (_, i) => `Artikel ${i};1`).join('\n');
   const realBatch = e.DB.batch.bind(e.DB); let injected = false;
-  e.DB.batch = async (st) => { if (!injected && st.length > 100) { injected = true; await U.ws.post('/api/stock', { name: 'Artikel 119' }); } return realBatch(st); };
+  e.DB.batch = async (st) => { if (!injected) { injected = true; await U.ws.post('/api/stock', { name: 'Artikel 119' }); } return realBatch(st); };
   try { await importStockCsv(e, wsUser, 'test', 'Bezeichnung;Bestand\n' + rows, {}); ok(false, 'Konflikt erwartet'); } catch (err) { eq(err.code, 'duplicate_item'); } finally { e.DB.batch = realBatch; }
   eq((await U.ws.get('/api/stock')).data.items.length, before + 1, 'nur der gleichzeitig angelegte Artikel, kein Teilimport');
   // 3. Fahrernachweis: Erfassung nach 00:00 Berlin (UTC noch Vortag) – nachgetragener älterer Führerschein bleibt Verlauf
@@ -15384,6 +15384,119 @@ await test('Fehlersuche 20.10. (18): Vertrag nach bestätigtem Tachotausch „un
   eq((await F.post(`/api/cases/${cid}/commands`, { action: 'comment', command_id: 'fx-cmd-1', expected_version: v, note: 'Hinweis eins' })).status, 200);
   const dup = await F.post(`/api/cases/${cid}/commands`, { action: 'comment', command_id: 'fx-cmd-1', expected_version: v, note: 'Hinweis eins' });
   eq(`${dup.status} ${dup.data.duplicate}`, '200 true');
+});
+
+await test('Fehlersuche 21.10. (1): Konten – Passwortwechsel nur mit gültiger Sitzung und unverändertem Passwort, Einladungslink nur für aktive Konten, fremde Sperre beendet keine Sitzungen', async () => {
+  const PW = 'Sicheres-Passwort-2026';
+  // (1) Passwortwechsel: Sitzung wird zwischen Prüfung und Schreiben beendet (z. B. Zurücksetzen-Link eingelöst) → 401, Passwort unverändert
+  { const { e, U } = await freshWorld(); const db = e.DB; const p0 = db.prepare.bind(db); let hit = 0;
+    db.prepare = (sql) => { if (!hit && /^UPDATE users SET password_hash=\?, password_salt=\?, updated_at=\? WHERE id=\? AND active=1/.test(sql)) { hit = 1; e.DB.db.prepare('DELETE FROM sessions WHERE user_id=?').run(U.driver.id); } return p0(sql); };
+    const r = await U.driver.post('/api/me/password', { old_password: PW, new_password: 'Rote-Muehle-5521' }); db.prepare = p0;
+    eq(hit, 1); eq(r.status, 401, JSON.stringify(r.data)); eq(r.data.error, 'unauthenticated');
+    eq((await new Client(worker, e, 'x').post('/api/login', { username: 'w.fahrer', password: PW })).status, 200, 'altes Passwort gilt weiter');
+    // ohne Störung weiter normal
+    const c = new Client(worker, e, 'y'); await c.post('/api/login', { username: 'w.fahrer', password: PW });
+    eq((await c.post('/api/me/password', { old_password: PW, new_password: 'Rote-Muehle-5521' })).status, 200, 'normaler Wechsel'); }
+  // (2) Einladungslink: Konto wird zwischen Prüfung und Anlage deaktiviert → 400 user_inactive, nach Reaktivierung kein gültiger Link
+  { const { e, U } = await freshWorld(); const db = e.DB; const p0 = db.prepare.bind(db); let hit = 0;
+    db.prepare = (sql) => { if (!hit && /^INSERT INTO invites/.test(sql)) { hit = 1; e.DB.db.prepare('UPDATE users SET active=0 WHERE id=?').run(U.driver.id); e.DB.db.prepare('UPDATE invites SET used_at=? WHERE user_id=? AND used_at IS NULL').run(new Date().toISOString(), U.driver.id); } return p0(sql); };
+    const r = await U.fleet.post(`/api/users/${U.driver.id}/invite`, {}); db.prepare = p0;
+    eq(hit, 1); eq(r.status, 400, JSON.stringify(r.data)); eq(r.data.error, 'user_inactive');
+    eq(e.DB.db.prepare('SELECT COUNT(*) n FROM invites WHERE user_id=? AND used_at IS NULL').get(U.driver.id).n, 0, 'kein offener Link');
+    eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: true })).status, 200);
+    eq((await U.fleet.post(`/api/users/${U.driver.id}/invite`, {})).status, 200, 'aktives Konto: Link wie bisher'); }
+  // (3) Sperre durch fremde Fehlanmeldungen: Passwortwechsel/2FA mit richtigem Passwort → 429, Sitzungen bleiben
+  { const { e, U } = await freshWorld(); const tab = new Client(worker, e, 'tab'); eq((await tab.post('/api/login', { username: 'w.fahrer', password: PW })).status, 200);
+    for (let i = 0; i < 8; i++) await new Client(worker, e, 'ev' + i).post('/api/login', { username: 'w.fahrer', password: 'Falsch-Passwort-' + i });
+    const r = await U.driver.post('/api/me/password', { old_password: PW, new_password: 'Neuer-Baum-7731' }); eq(r.status, 429); eq(r.data.error, 'locked');
+    eq((await U.driver.post('/api/me/totp/setup', { password: PW })).status, 429);
+    eq((await U.driver.get('/api/me')).status, 200, 'Handy bleibt angemeldet'); eq((await tab.get('/api/me')).status, 200, 'Tablet bleibt angemeldet'); }
+  // (4) Schub falscher Bestätigungen in der Sitzung selbst sperrt weiterhin und beendet die Sitzungen
+  { const { e, U } = await freshWorld();
+    await Promise.all(Array.from({ length: 12 }, (_, i) => U.driver.post('/api/me/password', { old_password: 'Falsch-' + i, new_password: 'Neuer-Baum-7731' })));
+    eq((await U.driver.get('/api/me')).status, 401, 'eigener Fehlversuch-Schub beendet die Sitzung'); }
+});
+
+await test('Fehlersuche 21.10. (2): Lager – Inventur und Artikel-Import mit vielen Zeilen im Abfragebudget, Brutto-Preisspalte nie als Nettopreis, Lager-CSV-Dateinamen mit Umgebung', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const ids = [];
+  for (let i = 0; i < 60; i++) ids.push((await U.ws.post('/api/stock', { name: 'Teil ' + i, part_number: 'P' + i, initial_qty: '5' })).data.id);
+  const counts = ids.map((id, i) => ({ item_id: id, counted: i % 2 ? 3 : 7 }));
+  const pv = await U.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts }); eq(pv.data.differences.length, 60);
+  let q0 = QSTAT.n; const go = await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts, preview: pv.data.differences }); let nq = QSTAT.n - q0;
+  eq(go.status, 200, JSON.stringify(go.data)); eq(go.data.booked, 60); ok(nq <= 50, 'Inventur: Abfragen ' + nq);
+  const k = db.prepare(`SELECT COUNT(*) n, SUM(qty) s, MIN(note) m FROM stock_movements WHERE type='korrektur'`).get(); eq(k.n, 60); eq(k.s, 0); ok(/^Inventur .*: gezählt 7 Stk, Buchbestand 5 Stk$/.test(k.m) || /gezählt \d/.test(k.m), k.m);
+  eq(db.prepare(`SELECT COUNT(DISTINCT id) n FROM stock_movements WHERE type='korrektur'`).get().n, 60, 'eigene Kennungen');
+  ok(db.prepare(`SELECT COUNT(*) n FROM stock_movements WHERE type='korrektur' AND (environment IS NULL OR user_id IS NULL OR document_ref NOT LIKE 'Inventur %')`).get().n === 0, 'Felder gesetzt');
+  // Import 100 neue Artikel mit Bestand: Budget, Bestände und Preise
+  const csv = 'Bezeichnung;Teilenummer;Bestand;Preis\n' + Array.from({ length: 100 }, (_, i) => `Imp ${i};I${i};${i % 3};1,50`).join('\n');
+  q0 = QSTAT.n; const imp = await U.ws.req('POST', '/api/stock/import', csv, { 'content-type': 'text/csv' }); nq = QSTAT.n - q0;
+  eq(imp.status, 200, JSON.stringify(imp.data)); eq(imp.data.created, 100); ok(nq <= 50, 'Import: Abfragen ' + nq);
+  const it = db.prepare(`SELECT i.site, i.unit_price_net p, i.environment, (SELECT COALESCE(SUM(qty),0) FROM stock_movements m WHERE m.item_id=i.id) q FROM stock_items i WHERE i.part_number='I5'`).get();
+  eq(`${it.site}|${it.p}|${it.environment}|${it.q}`, 'DORTMUND|1.5|test|2');
+  eq(db.prepare(`SELECT COUNT(*) n FROM stock_movements WHERE note='Anfangsbestand (Import)'`).get().n, 66, 'nur Zeilen mit Bestand');
+  eq((await U.ws.req('POST', '/api/stock/import', csv, { 'content-type': 'text/csv' })).data.created, 0, 'zweiter Import: nichts neu');
+  // Brutto-Spalten
+  const prv = async (c) => (await U.ws.req('POST', '/api/stock/import?dry_run=1', c, { 'content-type': 'text/csv' })).data;
+  let r = await prv('Bezeichnung;Teilenummer;Bestand;Preis brutto;Preis netto\nBremsbelag;A-1;4;119,00;100,00'); eq(r.rows[0].unit_price_net, 100); ok(r.ignored_columns.includes('Preis brutto'));
+  r = await prv('Bezeichnung;Teilenummer;Bestand;Preis (brutto)\nBremsscheibe;A-2;2;119,00'); eq(r.rows[0].unit_price_net, null); ok(r.ignored_columns.includes('Preis (brutto)'));
+  r = await prv('Bezeichnung;Teilenummer;Bestandswert netto;Preis;Bestand\nFilter;A-3;20,00;10,00;2'); eq(r.rows[0].unit_price_net, 10); eq(r.rows[0].initial_qty, 2);
+  r = await prv('Bezeichnung;Teilenummer;Bestand;EK netto\nKeil;A-4;1;3,50'); eq(r.rows[0].unit_price_net, 3.5);
+  // App: Dateinamen mit Umgebung
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('`fuhrpark-bestellvorschlag_${envFn()}_') && app.includes('`fuhrpark-lagerbestand-stichtag_${envFn()}_') && app.includes("'lagerjournal'}_${envFn()}_"), 'Lager-CSV mit Umgebung');
+});
+
+await test('Fehlersuche 21.10. (3): Prüftermine – berechnete SP aus dem eigenen Export ist beim Import kein Nachweis, Vorgang nennt berechnete HU/SP, Fahrer ohne erledigten Rückruf, automatischer Nachweistext übersetzt, Akte vergleicht Berliner Meldetag', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774'; const V2 = 'VIN:WDB9630051L917317';
+  const [ty, tm] = BERLIN_TODAY.split('-').map(Number);
+  const ymd = (off, day) => { const x = new Date(Date.UTC(ty, tm - 1 + off, day)); return x.toISOString().slice(0, 10); };
+  const de = (iso) => iso.split('-').reverse().join('.');
+  for (const v of [V1, V2]) eq((await U.own.post(`/api/vehicles/${v}/spec`, { zgm_class: 'ueber_12', first_registration: '2020-01-10', spec_source: 'Fahrzeugschein' })).status, 200);
+  const hu1 = await U.own.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: ymd(-13, 10), evidence: 'HU-Bericht A' }); eq(hu1.status, 201, JSON.stringify(hu1.data));
+  eq((await U.own.post(`/api/vehicles/${V2}/maintenance`, { kind: 'HU', last_done_date: ymd(-7, 15), evidence: 'HU-Bericht B' })).status, 201);
+  // (1) Export → Durchführung + Nachweis eintragen → Import
+  const raw = (await U.own.get('/api/maintenance?format=csv')).data; const csv = (raw instanceof Uint8Array ? new TextDecoder().decode(raw) : String(raw)).replace(/^\uFEFF/, '');
+  const lines = csv.trim().split('\r\n'); const head = lines[0];
+  const spOf = (plate) => lines.find((l) => l.startsWith(plate + ';') && l.split(';')[3] === 'SP'); ok(spOf('SZ-YC 5513') && spOf('SZ-KC 5515'), 'SP-Zeilen im Export');
+  const hidx = head.split(';'); const iLast = hidx.findIndex((h) => /Letzte Prüfung/i.test(h)); const iEv = hidx.findIndex((h) => /Nachweis/i.test(h)); ok(iLast >= 0 && iEv >= 0, head);
+  const fill = (l, d) => { const c = l.split(';'); c[iLast] = d; c[iEv] = 'SP-Prüfprotokoll 4711'; return c.join(';'); };
+  const late = BERLIN_TODAY;
+  const imp = await U.own.req('POST', '/api/maintenance/import', [head, fill(spOf('SZ-YC 5513'), de(ymd(-7, 20))), fill(spOf('SZ-KC 5515'), de(late))].join('\r\n'), { 'content-type': 'text/csv' });
+  eq(imp.status, 200, JSON.stringify(imp.data)); eq(imp.data.skipped.length, 0, JSON.stringify(imp.data.skipped)); eq(imp.data.created, 2);
+  const sp = db.prepare(`SELECT v.plate, m.last_done_date l, m.next_due_date n, m.due_source s FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.kind='SP' ORDER BY v.plate`).all();
+  eq(JSON.stringify(sp.map((x) => [x.l, x.s])), JSON.stringify([[late, 'berechnet'], [ymd(-7, 20), 'berechnet']]), JSON.stringify(sp));
+  // nächste HU an V1 → neuer SP-Zyklus, berechnet und in Ordnung (vorher „Frist ungeklärt“ mit alter Frist)
+  eq((await U.own.post(`/api/maintenance/${hu1.data.id}/complete`, { done_date: ymd(-1, 15), evidence: 'HU-Bericht A2' })).status, 200);
+  const r1 = (await U.own.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === V1 && r.kind === 'SP');
+  eq(`${r1.status}|${r1.due_basis}|${r1.next_due_date}`, `ok|berechnet|${ymd(6, 0)}`, JSON.stringify(r1));
+  // (2) Vorgang: berechnete, überfällige SP ohne eigenen Eintrag erscheint in der Kurzinfo
+  const V3 = 'VIN:WMA06XZZ4GP078491';
+  eq((await U.own.post('/api/vehicles', { plate: 'FX-SP 1', vin: 'WMA06XZZ4GP078491' })).status, 201);
+  eq((await U.own.post(`/api/vehicles/${V3}/spec`, { zgm_class: 'ueber_12', first_registration: '2020-01-10', spec_source: 'Fahrzeugschein' })).status, 200);
+  eq((await U.own.post(`/api/vehicles/${V3}/maintenance`, { kind: 'HU', last_done_date: ymd(-7, 15), evidence: 'HU-Bericht C' })).status, 201);
+  const cid = (await F.post('/api/cases', { vehicle_id: V3, description: 'Bremse quietscht', priority: 'mittel', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk() })).data.id;
+  const vi = (await F.get(`/api/cases/${cid}`)).data.vehicle_info;
+  ok(vi.inspections_due.some((x) => x.kind === 'SP' && x.next_due_date === ymd(-1 + 1, 0) && x.computed), JSON.stringify(vi.inspections_due)); ok(vi.inspections_due_total >= 1);
+  ok(!vi.inspections_due.some((x) => x.kind === 'HU'), 'HU nicht fällig');
+  // (3) Fahrer-Startseite: erledigter Rückruf mit gespeicherter Altfrist erscheint nicht
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,last_done_date,next_due_date,evidence,created_by,created_at,updated_at,due_source) VALUES ('fx-rr1',?,'Rückruf',?,?,'KBA-123 · Durchführung: Rechnung 7',?,?,?,'nachweis')`)
+    .run(V1, ymd(-2, 1), ymd(-1, 1), U.own.id ?? db.prepare(`SELECT id FROM users WHERE role='owner'`).get().id, ymd(-3, 1), ymd(-2, 1));
+  const nx = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1).next_inspections;
+  ok(!nx.some((x) => x.kind === 'Rückruf'), JSON.stringify(nx));
+  // (4) automatischer Nachweistext je Sprache (App und Kalender), Akte mit Berliner Meldetag
+  const { HUSP_RULE_EVIDENCE } = await import('../src/vehicles.js'); const { ICS_TEXTS } = await import('../public/ics-texts.js').catch(() => ({}));
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const ics = fs.readFileSync(new URL('../public/ics-texts.js', import.meta.url), 'utf8'); const i18 = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(app.includes(`e === '${HUSP_RULE_EVIDENCE}' ? t('ev_husp_rule')`), 'App übersetzt den automatischen Nachweistext');
+  eq((ics.match(/ev_husp_rule:/g) || []).length, 3, 'Kalendertexte DE/UK/EN'); eq((i18.match(/ev_husp_rule:/g) || []).length, 3, 'App-Texte DE/UK/EN');
+  ok(app.includes("BERLIN_FMT.format(new Date(c.created_at)) >= h.done_date"), 'Akte: Berliner Meldetag');
+  db.prepare(`UPDATE maintenance_rules SET evidence=? WHERE vehicle_id=? AND kind='HU'`).run(HUSP_RULE_EVIDENCE, V3);
+  db.prepare(`UPDATE users SET language='en' WHERE id=?`).run(U.fleet.id);
+  const cr = (await F.get('/api/maintenance?format=ics&lang=en')).data; const cal = cr instanceof Uint8Array ? new TextDecoder().decode(cr) : String(cr);
+  ok(!cal.includes('Frist nach StVZO') && cal.includes('Evidence: Due date calculated per StVZO Annex VIII'), 'Kalender EN ohne deutschen Nachweistext');
+  void ICS_TEXTS;
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

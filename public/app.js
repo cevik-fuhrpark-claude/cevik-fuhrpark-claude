@@ -1926,7 +1926,8 @@ async function viewVehicle(id, focusEv = null) {
   if (d.maintenance_history && d.maintenance_history.length) {
     const evOrders = new Map(d.cases.filter((c) => c.maintenance_event_id && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)).map((c) => [c.maintenance_event_id, c]));
     const yearAgo = bDate(-365);
-    const caseSince = (h) => d.cases.some((c) => c.status !== 'abgelehnt' && c.created_at >= h.done_date);
+    // Berliner Kalendertag der Meldung wie der Server (berlinDaySql) – UTC-Vergleich verfehlte Meldungen 00:00–02:00 Uhr am Prüftag (21.10.2026)
+    const caseSince = (h) => d.cases.some((c) => c.status !== 'abgelehnt' && BERLIN_FMT.format(new Date(c.created_at)) >= h.done_date);
     // Mängelauftrag freigegeben, aber keine neuere Durchführung derselben Prüfart → Nachprüfung eintragen (gleiche Regel wie der Server)
     const releasedFor = (h) => {
       if (!DEFECT_RESULTS.includes(h.result) || h.done_date < yearAgo || evOrders.has(h.id)) return null;
@@ -2358,7 +2359,7 @@ async function viewReorder() {
       <p id="rosum"><b>${esc(t('reorder_sum'))}:</b> ${valued.length ? eur(sum) : '–'}${valued.length < items.length ? ` <span class="small muted">(${esc(tn('unvalued_items_n', items.length - valued.length))})</span>` : ''}</p>` : `<p class="muted">${esc(t('reorder_none'))}</p>`}`, 'more');
   if ($('#rsite')) $('#rsite').onchange = () => { try { sessionStorage.setItem('cfp_reorder_site', $('#rsite').value); } catch {} viewReorder(); };
   $('#rprt').onclick = () => window.print();
-  $('#rcsv').onclick = async () => { try { download(await api('GET', '/api/stock?reorder=1&format=csv' + q), `fuhrpark-bestellvorschlag_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#rcsv').onclick = async () => { try { download(await api('GET', '/api/stock?reorder=1&format=csv' + q), `fuhrpark-bestellvorschlag_${envFn()}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Bestand zum Stichtag (Jahresabschluss): Menge aus allen Buchungen bis Tagesende, zwei Preisangaben, Bewertung legt die Buchhaltung fest
@@ -2388,7 +2389,7 @@ async function viewStockAsOf() {
       </tbody></table></div>` : rep ? `<p class="muted">${esc(t('asof_none'))}</p>` : ''}`, 'more');
   $('#saf').onsubmit = (e) => { e.preventDefault(); ss('cfp_sa_date', $('#sadate').value); if ($('#sasite')) ss('cfp_sa_site', $('#sasite').value); viewStockAsOf(); };
   $('#saprt').onclick = () => window.print();
-  $('#sacsv').onclick = async () => { try { download(await api('GET', '/api/stock/asof?format=csv&' + qs), `fuhrpark-lagerbestand-stichtag_${date}${site ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#sacsv').onclick = async () => { try { download(await api('GET', '/api/stock/asof?format=csv&' + qs), `fuhrpark-lagerbestand-stichtag_${envFn()}_${date}${site ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Lagerjournal: alle Buchungen eines Zeitraums (Berliner Datum), Wert nur mit Preis, ohne buchende Person
@@ -2424,7 +2425,7 @@ async function viewStockJournal() {
   $('#jf').onsubmit = (e) => { e.preventDefault(); ss('cfp_sj_from', $('#jfrom').value); ss('cfp_sj_to', $('#jto').value); if ($('#jsite')) ss('cfp_sj_site', $('#jsite').value); ss('cfp_sj_type', $('#jtype').value); viewStockJournal(); };
   $('#jprt').onclick = () => window.print();
   if ($('#jitemclr')) $('#jitemclr').onclick = () => { ss('cfp_sj_item', ''); viewStockJournal(); };
-  $('#jcsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#jcsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${envFn()}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 async function viewStockItem(id) {
@@ -3162,7 +3163,8 @@ function downloadChecked(blob, name) { download(blob, name); if (blob.cfpTruncat
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 // Gespeicherter Standard-Nachweis der Fahrerzuordnung (Server, deutsch) in der App-Sprache anzeigen; eigene Nachweise bleiben wörtlich
 // Rückruf erledigt: gespeicherter Zusatz „ · Durchführung: …“ in der App-Sprache (19.10.2026)
-const mEv = (e) => String(e || '').replace(' · Durchführung: ', ' · ' + t('ev_done_label') + ': ').replace(/\(Plakette ([^():]+): fällig bis Monatsende\)/, (_, m) => t('ev_plaque_month').replace('{m}', m)); // Import-Zusatz je Sprache (20.10.2026)
+const mEv = (e) => (e === 'Frist nach StVZO Anlage VIII berechnet (aus der Fahrzeugakte angelegt)' ? t('ev_husp_rule') : String(e || '')) // automatischer Nachweistext (HUSP_RULE_EVIDENCE) je Sprache (21.10.2026)
+  .replace(' · Durchführung: ', ' · ' + t('ev_done_label') + ': ').replace(/\(Plakette ([^():]+): fällig bis Monatsende\)/, (_, m) => t('ev_plaque_month').replace('{m}', m)); // Import-Zusatz je Sprache (20.10.2026)
 const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_default') : e || '');
 // Fahrerkandidat (Bußgeld): Begründung in der App-Sprache; übernommen wird weiter der gespeicherte deutsche Nachweis
 // gespeicherter Nachweis der Fahrerermittlung (deutscher Aktenvermerk aus dem Kandidaten) in der App-Sprache anzeigen; Freitext bleibt (19.10.2026)
