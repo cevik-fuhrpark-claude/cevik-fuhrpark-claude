@@ -262,9 +262,9 @@ async function handleApi(request, env, ctx, url) {
       // Auswahl der Liste (Standort/Art/Verfügbarkeit/Suche) in angezeigter Reihenfolge – wie Druck und Vorgangs-CSV
       // (20.10.2026: Export enthielt bei Filter „Hamburg“ alle Fahrzeuge); ohne „ids“ der ganze Bestand
       const ids = url.searchParams.get('ids');
-      const rows = ids === null ? list : (() => { const pos = new Map(ids.split(',').slice(0, 2000).map((x, i) => [x, i]));
+      const rows = ids === null ? [...list].sort((a, b) => String(a.plate).localeCompare(String(b.plate), 'de')) /* wie die Liste (Umlaute nicht ans Ende) */ : (() => { const pos = new Map(ids.split(',').slice(0, 2000).map((x, i) => [x, i]));
         return list.filter((v) => pos.has(v.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); })();
-      return new Response(veh.vehiclesCsv(rows, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${berlinDate()}.csv"` } });
+      return new Response(veh.vehiclesCsv(rows, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${envName}_${berlinDate()}.csv"` } });
     }
     return json({ vehicles: list });
   }
@@ -505,9 +505,11 @@ async function handleApi(request, env, ctx, url) {
     // Filter „Standort“ (Standort der Fahrerakte, Schreibweisen zusammengefasst) – nur Leitung; Fahrer sehen ohnehin nur die eigene Akte
     const dsel = ['owner', 'fleet'].includes(user.role) ? reports.siteSelection(list, q.site) : null;
     if (dsel && dsel.site) list = list.filter((d) => dsel.match(d.site));
+    // Leitung: Gesamtstatus mit Auslese-Frist wie CSV und Akte (Fahrer: listDrivers liefert die eigene Akte schon so)
+    const tr = ['owner', 'fleet'].includes(user.role) ? await tacho.tachoRows(env, envName, await tacho.warnDays(env)) : null;
+    if (tr) { const tb = new Map(tr.drivers.map((x) => [x.id, x])); list = list.map((d) => ({ ...d, status: drivers.withTacho(d.status, tb.get(d.id)) })); }
     if (q.format === 'csv') {
       if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
-      const tr = await tacho.tachoRows(env, envName, await tacho.warnDays(env));
       await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null });
       return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}.csv"` } });
     }
@@ -751,7 +753,9 @@ async function dashboard(env, user, envName, vsiteRaw = null) {
   if (['owner', 'fleet', 'dispatch'].includes(user.role)) {
     let vs = await veh.listVehicles(env, user, envName);
     if (vsite) { const sel = reports.siteSelection(vs, vsite); out.site = sel.site; vs = vs.filter((v) => sel.match(v.site)); }
-    out.vehicles = { total: vs.length, gesperrt: vs.filter((v) => v.availability === 'gesperrt').length, werkstatt: vs.filter((v) => v.availability === 'werkstatt').length,
+    // ruhende Fahrzeuge nicht in der Leiste (wie Management-Panel; Entscheidung 10.10.2026), nur als Anzahl daneben (20.10.2026)
+    const dormant = vs.filter((v) => v.eval_excluded).length; vs = vs.filter((v) => !v.eval_excluded);
+    out.vehicles = { total: vs.length, ruhend: dormant, gesperrt: vs.filter((v) => v.availability === 'gesperrt').length, werkstatt: vs.filter((v) => v.availability === 'werkstatt').length,
       meldung_offen: vs.filter((v) => v.availability === 'meldung_offen').length, einsatzbereit: vs.filter((v) => v.availability === 'einsatzbereit_lt_system').length };
   }
   if (['owner', 'fleet'].includes(user.role)) {

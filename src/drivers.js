@@ -109,7 +109,8 @@ export async function listDrivers(env, user, envName, query = {}, settings = nul
   const drivers = (await env.DB.prepare(`SELECT d.*, u.username FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, active).all()).results;
   const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.valid_until, x.issued_on, x.created_at, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.driver_id, c.checked_on, c.result FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id
-    WHERE d.environment=? AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id)`).bind(envName).all()).results;
+    WHERE d.environment=? AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id)
+    ORDER BY c.created_at, c.rowid`).bind(envName).all()).results; // mehrere am selben Tag: die zuletzt erfasste gilt (Map übernimmt die letzte Zeile)
   const c = cfg(settings || await settingsMap(env)); const today = berlinDate();
   const byD = new Map(); for (const x of docs) { if (!byD.has(x.driver_id)) byD.set(x.driver_id, []); byD.get(x.driver_id).push(x); }
   const chk = new Map(checks.map((x) => [x.driver_id, x]));
@@ -124,7 +125,7 @@ export const DRIVER_HIST_MAX = 100;
 export async function driverDetail(env, user, envName, id) {
   const d = await loadDriver(env, user, envName, id);
   const docs = (await env.DB.prepare(`SELECT x.*, u.display_name AS created_by_name FROM driver_documents x LEFT JOIN users u ON u.id=x.created_by WHERE x.driver_id=? ORDER BY x.superseded, x.kind, x.valid_until DESC`).bind(id).all()).results;
-  const checks = (await env.DB.prepare(`SELECT c.*, u.display_name AS checked_by_name FROM driver_license_checks c LEFT JOIN users u ON u.id=c.checked_by WHERE c.driver_id=? ORDER BY c.checked_on DESC LIMIT ?`).bind(id, DRIVER_HIST_MAX + 1).all()).results;
+  const checks = (await env.DB.prepare(`SELECT c.*, u.display_name AS checked_by_name FROM driver_license_checks c LEFT JOIN users u ON u.id=c.checked_by WHERE c.driver_id=? ORDER BY c.checked_on DESC, c.created_at DESC, c.rowid DESC LIMIT ?`).bind(id, DRIVER_HIST_MAX + 1).all()).results;
   const checksTruncated = checks.length > DRIVER_HIST_MAX; if (checksTruncated) checks.length = DRIVER_HIST_MAX;
   const sm = await settingsMap(env); const c = cfg(sm);
   const downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by WHERE t.driver_id=? ORDER BY t.downloaded_on DESC LIMIT ?`).bind(id, DRIVER_HIST_MAX + 1).all()).results;
@@ -139,7 +140,7 @@ export async function driverDetail(env, user, envName, id) {
   // ebenso Bemerkung/Erfassende der Auslesungen und Erfassende der Nachweise (20.10.2026: Fahrer sah den Vermerk der Leitung)
   const dlOut = isMgr(user) ? downloads : downloads.map(({ note, created_by_name, ...r }) => r);
   const docsOut = isMgr(user) ? docs : docs.map(({ created_by, created_by_name, ...r }) => r);
-  return { driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
+  return { driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: withTacho(driverStatus(docs, checks[0] || null, berlinDate(), c), tacho), settings: c };
 }
 
 export async function createDriver(env, user, envName, body) {
@@ -276,9 +277,11 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   const note = str(body.note, { max: 500, field: 'Bemerkung' });
   if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.');
   const cid = uuid();
-  // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026)
+  // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026); verglichen wird nur mit der
+  // neuesten Kontrolle desselben Tages (20.10.2026: „in Ordnung“ nach „nicht vorgelegt“ am selben Tag wurde als Dublette abgewiesen)
   const r = await env.DB.prepare(`INSERT INTO driver_license_checks(id,driver_id,checked_on,result,checked_by,note,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7
-    WHERE NOT EXISTS (SELECT 1 FROM driver_license_checks x WHERE x.driver_id=?2 AND x.checked_on=?3 AND x.result=?4 AND x.note IS ?6)`).bind(cid, id, on, result, user.id, note, nowIso()).run();
+    WHERE NOT EXISTS (SELECT 1 FROM (SELECT result, note FROM driver_license_checks WHERE driver_id=?2 AND checked_on=?3 ORDER BY created_at DESC, rowid DESC LIMIT 1) x
+      WHERE x.result=?4 AND x.note IS ?6)`).bind(cid, id, on, result, user.id, note, nowIso()).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate', 'Diese Kontrolle ist bereits erfasst.');
   await audit(env, user.id, 'driver.license_check', id, { checked_on: on, result });
   return { id: cid };
@@ -306,6 +309,17 @@ export async function driverFindings(env, environment, settings = null) {
   return out;
 }
 
+// Gesamtstatus schließt die Auslese-Frist der Fahrerkarte ein – einheitlich für CSV, Liste, Akte und Startseite (20.10.2026: Liste/Akte
+// zeigten „in Ordnung“, die CSV „kritisch · Auslesung: überfällig“). `overall_docs` = Stand ohne Auslesung (Agent meldet die Auslesung getrennt).
+const RANK = { ok: 0, hinweis: 1, kritisch: 2 };
+export function tachoOverall(base, tc) {
+  const t = tc && tc.status === 'ueberfaellig' ? 'kritisch' : tc && (tc.status === 'bald' || tc.status === 'keine') ? 'hinweis' : 'ok';
+  return RANK[t] > (RANK[base] ?? 0) ? t : base;
+}
+export function withTacho(status, tc) {
+  return { ...status, overall_docs: status.overall, overall: tachoOverall(status.overall, tc), tacho_status: tc ? tc.status : null };
+}
+
 // Fristenliste als CSV (nur Inhaber/Fuhrparkleitung; Aufruf wird protokolliert). Nur gespeicherte Daten, leere Zelle = nicht erfasst.
 export function driversCsv(list, tachoByDriver, cell) {
   const DOV = { ok: 'in Ordnung', hinweis: 'Hinweis', kritisch: 'kritisch' };
@@ -319,10 +333,7 @@ export function driversCsv(list, tachoByDriver, cell) {
     ...(d.status.check.status !== 'ok' ? ['Kontrolle ' + DCK[d.status.check.status]] : []),
     ...(tc && tc.status !== 'ok' ? ['Auslesung: ' + TST[tc.status]] : []),
   ];
-  // Gesamtstatus schließt die Auslese-Frist ein (20.10.2026: „in Ordnung · Auslesung: überfällig“)
-  const RANK = { ok: 0, hinweis: 1, kritisch: 2 };
-  const overall = (d, tc) => { const t = tc && tc.status === 'ueberfaellig' ? 'kritisch' : tc && (tc.status === 'bald' || tc.status === 'keine') ? 'hinweis' : 'ok';
-    return RANK[t] > (RANK[d.status.overall] ?? 0) ? t : d.status.overall; };
+  const overall = (d, tc) => tachoOverall(d.status.overall_docs || d.status.overall, tc);
   const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status'];
   for (const d of list) {
     const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';

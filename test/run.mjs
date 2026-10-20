@@ -15147,6 +15147,56 @@ await test('Fehlersuche 20.10. (15): Einstellungen (Schreibweise/Wirkung, „kri
   ok(app.includes("d.duplicate_of && !d.claim") && (i18n.match(/claim_dup_hint: '/g) || []).length === 3, 'Hinweis DE/UK/EN');
 });
 
+await test('Fehlersuche 20.10. (16): Führerscheinkontrolle am selben Tag korrigierbar, Gesamtstatus mit Auslese-Frist in Liste/Akte, Fahrer-CSV/Fahrzeug-CSV (inaktiv, Umgebung, Reihenfolge), Protokoll (Fahrerakte als „Betrifft“, Suche, je Person; alle Exporte; Telematik-Aufheben am Fahrzeug), erledigter Rückruf ohne Frist, Startseite ohne ruhende, Werkstatt-Buchung gilt als Übernahme', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const app = rd('public/app.js'), i18n = rd('public/i18n.js');
+  const today = BERLIN_TODAY;
+  // 1. Kontrolle „nicht vorgelegt“, danach am selben Tag „in Ordnung“ → angenommen, Akte zeigt die neueste
+  const dr = (await U.fleet.post('/api/drivers', { display_name: 'Olena Kowalenko', personnel_no: 'P-1', user_id: U.driver.id })).data.id; ok(dr, 'Fahrer');
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: today, result: 'nicht_vorgelegt', note: 'vergessen' })).status, 201);
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: today, result: 'in_ordnung' })).status, 201, 'Korrektur am selben Tag');
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: today, result: 'in_ordnung' })).status, 409, 'Doppelklick weiter abgewiesen');
+  const ak = (await U.fleet.get(`/api/drivers/${dr}`)).data; eq(ak.status.check.result || ak.license_checks[0].result, 'in_ordnung'); ok(ak.status.check.status !== 'mangel', JSON.stringify(ak.status.check));
+  eq((await U.fleet.get('/api/drivers')).data.drivers.find((d) => d.id === dr).status.check.status, ak.status.check.status, 'Liste = Akte');
+  // 2. Fahrerkarte ohne Auslesung: Gesamtstatus in Liste und Akte mit Auslese-Frist (wie CSV)
+  eq((await U.fleet.post(`/api/drivers/${dr}/documents`, { kind: 'fahrerkarte', valid_until: '2030-01-01', evidence: 'Kopie' })).status, 201);
+  const li = (await U.fleet.get('/api/drivers')).data.drivers.find((d) => d.id === dr).status; const ak2 = (await U.fleet.get(`/api/drivers/${dr}`)).data.status;
+  eq(li.tacho_status, 'keine'); eq(li.overall, ak2.overall); ok(li.overall !== 'ok', 'keine Auslesung = mindestens Hinweis'); ok('overall_docs' in li, 'Stand ohne Auslesung');
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/drivers?format=csv')).data); ok(csv.includes({ hinweis: 'Hinweis', kritisch: 'kritisch' }[li.overall]), csv);
+  ok(app.includes("'/api/drivers?format=csv' + (dq ? '&' + dq : '')") && app.includes('`fuhrpark-fahrer-fristen_${envFn()}_'), 'Fahrer-CSV mit „inaktiv“ und Umgebung');
+  ok(app.includes("location.replace('#/drivers/' + encodeURIComponent(list[0].id))"), 'Fahrer: „Zurück“ ohne Schleife');
+  ok(app.includes("(d.status.overall_docs || d.status.overall) === 'kritisch'"), 'Startseite: Auslesung nur unter „Auslesungen“');
+  // 3. Protokoll: Fahrerakte-Einträge mit Namen, per Name suchbar, im Protokoll der Person
+  const au = (await U.own.get('/api/admin/audit?q=Kowalenko&limit=50')).data.entries;
+  ok(au.some((x) => x.action === 'driver.license_check' && x.target_driver_name === 'Olena Kowalenko'), JSON.stringify(au.map((x) => x.action)));
+  ok((await U.own.get(`/api/admin/audit?user=${U.driver.id}&limit=50`)).data.entries.some((x) => x.action === 'driver.license_check'), 'je Person');
+  const acsv = new TextDecoder().decode((await U.own.get(`/api/admin/audit?format=csv&from=${today}&to=${today}&action=driver.`)).data); ok(acsv.includes('Olena Kowalenko'), 'CSV „Betrifft“');
+  ok(app.includes("'reports.,contract.export,claim.export,maintenance.export,maintenance.history_export,stock.journal.export,admin.audit_export,backup.export'") && (i18n.match(/au_exports: '/g) || []).length === 3, 'Bereich „Exporte“');
+  ok(app.includes('e.target_driver_name ?') && app.includes('`fuhrpark-protokoll_${af.from.value}_${af.to.value}${pu && S.auditUserName'), 'App');
+  ok(rd('src/telematics.js').includes("DELETE FROM telematics_mappings WHERE provider=? AND external_id=? RETURNING vehicle_id"), 'Aufheben mit Fahrzeug');
+  // 4. Fahrzeug-CSV: Umgebung im Namen, Reihenfolge wie die Liste (Umlaute)
+  eq((await U.own.post('/api/vehicles', { plate: 'ÖHR-X 2', vin: 'WDB00000000000099', site: 'Dortmund', kind: 'lkw' })).status, 201);
+  const vr = await U.fleet.get('/api/vehicles?format=csv'); const vt = new TextDecoder().decode(vr.data);
+  ok(/fuhrpark-fahrzeuge_test_/.test(vr.headers.get('content-disposition') || ''), vr.headers.get('content-disposition'));
+  const order = vt.split('\n').slice(1).filter(Boolean).map((l) => l.split(';')[0].replace(/"/g, '')); ok(order[0].startsWith('ÖHR'), order.join('|'));
+  ok(app.includes("`fuhrpark-fahrzeuge_${envFn()}${inact ? '_ausser-betrieb' : ''}_"), 'Dateiname App');
+  // 5. erledigter Rückruf mit gespeicherter Altfrist zählt nicht als nächste Prüfung
+  ok(rd('src/vehicles.js').includes("m.next_due_date IS NOT NULL AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due"), 'Fahrzeugliste');
+  // 6. Startseite: ruhende Fahrzeuge nicht in der Leiste, nur als Anzahl; Filter „überfällig“ ohne ruhende
+  const d0 = (await U.fleet.get('/api/dashboard')).data.vehicles;
+  db.prepare("UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WDB9630051L917317'").run();
+  const d1 = (await U.fleet.get('/api/dashboard')).data.vehicles; eq(d1.total, d0.total - 1); eq(d1.ruhend, 1);
+  ok(app.includes('const mOver = (v) => !v.eval_excluded &&') && app.includes('id="fbdormant"'), 'App');
+  // 7. Werkstatt bucht vor „Übernehmen“: gilt als übernommen
+  const id = await newCase({}, U.fleet);
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1.5, description: 'Rückleuchte getauscht' })).status, 200);
+  const cs = db.prepare('SELECT workshop_ack_at, workshop_ack_by, status FROM cases WHERE id=?').get(id);
+  ok(cs.workshop_ack_at && cs.workshop_ack_by === U.ws.id && cs.status === 'werkstatt_freigegeben', JSON.stringify(cs));
+  eq((await U.ws.get('/api/dashboard')).data.inbox, 0, 'nicht mehr „Neu – bitte übernehmen“');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

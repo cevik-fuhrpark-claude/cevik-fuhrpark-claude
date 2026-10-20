@@ -1178,6 +1178,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     default:
       throw bad('unknown_action', 'Unbekannte Aktion.');
   }
+  // Werkstatt bucht vor „Übernehmen“ (Arbeitszeit/Teil/Restarbeit): gilt als übernommen – sonst blieb der Auftrag unter „Neu – bitte
+  // übernehmen“ und der Agent meldete „nicht übernommen“ (bei kritisch als Eskalation), obwohl schon gearbeitet wird (20.10.2026)
+  if (user.role === 'workshop' && c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at && ['record_work', 'add_part', 'add_open_item'].includes(action) && !set.workshop_ack_at) {
+    set.workshop_ack_at = now; set.workshop_ack_by = user.id; payload = { ...(payload || {}), implicit_ack: true };
+    if (!notifyKind) notifyKind = 'acknowledged';
+  }
 
   const newVersion = c.version + 1;
   // abgeschlossen/abgelehnt: Wiedervorlage endet (blieb sonst in API/CSV stehen und war nicht mehr entfernbar, 17.10.2026)

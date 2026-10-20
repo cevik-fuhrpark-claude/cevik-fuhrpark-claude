@@ -698,8 +698,8 @@ function auditUser(query, where, args) {
   const id = String(query.user);
   if (!/^[\w-]{1,64}$/.test(id)) throw bad('validation', 'Unbekannte Person.');
   // zusätzlich Fahrerzuordnungen der Person (Ziel = Fahrzeug, Person im Detail „driver“) – über idx_dv_user und idx_audit_target_action
-  where.push(`(a.actor_id = ? OR a.target = ? OR (a.target IN (SELECT vehicle_id FROM driver_vehicles WHERE user_id = ?) AND a.action IN ('vehicle.assign_driver', 'vehicle.end_assignment') AND CASE WHEN json_valid(a.detail) THEN json_extract(a.detail, '$.driver') END = ?))`);
-  args.push(id, id, id, id);
+  where.push(`(a.actor_id = ? OR a.target = ? OR a.target IN (SELECT id FROM drivers WHERE user_id = ?) OR (a.target IN (SELECT vehicle_id FROM driver_vehicles WHERE user_id = ?) AND a.action IN ('vehicle.assign_driver', 'vehicle.end_assignment') AND CASE WHEN json_valid(a.detail) THEN json_extract(a.detail, '$.driver') END = ?))`);
+  args.push(id, id, id, id, id); // + Einträge zur Fahrerakte der Person (Kontrollen, Nachweise, Auslesungen; 20.10.2026)
   return id;
 }
 // Protokoll je Fahrzeug: Einträge mit dem Fahrzeug als Ziel (Stammdaten, Status, Bewertung, Prüftermine, Fahrerzuordnung, Hinweise, Telematik)
@@ -728,8 +728,8 @@ function auditQ(qs, where, args) {
   // instr statt LIKE: D1 lehnt LIKE-Muster über 50 Byte ab (Suchfeld 60 Zeichen → 500, 19.10.2026); lower() = LIKE-Verhalten für A–Z,
   // Varianten (caseVariants) für andere Buchstaben
   const IN = (col) => `instr(lower(${col}), lower(?)) > 0`;
-  where.push('(' + vs.map(() => ['a.target', 'a.detail', 'u.username', 'u.display_name', 'tu.username', 'tu.display_name', 'tv.plate'].map(IN).join(' OR ')).join(' OR ') + ')');
-  for (const v of vs) args.push(...Array(7).fill(v));
+  where.push('(' + vs.map(() => ['a.target', 'a.detail', 'u.username', 'u.display_name', 'tu.username', 'tu.display_name', 'tv.plate', 'td.display_name'].map(IN).join(' OR ')).join(' OR ') + ')');
+  for (const v of vs) args.push(...Array(8).fill(v)); // td = Fahrerakte (Ziel der Fahrerakte-Einträge, 20.10.2026)
 }
 // Bereich: ein Aktions-Präfix oder mehrere, durch Komma getrennt (z. B. „invite.,password.,totp.“ für Zugang & Sicherheit), höchstens 8 × 40 Zeichen
 function auditPrefix(query) {
@@ -767,8 +767,8 @@ export async function listAudit(env, user, query = {}) {
   const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
   // Betroffenes Konto bzw. Fahrzeug (target) zur Anzeige auflösen – je Eintrag zwei Primärschlüssel-Zugriffe, keine Zusatzabfrage
   const rows = (await env.DB.prepare(`SELECT a.id, a.action, a.target, a.detail, a.created_at, a.actor_id, u.display_name AS actor_name, u.username AS actor_username,
-    tu.display_name AS target_name, tu.username AS target_username, tv.plate AS target_plate
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`)
+    tu.display_name AS target_name, tu.username AS target_username, tv.plate AS target_plate, td.display_name AS target_driver_name
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target LEFT JOIN drivers td ON td.id=a.target WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`)
     .bind(...args, limit).all()).results;
   const entries = rows.map((r) => { let detail = null; try { detail = r.detail ? JSON.parse(r.detail) : null; } catch { detail = r.detail; } return { ...r, detail }; });
   await auditDetailRefs(env, entries);
@@ -823,8 +823,8 @@ export async function auditCsv(env, user, query, csvCell) {
   const person = await auditPerson(env, auditUser(query, where, args));
   const vehicle = await auditVehicleRow(env, auditVehicle(query, where, args));
   const rows = (await env.DB.prepare(`SELECT a.action, a.target, a.detail, a.created_at, u.display_name AS actor_name, u.username AS actor_username,
-    COALESCE(tv.plate, tu.display_name, tu.username) AS target_label
-    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target WHERE ${where.join(' AND ')}
+    COALESCE(tv.plate, tu.display_name, tu.username, td.display_name) AS target_label
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users tu ON tu.id=a.target LEFT JOIN vehicles tv ON tv.id=a.target LEFT JOIN drivers td ON td.id=a.target WHERE ${where.join(' AND ')}
     ORDER BY a.created_at, a.rowid LIMIT ?`).bind(...args, AUDIT_CSV_MAX + 1).all()).results;
   const truncated = rows.length > AUDIT_CSV_MAX; if (truncated) rows.length = AUDIT_CSV_MAX;
   const lines = [['Zeitpunkt', 'Aktion', 'Person', 'Benutzername', 'Betrifft (Kennung)', 'Betrifft', 'Details'].join(';')];
