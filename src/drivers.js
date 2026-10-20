@@ -109,7 +109,7 @@ export async function listDrivers(env, user, envName, query = {}, settings = nul
   const drivers = (await env.DB.prepare(`SELECT d.*, u.username FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, active).all()).results;
   const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.valid_until, x.issued_on, x.created_at, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.driver_id, c.checked_on, c.result FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id
-    WHERE d.environment=? AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id)
+    WHERE d.environment=? AND c.cancelled_at IS NULL AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id AND c2.cancelled_at IS NULL)
     ORDER BY c.created_at, c.rowid`).bind(envName).all()).results; // mehrere am selben Tag: die zuletzt erfasste gilt (Map übernimmt die letzte Zeile)
   const c = cfg(settings || await settingsMap(env)); const today = berlinDate();
   const byD = new Map(); for (const x of docs) { if (!byD.has(x.driver_id)) byD.set(x.driver_id, []); byD.get(x.driver_id).push(x); }
@@ -127,6 +127,8 @@ export async function driverDetail(env, user, envName, id) {
   const docs = (await env.DB.prepare(`SELECT x.*, u.display_name AS created_by_name FROM driver_documents x LEFT JOIN users u ON u.id=x.created_by WHERE x.driver_id=? ORDER BY x.superseded, x.kind, x.valid_until DESC`).bind(id).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.*, u.display_name AS checked_by_name FROM driver_license_checks c LEFT JOIN users u ON u.id=c.checked_by WHERE c.driver_id=? ORDER BY c.checked_on DESC, c.created_at DESC, c.rowid DESC LIMIT ?`).bind(id, DRIVER_HIST_MAX + 1).all()).results;
   const checksTruncated = checks.length > DRIVER_HIST_MAX; if (checksTruncated) checks.length = DRIVER_HIST_MAX;
+  // stornierte Kontrollen bleiben im Verlauf, zählen aber nicht (Migration 0065); gültige auch außerhalb der angezeigten 100 suchen
+  const validCheck = checks.find((x) => !x.cancelled_at) || (checks.length && checksTruncated ? await env.DB.prepare('SELECT * FROM driver_license_checks WHERE driver_id=? AND cancelled_at IS NULL ORDER BY checked_on DESC, created_at DESC, rowid DESC LIMIT 1').bind(id).first() : null);
   const sm = await settingsMap(env); const c = cfg(sm);
   const downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by WHERE t.driver_id=? ORDER BY t.downloaded_on DESC LIMIT ?`).bind(id, DRIVER_HIST_MAX + 1).all()).results;
   const downloadsTruncated = downloads.length > DRIVER_HIST_MAX; if (downloadsTruncated) downloads.length = DRIVER_HIST_MAX;
@@ -140,7 +142,7 @@ export async function driverDetail(env, user, envName, id) {
   // ebenso Bemerkung/Erfassende der Auslesungen und Erfassende der Nachweise (20.10.2026: Fahrer sah den Vermerk der Leitung)
   const dlOut = isMgr(user) ? downloads : downloads.map(({ note, created_by_name, ...r }) => r);
   const docsOut = isMgr(user) ? docs : docs.map(({ created_by, created_by_name, ...r }) => r);
-  return { driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: withTacho(driverStatus(docs, checks[0] || null, berlinDate(), c), tacho), settings: c };
+  return { driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: withTacho(driverStatus(docs, validCheck, berlinDate(), c), tacho), settings: c };
 }
 
 export async function createDriver(env, user, envName, body) {
@@ -269,6 +271,22 @@ export async function cancelDriverDocument(env, user, envName, id, docId, body =
   return { ok: true };
 }
 
+// Führerscheinkontrolle stornieren (Tippfehler im Datum/Ergebnis): bleibt im Verlauf mit Begründung, zählt nicht mehr; danach gilt die
+// neueste verbliebene Kontrolle (20.10.2026, Backlog 99 – wie Nachweise/Auslesungen)
+export async function cancelLicenseCheck(env, user, envName, id, checkId, body = {}) {
+  if (!isMgr(user)) throw forbidden();
+  await loadDriver(env, user, envName, id);
+  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');
+  const c = await env.DB.prepare('SELECT id, checked_on, result, cancelled_at FROM driver_license_checks WHERE id=? AND driver_id=?').bind(str(checkId, { max: 40 }), id).first();
+  if (!c) throw notFound('Kontrolle nicht gefunden.');
+  if (c.cancelled_at) return { ok: true, duplicate: true };
+  const r = await env.DB.prepare('UPDATE driver_license_checks SET cancelled_at=?, cancelled_by=?, cancel_reason=? WHERE id=? AND cancelled_at IS NULL').bind(nowIso(), user.id, reason, c.id).run();
+  if (!(r.meta && r.meta.changes)) return { ok: true, duplicate: true };
+  await audit(env, user.id, 'driver.license_check_cancel', id, { checked_on: c.checked_on, result: c.result, reason });
+  return { ok: true };
+}
+
 export async function addLicenseCheck(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
@@ -280,7 +298,7 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026); verglichen wird nur mit der
   // neuesten Kontrolle desselben Tages (20.10.2026: „in Ordnung“ nach „nicht vorgelegt“ am selben Tag wurde als Dublette abgewiesen)
   const r = await env.DB.prepare(`INSERT INTO driver_license_checks(id,driver_id,checked_on,result,checked_by,note,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7
-    WHERE NOT EXISTS (SELECT 1 FROM (SELECT result, note FROM driver_license_checks WHERE driver_id=?2 AND checked_on=?3 ORDER BY created_at DESC, rowid DESC LIMIT 1) x
+    WHERE NOT EXISTS (SELECT 1 FROM (SELECT result, note FROM driver_license_checks WHERE driver_id=?2 AND checked_on=?3 AND cancelled_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1) x
       WHERE x.result=?4 AND x.note IS ?6)`).bind(cid, id, on, result, user.id, note, nowIso()).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate', 'Diese Kontrolle ist bereits erfasst.');
   await audit(env, user.id, 'driver.license_check', id, { checked_on: on, result });

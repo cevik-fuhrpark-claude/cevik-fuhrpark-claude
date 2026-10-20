@@ -15197,6 +15197,28 @@ await test('Fehlersuche 20.10. (16): Führerscheinkontrolle am selben Tag korrig
   eq((await U.ws.get('/api/dashboard')).data.inbox, 0, 'nicht mehr „Neu – bitte übernehmen“');
 });
 
+await test('Backlog 99: Führerscheinkontrolle stornieren (Verlauf bleibt, zählt nicht, Rechte, Wiederholung, Protokoll, App)', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  const today = BERLIN_TODAY;
+  const dr = (await U.fleet.post('/api/drivers', { display_name: 'Petra Storno', user_id: U.driver.id })).data.id;
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: '2025-03-01', result: 'in_ordnung' })).status, 201);
+  const wrong = (await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: today, result: 'maengel', note: 'falscher Fahrer' })).data.id;
+  eq((await U.fleet.get(`/api/drivers/${dr}`)).data.status.check.status, 'mangel');
+  eq((await U.driver.post(`/api/drivers/${dr}/license-checks/${wrong}/cancel`, { reason: 'Tippfehler' })).status, 403, 'Fahrer');
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks/${wrong}/cancel`, { reason: 'x' })).status, 400, 'Begründung zu kurz');
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks/gibtsnicht/cancel`, { reason: 'Tippfehler' })).status, 404);
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks/${wrong}/cancel`, { reason: 'Tippfehler beim Fahrer' })).status, 200);
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks/${wrong}/cancel`, { reason: 'Tippfehler beim Fahrer' })).data.duplicate, true);
+  const ak = (await U.fleet.get(`/api/drivers/${dr}`)).data;
+  eq(ak.status.check.last, '2025-03-01', JSON.stringify(ak.status.check)); ok(ak.status.check.status !== 'mangel');
+  ok(ak.license_checks.some((c) => c.id === wrong && c.cancelled_at && c.cancel_reason === 'Tippfehler beim Fahrer'), 'bleibt im Verlauf');
+  eq((await U.fleet.get('/api/drivers')).data.drivers.find((d) => d.id === dr).status.check.last, '2025-03-01', 'Liste');
+  eq((await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: today, result: 'maengel', note: 'falscher Fahrer' })).status, 201, 'stornierte zählt nicht als Dublette');
+  eq(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='driver.license_check_cancel'").get().n, 1);
+  ok(app.includes('data-lccancel') && (i18n.match(/lc_cancel_reason: '/g) || []).length === 3 && i18n.includes("'driver.license_check_cancel'"), 'App/Texte');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
