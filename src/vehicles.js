@@ -212,7 +212,9 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Akte: Verlauf höchstens MAINT_HIST_MAX (eine Zeile mehr gelesen → maintenance_history_truncated, App verlinkt die Zeitleiste „Prüfungen“).
   // Erst nach failedInspection/resultMissing kürzen – die Hinweise nutzen alle gelesenen Ereignisse.
   const maintTruncated = !tl && maintenanceHistory.length > MAINT_HIST_MAX; if (maintTruncated) maintenanceHistory.length = MAINT_HIST_MAX;
-  const out = { inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
+  // Sicherheitssperre aus allen Vorgängen (Werkstatt sieht nur eigene/übernommene – Kennzeichen zeigte dort sonst kein Schloss, 20.10.2026)
+  const locked = allCases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
+  const out = { locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
   if (isManager(user)) {
     if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
@@ -246,7 +248,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // das Dokument mit dem spätesten „gültig bis“; ältere derselben Art gelten als abgelöst (19.10.2026: Akte zeigte Ablauf nicht an)
   if (documents.length) {
     const today = berlinDate(); const w = maintenanceWarnDays(sets.get('maintenance_warn_days'));
-    const keyOf = (f) => `${f.doc_kind || 'sonstiges'}|${f.doc_kind === 'sonstiges' ? String(f.doc_note || '').trim().toLowerCase() : ''}`;
+    const keyOf = (f) => `${f.doc_kind || 'sonstiges'}|${f.doc_kind === 'sonstiges' ? String(f.doc_note || '').replace(/^ +| +$/g, '').replace(/[A-Z]/g, (c) => c.toLowerCase()) : ''}`; // wie SQLite lower()/trim() im Agenten (nur ASCII, 20.10.2026)
     const maxBy = new Map();
     for (const f of documents) if (f.doc_valid_until && (!maxBy.has(keyOf(f)) || f.doc_valid_until > maxBy.get(keyOf(f)))) maxBy.set(keyOf(f), f.doc_valid_until);
     for (const f of documents) {
@@ -528,7 +530,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
 
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40 }), envName).first();
+  const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40, field: 'Fahrer' }), envName).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
   const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();

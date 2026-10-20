@@ -8241,7 +8241,7 @@ await test('Benutzer bearbeiten: Name/Rolle/Werkstatt/Umgebung, Protokoll „ge�
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const mayEdit = (u) => u.id !== S.me.id && (S.me.role === 'owner' || (roles.includes(u.role) && u.environment === S.me.environment));"), 'mayEdit wie Server');
-  ok(/if \(roleEnvChange && !confirm\(t\('ue_confirm'\)/.test(app), 'Bestätigung nur bei Rollen-/Umgebungswechsel');
+  ok(/if \(ends && !confirm\(t\('ue_confirm'\)/.test(app) && /const ends = roleEnvChange \|\| \(u\.role === 'workshop'/.test(app), 'Bestätigung nur bei Rollen-/Umgebungs-/Werkstattwechsel');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['ue_edit', 'ue_title', 'ue_confirm', 'ue_none', 'ue_saved_ended']) ok(STRINGS[l][k], `${k} ${l}`);
   ok(/if \(b\.dataset\.on !== '1' && !confirm\(t\('deactivate_confirm'\)/.test(app), 'Deaktivieren mit Rückfrage, Aktivieren ohne');
@@ -11805,7 +11805,7 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: S\.me\.id, user_name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
   ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
-  eq((app.match(/if \(err\.offline\) \{ later = await photosLater\(/g) || []).length, 2, 'Fotos bei Netzabbruch nachreichen (Meldung + Abfahrtskontrolle)');
+  eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 2, 'Fotos bei Netzabbruch nachreichen (Meldung + Abfahrtskontrolle)');
   const { num } = await import('../src/util.js'); eq(num('4,750', { decimalComma: true }), 4.75); eq(num('1.234,50'), 1234.5);
   // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
   const { agentBasics } = await import('../src/agent.js');
@@ -14309,6 +14309,88 @@ await test('Fehlersuche 20.10. (Vorgang/Fahrzeugliste/Hilfe): veraltete Seite �
   ok(app.includes("['all', t('filter_all'), bySite.length]"), 'Art-Reiter je Standort');
   ok(app.includes("S.unread = 0; refreshUnread(); route();"), 'Glocke nach Umgebungswechsel');
   ok(app.includes("${eur3(p.unit_price_net)}") && app.includes("o.safety_relevant && o.status === 'offen' ? 'p-kritisch'"), 'Stückpreis/erledigte Restarbeit');
+});
+
+await test('Fehlersuche 20.10. (2): Prüftermin-Import nimmt verspätet erledigte Prüfung (Datum/km) aus dem eigenen Export an, außer Betrieb statt „nicht im Fahrzeugstamm“, Vertrag mit nachgetragenem km-Kontingent über Tachotausch „nicht berechenbar“, Sperre in der Akte auch für die Werkstatt, Foto-Dublette bei vollem Vorgang, Postausgang/Fahrerauswahl/Werkstattwechsel in der Oberfläche', async () => {
+  const { e, U, newCase, V1 } = await freshWorld();
+  const { addMonths } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const H = { 'content-type': 'text/csv' };
+  const mk = async (vin, plate) => { const r = await U.own.post('/api/vehicles', { vin, plate, site: 'Dortmund' }); ok(r.status < 300, 'Fahrzeug ' + JSON.stringify(r.data)); return 'VIN:' + vin; };
+  // 1. verspätet erledigte UVV: Export-Zeile mit neuer „Letzte Prüfung“ und altem (berechnetem) Termin
+  const VB = await mk('WDB96340310888801', 'TT-FS 2001');
+  const lastOld = day(-400); const nextOld = addMonths(lastOld, 12);
+  eq((await U.fleet.post(`/api/vehicles/${VB}/maintenance`, { kind: 'UVV', last_done_date: lastOld, interval_months: 12, evidence: 'UVV-Protokoll (Test)' })).status, 201);
+  const lateDone = day(-5);
+  const csv1 = `FIN;Prüfart;Letzte Prüfung;Nächster Termin;Nachweis\nWDB96340310888801;UVV;${lateDone};${nextOld};UVV-Protokoll neu (Test)`;
+  const im1 = await U.fleet.req('POST', '/api/maintenance/import', csv1, H);
+  eq(im1.status, 200, JSON.stringify(im1.data)); eq(im1.data.skipped.length, 0, 'nicht abgewiesen: ' + JSON.stringify(im1.data.skipped)); eq(im1.data.updated, 1);
+  eq((await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === VB && r.kind === 'UVV').next_due_date, addMonths(lateDone, 12), 'Termin aus der neuen Durchführung');
+  // neue Prüfart mit Durchführung nach dem belegten Termin bleibt abgewiesen
+  const bad = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', `FIN;Prüfart;Letzte Prüfung;Nächster Termin;Nachweis\nWDB96340310888801;Tachograph;${day(-5)};${day(-30)};x`, H);
+  eq(bad.data.skipped[0].reason, 'Letzte Prüfung liegt nach dem nächsten Termin');
+  // 2. dasselbe für km: Ölwechsel 60 000 km, letzte bei 40 000, verspätet bei 110 000 erledigt, „Fällig bei km“ (abgeleitet) 100 000 unverändert
+  eq((await U.fleet.post(`/api/vehicles/${VB}/maintenance`, { kind: 'Ölwechsel', interval_km: 60000, last_done_km: 40000, evidence: 'Rechnung (Test)' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${VB}/odometer`, { km: 110000 })).status, 201);
+  const csv2 = 'FIN;Prüfart;Fällig bei km;km bei letzter Prüfung;Intervall km;Nachweis\nWDB96340310888801;Ölwechsel;100000;110000;60000;Rechnung neu (Test)';
+  const im2 = await U.fleet.req('POST', '/api/maintenance/import', csv2, H);
+  eq(im2.data.skipped.length, 0, 'km nicht abgewiesen: ' + JSON.stringify(im2.data.skipped));
+  eq((await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === VB && r.kind === 'Ölwechsel').next_due_km, 170000);
+  const badKm = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Prüfart;Fällig bei km;km bei letzter Prüfung;Nachweis\nWMA15SZZ2HM722774;Ölwechsel;100000;110000;x', H);
+  eq(badKm.data.skipped[0].reason, 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung', 'neue Regel weiter geprüft');
+  // 3. außer Betrieb: eigener Grund (Prüftermine und Rückrufe), übersetzt
+  const VC = await mk('WDB96340310888802', 'TT-FS 2002');
+  eq((await U.fleet.post(`/api/vehicles/${VC}/active`, { active: false, reason: 'verkauft (Test)' })).status, 200);
+  const off = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'FIN;Prüfart;Nächster Termin;Nachweis\nWDB96340310888802;UVV;2099-01-01;x\n;UVV;2099-01-01;x', H);
+  eq(off.data.skipped[0].reason, 'Fahrzeug außer Betrieb – nicht übernommen');
+  const offP = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;Prüfart;Nächster Termin;Nachweis\nTT-FS 2002;UVV;2099-01-01;x\nTT-XX 9999;UVV;2099-01-01;x', H);
+  eq(offP.data.skipped.map((x) => x.reason).join('|'), 'Fahrzeug außer Betrieb – nicht übernommen|Kennzeichen nicht im Fahrzeugstamm');
+  eq((await U.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Referenz\nWDB96340310888802;KBA-1', H)).data.skipped[0].reason, 'Fahrzeug außer Betrieb – nicht übernommen');
+  const { translateImportReason, STRINGS } = await import('../public/i18n.js');
+  eq(translateImportReason('en', 'Fahrzeug außer Betrieb – nicht übernommen'), 'Vehicle out of service – not imported');
+  // 4. Vertrag ohne Kontingent, Tachotausch, Kontingent nachgetragen → „nicht berechenbar“ (vorher „ok“ über gemischte Zähler)
+  const VA = await mk('WDB96340310888803', 'TT-FS 2003');
+  const c = await U.fleet.post(`/api/vehicles/${VA}/contracts`, { kind: 'leasing', partner: 'Test-Leasing', start_date: day(-400), end_date: day(600), start_km: 100000, evidence: 'Testvertrag' });
+  eq(c.status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${VA}/odometer`, { km: 300000, measured_on: day(-30) })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${VA}/odometer`, { km: 5000, measured_on: day(-20), note: 'Tachotausch laut Werkstattrechnung (Test)' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${VA}/odometer`, { km: 6200 })).status, 201);
+  eq((await U.fleet.patch(`/api/contracts/${c.data.id}`, { km_allowance: 200000 })).status, 200);
+  const ct = (await U.fleet.get(`/api/vehicles/${VA}`)).data.contracts.find((x) => x.id === c.data.id);
+  eq(ct.status.km.status, 'zaehler', 'Kontingent nicht berechenbar');
+  // 5. Werkstatt sieht in der Akte die Sperre (Vorgang „gemeldet“ ist für sie gefiltert)
+  const k = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Bremse zieht (Test)', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() });
+  eq(k.status, 201);
+  const dw = (await U.ws.get(`/api/vehicles/${V1}`)).data;
+  eq(dw.locked, true, 'Sperre für Werkstatt'); ok(!dw.cases.some((x) => x.id === k.data.id), 'Vorgang selbst bleibt gefiltert');
+  eq((await U.fleet.get(`/api/vehicles/${VB}`)).data.locked, false);
+  // 6. Foto-Dublette bei vollem Vorgang → „schon da“ statt too_many
+  const c6 = await newCase();
+  const png = () => { const b = new Uint8Array(400); b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); crypto.getRandomValues(b.subarray(8)); return b; };
+  const first = png();
+  for (const [i, b] of [first, ...Array.from({ length: 9 }, png)].entries()) eq((await U.driver.req('POST', `/api/cases/${c6}/files`, b, { 'content-type': 'image/png', 'x-filename': `f${i}.png` })).status, 201);
+  const again = await U.driver.req('POST', `/api/cases/${c6}/files`, first, { 'content-type': 'image/png', 'x-filename': 'f0.png' });
+  eq(again.status, 201, JSON.stringify(again.data)); eq(again.data.duplicate, true);
+  eq((await U.driver.req('POST', `/api/cases/${c6}/files`, png(), { 'content-type': 'image/png', 'x-filename': 'f11.png' })).data.error, 'too_many', 'neue Datei weiter begrenzt');
+  // 7. Fahrer zuordnen ohne Auswahl: Feldname in der Meldung
+  const as = await U.fleet.post(`/api/vehicles/${V1}/drivers`, {});
+  eq(as.status, 400); ok(String(as.data.message).includes('Fahrer'), as.data.message);
+  // 8. Oberfläche
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch'));"), 'Fotos bei 401/429/5xx behalten');
+  ok(app.includes("if (photoRetry(err)) { photoPending.set("), 'Postausgang reicht Fotos nach');
+  ok(app.includes("tn('outbox_photos_pending', np)"), 'nur Fotos ausstehend: eigener Text');
+  ok(app.includes("u.environment === envShown"), 'Fahrerauswahl je Umgebung') ; ok(app.includes("t('no_drivers_env')"), 'Hinweis ohne Fahrer');
+  ok(app.includes("locked: d.locked ??"), 'Akte nimmt Sperre vom Server');
+  ok(app.includes("api('GET', '/api/contracts?filter=aktiv')") && app.includes("c.status.notice.by >= today && c.status.notice.by <= in7"), 'Heute zu tun: Verträge unabhängig von der Vorwarnung');
+  ok(/device_id: deviceId\(\) \}\); resetUserState\(\);/.test(app), 'Einladung: Zustand der vorherigen Person geleert');
+  ok(app.includes("${fmtNum(Math.max(1, Math.round(f.size / 1024)))} ${esc(t('unit_kb'))}"), 'Dateigröße im Sprachformat');
+  for (const l of ['de', 'uk', 'en']) for (const key of ['unit_kb', 'no_drivers_env', 'outbox_photos_pending']) ok(STRINGS[l][key], `${l} ${key}`);
+  ok(STRINGS.uk.vehicle_inactive.includes('агент'), 'UK außer Betrieb vollständig');
+  ok(STRINGS.en.ct_import_hint.includes('1099.90'), 'EN Zahlenformat im Import-Hinweis');
+  // 9. Dokument „Sonstiges“: Akte gruppiert wie der Agent (nur ASCII klein)
+  const vsrc = (await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
+  ok(vsrc.includes(".replace(/[A-Z]/g, (c) => c.toLowerCase())"), 'Akte faltet nur ASCII');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

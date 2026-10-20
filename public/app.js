@@ -632,7 +632,7 @@ async function viewInvite(token) {
   bindLang();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
+    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState(); /* evtl. im Tab angemeldete andere Person: Sprache ging sonst verloren (user_mismatch), Ansichtszustand wurde vererbt (20.10.2026) */ if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -826,7 +826,7 @@ async function fleetTodo() {
     api('GET', '/api/fines?status=open').then((r) => r.fines).catch(() => []),
     isMgr() ? api('GET', '/api/tacho').catch(() => null) : null,
     isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(() => []) : [],
-    isMgr() ? api('GET', '/api/contracts?filter=aktion').then((r) => r.contracts).catch(() => []) : [],
+    isMgr() ? api('GET', '/api/contracts?filter=aktiv').then((r) => r.contracts).catch(() => []) : [],
     isMgr() ? api('GET', '/api/claims?filter=offen').then((r) => r.claims.filter((c) => c.followup_due)).catch(() => []) : [],
     // Lkw ohne Alpine-Symbol laut Erfassung – Entscheidung zur Umrüstung liegt bei der Fuhrparkleitung (nur Information, keine Sperre)
     isMgr() ? api('GET', '/api/tires/winter').then((r) => r.noncompliant).catch(() => []) : [],
@@ -853,8 +853,8 @@ async function fleetTodo() {
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.km_status === 'ueberfaellig' ? `${t('due_at_km')} ${fmtKm(r.next_due_km)} (${t('km_over')} ${fmtKm(-r.km_remaining)})` : r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')} · ${r.planned_date && r.planned_date >= today ? t('planned') + ' ' + fmtD(r.planned_date) : t('no_planned_date')}`, 'mittel'],
     ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/vehicles/' + encodeURIComponent(x.id) }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald') : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
     ['todo_driver_docs', dr.filter((d) => d.status.overall === 'kritisch'), (d) => `#/drivers/${d.id}`, (d) => `${d.display_name} · ${[...d.status.items.filter((i) => i.status === 'abgelaufen').map((i) => t('dk2_' + i.kind)), d.status.check.status === 'mangel' ? t('license_check') : ''].filter(Boolean).join(', ')}`, 'kritisch'],
-    ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
-      (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.status === 'bald' && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
+    ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
+      (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
     ['todo_claims', cl, (c) => `#/cases/${c.case_id}`, (c) => `${c.case_no} · ${c.plate} · ${c.insurer} · ${tn('claim_days_open', c.days_open)}`, ''],
     ['todo_winter', wi, (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', '))}${x.open_order ? ` · 🔧 ${t('mo_open')} ${x.open_order.case_no}` : ''}${x.closed_order ? ` · ⚠ ${t('wo_closed_short').replace('{no}', x.closed_order.case_no)}` : ''}`, ''],
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7 && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status)), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
@@ -936,9 +936,12 @@ async function idbDo(mode, fn) { const db = await idb(); return new Promise((res
 const photosPut = (key, list) => idbDo('readwrite', (st) => st.put(list, key));
 const photosGet = (key) => idbDo('readonly', (st) => st.get(key));
 const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
+// vorübergehende Fehler beim Foto-Upload (Netz, Anmeldung beendet, andere Person, 429, 5xx): Fotos bleiben zum Nachreichen erhalten –
+// vorher galten 401/429/5xx als endgültig, die Fotos wurden gelöscht (20.10.2026)
+const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch'));
 async function uploadCasePhotos(caseId, list, ox = {}) {
   let failed = 0;
-  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (err.offline) throw err; failed++; } }
+  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (photoRetry(err)) throw err; failed++; } }
   return failed;
 }
 let flushing = false;
@@ -973,7 +976,10 @@ async function flushOutbox() {
           // der Server erkennt bereits hochgeladene Fotos am Inhalt (keine Dubletten)
           if (ph && ph.length && !target) skippedTxt = photosSkippedText(r); // Kontrolle ohne Ziel: bewusst nicht übertragen (nicht „fehlgeschlagen“)
           try { if (ph && ph.length && target) failed = await uploadCasePhotos(target, ph, ox); }
-          catch (err) { if (err.offline) { photoPending.set(item.body.request_key, { target, case_no: r.case_no }); kept++; continue; } throw err; }
+          catch (err) {
+            if (photoRetry(err)) { photoPending.set(item.body.request_key, { target, case_no: r.case_no }); kept++; if (err.status === 401 || err.code === 'user_mismatch') break; continue; }
+            throw err;
+          }
           await photosDel(item.body.request_key).catch(() => {});
         }
         done.add(item.body.request_key);
@@ -1021,7 +1027,7 @@ function otherEnvOutbox() {
 }
 function outboxBanner() {
   if (!S.me) return '';
-  const all = outboxGet(); const n = all.filter((x) => !x.failed).length; const bad = [...all.filter((x) => x.failed), ...otherEnvOutbox()];
+  const all = outboxGet(); const n = all.filter((x) => !x.failed && !x.photo_target).length; const np = all.filter((x) => !x.failed && x.photo_target).length; const bad = [...all.filter((x) => x.failed), ...otherEnvOutbox()];
   let html = '';
   if (bad.length) {
     html += `<div class="panel alert" id="outbox_failed" role="alert"><h2>${esc(tn('outbox_failed_n', bad.length))}</h2><p class="small">${esc(tn('outbox_failed_hint', bad.length))}</p>${bad.map((x) => {
@@ -1032,7 +1038,8 @@ function outboxBanner() {
         <div class="actions">${x.envKey ? `<button type="button" class="btn secondary" data-obx-del-env="${esc(x.envKey)}" data-rk="${k}">${esc(t('outbox_discard'))}</button>` : `<button type="button" class="btn secondary" data-obx-retry="${k}">${esc(t('outbox_retry'))}</button><button type="button" class="btn secondary" data-obx-del="${k}">${esc(t('outbox_discard'))}</button>`}</div></div>`;
     }).join('')}</div>`;
   }
-  if (n) html += `<div class="panel alert" id="outbox" role="status">${esc(tn('outbox_pending', n))}</div>`;
+  // Meldung schon angelegt, nur Fotos fehlen: eigener Text (sah sonst wie eine ungesendete Meldung aus → Doppelmeldung, 20.10.2026)
+  if (n || np) html += `<div class="panel alert" id="outbox" role="status">${[n ? esc(tn('outbox_pending', n)) : '', np ? esc(tn('outbox_photos_pending', np)) : ''].filter(Boolean).join('<br>')}</div>`;
   return html ? `<div id="outbox_area">${html}</div>` : '';
 }
 // Nach dem Senden: Hinweisbereich der aktuellen Seite aktualisieren, ohne die Seite neu aufzubauen (Eingaben bleiben)
@@ -1143,7 +1150,7 @@ async function viewNew(preId) {
       let later = 0;
       for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (err.offline) { later = await photosLater('/api/cases', body, r, r.id, files.slice(i)); break; } failed++; }
+        try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (photoRetry(err)) { later = await photosLater('/api/cases', body, r, r.id, files.slice(i)); break; } failed++; }
       }
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
       location.hash = '#/cases/' + r.id;
@@ -1541,7 +1548,7 @@ async function viewDepartureCheck(preId) {
       let later = 0;
       if (files.length && fTarget) for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (err.offline) { later = await photosLater('/api/inspections', body, r, fTarget, files.slice(i)); break; } failed++; }
+        try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (photoRetry(err)) { later = await photosLater('/api/inspections', body, r, fTarget, files.slice(i)); break; } failed++; }
       }
       toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
       location.hash = fTarget ? '#/cases/' + fTarget : '#/';
@@ -1806,7 +1813,7 @@ async function viewVehicle(id, focusEv = null) {
   const afHtml = af.length ? `<details class="panel" id="vaf"${af.some((f) => f.severity === 'kritisch') ? ' open' : ''}><summary><b>${esc(t('veh_findings'))}</b> <span class="chip ${AFS[af[0].severity]}">${af.length}</span></summary><div class="list" style="margin-top:8px">${af.map((f) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}"><span class="chip ${AFS[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${f.case_id ? `<a href="#/cases/${esc(f.case_id)}">${esc(t('details'))}</a>` : ''}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('')}</div><p class="small muted">${esc(t('veh_findings_hint'))} <a class="noprint" href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm">${esc(t('nav_master'))} ›</a></p></details>` : '';
   // Prüfergebnis fehlt (in der App erfasste Pflichtprüfung ohne Ergebnis) – Knopf öffnet das Formular in „Bisherige Durchführungen“
   const rmHtml = (d.result_missing || []).length ? `<div class="panel" id="vrm"><b>${esc(t('dq_inspection_no_result'))}</b><div>${d.result_missing.map((r) => `${esc(mk(r.kind))} · ${fmtD(r.done_date)}`).join(' · ')}</div>${canMaint ? `<div class="actions noprint">${d.result_missing.map((r) => `<button type="button" class="btn secondary" data-rmgo="${esc(r.event_id)}">${esc(t('res_add_go'))}: ${esc(mk(r.kind))}</button>`).join('')}</div>` : ''}</div>` : '';
-  let html = `<p class="noprint"><a href="#/vehicles">‹ ${esc(t('back'))}</a></p><div>${plate(v.plate, { big: true, locked: d.cases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)) })}</div>
+  let html = `<p class="noprint"><a href="#/vehicles">‹ ${esc(t('back'))}</a></p><div>${plate(v.plate, { big: true, locked: d.locked ?? d.cases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)) })}</div>
     <h1 style="margin-top:12px" data-title="${esc(v.plate)} · ${esc(t('vehicle_file'))}">${esc(t('vehicle_file'))}</h1><p class="print-only small">${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>${fiHtml}${rmHtml}${afHtml}<section class="panel"><dl class="kv"><dt>${esc(t('vin'))}</dt><dd>${esc(v.vin)}</dd><dt>${esc(t('manufacturer'))}</dt><dd>${esc(v.manufacturer || '–')} ${esc(v.model || '')}</dd><dt>${esc(t('year'))}</dt><dd>${esc(v.build_year || '–')}</dd><dt>${esc(t('site'))}</dt><dd>${esc(v.site || '–')}</dd><dt>${esc(t('vehicle_kind'))}</dt><dd>${esc(t('vk_' + (v.kind || 'lkw')))}</dd>${v.kind === 'anhaenger' ? `<dt>${esc(t('truck'))}</dt><dd>${(d.coupled || []).map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>${c.locked ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}`).join(', ') || '–'}</dd>` : `<dt>${esc(t('trailer'))}</dt><dd>${(d.coupled || []).length ? d.coupled.map((c) => `<a href="#/vehicles/${encodeURIComponent(c.id)}">${esc(c.plate)}</a>${c.locked ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}`).join(', ') : esc(v.trailer_plate || '–')}</dd>`}<dt>${esc(t('km'))}</dt><dd>${d.odometer[0] ? fmtKm(d.odometer[0].km) + ' · ' + fmtD(d.odometer[0].measured_at) : '–'}</dd>${v.kind !== 'anhaenger' ? `<dt>${esc(t('last_check'))}</dt><dd>${d.last_check ? `${fmtDT(d.last_check.created_at)} <span class="chip ${d.last_check.result === 'ok' ? 'ok' : 'kritisch'}">${d.last_check.result === 'ok' ? 'OK' : esc(t('defect'))}</span> <span class="small muted">${esc(pnm(d.last_check.performed_by_name, d.last_check.performed_by_name_hidden))}</span>` : esc(t('last_check_none'))}<div class="small muted">${esc(t('last_check_info'))}</div></dd>` : ''}</dl></section>`;
   if (!v.active) { const ia = d.inactive_info; html += `<div class="panel alert" data-inactive>${esc(t('vehicle_inactive'))}${ia ? `<div class="small">${esc(t('inactive_since'))} ${fmtDT(ia.since)}${ia.by_name ? ' · ' + esc(ia.by_name) : ''}${ia.reason ? ` · ${esc(t('inactive_reason'))}: ${esc(ia.reason)}` : ''}</div>` : ''}</div>`; }
   if (S.me.role !== 'driver') html += `<section class="panel" id="vnotes" aria-live="polite"></section>`;
@@ -1856,7 +1863,7 @@ async function viewVehicle(id, focusEv = null) {
   if (canMaint) html += `<details class="panel"><summary>${esc(t('add_rule'))}</summary><form id="mf"><label>${esc(t('kind'))}</label><select name="kind">${S.meta.maintenance_kinds.map((k) => `<option value="${esc(k)}">${esc(mk(k))}</option>`).join('')}</select><label>${esc(t('last_done'))}</label><input type="date" name="last_done_date" max="${esc(bDate())}"><label>${esc(t('interval_months'))}</label><input name="interval_months" inputmode="numeric"><label>${esc(t('next_due'))}</label><input type="date" name="next_due_date"><label>${esc(t('last_done_km'))}</label><input name="last_done_km" inputmode="numeric"><label>${esc(t('interval_km'))}</label><input name="interval_km" inputmode="numeric"><label>${esc(t('due_km_doc'))}</label><input name="due_km" inputmode="numeric"><label>${esc(t('evidence'))}</label><input name="evidence" required><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
   if (d.documents) {
     const canDoc = ['owner', 'fleet', 'workshop'].includes(S.me.role);
-    html += `<h2>${esc(t('documents'))}</h2>${d.documents.length ? `<div class="list">${d.documents.map((f) => `<a class="row" href="${fileUrl(f.id)}" target="_blank" rel="noopener"><span class="chip">${esc(t('dk_' + (f.doc_kind || 'sonstiges')))}</span><span class="title">${esc(f.filename)}</span><span class="small muted">${Math.max(1, Math.round(f.size / 1024))} KB</span>${f.doc_status && f.doc_status !== 'gueltig' ? `<span class="chip ${f.doc_status === 'abgelaufen' ? 'kritisch' : f.doc_status === 'laeuft_ab' ? 'mittel' : ''}" data-docst="${esc(f.doc_status)}">${esc(t('docst_' + f.doc_status))}</span>` : ''}<span class="sub" style="white-space:normal">${[f.doc_valid_until && `${esc(t('valid_until'))} ${fmtD(f.doc_valid_until)}`, f.doc_note && esc(f.doc_note), fmtD(f.created_at), esc(f.uploaded_by_name)].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
+    html += `<h2>${esc(t('documents'))}</h2>${d.documents.length ? `<div class="list">${d.documents.map((f) => `<a class="row" href="${fileUrl(f.id)}" target="_blank" rel="noopener"><span class="chip">${esc(t('dk_' + (f.doc_kind || 'sonstiges')))}</span><span class="title">${esc(f.filename)}</span><span class="small muted">${fmtNum(Math.max(1, Math.round(f.size / 1024)))} ${esc(t('unit_kb'))}</span>${f.doc_status && f.doc_status !== 'gueltig' ? `<span class="chip ${f.doc_status === 'abgelaufen' ? 'kritisch' : f.doc_status === 'laeuft_ab' ? 'mittel' : ''}" data-docst="${esc(f.doc_status)}">${esc(t('docst_' + f.doc_status))}</span>` : ''}<span class="sub" style="white-space:normal">${[f.doc_valid_until && `${esc(t('valid_until'))} ${fmtD(f.doc_valid_until)}`, f.doc_note && esc(f.doc_note), fmtD(f.created_at), esc(f.uploaded_by_name)].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
       ${canDoc && d.documents.length ? `<details class="panel noprint" id="docedit-d"><summary>${esc(t('doc_edit'))}</summary><form id="docedit"><label>${esc(t('documents'))}</label><select name="file_id">${d.documents.map((f) => `<option value="${esc(f.id)}">${esc(t('dk_' + (f.doc_kind || 'sonstiges')))} · ${esc(f.filename)} · ${fmtD(f.created_at)}</option>`).join('')}</select><label>${esc(t('doc_kind'))}</label><select name="kind">${(S.meta.doc_kinds || []).map((k) => `<option value="${k}">${esc(t('dk_' + k))}</option>`).join('')}</select><label>${esc(t('note'))}<span class="hint">${esc(t('doc_note_hint'))}</span></label><input name="note" maxlength="200"><label>${esc(t('valid_until'))}<span class="hint">${esc(t('doc_edit_hint'))}</span></label><input type="date" name="valid_until"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}${canDoc && d.documents.length >= VEH_DOCS_MAX ? `<p class="small muted noprint" id="docfull">${esc(t('docs_full').replace('{max}', VEH_DOCS_MAX))}</p>` : ''}${canDoc && d.documents.length < VEH_DOCS_MAX ? `<details class="panel noprint"><summary>${esc(t('add_document'))}${d.documents.length >= VEH_DOCS_MAX / 2 ? ` <span class="small muted" id="docfree">(${esc(t('files_free').replace('{n}', VEH_DOCS_MAX - d.documents.length).replace('{max}', VEH_DOCS_MAX))})</span>` : ''}</summary><form id="docf"><label>${esc(t('doc_kind'))}</label><select name="kind">${(S.meta.doc_kinds || []).map((k) => `<option value="${k}">${esc(t('dk_' + k))}</option>`).join('')}</select><label>${esc(t('note'))}<span class="hint">${esc(t('doc_note_hint'))}</span></label><input name="note" maxlength="200"><label>${esc(t('valid_until'))}<span class="hint">${esc(t('valid_until_hint'))}</span></label><input type="date" name="valid_until"><label>${esc(t('file'))}<span class="hint">${esc(t('doc_file_hint'))}</span></label><input type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required><div class="actions"><button class="btn">${esc(t('upload'))}</button></div></form></details>` : ''}`;
   }
   if (d.contracts) html += ctSection(d.contracts, d.documents || null);
@@ -1942,8 +1949,16 @@ async function viewVehicle(id, focusEv = null) {
   bindTachoCancel(document, () => viewVehicle(id));
   const tvf = $('#tvf'); if (tvf) tvf.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: id, ...Object.fromEntries(new FormData(tvf)) }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const df = $('#df');
+  // Fahrerliste nachladen: nur Fahrer der angezeigten Umgebung (Inhaber sah sonst auch Betriebs-/Testkonten → 400), Ladefehler ersetzt
+  // nicht die ganze Akte, ohne Fahrer Hinweis statt leerer Auswahl (20.10.2026)
+  let us = null;
   if (df) {
-    const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active);
+    const envShown = (S.viewEnv && S.me.role === 'owner') ? S.viewEnv : S.me.environment;
+    try { us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active && (!u.environment || u.environment === envShown)); }
+    catch (err) { us = null; df.innerHTML = `<p class="small muted">${esc(err.message)}</p>`; }
+    if (us && !us.length) df.innerHTML = `<p class="small muted">${esc(t('no_drivers_env'))}</p>`;
+  }
+  if (df && us && us.length) {
     $('#drvsel').innerHTML = us.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)}</option>`).join('');
     df.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/drivers`, { user_id: $('#drvsel').value, end_previous: $('#endprev').checked }); if (r.ended_previous.length) toast(`${t('ended_assignment')}: ${r.ended_previous.join(', ')}`); else if (r.other_open.length) toast(`${t('also_assigned')}: ${r.other_open.join(', ')}`, true); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   }
@@ -3872,9 +3887,11 @@ async function viewUsers() {
       if (body.role === 'workshop') body.workshop_site = $('#uews').value;
       if ($('#uee')) body.environment = $('#uee').value;
       const roleEnvChange = body.role !== u.role || (body.environment && body.environment !== u.environment);
+      // Werkstatt-Standortwechsel beendet serverseitig ebenfalls alle Anmeldungen (Tablet) – dieselbe Rückfrage (20.10.2026)
+      const ends = roleEnvChange || (u.role === 'workshop' && body.role === 'workshop' && (body.workshop_site || null) !== (u.workshop_site || null));
       if (!roleEnvChange && body.display_name === u.display_name && (body.role !== 'workshop' || body.workshop_site === u.workshop_site)) { toast(t('ue_none')); return; }
-      if (roleEnvChange && !confirm(t('ue_confirm').replace('{name}', u.display_name))) return;
-      try { const r = await api('PATCH', `/api/users/${u.id}`, body); toast(r.sessions_ended && roleEnvChange ? t('ue_saved_ended') : '✓'); viewUsers(); } catch (err) { toast(err.message, true); }
+      if (ends && !confirm(t('ue_confirm').replace('{name}', u.display_name))) return;
+      try { const r = await api('PATCH', `/api/users/${u.id}`, body); toast(r.sessions_ended && ends ? t('ue_saved_ended') : '✓'); viewUsers(); } catch (err) { toast(err.message, true); }
     };
     $('#uen').focus({ preventScroll: true }); $('#uef').scrollIntoView({ block: 'start' });
   }));

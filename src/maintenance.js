@@ -362,6 +362,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 
   // km_drop: letzter km-Rücksprung je Fahrzeug (km-Grundlage einer Durchführung vor dem Tachotausch bleibt „ungeklärt“, kmBasisForDone)
   const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, ${KM_DROP_SQL('v.id')} AS km_drop FROM vehicles v WHERE v.active=1`).all()).results;
+  const offOf = await inactiveIndex(env); // außer Betrieb genommene Fahrzeuge: eigener Grund statt „nicht im Fahrzeugstamm“ (20.10.2026)
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = plateIndex(vehicles);
   const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source, km_basis_at FROM maintenance_rules ORDER BY created_at').all()).results;
@@ -384,11 +385,11 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (vinRaw) {
       if (!isValidVin(vinRaw)) return skip('FIN ungültig');
       v = byId.get(`VIN:${vinRaw}`);
-      if (!v) return skip('FIN nicht im Fahrzeugstamm');
+      if (!v) return skip(offOf.vins.has(vinRaw) ? INACTIVE_SKIP : 'FIN nicht im Fahrzeugstamm');
       matchedBy = 'FIN';
     } else {
       const hit = byPlate.get(normPlate(plateRaw));
-      if (!plateRaw || !hit) return skip('Kennzeichen nicht im Fahrzeugstamm');
+      if (!plateRaw || !hit) return skip(plateRaw && offOf.plates.has(normPlate(plateRaw)) ? INACTIVE_SKIP : 'Kennzeichen nicht im Fahrzeugstamm');
       if (hit === 'mehrdeutig') return skip('Kennzeichen mehrdeutig – FIN angeben');
       v = hit; matchedBy = 'Kennzeichen';
     }
@@ -422,12 +423,14 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       dueKm = kmNum(kmRaw[0], 1, 5000000); if (Number.isNaN(dueKm)) return skip(`km ungültig: ${kmRaw[0]}`);
       lastKm = kmNum(kmRaw[1], 0, 5000000); if (Number.isNaN(lastKm)) return skip(`km ungültig: ${kmRaw[1]}`);
       intervalKm = kmNum(kmRaw[2], 100, 1000000); if (Number.isNaN(intervalKm)) return skip(`km ungültig: ${kmRaw[2]}`);
-      if (dueKm !== null && lastKm !== null && dueKm <= lastKm) return skip('Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung');
+      // „Fällig bei km ≤ km letzte Prüfung“ erst nach dem Abgleich mit dem gespeicherten Termin (zweite Schleife): im eigenen Export ist die
+      // km-Fälligkeit abgeleitet – eine verspätet nachgetragene Durchführung wurde sonst abgewiesen (20.10.2026)
     }
     let next = due.date;
     if (!next && last.date && interval) next = addMonths(last.date, interval);
     if (!next && !last.date && dueKm === null && lastKm === null) return skip('Kein Datum: „Nächster Termin“ oder „Letzte Prüfung“ angeben');
-    if (next && last.date && last.date > next) return skip('Letzte Prüfung liegt nach dem nächsten Termin');
+    // „Letzte Prüfung nach dem nächsten Termin“ erst nach dem Abgleich mit dem gespeicherten (berechneten) Termin prüfen – sonst wurde
+    // eine verspätet erledigte Prüfung im eigenen Export abgewiesen (20.10.2026)
     const ev = due.month_only ? `${evidence} (Plakette ${get(cells, ci.due)}: fällig bis Monatsende)` : evidence;
     const key = `${v.id}|${kind}`;
     if (MULTI_RULE_KINDS.includes(kind)) {
@@ -474,6 +477,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     }
     // dasselbe für km: unveränderte (abgeleitete) km-Fälligkeit bei neuerer Durchführung gilt nicht als Beleg
     if (cur && !p.husp && p.dueKm !== null && p.lastKm !== null && cur.last_done_km !== null && p.lastKm > cur.last_done_km && p.dueKm === ruleDueKm(cur)) p.dueKm = null;
+    if (p.next && p.last && p.last > p.next) { skipRow('Letzte Prüfung liegt nach dem nächsten Termin'); continue; }
     let action; let next = p.next; let last = p.last;
     let keepDoc = false;
     if (!cur) action = 'neu';
@@ -563,6 +567,11 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 
 // Kennzeichen → Fahrzeug; doppeltes Kennzeichen wegen ruhendem Doppel (Fall SZ-YC 5539) → das bewertete Fahrzeug, wie beim
 // Auslesungen-Import und bei Bußgeldern (17.10.2026); sonst „mehrdeutig“
+const INACTIVE_SKIP = 'Fahrzeug außer Betrieb – nicht übernommen';
+async function inactiveIndex(env) {
+  const rows = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=0').all()).results;
+  return { vins: new Set(rows.filter((r) => String(r.id).startsWith('VIN:')).map((r) => r.id.slice(4))), plates: new Set(rows.map((r) => normPlate(r.plate))) };
+}
 function plateIndex(vehicles) {
   const byPlate = new Map(); const evalOnly = new Map();
   for (const v of vehicles) {
@@ -599,6 +608,7 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
   if (ci.ref < 0) throw bad('validation', 'Spalte „Referenz“ (Rückrufnummer laut Schreiben) erforderlich.');
   const vehicles = (await env.DB.prepare('SELECT id, plate, eval_excluded FROM vehicles WHERE active=1').all()).results;
+  const offOf = await inactiveIndex(env); // außer Betrieb genommene Fahrzeuge: eigener Grund statt „nicht im Fahrzeugstamm“ (20.10.2026)
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = plateIndex(vehicles);
   // vorhandene Rückrufe: Nachweis = Referenz (offen) bzw. „Referenz · Durchführung: …“ (erledigt)
@@ -620,11 +630,11 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
     if (vinRaw) {
       if (!isValidVin(vinRaw)) return skip('FIN ungültig');
       v = byId.get(`VIN:${vinRaw}`);
-      if (!v) return skip('FIN nicht im Fahrzeugstamm');
+      if (!v) return skip(offOf.vins.has(vinRaw) ? INACTIVE_SKIP : 'FIN nicht im Fahrzeugstamm');
       matchedBy = 'FIN';
     } else {
       const hit = byPlate.get(normPlate(plateRaw));
-      if (!plateRaw || !hit) return skip('Kennzeichen nicht im Fahrzeugstamm');
+      if (!plateRaw || !hit) return skip(plateRaw && offOf.plates.has(normPlate(plateRaw)) ? INACTIVE_SKIP : 'Kennzeichen nicht im Fahrzeugstamm');
       if (hit === 'mehrdeutig') return skip('Kennzeichen mehrdeutig – FIN angeben');
       v = hit; matchedBy = 'Kennzeichen';
     }

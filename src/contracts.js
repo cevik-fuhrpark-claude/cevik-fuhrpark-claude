@@ -192,7 +192,9 @@ export async function updateContract(env, user, id, body, envName) {
       // km-Grundlage nur neu, wenn sie sich ändert oder ausdrücklich bestätigt wird (Bemerkung/Rate klärten sonst einen Tachotausch, 17.10.2026)
       // 19.10.2026: Kontingent allein klärt keinen Tachotausch mehr; geänderter Beginn/km bei Übernahme nach derselben Regel wie die Neuanlage
       flagLike(body.confirm_km_basis) ? laterIso(c.updated_at)
-        : ['start_km', 'start_date'].some((k) => changed.includes(k)) ? contractKmBasis(await dropOf(env, c.vehicle_id), f.start_date, laterIso(c.updated_at)) : null).run();
+        // 20.10.2026: erstmals eingetragenes Kontingent – Grundlage nach derselben Regel wie die Neuanlage (beim Anlegen ohne Kontingent stand sie
+        // auf „jetzt“, ein Tachotausch dazwischen wurde überrechnet und eine Überschreitung blieb verborgen)
+        : (['start_km', 'start_date'].some((k) => changed.includes(k)) || (!c.km_allowance && f.km_allowance)) ? contractKmBasis(await dropOf(env, c.vehicle_id), f.start_date, laterIso(c.updated_at)) : null).run();
   if (!(r.meta && r.meta.changes)) {
     const why = await env.DB.prepare(`SELECT ${DUP} AS dup, ${CLAIM} AS claim`).bind(f.kind, f.partner, f.contract_no, f.start_date, null, null, null, null, null, null, null, null, null, id, null, c.vehicle_id).first();
     if (why && why.claim) throw conflict('contract_in_claim', 'Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.');
