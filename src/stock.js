@@ -541,13 +541,22 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   const MAX_ROWS = STOCK_IMPORT_MAX;
   if (table.length - 1 > MAX_ROWS) throw bad('validation', `Maximal ${MAX_ROWS} Zeilen je Import.`);
   const head = table[0].map((h) => String(h || '').trim().toLowerCase());
-  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { name: col(['bezeichnung', 'artikelbezeichnung', 'artikel', 'name', 'teil']), pn: col(['teilenummer', 'artikelnummer', 'art.-nr', 'art-nr', 'artnr', 'nummer', 'teile-nr']),
-    unit: head.findIndex((h) => h.startsWith('einheit') || h.startsWith('mengeneinheit') || h === 'me'), min: col(['mindest', 'meldebestand']), loc: col(['lagerort', 'ort', 'regal', 'lagerplatz']),
-    price: col(['preis', 'einkaufspreis', 'einzelpreis', 'stückpreis', 'stueckpreis', 'ek', 'netto']), qty: -1 };
-  ci.qty = head.findIndex((h, i) => i !== ci.unit && i !== ci.min && ['bestand', 'anfangsbestand', 'lagerbestand', 'istbestand', 'menge', 'stück', 'stueck', 'anzahl'].some((n) => h.startsWith(n)));
-  // „Teilenummer“ beginnt nicht mit „teil“-Spalte verwechseln: Bezeichnungsspalte darf nicht die Nummernspalte sein
-  if (ci.name >= 0 && ci.name === ci.pn) ci.name = head.findIndex((h, i) => i !== ci.pn && ['bezeichnung', 'artikelbezeichnung', 'artikel', 'name'].some((n) => h.startsWith(n)));
+  // Spalten nach Vorrang der Namen statt nach Spaltenreihenfolge (20.10.2026: „Artikel-Nr“ wurde Bezeichnung, „Stückpreis“ vor
+  // „Bestand“ wurde als Menge gebucht): erst genaue Treffer, dann Anfang des Namens; jede Spalte nur einmal vergeben
+  const taken = new Set();
+  const col = (names, exact = []) => {
+    let i = head.findIndex((h, j) => !taken.has(j) && (names.includes(h) || exact.includes(h)));
+    if (i < 0) for (const n of names) { i = head.findIndex((h, j) => !taken.has(j) && h.startsWith(n)); if (i >= 0) break; }
+    if (i >= 0) taken.add(i);
+    return i;
+  };
+  const ci = { pn: col(['teilenummer', 'artikelnummer', 'artikel-nr', 'artikelnr', 'art.-nr', 'art-nr', 'art.nr', 'artnr', 'teile-nr', 'teilenr', 'nummer']) };
+  ci.unit = col(['einheit', 'mengeneinheit'], ['me']);
+  ci.min = col(['mindest', 'meldebestand']);
+  ci.price = col(['preis', 'einkaufspreis', 'einzelpreis', 'stückpreis', 'stueckpreis', 'ek', 'netto']);
+  ci.loc = col(['lagerort', 'lagerplatz', 'regal', 'ort']);
+  ci.qty = col(['bestand', 'anfangsbestand', 'lagerbestand', 'istbestand', 'menge', 'stück', 'stueck', 'anzahl']);
+  ci.name = col(['bezeichnung', 'artikelbezeichnung', 'artikel', 'name', 'teil']);
   if (ci.name < 0) throw bad('validation', 'Spalte „Bezeichnung“ erforderlich.');
   const existing = (await env.DB.prepare('SELECT id, name, part_number, unit, min_qty, location, unit_price_net, active FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;
   const known = new Map(existing.map((r) => [itemKey(r.name, r.part_number), r]));
@@ -569,7 +578,10 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
     let min; let price; let qty;
     try { min = numOf(get(cells, ci.min), 'Mindestbestand', 1e6); price = get(cells, ci.price) === '' ? null : num(get(cells, ci.price).replace(/\s*€$/, ''), { min: 0, max: 1e7, field: 'Preis', decimalComma: dec, decimalPoint: pdec }); qty = numOf(get(cells, ci.qty), 'Anfangsbestand', 1e6); }
     catch (e) { if (e instanceof HttpError) return skip(e.message); throw e; }
-    const unit = stdUnit(get(cells, ci.unit).slice(0, 20) || null); const loc = get(cells, ci.loc).slice(0, 80) || null;
+    // zu lang = Zeile übersprungen wie im Formular (20.10.2026: vorher still gekürzt)
+    if (get(cells, ci.unit).length > 20) return skip('Einheit zu lang (max. 20 Zeichen)');
+    if (get(cells, ci.loc).length > 80) return skip('Lagerort zu lang (max. 80 Zeichen)');
+    const unit = stdUnit(get(cells, ci.unit) || null); const loc = get(cells, ci.loc) || null;
     const key = itemKey(name, pn);
     if (seen.has(key)) return skip('doppelt in der Datei');
     seen.set(key, line);

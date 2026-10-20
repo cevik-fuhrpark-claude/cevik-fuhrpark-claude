@@ -445,9 +445,10 @@ export async function kpiReport(env, user, envName, query = {}) {
     let wait = 0; let since = null;
     for (const e of evs) {
       if (e.to_status === 'wartet_teile' && since === null) since = Date.parse(e.created_at);
-      else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { wait += Date.parse(e.created_at) - since; addIv(pwait, c.vehicle_id, since, Date.parse(e.created_at)); since = null; }
+      else if (since !== null && e.to_status && e.to_status !== 'wartet_teile') { const b = clipEnd(Date.parse(e.created_at)); if (b > since) wait += b - since; addIv(pwait, c.vehicle_id, since, b); since = null; }
     }
-    if (since !== null) { wait += now - since; addIv(pwait, c.vehicle_id, since, now); }
+    // höchstens bis Zeitraumende wie Ausfall-/Sperrzeit (20.10.2026: offener Abschnitt aus September zählte 960 h Teile-Wartezeit im 720-h-Monat)
+    if (since !== null) { const b = clipEnd(now); if (b > since) wait += b - since; addIv(pwait, c.vehicle_id, since, b); }
     // Termintreue Teile: je Abschnitt „wartet auf Teile“ der zuletzt gesetzte Liefertermin (laut Werkstatt) gegen das Ende des Abschnitts
     // (Reparatur fortgesetzt) nach Berliner Datum. Ohne Liefertermin nur gezählt; offener Abschnitt nur, wenn der Termin schon vorbei ist.
     let seg = null;

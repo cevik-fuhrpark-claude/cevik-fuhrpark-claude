@@ -256,7 +256,12 @@ async function handleApi(request, env, ctx, url) {
     const list = await veh.listVehicles(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
       if (user.role === 'driver') throw forbidden();
-      return new Response(veh.vehiclesCsv(list, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${berlinDate()}.csv"` } });
+      // Auswahl der Liste (Standort/Art/Verfügbarkeit/Suche) in angezeigter Reihenfolge – wie Druck und Vorgangs-CSV
+      // (20.10.2026: Export enthielt bei Filter „Hamburg“ alle Fahrzeuge); ohne „ids“ der ganze Bestand
+      const ids = url.searchParams.get('ids');
+      const rows = ids === null ? list : (() => { const pos = new Map(ids.split(',').slice(0, 2000).map((x, i) => [x, i]));
+        return list.filter((v) => pos.has(v.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); })();
+      return new Response(veh.vehiclesCsv(rows, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${berlinDate()}.csv"` } });
     }
     return json({ vehicles: list });
   }
@@ -419,7 +424,11 @@ async function handleApi(request, env, ctx, url) {
 
   if (path === '/api/workshop/plan' && m === 'GET') {
     const plan = await reports.workshopPlan(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'ics') return new Response(reports.workshopPlanIcs(plan, envName, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstattplan_${envName}_${berlinDate()}.ics"` } });
+    if (url.searchParams.get('format') === 'ics') {
+      // Kalendername mit Werkstattname statt Code („Werkstattplan Werkstatt München“ statt „MUENCHEN“, 20.10.2026)
+      const ws = plan.site ? await env.DB.prepare('SELECT name FROM workshops WHERE code=?').bind(plan.site).first() : null;
+      return new Response(reports.workshopPlanIcs({ ...plan, site: (ws && ws.name) || plan.site }, envName, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="werkstattplan_${envName}_${berlinDate()}.ics"` } });
+    }
     return json(plan);
   }
   if (path === '/api/reports/workshop-load' && m === 'GET') {

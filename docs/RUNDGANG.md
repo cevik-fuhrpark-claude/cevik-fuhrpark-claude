@@ -11,7 +11,7 @@ Umgebung „Test“ sichtbar; Betriebskonten sehen sie nicht.
 1. **Mehr → Einstellungen → „Testkonten dürfen gemeinsame Stammdaten nur lesen“ einschalten.** Fahrzeuge, Prüftermine und
    km-Stände gibt es nur einmal; ohne diesen Schalter könnte eine Test-Abfahrtskontrolle einen km-Stand in die echte
    Fahrzeugakte schreiben (siehe Offene Fragen in `docs/CHECKPOINT.md`).
-2. Inhaber-Konto: oben **„Ansicht“ → „Test“** wählen (Banner „TESTMODUS“). Erst in dieser Ansicht lassen sich Testkonten
+2. Inhaber-Konto: oben in der Kopfzeile die Auswahl **„Betrieb“ auf „Test“** umstellen (Banner „TESTMODUS“). Erst in dieser Ansicht lassen sich Testkonten
    Fahrzeugen zuordnen und Testvorgänge sehen.
 3. **Mehr → Benutzer → „Benutzer anlegen“** – drei Konten mit **Umgebung „Test“**:
    - Rolle **Fahrer** (danach in der Fahrzeugakte eines Lkw als Fahrer zuordnen – ein eigenes Test-Fahrzeug ist nicht nötig),

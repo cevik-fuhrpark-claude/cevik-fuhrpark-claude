@@ -14734,6 +14734,58 @@ await test('Fehlersuche 20.10. (9): berechnete SP auf der Fahrer-Startseite, Bu�
   ok(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("addEventListener('pushsubscriptionchange'"), 'SW: erneuertes Abo');
 });
 
+await test('Fehlersuche 20.10. (10): Teile-Wartezeit bis Zeitraumende, Artikel-Import nach Spaltenvorrang („Artikel-Nr“, „Stückpreis“, „Teil“) ohne stilles Kürzen, Inventurmeldung mit langem Artikelnamen übersetzt, Fahrzeug-CSV nach Auswahl, Werkstattplan-Kalender mit Werkstattname, Hilfe-Korrekturen', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  // 1. offener Abschnitt „wartet auf Teile“ seit 10.08. – im August höchstens bis Monatsende (21 Tage 18 h), nicht bis heute
+  const { kpiReport } = await import('../src/reports.js');
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('V-PW','VPW','TT-PW 1','Dortmund','lkw',1,0,'2026-01-01','2026-01-01')`).run();
+  db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at,workshop_site)
+    VALUES ('PW1','PW1','production','V-PW','u','d','mittel','mittel','fahrbereit','wartet_teile','PW1','PW1','2026-08-10T06:00:00Z','2026-08-10T06:00:00Z','DORTMUND')`).run();
+  const insEv = db.prepare(`INSERT INTO case_events(id,case_id,environment,action,to_status,created_at) VALUES (?,?,'production',?,?,?)`);
+  [['create', 'gemeldet', '06:00'], ['approve', 'werkstatt_freigegeben', '06:30'], ['start_repair', 'in_reparatur', '07:00'], ['wait_parts', 'wartet_teile', '08:00']]
+    .forEach(([a, st, t], i) => insEv.run('PW1-' + i, 'PW1', a, st, `2026-08-10T${t}:00Z`));
+  const kr = await kpiReport(e, { role: 'fleet' }, 'production', { from: '2026-08', to: '2026-08' });
+  const want = (Date.parse('2026-08-31T22:00:00Z') - Date.parse('2026-08-10T08:00:00Z')) / 3600e3;
+  eq(Math.round(kr.vehicles.find((x) => x.vehicle_id === 'V-PW').parts_wait_h * 10) / 10, Math.round(want * 10) / 10, 'je Fahrzeug bis Monatsende');
+  eq(Math.round(kr.by_priority.find((x) => x.priority === 'alle').parts_wait_h * 10) / 10, Math.round(want * 10) / 10, 'je Dringlichkeit bis Monatsende');
+  // 2. Artikel-Import: Spaltenvorrang statt Reihenfolge
+  const H = { 'content-type': 'text/csv' };
+  const imp = async (csv) => { const r = await U.fleet.req('POST', '/api/stock/import?dry_run=1&site=DORTMUND', csv, H); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  let d = await imp('Bezeichnung;Stückpreis;Bestand\nFilter A;12,50;3'); eq(d.rows[0].initial_qty, 3, 'Bestand statt Stückpreis'); eq(d.rows[0].unit_price_net, 12.5);
+  d = await imp('Artikel-Nr;Artikelbezeichnung;Anzahl\n123;Bremsscheibe;2'); eq(d.rows[0].name, 'Bremsscheibe'); eq(d.rows[0].part_number, '123'); eq(d.rows[0].initial_qty, 2); eq(d.ignored_columns.length, 0);
+  d = await imp('Teile-Nr.;Teil;Menge\nA-1;Keilriemen;4'); eq(d.rows[0].name, 'Keilriemen'); eq(d.rows[0].part_number, 'A-1');
+  d = await imp('Bezeichnung;Einheit;Lagerort\nÖl;Stk;Regal 1\nFett;Kanister20Liter-Gebinde-XL;Regal 2\nDichtung;Stk;' + 'R'.repeat(81));
+  eq(d.rows.length, 1); eq(d.skipped.map((x) => x.reason).join('|'), 'Einheit zu lang (max. 20 Zeichen)|Lagerort zu lang (max. 80 Zeichen)', 'nicht still gekürzt');
+  const I = await import('../public/i18n.js');
+  const i18n = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(i18n.includes("['Einheit zu lang (max. 20 Zeichen)', '") && i18n.includes("['Lagerort zu lang (max. 80 Zeichen)', '"), 'Gründe übersetzt');
+  // 3. Inventur-Meldung mit langem Artikelnamen übersetzt
+  const long = 'Zählmenge Keilriemen extra lang Ausführung für Zugmaschine Hinterachse links';
+  ok(I.translateValidation('en', long + ': ungültige Zahl.')?.startsWith('Counted quantity Keilriemen'), 'EN');
+  ok(I.translateValidation('uk', long + ': mindestens 0.')?.startsWith('Підрахована кількість Keilriemen'), 'UK');
+  // 4. Fahrzeug-CSV: mit „ids“ nur die Auswahl in dieser Reihenfolge, ohne den ganzen Bestand
+  const all = (await U.fleet.get('/api/vehicles')).data.vehicles; ok(all.length >= 2);
+  const pick = [all[1].id, all[0].id];
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/vehicles?format=csv&ids=' + encodeURIComponent(pick.join(',')))).data).trim().split('\n');
+  eq(csv.length, 3, 'Kopf + 2 Zeilen'); ok(csv[1].includes(all[1].plate) && csv[2].includes(all[0].plate), 'Reihenfolge der Anzeige');
+  const full = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/vehicles?format=csv')).data).trim().split('\n');
+  eq(full.length, all.length + 1, 'ohne ids der ganze Bestand');
+  // 5. Werkstattplan-Kalender: Werkstattname statt Code
+  const name = db.prepare("SELECT name FROM workshops WHERE code='DORTMUND'").get().name;
+  const ics = (await U.ws.get('/api/workshop/plan?days=7&format=ics')).data; const icsT = typeof ics === 'string' ? ics : new TextDecoder().decode(ics);
+  ok(new RegExp('X-WR-CALNAME:[^\\r\\n]*' + name).test(icsT), 'Kalendername: ' + (icsT.match(/X-WR-CALNAME:[^\r\n]*/) || [''])[0]);
+  // 6. Oberfläche/Hilfe: Fahrzeug-CSV sendet die Auswahl, Druck „ohne Standort“ übersetzt, Kurzanleitung auch für die Werkstatt, Hilfe ohne falsche Zusagen
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'&ids=' + encodeURIComponent(vis.join(','))") && app.includes("site === 'ohne' ? t('cs_nosite') : site"), 'Fahrzeugliste');
+  ok(app.includes("S.me.role === 'dispatch' || S.me.role === 'workshop' ? `<a class=\"row\" href=\"#/guide\">"), 'Kurzanleitung im Menü der Werkstatt');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(!/Fremdrechnungen im Vorgang erfassen|сторонніх виконавців у заявці|and external invoices in the case/.test(I.STRINGS[l].help_ws_s), l + ': Werkstatt erfasst keine Fremdrechnungen');
+    ok(!/Kennzeichnung selbst angeben|самі вказати маркування|enter the marking yourself/.test(I.STRINGS[l].help_check_s), l + ': Fahrer erfassen keine Reifenkennzeichnung');
+  }
+  ok(I.STRINGS.uk.help_ws_s.includes('«' + I.STRINGS.uk.act_wait_parts + '»'), 'UK-Knopfname „Wartet auf Teile“');
+  ok(!/\bdu\b|\bdir\b/.test(I.STRINGS.de.help_push_s) && !/\bkannst du\b/.test(I.STRINGS.de.help_check_s), 'DE-Hilfe einheitlich „Sie“');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
