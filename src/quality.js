@@ -129,7 +129,11 @@ export async function dataQuality(env, user, envName, query = {}) {
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand
     env.DB.prepare(`SELECT c.id, c.vehicle_id, c.kind, c.partner, c.contract_no, c.km_allowance, c.start_date, c.end_date, c.start_km, c.file_id, v.plate, v.active,
       (SELECT MAX(o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id) AS last_km_at,
-      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.created_at DESC LIMIT 1) AS last_km
+      (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.created_at DESC LIMIT 1) AS last_km,
+      -- begründeter km-Rücksprung (Tachotausch) seit Vertragsbeginn und nach der letzten Prüfung „km bei Übernahme“: Zählerwechsel, kein Tippfehler
+      -- (wie die Vertragsseite, Status „zaehler“; 20.10.2026)
+      EXISTS (SELECT 1 FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id AND c.start_km IS NOT NULL AND o.km < c.start_km AND o.note IS NOT NULL AND trim(o.note)<>''
+        AND (c.start_date IS NULL OR o.measured_at >= c.start_date) AND (c.km_basis_at IS NULL OR o.created_at > c.km_basis_at)) AS reasoned_drop
       FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND v.eval_excluded=0`).all(),
     // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
     env.DB.prepare(`SELECT DISTINCT f.vehicle_id FROM files f WHERE f.environment=? AND f.case_id IS NULL AND f.doc_kind='leasing'
@@ -243,7 +247,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!c.active) addA('contract_vehicle_inactive', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
     // Vertrag beginnt erst künftig: eine Ablesung ab Beginn kann es noch nicht geben – keine Lücke (18.10.2026)
     else if (c.km_allowance && !(c.start_date && c.start_date > berlinDate()) && (!c.last_km_at || (c.start_date && berlinDate(c.last_km_at) < c.start_date))) addA('contract_km_no_reading', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
-    else if (c.km_allowance && c.start_km !== null && c.last_km !== null && c.last_km < c.start_km) addA('contract_km_below_start', v, `${CK_DE[c.kind]} · ${c.partner} · ${c.last_km} km < ${c.start_km} km`, { ...ca, km: c.last_km, start_km: c.start_km });
+    else if (c.km_allowance && c.start_km !== null && c.last_km !== null && c.last_km < c.start_km && !c.reasoned_drop) addA('contract_km_below_start', v, `${CK_DE[c.kind]} · ${c.partner} · ${c.last_km} km < ${c.start_km} km`, { ...ca, km: c.last_km, start_km: c.start_km });
     // Leasing/Miete/Finanzierung ohne verknüpftes Vertragsdokument (Nachweis nur als Text) – Hinweis, keine Pflicht
     if (c.active && !c.file_id && ['leasing', 'miete', 'finanzierung'].includes(c.kind)) addA('contract_no_document', v, `${CK_DE[c.kind]} · ${c.partner}`, ca);
   }

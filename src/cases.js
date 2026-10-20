@@ -297,11 +297,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
     const soon = berlinDate(new Date(Date.now() + 30 * 86400000).toISOString());
     // + offene Herstellerrückrufe auch ohne Frist (mit Referenz laut Nachweis) – typischer Fall „beim selben Werkstattaufenthalt mit erledigen“
     const due = (await env.DB.prepare(`SELECT kind, next_due_date, CASE WHEN kind='Rückruf' THEN evidence END AS recall_ref FROM maintenance_rules WHERE vehicle_id=?
-      AND ((next_due_date IS NOT NULL AND next_due_date <= ?) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results
+      AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results
       .map(({ recall_ref, ...m }) => (recall_ref ? { ...m, recall_ref } : m));
     // mehr als 10 fällige Prüfungen/Rückrufe: Gesamtzahl nur dann nachzählen (seltener Fall, keine Zusatzabfrage im Normalfall)
     const dueTotal = due.length < 10 ? due.length : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=?
-      AND ((next_due_date IS NOT NULL AND next_due_date <= ?) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
+      AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
         (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until)) FROM

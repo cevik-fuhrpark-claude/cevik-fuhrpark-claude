@@ -247,11 +247,21 @@ export async function cancelDriverDocument(env, user, envName, id, docId, body =
   if (d.cancelled_at) return { ok: true, duplicate: true };
   const now = nowIso();
   const single = ['fuehrerschein', 'fahrerkarte', 'code95'].includes(d.kind);
+  // Nachfolger nach derselben Regel wie beim Erfassen (newerExists): beide mit „gültig bis“ → späteres; sonst späteres Ausstellungsdatum
+  // (ohne: Berliner Erfassungstag). Vorher zog die Sortierung jeden Nachweis mit Ablaufdatum vor – nach dem Storno galt wieder der alte
+  // Führerschein statt des neueren ohne Ablaufdatum (20.10.2026).
+  let pick = null;
+  if (single) {
+    const rest = (await env.DB.prepare('SELECT id, valid_until, issued_on, created_at FROM driver_documents WHERE driver_id=? AND kind=? AND cancelled_at IS NULL AND id<>?').bind(id, d.kind, d.id).all()).results;
+    const day = (x) => x.issued_on || berlinDate(x.created_at);
+    const newer = (a, b) => (a.valid_until && b.valid_until && a.valid_until !== b.valid_until ? a.valid_until > b.valid_until
+      : day(a) !== day(b) ? day(a) > day(b) : String(a.created_at) > String(b.created_at));
+    pick = rest.reduce((m, x) => (!m || newer(x, m) ? x : m), null);
+  }
   const [r] = await env.DB.batch([
     env.DB.prepare('UPDATE driver_documents SET superseded=2, cancelled_at=?, cancelled_by=?, cancel_reason=? WHERE id=? AND cancelled_at IS NULL').bind(now, user.id, reason, d.id),
-    ...(single ? [env.DB.prepare(`UPDATE driver_documents SET superseded=0 WHERE id=(SELECT id FROM driver_documents WHERE driver_id=?1 AND kind=?2 AND cancelled_at IS NULL
-        ORDER BY COALESCE(valid_until,'0000') DESC, COALESCE(issued_on, substr(created_at,1,10)) DESC, created_at DESC LIMIT 1)
-      AND NOT EXISTS (SELECT 1 FROM driver_documents WHERE driver_id=?1 AND kind=?2 AND superseded=0)`).bind(id, d.kind)] : []),
+    ...(pick ? [env.DB.prepare(`UPDATE driver_documents SET superseded=0 WHERE id=?3 AND cancelled_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM driver_documents WHERE driver_id=?1 AND kind=?2 AND superseded=0)`).bind(id, d.kind, pick.id)] : []),
   ]);
   if (!(r.meta && r.meta.changes)) return { ok: true, duplicate: true };
   await audit(env, user.id, 'driver.document_cancel', id, { kind: d.kind, valid_until: d.valid_until, reason });
@@ -304,7 +314,7 @@ export function driversCsv(list, tachoByDriver, cell) {
   const DL = { fuehrerschein: 'Führerschein', fahrerkarte: 'Fahrerkarte', code95: 'Code 95', unterweisung: 'Unterweisung', sonstiges: 'Nachweis' };
   // Status mit allen Gründen (19.10.2026: „Hinweis“ ohne Grund, z. B. kein Führerschein erfasst oder Nachweis läuft ab)
   const reasons = (d, tc) => [
-    ...d.status.items.filter((i) => i.status === 'abgelaufen' || i.status === 'laeuft_ab').map((i) => `${DL[i.kind] || 'Nachweis'}${i.topic ? ' ' + (i.title || i.topic) : ''} ${i.status === 'abgelaufen' ? 'abgelaufen' : 'läuft ab'}`),
+    ...d.status.items.filter((i) => i.status === 'abgelaufen' || i.status === 'laeuft_ab').map((i) => `${DL[i.kind] || 'Nachweis'}${i.title ? ' ' + i.title : ''} ${i.status === 'abgelaufen' ? 'abgelaufen' : 'läuft ab'}`),
     ...(d.status.has_license ? [] : ['kein Führerschein erfasst']),
     ...(d.status.check.status !== 'ok' ? ['Kontrolle ' + DCK[d.status.check.status]] : []),
     ...(tc && tc.status !== 'ok' ? ['Auslesung: ' + TST[tc.status]] : []),

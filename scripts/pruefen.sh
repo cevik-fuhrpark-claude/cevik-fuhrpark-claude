@@ -113,6 +113,7 @@ UI-km-Zähler gesunken (Tachotausch)|ui-tachotausch.py|/tmp/cfp-tachotausch.log
 UI-Werkstattplan nach Tachotausch|ui-plan-tachotausch.py|/tmp/cfp-plan-tachotausch.log
 UI-Einladung ungültig, Datenqualität-Link Akte, Offline-Fahrzeugliste|ui-einladung-dqlink.py|/tmp/cfp-einladung-dqlink.log
 UI-Fahrzeug-CSV nach Auswahl, Druckkopf ohne Standort|ui-fahrzeug-csv-auswahl.py|/tmp/cfp-fahrzeug-csv-auswahl.log
+UI-Fahrerakte Klassen, unbenannte Unterweisung, Notfall zurück zur Akte|ui-fahrerakte-klassen-notfall.py|/tmp/cfp-fahrerakte-klassen-notfall.log
 '
 N=0
 NL='

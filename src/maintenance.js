@@ -121,6 +121,8 @@ export function ruleDueKm(rule) {
   if (!rule) return null;
   // HU/SP richten sich nur nach der Zeit (StVZO Anl. VIII) – auch ein altes km-Intervall ergibt keine km-Fälligkeit (vorher: Agent meldete „HU bei … km fällig“, 17.10.2026)
   if (rule.kind === 'HU' || rule.kind === 'SP') return null;
+  // durchgeführter Rückruf hat keine Folgefrist (auch nicht aus älteren Einträgen; 20.10.2026)
+  if (ONE_TIME_KINDS.includes(rule.kind) && rule.last_done_date) return null;
   if (rule.due_km !== null && rule.due_km !== undefined) return rule.due_km;
   if (!rule.interval_km || rule.last_done_km === null || rule.last_done_km === undefined) return null;
   return rule.last_done_km + rule.interval_km;
@@ -278,7 +280,8 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
         date_status: !due ? 'ohne_termin' : daysUntil(due, today) < 0 ? 'ueberfaellig' : daysUntil(due, today) <= warnDays ? 'faellig' : 'ok',
         evidence: r.evidence, updated_at: r.updated_at, interval_km: null, last_done_km: r.last_done_km, next_due_km: null, km_remaining: null, km_status: null, ...(r.virtual ? { virtual: true } : {}) };
     }
-    const days = r.next_due_date ? daysUntil(r.next_due_date, today) : null;
+    // durchgeführter Rückruf: eine (früher mögliche) gespeicherte Frist zählt nicht mehr (20.10.2026)
+    const days = r.next_due_date && !(r.last_done_date && ONE_TIME_KINDS.includes(r.kind)) ? daysUntil(r.next_due_date, today) : null;
     // Einmalige Aktion (Rückruf) erledigt und keine neue Frist laut Schreiben → „erledigt“ statt „ohne Termin“
     const dateStatus = days === null && r.last_done_date && ONE_TIME_KINDS.includes(r.kind) ? 'erledigt' : days === null ? 'ohne_termin' : days < 0 ? 'ueberfaellig' : days <= warnDays ? 'faellig' : 'ok';
     const kmd = kmDue(r, latestKm.get(r.vehicle_id), warnKm, today);
@@ -660,7 +663,7 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
           AND (lower(evidence)=?9 OR instr(lower(evidence), ?9 || ' – ')=1 OR instr(lower(evidence), ?9 || ' · durchführung: ')=1))`)
         .bind(uuid(), v.id, due.date, evidence, user.id, now, now, due.date ? 'nachweis' : null, r));
     } else if (cur.last_done_date) {
-      action = 'erledigt'; result.unchanged++; // bereits durchgeführt – bleibt unverändert row.done_on = cur.last_done_date;
+      action = 'erledigt'; result.unchanged++; row.done_on = cur.last_done_date; // bereits durchgeführt – bleibt unverändert
     } else if (due.date && !cur.next_due_date) {
       action = 'aktualisiert'; result.updated++;
       stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, due_source='nachweis', updated_at=? WHERE id=? AND last_done_date IS NULL`).bind(due.date, now, cur.id));

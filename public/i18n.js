@@ -824,6 +824,7 @@ const V_MORE = [
   ['Nur Inhaber und Fuhrparkleitung dürfen Rückrufe importieren.', 'Імпортувати відкликання можуть лише власник і керівник автопарку.', 'Only the owner and fleet management may import recalls.'],
   ['Dieser Rückruf ist bereits durchgeführt.', 'Це відкликання вже виконано.', 'This recall has already been carried out.'],
   ['Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.', 'Відкликання – одноразова акція: не вказуйте наступний строк.', 'A recall is a one-off action – do not enter a follow-up deadline.'],
+  ['Rückruf ist bereits durchgeführt – keine Frist angeben.', 'Відкликання вже виконано – не вказуйте строк.', 'The recall has already been carried out – do not enter a deadline.'],
   ['Rückruf ist eine einmalige Aktion – kein Intervall angeben.', 'Відкликання – одноразова акція: не вказуйте інтервал.', 'A recall is a one-off action – do not enter an interval.'],
   ['Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).', 'Позиція не відповідає причепу (лише осі AH або запасне колесо).', 'Position does not match the trailer (AH axles or spare only).'],
   ['Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).', 'Позиція не відповідає вантажівці (осі причепа AH вносьте у причепа).', 'Position does not match the truck (record trailer axles AH on the trailer).'],

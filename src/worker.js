@@ -592,7 +592,7 @@ async function handleApi(request, env, ctx, url) {
     const ov = await claims.claimOverview(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter, site: ov.site });
-      return new Response(claims.claimsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${ov.today}.csv"` } });
+      return new Response(claims.claimsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${envName}_${ov.today}.csv"` } });
     }
     return json(ov);
   }

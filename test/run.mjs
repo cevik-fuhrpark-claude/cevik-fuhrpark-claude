@@ -9,6 +9,7 @@ import { criticalBody, reminderBody } from '../src/agent.js';
 
 let passed = 0; let failed = 0; const failures = [];
 async function test(name, fn) {
+  if (process.env.CFP_ONLY && !name.includes(process.env.CFP_ONLY)) return; // gezielter Lauf einzelner Tests (Entwicklung)
   try { await fn(); passed++; console.log(`  ✔ ${name}`); }
   catch (e) { failed++; failures.push(name); console.log(`  ✘ ${name}\n     ${e && e.stack ? e.stack.split('\n').slice(0, 3).join('\n     ') : e}`); }
 }
@@ -3382,7 +3383,7 @@ await test('Panne & Notfall: Rufnummern je Umgebung (alle/Standort/Fahrzeug), Fa
   const ar = (await users.fleet.get('/api/emergency/contacts?archived=1')).data.contacts.find((c) => c.id === v.data.id); ok(ar && ar.archived_at && ar.archived_by_name === 'Test Dispo', 'Archiv mit Zeitpunkt und Person');
   // Oberfläche: Routen, Einstiege (Start Fahrer, Mehr, QR-Scan), Notruf 112 fest, sonst keine Nummern in den Texten; Hilfe DE/UK/EN nennt die Seite
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const x of ['viewEmergency]', 'viewEmergencyEdit]', 'id="emhome"', 'href="#/emergency?v=${esc(v.id)}"', 'href="tel:112"', '<a class="btn secondary" href="#/emergency?v=${esc(v.id)}">☎ ${esc(t(\'em_title\'))}</a>', "localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), d }))", "k.startsWith('cfp_emerg_')"]) ok(app.includes(x), 'Oberfläche: ' + x);
+  for (const x of ['viewEmergency]', 'viewEmergencyEdit]', 'id="emhome"', 'href="#/emergency?v=${esc(v.id)}"', 'href="tel:112"', '<a class="btn secondary" href="#/emergency?v=${esc(v.id)}&from=file">☎ ${esc(t(\'em_title\'))}</a>', "localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), d }))", "k.startsWith('cfp_emerg_')"]) ok(app.includes(x), 'Oberfläche: ' + x);
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   for (const lg of ['de', 'uk', 'en']) {
     for (const k of Object.keys(STRINGS.de).filter((k) => k.startsWith('em_'))) { ok(STRINGS[lg][k], `${lg}.${k}`); ok(!/\d{3,}/.test(STRINGS[lg][k].replace(/112/g, '')), `${lg}.${k}: keine Nummern außer 112`); }
@@ -12890,7 +12891,7 @@ await test('Verbesserungen 18.10. (26): Einheit „Stk“ je Sprache (шт./pcs)
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   eq((app.match(/esc\(\w+\.unit\)|'\{u\}', \w+\.unit\)/g) || []).join(), '', 'Einheit nur über unitL anzeigen');
   ok(!/name="unit" value="Stk"/.test(app), 'Formular-Vorgabe je Sprache');
-  ok(/a\.download = `fuhrpark-kosten_\$\{rep\.from \|\| from\}_\$\{rep\.to \|\| to\}/.test(app), 'CSV-Dateiname aus angezeigtem Zeitraum');
+  ok(/a\.download = `fuhrpark-kosten_\$\{envFn\(\)\}_\$\{rep\.from \|\| from\}_\$\{rep\.to \|\| to\}/.test(app), 'CSV-Dateiname aus angezeigtem Zeitraum');
   // Kostenbericht: Standort wie in den Stammdaten geschrieben (Eingabe klein)
   const c = await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-02&site=dortmund'); eq(c.status, 200);
   eq(c.data.site, 'Dortmund', 'Anzeige-Schreibweise'); eq((await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-02')).data.site, null);
@@ -14463,7 +14464,7 @@ await test('Fehlersuche 20.10. (3): Umlagerung findet Ziel-Artikel ohne Groß-/K
   ok(app.includes("esc(fmtMm(h.tread_mm))") && app.includes("esc(fmtBar(h.pressure_bar))") && !/fmtNum\([^)]*\)\) \+ ' mm'/.test(app), 'mm/bar je Sprache');
   ok(app.includes('DOT ${esc(dotTxt(p.dot))}') && !app.includes('name="dot" maxlength="20" inputmode="numeric"'), 'DOT nicht doppelt, Buchstaben eingebbar');
   ok(app.includes("const vActive = !d.vehicle || d.vehicle.active !== 0;") && app.includes("d.vehicle.active === 0 ||"), 'außer Betrieb: keine Reifenformulare');
-  ok(app.includes("t('import_tire_cols')") && app.includes("o.note === 'Import' ? t('odo_src_import')") && app.includes("i.title || i.topic ? ' ' + (i.title || i.topic)"), 'Reifen-Spalten übersetzt, Import-Vermerk, Unterweisungs-Thema');
+  ok(app.includes("t('import_tire_cols')") && app.includes("o.note === 'Import' ? t('odo_src_import')") && app.includes("${i.title ? ' ' + i.title : ''}"), 'Reifen-Spalten übersetzt, Import-Vermerk, Unterweisungs-Thema');
   ok(app.includes("t('stock_import_ignored')") && app.includes("data-reason="), 'nicht erkannte Spalten, Einstellungsgrund');
   for (const l of ['de', 'uk', 'en']) for (const key of ['import_tire_cols', 'setting_stored_format', 'setting_stored_precision', 'setting_off', 'stock_import_ignored']) ok(STRINGS[l][key], `${l} ${key}`);
   ok(STRINGS.uk.tire_warn.includes('1,6 мм'), 'UK Warnschwelle vollständig');
@@ -14784,6 +14785,68 @@ await test('Fehlersuche 20.10. (10): Teile-Wartezeit bis Zeitraumende, Artikel-I
   }
   ok(I.STRINGS.uk.help_ws_s.includes('«' + I.STRINGS.uk.act_wait_parts + '»'), 'UK-Knopfname „Wartet auf Teile“');
   ok(!/\bdu\b|\bdir\b/.test(I.STRINGS.de.help_push_s) && !/\bkannst du\b/.test(I.STRINGS.de.help_check_s), 'DE-Hilfe einheitlich „Sie“');
+});
+
+await test('Fehlersuche 20.10. (11): durchgeführter Rückruf ohne Frist, Fahrer-Hinweise eigene zuerst ohne Kappung, Storno-Nachfolger nach Erfassungsregel, unbenannte Nachweise ohne Kennung, Notfallnummern offline nach QR-Scan, Exporte mit Umgebung, Datenqualität nach Tachotausch', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  // 1. Rückruf: bereits durchgeführt + Frist/km-Fälligkeit beim Anlegen abgewiesen; beim Erledigen keine km-Fälligkeit
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Rückruf', last_done_date: day(-10), next_due_date: day(-5), evidence: 'KBA-1' })).status, 400, 'Frist nach Durchführung');
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Rückruf', last_done_date: day(-10), due_km: 100100, evidence: 'KBA-2' })).status, 400, 'km nach Durchführung');
+  const rc = await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Rückruf', evidence: 'KBA-3' }); eq(rc.status, 201);
+  eq((await U.ws.post(`/api/maintenance/${rc.data.id}/complete`, { done_date: BERLIN_TODAY, done_km: 100000, next_due_km: 100100, evidence: 'Rechnung' })).status, 400, 'keine km-Fälligkeit');
+  eq((await U.ws.post(`/api/maintenance/${rc.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Rechnung' })).status, 200);
+  // Altbestand: erledigter Rückruf mit gespeicherter Frist/km zählt nicht (Lesen, Daten bleiben unverändert)
+  db.prepare('UPDATE maintenance_rules SET next_due_date=?, due_km=5 WHERE id=?').run(day(-3), rc.data.id);
+  const row = (await F.get('/api/maintenance')).data.rows.find((x) => x.id === rc.data.id);
+  eq(row.status, 'erledigt', JSON.stringify(row)); eq(row.km_status ?? null, null);
+  const { ruleDueKm } = await import('../src/maintenance.js'); eq(ruleDueKm({ kind: 'Rückruf', last_done_date: '2026-01-01', due_km: 5 }), null);
+  const ag = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
+  ok(ag.includes("if (r.kind === 'Rückruf' && r.last_done_date) continue;"), 'Agent ohne Befund');
+  eq(db.prepare('SELECT due_km FROM maintenance_rules WHERE id=?').get(rc.data.id).due_km, 5, 'keine Datenänderung');
+  // 2. Fahrer-Hinweise: eigene vor denen des gekoppelten Anhängers, keine Kappung auf 10
+  const z = await F.post('/api/vehicles', { plate: 'DQ-HZ 1', vin: 'WDB96340310997001', site: 'Dortmund', trailer_plate: 'DQ-HA 1' }); eq(z.status, 201, JSON.stringify(z.data));
+  const a = await F.post('/api/vehicles', { plate: 'DQ-HA 1', vin: 'WDB96340310997002', site: 'Dortmund', kind: 'anhaenger' }); eq(a.status, 201);
+  const ZV = z.data.id || z.data.vehicle?.id, AV = a.data.id || a.data.vehicle?.id;
+  eq((await F.post(`/api/vehicles/${ZV}/drivers`, { user_id: U.driver.id })).status, 201);
+  for (let i = 0; i < 8; i++) eq((await F.post(`/api/vehicles/${ZV}/notes`, { text: 'Zug-Hinweis ' + i, for_driver: true })).status, 201);
+  for (let i = 0; i < 8; i++) eq((await F.post(`/api/vehicles/${AV}/notes`, { text: 'Anhänger-Hinweis ' + i, for_driver: true })).status, 201);
+  const mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === ZV);
+  eq(mv.notes.length, 16, 'alle Hinweise'); ok(mv.notes.slice(0, 8).every((n) => !n.plate), 'eigene zuerst');
+  // 3. Fahrernachweis-Storno: Nachfolger nach derselben Regel wie beim Erfassen
+  const D = (await F.post('/api/drivers', { display_name: 'Storno Regel' })).data.id;
+  const A = await F.post(`/api/drivers/${D}/documents`, { kind: 'fuehrerschein', issued_on: '2015-01-01', valid_until: '2030-01-01', evidence: 'alt' }); eq(A.status, 201);
+  const B = await F.post(`/api/drivers/${D}/documents`, { kind: 'fuehrerschein', issued_on: day(-300), evidence: 'neu ohne Ablauf' }); eq(B.status, 201);
+  const T = await F.post(`/api/drivers/${D}/documents`, { kind: 'fuehrerschein', issued_on: BERLIN_TODAY, evidence: 'Tippfehler' }); eq(T.status, 201);
+  eq((await F.post(`/api/drivers/${D}/documents/${T.data.id}/cancel`, { reason: 'Tippfehler erfasst' })).status, 200);
+  const cur = db.prepare("SELECT id FROM driver_documents WHERE driver_id=? AND kind='fuehrerschein' AND superseded=0").all(D);
+  eq(cur.length, 1); eq(cur[0].id, B.data.id, 'neuerer ohne Ablauf gilt wieder');
+  // 4. unbenannte Unterweisung: keine interne Kennung in Liste/Startseite/CSV
+  eq((await F.post(`/api/drivers/${D}/documents`, { kind: 'unterweisung', valid_until: day(-1), evidence: 'Liste' })).status, 201);
+  const dcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/drivers?format=csv')).data);
+  ok(/Unterweisung abgelaufen/.test(dcsv) && !/Unterweisung #/.test(dcsv), 'CSV ohne Kennung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!app.includes('i.topic'), 'Oberfläche zeigt keine Gruppenkennung');
+  ok(app.includes("${fmtD(o.created_at)}${o.created_by_name ? ' · ' + esc(o.created_by_name) : ''}"), 'kein hängender Trenner');
+  ok(app.includes("$('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'"), 'Klassen nur beim Führerschein');
+  // 5. Panne & Notfall: Startseite hält Rufnummern vor, QR-Scan offline fällt auf allgemeinen Stand zurück; Zurück zur Akte
+  ok(app.includes("api('GET', '/api/emergency').then((d) => { try { localStorage.setItem(`cfp_emerg_${S.me.id}_${S.me.environment}_`"), 'vorab geladen');
+  ok(app.includes('localStorage.getItem(key.slice(0, -vid.length))') && app.includes('&from=file'), 'Rückfall + Zurück');
+  // 6. Versicherungsfälle/Kosten: Konflikt lädt neu, Link mit Fahrzeugstandort, Exporte mit Umgebung
+  ok(app.includes("toast(err.message, true); if (err.code === 'version_conflict') viewCase(c.id); } };") && app.includes("S.claimSite = v.site || 'ohne'"), 'Fall-Formular/Link');
+  ok(app.includes('`fuhrpark-versicherungsfaelle_${envFn()}_') && app.includes('`fuhrpark-vorgaenge_${envFn()}_'), 'Dateinamen');
+  const cl = await F.get('/api/claims?format=csv'); ok(/fuhrpark-versicherungsfaelle_(production|test)_/.test(cl.headers.get('content-disposition') || ''), 'Server-Dateiname: ' + cl.headers.get('content-disposition'));
+  // 7. Rückruf-Import: Vorschau nennt das Durchführungsdatum
+  ok((await import('node:fs')).readFileSync(new URL('../src/maintenance.js', import.meta.url), 'utf8').includes("result.unchanged++; row.done_on = cur.last_done_date;"), 'done_on');
+  const I = await import('../public/i18n.js'); ok(I.translateValidation('en', 'Rückruf ist bereits durchgeführt – keine Frist angeben.'), 'übersetzt');
+  // 8. Datenqualität: begründeter Tachotausch nach Vertragsbeginn ist kein „km unter Übernahme“; Schweregrad-Filter ohne Treffer verworfen; Zeitleiste/Akte
+  eq((await F.post(`/api/vehicles/${ZV}/contracts`, { kind: 'leasing', partner: 'LB', evidence: 'v', km_allowance: 300000, start_km: 100000 })).status, 201);
+  eq((await F.post(`/api/vehicles/${ZV}/odometer`, { km: 120000, measured_on: day(-1) })).status, 201);
+  eq((await F.post(`/api/vehicles/${ZV}/odometer`, { km: 500, note: 'Tachotausch laut Werkstattrechnung' })).status, 201);
+  ok(!(await F.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'contract_km_below_start' && i.vehicle_id === ZV), 'Zählerwechsel, kein Widerspruch');
+  ok(app.includes("if (sev && !r.items.some((i) => i.severity === sev)) { S.dqSev = ''; sev = ''; }"), 'Schweregrad verworfen');
+  ok(app.includes(".filter((k) => k !== 'driver' || isMgr() || S.me.role === 'dispatch')"), 'Zeitleiste ohne Fahrer-Filter für Werkstatt/Lesezugriff');
+  ok((await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8').includes('const sinceNr = berlinDate('), 'Akte: Berliner Tag');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

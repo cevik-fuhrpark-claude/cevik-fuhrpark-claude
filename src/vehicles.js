@@ -195,7 +195,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), maintenanceWarnDays(sets.get('maintenance_warn_days')));
   const failedInspection = failedInspectionOf(v, maintenanceHistory, allCases, addMonths(berlinDate(), -12));
   // Pflichtprüfung in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`, ohne Zusatzabfrage
-  const sinceNr = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
+  const sinceNr = berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()); // Berliner Tag wie noResultSql (Datenqualität/„Heute zu tun“, 20.10.2026)
   const newer = (a, b) => b.done_date > a.done_date || (b.done_date === a.done_date && b.created_at > a.created_at);
   const resultMissing = v.active && !v.eval_excluded ? maintenanceHistory.filter((e) => e.result === null && ['erfasst', 'erledigt'].includes(e.source) && REQUIRED_KINDS.includes(e.kind)
     && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
@@ -665,7 +665,9 @@ export async function myVehicles(env, user, envName) {
         .map(({ r, k }) => ({ kind: r.kind, next_due_km: k.next_due_km, km_remaining: k.km_remaining, status: k.km_status, planned_date: r.planned_date >= today ? r.planned_date : null })),
       // eigene Hinweise und die des fest gekoppelten Anhängers bzw. der Zugmaschine (mit Kennzeichen); „gültig bis“ mitgeben – die App blendet
       // abgelaufene auch im Offline-Stand aus (vorher fehlte das Feld, Gespann-Hinweise wurden gelesen, aber nie gezeigt – 17.10.2026)
-      notes: notes.results.filter((n) => n.vehicle_id === v.id || (coupledOf.has(v.id) && n.vehicle_id === coupledOf.get(v.id).id)).slice(0, 10)
+      // eigene Hinweise vor denen des gekoppelten Fahrzeugs, ohne Kappung (je Fahrzeug höchstens 20 aktive; vorher verdrängten 8 neuere Anhänger-Hinweise
+      // die eigenen bis auf 2 – ohne Hinweis, 20.10.2026)
+      notes: notes.results.filter((n) => n.vehicle_id === v.id || (coupledOf.has(v.id) && n.vehicle_id === coupledOf.get(v.id).id)).sort((a, b) => (a.vehicle_id === v.id ? 0 : 1) - (b.vehicle_id === v.id ? 0 : 1))
         .map(({ vehicle_id, text, created_at, valid_until }) => ({ text, created_at, valid_until: valid_until || null, ...(vehicle_id !== v.id ? { plate: coupledOf.get(v.id).plate } : {}) })),
       // Winterreifen: nur „nicht erfüllt“ laut Erfassung (Information für die Fahrt bei Glätte, StVO § 2 Abs. 3a); nicht erfasst = null (kein Rauschen)
       winter: v.kind === 'anhaenger' ? null : (({ status, noncompliant }) => (status === 'nicht_erfuellt' ? { status, noncompliant } : null))(winterStatus(v.kind, winterMarks(tiresBy.get(v.id) || []))),
@@ -704,6 +706,8 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
   const husp = kind === 'HU' || kind === 'SP';
   if (ONE_TIME_KINDS.includes(kind) && (months || km)) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
+  // bereits durchgeführter Rückruf: keine Frist (sonst überfällig/fällig, aber weder erledigbar noch planbar – Dauerbefund; 20.10.2026)
+  if (ONE_TIME_KINDS.includes(kind) && body.last_done_date && String(body.last_done_date).trim() && ((body.next_due_date && String(body.next_due_date).trim()) || (body.due_km && String(body.due_km).trim()))) throw bad('validation', 'Rückruf ist bereits durchgeführt – keine Frist angeben.');
   // Belegte km-Fälligkeit (Serviceanzeige/Wartungsheft); HU/SP richten sich nur nach der Zeit
   let dueKm = body.due_km ? Math.round(num(body.due_km, { min: 1, max: 5000000, field: 'km', grouped: true })) : null;
   if (husp && (dueKm !== null || km !== null)) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
@@ -872,7 +876,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   // einmalige Aktion (Rückruf): nur einmal durchführbar, keine Folgefrist (sonst stünde sie nie auf „erledigt“)
   const oneTime = ONE_TIME_KINDS.includes(r.kind);
   if (oneTime && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
-  if (oneTime && docNext) throw bad('validation', 'Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.');
+  if (oneTime && (docNext || (body.next_due_km && String(body.next_due_km).trim()))) throw bad('validation', 'Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.');
   // neue km-Fälligkeit laut Beleg (z. B. Serviceanzeige nach dem Ölwechsel); ohne Angabe gilt „km + Intervall km“
   let docKm = body.next_due_km ? Math.round(num(body.next_due_km, { min: 1, max: 5000000, field: 'km', grouped: true })) : null;
   if (husp && docKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
