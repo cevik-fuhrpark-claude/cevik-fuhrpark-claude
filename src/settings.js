@@ -74,7 +74,14 @@ export function storedInvalid(values) {
   for (const k of SETTINGS_KEYS) {
     const v = values[k];
     if (v === null || v === undefined || v === '') continue;
-    try { settingValue(k, v); } catch (e) { out.push({ setting: k, value: String(v), ...(e.extra || {}) }); }
+    try { settingValue(k, v); } catch (e) {
+      // Grund nennen (20.10.2026: „1.000“ liegt im Bereich, ist aber mehrdeutig – Meldung „außerhalb des Bereichs“ widersprach sich);
+      // effective = so wertet die App den gespeicherten Text heute aus (Number(), wie die Leser der Einstellung)
+      const r = SETTING_RULES[k]; let reason = 'format';
+      if (r) { try { const n = num(String(v), { grouped: !!r.int }); reason = n < r.min || n > r.max ? 'range' : r.int && !Number.isInteger(n) ? 'integer' : 'decimals'; } catch { reason = 'format'; } }
+      const eff = Number(v);
+      out.push({ setting: k, value: String(v), reason, ...(Number.isFinite(eff) ? { effective: eff } : {}), ...(e.extra || {}) });
+    }
   }
   return out;
 }

@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-HEAD={'de':'außerhalb des zulässigen Bereichs','uk':'поза допустимим діапазоном','en':'outside the permitted range'}
+HEAD={'de':'Gespeicherte Einstellungen ungültig','uk':'Збережені налаштування недійсні','en':'Saved settings invalid'}
 RANGE={'de':'erlaubt 0 bis 365 (ganze Zahl)','uk':'дозволено від 0 до 365 (ціле число)','en':'permitted 0 to 365 (whole number)'}
 fails=[]
 def check(c,m):
@@ -39,6 +39,15 @@ with sync_playwright() as p:
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         api('PUT','/api/settings',{'maintenance_warn_days':None})
         c.close()
+    # mehrdeutiger Altwert im Bereich („1.000“): unveränderter Text, Grund und Wirkung statt „außerhalb des Bereichs“ (20.10.2026)
+    FMT={'de':'Schreibweise nicht eindeutig (wirkt derzeit als 1)','uk':'запис неоднозначний (зараз діє як 1)','en':'notation ambiguous (currently acts as 1)'}
+    for lang in ['de','uk','en']:
+        api('PATCH','/api/me',{'language':lang}); raw('repair_cost_limit_net','1.000')
+        c=br.new_context(viewport={'width':390,'height':844}); q=c.new_page(); q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'aw.inhaber','password':PW}])
+        q.goto(B+'/#/settings'); q.wait_for_selector('#sinv li[data-reason="format"]'); txt=q.inner_text('#sinv li[data-reason="format"]')
+        check('1.000' in txt and FMT[lang] in txt, f'{lang} 390px: mehrdeutiger Altwert mit Grund/Wirkung ({txt!r})')
+        c.close()
+    raw('repair_cost_limit_net','')
     br.close()
 print(f"\n{'OK' if not fails else str(len(fails))+' Fehler'}")
 raise SystemExit(1 if fails else 0)

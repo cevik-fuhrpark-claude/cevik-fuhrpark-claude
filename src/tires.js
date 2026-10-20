@@ -116,7 +116,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
     if (!a) throw forbidden('Reifendaten nur für zugeordnete Fahrzeuge.');
   }
-  const v = await env.DB.prepare('SELECT id, plate, kind, site FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, kind, site, active FROM vehicles WHERE id=?').bind(vehicleId).first(); // active: Formulare ausblenden (20.10.2026)
   if (!v) throw notFound();
   const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
   // Verlauf zur Anzeige: die neuesten TIRE_HIST_MAX Ereignisse (eine Zeile mehr gelesen → history_truncated).

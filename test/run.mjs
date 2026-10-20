@@ -14393,6 +14393,78 @@ await test('Fehlersuche 20.10. (2): Prüftermin-Import nimmt verspätet erledigt
   ok(vsrc.includes(".replace(/[A-Z]/g, (c) => c.toLowerCase())"), 'Akte faltet nur ASCII');
 });
 
+await test('Fehlersuche 20.10. (3): Umlagerung findet Ziel-Artikel ohne Groß-/Kleinschreibung, Artikel-Import atomar/EN-Dezimalpunkt/weitere Spaltennamen/nicht erkannte Spalten, Fahrernachweis-Erfassungstag nach Berliner Datum, Fahrer ohne Vermerke der Leitung, Fahrer sortiert, Rufnummern je Gespann einmal, Einstellungs-Altwert mit Grund, Reifen-Oberfläche', async () => {
+  const { e, U } = await freshWorld();
+  const H = { 'content-type': 'text/csv' };
+  // 1. Umlagerung: „Bremsbelag“ (DORTMUND) → MÜNCHEN mit „bremsbelag“ → kein zweiter Artikel
+  const a = await U.ws.post('/api/stock', { name: 'Bremsbelag', part_number: 'AB-1', initial_qty: 5 }); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.wsMuc.post('/api/stock', { name: ' bremsbelag ', part_number: 'ab-1', initial_qty: 1 }); eq(b.status, 201, JSON.stringify(b.data));
+  const tr = await U.ws.post(`/api/stock/${a.data.id}/transfer`, { to_site: 'MUENCHEN', qty: 2, request_key: rk() });
+  eq(tr.status, 201, JSON.stringify(tr.data)); ok(!tr.data.target_created, 'kein neuer Artikel');
+  const muc = (await U.wsMuc.get('/api/stock')).data.items.filter((i) => /bremsbelag/i.test(i.name));
+  eq(muc.length, 1, 'ein Artikel im Ziellager'); eq(muc[0].on_hand, 3);
+  // 2. Import: EN-Dezimalpunkt, Spalten „Lagerbestand“/„Einzelpreis“, nicht erkannte Spalten genannt
+  const imp = await U.fleet.req('POST', '/api/stock/import?dry_run=1&site=DORTMUND', 'Bezeichnung;Lagerbestand;Einzelpreis;Farbe\nKeilriemen;7;12,50;blau', H);
+  eq(imp.status, 200, JSON.stringify(imp.data)); eq(imp.data.rows[0].initial_qty, 7); eq(imp.data.rows[0].unit_price_net, 12.5); eq(imp.data.ignored_columns.join(), 'Farbe');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/stock.js', import.meta.url), 'utf8');
+  ok(src.includes('decimalComma: dec, decimalPoint: pdec'), 'Import kennt den EN-Dezimalpunkt');
+  ok(src.includes('await env.DB.batch(stmts); } catch (e) {') && !src.includes('i += 90) await env.DB.batch'), 'Import in einem Stapel (atomar)');
+  // Import-Konflikt: nichts gebucht
+  const before = (await U.ws.get('/api/stock')).data.items.length;
+  const { importStockCsv } = await import('../src/stock.js');
+  const wsUser = await e.DB.prepare("SELECT * FROM users WHERE username='w.werkstatt'").first();
+  const rows = Array.from({ length: 120 }, (_, i) => `Artikel ${i};1`).join('\n');
+  const realBatch = e.DB.batch.bind(e.DB); let injected = false;
+  e.DB.batch = async (st) => { if (!injected && st.length > 100) { injected = true; await U.ws.post('/api/stock', { name: 'Artikel 119' }); } return realBatch(st); };
+  try { await importStockCsv(e, wsUser, 'test', 'Bezeichnung;Bestand\n' + rows, {}); ok(false, 'Konflikt erwartet'); } catch (err) { eq(err.code, 'duplicate_item'); } finally { e.DB.batch = realBatch; }
+  eq((await U.ws.get('/api/stock')).data.items.length, before + 1, 'nur der gleichzeitig angelegte Artikel, kein Teilimport');
+  // 3. Fahrernachweis: Erfassung nach 00:00 Berlin (UTC noch Vortag) – nachgetragener älterer Führerschein bleibt Verlauf
+  const d = await U.fleet.post('/api/drivers', { display_name: 'Özdemir, Ali (Test)' }); eq(d.status, 201);
+  await U.fleet.post('/api/drivers', { display_name: 'Zimmer, Jan (Test)' }); await U.fleet.post('/api/drivers', { display_name: 'von Berg, Eva (Test)' });
+  const nw = await U.fleet.post(`/api/drivers/${d.data.id}/documents`, { kind: 'fuehrerschein', evidence: 'Sichtprüfung (Test)' }); eq(nw.status, 201, JSON.stringify(nw.data));
+  await e.DB.prepare("UPDATE driver_documents SET created_at='2026-03-10T23:30:00.000Z' WHERE id=?").bind(nw.data.id).run(); // Berlin 11.03.
+  const old = await U.fleet.post(`/api/drivers/${d.data.id}/documents`, { kind: 'fuehrerschein', issued_on: '2026-03-10', evidence: 'alte Kopie (Test)' }); eq(old.status, 201);
+  const docs = (await U.fleet.get(`/api/drivers/${d.data.id}`)).data.documents;
+  eq(docs.find((x) => x.id === old.data.id).superseded, 1, 'älterer Nachweis nur Verlauf'); eq(docs.find((x) => x.id === nw.data.id).superseded, 0);
+  const { driverStatus } = await import('../src/drivers.js');
+  const st = driverStatus([{ id: 'n', kind: 'unterweisung', title: 'ADR', created_at: '2026-03-10T23:30:00.000Z', superseded: 0 }, { id: 'o', kind: 'unterweisung', title: 'ADR', issued_on: '2026-03-10', valid_until: '2026-03-20', superseded: 0 }], null, '2026-04-01', { warnDays: 30, checkMonths: null });
+  eq(st.replaced.map((x) => x.id + '>' + x.by_issued_on).join(), 'o>2026-03-11', 'Erfassungstag nach Berliner Datum');
+  // 4. Fahrer-Liste nach deutscher Sortierung
+  const names = (await U.fleet.get('/api/drivers')).data.drivers.map((x) => x.display_name).filter((n) => n.includes('(Test)'));
+  eq(names.join('|'), 'Özdemir, Ali (Test)|von Berg, Eva (Test)|Zimmer, Jan (Test)');
+  // 5. Fahrer sieht keine Vermerke/Namen der Leitung in der eigenen Akte
+  const dd = await U.fleet.post('/api/drivers', { display_name: 'Fahrer W', user_id: U.driver.id }); eq(dd.status, 201, JSON.stringify(dd.data));
+  eq((await U.fleet.post(`/api/drivers/${dd.data.id}/documents`, { kind: 'fahrerkarte', valid_until: '2030-01-01', evidence: 'Karte (Test)' })).status, 201);
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: dd.data.id, downloaded_on: BERLIN_TODAY, evidence: 'Auslesung (Test)', note: 'interner Vermerk (Test)' })).status, 201);
+  const dv = (await U.driver.get(`/api/drivers/${dd.data.id}`)).data;
+  ok(dv.tacho_downloads.length && dv.tacho_downloads.every((x) => !('note' in x) && !('created_by_name' in x)), 'Auslesungen ohne Vermerk/Namen');
+  ok(dv.documents.every((x) => !('created_by_name' in x)), 'Nachweise ohne Erfassende');
+  ok((await U.fleet.get(`/api/drivers/${dd.data.id}`)).data.tacho_downloads[0].note, 'Leitung sieht den Vermerk');
+  // 6. Rufnummern: Standort-Nummer bei Zugmaschine und Anhänger desselben Standorts nur einmal
+  eq((await U.fleet.post('/api/vehicles', { plate: 'TT-RN 1', vin: 'WDB96340310777701', site: 'Dortmund', trailer_plate: 'TT-RA 1' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { plate: 'TT-RA 1', vin: 'WDB96340310777702', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles/VIN:WDB96340310777701/drivers', { user_id: U.driver.id, evidence: 'Dispo (Test)' })).status, 201);
+  eq((await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo Dortmund (Test)', phone: '0231 123456', scope: 'site', site: 'Dortmund' })).status, 201);
+  const em = (await U.driver.get('/api/emergency')).data;
+  const hits = em.vehicles.flatMap((v) => v.contacts.filter((c) => c.label === 'Dispo Dortmund (Test)').map(() => v.plate));
+  ok(em.vehicles.some((v) => v.plate === 'TT-RA 1'), 'Anhänger in der Ansicht'); eq(hits.length, 1, 'Standort-Nummer einmal: ' + hits.join());
+  // 7. Einstellung „1.000“ (mehrdeutig, im Bereich) → Grund format, Wirkung 1
+  await e.DB.prepare("INSERT INTO settings(key,value,updated_at) VALUES('repair_cost_limit_net','1.000',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(new Date().toISOString()).run();
+  const inv = (await U.own.get('/api/settings')).data.invalid.find((x) => x.setting === 'repair_cost_limit_net');
+  ok(inv, 'gemeldet'); eq(inv.reason, 'format'); eq(inv.effective, 1); eq(inv.value, '1.000');
+  await e.DB.prepare("DELETE FROM settings WHERE key='repair_cost_limit_net'").run();
+  // 8. Oberfläche
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes('<table class="stack" id="tirehist">'), 'Reifenverlauf stapelbar (390 px)');
+  ok(app.includes("esc(fmtMm(h.tread_mm))") && app.includes("esc(fmtBar(h.pressure_bar))") && !/fmtNum\([^)]*\)\) \+ ' mm'/.test(app), 'mm/bar je Sprache');
+  ok(app.includes('DOT ${esc(dotTxt(p.dot))}') && !app.includes('name="dot" maxlength="20" inputmode="numeric"'), 'DOT nicht doppelt, Buchstaben eingebbar');
+  ok(app.includes("const vActive = !d.vehicle || d.vehicle.active !== 0;") && app.includes("d.vehicle.active === 0 ||"), 'außer Betrieb: keine Reifenformulare');
+  ok(app.includes("t('import_tire_cols')") && app.includes("o.note === 'Import' ? t('odo_src_import')") && app.includes("i.title || i.topic ? ' ' + (i.title || i.topic)"), 'Reifen-Spalten übersetzt, Import-Vermerk, Unterweisungs-Thema');
+  ok(app.includes("t('stock_import_ignored')") && app.includes("data-reason="), 'nicht erkannte Spalten, Einstellungsgrund');
+  for (const l of ['de', 'uk', 'en']) for (const key of ['import_tire_cols', 'setting_stored_format', 'setting_stored_precision', 'setting_off', 'stock_import_ignored']) ok(STRINGS[l][key], `${l} ${key}`);
+  ok(STRINGS.uk.tire_warn.includes('1,6 мм'), 'UK Warnschwelle vollständig');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

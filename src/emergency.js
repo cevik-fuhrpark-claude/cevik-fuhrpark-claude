@@ -62,8 +62,12 @@ export async function emergencyView(env, user, envName, query = {}) {
   }
   const all = await activeContacts(env, envName);
   const general = all.filter((c) => !c.site && !c.vehicle_id).sort(sortContacts).map(pub);
+  // jede Nummer nur einmal je Ansicht (20.10.2026: Standort-Nummer erschien bei Zugmaschine und Anhänger desselben Standorts doppelt) –
+  // fahrzeugbezogene zuerst vergeben, Standort-Nummern beim ersten Fahrzeug des Standorts
+  const shown = new Set(all.filter((c) => c.vehicle_id && vehicles.some((v) => v.id === c.vehicle_id)).map((c) => c.id));
   const out = vehicles.map((v) => ({ id: v.id, plate: v.plate,
-    contacts: all.filter((c) => c.vehicle_id === v.id || (c.site && v.site && siteKey(c.site) === siteKey(v.site))).sort((a, b) => (a.vehicle_id ? 0 : 1) - (b.vehicle_id ? 0 : 1) || sortContacts(a, b)).map(pub) }));
+    contacts: all.filter((c) => c.vehicle_id === v.id || (!c.vehicle_id && c.site && v.site && siteKey(c.site) === siteKey(v.site) && !shown.has(c.id) && shown.add(c.id)))
+      .sort((a, b) => (a.vehicle_id ? 0 : 1) - (b.vehicle_id ? 0 : 1) || sortContacts(a, b)).map(pub) }));
   return { general, vehicles: out, can_edit: WRITE.includes(user.role) };
 }
 

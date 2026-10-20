@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -42,6 +42,10 @@ function addMonthsIso(d, m) {
 }
 
 export const GROUPED_KINDS = ['unterweisung', 'sonstiges'];
+// Erfassungstag als Berliner Kalendertag (20.10.2026: UTC-Tag – nach 00:00 Berlin galt der Vortag, ein am selben Tag nachgetragener
+// älterer Nachweis löste den neuen ab)
+export const byName = (a, b) => String(a.display_name || '').localeCompare(String(b.display_name || ''), 'de', { sensitivity: 'base' });
+const entryDay = (iso) => (iso ? berlinDate(String(iso)) : '');
 // Status je Fahrer aus aktuellen Nachweisen und letzter Führerscheinkontrolle
 export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) {
   const items = [];
@@ -54,7 +58,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   // ohne „gültig bis“ löst die abgelaufene ab (17.10.2026), ein nachgetragener älterer Nachweis nicht
   const newer = (a, b) => {
     if (a.valid_until && b.valid_until && a.valid_until !== b.valid_until) return a.valid_until > b.valid_until;
-    const da = a.issued_on || String(a.created_at || '').slice(0, 10); const db = b.issued_on || String(b.created_at || '').slice(0, 10);
+    const da = a.issued_on || entryDay(a.created_at); const db = b.issued_on || entryDay(b.created_at);
     if (da !== db) return da > db;
     if (!!a.valid_until !== !!b.valid_until) return !!a.valid_until;
     return String(a.created_at || '') > String(b.created_at || '');
@@ -67,7 +71,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   }
   const replaced = [];
   for (const d of docs.filter((x) => !x.superseded && x.valid_until)) {
-    if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until || null, ...(n.valid_until ? {} : { by_issued_on: n.issued_on || String(n.created_at || '').slice(0, 10) || null }) }); continue; } }
+    if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until || null, ...(n.valid_until ? {} : { by_issued_on: n.issued_on || entryDay(n.created_at) || null }) }); continue; } }
     const left = days(today, d.valid_until);
     const topic = GROUPED_KINDS.includes(d.kind) ? groupKey(d).slice(d.kind.length + 1) : '';
     items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic, ...(String(d.title || '').trim() ? { title: String(d.title).trim().slice(0, 80) } : {}) } : {}) });
@@ -109,6 +113,8 @@ export async function listDrivers(env, user, envName, query = {}, settings = nul
   const c = cfg(settings || await settingsMap(env)); const today = berlinDate();
   const byD = new Map(); for (const x of docs) { if (!byD.has(x.driver_id)) byD.set(x.driver_id, []); byD.get(x.driver_id).push(x); }
   const chk = new Map(checks.map((x) => [x.driver_id, x]));
+  // Namen nach deutscher Sortierung (20.10.2026: ORDER BY sortierte „Özdemir“, „von Berg“ hinter „Zimmer“)
+  drivers.sort(byName);
   return drivers.map((d) => ({ ...d, status: driverStatus(byD.get(d.id) || [], chk.get(d.id) || null, today, c) }));
 }
 
@@ -130,7 +136,10 @@ export async function driverDetail(env, user, envName, id) {
   const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)`).bind(d.user_id, nowIso()).all()).results : [];
   // Fahrer selbst: Kontrollverlauf ohne Vermerk/Prüfende der Leitung (wie der interne Vermerk der Akte; App zeigt ihn nur der Leitung, 19.10.2026)
   const checksOut = isMgr(user) ? checks : checks.map(({ note, checked_by, checked_by_name, ...r }) => r);
-  return { driver: d, documents: docs, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: downloads, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
+  // ebenso Bemerkung/Erfassende der Auslesungen und Erfassende der Nachweise (20.10.2026: Fahrer sah den Vermerk der Leitung)
+  const dlOut = isMgr(user) ? downloads : downloads.map(({ note, created_by_name, ...r }) => r);
+  const docsOut = isMgr(user) ? docs : docs.map(({ created_by, created_by_name, ...r }) => r);
+  return { driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: driverStatus(docs, checks[0] || null, berlinDate(), c), settings: c };
 }
 
 export async function createDriver(env, user, envName, body) {
@@ -214,7 +223,7 @@ export async function addDriverDocument(env, user, envName, id, body) {
   const single = ['fuehrerschein', 'fahrerkarte', 'code95'].includes(kind);
   const newerExists = `EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=?2 AND x.kind=?3 AND x.superseded=0 AND (
       (x.valid_until IS NOT NULL AND ?8 IS NOT NULL AND x.valid_until > ?8)
-      OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, substr(x.created_at,1,10)) > ?7)))`;
+      OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, ${berlinDaySql('x.created_at')}) > ?7)))`;
   stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11)`)
     .bind(docId, id, kind, str(body.title, { max: 120, field: 'Bezeichnung' }), str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now));

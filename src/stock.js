@@ -257,10 +257,12 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   const avail = await onHand(env, id);
   if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
   const note = str(body.note, { max: 300, field: 'Bemerkung' });
-  const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=? AND (name=? OR (part_number IS NOT NULL AND part_number<>\'\' AND part_number=?))')
-    .bind(envName, toSite, it.name, it.part_number || '\u0000').all()).results;
-  let target = cands.find((c) => (c.part_number || '') === (it.part_number || '') && c.name === it.name) || null;
-  if (!target && it.part_number) { const pn = cands.filter((c) => c.active && c.part_number === it.part_number); if (pn.length === 1) target = pn[0]; }
+  // Ziel-Artikel wie assertNoTwin ohne Groß-/Kleinschreibung und Leerzeichen (20.10.2026: „bremsbelag“ im Ziellager wurde nicht gefunden,
+  // Umlagerung legte einen zweiten Artikel an); danach eindeutige Teilenummer (ebenfalls ohne Groß-/Kleinschreibung)
+  const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=?').bind(envName, toSite).all()).results;
+  const k = itemKey(it.name, it.part_number);
+  let target = cands.find((c) => itemKey(c.name, c.part_number) === k) || null;
+  if (!target && it.part_number) { const pk = String(it.part_number).trim().toLocaleLowerCase('de'); const pn = cands.filter((c) => c.active && String(c.part_number || '').trim().toLocaleLowerCase('de') === pk); if (pn.length === 1) target = pn[0]; }
   const now = nowIso(); const tid = uuid(); const stmts = []; let created = false;
   if (!target) {
     target = { id: uuid(), site: toSite, unit: it.unit, unit_price_net: it.unit_price_net, active: 1 }; created = true;
@@ -542,17 +544,21 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
   const ci = { name: col(['bezeichnung', 'artikelbezeichnung', 'artikel', 'name', 'teil']), pn: col(['teilenummer', 'artikelnummer', 'art.-nr', 'art-nr', 'artnr', 'nummer', 'teile-nr']),
     unit: head.findIndex((h) => h.startsWith('einheit') || h.startsWith('mengeneinheit') || h === 'me'), min: col(['mindest', 'meldebestand']), loc: col(['lagerort', 'ort', 'regal', 'lagerplatz']),
-    price: col(['preis', 'einkaufspreis', 'ek', 'netto']), qty: -1 };
-  ci.qty = head.findIndex((h, i) => i !== ci.unit && ['bestand', 'anfangsbestand', 'menge'].some((n) => h.startsWith(n)));
+    price: col(['preis', 'einkaufspreis', 'einzelpreis', 'stückpreis', 'stueckpreis', 'ek', 'netto']), qty: -1 };
+  ci.qty = head.findIndex((h, i) => i !== ci.unit && i !== ci.min && ['bestand', 'anfangsbestand', 'lagerbestand', 'istbestand', 'menge', 'stück', 'stueck', 'anzahl'].some((n) => h.startsWith(n)));
   // „Teilenummer“ beginnt nicht mit „teil“-Spalte verwechseln: Bezeichnungsspalte darf nicht die Nummernspalte sein
   if (ci.name >= 0 && ci.name === ci.pn) ci.name = head.findIndex((h, i) => i !== ci.pn && ['bezeichnung', 'artikelbezeichnung', 'artikel', 'name'].some((n) => h.startsWith(n)));
   if (ci.name < 0) throw bad('validation', 'Spalte „Bezeichnung“ erforderlich.');
   const existing = (await env.DB.prepare('SELECT id, name, part_number, unit, min_qty, location, unit_price_net, active FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;
   const known = new Map(existing.map((r) => [itemKey(r.name, r.part_number), r]));
-  const result = { dry_run: !!dryRun, site, created: 0, unchanged: 0, skipped: [], rows: [] };
+  // nicht erkannte Spalten nennen statt still zu übergehen (20.10.2026: „Lagerbestand“/„Einzelpreis“ ergaben Artikel ohne Bestand/Preis)
+  const used = new Set(Object.values(ci).filter((i) => i >= 0));
+  const ignored = table[0].map((h, i) => (used.has(i) || !String(h || '').trim() ? null : String(h).trim().slice(0, 60))).filter(Boolean);
+  const result = { dry_run: !!dryRun, site, created: 0, unchanged: 0, skipped: [], rows: [], ignored_columns: ignored };
   const seen = new Map(); const stmts = []; const now = nowIso(); const dec = commaDec(user);
   const get = (cells, i) => (i >= 0 ? String(cells[i] ?? '').trim() : '');
-  const numOf = (v, field, max) => (v === '' ? null : r3(num(v, { min: 0, max, field, decimalComma: dec })));
+  const pdec = pointDec(user);
+  const numOf = (v, field, max) => (v === '' ? null : r3(num(v, { min: 0, max, field, decimalComma: dec, decimalPoint: pdec })));
   table.slice(1).forEach((cells, idx) => {
     const line = cells.line || idx + 2;
     if (cells.every((c) => !String(c ?? '').trim())) return;
@@ -561,7 +567,7 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
     if (!name) return skip('Bezeichnung fehlt');
     if (name.length > 200 || (pn && pn.length > 80)) return skip('Bezeichnung/Teilenummer zu lang');
     let min; let price; let qty;
-    try { min = numOf(get(cells, ci.min), 'Mindestbestand', 1e6); price = get(cells, ci.price) === '' ? null : num(get(cells, ci.price).replace(/\s*€$/, ''), { min: 0, max: 1e7, field: 'Preis', decimalComma: dec }); qty = numOf(get(cells, ci.qty), 'Anfangsbestand', 1e6); }
+    try { min = numOf(get(cells, ci.min), 'Mindestbestand', 1e6); price = get(cells, ci.price) === '' ? null : num(get(cells, ci.price).replace(/\s*€$/, ''), { min: 0, max: 1e7, field: 'Preis', decimalComma: dec, decimalPoint: pdec }); qty = numOf(get(cells, ci.qty), 'Anfangsbestand', 1e6); }
     catch (e) { if (e instanceof HttpError) return skip(e.message); throw e; }
     const unit = stdUnit(get(cells, ci.unit).slice(0, 20) || null); const loc = get(cells, ci.loc).slice(0, 80) || null;
     const key = itemKey(name, pn);
@@ -586,7 +592,8 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
     result.rows.push(row);
   });
   if (!dryRun && stmts.length) {
-    try { for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90)); } catch (e) {
+    // ein einziger Stapel = alles oder nichts (20.10.2026: Teilstapel blieben bei späterem UNIQUE-Fehler gebucht, ohne Protokoll)
+    try { await env.DB.batch(stmts); } catch (e) {
       if (String(e && e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
       throw e;
     }
