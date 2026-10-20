@@ -1282,16 +1282,18 @@ for (const l of ['de', 'uk', 'en']) for (const [c, v] of Object.entries(FINDING_
 // [CLAUDE] Automatischer Sperrgrund bei Meldungen (Server speichert Deutsch, z. B. „Fahrer meldet: nicht fahrbereit (ungeprüft)“) –
 // in der Oberfläche in der Sprache der Person. Von Hand eingegebene Sperrgründe bleiben unverändert.
 const LOCK_REASON = {
-  uk: { driver: 'Водій повідомляє', report: 'Повідомлення ({r})', nicht_fahrbereit: 'не може їхати (не перевірено)', sicherheitskritisch: 'загроза безпеці (не перевірено)' },
-  en: { driver: 'Driver reports', report: 'Report ({r})', nicht_fahrbereit: 'not drivable (unverified)', sicherheitskritisch: 'safety-critical (unverified)' },
+  uk: { driver: 'Водій повідомляє', report: 'Повідомлення ({r})', nicht_fahrbereit: 'не може їхати (не перевірено)', sicherheitskritisch: 'загроза безпеці (не перевірено)', order: 'Замовлення ({r})', nicht_fahrbereit_o: 'не може їхати', sicherheitskritisch_o: 'загроза безпеці' },
+  en: { driver: 'Driver reports', report: 'Report ({r})', nicht_fahrbereit: 'not drivable (unverified)', sicherheitskritisch: 'safety-critical (unverified)', order: 'Order ({r})', nicht_fahrbereit_o: 'not drivable', sicherheitskritisch_o: 'safety-critical' },
 };
 const LOCK_ROLE = { Inhaber: 'role_owner', Fuhrparkleitung: 'role_fleet', Werkstatt: 'role_workshop', Disposition: 'role_dispatch' };
 export function translateLockReason(lang, msg) {
   const T = LOCK_REASON[lang]; if (!T || typeof msg !== 'string') return msg;
-  const m = msg.match(/^(Fahrer meldet|Meldung(?: (Inhaber|Fuhrparkleitung|Werkstatt|Disposition))?): (nicht fahrbereit|sicherheitskritisch) \(ungeprüft\)$/);
-  if (!m) return msg;
-  const who = m[1] === 'Fahrer meldet' ? T.driver : T.report.replace('{r}', m[2] ? STRINGS[lang][LOCK_ROLE[m[2]]] : '').replace(' ()', '');
-  return `${who}: ${T[m[3] === 'nicht fahrbereit' ? 'nicht_fahrbereit' : 'sicherheitskritisch']}`;
+  // „Auftrag <Rolle>: …“ ohne „(ungeprüft)“ = Auftrag der Leitung aus Prüftermin/Prüfmangel (20.10.2026: blieb in UK/EN deutsch)
+  const m = msg.match(/^(Fahrer meldet|(Meldung|Auftrag)(?: (Inhaber|Fuhrparkleitung|Werkstatt|Disposition))?): (nicht fahrbereit|sicherheitskritisch)( \(ungeprüft\))?$/);
+  if (!m || (m[2] === 'Auftrag') === !!m[5]) return msg;
+  const who = m[1] === 'Fahrer meldet' ? T.driver : T[m[2] === 'Auftrag' ? 'order' : 'report'].replace('{r}', m[3] ? STRINGS[lang][LOCK_ROLE[m[3]]] : '').replace(' ()', '');
+  const k = m[4] === 'nicht fahrbereit' ? 'nicht_fahrbereit' : 'sicherheitskritisch';
+  return `${who}: ${m[5] ? T[k] : T[k + '_o']}`;
 }
 // [CLAUDE] 14.10.2026: Bekannte Geräte (Anmelde-Hinweis) – eigene Liste in „Mein Konto“, Anzahl in der Benutzerliste
 Object.assign(STRINGS.de, { ufilter: 'Anzeigen', ufilter_all: 'alle Konten', ufilter_active: 'aktiv', ufilter_inactive: 'deaktiviert', ufilter_invite: 'Einladung offen', ufilter_locked: 'gesperrt (Fehlversuche)', ufilter_shown: 'Konten angezeigt: {n} von {m}', usort_role: 'Umgebung und Rolle', usort_name: 'Name', usort_login_oldest: 'Letzte Anmeldung (am längsten her zuerst)', uc_print: 'Berechtigungsübersicht', unknown_device_l: 'Unbekanntes Gerät', last_login: 'Letzte Anmeldung', last_login_none: 'Anmeldung noch nicht protokolliert', uc_btn: 'Berechtigungsübersicht (CSV)', uc_hint: 'Alle Konten mit Rolle, Status, Zwei-Faktor, Push-Geräten und letzter Anmeldung – zur regelmäßigen Prüfung der Zugänge', uc_push: 'Push-Geräte', uc_yes: 'ja', uc_no: 'nein', kd_title: 'Bekannte Geräte (für den Anmelde-Hinweis)', kd_hint: 'Auf diesen Geräten haben Sie sich schon angemeldet – dort gibt es keinen Hinweis. Ein vergessenes Gerät (z. B. altes oder verkauftes Handy) löst bei der nächsten Anmeldung wieder den Hinweis aus. Abmelden geht oben unter „Meine Anmeldungen“.', kd_first: 'zuerst', kd_last: 'zuletzt', kd_forget: 'Vergessen', kd_forget_confirm: 'Gerät „{d}“ vergessen? Bei der nächsten Anmeldung darauf kommt wieder der Hinweis „Neue Anmeldung“.', kd_none: 'Noch kein Gerät gespeichert.', kd_n: 'Bekannte Geräte: {n}', err_current_device: 'Dieses Gerät kann nicht vergessen werden.', err_invalid_device: 'Ungültiges Gerät.' });

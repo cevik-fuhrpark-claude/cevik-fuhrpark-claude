@@ -1268,7 +1268,7 @@ async function viewCase(id) {
   // Arbeiten, Teile, Kosten
   if (d.work) {
     html += `<h2>${esc(t('work'))} & ${esc(t('parts'))}</h2><div class="scroll"><table><thead><tr><th>${esc(t('date'))}</th><th>${esc(t('activity'))}</th><th>${esc(t('hours'))}</th></tr></thead><tbody>${d.work.map((w) => `<tr><td>${fmtD(w.work_date)}</td><td>${esc(w.description)}<br><span class="small muted">${esc(w.user_name)}</span></td><td>${hrs(w.hours)}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">–</td></tr>`}</tbody></table>
-      <table style="margin-top:8px"><thead><tr><th>${esc(t('part_name'))}</th><th>${esc(t('qty'))}</th><th>€</th></tr></thead><tbody>${d.parts.map((p) => `<tr><td>${esc(p.name)}${p.part_number ? ` <span class="small muted">${esc(p.part_number)}</span>` : ''}${warrChip(p.warranty_until)}</td><td>${fmtNum(p.quantity)} ${esc(unitL(p.unit))}</td><td>${p.unit_price_net === null ? `<span class="chip mittel">${esc(t('unvalued'))}</span>` : eur(Math.round((Number(p.quantity) * p.unit_price_net + Number.EPSILON) * 100) / 100) + (Number(p.quantity) !== 1 ? ` <span class="small muted">(${esc(t('per_unit'))} ${eur3(p.unit_price_net)})</span>` : '') + (p.valuation === 'estimate' ? ' (' + esc(t('estimate')) + ')' : '')}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">–</td></tr>`}</tbody></table></div>`;
+      <table style="margin-top:8px"><thead><tr><th>${esc(t('part_name'))}</th><th>${esc(t('qty'))}</th><th>€</th></tr></thead><tbody>${d.parts.map((p) => `<tr><td>${esc(p.name)}${p.part_number ? ` <span class="small muted">${esc(p.part_number)}</span>` : ''}${warrChip(p.warranty_until)}</td><td>${fmtNum(p.quantity)} ${esc(unitL(p.unit))}</td><td>${p.unit_price_net === null ? `<span class="chip mittel">${esc(t('unvalued'))}</span>` : eur(rc2(Number(p.quantity) * p.unit_price_net)) + (Number(p.quantity) !== 1 ? ` <span class="small muted">(${esc(t('per_unit'))} ${eur3(p.unit_price_net)})</span>` : '') + (p.valuation === 'estimate' ? ' (' + esc(t('estimate')) + ')' : '')}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">–</td></tr>`}</tbody></table></div>`;
   }
   if (d.costs) {
     const k = d.costs;
@@ -1296,7 +1296,8 @@ async function viewCase(id) {
   const cmd = async (action, note, payload = {}) => {
     try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: uid(), expected_version: c.version, note, payload }); toast('✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
-    catch (err) { toast(err.message, true); if (err.code === 'version_conflict') { S.actSince = []; viewCase(c.id); } }
+    // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
+    catch (err) { toast(err.message, true); if (err.code === 'version_conflict') { S.actSince = []; viewCase(c.id); } else if (err.code === 'cost_approval_open') viewCase(c.id); }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
@@ -3927,7 +3928,8 @@ async function viewUsers() {
     $('#uex').onclick = () => ($('#inv').innerHTML = '');
     $('#uef').onsubmit = async (e) => {
       e.preventDefault();
-      const body = { display_name: $('#uen').value.trim(), role: $('#uer').value };
+      // leerer Name: Server prüft und meldet (übersetzt) – vorher galt „“ als „unverändert“ und die App zeigte „✓“ (20.10.2026)
+      const body = { display_name: $('#uen').value.trim() || ' ', role: $('#uer').value };
       if (body.role === 'workshop') body.workshop_site = $('#uews').value;
       if ($('#uee')) body.environment = $('#uee').value;
       const roleEnvChange = body.role !== u.role || (body.environment && body.environment !== u.environment);

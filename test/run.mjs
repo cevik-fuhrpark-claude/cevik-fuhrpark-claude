@@ -14638,6 +14638,47 @@ await test('Fehlersuche 20.10. (7): Fahrzeugdokument „gültig bis“ plausibel
   ok(translateLockReason('en', 'Fahrer meldet: sicherheitskritisch (ungeprüft)') !== 'Fahrer meldet: sicherheitskritisch (ungeprüft)', 'Sperrgrund EN');
 });
 
+await test('Fehlersuche 20.10. (8): Einladungslink der Fuhrparkleitung nie für Inhaber-/Leitungskonten, bleibt bei erlaubtem Rollenwechsel gültig, leeres Speichern der Einstellungen ohne Protokoll, Sperrgrund „Auftrag …“ übersetzt, Stunden/Betrag mit Komma, keine „sperren“-Aktion bei Sperre, Teilezeile wie Summe gerundet', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const own = U.own; const F = U.fleet; const an = new Client(worker, e, 'anon');
+  // Leitung legt Fahrer an, Inhaber stuft vor der Einrichtung zum Inhaber hoch → Link der Leitung nicht einlösbar
+  let x = await F.post('/api/users', { username: 'inv.x1', display_name: 'Inv X1', role: 'driver' }); eq(x.status, 201);
+  eq((await own.patch(`/api/users/${x.data.id}`, { role: 'owner' })).status, 200);
+  eq((await an.get('/api/invite/' + x.data.invite_token)).status, 410, 'Leitungs-Link für Inhaberkonto ungültig');
+  const ul = (await own.get('/api/users')).data.users.find((u) => u.id === x.data.id); ok(!ul.invite_expires_at, 'Benutzerliste: keine offene Einladung');
+  // Zeitfenster: Link erst nach dem Hochstufen erzeugt (gleichzeitige Anfragen) – Ausstellerregel greift beim Einlösen
+  x = await F.post('/api/users', { username: 'inv.x2', display_name: 'Inv X2', role: 'driver' });
+  const fresh = (await F.post(`/api/users/${x.data.id}/invite`)).data.invite_token; ok(fresh, 'neuer Link');
+  e.DB.db.prepare(`UPDATE users SET role='owner' WHERE id=?`).run(x.data.id);
+  eq((await an.post('/api/invite/accept', { token: fresh, password: 'Sicheres-Passwort-2026' })).status, 410, 'Einlösen abgewiesen');
+  // erlaubter Wechsel (Fahrer → Lesezugriff) durch die Leitung: Link bleibt gültig
+  x = await F.post('/api/users', { username: 'inv.x3', display_name: 'Inv X3', role: 'driver' });
+  eq((await F.patch(`/api/users/${x.data.id}`, { role: 'viewer' })).status, 200);
+  eq((await an.get('/api/invite/' + x.data.invite_token)).status, 200, 'Link bleibt gültig');
+  // Inhaber-Link für hochgestuftes Konto bleibt gültig (Erst-Einladung)
+  x = await own.post('/api/users', { username: 'inv.x4', display_name: 'Inv X4', role: 'driver', environment: 'test' });
+  eq((await own.patch(`/api/users/${x.data.id}`, { role: 'fleet' })).status, 200);
+  eq((await an.get('/api/invite/' + x.data.invite_token)).status, 200, 'Inhaber-Link gilt weiter');
+  // Einstellungen ohne Änderung: kein Protokolleintrag
+  const n0 = (await own.get('/api/admin/audit?action=settings.update&limit=50')).data.entries.length;
+  eq((await own.req('PUT', '/api/settings', {})).status, 200);
+  eq((await own.get('/api/admin/audit?action=settings.update&limit=50')).data.entries.length, n0, 'kein leerer Eintrag');
+  // Sperrgrund aus Prüfmangel-Auftrag
+  const { translateLockReason } = await import('../public/i18n.js');
+  eq(translateLockReason('en', 'Auftrag Inhaber: nicht fahrbereit'), 'Order (Owner): not drivable');
+  eq(translateLockReason('en', 'Meldung Werkstatt: sicherheitskritisch (ungeprüft)'), 'Report (Workshop): safety-critical (unverified)');
+  // Stunden/Betrag mit Komma (DE)
+  const id = await toRepair();
+  let r = await cmd(U.ws, id, 'record_work', { hours: '1,250', description: 'Leuchte', work_date: BERLIN_TODAY }); eq(r.status, 200, 'Stunden 1,250: ' + JSON.stringify(r.data));
+  r = await cmd(F, id, 'add_external_cost', { amount_net: '1,500', description: 'Abschleppen' }); eq(r.status, 400); ok(!/mehrdeutig/.test(r.data.message), 'Betrag: Nachkommastellen statt „mehrdeutig“: ' + r.data.message);
+  // gesperrter Vorgang: keine Aktion „sperren“
+  eq((await cmd(F, id, 'set_safety_lock', {}, 'Bremse')).status, 200);
+  const d = (await F.get(`/api/cases/${id}`)).data; ok(d.allowed_actions.includes('lift_safety_lock') && !d.allowed_actions.includes('set_safety_lock'), 'nur „Sperre aufheben“');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('rc2(Number(p.quantity) * p.unit_price_net)') && !app.includes('Number.EPSILON) * 100) / 100'), 'Teilezeile gerundet wie der Server');
+  ok(app.includes("else if (err.code === 'cost_approval_open') viewCase(c.id);"), 'Kostenfreigabe offen → neu laden');
+  ok(app.includes("display_name: $('#uen').value.trim() || ' '"), 'leerer Name wird geprüft');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -680,7 +680,7 @@ async function handleApi(request, env, ctx, url) {
       await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs)).run();
     }
-    await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
+    if (pairs.length) await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
     // Grenze/Stundensatz geändert: offene Markierungen „Kostenfreigabe ausstehend“ neu bewerten (19.10.2026)
     const costs_revalidated = pairs.some(([k]) => k === 'repair_cost_limit_net' || k === 'workshop_hourly_rate_net') ? (await cases.revalidateCostMarks(env, user.id)).length : 0;
     return json({ ok: true, ...(costs_revalidated ? { costs_revalidated } : {}) });

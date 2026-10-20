@@ -336,8 +336,10 @@ export async function inviteInfo(env, token) {
   const row = await env.DB.prepare(
     // Aussteller muss noch aktive Leitung/Inhaber sein: Links einer ausgeschiedenen bzw. herabgestuften Fuhrparkleitung verfallen (19.10.2026:
     // sonst konnte sie Fahrerkonten mit zuvor erzeugten Links übernehmen); Ersteinrichtung ohne Aussteller bleibt gültig
+    // 20.10.2026: Link der Fuhrparkleitung nur für Rollen/Umgebung, die sie selbst anlegen darf (FLEET_MAY_CREATE) – sonst ergab ein gleichzeitiges
+    // „neuer Link“ (Leitung) + Hochstufen zum Inhaber einen einlösbaren Inhaber-Link
     `SELECT i.*, u.username, u.display_name, u.role, u.environment, u.active FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?
-      AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND c.role IN ('owner','fleet')))`
+      AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND (c.role='owner' OR (c.role='fleet' AND u.role IN ('driver','workshop','viewer') AND u.environment=c.environment))))`
   ).bind(h).first();
   // deaktiviertes Konto: Einladung nicht einlösbar (vorher Passwort gesetzt + „Letzte Anmeldung“ trotz Deaktivierung)
   if (!row || row.used_at || row.expires_at < nowIso() || !row.active) throw new HttpError(410, 'invite_invalid', 'Einladung ungültig oder abgelaufen.');
@@ -353,7 +355,9 @@ export async function acceptInvite(env, request, body, ctx = null) {
   // Passwort und bekamen beide eine Sitzung (17.10.2026)
   try {
     await env.DB.batch([
-      env.DB.prepare('UPDATE invites SET used_at=? WHERE token_hash=? AND used_at IS NULL').bind(now, hash),
+      // Ausstellerregel wie inviteInfo auch beim Einlösen (Rolle kann sich dazwischen geändert haben, 20.10.2026)
+      env.DB.prepare(`UPDATE invites SET used_at=? WHERE token_hash=? AND used_at IS NULL AND (created_by IS NULL OR EXISTS (SELECT 1 FROM users c, users u
+        WHERE c.id=invites.created_by AND u.id=invites.user_id AND c.active=1 AND u.active=1 AND (c.role='owner' OR (c.role='fleet' AND u.role IN ('driver','workshop','viewer') AND u.environment=c.environment))))`).bind(now, hash),
       env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
       env.DB.prepare('DELETE FROM cmd_guard'),
       env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, updated_at=? WHERE id=?').bind(ph, salt, now, row.user_id),
@@ -574,10 +578,9 @@ export async function updateUser(env, actor, userId, body) {
   // offene Einladungs-/Zurücksetzen-Links entwerten: bei Deaktivierung immer (galt nach Reaktivierung wieder), bei Rollen-/Umgebungswechsel
   // nur für eingerichtete Konten (Zurücksetzen-Link der alten Rolle gab sonst Zugang mit der neuen; Erst-Einladung bleibt gültig) – 18.10.2026
   if (!active || role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE invites SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL
-    AND (?3 = 1 OR EXISTS (SELECT 1 FROM users WHERE id=?2 AND password_hash IS NOT NULL)
-      OR NOT EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by AND c.role='owner'))`).bind(now, userId, active ? 0 : 1));
-  // Erst-Einladung, die nicht vom Inhaber stammt, verfällt beim Rollen-/Umgebungswechsel ebenfalls (18.10.2026): sonst konnte die
-  // Fuhrparkleitung mit ihrem Link ein vom Inhaber hochgestuftes Konto (z. B. Inhaber/Betrieb) selbst einrichten.
+    AND (?3 = 1 OR EXISTS (SELECT 1 FROM users WHERE id=?2 AND password_hash IS NOT NULL))`).bind(now, userId, active ? 0 : 1));
+  // Erst-Einladung der Fuhrparkleitung nach Rollen-/Umgebungswechsel: gilt weiter, solange die Leitung diese Rolle/Umgebung selbst anlegen
+  // dürfte – geprüft beim Einlösen (inviteInfo) und in der Benutzerliste (20.10.2026; vorher verfiel sie still auch bei Fahrer → Lesezugriff)
   try { await env.DB.batch(stmts); } catch (e) {
     if (String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Der Benutzer wurde zwischenzeitlich geändert. Bitte neu laden.');
     throw e;
@@ -611,7 +614,7 @@ export async function listUsers(env, actor) {
     (SELECT COUNT(*) FROM known_devices k WHERE k.user_id=u.id AND k.last_seen >= ?3) AS known_devices,
     (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=u.id AND a.action IN ('login', 'invite.accept')) AS last_login,
     CASE WHEN u.password_hash IS NULL THEN (SELECT MAX(i.expires_at) FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL
-      AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND c.role IN ('owner','fleet')))) END AS invite_expires_at`;
+      AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND (c.role='owner' OR (c.role='fleet' AND u.role IN ('driver','workshop','viewer') AND u.environment=c.environment))))) END AS invite_expires_at`;
   const q = actor.role === 'owner'
     ? env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username ORDER BY u.environment, u.role, u.display_name`).bind(nowIso(), null, kdSince)
     : env.DB.prepare(`SELECT ${cols} FROM users u LEFT JOIN login_attempts la ON la.key=u.username WHERE u.environment=?2 ORDER BY u.role, u.display_name`).bind(nowIso(), actor.environment, kdSince);

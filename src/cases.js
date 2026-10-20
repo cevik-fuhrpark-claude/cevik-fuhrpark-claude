@@ -541,7 +541,7 @@ export function allowedActions(user, c, access) {
   if (mgr) {
     // Sperre nur an offenen Vorgängen – an abgeschlossenen/abgelehnten wirkte sie nirgends (Fahrzeugliste, Disposition, Agent zählen nur offene),
     // obwohl dringende Pushs „gesperrt“ verschickt wurden (17.10.2026). Neue Sperre: neuen Vorgang melden.
-    if (OPEN_STATUSES.includes(c.status)) a.push('set_safety_lock');
+    if (OPEN_STATUSES.includes(c.status) && !c.safety_lock) a.push('set_safety_lock'); // schon gesperrt: Server weist ab (20.10.2026: Knopf ohne Wirkung)
     if (c.safety_lock) a.push('lift_safety_lock');
     if (OPEN_STATUSES.includes(c.status)) a.push('change_priority', 'set_followup');
   }
@@ -1022,7 +1022,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       notifyKind = 'resumed';
       break;
     case 'record_work': {
-      const hours = num(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user) });
+      const hours = num(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
       const date = str(p.work_date, { max: 10 }) || berlinDate();
       if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
@@ -1087,7 +1087,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     case 'add_external_cost': {
       const supplier = str(p.supplier, { required: true, max: 120, field: 'Lieferant' });
-      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) });
+      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);
