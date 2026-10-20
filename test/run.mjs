@@ -15346,6 +15346,46 @@ await test('Backlog 103: Telematik – mehrere Tage in einem Aufruf werden wie i
   ok(nq <= 25, 'Abfragen je Aufruf: ' + nq);
 });
 
+await test('Fehlersuche 20.10. (18): Vertrag nach bestätigtem Tachotausch „unter Übernahme“ statt „kein km-Stand“, Vertragsimport „Nummernschild“ keine Vertragsnummer, Bußgeld-Kandidat aus Kontrolle an der Zugmaschine benannt, Befehlswiederholung mit gleicher Kennung, Suche mit Bußgeld-Hinweis, API-Pfad', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774';
+  // 1. Vertrag: km 200 000 vor Beginn, Übernahme 200 500, nach Beginn 230 000 → Tausch 5 000 (begründet) → 9 000; nach Bestätigung Hinweis
+  const t0 = Date.now(); const iso = (d) => new Date(t0 - d * 86400000).toISOString();
+  const odo = (km, d, note = null) => db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES(?,?,?,?,'manuell',?,?,?)`).run(crypto.randomUUID(), V1, km, iso(d), F.id, new Date().toISOString(), note);
+  odo(200000, 100);
+  const start = new Date(t0 - 90 * 86400000).toISOString().slice(0, 10);
+  const c = (await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'LeaseCo', evidence: 'L-1', start_date: start, end_date: '2029-12-31', km_allowance: 100000, start_km: 200500 })).data.id;
+  await new Promise((r) => setTimeout(r, 3)); odo(230000, 30); odo(5000, 20, 'Tachotausch'); odo(9000, 10); await new Promise((r) => setTimeout(r, 3));
+  const st = async () => (await F.get('/api/contracts')).data.contracts.find((x) => x.id === c).status;
+  eq((await st()).km.status, 'zaehler');
+  const cur = (await F.get(`/api/vehicles/${V1}`)).data.contracts.find((x) => x.id === c);
+  eq((await F.req('PATCH', `/api/contracts/${c}`, { expected_updated_at: cur.updated_at, confirm_km_basis: '1' })).status, 200);
+  const s2 = await st(); eq(s2.km.status, 'unter_start', JSON.stringify(s2.km)); ok(s2.overall !== 'ok', 'nicht „in Ordnung“: ' + s2.overall);
+  // 2. Vertragsimport: „Nummernschild“ ist keine Vertragsnummer
+  const csv = 'FIN;Nummernschild;Vertragsart;Vertragspartner;Nachweis\nWDB9630051L917317;SZ-KC 5515;Miete;X;M';
+  const pv = await F.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(pv.status, 200, JSON.stringify(pv.data)); eq(pv.data.rows[0].contract_no ?? null, null, JSON.stringify(pv.data.rows[0]));
+  // 3. Bußgeld zum Anhänger: Kontrolle an der Zugmaschine im Nachweis benannt
+  eq((await U.own.post('/api/vehicles', { plate: 'FX-ZM 1', vin: 'WDB96340310998101', trailer_plate: 'FX-AH 1' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'FX-AH 1', vin: 'WDB96340310998102', kind: 'anhaenger' })).status, 201);
+  const zm = db.prepare(`SELECT id FROM vehicles WHERE plate='FX-ZM 1'`).get().id; const envD = db.prepare('SELECT environment FROM users WHERE id=?').get(U.driver.id).environment;
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at) VALUES('fx-i1',?,?,NULL,'abfahrt','v1',?,NULL,'[]','ok',NULL,'2026-09-15T05:30:00.000Z')`).run(envD, zm, U.driver.id);
+  const fid = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: '2026-09-15T10:00', plate_in_letter: 'FX-AH 1', authority: 'Stadt Hamm', reference: 'FX-1' })).data.id;
+  const cand = (await F.get(`/api/fines/${fid}`)).data.candidates.find((x) => x.basis === 'manuell');
+  ok(cand, 'Kandidat aus Kontrolle'); eq(cand.via_plate, 'FX-ZM 1'); ok(/Zugmaschine FX-ZM 1$/.test(cand.evidence), cand.evidence);
+  // 4. App: Befehlskennung je Inhalt, Bußgeld-Hinweis in der Suche, Übersetzung des Nachweises; Doku-Pfad
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/S\.pendCmd && S\.pendCmd\.key === key \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; toast'), 'Befehlswiederholung mit gleicher Kennung');
+  ok(/fineTrunc = !!fr\.truncated/.test(app) && app.includes('id="gftrunc"'), 'Suche: Hinweis auf die 500 jüngsten Schreiben');
+  ok(app.includes("Uhr(?: – Zugmaschine (.+))?$/") , 'Nachweis-Übersetzung mit Zugmaschine');
+  const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(!api.includes('/api/fines/:id/command`'), 'Doku: /commands');
+  // Server: gleiche command_id → duplicate (Grundlage der App-Wiederholung)
+  const cid = (await F.post('/api/cases', { vehicle_id: V1, description: 'Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fx-rk-1' })).data.id;
+  const v = (await F.get(`/api/cases/${cid}`)).data.case.version;
+  eq((await F.post(`/api/cases/${cid}/commands`, { action: 'comment', command_id: 'fx-cmd-1', expected_version: v, note: 'Hinweis eins' })).status, 200);
+  const dup = await F.post(`/api/cases/${cid}/commands`, { action: 'comment', command_id: 'fx-cmd-1', expected_version: v, note: 'Hinweis eins' });
+  eq(`${dup.status} ${dup.data.duplicate}`, '200 true');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

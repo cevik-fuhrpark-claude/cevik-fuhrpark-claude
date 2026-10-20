@@ -1336,8 +1336,12 @@ async function viewCase(id) {
   render(html, 'cases', { defer: true });
   $('#cprt').onclick = () => window.print();
 
+  // Befehlskennung je Inhalt: wiederholtes Absenden desselben Eintrags nach verlorener Antwort (Funkloch) nutzt dieselbe command_id –
+  // der Server meldet dann „duplicate“ statt doppelt zu buchen (20.10.2026: 2 × 1,5 h Arbeitszeit, doppelte Lagerentnahme); nach Erfolg verworfen
   const cmd = async (action, note, payload = {}) => {
-    try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: uid(), expected_version: c.version, note, payload }); toast('✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
+    const key = JSON.stringify([c.id, action, note ?? null, payload]);
+    const commandId = S.pendCmd && S.pendCmd.key === key ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId };
+    try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); S.pendCmd = null; toast('✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     catch (err) { toast(err.message, true); if (err.code === 'version_conflict') { S.actSince = []; viewCase(c.id); } else if (err.code === 'cost_approval_open') viewCase(c.id); }
@@ -3165,10 +3169,10 @@ const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_defa
 const fineEvTr = (s) => {
   const m = /^Fahrzeugzuordnung seit (\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4})(?: – Zugmaschine (.+?))?(?: \((.*)\))?$/.exec(s || '');
   if (m) { const d = m[1].includes('.') ? m[1].split('.').reverse().join('-') : m[1]; return candEv({ since: d, via_plate: m[2] || null, assign_evidence: m[3] || null }); }
-  const k = /^Abfahrtskontrolle am Tattag (\d{2}:\d{2}) Uhr$/.exec(s || '');
-  return k ? t('cand_check').replace('{t}', k[1]) : s || '';
+  const k = /^Abfahrtskontrolle am Tattag (\d{2}:\d{2}) Uhr(?: – Zugmaschine (.+))?$/.exec(s || '');
+  return k ? t('cand_check').replace('{t}', k[1]) + (k[2] ? ' – ' + t('cand_via').replace('{p}', k[2]) : '') : s || '';
 };
-const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) : c.evidence || '');
+const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') : c.evidence || '');
 // Planungshilfe: km-Prognose fällt in die nächsten 30 Tage (ändert keinen Status, nur Anzeige)
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
 // „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus eine Datumsfälligkeit – die bleibt einzuplanen (Server: date_status)
@@ -3637,7 +3641,7 @@ async function viewUsage() {
 async function viewSearch() {
   if (S.me.role === 'driver') { location.hash = '#/'; return; }
   render(`<h1>${esc(t('search_title'))}</h1><input id="gq" type="search" autocomplete="off" aria-label="${esc(t('search_title'))}" placeholder="${esc(t('search_ph'))}" value="${esc(S.lastSearch || '')}"><div id="gr"></div>`, '');
-  let vehicles = null; let fineList = null; let stockList = null; let timer = null; let seq = 0;
+  let vehicles = null; let fineList = null; let fineTrunc = false; let stockList = null; let timer = null; let seq = 0;
   // Bußgelder nur Inhaber/Fuhrparkleitung/Lesezugriff, Lager nur Inhaber/Fuhrparkleitung/Werkstatt (eigenes Lager) – wie die Server-Rechte
   const canFines = ['owner', 'fleet', 'viewer'].includes(S.me.role); const canStock = ['owner', 'fleet', 'workshop'].includes(S.me.role);
   const norm = (x) => String(x || '').toLowerCase().replace(/[\s-]/g, '');
@@ -3654,7 +3658,8 @@ async function viewSearch() {
       // Treffer je Bereich höchstens 10 (Vorgänge 20) – Gesamtzahl und Hinweis „Suche genauer eingeben“ statt stillem Abschneiden
       const vAll = vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate, v.manufacturer, v.model].some((x) => norm(x).includes(n))); const vs = vAll.slice(0, 10);
       const cr = await api('GET', '/api/cases?status=&limit=20&q=' + encodeURIComponent(q)); const cs = cr.cases;
-      if (canFines && !fineList) fineList = (await api('GET', '/api/fines')).fines;
+      // Suche nur in den 500 jüngsten Schreiben – Hinweis statt stillem Abschneiden (20.10.2026)
+      if (canFines && !fineList) { const fr = await api('GET', '/api/fines'); fineList = fr.fines; fineTrunc = !!fr.truncated; }
       if (canStock && !stockList) stockList = (await api('GET', '/api/stock')).items;
       if (my !== seq) return;
       const lq = q.toLowerCase();
@@ -3666,6 +3671,7 @@ async function viewSearch() {
       const hs = (helpMatches(helpSections(S.me.role).map((h) => ({ name: h, title: t(`help_${h}_t`), steps: t(`help_${h}_s`).split('|') })), q) || []).sort((a, b) => b.title_hit - a.title_hit).slice(0, 5);
       box.innerHTML = `<h2>${esc(t('nav_vehicles'))} <span class="chip">${vAll.length}</span></h2>${more(vs.length, vAll.length)}${vs.length ? `<div class="list">${vs.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(v.manufacturer || '')} ${esc(v.site || '')}</span><span class="chip">${esc(v.__inactive ? t('inactive_vehicles') : t('av_' + v.availability))}</span><span class="sub">${esc(v.vin || '')}</span></a>`).join('')}</div>` : `<p class="muted">–</p>`}
         <h2>${esc(t('nav_cases'))} <span class="chip">${cs.length}${cr.truncated ? '+' : ''}</span></h2>${cr.truncated ? `<p class="small muted" data-more>${esc(t('search_more_cases').replace('{n}', cs.length))} <a href="#/cases" id="gcases">${esc(t('search_all_cases'))}</a></p>` : ''}${caseList(cs, '–')}`
+        + (canFines && fineTrunc ? `<p class="small muted" id="gftrunc">${esc(t('fines'))}: ${esc(t('fines_truncated'))}</p>` : '')
         + (fs.length ? `<h2>${esc(t('fines'))} <span class="chip">${fAll.length}</span></h2>${more(fs.length, fAll.length)}<div class="list" id="gfines">${fs.map((f) => `<a class="row" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))}</span><span class="chip">${esc(t('fs_' + f.status))}</span><span class="sub">${esc(f.fine_no)}${f.reference ? ' · ' + esc(f.reference) : ''}${f.authority ? ' · ' + esc(f.authority) : ''}</span></a>`).join('')}</div>` : '')
         + (ss.length ? `<h2>${esc(t('stock'))} <span class="chip">${sAll.length}</span></h2>${more(ss.length, sAll.length)}<div class="list" id="gstock">${ss.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}"><span class="chip">${esc(wsName(i.site))}</span><span class="title">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min'))].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>` : '')
         + (hs.length ? `<h2>${esc(t('help'))} <span class="chip">${hs.length}</span></h2><div class="list" id="ghelp">${hs.map((h) => `<a class="row" href="#/help?s=${h.name}&q=${encodeURIComponent(q)}"><span>?</span><span class="title">${esc(t(`help_${h.name}_t`))}</span><span></span></a>`).join('')}</div>` : '');

@@ -55,8 +55,8 @@ export function contractStatus(c, latest, today, warnDays) {
     else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !((c.km_basis_at || c.updated_at) && (c.km_basis_at || c.updated_at) > (latest.drop_rec || latest.drop_at))) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
     else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date)) km = { status: 'ohne_km', allowance: c.km_allowance };
     // km-Stand seit Beginn liegt unter „km bei Übernahme“ (Tippfehler im Vertrag oder beim km-Stand) – nicht „kein km-Stand“ (20.10.2026); ohne Zähler-Rücksprung seit Beginn
-    else if (latest.km < c.start_km && !(latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date))) km = { status: 'unter_start', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, start_km: c.start_km };
-    else if (latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
+    // auch nach bestätigtem Zähler-Rücksprung (Tachotausch): Hinweis statt „kein km-Stand“ – vorher blieb eine Überschreitung unsichtbar (20.10.2026)
+    else if (latest.km < c.start_km) km = { status: 'unter_start', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, start_km: c.start_km };
     else {
       const driven = latest.km - c.start_km;
       km = { status: driven > c.km_allowance ? 'ueber' : 'ok', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, driven, remaining: c.km_allowance - driven, forecast_driven: null };
@@ -391,7 +391,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   if (head.some((h) => /^(kündigung|kuendigung)/.test(h) && /tag|woche/.test(h))) throw bad('validation', 'Kündigungsfrist in Tagen oder Wochen erkannt – bitte in Monaten angeben (Spalte „Kündigungsfrist (Monate)“; Tage/Wochen werden nicht umgerechnet).');
   // Beginn auch „Laufzeitbeginn“/„Leasingbeginn“ (wurde still ignoriert, 17.10.2026)
   const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin', 'fin ']), kind: col(['vertragsart', 'art', 'typ']),
-    partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'vertrag nr', 'vertrag-nr', 'police', 'versicherungsschein', 'versicherungsnummer', 'vsnr', 'nummer', 'nr']), // auch Versicherungsköpfe (19.10.2026)
+    partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'vertrag nr', 'vertrag-nr', 'police', 'versicherungsschein', 'versicherungsnummer', 'vsnr', 'nummer', 'nr'], (h) => /schild|kennz|kfz-nr|amtl/.test(h)), // auch Versicherungsköpfe (19.10.2026)
     start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'beginn', 'start']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'ende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
     allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], isAnnual), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
     rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], isGrossOrCount), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };

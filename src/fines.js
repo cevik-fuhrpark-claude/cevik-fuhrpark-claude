@@ -83,13 +83,15 @@ export async function driverCandidates(env, envName, f) {
     out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
   }
   const day = berlinDate(f.offense_at);
-  const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at FROM inspections i JOIN users u ON u.id=i.performed_by
+  const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at, i.vehicle_id, vv.plate FROM inspections i JOIN users u ON u.id=i.performed_by JOIN vehicles vv ON vv.id=i.vehicle_id
     WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND u.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4`)
     .bind(f.vehicle_id, envName, new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(), new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString()).all()).results;
   for (const c of checks) {
     if (berlinDate(c.created_at) !== day) continue;
     if (out.some((o) => o.user_id === c.user_id && o.basis === 'manuell')) continue; // je Person einmal (mehrere Kontrollen am Tattag)
-    out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${berlinDateTime(c.created_at).slice(-5)} Uhr`, check_at: c.created_at });
+    // Kontrolle an der gekoppelten Zugmaschine: im Nachweis nennen (wie bei Zuordnungen) – sonst behauptete der Aktenvermerk eine Kontrolle am Anhänger (20.10.2026)
+    const via = c.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${c.plate}` : '';
+    out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${berlinDateTime(c.created_at).slice(-5)} Uhr${via}`, check_at: c.created_at, ...(via ? { via_plate: c.plate } : {}) });
   }
   return out;
 }

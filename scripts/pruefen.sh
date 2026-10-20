@@ -61,6 +61,7 @@ UI-Artikelverlauf (Hinweis, Journal je Artikel)|ui-artikelverlauf.py|/tmp/cfp-ar
 UI-Versicherungsfall bei Dublette (Hinweis statt Formular), Alle gelesen|ui-versicherung-dublette.py|/tmp/cfp-vers-dublette.log
 UI-Führerscheinkontrolle stornieren (Verlauf, Begründung)|ui-fuehrerscheinkontrolle-storno.py|/tmp/cfp-fk-storno.log
 UI-Startseite: Sprung mit Standortfilter wie Zähler|ui-startseite-sprung-standort.py|/tmp/cfp-sprung-standort.log
+UI-Werkstatt-Befehl nach Funkloch nicht doppelt|ui-befehl-funkloch.py|/tmp/cfp-befehl-funkloch.log
 UI-Kosten nur unbewertet (– statt 0 €)|ui-kosten-unbewertet.py|/tmp/cfp-kostenuv.log
 UI-Zeitleiste Hinweis bei Kürzung|ui-zeitleiste-hinweis.py|/tmp/cfp-zlhinweis.log
 UI-Datenqualität Hinweis bei Kappung|ui-dq-kappung.py|/tmp/cfp-dqkappung.log
