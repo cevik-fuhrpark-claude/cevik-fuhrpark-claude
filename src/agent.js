@@ -562,7 +562,7 @@ export async function masterPanel(env, environment) {
   const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results;
   // has_newer: es gibt eine neuere Übergabe desselben Befunds – unabhängig von deren Entscheidung (18.10.2026: nach Entscheidung der neuesten
   // zählte die ältere, nie entschiedene wieder als offene Entscheidung)
-  const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id
+  const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, f.subject_key AS finding_subject, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id
       AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer, du.display_name AS decided_by_name FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id LEFT JOIN users du ON du.id=m.decided_by
     WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC, m.rowid DESC
     LIMIT (SELECT COUNT(*) FROM master_inbox WHERE environment=?1 AND decision_status IN ('offen','gesehen')) + ${MASTER_INBOX_DONE_MAX}`).bind(environment).all()).results

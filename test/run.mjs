@@ -13424,8 +13424,8 @@ await test('Fehlersuche 19.10. (45): Datenauskunft enthält Erfassungen als Leit
   eq((await U.fleet.post(`/api/drivers/${d.data.id}/license-checks`, { checked_on: day(-1), result: 'maengel', note: 'Klasse CE fehlt' })).status, 201);
   eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: d.data.id, downloaded_on: day(-1), evidence: 'Export X' })).status, 201);
   const ex = await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`); eq(ex.status, 200);
-  eq(ex.data.license_checks_performed[0].note, 'Klasse CE fehlt'); eq(ex.data.license_checks_performed[0].driver, 'Dieter Fahrer');
-  eq(ex.data.tacho_downloads_recorded[0].evidence, 'Export X'); eq(ex.data.drivers_created[0].display_name, 'Dieter Fahrer');
+  eq(ex.data.license_checks_performed[0].result, 'maengel'); eq(ex.data.license_checks_performed[0].note, undefined); eq(ex.data.license_checks_performed[0].driver, undefined); // ohne Daten Dritter (20.10.2026)
+  eq(ex.data.tacho_downloads_recorded[0].evidence, 'Export X'); eq(ex.data.drivers_created.length, 1); eq(ex.data.drivers_created[0].display_name, undefined);
   // Werkstattplan
   const rule = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', evidence: 'Plakette', interval_months: 12, last_done_date: day(-300) }); eq(rule.status, 201);
   eq((await U.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(3) })).status, 200);
@@ -13829,7 +13829,7 @@ await test('Backlog 93 (19.10.): SP nur aus HU berechnet (kein SP-Eintrag) ersch
   const ov = (await F.get('/api/maintenance')).data;
   const sp = ov.rows.find((r) => r.vehicle_id === vid && r.kind === 'SP'); ok(sp, 'SP-Zeile vorhanden'); eq(sp.virtual, true); eq(sp.status, 'ueberfaellig'); eq(sp.id, `husp:${vid}:SP`);
   ok(!ov.gaps.some((g) => g.vehicle_id === vid && g.missing.includes('SP')), 'keine Lücke SP');
-  const ics = new TextDecoder().decode((await F.get('/api/maintenance?format=ics')).data); ok(ics.includes(`husp:${vid}:SP`), 'Kalender');
+  const ics = new TextDecoder().decode((await F.get('/api/maintenance?format=ics')).data); ok(ics.includes(`husp-${vid}-SP`), 'Kalender');
   const plan = (await F.get('/api/workshop/plan?days=7')).data; ok((plan.maintenance_due || []).some((i) => i.vehicle_id === vid && i.kind === 'SP' && i.status === 'ueberfaellig'), 'Werkstattplan');
   const dq = (await U.own.get('/api/admin/data-quality')).data; ok(!dq.items.some((i) => i.check === 'missing_inspection' && i.vehicle_id === vid && /SP/.test(i.detail)), 'Datenqualität: keine Lücke SP');
   eq((await e.DB.prepare("SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'").bind(vid).first()).n, 0, 'nichts angelegt');
@@ -14465,6 +14465,56 @@ await test('Fehlersuche 20.10. (3): Umlagerung findet Ziel-Artikel ohne Groß-/K
   for (const l of ['de', 'uk', 'en']) for (const key of ['import_tire_cols', 'setting_stored_format', 'setting_stored_precision', 'setting_off', 'stock_import_ignored']) ok(STRINGS[l][key], `${l} ${key}`);
   ok(STRINGS.uk.tire_warn.includes('1,6 мм'), 'UK Warnschwelle vollständig');
 });
+await test('Fehlersuche 20.10. (4): Kontroll-Wiederholung vor Zustandsprüfungen, Bußgeld zurück auf „Eingegangen“ setzt Fahrer zurück, unbekannte Aktion 400, „heute fällig“, CSV-Betrag 2 Stellen, Befund verlinkt Bußgeld, Datenauskunft ohne Dritte, Kalender-UID HU/SP', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  // 1. Abfahrtskontrolle gespeichert, Antwort verloren; inzwischen Fahrzeug außer Betrieb bzw. > 7 Tage → Wiederholung = Dublette statt 400
+  const items = (await U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const key = rk(); const at = new Date(Date.now() - 3600000).toISOString();
+  const r1 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items, performed_at: at }); eq(r1.status, 201, JSON.stringify(r1.data));
+  const vid = db.prepare('SELECT vehicle_id FROM inspections WHERE id=?').get(r1.data.id).vehicle_id;
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(vid);
+  const r2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items, performed_at: new Date(Date.now() - 8 * 864e5).toISOString() });
+  ok(r2.status < 300 && r2.data.duplicate && r2.data.id === r1.data.id, 'Wiederholung erkannt: ' + JSON.stringify(r2.data));
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items })).status, 400, 'neue Kontrolle weiter abgewiesen');
+  db.prepare('UPDATE vehicles SET active=1 WHERE id=?').run(vid);
+  // 2. Bußgeld: unbekannte Aktion 400; „Eingegangen“ setzt die Ermittlung zurück
+  const F = U.fleet;
+  const fn = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-01T09:00', plate_in_letter: 'XX-UNBEKANNT 1', authority: 'Stadt Test', reference: 'AZ-443', amount_eur: '35,5' }); eq(fn.status, 201, JSON.stringify(fn.data));
+  const fid = fn.data.id; const fv = async () => (await F.get(`/api/fines/${fid}`)).data.fine.version;
+  const unk = await F.post(`/api/fines/${fid}/commands`, { action: 'foo', expected_version: await fv() }); eq(unk.status, 400); eq(unk.data.error, 'unknown_action');
+  eq((await F.post(`/api/fines/${fid}/commands`, { action: 'confirm_driver', expected_version: await fv(), payload: { driver_name_note: 'Aushilfe (Test)', basis: 'fahrerangabe', evidence: 'Angabe' } })).status, 200);
+  eq((await F.post(`/api/fines/${fid}/commands`, { action: 'set_status', expected_version: await fv(), payload: { status: 'bezahlt' }, note: 'bezahlt' })).status, 200);
+  eq((await F.post(`/api/fines/${fid}/commands`, { action: 'set_status', expected_version: await fv(), payload: { status: 'eingegangen' }, note: 'wieder offen' })).status, 200);
+  const fr = db.prepare('SELECT status, driver_name_note, driver_confirmed_at, driver_basis FROM fines WHERE id=?').get(fid);
+  eq(fr.status, 'eingegangen'); eq(fr.driver_name_note, null); eq(fr.driver_confirmed_at, null); eq(fr.driver_basis, null);
+  const ev = db.prepare(`SELECT payload FROM fine_events WHERE fine_id=? AND action='set_status' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(fid);
+  eq(JSON.parse(ev.payload).driver_reset.driver_name_note, 'Aushilfe (Test)', 'bisheriger Fahrer im Verlauf');
+  // CSV-Betrag mit zwei Nachkommastellen
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/fines?format=csv')).data); ok(csv.includes(';35,50;'), 'Betrag 35,50');
+  // 3. Befund zum Bußgeld (Kennzeichen unbekannt) trägt subject_key = Bußgeld-ID (Oberfläche verlinkt das Schreiben)
+  eq((await F.post('/api/agent/run')).status, 200);
+  const pf = (await F.get('/api/master')).data.findings.find((x) => x.finding_code === 'FINE_VEHICLE_UNKNOWN' && x.subject_key === fid); ok(pf, 'Befund mit subject_key');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("String(code || '').startsWith('FINE_') && subj ? `<a href=\"#/fines/"), 'afLink');
+  eq((app.match(/afLink\(/g) || []).length, 3, 'Akte, Entscheidungen, Befunde');
+  // 4. „heute fällig“ statt „in 0 Tagen“
+  const { fineFindings } = await import('../src/fines.js'); const { BERLIN_TODAY: today } = { BERLIN_TODAY };
+  db.prepare(`UPDATE fines SET response_due=? WHERE id=?`).run(today, fid);
+  const ff = (await fineFindings(e, 'test', new Map([['fine_warn_days', '3']]))).find((x) => x.code === 'FINE_DUE_SOON'); ok(ff, 'Befund');
+  ok(ff.message.includes('heute fällig') && !ff.message.includes('0 Tag'), ff.message);
+  const { findingText } = await import('../public/finding-messages.js');
+  for (const l of ['uk', 'en']) ok(!/\b0\b/.test(findingText('FINE_DUE_TODAY', { label: 'B-1', due: today }, l).message || ''), l);
+  // 5. Datenauskunft der Leitung: Zuordnung/Einladung ohne Namen der anderen Person
+  const asg = await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: "Tourenplan (Test)" }); ok(asg.status < 300, JSON.stringify(asg.data));
+  const ex = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data;
+  ok((ex.vehicle_assignments_made || []).length && ex.vehicle_assignments_made.every((x) => !('assigned_user' in x)), 'Zuordnung ohne Namen');
+  ok((ex.invites_created || []).every((x) => !('invited_user' in x)), 'Einladung ohne Namen');
+  // 6. Kalender: berechnete SP ohne leeren „Nachweis:“, UID fachlich je Fahrzeug/Prüfart
+  const { maintenanceIcs } = await import('../src/maintenance.js');
+  const ics = maintenanceIcs({ rows: [{ id: 'husp:V9:SP', vehicle_id: 'V9', kind: 'SP', virtual: true, next_due_date: '2026-12-31', plate: 'T-X 1' }, { id: 'r1', vehicle_id: 'V9', kind: 'UVV', next_due_date: '2026-12-30', plate: 'T-X 1', evidence: '' }], warn_days: 7, today: '2026-10-20' }, '2026-10-20T00:00:00Z', 'de');
+  ok(ics.includes('UID:husp-V9-SP') && !ics.includes('husp:V9'), 'UID'); ok(ics.includes('berechnet nach StVZO') && !/Nachweis: \r\n/.test(ics), 'kein leerer Nachweis'); ok(ics.includes('Nachweis: –'), 'leerer Nachweis als –');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

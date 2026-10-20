@@ -33,7 +33,7 @@ export const ICS_LABELS = {
 // Satzbausteine je Kalender; {x} = Platzhalter. Datumswerte kommen bereits in der Schreibweise der Sprache.
 export const ICS_TEXTS = {
   de: {
-    cal_maint: 'Fuhrpark Prüftermine', maint_due: '{kind} fällig – {plate}', maint_desc: 'Nachweis: {evidence}', maint_last: 'letzte Prüfung {d}',
+    cal_maint: 'Fuhrpark Prüftermine', maint_due: '{kind} fällig – {plate}', maint_desc: 'Nachweis: {evidence}', maint_desc_calc: 'berechnet nach StVZO Anlage VIII (kein eigener Eintrag)', maint_last: 'letzte Prüfung {d}',
     maint_plan: 'Werkstatttermin {kind} – {plate}', maint_plan_desc: 'geplanter Werkstatttermin', maint_plan_due: 'fällig {d}',
     cal_contracts: 'Fuhrpark Verträge', no_site: 'ohne Standort', c_notice: 'Kündigung spätestens: {label}',
     c_notice_desc: 'Laut Vertrag {n} {months} vor Vertragsende {end}. Form und Zugang der Kündigung laut Vertrag prüfen.', month_one: 'Monat', month_other: 'Monate',
@@ -44,7 +44,7 @@ export const ICS_TEXTS = {
     cal_followup: 'Fuhrpark Wiedervorlagen', test_env: 'Test', followup: 'Wiedervorlage {no} – {plate}', followup_desc: 'Vorgang {no} ({status}) in der App öffnen',
   },
   uk: {
-    cal_maint: 'Автопарк: терміни перевірок', maint_due: '{kind}: строк – {plate}', maint_desc: 'Підстава: {evidence}', maint_last: 'остання перевірка {d}',
+    cal_maint: 'Автопарк: терміни перевірок', maint_due: '{kind}: строк – {plate}', maint_desc: 'Підстава: {evidence}', maint_desc_calc: 'розраховано за StVZO, додаток VIII (без власного запису)', maint_last: 'остання перевірка {d}',
     maint_plan: 'Візит у майстерню {kind} – {plate}', maint_plan_desc: 'запланований візит у майстерню', maint_plan_due: 'строк {d}',
     cal_contracts: 'Автопарк: договори', no_site: 'без місця базування', c_notice: 'Розірвати не пізніше: {label}',
     c_notice_desc: 'За договором – за {n} {months} до закінчення договору {end}. Форму та спосіб подання розірвання перевірте за договором.', month_one: 'місяць', month_few: 'місяці', month_many: 'місяців',
@@ -55,7 +55,7 @@ export const ICS_TEXTS = {
     cal_followup: 'Автопарк: нагадування', test_env: 'Тест', followup: 'Нагадування {no} – {plate}', followup_desc: 'Відкрийте випадок {no} ({status}) у застосунку',
   },
   en: {
-    cal_maint: 'Fleet inspection dates', maint_due: '{kind} due – {plate}', maint_desc: 'Evidence: {evidence}', maint_last: 'last inspection {d}',
+    cal_maint: 'Fleet inspection dates', maint_due: '{kind} due – {plate}', maint_desc: 'Evidence: {evidence}', maint_desc_calc: 'calculated per StVZO Annex VIII (no own entry)', maint_last: 'last inspection {d}',
     maint_plan: 'Workshop appointment {kind} – {plate}', maint_plan_desc: 'planned workshop appointment', maint_plan_due: 'due {d}',
     cal_contracts: 'Fleet contracts', no_site: 'no location', c_notice: 'Give notice by: {label}',
     c_notice_desc: 'Per contract {n} {months} before contract end {end}. Check form and delivery of the notice in the contract.', month_one: 'month', month_other: 'months',

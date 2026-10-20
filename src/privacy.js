@@ -67,11 +67,13 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     master_inbox: q("SELECT m.environment, m.received_at, m.decision_status, m.decision_note, m.decided_at FROM master_inbox m WHERE m.finding_id IN (SELECT id FROM agent_findings WHERE substr(subject_key, 1, length(?1) + 1) = ?1 || '|') ORDER BY m.received_at", did || ''),
     // Erfassungen/Entscheidungen dieser Person als Leitung, Prüfer oder Werkstatt (19.10.2026 ergänzt – vorher fehlten u. a. Führerscheinkontrollen,
     // Auslesungen, Master-Entscheidungen, Verträge, Versicherungsfälle, Bußgelder und Übernahmen von Vorgängen in der Auskunft)
-    license_checks_performed: q('SELECT c.checked_on, c.result, c.note, d.display_name AS driver FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id WHERE c.checked_by=? ORDER BY c.checked_on', userId),
+    // Art. 15 Abs. 4 DSGVO: Handlungen an Daten anderer Personen ohne deren Namen/Vermerke (20.10.2026: Auskunft der Leitung enthielt Name, Ergebnis-
+    // Vermerk geprüfter Fahrer, angelegte Fahrer, zugeordnete und eingeladene Personen)
+    license_checks_performed: q('SELECT checked_on, result, created_at FROM driver_license_checks WHERE checked_by=? ORDER BY checked_on', userId),
     tacho_downloads_recorded: q(`SELECT t.kind, t.downloaded_on, t.evidence, t.created_at, t.cancelled_at, t.cancel_reason, CASE WHEN t.created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN t.cancelled_by=?1 THEN 1 ELSE 0 END AS cancelled
       FROM tacho_downloads t WHERE t.created_by=?1 OR t.cancelled_by=?1 ORDER BY t.created_at`, userId),
     master_decisions: q('SELECT environment, received_at, decision_status, decision_note, decided_at FROM master_inbox WHERE decided_by=? ORDER BY decided_at', userId),
-    drivers_created: q('SELECT display_name, created_at FROM drivers WHERE created_by=? ORDER BY created_at', userId),
+    drivers_created: q('SELECT created_at FROM drivers WHERE created_by=? ORDER BY created_at', userId),
     driver_documents_recorded: q('SELECT kind, valid_until, created_at FROM driver_documents WHERE created_by=? ORDER BY created_at', userId),
     contracts_recorded: q(`SELECT k.kind, k.partner, k.contract_no, k.created_at, v.plate FROM vehicle_contracts k JOIN vehicles v ON v.id=k.vehicle_id WHERE k.created_by=? ORDER BY k.created_at`, userId),
     claims_recorded: q(`SELECT c.case_no, i.insurer, i.status, i.created_at FROM insurance_claims i JOIN cases c ON c.id=i.case_id WHERE i.created_by=? ORDER BY i.created_at`, userId),
@@ -87,8 +89,8 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     // 19.10.2026 ergänzt: Zuordnungen/Einladungen, die die Person vorgenommen hat, Lagerartikel (angelegt/bestellt), geänderte Einstellungen –
     // in EINER Abfrage (Abfragebudget ≤ 50 je Aufruf), unten in Abschnitte aufgeteilt
     _made_by: env.DB.prepare(`SELECT
-      (SELECT json_group_array(json_object('valid_from', valid_from, 'valid_to', valid_to, 'evidence', evidence, 'created_at', created_at, 'plate', plate, 'assigned_user', assigned_user)) FROM (SELECT d.valid_from, d.valid_to, d.evidence, d.created_at, v.plate, u2.display_name AS assigned_user FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id LEFT JOIN users u2 ON u2.id=d.user_id WHERE d.created_by=?1 ORDER BY d.created_at LIMIT ?2)) AS vehicle_assignments_made,
-      (SELECT json_group_array(json_object('created_at', created_at, 'expires_at', expires_at, 'used_at', used_at, 'invited_user', invited_user)) FROM (SELECT i.created_at, i.expires_at, i.used_at, u2.display_name AS invited_user FROM invites i LEFT JOIN users u2 ON u2.id=i.user_id WHERE i.created_by=?1 ORDER BY i.created_at LIMIT ?2)) AS invites_created,
+      (SELECT json_group_array(json_object('valid_from', valid_from, 'valid_to', valid_to, 'evidence', evidence, 'created_at', created_at, 'plate', plate)) FROM (SELECT d.valid_from, d.valid_to, d.evidence, d.created_at, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.created_by=?1 ORDER BY d.created_at LIMIT ?2)) AS vehicle_assignments_made,
+      (SELECT json_group_array(json_object('created_at', created_at, 'expires_at', expires_at, 'used_at', used_at)) FROM (SELECT i.created_at, i.expires_at, i.used_at FROM invites i WHERE i.created_by=?1 ORDER BY i.created_at LIMIT ?2)) AS invites_created,
       (SELECT json_group_array(json_object('environment', environment, 'site', site, 'name', name, 'part_number', part_number, 'created_at', created_at, 'ordered_on', ordered_on, 'ordered_qty', ordered_qty, 'created', created, 'ordered', ordered)) FROM (SELECT environment, site, name, part_number, created_at, ordered_on, ordered_qty, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN ordered_by=?1 THEN 1 ELSE 0 END AS ordered FROM stock_items WHERE created_by=?1 OR ordered_by=?1 ORDER BY created_at LIMIT ?2)) AS stock_items_edited,
       (SELECT json_group_array(json_object('key', key, 'updated_at', updated_at)) FROM (SELECT key, updated_at FROM settings WHERE updated_by=?1 ORDER BY updated_at LIMIT ?2)) AS settings_changed`).bind(userId, LIMIT + 1),
   };

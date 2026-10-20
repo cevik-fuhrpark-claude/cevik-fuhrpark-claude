@@ -683,11 +683,14 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
 // Texte in der Sprache der Person (lang; DE/UK/EN, sonst Deutsch) – Nachweis bleibt wie gespeichert
 export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de') {
   const I = icsLang(lang);
-  const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: r.id, date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
-    description: I.tx('maint_desc', { evidence: r.evidence }) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
+  // HU/SP: fachliche UID je Fahrzeug und Prüfart – eine berechnete Zeile (ohne Eintrag) behält beim späteren Anlegen des Eintrags ihre UID,
+  // ein erneuter Import ersetzt den Termin statt ihn zu verdoppeln; berechnete Zeile ohne leeren „Nachweis:“ (20.10.2026)
+  const uidOf = (r) => (r.kind === 'HU' || r.kind === 'SP' ? `husp-${r.vehicle_id}-${r.kind}` : r.id);
+  const events = ov.rows.filter((r) => r.next_due_date).map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
+    description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence || '–' })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();
-  for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${r.id}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
+  for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${uidOf(r)}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
     description: I.tx('maint_plan_desc') + (r.next_due_date ? ' · ' + I.tx('maint_plan_due', { d: I.d(r.next_due_date) }) : '') });
   return icsCalendar(I.tx('cal_maint'), events, stamp);
 }

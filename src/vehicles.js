@@ -226,7 +226,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     // Offene Befunde des Fuhrparkagenten zu diesem Fahrzeug (Umgebung der Person; gleiche Sichtbarkeit wie das Management-Panel) – schwerste zuerst
     // Ausfall je Berliner Monat (letzte 12): Werkstatt-Übernahme → Freigabe/Ablehnung (offen bis jetzt) ∪ Sicherheitssperre – gleiche Regel wie Kennzahlen
     out.downtime = await vehicleDowntime(env, envName, vehicleId, allCases, v.created_at);
-    out.agent_findings = (await env.DB.prepare(`SELECT id, finding_code, severity, message, message_args, next_action, owner_role, case_id, first_seen FROM agent_findings
+    out.agent_findings = (await env.DB.prepare(`SELECT id, finding_code, subject_key, severity, message, message_args, next_action, owner_role, case_id, first_seen FROM agent_findings
       WHERE vehicle_id=? AND environment=? AND status='offen'
       ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, first_seen`).bind(vehicleId, envName).all()).results;
     }

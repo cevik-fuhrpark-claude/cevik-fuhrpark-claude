@@ -214,6 +214,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
       let to = null; try { to = JSON.parse(last?.payload || '{}').to ?? null; } catch { /* alter Eintrag */ }
       if (last && last.action === action && last.actor_id === user.id && (action !== 'set_status' || (to !== null && to === p.status))) return { ok: true, version: f.version, duplicate: true };
     }
+    // unbekannte Aktion → 400 unknown_action (vorher 403 „ist hier nicht möglich“, 20.10.2026)
+    if (!['confirm_driver', 'inform_driver', 'set_status', 'update'].includes(action)) throw bad('unknown_action', 'Unbekannte Aktion.');
     if (!fineActions(user, f).includes(action)) throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`);
     if (body.expected_version !== undefined && Number(body.expected_version) !== f.version) throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
     switch (action) {
@@ -254,6 +256,12 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         if (['fahrer_ermittelt', 'fahrer_informiert'].includes(st)) throw bad('validation', 'Dieser Status entsteht über die Fahrerermittlung.');
         if (!note) throw bad('note_required', 'Bitte Vermerk angeben.');
         set.status = st; payload = { from: f.status, to: st };
+        // zurück auf „eingegangen“ = Fahrer offen: bisherige Ermittlung samt Information/Quittung zurücksetzen (bleibt im Verlauf) – vorher
+        // „eingegangen“ mit eingetragenem Fahrer: Agent meldete „Fahrer nicht ermittelt“, Kennzeichen blieb gesperrt, Fahrer sah den Vorgang (20.10.2026)
+        if (st === 'eingegangen' && (f.driver_confirmed_at || f.driver_id || f.driver_name_note)) {
+          Object.assign(set, { driver_id: null, driver_name_note: null, driver_basis: null, driver_evidence: null, driver_confirmed_by: null, driver_confirmed_at: null, driver_informed_at: null, driver_ack_at: null });
+          payload.driver_reset = { driver_id: f.driver_id || null, driver_name_note: f.driver_name_note || null };
+        }
         break;
       }
       case 'update':
@@ -309,7 +317,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     await env.DB.batch([
       ...refGuard,
       // Fahrer neu ermittelt: Hinweise des bisherigen Fahrers ausblenden (Link führte auf 404, zurückgehaltener Push ging noch raus – 17.10.2026)
-      ...(action === 'confirm_driver' && f.driver_id ? [env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE user_id=? AND ref=? AND hidden_at IS NULL
+      ...((action === 'confirm_driver' || (action === 'set_status' && set.driver_id === null)) && f.driver_id ? [env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE user_id=? AND ref=? AND hidden_at IS NULL
         AND EXISTS (SELECT 1 FROM fines WHERE id=? AND version=?)`).bind(now, f.driver_id, `fine:${id}`, id, f.version)] : []),
       env.DB.prepare(`UPDATE fines SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`).bind(...cols.map((k) => set[k]), id, f.version),
       env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
@@ -388,7 +396,7 @@ export function finesCsv(rows, csvCell, withDriver) {
   const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
   const lines = [head.join(';')];
   for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), quoteCell(csvCell(f.reference)), OFFENSE_DE[f.offense_type] || csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
-    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : String(f.amount_eur).replace('.', ','), f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
+    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : Number(f.amount_eur).toFixed(2).replace('.', ','), f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
     ...(withDriver ? [csvCell(f.driver_name || f.driver_name_note)] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -414,7 +422,7 @@ export async function fineFindings(env, environment, settings = null) {
     if (f.response_due) {
       const days = Math.round((Date.parse(f.response_due) - Date.parse(today)) / 86400000);
       if (days < 0) out.push({ code: 'FINE_OVERDUE', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_OVERDUE', { label, due: f.response_due }), next_action: 'Sofort beantworten bzw. Fristverlängerung klären.' });
-      else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.' });
+      else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm(days === 0 ? 'FINE_DUE_TODAY' : 'FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.' });
     }
     if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
     else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });

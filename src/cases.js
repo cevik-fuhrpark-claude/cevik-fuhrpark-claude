@@ -1230,6 +1230,20 @@ export const CHECKLIST = [
 
 export async function submitInspection(env, ctx, user, envName, body) {
   const kind = oneOf(body.kind, ['nach_reparatur', 'abfahrt'], 'Kontrollart');
+  const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
+  const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
+  // Wiederholung (Antwort ging verloren, Postausgang sendet erneut): dieselben Folgeaufträge wie beim ersten Senden zurückgeben –
+  // sonst ließen sich die Fotos nicht mehr anhängen (17.10.2026). Vor allen Zustandsprüfungen: eine bereits gespeicherte Kontrolle wurde
+  // sonst abgewiesen, wenn das Fahrzeug inzwischen außer Betrieb war, die Durchführung > 7 Tage zurücklag oder der Vorgang weiter war (20.10.2026)
+  const asDuplicate = (already) => {
+    let its = []; try { its = JSON.parse(already.items || '[]') || []; } catch { its = []; }
+    const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}) }));
+    return { id, result: already.result, followups: fu, duplicate: true };
+  };
+  {
+    const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
+    if (already) return asDuplicate(already);
+  }
   let c = null;
   let vehicleId;
   if (kind === 'nach_reparatur') {
@@ -1259,10 +1273,8 @@ export async function submitInspection(env, ctx, user, envName, body) {
   if (byKey.size !== keys.size) throw bad('incomplete', 'Bitte alle Prüfpunkte bewerten (OK / Mangel / entfällt).');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
-  const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
   // Vermerk vor dem Anlegen der Folgeaufträge prüfen (17.10.2026: zu langer Vermerk → 400 erst nach dem Anlegen; gesperrter Folgeauftrag ohne Kontrolle)
   const inspNote = str(body.note, { max: 2000, field: 'Bemerkung' });
-  const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
   const now = nowIso();
   // Offline gespeicherte Abfahrtskontrolle (17.10.2026): Postausgang sendet den Zeitpunkt der Durchführung mit (`performed_at`).
   // Übernommen, wenn plausibel: nicht in der Zukunft (Uhr des Geräts vorgehend → jetzt), höchstens 7 Tage alt (älter → 400,
@@ -1276,15 +1288,6 @@ export async function submitInspection(env, ctx, user, envName, body) {
     if (ms < nowMs - 7 * 86400000) throw bad('validation', 'Die Kontrolle liegt mehr als 7 Tage zurück und wird nicht mehr übernommen. Bitte neu durchführen.');
     if (ms < nowMs) performedAt = new Date(ms).toISOString();
   }
-  // Wiederholung (Antwort ging verloren, Postausgang sendet erneut): dieselben Folgeaufträge wie beim ersten Senden zurückgeben –
-  // sonst ließen sich die Fotos nicht mehr anhängen (17.10.2026)
-  const asDuplicate = (already) => {
-    let its = []; try { its = JSON.parse(already.items || '[]') || []; } catch { its = []; }
-    const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}) }));
-    return { id, result: already.result, followups: fu, duplicate: true };
-  };
-  const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
-  if (already) return asDuplicate(already);
 
   // Folgeaufträge für jeden Mangel (eigener Vorgang, mit Bezug) – gesammelt angelegt (Abfragezahl unabhängig von der Mängelzahl)
   const followups = [];

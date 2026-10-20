@@ -91,6 +91,7 @@ UI-Auslesung stornieren (Fahrer-/Fahrzeugakte)|ui-auslesung-storno.py|/tmp/cfp-a
 UI-Telematik-km größer als später erfasster Stand (Übersicht, Akte)|ui-telematik-km-spaeter.py|/tmp/cfp-telematik-km-spaeter.log
 UI-Versicherungsfälle ruhender Fahrzeuge (Summe, Chip)|ui-versicherung-ruhend.py|/tmp/cfp-versicherung-ruhend.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
+UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Dokumentangaben korrigieren|ui-dokument-korrigieren.py|/tmp/cfp-dokument-korrigieren.log
 UI-Dokument-Gültigkeit (Chips), Dublette mit anderen Angaben öffnet Korrektur|ui-dokument-status.py|/tmp/cfp-dokument-status.log
 UI-Wiedervorlage behält Vermerk, Suche findet außer Betrieb, Chip-Zeilen 390 px|ui-wiedervorlage-suche.py|/tmp/cfp-wiedervorlage-suche.log
