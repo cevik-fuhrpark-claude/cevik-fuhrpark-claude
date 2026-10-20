@@ -319,12 +319,16 @@ export function driversCsv(list, tachoByDriver, cell) {
     ...(d.status.check.status !== 'ok' ? ['Kontrolle ' + DCK[d.status.check.status]] : []),
     ...(tc && tc.status !== 'ok' ? ['Auslesung: ' + TST[tc.status]] : []),
   ];
+  // Gesamtstatus schließt die Auslese-Frist ein (20.10.2026: „in Ordnung · Auslesung: überfällig“)
+  const RANK = { ok: 0, hinweis: 1, kritisch: 2 };
+  const overall = (d, tc) => { const t = tc && tc.status === 'ueberfaellig' ? 'kritisch' : tc && (tc.status === 'bald' || tc.status === 'keine') ? 'hinweis' : 'ok';
+    return RANK[t] > (RANK[d.status.overall] ?? 0) ? t : d.status.overall; };
   const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status'];
   for (const d of list) {
     const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';
     const tc = tachoByDriver.get(d.id);
     lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
-      d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', cell([DOV[d.status.overall], ...reasons(d, tc)].join(' · '))].join(';'));
+      d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
   }
   return lines.join('\r\n') + '\r\n';
 }

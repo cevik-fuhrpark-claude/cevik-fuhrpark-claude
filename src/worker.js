@@ -542,7 +542,7 @@ async function handleApi(request, env, ctx, url) {
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
       await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site, ...(sel.truncated ? { truncated: true } : {}) });
-      return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}.csv"`, ...trunc } });
+      return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}${siteSuffix(sel.site)}.csv"`, ...trunc } });
     }
     return json({ fines: list, site: sel.site, site_options: sel.site_options, truncated: !!sel.truncated });
   }

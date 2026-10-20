@@ -980,7 +980,7 @@ let flushing = false;
 // gespeicherte Meldungen bleiben (vorher überschrieb das Ende des Sendens die Liste); Netzabbruch, 429 und 5xx bleiben zur Wiederholung.
 // Fotos einer Abfahrtskontrolle gehören an den ersten eigenen Folgeauftrag (nicht an die Kontrolle; Wiederholungsvermerk = fremder Vorgang).
 // Gleiche Regel wie online (18.10.2026): Leitung/Werkstatt hängen Fotos auch an den Vorgang „erneut festgestellt“, Fahrer nicht (fremder Vorgang)
-const photoTarget = (item, r) => (item.path === '/api/inspections' ? ((r.followups || []).find((f) => f && f.id && !f.repeat) || (S.me && S.me.role !== 'driver' ? (r.followups || []).find((f) => f && f.id) : null) || {}).id : r.id);
+const photoTarget = (item, r) => (item.path === '/api/inspections' ? ((r.followups || []).find((f) => f && f.id && (!f.repeat || f.own)) || (S.me && S.me.role !== 'driver' ? (r.followups || []).find((f) => f && f.id) : null) || {}).id : r.id);
 // Kontrolle ohne Ziel für Fotos: kein Mangel oder Mangel schon gemeldet (Wiederholung) – zutreffender Text
 const photosSkippedText = (r) => ((r && r.followups || []).some((f) => f && f.repeat) ? t('check_photos_repeat') : t('check_photos_skipped'));
 async function flushOutbox() {
@@ -1164,7 +1164,7 @@ async function viewNew(preId) {
   if (S.me.role === 'driver' && mine.length) {
     let known = null;
     const showKnown = () => { const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const v = known && sel && known.find((x) => x.id === sel.value); box.innerHTML = v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : ''; };
-    api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => {});
+    api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
     $$('input[name=veh]').forEach((r) => r.addEventListener('change', showKnown));
   }
   // Beschreibung nennt einen Unfall: kurze Hinweise für vollständige Unterlagen (Fotos, Unfallstelle, Fuhrparkleitung informieren)
@@ -1218,6 +1218,9 @@ function myPlanned(v) {
   if (pi && ![...(v.next_inspections || []), ...(v.km_due || [])].some((r) => r.kind === pi.kind && r.planned_date)) h += `<dt>${esc(mk(pi.kind))}</dt><dd>${esc(t('planned'))} ${fmtD(pi.planned_date)}${pi.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</dd>`;
   return h;
 }
+
+// „Mein Fahrzeug“ aus dem Zwischenspeicher der Startseite (ohne Netz: Sperre/Anhänger-Sperre/bekannte Mängel weiter sichtbar, 20.10.2026)
+function myVehCached() { try { const c = JSON.parse(localStorage.getItem(`cfp_myveh_${S.me.id}_${S.me.environment}`) || 'null'); return c && Array.isArray(c.vehicles) ? c.vehicles : null; } catch { return null; } }
 
 // Bekannte (offene) Mängel am eigenen Fahrzeug – Fahrer sieht, was schon gemeldet ist (ohne Namen); eigene Meldungen verlinkt
 function knownDefects(list) {
@@ -1571,13 +1574,15 @@ async function viewDepartureCheck(preId) {
   if (S.me.role === 'driver') {
     let known = null;
     const showKnown = () => { const box = $('#known'); if (!box) return; const v = known && known.find((x) => x.id === $('#v').value); box.innerHTML = v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : ''; };
-    api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => {});
+    api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
     $('#v').addEventListener('change', showKnown);
   }
   photoLimitWatch($('#ph'));
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
+    // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)
+    if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
     const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const hasDefect = body.items.some((i) => i.result === 'mangel');
@@ -1587,7 +1592,7 @@ async function viewDepartureCheck(preId) {
       // Fotos gehören zum Mangel: an den (ersten) Folgeauftrag hängen; ohne Mangel wird nichts hochgeladen
       let failed = 0;
       // Ziel: erster eigener Folgeauftrag; ein Wiederholungsvermerk an einem fremden Vorgang ist für Fahrer nicht sichtbar (17.10.2026)
-      const fTarget = (r.followups.find((f) => f && f.id && !f.repeat) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
+      const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
       if (files.length && fTarget) for (const [i, file] of files.entries()) {
         $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
@@ -1609,6 +1614,8 @@ async function viewDepartureCheck(preId) {
     }
   };
 }
+
+function kmInputOk(v) { const x = String(v).replace(/[\s\u00a0]/g, ''); if (!/^\d+$/.test(x) && !/^[1-9]\d{0,2}(\.\d{3})+$/.test(x)) return false; const n = Number(x.replace(/\./g, '')); return n >= 0 && n <= 5000000; }
 
 // Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App
 function viewCheckPaper() {
@@ -1878,7 +1885,7 @@ async function viewVehicle(id, focusEv = null) {
   const dqLink = (href) => (isMgr() && v.active && !v.eval_excluded ? ` · <a href="${href}">${esc(t('show_in_dq'))} ›</a>` : '');
   if (d.telematics && d.telematics.length) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tm_live'))}</h3>${d.telematics.map((x) => `${x.reported_plate ? `<p class="small" style="color:var(--stop)" data-tmmism>⚠ ${esc(t('dq_telematics_plate_mismatch'))}: ${esc(provL(x.provider))} ${esc(x.external_id || '')} → ${esc(t('tm_reports'))} <b>${esc(x.reported_plate)}</b>${dqLink('#/quality?f=telematics_plate_mismatch')}</p>` : ''}<dl class="kv"><dt>${esc(t('tm_source'))}</dt><dd>${esc(provL(x.provider))} (${esc(x.match_basis === 'vin' ? t('vin') : t('tm_mappings'))})</dd><dt>${esc(t('tm_time'))}</dt><dd>${fmtDT(x.gps_time || x.received_at)}${x.gps_time && tmAge(x.gps_time) ? ` <span class="chip">${esc(tmAge(x.gps_time))}</span>` : ''}</dd>${x.km !== null ? `<dt>${esc(t('km'))}</dt><dd>${fmtKm(x.km)}${x.km_rejected_below !== null && x.km_rejected_below !== undefined ? ` <span class="small" style="color:var(--mid)" data-tmkm>⚠ ${esc(tmKmRej('below', x.km_rejected_below))}${dqLink('#/quality?f=telematics_km_rejected')}</span>` : x.km_rejected_above ? ` <span class="small" style="color:var(--mid)" data-tmkm="above">⚠ ${esc(tmKmRej('above', x.km_rejected_above.km, x.km_rejected_above.at))}${dqLink('#/quality?f=telematics_km_rejected')}</span>` : ''}</dd>` : ''}${x.ignition !== null ? `<dt>${esc(t('tm_ignition'))}</dt><dd>${esc(t(x.ignition ? 'tm_on' : 'tm_off'))}</dd>` : ''}${x.lat !== null && x.lon !== null ? `<dt>${esc(t('tm_position'))}</dt><dd><a href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lon}#map=14/${x.lat}/${x.lon}" target="_blank" rel="noopener noreferrer">${x.lat.toFixed(4)}, ${x.lon.toFixed(4)}</a></dd>` : ''}</dl>`).join('')}</section>`;
   if (d.tacho) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tacho_vu'))}</h3><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${d.tacho.last ? fmtD(d.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${d.tacho.due ? fmtD(d.tacho.due) + ' ' : ''}<span class="chip ${TST[d.tacho.status]}">${esc(t('tst_' + d.tacho.status))}</span></dd></dl>
-    ${(d.tacho_downloads || []).length ? `<details id="vthist"><summary>${esc(t('history'))} (${d.tacho_downloads.length})</summary>${tachoHistList(d.tacho_downloads, isMgr())}</details>` : ''}
+    ${(d.tacho_downloads || []).length ? `<details id="vthist"><summary>${esc(t('history'))} (${d.tacho_downloads.length}${d.tacho_downloads_truncated ? '+' : ''})</summary>${tachoHistList(d.tacho_downloads, isMgr())}${d.tacho_downloads_truncated ? `<p class="small muted vtrunc">${esc(t('hist_truncated').replace('{n}', d.tacho_downloads.length))}</p>` : ''}</details>` : ''}
     <form id="tvf" class="actions" style="flex-wrap:wrap;align-items:flex-end"><div><label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${bDate()}"></div><div style="flex:1;min-width:200px"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"></div><button class="btn secondary">${esc(t('tacho_record'))}</button></form></section>`;
   if (d.costs) html += `<section class="panel"><h3>${esc(t('costs'))}</h3><dl class="kv"><dt>${esc(t('actual_cost'))}</dt><dd>${eurIst(d.costs)}</dd><dt>${esc(t('estimate'))}</dt><dd>${eur(d.costs.estimate_net)}</dd><dt>${esc(t('unvalued'))}</dt><dd>${d.costs.unvalued_items}</dd>${d.claims_summary && d.claims_summary.total ? `<dt>${esc(t('claims'))}</dt><dd>${d.claims_summary.total}${d.claims_summary.open ? ` · <a href="#/claims" id="vclaims">${esc(t('claim_f_open'))}: ${d.claims_summary.open}</a>` : ''}${d.claims_summary.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(d.claims_summary.reimbursed_net)}` : ''}</dd>` : ''}</dl>${d.claims_summary && d.claims_summary.reimbursed_net !== null ? `<p class="small muted">${esc(t('vc_claims_rule'))}</p>` : ''}</section>`;
   // Ausfall je Monat (Werkstatt-Übernahme bis Freigabe und Sperrzeit, Überschneidungen einmal) – nur Monate mit Ausfall, neueste zuerst
@@ -2043,6 +2050,7 @@ function ctLines(c, { noEvidence = false } = {}) {
   if (s.km) {
     if (s.km.driven !== undefined) out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · ${esc(t('ct_driven'))}: ${fmtKm(s.km.driven)} · ${esc(t('ct_left'))}: ${fmtKm(Math.max(0, s.km.remaining))}${s.km.status === 'ueber' ? ` <span class="chip kritisch">${esc(t('ct_km_over'))}</span>` : ''}${s.km.forecast_driven ? `<br>${esc(t('ct_forecast'))}: <span class="chip ${s.km.status === 'prognose_ueber' ? 'mittel' : ''}">≈ ${fmtKm(s.km.forecast_driven)}</span> <span class="small muted">(${esc(t('ct_forecast_hint'))})</span>` : ''}`);
     else if (s.km.status === 'zaehler') out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="chip mittel" style="white-space:normal">${esc(t('ct_km_counter_drop').replace('{d}', fmtD(s.km.drop_at)))}</span>`);
+    else if (s.km.status === 'unter_start') out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="chip mittel" style="white-space:normal" data-ct-below>${esc(t('ct_km_below').replace('{km}', fmtKm(s.km.current_km)).replace('{start}', fmtKm(s.km.start_km)))}</span>`);
     else out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="muted">${esc(t('ct_km_none'))}</span>`);
   }
   if (c.monthly_rate_net !== null) out.push(`${esc(t('ct_rate'))}: ${eur(c.monthly_rate_net)}`);
@@ -2470,7 +2478,7 @@ async function viewFines() {
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn secondary" id="fcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="fics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="fprt">${esc(t('print'))}</button>${mgr ? `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv"> ${esc(t('with_driver_names'))}</label>` : ''}</div>`;
   render(html, 'more');
   const day = bDate();
-  const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { downloadChecked(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}`), `fuhrpark-bussgelder_${day}.csv`); } catch (err) { toast(err.message, true); } };
+  const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { downloadChecked(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}`), `fuhrpark-bussgelder_${envFn()}_${day}${fr.site ? '_' + fnPart(fr.site === 'ohne' ? t('cs_nosite') : fr.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const fi = $('#fics'); if (fi) fi.onclick = async () => { try { downloadChecked(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${day}.ics`); } catch (err) { toast(err.message, true); } };
   const fs = $('#fsite'); if (fs) fs.onchange = () => { S.fineSite = fs.value; viewFines(); };
   const fp = $('#fprt'); if (fp) fp.onclick = () => window.print();
@@ -2501,7 +2509,7 @@ async function viewFine(id) {
   let html = `<p class="noprint"><a href="#/fines">‹ ${esc(t('back'))}</a></p><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(f.plate || f.plate_in_letter, { big: true })}<span class="chip">${esc(t('fs_' + f.status))}</span>${f.environment === 'test' ? '<span class="chip test">TEST</span>' : ''}</div>
     <h1 style="margin-top:12px">${esc(f.fine_no)} · ${esc(t('fk_' + f.kind))}</h1>${printHead([t('fines'), f.fine_no])}
     <div class="actions noprint"><button type="button" class="btn secondary" id="fdprt">${esc(t('print'))}</button></div>
-    ${!f.vehicle_id ? `<div class="panel alert">${esc(t('vehicle_unknown'))}: ${esc(f.plate_in_letter)}</div>` : ''}
+    ${!f.vehicle_id ? `<div class="panel alert">${d.vehicle_ambiguous ? `${esc(f.plate_in_letter)}: ${esc(t('fine_vehicle_ambiguous'))}` : `${esc(t('vehicle_unknown'))}: ${esc(f.plate_in_letter)}`}</div>` : ''}
     <section class="panel"><dl class="kv"><dt>${esc(t('offense'))}</dt><dd>${esc(t('of_' + f.offense_type))}</dd><dt>${esc(t('offense_at'))}</dt><dd>${fmtDT(f.offense_at)}</dd><dt>${esc(t('offense_place'))}</dt><dd>${esc(f.location || '–')}</dd>
       <dt>${esc(t('authority'))}</dt><dd>${esc(f.authority)}</dd><dt>${esc(t('reference'))}</dt><dd>${esc(f.reference || '–')}</dd><dt>${esc(t('amount'))}</dt><dd>${eur(f.amount_eur)}</dd>
       <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? fmtD(f.response_due) : '–'}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}</dd></dl>
@@ -2910,7 +2918,7 @@ async function viewTacho() {
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
     <div class="actions"><button type="button" class="btn secondary" id="tcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="tprt">${esc(t('print'))}</button></div>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('tacho_import'))}</h2><p class="small muted">${esc(t('tacho_import_hint'))}</p>
-      <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" placeholder="${esc(t('tacho_ev_ph'))}"><input type="file" id="timp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
+      <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" maxlength="300" placeholder="${esc(t('tacho_ev_ph'))}"><input type="file" id="timp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
   $$('[data-tt]').forEach((b) => (b.onclick = () => { S.tachoTab = b.dataset.tt; viewTacho(); }));
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tachoFilter = b.dataset.tf; viewTacho(); }));
   const tse = $('#tsite'); if (tse) tse.onchange = () => { S.tachoSite = tse.value; viewTacho(); };
@@ -3762,7 +3770,7 @@ async function viewFleetTires() {
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(fmtMm(x.min_tread_mm))}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span>${x.winter === 'nicht_erfuellt' ? `<span class="chip kritisch">${esc(t('ws_nicht_erfuellt'))}</span>` : ''}<span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${esc(tn('tires_measured_n', x.measured_positions))}`, x.below_min && `${x.below_min}× < ${fmtMm(r.legal_min_tread_mm)}`, x.spare_below_min && esc(t('tires_spare_below').replace('{min}', fmtNum(r.legal_min_tread_mm))), x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`, x.oldest_dot_months !== null && `${esc(t('tires_oldest_dot'))} ${esc(tireAge(x.oldest_dot_months))}${x.age_warn ? ` (${x.age_warn}× ${esc(tn('tire_age_warn', r.warn_age_years))})` : ''}`, wf && x.winter_noncompliant.length && esc(t('winter_bad').replace('{p}', x.winter_noncompliant.map(posL).join(', '))), wf && x.winter_missing.length && esc(t('winter_missing').replace('{p}', x.winter_missing.map(posL).join(', '))), wf && x.winter_order && `🔧 ${esc(t('mo_open'))} ${esc(x.winter_order.case_no)}`, wf && x.winter_closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.winter_closed_order.case_no))}`].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>${wf ? `<p class="small muted">${esc(t('winter_rule'))}</p>` : ''}`, 'more');
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
   // CSV: alle Fahrzeuge (gewählter Standort) mit Status und Reifengrößen je Achse – unabhängig vom Filterknopf
-  $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-reifen_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-reifen_${envFn()}_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const ts = $('#tsite'); if (ts) ts.onchange = () => { S.tireSite = ts.value; viewFleetTires(); };
   $('#trprt').onclick = () => window.print();
 }
@@ -4019,7 +4027,7 @@ async function viewSettings() {
     try {
       const r = await api('POST', '/api/tires/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });
       $('#tcsvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${esc(t('imp_new'))}: ${r.counts.neu} · ${esc(t('imp_changed'))}: ${r.counts.geaendert} · ${esc(t('imp_same'))}: ${r.counts.unveraendert} · ${esc(t('tires_kept_verified'))}: ${r.kept_verified} · ${esc(t('tires_no_vehicle'))}: ${r.skipped_no_vehicle.length}</p>${(r.skipped || []).length ? `<details open><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.slice(0, 300).map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul>${impMore(r.skipped.length, 300)}</details>` : ''}<div class="actions"><button type="button" class="btn" id="tgo"${r.counts.neu + r.counts.geaendert ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
-      $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${g.imported}</p>`; } catch (err) { toast(err.message, true); } };
+      $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${esc(t('imp_new'))}: ${g.counts.neu} · ${esc(t('imp_changed'))}: ${g.counts.geaendert} · ${esc(t('imp_same'))}: ${g.counts.unveraendert}</p>`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
   // Werte unverändert senden (Server versteht „12,5“, „1.234,50“, „2000“ und weist Mehrdeutiges/außerhalb des Bereichs ab – nichts wird halb gespeichert)

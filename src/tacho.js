@@ -76,8 +76,10 @@ export async function listDownloads(env, user, envName, q = {}) {
   if (q.driver_id) {
     const d = await env.DB.prepare('SELECT id, user_id FROM drivers WHERE id=? AND environment=?').bind(str(q.driver_id, { max: 40 }), envName).first();
     if (!d || (!isMgr(user) && !(user.role === 'driver' && d.user_id === user.id))) throw notFound('Fahrer nicht gefunden.');
-    return (await env.DB.prepare(`SELECT t.id, t.kind, t.downloaded_on, t.evidence, t.note, t.created_at, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t
+    const rows = (await env.DB.prepare(`SELECT t.id, t.kind, t.downloaded_on, t.evidence, t.note, t.created_at, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t
       LEFT JOIN users u ON u.id=t.created_by WHERE t.driver_id=? ORDER BY t.downloaded_on DESC LIMIT 100`).bind(d.id).all()).results;
+    // Fahrer selbst: ohne Bemerkung/Erfassende der Leitung (wie Fahrerakte, 20.10.2026)
+    return isMgr(user) ? rows : rows.map(({ note, created_by_name, ...r }) => r);
   }
   if (!isMgr(user)) throw forbidden();
   if (!q.vehicle_id) throw bad('validation', 'driver_id oder vehicle_id angeben.');
@@ -217,7 +219,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: nameCol(head),
     plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: dayCol(head), ev: col(['nachweis', 'datei', 'beleg']) };
   if (ci.day === -2) throw bad('tacho_day_ambiguous', 'Datumsspalte nicht eindeutig – bitte die Spalte mit dem Auslesedatum „Auslesedatum“ nennen.');
-  const fallbackEv = str(source, { max: 200 }) || ''; // keine Quelle angegeben: leer statt null (leere Nachweis-Zelle ergab sonst 500)
+  const fallbackEv = str(source, { max: 300, field: 'Quelle' }) || ''; // keine Quelle angegeben: leer statt null (leere Nachweis-Zelle ergab sonst 500)
   if (ci.kind < 0) throw bad('validation', 'Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.');
   // Eigene Übersicht der App (Export „Auslesungen“: Letzte Auslesung/Spätestens fällig) ist kein Beleg einer Auslesung
   if (ci.day < 0 && head.some((h) => h.startsWith('letzte auslesung') || h.startsWith('spätestens fällig'))) throw bad('wrong_file_tacho', 'Das ist die Fristen-Übersicht dieser App, kein Export der Auslesesoftware. Bitte die Datei der Auslesesoftware mit Spalte „Datum“ hochladen.');

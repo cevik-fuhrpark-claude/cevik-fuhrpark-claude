@@ -234,10 +234,14 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     out.contracts = await vehicleContracts(env, vehicleId, odometer[0] ? { ...odometer[0], ...kmDrop } : null, sets, envName);
     if (v.kind !== 'anhaenger') {
       // Massenspeicher-Auslesungen (FPersV § 2 Abs. 5: spätestens alle 90 Tage) – Frist nur ab erfasster Auslesung
+      // Verlauf wie in der Fahrerakte: eine Zeile mehr lesen und Kürzung melden (20.10.2026: still bei 20 abgeschnitten)
+      const dlMax = cap || 100;
       out.tacho_downloads = (await env.DB.prepare(`SELECT t.id, t.downloaded_on, t.evidence, t.note, t.cancelled_at, t.cancel_reason, u.display_name AS created_by_name FROM tacho_downloads t LEFT JOIN users u ON u.id=t.created_by
-        WHERE t.vehicle_id=? AND t.environment=?${tl ? ' AND t.cancelled_at IS NULL' : ''} ORDER BY t.downloaded_on DESC LIMIT ?`).bind(vehicleId, envName, cap || 20).all()).results;
-      const validVu = out.tacho_downloads.find((x) => !x.cancelled_at); // stornierte zählen nicht (18.10.2026)
-      out.tacho = { ...tachoStatus(validVu ? validVu.downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
+        WHERE t.vehicle_id=? AND t.environment=?${tl ? ' AND t.cancelled_at IS NULL' : ''} ORDER BY t.downloaded_on DESC LIMIT ?`).bind(vehicleId, envName, dlMax + 1).all()).results;
+      out.tacho_downloads_truncated = out.tacho_downloads.length > dlMax; if (out.tacho_downloads_truncated) out.tacho_downloads.length = dlMax;
+      // letzte gültige Auslesung unabhängig vom angezeigten Ausschnitt (stornierte zählen nicht, 18.10.2026)
+      const validVu = out.tacho_downloads.find((x) => !x.cancelled_at) || (out.tacho_downloads_truncated ? await env.DB.prepare('SELECT MAX(downloaded_on) AS downloaded_on FROM tacho_downloads WHERE vehicle_id=? AND environment=? AND cancelled_at IS NULL').bind(vehicleId, envName).first() : null);
+      out.tacho = { ...tachoStatus(validVu && validVu.downloaded_on ? validVu.downloaded_on : null, TACHO_RULE.vu_days, berlinDate(), warnDaysOf(sets)), rule: TACHO_RULE };
     }
   }
   // Fahrleistung je Monat (16.10.2026) – nur aus gespeicherten Kilometerständen, keine Schätzung (alle, die die Akte sehen)
@@ -648,11 +652,13 @@ export async function myVehicles(env, user, envName) {
   const today = berlinDate();
   const minDate = (arr) => arr.filter((d) => d && d >= today).sort()[0] || null;
   const WS = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
+  const PRIO_RANK = { kritisch: 0, mittel: 1, niedrig: 2 };
   return {
     vehicles: vs.map((v) => ({
       ...v, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
       my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, parts_expected_date: _e, ...c }) => c),
-      known_defects: mine.results.filter((c) => c.vehicle_id === v.id).slice(0, 10).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
+      // alle offenen (vorher still 10 – ältere sicherheitsrelevante verdrängt, 20.10.2026); gesperrte/kritische zuerst
+      known_defects: mine.results.filter((c) => c.vehicle_id === v.id).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3) || String(b.created_at).localeCompare(String(a.created_at))).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
         description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine,
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)

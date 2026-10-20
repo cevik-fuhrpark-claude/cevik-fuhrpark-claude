@@ -49,7 +49,9 @@ export async function listFinesSel(env, user, envName, query = {}, max = 500) {
     if (pick.length > max) { pick = pick.slice(0, max); truncated = true; }
     rows = pick.length ? (await env.DB.prepare(`SELECT f.*, v.plate, v.site AS vehicle_site, u.display_name AS driver_name FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id LEFT JOIN users u ON u.id=f.driver_id
       WHERE f.environment=? AND f.id IN (SELECT value FROM json_each(?))`).bind(envName, JSON.stringify(pick.map((r) => r.id))).all()).results : [];
-    rows.sort((x, y) => (x.response_due === null) - (y.response_due === null) || (x.response_due || '').localeCompare(y.response_due || '') || (y.created_at || '').localeCompare(x.created_at || ''));
+    // offene zuerst, dann nach Frist (20.10.2026: erledigte mit alter Frist standen vor offenen)
+    const closed = (r) => (['bezahlt', 'eingestellt', 'erledigt'].includes(r.status) ? 1 : 0);
+    rows.sort((x, y) => closed(x) - closed(y) || (x.response_due === null) - (y.response_due === null) || (x.response_due || '').localeCompare(y.response_due || '') || (y.created_at || '').localeCompare(x.created_at || ''));
   } else if (user.role === 'driver') {
     rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id
       WHERE f.environment=? AND f.driver_id=? AND f.driver_informed_at IS NOT NULL ORDER BY f.offense_at DESC`).bind(envName, user.id).all()).results;
@@ -98,6 +100,8 @@ export async function fineDetail(env, user, envName, id) {
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at FROM files WHERE fine_id=? ORDER BY created_at').bind(id).all()).results;
   const driver = f.driver_id ? await env.DB.prepare('SELECT display_name FROM users WHERE id=?').bind(f.driver_id).first() : null;
   const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
+  // nicht zugeordnet, weil das Kennzeichen an mehreren aktiven Fahrzeugen steht → Fahrzeugstamm bereinigen statt „Fremdfahrzeug?“ (20.10.2026)
+  if (!f.vehicle_id && f.plate_in_letter) out.vehicle_ambiguous = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, f.plate_in_letter).ambiguous;
   if (isMgr(user)) {
     out.events = events;
     // bestätigte bzw. beim Zurücksetzen abgelöste Fahrer im Verlauf mit Namen (20.10.2026: „bisheriger Fahrer bleibt im Verlauf“ galt nur in der Datenbank)
@@ -395,7 +399,7 @@ export async function canReadFineFile(env, user, envName, fineId) {
 // Status als Bezeichnung wie in der App (bis 16.10.2026 Code in der CSV); Test prüft Gleichheit mit i18n.js
 export const FINE_STATUS_DE = { eingegangen: 'Eingegangen', fahrer_ermittelt: 'Fahrer ermittelt', fahrer_informiert: 'Fahrer informiert', beantwortet: 'Beantwortet', bezahlt: 'Bezahlt', eingestellt: 'Eingestellt', erledigt: 'Erledigt' };
 export const OFFENSE_DE = { geschwindigkeit: 'Geschwindigkeit', abstand: 'Abstand', parken: 'Parken/Halten', rotlicht: 'Rotlicht', lenk_ruhezeit: 'Lenk-/Ruhezeit', ladung: 'Ladung/Gewicht', maut: 'Maut', handy: 'Handy', sonstiges: 'Sonstiges' };
-const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', bussgeldbescheid: 'Bußgeldbescheid', verwarnung: 'Verwarnung', maut: 'Maut', sonstiges: 'Sonstiges' };
+const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', bussgeldbescheid: 'Bußgeldbescheid', verwarnung: 'Verwarnung', maut: 'Mautnacherhebung', sonstiges: 'Sonstiges' };
 export function finesCsv(rows, csvCell, withDriver) {
   const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
   const lines = [head.join(';')];
@@ -421,6 +425,7 @@ export async function fineFindings(env, environment, settings = null) {
   const rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
   const today = berlinDate();
   const out = [];
+  const vehs = rows.some((f) => !f.vehicle_id) ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results : [];
   for (const f of rows) {
     const label = `${f.fine_no} (${f.plate || f.plate_in_letter}, ${f.authority})`;
     if (f.response_due) {
@@ -428,7 +433,8 @@ export async function fineFindings(env, environment, settings = null) {
       if (days < 0) out.push({ code: 'FINE_OVERDUE', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_OVERDUE', { label, due: f.response_due }), next_action: 'Sofort beantworten bzw. Fristverlängerung klären.' });
       else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm(days === 0 ? 'FINE_DUE_TODAY' : 'FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.' });
     }
-    if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
+    if (!f.vehicle_id && pickVehicleByPlate(vehs, f.plate_in_letter).ambiguous) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_AMBIGUOUS', { label, plate: f.plate_in_letter }), next_action: 'Fahrzeugstamm prüfen: Kennzeichen steht an mehreren aktiven Fahrzeugen (Datenqualität).' });
+    else if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
     else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
   }
   return out;

@@ -1245,7 +1245,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
   // sonst abgewiesen, wenn das Fahrzeug inzwischen außer Betrieb war, die Durchführung > 7 Tage zurücklag oder der Vorgang weiter war (20.10.2026)
   const asDuplicate = (already) => {
     let its = []; try { its = JSON.parse(already.items || '[]') || []; } catch { its = []; }
-    const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}) }));
+    const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}), ...(i.repeat_own ? { own: true } : {}) }));
     return { id, result: already.result, followups: fu, duplicate: true };
   };
   {
@@ -1305,8 +1305,8 @@ export async function submitInspection(env, ctx, user, envName, body) {
   // Nur wenn der offene Vorgang mindestens so dringend ist; ein sicherheitsrelevanter Mangel braucht dort eine aktive Sperre.
   const openByItem = new Map();
   if (kind === 'abfahrt' && defects.length) {
-    for (const r of (await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version, check_item FROM cases WHERE vehicle_id=? AND environment=? AND origin='kontrolle'
-      AND check_item IN (SELECT value FROM json_each(?)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(vehicleId, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
+    for (const r of (await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version, check_item, reporter_id=? AS own FROM cases WHERE vehicle_id=? AND environment=? AND origin='kontrolle'
+      AND check_item IN (SELECT value FROM json_each(?)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(user.id, vehicleId, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
       if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, r); // jüngster offener je Prüfpunkt
     }
   }
@@ -1317,8 +1317,9 @@ export async function submitInspection(env, ctx, user, envName, body) {
     const open = openByItem.get(d.key);
     if (open && RANK[open.priority] >= RANK[prio] && (!d.safety_relevant || open.safety_lock)) {
       repeats.push({ open, d });
-      d.followup_case_id = open.id; d.followup_case_no = open.case_no; d.repeat = true;
-      followups.push({ id: open.id, case_no: open.case_no, duplicate: true, repeat: true });
+      // eigener offener Vorgang: Fahrer darf dort Fotos anhängen (20.10.2026: Fotos zum erneut festgestellten eigenen Mangel wurden verworfen)
+      d.followup_case_id = open.id; d.followup_case_no = open.case_no; d.repeat = true; if (open.own) d.repeat_own = true;
+      followups.push({ id: open.id, case_no: open.case_no, duplicate: true, repeat: true, ...(open.own ? { own: true } : {}) });
       continue;
     }
     slots.push({ d, at: followups.length });

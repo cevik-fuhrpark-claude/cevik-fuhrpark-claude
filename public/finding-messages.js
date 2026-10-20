@@ -70,6 +70,7 @@ export const FINDING_MESSAGES = {
     FINE_DUE_SOON: '{label}: Antwortfrist {due} (in {days} {days#Tag/Tagen}).',
     FINE_DUE_TODAY: '{label}: Antwortfrist {due} (heute fällig).',
     FINE_VEHICLE_UNKNOWN: '{label}: Kennzeichen {plate} keinem Fahrzeug zugeordnet.',
+    FINE_VEHICLE_AMBIGUOUS: '{label}: Kennzeichen {plate} steht an mehreren aktiven Fahrzeugen – nicht zugeordnet.',
     FINE_DRIVER_OPEN: '{label}: Fahrer zur Tatzeit noch nicht ermittelt.',
   },
   uk: {
@@ -135,6 +136,7 @@ export const FINDING_MESSAGES = {
     FINE_DUE_SOON: '{label}: строк відповіді {due} (через {days} дн.).',
     FINE_DUE_TODAY: '{label}: строк відповіді {due} (сьогодні).',
     FINE_VEHICLE_UNKNOWN: '{label}: номерний знак {plate} не прив’язаний до жодного транспорту.',
+    FINE_VEHICLE_AMBIGUOUS: '{label}: номерний знак {plate} є в кількох активних транспортних засобів – не прив’язано.',
     FINE_DRIVER_OPEN: '{label}: водія на момент порушення ще не встановлено.',
   },
   en: {
@@ -200,6 +202,7 @@ export const FINDING_MESSAGES = {
     FINE_DUE_SOON: '{label}: response deadline {due} (in {days} {days#day/days}).',
     FINE_DUE_TODAY: '{label}: response deadline {due} (due today).',
     FINE_VEHICLE_UNKNOWN: '{label}: licence plate {plate} not assigned to any vehicle.',
+    FINE_VEHICLE_AMBIGUOUS: '{label}: licence plate {plate} is on several active vehicles – not assigned.',
     FINE_DRIVER_OPEN: '{label}: driver at the time of the offence not yet identified.',
   },
 };

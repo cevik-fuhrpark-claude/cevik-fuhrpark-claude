@@ -2002,7 +2002,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -14914,6 +14914,74 @@ await test('Fehlersuche 20.10. (12): Leerlauf mehrere Tabs/Minutentakt, Einladun
   ok(i18n.includes('Konten der Disposition oder Fuhrparkleitung: den Inhaber'), 'Passwort vergessen');
   const { usersCsv } = await import('../public/csv.js'); const tl = (k) => I.STRINGS.de[k] || k;
   ok(usersCsv([{ display_name: 'A', username: 'a', role: 'driver', environment: 'test', has_password: 1, active: 1, locked_until: '2999-01-01T00:00:00Z' }], tl, (x) => x, (x) => x).includes('gesperrt bis'), 'CSV nennt Sperre');
+});
+
+await test('Fehlersuche 20.10. (13): Auslesungen (Fahrer ohne Vermerk, Akte-Verlauf mit Hinweis, Quelle 300), Fahrer-CSV-Gesamtstatus, Vertrag „km unter Übernahme“, bekannte Mängel ohne Kappung, Foto zum eigenen Wiederholungsmangel, Bußgelder (offene zuerst, mehrdeutiges Kennzeichen, Dateinamen), Reifengrößen-Import-Zähler', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const app = rd('public/app.js'), i18n = rd('public/i18n.js');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  // 1. Auslesungen: Fahrer bekommt eigene Auslesungen ohne Bemerkung/Erfasser; Fahrer-CSV Gesamtstatus „kritisch“ bei überfälliger Auslesung
+  const D = (await F.post('/api/drivers', { display_name: 'Fahrer W', user_id: U.driver.id })).data.id;
+  eq((await F.post(`/api/drivers/${D}/documents`, { kind: 'fuehrerschein', issued_on: '2015-01-01', valid_until: day(3000), evidence: 'FS' })).status, 201);
+  eq((await F.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(3000), evidence: 'FK' })).status, 201);
+  eq((await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: D, downloaded_on: day(-60), evidence: 'Datei', note: 'Vermerk Leitung' })).status, 201);
+  const own = (await U.driver.get('/api/tacho/downloads?driver_id=' + D)).data.downloads;
+  eq(own.length, 1); ok(!('note' in own[0]) && !('created_by_name' in own[0]), 'ohne Vermerk/Erfasser');
+  ok('note' in (await F.get('/api/tacho/downloads?driver_id=' + D)).data.downloads[0], 'Leitung sieht Vermerk');
+  const dcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/drivers?format=csv')).data);
+  const line = dcsv.split('\r\n').find((l) => l.startsWith('Fahrer W;'));
+  ok(/;kritisch · .*Auslesung: überfällig/.test(line) && !/in Ordnung · Auslesung/.test(line), line);
+  // Quelle beim Import bis 300 Zeichen (wie Nachweis-Spalte und Einzelerfassung)
+  const tcsv = 'Art;Name;Datum\nFahrerkarte;Fahrer W;' + day(-1);
+  const ti = await F.req('POST', '/api/tacho/import?dry_run=1&source=' + encodeURIComponent('Q'.repeat(250)), tcsv, { 'content-type': 'text/csv' });
+  eq(ti.status, 200, JSON.stringify(ti.data)); ok(app.includes('<input id="tsrc" maxlength="300"'), 'Feld begrenzt');
+  // 2. Fahrzeugakte: Auslese-Verlauf über 100 → Hinweis, Status aus der letzten gültigen Auslesung
+  const ins = db.prepare("INSERT INTO tacho_downloads(id,environment,kind,vehicle_id,downloaded_on,evidence,created_by,created_at) VALUES (?,'test','massenspeicher',?,?,'x',?,?)");
+  for (let i = 0; i < 101; i++) ins.run('tv' + i, V1, day(-10 - i), U.fleet.id, new Date().toISOString());
+  const ak = (await F.get('/api/vehicles/' + encodeURIComponent(V1))).data;
+  eq(ak.tacho_downloads.length, 100); eq(ak.tacho_downloads_truncated, true); eq(ak.tacho.last, day(-10));
+  ok(app.includes("d.tacho_downloads_truncated ? `<p class=\"small muted vtrunc\">"), 'Hinweis in der Akte');
+  // 3. Vertrag: km-Stand seit Beginn unter „km bei Übernahme“ → eigener Status statt „kein km-Stand“
+  const { contractStatus } = await import('../src/contracts.js');
+  const cs = contractStatus({ km_allowance: 100000, start_km: 50000, start_date: day(-100) }, { km: 20000, measured_at: new Date().toISOString() }, BERLIN_TODAY, 30);
+  eq(cs.km.status, 'unter_start'); eq(cs.overall, 'hinweis'); eq(cs.km.current_km, 20000);
+  ok(i18n.includes("ct_km_below: 'km-Stand {km} liegt unter") && i18n.includes('„km bei Übernahme … geprüft“ ankreuzen'), 'Texte');
+  // 4. bekannte Mängel: alle offenen, gesperrte/kritische zuerst
+  eq((await F.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  const ids = [];
+  for (let i = 0; i < 12; i++) { const c = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Mangel ' + i, priority: i === 0 ? 'kritisch' : 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(c.status, 201, JSON.stringify(c.data)); ids.push(c.data.id); }
+  const kd = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1).known_defects;
+  eq(kd.length, 12, 'keine Kappung auf 10'); eq(kd[0].priority, 'kritisch', 'kritisch zuerst');
+  ok(app.includes(".catch(() => { known = myVehCached(); showKnown(); });"), 'offline aus Zwischenspeicher');
+  // 5. Wiederholungsmangel am eigenen Vorgang: Fahrer bekommt „own“ (Fotoziel), auch bei erneutem Senden
+  const keys = (await U.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const items = keys.map((k, i) => (i === 0 ? { key: k, result: 'mangel', note: 'Licht defekt' } : { key: k, result: 'ok' }));
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items })).status, 201);
+  const k2 = rk(); const r2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: k2, items });
+  eq(r2.status, 201); ok(r2.data.followups[0].repeat && r2.data.followups[0].own, JSON.stringify(r2.data.followups));
+  ok((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: k2, items })).data.followups[0].own, 'Wiederholung');
+  ok(app.includes('f && f.id && (!f.repeat || f.own)'), 'App nutzt eigenen Vorgang als Fotoziel');
+  ok(app.includes("if ($('#km').value.trim() && !kmInputOk($('#km').value))"), 'km wie Server geprüft');
+  // 6. Bußgelder: offene vor erledigten; mehrdeutiges Kennzeichen in Detail/Agent; CSV-Art „Mautnacherhebung“; Dateinamen mit Umgebung
+  const fb = (ref, due) => ({ kind: 'maut', authority: 'BAG', reference: ref, offense_type: 'sonstiges', offense_at: new Date(Date.parse(due + 'T12:00:00Z') - 30 * 864e5).toISOString(), plate_in_letter: 'SZ YC 5513', response_due: due });
+  const f1 = await F.post('/api/fines', fb('AZ-ALT', day(-200))); eq(f1.status, 201, JSON.stringify(f1.data));
+  const fv = (await F.get('/api/fines/' + f1.data.id)).data.fine.version;
+  eq((await F.post(`/api/fines/${f1.data.id}/commands`, { action: 'set_status', expected_version: fv, command_id: rk(), note: 'bezahlt', payload: { status: 'erledigt' } })).status, 200);
+  const f2 = await F.post('/api/fines', fb('AZ-NEU', day(14))); eq(f2.status, 201);
+  const fl = (await F.get('/api/fines')).data.fines.map((r) => r.id); ok(fl.indexOf(f2.data.id) < fl.indexOf(f1.data.id), 'offene zuerst');
+  eq((await F.post('/api/vehicles', { plate: 'DQ-MD 1', vin: 'WDB96340310997101', site: 'Dortmund' })).status, 201);
+  eq((await F.post('/api/vehicles', { plate: 'DQ MD 1', vin: 'WDB96340310997102', site: 'Dortmund' })).status, 201);
+  const f3 = await F.post('/api/fines', { ...fb('AZ-AMB', day(20)), plate_in_letter: 'DQ-MD 1' }); eq(f3.data.vehicle_ambiguous, true);
+  eq((await F.get('/api/fines/' + f3.data.id)).data.vehicle_ambiguous, true, 'Detail');
+  const { fineFindings } = await import('../src/fines.js');
+  const ff = (await fineFindings(e, 'test')).find((x) => x.f.id === f3.data.id && x.code === 'FINE_VEHICLE_UNKNOWN');
+  ok(ff && /mehreren aktiven Fahrzeugen/.test(ff.next_action), JSON.stringify(ff && ff.next_action));
+  const fcsv = await F.get('/api/fines?format=csv'); ok(/Mautnacherhebung/.test(new TextDecoder().decode(fcsv.data)), 'Art wie App');
+  ok(app.includes('`fuhrpark-bussgelder_${envFn()}_') && app.includes('`fuhrpark-reifen_${envFn()}_'), 'Dateinamen');
+  // 7. Reifengrößen-Import: „importiert“ = neu + geändert (wie Vorschau)
+  ok(rd('src/tires.js').includes('res.imported = res.counts.neu + res.counts.geaendert;'), 'Zähler');
+  ok(i18n.includes('(„Heute zu tun“ und die Winterlisten nennen nur Fahrzeuge mit „nicht erfüllt“)'), 'Hilfe Winterlage');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

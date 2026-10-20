@@ -299,7 +299,7 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
       .bind(nowIso(), JSON.stringify(list.slice(i, i + 400))));
   }
   if (stmts.length) await env.DB.batch(stmts);
-  res.imported = list.length;
+  res.imported = res.counts.neu + res.counts.geaendert; // wie die Vorschau (20.10.2026: „✓ 4“ bei „neu 0 · geändert 1 · unverändert 3“)
   await audit(env, user.id, 'tires.import', null, { imported: res.imported });
   return res;
 }

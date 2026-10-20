@@ -53,7 +53,10 @@ export function contractStatus(c, latest, today, warnDays) {
     // Gilt nur, bis der Vertrag danach gespeichert wurde (km bei Übernahme geprüft) – wie `km_basis_at` bei Prüfterminen; vorher blieb ein
     // korrigierter Tippfehler für immer „nicht berechenbar“ und eine echte Überschreitung unbemerkt (17.10.2026)
     else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !((c.km_basis_at || c.updated_at) && (c.km_basis_at || c.updated_at) > (latest.drop_rec || latest.drop_at))) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
-    else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date) || latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
+    else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date)) km = { status: 'ohne_km', allowance: c.km_allowance };
+    // km-Stand seit Beginn liegt unter „km bei Übernahme“ (Tippfehler im Vertrag oder beim km-Stand) – nicht „kein km-Stand“ (20.10.2026); ohne Zähler-Rücksprung seit Beginn
+    else if (latest.km < c.start_km && !(latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date))) km = { status: 'unter_start', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, start_km: c.start_km };
+    else if (latest.km < c.start_km) km = { status: 'ohne_km', allowance: c.km_allowance };
     else {
       const driven = latest.km - c.start_km;
       km = { status: driven > c.km_allowance ? 'ueber' : 'ok', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, driven, remaining: c.km_allowance - driven, forecast_driven: null };
@@ -68,7 +71,7 @@ export function contractStatus(c, latest, today, warnDays) {
     }
   }
   const handeln = (end && end.status === 'abgelaufen') || (km && km.status === 'ueber');
-  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler'));
+  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start'));
   return { overall: handeln ? 'handeln' : hinweis ? 'hinweis' : 'ok', end, notice, km };
 }
 
@@ -459,7 +462,12 @@ export async function importContracts(env, user, text, { dryRun = false, source 
       ELSE COALESCE(c.contract_no,'')='' AND LOWER(COALESCE(c.partner,''))=LOWER(COALESCE(${J('partner')},'')) AND COALESCE(c.start_date,'')=COALESCE(${J('sd')},'') END))`)
     .bind(user.id, now, JSON.stringify(items)).run();
   const inserted = r.meta && typeof r.meta.changes === 'number' ? r.meta.changes : fresh.length;
-  if (inserted < fresh.length) { result.counts.vorhanden += fresh.length - inserted; result.counts.neu = inserted; result.concurrent = true; }
+  if (inserted < fresh.length) {
+    result.counts.vorhanden += fresh.length - inserted; result.counts.neu = inserted; result.concurrent = true;
+    // Zeilen der Ergebnistabelle wie die Zähler (20.10.2026: Tabelle zeigte „neu“ für nicht angelegte Verträge)
+    const have = new Set((await env.DB.prepare('SELECT id FROM vehicle_contracts WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(items.map((x) => x.id))).all()).results.map((x) => x.id));
+    fresh.forEach((row, i) => { if (!have.has(items[i].id)) row.status = 'vorhanden'; });
+  }
   await audit(env, user.id, 'contract.import', null, result.counts);
   return result;
 }
