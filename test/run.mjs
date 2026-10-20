@@ -1500,7 +1500,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`', 'Vorgang V-2026-0007 ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.', 'Заявка V-2026-0007 сама є дублікатом – виберіть початкову заявку.', 'Case V-2026-0007 is itself a duplicate – please choose the original case.'],
     ['`${field}: höchstens 2 Nachkommastellen.`', 'Betrag: höchstens 2 Nachkommastellen.', 'Сума: не більше 2 знаків після коми.', 'Amount: at most 2 decimal places.'],
     ['`Unbekannter Prüfpunkt ${it.key}.`', 'Unbekannter Prüfpunkt xyz.', 'Невідомий пункт перевірки xyz.', 'Unknown check item xyz.'],
-    ["`Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`", 'Arbeitsdatum: nicht in der Zukunft und nicht vor dem 17.10.2025.', 'Дата роботи: не в майбутньому і не раніше 17.10.2025.', 'Work date: not in the future and not before 17.10.2025.'],
+    ["`Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`", 'Arbeitsdatum: nicht in der Zukunft und nicht vor dem 17.10.2025.', 'Дата роботи: не в майбутньому і не раніше 17.10.2025.', 'Work date: not in the future and not before 17/10/2025.'],
   ];
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
   eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
@@ -14281,6 +14281,34 @@ await test('Fehlersuche 19.10. (Agentenbefunde/Datenqualität/Telematik): Befund
   eq(dqDetailText({ check: 'km_drop_unexplained', detail: '2026-10-20: 2 → 1 km · x' }, (k) => k, fd, mk, x), '20.10.2026: 2 → 1 km · x', 'ältere Antwort ohne detail_args');
   const q = (await import('node:fs')).readFileSync(new URL('../src/quality.js', import.meta.url), 'utf8');
   ok(!/\badd\('(km_drop_unexplained|km_rule_no_base|km_inspection_rejected|telematics_km_rejected)'/.test(q), 'Server liefert detail_args');
+});
+
+await test('Fehlersuche 20.10. (Vorgang/Fahrzeugliste/Hilfe): veraltete Seite → „neu laden“ statt „nicht erlaubt“, Terminänderung bei Freigabe/Übernahme im Verlauf, Fahrzeugliste übersetzt/sucht ohne Bindestrich/zählt je Standort, Glocke nach Umgebungswechsel, EN-Datum/Stückpreis', async () => {
+  const VP = 'VIN:WDB96340310555504';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: VP, description: 'Fehlersuche 20.10. Termin', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  let c = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: c.version, note: 'Termin-Test', payload: { workshop_site: 'DORTMUND', planned_date: day(2) } })).status, 200);
+  c = (await users.ws.get(`/api/cases/${cid}`)).data.case;
+  const v0 = c.version;
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'acknowledge', command_id: rk(), expected_version: v0, payload: { planned_date: day(3) } })).status, 200);
+  const d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  const ap = d.events.find((e) => e.action === 'approve_repair'), ak = d.events.find((e) => e.action === 'acknowledge');
+  eq(ap.payload.planned_to, day(2)); eq(ap.payload.planned_from, null);
+  eq(ak.payload.planned_from, day(2)); eq(ak.payload.planned_to, day(3), 'Übernahme ändert Termin – im Verlauf');
+  // veraltete Seite: Aktion im inzwischen geänderten Status → version_conflict (nicht forbidden)
+  const st = await users.ws.post(`/api/cases/${cid}/commands`, { action: 'acknowledge', command_id: rk(), expected_version: v0, payload: {} });
+  eq(st.status, 409); eq(st.data.error, 'version_conflict');
+  // fremde Rolle mit aktueller Version bleibt „nicht erlaubt“
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: d.case.version, note: 'x', payload: {} })).status, 403);
+  const { translateValidation } = await import('../public/i18n.js');
+  eq(translateValidation('en', 'Höchstens 24 Stunden je Person und Arbeitstag – am 18.10.2026 sind bereits 20,5 h erfasst.').includes('18/10/2026'), true, 'EN-Datum');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("String(v.planned_inspection_kind).split(', ').map(mk)"), 'geplante Prüfart übersetzt');
+  ok(app.includes(".replace(/[\\s-]/g, '')"), 'Fahrzeugsuche ohne Bindestrich');
+  ok(app.includes("['all', t('filter_all'), bySite.length]"), 'Art-Reiter je Standort');
+  ok(app.includes("S.unread = 0; refreshUnread(); route();"), 'Glocke nach Umgebungswechsel');
+  ok(app.includes("${eur3(p.unit_price_net)}") && app.includes("o.safety_relevant && o.status === 'offen' ? 'p-kritisch'"), 'Stückpreis/erledigte Restarbeit');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

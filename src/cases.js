@@ -845,9 +845,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   if (done && done.action !== action) throw conflict('command_id_reused', 'Diese Befehlskennung wurde bereits für eine andere Aktion verwendet.');
   if (done) return { ok: true, duplicate: true, version: c.version };
 
+  // Version zuerst (20.10.2026): veraltete Seite bekommt „bitte neu laden“ statt „nicht erlaubt“ (Status hat sich inzwischen geändert)
+  if (c.version !== expectedVersion) throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.', { current_version: c.version });
   const allowed = allowedActions(user, c, access);
   if (!allowed.includes(action)) throw forbidden(`Aktion „${action}“ ist für Ihre Rolle bzw. im Status „${c.status}“ nicht erlaubt.`);
-  if (c.version !== expectedVersion) throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.', { current_version: c.version });
 
   const now = nowIso();
   const set = {};
@@ -905,7 +906,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       set.workshop_site = site; set.approval_scope = note; set.priority_reviewed = 1;
       if (p.priority) { const np = oneOf(p.priority, PRIORITIES, 'Priorität'); if (np !== c.priority) { set.priority = np; payload.priority_from = c.priority; payload.priority_to = np; } }
       if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
-      if (p.planned_date) set.planned_date = planDate(p.planned_date);
+      if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) { payload.planned_from = c.planned_date || null; payload.planned_to = set.planned_date; } }
       toStatus = 'werkstatt_freigegeben';
       payload.workshop_site = site;
       // vorgeschlagene Werkstatt bekommt den Auftrag nicht: ihre Hinweise zum Vorgang ausblenden (18.10.2026: Link → 404; Melder ausgenommen)
@@ -983,7 +984,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     case 'acknowledge':
       set.workshop_ack_at = now; set.workshop_ack_by = user.id;
-      if (p.planned_date) set.planned_date = planDate(p.planned_date);
+      // Terminänderung bei Übernahme im Verlauf festhalten (20.10.2026; vorher nur bei „Termin setzen/verschieben“)
+      if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) payload = { planned_from: c.planned_date || null, planned_to: set.planned_date }; }
       notifyKind = 'acknowledged';
       break;
     case 'start_repair':
