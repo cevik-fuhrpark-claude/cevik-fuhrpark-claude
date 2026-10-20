@@ -56,7 +56,16 @@ const dateOpts = (timeZone) => ({ day: '2-digit', month: '2-digit', year: 'numer
 const dtFmt = (kind) => { const loc = uiLoc(); const k = kind + loc; return DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(loc, kind === 'dt' ? { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' } : dateOpts(kind === 'd' ? 'Europe/Berlin' : 'UTC'))); };
 // Ziel beim Tippen auf einen Hinweis – gleiche Regel wie im Service Worker (Push-Klick): Vorgang, Bezug (Fahrzeugakte/Bußgeld), Anmelde-Hinweis → Meine Anmeldungen
 // Link eines Agentenbefunds: Vorgang, sonst bei Bußgeldbefunden das Schreiben (subject_key = Bußgeld-ID; vorher kein Link bzw. nur zur Fahrzeugakte, 20.10.2026)
-const afLink = (caseId, code, subj) => caseId ? `<a href="#/cases/${esc(caseId)}">${esc(t('details'))}</a>` : String(code || '').startsWith('FINE_') && subj ? `<a href="#/fines/${encodeURIComponent(subj)}" data-afine>${esc(t('details'))}</a>` : '';
+// 20.10.2026: Fahrerbefunde (Nachweise, Führerscheinkontrolle, Fahrerkarte; Betreff „<Fahrer-ID>|…“) → Fahrerakte, Lagerbefunde → Artikel (vorher ohne Link)
+const AF_DRIVER = /^(DRIVER_DOC_|LICENSE_CHECK_|TACHO_CARD_)/;
+const afLink = (caseId, code, subj) => { const c = String(code || ''); const d = (h, attr) => `<a href="${h}"${attr}>${esc(t('details'))}</a>`;
+  if (caseId) return d(`#/cases/${esc(caseId)}`, '');
+  if (!subj) return '';
+  if (c.startsWith('FINE_')) return d(`#/fines/${encodeURIComponent(subj)}`, ' data-afine');
+  const did = String(subj).split('|')[0];
+  if (AF_DRIVER.test(c) && isMgr()) return d(`#/drivers/${encodeURIComponent(did)}`, ' data-adriver');
+  if (c.startsWith('STOCK_')) return d(`#/stock/${encodeURIComponent(subj)}`, ' data-astock');
+  return ''; };
 const notifHref = (x) => { const m = /^(vehicle|fine):(.+)$/.exec(x.ref || ''); return x.case_id ? '#/cases/' + encodeURIComponent(x.case_id) : m ? (m[1] === 'vehicle' ? '#/vehicles/' + encodeURIComponent(m[2]) : '#/fines/' + encodeURIComponent(m[2])) : x.kind === 'new_login' ? '#/more?o=sess' : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'; };
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
 // Kalenderdatum „JJJJ-MM-TT“ bleibt dieser Tag; Zeitstempel → Berliner Kalendertag
@@ -3007,6 +3016,7 @@ function fMsg(stored, fallback) {
   if (o && o.a && typeof o.a === 'object') {
     const a = { ...o.a };
     if (typeof a.kind === 'string') a.kind = mk(a.kind);
+    if (typeof a.reason === 'string') a.reason = translateLockReason(S.lang, a.reason); // automatischer Sperrgrund (20.10.2026: blieb in UK/EN deutsch)
     if (typeof a.pos === 'string') a.pos = posL(a.pos);
     if ('unit' in a && a.unit != null) a.unit = unitL(a.unit);
     if (typeof a.site === 'string' && a.site && S.meta && S.meta.workshops) a.site = wsName(a.site);

@@ -1088,14 +1088,22 @@ Historie:\n${history}`;
 // Dokumentablage je Fahrzeug: PDF/JPG/PNG/WEBP bis 5 MB, max. 30 je Fahrzeug und Umgebung, Dubletten (SHA-256) werden erkannt
 export const DOC_KINDS = ['zulassung', 'pruefbericht', 'rechnung', 'versicherung', 'leasing', 'rueckruf', 'foto', 'sonstiges'];
 export const MAX_VEHICLE_DOCS = 30;
+// „gültig bis“ plausibel: 1990 bis heute + 20 Jahre (20.10.2026: 2199-12-31 löste ein abgelaufenes Dokument ab und blendete den Ablauf dauerhaft aus)
+function docValidRange(d) {
+  if (!d) return;
+  if (d < '1990-01-01') throw bad('validation', '„Gültig bis“ liegt vor 1990 – bitte Jahr prüfen.');
+  const today = berlinDate();
+  if (d > String(Number(today.slice(0, 4)) + 20) + today.slice(4)) throw bad('validation', '„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.');
+}
 export async function uploadVehicleDocument(env, user, envName, vehicleId, request, query = {}) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const kind = oneOf(query.kind || 'sonstiges', DOC_KINDS, 'Dokumentart');
   const note = str(query.note || null, { max: 200, field: 'Bemerkung' });
-  const validUntil = str(query.valid_until || null, { max: 10 });
+  const validUntil = str(query.valid_until || null, { max: 10, field: 'Gültig bis' });
   if (validUntil && !isCalendarDate(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
+  docValidRange(validUntil);
   const buf = new Uint8Array(await request.arrayBuffer());
   if (!buf.length) throw bad('empty', 'Leere Datei.');
   if (buf.length > 5 * 1024 * 1024) throw bad('too_large', 'Datei zu groß (max. 5 MB).');
@@ -1139,6 +1147,7 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
   const note = 'note' in body ? str(body.note || null, { max: 200, field: 'Bemerkung' }) : f.doc_note;
   const validUntil = 'valid_until' in body ? str(body.valid_until || null, { max: 10, field: 'Gültig bis' }) : f.doc_valid_until;
   if (validUntil && !isCalendarDate(validUntil)) throw bad('validation', 'Gültig bis im Format JJJJ-MM-TT.');
+  if (validUntil !== f.doc_valid_until) docValidRange(validUntil);
   const before = { kind: f.doc_kind || 'sonstiges', note: f.doc_note ?? null, valid_until: f.doc_valid_until ?? null };
   const after = { kind, note: note ?? null, valid_until: validUntil ?? null };
   if (JSON.stringify(before) === JSON.stringify(after)) return { ok: true, unchanged: true };

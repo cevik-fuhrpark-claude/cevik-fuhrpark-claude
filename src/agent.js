@@ -108,7 +108,7 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
-  (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(*) AS n FROM notifications n
+  (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(DISTINCT n.user_id) AS n FROM notifications n
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
      AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 AND n.hidden_at IS NULL
      AND n.user_id IN (SELECT id FROM users WHERE active=1) GROUP BY n.case_id)) AS undelivered,
@@ -579,9 +579,11 @@ export async function masterPanel(env, environment) {
   // je Befund eine offene Entscheidung: wiederkehrender Befund (neue Übergabe) zählte den alten, nie entschiedenen Eintrag mit (17.10.2026);
   // ältere Einträge desselben Befunds sind als `superseded` markiert (neuester steht zuerst)
   const openIds = new Set();
-  for (const m of inbox) if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && m.finding_id) { if (m.has_newer || openIds.has(m.finding_id)) m.superseded = true; else openIds.add(m.finding_id); }
+  // 20.10.2026: Zähler = angezeigte Liste – auch Einträge, deren Befund inzwischen erledigt ist (stehen mit „✓ erledigt“ zum Abschließen
+  // in der Liste), je Befund einmal (vorher Zähler 3, Liste 6, derselbe erledigte Befund doppelt)
+  for (const m of inbox) if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_id) { if (m.has_newer || openIds.has(m.finding_id)) m.superseded = true; else openIds.add(m.finding_id); }
   for (const m of inbox) delete m.has_newer;
-  const decisionsOpen = openIds.size + inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && m.finding_status === 'offen' && !m.finding_id).length;
+  const decisionsOpen = openIds.size + inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && !m.finding_id).length;
   return {
     environment, generated_at: nowIso(), vehicles_total: vehicles, vehicles_locked: lockedVehicles, vehicles_in_workshop: inWorkshop,
     status_counts: counts, decisions_open: decisionsOpen,

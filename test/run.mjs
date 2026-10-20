@@ -645,7 +645,7 @@ await test('Dokumentablage je Fahrzeug: Rechte, Dateityp, Dubletten, Download, U
   ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'DOCUMENT_EXPIRED'), 'abgelaufen erkannt');
   ok((await users.fleet.get('/api/notifications')).data.notifications.some((n) => n.kind === 'agent_reminder' && /Dokument abgelaufen/.test(n.body)), 'Erinnerung');
   const pdf3 = new TextEncoder().encode('%PDF-1.4\n% Versicherung neu\n%%EOF');
-  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=2099-01-31`, pdf3, H)).status, 201);
+  eq((await users.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=${new Date().getUTCFullYear() + 10}-01-31`, pdf3, H)).status, 201); // seit 20.10.2026 höchstens +20 Jahre
   await users.fleet.post('/api/agent/run');
   ok(!(await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code.startsWith('DOCUMENT_')), 'durch neueres Dokument erledigt');
 });
@@ -14496,7 +14496,7 @@ await test('Fehlersuche 20.10. (4): Kontroll-Wiederholung vor Zustandsprüfungen
   eq((await F.post('/api/agent/run')).status, 200);
   const pf = (await F.get('/api/master')).data.findings.find((x) => x.finding_code === 'FINE_VEHICLE_UNKNOWN' && x.subject_key === fid); ok(pf, 'Befund mit subject_key');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("String(code || '').startsWith('FINE_') && subj ? `<a href=\"#/fines/"), 'afLink');
+  ok(app.includes("if (c.startsWith('FINE_')) return d(`#/fines/${encodeURIComponent(subj)}`, ' data-afine');"), 'afLink');
   eq((app.match(/afLink\(/g) || []).length, 3, 'Akte, Entscheidungen, Befunde');
   // 4. „heute fällig“ statt „in 0 Tagen“
   const { fineFindings } = await import('../src/fines.js'); const { BERLIN_TODAY: today } = { BERLIN_TODAY };
@@ -14598,6 +14598,44 @@ await test('Fehlersuche 20.10. (6): Vorgangs-CSV mit Bezeichnungen (fahrbereit, 
   const q = readFileSync(new URL('../src/quality.js', import.meta.url), 'utf8');
   ok(q.includes('addMonths(berlinDate(), -12)') && !q.includes('Date.now() - 365 * 86400000'), 'Datenqualität 12-Monats-Fenster nach Berliner Tag');
   eq((await F.get('/api/admin/data-quality')).status, 200, 'Datenqualität läuft');
+});
+
+await test('Fehlersuche 20.10. (7): Fahrzeugdokument „gültig bis“ plausibel (1990 bis +20 Jahre, Feldname), Kennzahlen-Ausfall je Fahrzeug bis Zeitraumende, Master-Zähler = Liste, Empfänger statt Benachrichtigungen, Sperrgrund übersetzt, Fahrer-/Lagerbefunde verlinkt', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Versicherung\n%%EOF');
+  const H = { 'content-type': 'application/pdf', 'x-filename': encodeURIComponent('Versicherung.pdf') };
+  const up = (vu) => F.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=${vu}`, pdf, H);
+  let r = await up('2199-12-31'); eq(r.status, 400, 'Jahr 2199'); ok(/20 Jahre/.test(r.data.message), r.data.message);
+  r = await up('1900-01-01'); eq(r.status, 400, 'Jahr 1900'); ok(/vor 1990/.test(r.data.message), r.data.message);
+  r = await up('2026-10-200'); eq(r.status, 400); ok(r.data.message.startsWith('Gültig bis'), 'Feldname: ' + r.data.message);
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation('en', '„Gültig bis“ liegt vor 1990 – bitte Jahr prüfen.') !== '„Gültig bis“ liegt vor 1990 – bitte Jahr prüfen.', 'Meldung übersetzt');
+  const d = new Date(); const pm = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)); const ym = pm.toISOString().slice(0, 7);
+  r = await up(`${ym}-15`); eq(r.status, 201, 'plausibles Datum (Vormonat)');
+  const fid = r.data.id || r.data.file?.id;
+  if (fid) { const p = await F.req('PATCH', `/api/vehicles/${V1}/documents/${fid}`, { valid_until: '2199-01-01' }); eq(p.status, 400, 'Korrektur 2199 nicht angenommen'); }
+  eq(STRINGS.en.cs_hinweis, 'Attention', 'EN-Statuschip eindeutig');
+  // Kennzahlen: Sperre eines offenen Vorgangs aus dem Vormonat zählt höchstens bis Monatsende
+  const cid = (await F.post('/api/cases', { vehicle_id: V1, description: 'Bremse zieht (KPI-Test)', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const c = (await F.get(`/api/cases/${cid}`)).data.case;
+  eq((await F.post(`/api/cases/${cid}/commands`, { action: 'set_safety_lock', command_id: rk(), expected_version: c.version, note: 'Bremse' })).status, 200);
+  db.prepare(`UPDATE cases SET created_at=? WHERE id=?`).run(`${ym}-20T10:00:00.000Z`, cid);
+  db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=?`).run(`${ym}-20T10:00:00.000Z`, cid);
+  const k = (await F.get(`/api/reports/kpi?from=${ym}&to=${ym}`)).data;
+  const row = k.vehicles.find((x) => x.vehicle_id === V1);
+  ok(row && row.locked_h > 200 && row.locked_h <= 12 * 24, 'Sperrzeit bis Monatsende: ' + (row && row.locked_h));
+  ok(row.downtime_h <= 12 * 24, 'Ausfall bis Monatsende: ' + row.downtime_h);
+  const { readFileSync } = await import('node:fs');
+  const ag = readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
+  ok(ag.includes('COUNT(DISTINCT n.user_id) AS n FROM notifications n'), 'URGENT_NOT_DELIVERED zählt Empfänger');
+  ok(ag.includes("if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_id) {") && !ag.includes("m.finding_status === 'offen' && !m.finding_id"), 'Master: Zähler nach derselben Regel wie die Liste');
+  const m = (await F.get('/api/master')).data;
+  eq(m.decisions_open, m.inbox.filter((x) => ['offen', 'gesehen'].includes(x.decision_status) && !x.superseded).length, 'Zähler = Liste');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (typeof a.reason === 'string') a.reason = translateLockReason(S.lang, a.reason);"), 'Sperrgrund in Befunden übersetzt');
+  ok(app.includes("const AF_DRIVER = /^(DRIVER_DOC_|LICENSE_CHECK_|TACHO_CARD_)/;") && app.includes("d(`#/stock/${encodeURIComponent(subj)}`, ' data-astock')"), 'Fahrer-/Lagerbefunde verlinkt');
+  const { translateLockReason } = await import('../public/i18n.js');
+  ok(translateLockReason('en', 'Fahrer meldet: sicherheitskritisch (ungeprüft)') !== 'Fahrer meldet: sicherheitskritisch (ungeprüft)', 'Sperrgrund EN');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
