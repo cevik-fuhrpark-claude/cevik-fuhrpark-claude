@@ -281,8 +281,9 @@ export async function integrationRouter(request, env, ctx, url) {
     const lastGps = new Map(latest.results.map((r) => [r.vehicle_id, r.gps_time]));
     // Gesammelte Schreibzugriffe: je Tabelle EINE Anweisung über json_each (jede Anweisung zählt zum Abfragebudget)
     const unmatched = new Map(); const matchedExt = new Set(); const latestRows = new Map(); const odo = new Map();
-    // höchster km-Stand je Fahrzeug innerhalb dieses Aufrufs: ein späterer kleinerer Tageswert (Nachlieferung mehrerer Tage) wird verworfen –
-    // die Plausibilität im Stapel sah nur den Stand vor dem Aufruf → unbegründeter Rücksprung 100 000 → 90 000 (18.10.2026)
+    // höchster km-Stand je Fahrzeug und Tag innerhalb dieses Aufrufs: ein späterer kleinerer Wert desselben Tages wird verworfen. Mehrere Tage
+    // eines Fahrzeugs prüft die Datenbank in Runden (n-ter Tag = Runde n, siehe unten) – jede Runde sieht die geschriebenen Werte der
+    // vorigen; vorher blockierte ein selbst abgewiesener Tageswert auch spätere plausible Tage desselben Aufrufs (Backlog 103, 20.10.2026)
     const kmMaxInCall = new Map(); let kmRejectedInCall = 0;
     // Nachlieferung mehrerer Tage in beliebiger Reihenfolge (19.10.2026: neueste zuerst → ältere Tage samt km-Stand verworfen):
     // Einträge nach GPS-Zeit aufsteigend verarbeiten (stabil; ohne lesbare Zeit am Ende, wie bisher nach einem Stand mit Zeit abgewiesen)
@@ -335,9 +336,9 @@ export async function integrationRouter(request, env, ctx, url) {
         // je Fahrzeug und Tag höchstens ein Telematik-km-Stand (der jüngste) – sonst entstünden bei 5-Minuten-Takt Tausende Zeilen/Tag
         // Tag = Berliner Kalendertag (Fahrt 00:30 Uhr gehört zum neuen Tag, nicht zum UTC-Vortag)
         const day = berlinDate(gps); const key = `${vehicleId}|${day}`; const cur = odo.get(key);
-        const maxSoFar = kmMaxInCall.get(vehicleId);
+        const maxSoFar = kmMaxInCall.get(key);
         if (maxSoFar !== undefined && Math.round(km) < maxSoFar) kmRejectedInCall++;
-        else { kmMaxInCall.set(vehicleId, Math.round(km)); if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps }); }
+        else { kmMaxInCall.set(key, Math.round(km)); if (!cur || gps > cur.t) odo.set(key, { id: `tel:${provider}:${vehicleId}:${day}`, v: vehicleId, km: Math.round(km), t: gps }); }
       }
       res.matched++;
     }
@@ -361,31 +362,43 @@ export async function integrationRouter(request, env, ctx, url) {
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)
     const NEXT_SMALLER = `COALESCE((SELECT o.km < ${X('km')} AND (o.note IS NULL OR trim(o.note) = '') FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at > ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at ASC LIMIT 1), 0)`;
-    const rejPos = stmts.length;
-    if (odo.size) stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?1)
+    // Runden: je Fahrzeug der n-te Tag (zeitlich) in Runde n, höchstens ODO_ROUNDS; weitere Tage in der letzten Runde mit der bisherigen
+    // Prüfung im Speicher (nie kleiner als der höchste frühere Tag dieser Runde). Je Runde eine Zähl- und eine Einfügeanweisung im selben Stapel.
+    const ODO_ROUNDS = 4; const rounds = []; const perV = new Map();
+    for (const o of [...odo.values()].sort((x, y) => (x.t < y.t ? -1 : x.t > y.t ? 1 : 0))) {
+      const n = perV.get(o.v) || 0; perV.set(o.v, n + 1); const k = Math.min(n, ODO_ROUNDS - 1);
+      if (k === ODO_ROUNDS - 1) { const mk = 'last|' + o.v; const mx = kmMaxInCall.get(mk); if (mx !== undefined && o.km < mx) { kmRejectedInCall++; continue; } kmMaxInCall.set(mk, Math.max(mx ?? 0, o.km)); }
+      (rounds[k] ||= []).push(o);
+    }
+    const roundPos = [];
+    for (const r of rounds.filter(Boolean)) {
+      const rejPos = stmts.length;
+      stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?1)
       WHERE ${X('km')} < (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1)
         OR ${NEXT_SMALLER}
         OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at < ${X('t')} AND d.km > ${X('km')})
         OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at > ${X('t')} AND d.km < ${X('km')} AND (d.note IS NULL OR trim(d.note)=''))`)
-      .bind(JSON.stringify([...odo.values()])));
-    const odoPos = stmts.length;
-    // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage) und – wie bei der
-    // Erfassung in der App – nie größer als der nächste spätere Stand, außer dieser ist begründet (z. B. Tachotausch); sonst würde ein
-    // nachgereichter Telematikwert den späteren manuellen Stand zum „Rücksprung ohne Begründung“ machen (17.10.2026).
-    // Der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
-    if (odo.size) stmts.push(env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
+      .bind(JSON.stringify(r)));
+      const odoPos = stmts.length;
+      // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage) und – wie bei der
+      // Erfassung in der App – nie größer als der nächste spätere Stand, außer dieser ist begründet (z. B. Tachotausch); sonst würde ein
+      // nachgereichter Telematikwert den späteren manuellen Stand zum „Rücksprung ohne Begründung“ machen (17.10.2026).
+      // Der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
+      stmts.push(env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
       SELECT ${X('id')}, ${X('v')}, ${X('km')}, ${X('t')}, ?1, NULL, ?2 FROM json_each(?3)
       WHERE ${X('km')} >= COALESCE((SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1), 0)
         AND NOT ${NEXT_SMALLER}
       ON CONFLICT(id) DO UPDATE SET km=excluded.km, measured_at=excluded.measured_at, created_at=excluded.created_at
         WHERE excluded.measured_at > odometer_readings.measured_at AND excluded.km >= odometer_readings.km
-      ON CONFLICT DO NOTHING`).bind(`telematik:${provider}`, now, JSON.stringify([...odo.values()])));
+      ON CONFLICT DO NOTHING`).bind(`telematik:${provider}`, now, JSON.stringify(r)));
+      roundPos.push([rejPos, odoPos]);
+    }
     if (stmts.length) {
       const out = await env.DB.batch(stmts);
       if (latestRows.size) { const late = (out[latePos] && out[latePos].results && out[latePos].results[0] && out[latePos].results[0].n) || 0; res.rejected += late; res.matched -= late; }
-      if (odo.size) {
-        res.odometer_written = (out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0;
-        res.odometer_rejected = (out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].n) || 0;
+      for (const [rejPos, odoPos] of roundPos) {
+        res.odometer_written = (res.odometer_written || 0) + ((out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0);
+        res.odometer_rejected = (res.odometer_rejected || 0) + ((out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].n) || 0);
       }
     }
     res.odometer_rejected = (res.odometer_rejected || 0) + kmRejectedInCall;

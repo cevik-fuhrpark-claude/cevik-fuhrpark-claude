@@ -15323,6 +15323,29 @@ await test('Fehlersuche 20.10. (17): Telematik (große Zahl-ID, Meldung ohne km 
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/ics-texts.js'"), 'ics-texts.js im Offline-Cache');
 });
 
+await test('Backlog 103: Telematik – mehrere Tage in einem Aufruf werden wie in getrennten Aufrufen geprüft (abgewiesener Tag blockiert spätere plausible nicht), Abfragebudget', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const run = async (split) => {
+    const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+    db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES('hand2',?,1100,'2026-10-02T10:00:00.000Z','manuell',NULL,'2026-10-02T10:00:00.000Z')`).run(V1);
+    const post = (items) => U.own.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items }, H);
+    const a = { external_id: 'R1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-01T08:00:00Z', km: 1200 }; const b = { external_id: 'R1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-03T08:00:00Z', km: 1150 };
+    let w = 0, r = 0;
+    for (const items of split ? [[a], [b]] : [[a, b]]) { const x = (await post(items)).data; w += x.odometer_written; r += x.odometer_rejected; }
+    return { w, r, kms: db.prepare(`SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at`).all(V1).map((o) => o.km).join(',') };
+  };
+  const one = await run(false); const two = await run(true);
+  eq(JSON.stringify(one), JSON.stringify(two), 'ein Aufruf = zwei Aufrufe');
+  eq(one.w, 1); eq(one.r, 1); eq(one.kms, '1100,1150');
+  // sieben Tage, absteigend geliefert, ein Rücksprung am Tag 6: Runden + letzte Runde im Speicher; Budget
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const days = [1000, 1100, 1200, 1300, 1400, 1350, 1500].map((km, i) => ({ external_id: 'R2', vin: 'WMA15SZZ2HM722774', gps_time: `2026-10-0${i + 1}T08:00:00Z`, km })).reverse();
+  const q0 = QSTAT.n; const x = (await U.own.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: days }, H)).data; const nq = QSTAT.n - q0;
+  eq(x.odometer_written, 6, JSON.stringify(x)); eq(x.odometer_rejected, 1);
+  eq(db.prepare(`SELECT group_concat(km) k FROM (SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at)`).get(V1).k, '1000,1100,1200,1300,1400,1500');
+  ok(nq <= 25, 'Abfragen je Aufruf: ' + nq);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
