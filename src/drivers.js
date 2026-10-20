@@ -74,7 +74,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
     if (GROUPED_KINDS.includes(d.kind)) { const n = newest.get(groupKey(d)); if (n && n.id !== d.id) { replaced.push({ id: d.id, by: n.id, by_valid_until: n.valid_until || null, ...(n.valid_until ? {} : { by_issued_on: n.issued_on || entryDay(n.created_at) || null }) }); continue; } }
     const left = days(today, d.valid_until);
     const topic = GROUPED_KINDS.includes(d.kind) ? groupKey(d).slice(d.kind.length + 1) : '';
-    items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic, ...(String(d.title || '').trim() ? { title: String(d.title).trim().slice(0, 80) } : {}) } : {}) });
+    items.push({ type: 'doc', kind: d.kind, id: d.id, valid_until: d.valid_until, days: left, status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok', ...(topic ? { topic, ...(String(d.title || '').trim() ? { title: shortTitle(d.title) } : {}) } : {}) });
   }
   let check = { last: lastCheck ? lastCheck.checked_on : null, result: lastCheck ? lastCheck.result : null, due: null, status: lastCheck ? 'ok' : 'fehlt' };
   if (lastCheck && lastCheck.result !== 'in_ordnung') check.status = 'mangel';
@@ -162,6 +162,12 @@ export async function createDriver(env, user, envName, body) {
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
   await audit(env, user.id, 'driver.create', id, { name, environment: envName });
   return { id };
+}
+
+// Konten, die schon einer Fahrerakte zugeordnet sind (alle Umgebungen, aktiv/inaktiv – der eindeutige Index idx_drivers_user gilt global);
+// die App blendet sie in der Kontoauswahl aus, sonst endete das Speichern mit 409 (Backlog 101, 20.10.2026)
+export async function linkedUserIds(env) {
+  return (await env.DB.prepare('SELECT user_id FROM drivers WHERE user_id IS NOT NULL').all()).results.map((r) => r.user_id);
 }
 
 async function validLinkedUser(env, envName, raw) {
@@ -305,6 +311,20 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   return { id: cid };
 }
 
+// Befundschlüssel je Thema: bis 80 Zeichen unverändert (bestehende Befunde behalten ihren Schlüssel); längere Titel (bis 120) mit
+// Prüfsumme über den vollen Titel – vorher fielen zwei Themen mit gleichem Anfang in einen Befund (Backlog 100, 20.10.2026)
+export function topicKey(topic) {
+  const t = String(topic || '');
+  if (t.length <= 80) return t;
+  let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return t.slice(0, 71) + '#' + h.toString(16).padStart(8, '0');
+}
+// Anzeige: höchstens 80 Zeichen, gekürzt mit „…“ (vorher ohne Kennzeichnung abgeschnitten)
+export function shortTitle(title) {
+  const t = String(title || '').trim().replace(/\s+/g, ' ');
+  return t.length > 80 ? t.slice(0, 79).trimEnd() + '…' : t;
+}
+
 // Für den Fuhrparkagenten: abgelaufene/ablaufende Nachweise, fällige/fehlerhafte Führerscheinkontrollen (nur aktive Fahrer)
 export async function driverFindings(env, environment, settings = null) {
   const list = await listDrivers(env, { role: 'owner' }, environment, {}, settings);
@@ -313,7 +333,7 @@ export async function driverFindings(env, environment, settings = null) {
   for (const d of list) {
     for (const i of d.status.items) {
       // je Thema ein Befund (Unterweisung/Sonstiges mit Titel; vorher fasste der Schlüssel Fahrer|Art mehrere abgelaufene Themen zu einem zusammen, 17.10.2026)
-      const subject = `${d.id}|${i.kind}${i.topic ? '|' + i.topic.slice(0, 80) : ''}`;
+      const subject = `${d.id}|${i.kind}${i.topic ? '|' + topicKey(i.topic) : ''}`;
       if (i.status === 'abgelaufen') out.push({ code: 'DRIVER_DOC_EXPIRED', subject, severity: i.kind === 'fuehrerschein' || i.kind === 'fahrerkarte' ? 'kritisch' : 'handeln', requires_decision: 1,
         ...fm('DRIVER_DOC_EXPIRED', { name: d.display_name, ddoc: L[i.kind] ? i.kind : 'sonstiges', topic: i.title || null, date: i.valid_until }), next_action: 'Nicht einsetzen, bis ein gültiger Nachweis vorliegt; neuen Nachweis erfassen.' });
       else if (i.status === 'laeuft_ab') out.push({ code: 'DRIVER_DOC_EXPIRES_SOON', subject, severity: 'hinweis', requires_decision: 0,

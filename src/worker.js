@@ -513,10 +513,15 @@ async function handleApi(request, env, ctx, url) {
       await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null });
       return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}.csv"` } });
     }
-    return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options } : {}) });
+    return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
   }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
-  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') return json(await drivers.driverDetail(env, user, envName, mm[1]));
+  if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') {
+    const dd = await drivers.driverDetail(env, user, envName, mm[1]);
+    // Leitung: Konten anderer Akten für die Kontoauswahl „Stammdaten ändern“ (Backlog 101)
+    if (['owner', 'fleet'].includes(user.role)) dd.linked_user_ids = (await drivers.linkedUserIds(env)).filter((u) => u !== dd.driver.user_id);
+    return json(dd);
+  }
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'PATCH') return json(await drivers.updateDriver(env, user, envName, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/documents$/)) && m === 'POST') return json(await drivers.addDriverDocument(env, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)\/documents\/([\w-]+)\/cancel$/)) && m === 'POST') return json(await drivers.cancelDriverDocument(env, user, envName, mm[1], mm[2], await readJson(request)));

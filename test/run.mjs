@@ -6678,7 +6678,7 @@ await test('Oberfläche: jeder interne Link (href="#/…") passt auf eine Route 
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const start = src.indexOf('const routes = [');
   const routes = new Function(src.slice(start, src.indexOf('\n];', start) + 3).replace(/,\s*view\w+\]/g, ', null]') + '; return routes;')();
-  ok(/const h = \(location\.hash \|\| '#\/'\)\.replace\(\/%3A\/gi, ':'\)/.test(src), 'route() normalisiert %3A');
+  ok(/(?:const|let) h = \(location\.hash \|\| '#\/'\)\.replace\(\/%3A\/gi, ':'\)/.test(src), 'route() normalisiert %3A');
   // href="#/…" sowie Sprungziele als Zeichenkette/Vorlage (`#/…`, '#/…' bzw. '#/cases/' + id), z. B. in „Heute zu tun“ oder location.hash
   const strs = [...src.matchAll(/[`'](#\/[^`'"]*)[`'](\s*\+)?/g)].map((m) => m[1] + (m[2] && m[1].endsWith('/') ? '${id}' : ''));
   ok(strs.length > 20, 'Sprungziele als Zeichenkette gefunden: ' + strs.length);
@@ -7657,7 +7657,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
   // „Heute zu tun“ (Leitung): Gruppe „Fahrzeuge mit kritischen Agentenbefunden“ aus derselben Liste, Direktsprung in die gefilterte Fahrzeugliste
   { const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(/async function fleetTodo[\s\S]*?\/api\/vehicles'\)\.then\(\(r\) => r\.vehicles\.filter\(\(v\) => v\.agent_findings_critical > 0\)\)[\s\S]*?\['todo_vfind_crit', af,/.test(app), '„Heute zu tun“: Gruppe kritische Agentenbefunde');
-    ok(app.includes('href="#/vehicles?f=with_findings"') && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
+    ok(app.includes("href=\"${hj('#/vehicles?f=with_findings')}\"") && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
     ok(/printHead\(\[`\$\{t\('period'\)\}: \$\{fmtMonth\(from\)\} – \$\{fmtMonth\(to\)\}`[\s\S]*?id="costprt"[\s\S]*?class="list print-summary"[\s\S]*?\$\('#costprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Kosten je Fahrzeug druckbar (Zeitraum/Standort im Vermerk, Fahrzeugzeilen zusammengefasst)');
     ok(/async function viewKpi[\s\S]*?printHead\(\[`\$\{t\('period'\)\}[\s\S]*?id="kpiprt"[\s\S]*?\$\('#kpiprt'\)\.onclick = async \(\) => \{[^\n]*window\.print\(\)/.test(app), 'Kennzahlen druckbar');
     ok(/@media print[\s\S]*?\.print-summary details:not\(\[open\]\) \{ display: block !important; \}/.test((await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Druck-CSS: zugeklappte Zeilen als Zusammenfassung');
@@ -7667,7 +7667,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
     ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
     ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && /\[\/\^#\\\/master\(\?:\\\?q=\(\[\^&\]\*\)\)\?\$\/, \(q\) => viewMaster\(q\)\]/.test(app) && /async function viewMaster\(q\) \{[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
-    ok(app.includes('href="#/vehicles?f=with_notes" id="dnotes"') && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
+    ok(app.includes("href=\"${hj('#/vehicles?f=with_notes')}\" id=\"dnotes\"") && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
     const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
     eq(crit, env.DB.db.prepare("SELECT COUNT(DISTINCT f.vehicle_id) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen' AND f.severity='kritisch'").get().n, 'Anzahl Fahrzeuge mit kritischen Befunden = Datenbank'); }
   const { STRINGS } = await import('../public/i18n.js');
@@ -15217,6 +15217,62 @@ await test('Backlog 99: Führerscheinkontrolle stornieren (Verlauf bleibt, zähl
   eq((await U.fleet.post(`/api/drivers/${dr}/license-checks`, { checked_on: today, result: 'maengel', note: 'falscher Fahrer' })).status, 201, 'stornierte zählt nicht als Dublette');
   eq(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='driver.license_check_cancel'").get().n, 1);
   ok(app.includes('data-lccancel') && (i18n.match(/lc_cancel_reason: '/g) || []).length === 3 && i18n.includes("'driver.license_check_cancel'"), 'App/Texte');
+});
+
+await test('Backlog 101: Kontoauswahl der Fahrerakte ohne Konten anderer Akten (auch anderer Standort/inaktiv), Server liefert linked_user_ids nur der Leitung', async () => {
+  const { U } = await freshWorld();
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = (await U.fleet.post('/api/drivers', { display_name: 'Anna Hamburg', site: 'Hamburg', user_id: U.driver.id })).data.id;
+  const b = (await U.fleet.post('/api/drivers', { display_name: 'Bernd Dortmund', site: 'Dortmund' })).data.id;
+  const l = (await U.fleet.get('/api/drivers?site=Dortmund')).data;
+  ok(!l.drivers.some((d) => d.id === a), 'Akte Hamburg nicht in der gefilterten Liste');
+  ok((l.linked_user_ids || []).includes(U.driver.id), 'verknüpftes Konto trotz Standortfilter bekannt');
+  const db = (await U.fleet.get(`/api/drivers/${b}`)).data; ok(db.linked_user_ids.includes(U.driver.id), 'andere Akte: Konto belegt');
+  const da = (await U.fleet.get(`/api/drivers/${a}`)).data; ok(!da.linked_user_ids.includes(U.driver.id), 'eigene Akte: eigenes Konto wählbar');
+  eq((await U.fleet.patch(`/api/drivers/${b}`, { user_id: U.driver.id })).status, 409, "Server lehnt weiter ab");
+  const own = await U.driver.get(`/api/drivers/${a}`); eq(own.status, 200); eq(own.data.linked_user_ids, undefined, 'Fahrer sieht keine Kontenliste');
+  eq((await U.driver.get('/api/drivers')).data.linked_user_ids, undefined);
+  ok(app.includes('dr.linked_user_ids') && app.includes('x.linked_user_ids'), 'App nutzt die Liste');
+});
+
+await test('Backlog 100: Unterweisungen mit langem, gleich beginnendem Titel – je Thema ein Befund, Anzeige gekürzt mit „…“, kurze Titel behalten ihren Schlüssel', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const drv = await import('../src/drivers.js');
+  const dr = (await U.fleet.post('/api/drivers', { display_name: 'Lena Langtitel' })).data.id;
+  const env = db.prepare('SELECT environment FROM drivers WHERE id=?').get(dr).environment;
+  const base = 'Jährliche Sicherheitsunterweisung gemäß DGUV Vorschrift 70 Fahrzeuge und Ladungssicherung Standort ';
+  ok(base.length > 80, 'Testtitel länger als 80');
+  for (const [title, until] of [[base + 'Dortmund', '2026-01-31'], [base + 'Hamburg', '2026-02-28'], ['Gefahrgut ADR', '2026-03-31']]) {
+    const r = await U.fleet.post(`/api/drivers/${dr}/documents`, { kind: 'unterweisung', title, valid_until: until, evidence: 'Teilnehmerliste' }); ok(r.status === 201, JSON.stringify(r.data));
+  }
+  const fs = (await drv.driverFindings(e, env)).filter((f) => f.code === 'DRIVER_DOC_EXPIRED' && f.subject.startsWith(dr));
+  eq(fs.length, 3, 'drei Themen, drei Befunde: ' + JSON.stringify(fs.map((f) => f.subject)));
+  ok(fs.every((f) => f.subject.length <= dr.length + 14 + 80), 'Schlüssel bleibt begrenzt');
+  ok(fs.some((f) => f.subject === `${dr}|unterweisung|gefahrgut adr`), 'kurzer Titel: Schlüssel wie bisher');
+  eq(drv.topicKey('a'.repeat(80)), 'a'.repeat(80)); ok(drv.topicKey('a'.repeat(81)) !== drv.topicKey('a'.repeat(80) + 'b'), 'Prüfsumme über den vollen Titel');
+  const items = (await U.fleet.get(`/api/drivers/${dr}`)).data.status.items.filter((i) => i.kind === 'unterweisung');
+  eq(items.length, 3); ok(items.filter((i) => i.title.endsWith('…') && i.title.length === 80).length === 2, 'lange Titel gekürzt mit „…“: ' + JSON.stringify(items.map((i) => i.title)));
+});
+
+await test('Backlog 102: Startseiten-Sprünge tragen den Standort des Zählers (vs), Router setzt den Listenfilter und entfernt vs', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const home = app.slice(app.indexOf('async function viewHome()'), app.indexOf('async function viewCases()'));
+  for (const l of ['#/cases', '#/cases?f=repeat', '#/plan', '#/plan?s=mdue', '#/quality?f=inspection_no_result', '#/tires?f=winter_bad', '#/vehicles?f=with_findings', '#/vehicles?f=with_notes'])
+    ok(home.includes(`href="\${hj('${l}')}"`) && !home.includes(`href="${l}"`), 'Startseite: ' + l);
+  ok(app.includes('h = applySiteJump(h);') && /VS_KEYS = \{ cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite' \}/.test(app), 'Router');
+  // Logik der Hilfsfunktionen isoliert prüfen
+  const grab = (name) => { const i = app.indexOf(`function ${name}(`); let d = 0, j = app.indexOf('{', i); for (; j < app.length; j++) { if (app[j] === '{') d++; else if (app[j] === '}' && --d === 0) break; } return app.slice(i, j + 1); };
+  const keys = app.match(/const VS_KEYS = [^;]+;/)[0];
+  const S = {}; let replaced = null; const history = { replaceState: (a, b, h) => { replaced = h; } };
+  const f = new Function('S', 'history', `${keys} ${grab('hj')} ${grab('applySiteJump')} return { hj, applySiteJump };`)(S, history);
+  S.me = { role: 'fleet', home_site: 'Hamburg' }; eq(f.hj('#/cases'), '#/cases?vs=*'); eq(f.hj('#/plan?s=mdue'), '#/plan?s=mdue&vs=*');
+  S.me = { role: 'dispatch', home_site: 'Hamburg' }; eq(f.hj('#/cases'), '#/cases?vs=Hamburg'); S.dispoAll = true; eq(f.hj('#/cases'), '#/cases?vs=*');
+  S.me = { role: 'workshop', home_site: 'Dortmund' }; eq(f.hj('#/plan'), '#/plan');
+  S.me = { role: 'fleet' }; S.caseVsite = 'Dortmund';
+  eq(f.applySiteJump('#/cases?f=repeat&vs=*'), '#/cases?f=repeat'); eq(S.caseVsite, ''); eq(replaced, '#/cases?f=repeat');
+  eq(f.applySiteJump('#/vehicles?f=with_notes&vs=Hamburg'), '#/vehicles?f=with_notes'); eq(S.vehSite, 'Hamburg');
+  eq(f.applySiteJump('#/plan?vs=*'), '#/plan'); eq(S.planVsite, '');
+  eq(f.applySiteJump('#/cases?f=open'), '#/cases?f=open', 'ohne vs unverändert');
+  S.me = { role: 'driver' }; S.caseVsite = undefined; f.applySiteJump('#/cases?vs=Hamburg'); eq(S.caseVsite, undefined, 'Fahrer ohne Standortfilter');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (19.10.2026): Fahrerakte – Nachweise-Tabelle bei 390 px gestapelt (kein Umbruch mitten im Wort, kein Querscrollen),
-# App-Konto nachträglich in „Stammdaten bearbeiten“ verknüpfen; „Fahrer anlegen“ bietet nur freie Konten der Ansicht an.
+# App-Konto nachträglich (20.10.: ohne Konten anderer Akten, Backlog 101) in „Stammdaten bearbeiten“ verknüpfen; „Fahrer anlegen“ bietet nur freie Konten der Ansicht an.
 # EN 390 px, UK 390 px, DE 1440 px; keine Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -32,6 +32,8 @@ with sync_playwright() as p:
       opts=q.eval_on_selector_all('#ndf select[name=user_id] option','os=>os.map(o=>o.value)')
       check(u2 in opts and u1 not in opts and u3 not in opts,f'{lang}/{w}: „Fahrer anlegen“ nur freie Konten der Ansicht')
       q.goto(B+f'/#/drivers/{d2}'); q.wait_for_selector('#edf',state='attached',timeout=15000)
+      eo=q.eval_on_selector_all('#edf select[name=user_id] option','os=>os.map(o=>o.value)')
+      check(u1 not in eo and u2 in eo,f'{lang}/{w}: „Stammdaten ändern“ ohne Konto einer anderen Akte (Backlog 101)')
       ov=q.evaluate("() => { const t = document.querySelector('table'); return t ? t.scrollWidth - t.parentElement.clientWidth : 0; }")
       check(ov<=1,f'{lang}/{w}: Nachweise-Tabelle ohne Überbreite ({ov})')
       if w<=420: check(q.evaluate("() => !!document.querySelector('table.stack')"),f'{lang}/{w}: Nachweise gestapelt')
