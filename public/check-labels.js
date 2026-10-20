@@ -81,7 +81,11 @@ export function checkKeysFor(word) {
   const out = [];
   for (const k of Object.keys(CHECK_LABELS.de)) {
     if (['de', 'uk', 'en'].some((l) => String(CHECK_LABELS[l][k] || '').toLocaleLowerCase('de').includes(w))) out.push(k);
-    if (out.length >= 3) break; // D1: höchstens 100 Parameter je Abfrage (5 Wörter × (4 Schreibweisen + 3 Schlüssel))
+    if (out.length >= 3) break; // D1: höchstens 100 Parameter je Abfrage (5 Wörter × (4 Schreibweisen + 3 Schlüssel + 2 Vorsätze))
+  }
+  // angezeigter Vorsatz in UK/EN („[Pre-trip check]“, „[Перевірка перед виїздом]“) → gespeicherter deutscher Vorsatz (20.10.2026: Suche fand ihn nicht)
+  for (const [k, de] of Object.entries(CHECK_PREFIX.de)) {
+    if (['uk', 'en'].some((l) => CHECK_PREFIX[l][k].toLocaleLowerCase('de').includes(w))) out.push(`[${de}]`);
   }
   return out;
 }

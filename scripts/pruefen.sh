@@ -110,6 +110,7 @@ UI-Fahrleistung je Monat (Fahrzeugakte)|ui-fahrleistung.py|/tmp/cfp-fahrleistung
 UI-Kosten je km (Regel Fahrleistung)|ui-kosten-km.py|/tmp/cfp-kostenkm.log
 UI-km-Zähler gesunken (Tachotausch)|ui-tachotausch.py|/tmp/cfp-tachotausch.log
 UI-Werkstattplan nach Tachotausch|ui-plan-tachotausch.py|/tmp/cfp-plan-tachotausch.log
+UI-Einladung ungültig, Datenqualität-Link Akte, Offline-Fahrzeugliste|ui-einladung-dqlink.py|/tmp/cfp-einladung-dqlink.log
 '
 N=0
 NL='

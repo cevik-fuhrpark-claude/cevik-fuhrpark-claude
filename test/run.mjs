@@ -11579,7 +11579,7 @@ await test('Fehlersuche 18.10. (5): Oberfläche – Service Worker speichert nur
   ok(/c\.addAll\(SHELL\.map/.test(sw) && !/\.put\(e\.request/.test(sw) && sw.includes("'/version.json']"), 'Hülle atomar je Fassung inkl. version.json');
   ok(sw.includes(": '#/push';") && app.includes("[/^#\\/push$/, () => { location.replace(notifHref({})); }]"), 'Push ohne Ziel → Rollenregel der Hinweisliste');
   ok(/S\.me\.language = l\.value; saveOfflineSession\(\);/.test(app), 'Sprachwechsel in der Offline-Sitzung');
-  ok(app.includes("if (!localStorage.getItem(`cfp_veh_${S.me.id}_${S.me.environment}`)) vehiclesCached()"), 'Fahrzeugliste vorhalten');
+  ok(app.includes("mayReport() && navigator.onLine) vehCacheRefresh();") && app.includes('if (!force && localStorage.getItem(vkey) && Date.now() - at < 300000) return;'), 'Fahrzeugliste vorhalten (seit 20.10.2026 auch auffrischen)');
   ok(/const photoTarget = [^\n]*S\.me\.role !== 'driver'/.test(app), 'Foto-Ziel offline wie online');
   ok(/done\.size && \/\^#\\\/\?\$\/\.test\(location\.hash \|\| '#\/'\) && !viewDirty\(\)\) route\(\);/.test(app), 'Startseite nach dem Senden');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].check_photos_repeat && STRINGS[l].rule_checked_on, l);
@@ -14565,6 +14565,39 @@ await test('Disposition „seit“ = Beginn der Sperre bzw. des Status (Backlog 
   r = await row(); eq(r.status_since, sinceBefore, 'Kommentar verschiebt „seit“ nicht'); ok(r.updated_at >= (sinceBefore || ''), 'updated_at weiter');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('fmtDT(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at)'), 'Tafel nutzt lock_since/status_since');
+});
+
+await test('Fehlersuche 20.10. (6): Vorgangs-CSV mit Bezeichnungen (fahrbereit, Werkstattname), Suche nach UK/EN-Vorsatz von Kontroll-Vorgängen, Startseite „Mangel erneut“ = Listenfilter, Datenqualität-Links nur wenn sinnvoll, Offline-Fahrzeugliste aktuell, Einladung ohne Sackgasse', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const { DRV_DE } = await import('../src/cases.js'); const { STRINGS } = await import('../public/i18n.js');
+  for (const [k, v] of Object.entries(DRV_DE)) eq(v, STRINGS.de['drv_' + k], `Fahrbereit ${k} wie in der App`);
+  const cid = (await F.post('/api/cases', { vehicle_id: V1, description: 'Blinker hinten links (CSV-Test)', priority: 'mittel', driveability: 'nicht_fahrbereit', request_key: rk() })).data.id;
+  db.prepare(`UPDATE cases SET workshop_site='MUENCHEN', description='[Kontrolle Abfahrt] blinker_warnblinker: hinten links ohne Funktion' WHERE id=?`).run(cid);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/cases?format=csv&status=')).data);
+  const line = csv.split('\r\n').find((l) => l.includes('hinten links ohne Funktion'));
+  ok(line, 'Zeile im CSV');
+  ok(line.includes(';Nein, nicht fahrbereit;Werkstatt München;'), 'Bezeichnungen statt Codes: ' + line);
+  ok(!/;nicht_fahrbereit;|;MUENCHEN;/.test(line), 'keine Codes');
+  // Suche nach dem angezeigten Vorsatz in UK/EN
+  for (const q of ['pre-trip', 'Перевірка перед', 'Kontrolle Abfahrt']) {
+    const r = await F.get('/api/cases?status=&q=' + encodeURIComponent(q));
+    eq(r.status, 200, q); ok(r.data.cases.some((c) => c.id === cid), `Suche „${q}“ findet den Kontroll-Vorgang`);
+  }
+  const { checkKeysFor } = await import('../public/check-labels.js');
+  ok(checkKeysFor('post-repair').includes('[Kontrolle nach Reparatur]') && !checkKeysFor('post-repair').includes('[Kontrolle Abfahrt]'), 'Vorsatz nach Reparatur');
+  // fünf Wörter mit Vorsätzen bleiben unter dem D1-Parameterlimit (100)
+  eq((await F.get('/api/cases?status=&q=' + encodeURIComponent('check check2 check3 check4 check5'))).status, 200, 'fünf Wörter');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const recentRepeat = (c) => !!c.last_repeat_at && BERLIN_FMT.format(new Date(c.last_repeat_at)) >= bDate(-2);"), 'Startseite zählt wie der Listenfilter (Berliner Tage)');
+  ok(app.includes("isMgr() && v.active && !v.eval_excluded ? ` · <a href=\"${href}\">") && app.includes("${dqLink('#/quality?f=telematics_km_rejected')}") && !app.includes('· <a href="#/quality?f=telematics_km_rejected">'), 'Datenqualität-Link in der Akte nur für Leitung bei Fahrzeug in Betrieb');
+  ok(app.includes("if (jump && vsDef('dqSite') && !r.counts[pre]) { S.dqSite = '';"), 'Direktsprung: Standort „Alle“, wenn Befund woanders');
+  ok(app.includes('x.providers.map(provL)'), 'Anbieter als Bezeichnung');
+  ok(app.includes('<form id="f" class="narrow panel" novalidate>') && app.includes('id="invbad"'), 'Einladung: App-Meldung statt Browserblase, Weg zur Anmeldung');
+  ok(!app.includes('S.vehCache') && app.includes('VEH_CHANGE_RE.test(path)) setTimeout(() => vehCacheRefresh(true)') && !app.includes("if (!localStorage.getItem(`cfp_veh_"), 'Offline-Fahrzeugliste wird aufgefrischt');
+  const q = readFileSync(new URL('../src/quality.js', import.meta.url), 'utf8');
+  ok(q.includes('addMonths(berlinDate(), -12)') && !q.includes('Date.now() - 365 * 86400000'), 'Datenqualität 12-Monats-Fenster nach Berliner Tag');
+  eq((await F.get('/api/admin/data-quality')).status, 200, 'Datenqualität läuft');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -1,6 +1,6 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso, berlinDate, berlinWindowStartIso, berlinDateTime, berlinDaySql, normPlate, caseVariants, intParam } from './util.js';
+import { forbidden, nowIso, addMonths, berlinDate, berlinWindowStartIso, berlinDateTime, berlinDaySql, normPlate, caseVariants, intParam } from './util.js';
 
 // Unfall-Wortstämme auf Ukrainisch: lower() wirkt in SQLite/D1 nur auf A–Z – daher alle Schreibweisen (klein, GROSS, Anfang groß)
 // einzeln suchen („АВАРІЯ“, „Дтп“ wurden vorher nicht erkannt). Deutsch/Englisch genügt lower().
@@ -149,7 +149,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND ${berlinDaySql('c.closed_at')} <= n.done_date
       AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher') ${vf ? 'AND n.vehicle_id IN (SELECT value FROM json_each(?))' : ''}
-      GROUP BY n.id ORDER BY n.done_date DESC LIMIT ${DQ_MAX + 1}`).bind(envName, new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10), ...(vf ? [vf] : [])).all(),    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
+      GROUP BY n.id ORDER BY n.done_date DESC LIMIT ${DQ_MAX + 1}`).bind(envName, addMonths(berlinDate(), -12), ...(vf ? [vf] : [])).all(), // Berliner Tag (20.10.2026: vorher UTC-Datum, 00–02 Uhr ein Tag mehr)    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
     noResultQuery(env, null, DQ_MAX + 1, vf).all(),
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)

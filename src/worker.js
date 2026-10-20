@@ -565,8 +565,9 @@ async function handleApi(request, env, ctx, url) {
       const claimMap = ['owner', 'fleet'].includes(user.role)
         ? new Map((await env.DB.prepare('SELECT case_id, status, insurer, claim_no FROM insurance_claims WHERE environment=?').bind(envName).all()).results.map((r) => [r.case_id, r]))
         : null;
+      const wsNames = new Map((await env.DB.prepare('SELECT code, name FROM workshops').all()).results.map((r) => [r.code, r.name]));
       // Begrenzung sichtbar machen (wie die Vorgangsliste): Antwort-Header, die Oberfläche zeigt einen Hinweis
-      return new Response(cases.casesCsv(rows, maint.csvCell, fmt, claimMap), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"`, ...(cmeta.truncated ? { 'x-cfp-truncated': String(CASES_CSV_MAX) } : {}) } });
+      return new Response(cases.casesCsv(rows, maint.csvCell, fmt, claimMap, wsNames), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vorgaenge_${envName}_${berlinDate()}.csv"`, ...(cmeta.truncated ? { 'x-cfp-truncated': String(CASES_CSV_MAX) } : {}) } });
     }
     const meta = {}; const list = await cases.listCases(env, user, envName, q, meta);
     return json({ cases: list, site: meta.site ?? null, site_options: meta.site_options || [], ...(user.role === 'driver' ? {} : { stale_days: meta.stale_days ?? null }), truncated: !!meta.truncated, limit: Math.min(Number(q.limit) || 200, 500) });

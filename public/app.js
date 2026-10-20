@@ -109,8 +109,11 @@ async function api(method, path, body, extra = {}) {
     if (code === 'user_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
   }
+  // Fahrzeugstamm/Zuordnungen geändert → Offline-Fahrzeugliste auf diesem Gerät gleich auffrischen (20.10.2026)
+  if (method !== 'GET' && VEH_CHANGE_RE.test(path)) setTimeout(() => vehCacheRefresh(true), 0);
   return data;
 }
+const VEH_CHANGE_RE = /^\/api\/(vehicles(\/import|\/[^/?]+\/(active|drivers))?|assignments\/[^/?]+)(\?|$)/;
 // Server-Meldung (deutsch) in der aktuellen Oberflächensprache: erst Code (err_*), sonst bekannter Text; unbekannt → null
 function srvText(code, msg) {
   if (code === 'validation' && S.lang === 'de') return deLimitText(msg); // Zahlgrenzen im deutschen Format („0,01“, „100.000“)
@@ -626,8 +629,9 @@ async function viewSetup() {
 async function viewInvite(token) {
   let info;
   try { info = await api('GET', '/api/invite/' + encodeURIComponent(token)); }
-  catch (e) { render(`<div class="center"><div class="panel narrow alert"><p>${esc(e.message)}</p></div></div>`); return; }
-  render(`<div class="center"><form id="f" class="narrow panel"><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
+  // benutzte/abgelaufene Einladung: Weg zur Anmeldung und wen man ansprechen kann, Sprachauswahl (20.10.2026: vorher Sackgasse)
+  catch (e) { render(`<div class="center"><div class="panel narrow alert" id="invbad"><p>${esc(e.message)}</p><p class="small">${esc(t('forgot_pw_hint'))}</p><div class="actions"><a class="btn block" href="#/login">${esc(t('login'))}</a></div>${langSelect()}</div></div>`); bindLang(); return; }
+  render(`<div class="center"><form id="f" class="narrow panel" novalidate><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
     <p class="muted">${esc(t('username'))}: <b>${esc(info.username)}</b> · ${esc(t('role_' + info.role))}${info.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>
     <label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input id="p" type="password" autocomplete="new-password" minlength="10" required>
     <div class="actions"><button class="btn block">${esc(t('set_password'))}</button></div>${langSelect()}</form></div>`);
@@ -697,7 +701,7 @@ async function viewHome() {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
   // Werkstatt/Leitung/Disposition: Fahrzeugliste für „Schaden melden“/Abfahrtskontrolle ohne Netz ebenfalls vorhalten (19.10.2026: offline
   // nach dem Anmelden nur „Keine Verbindung“) – einmal je Anmeldung im Hintergrund, Fahrer siehe unten
-  if (S.me.role !== 'driver' && mayReport() && navigator.onLine) { try { if (!localStorage.getItem(`cfp_veh_${S.me.id}_${S.me.environment}`)) vehiclesCached().catch(() => {}); } catch {} }
+  if (S.me.role !== 'driver' && mayReport() && navigator.onLine) vehCacheRefresh();
   let d, cases;
   try {
     // Disposition mit Standard-Standort: Standort schon serverseitig filtern – sonst verdrängen neuere Vorgänge anderer Standorte die eigenen aus den 8 (19.10.2026)
@@ -716,7 +720,7 @@ async function viewHome() {
     let mv = null; let mvOffline = false;
     try { mv = (await api('GET', '/api/me/vehicles')).vehicles; try { localStorage.setItem(mvKey, JSON.stringify({ at: new Date().toISOString(), vehicles: mv })); } catch {}
       // Fahrzeugliste für „Schaden melden“/„Abfahrtskontrolle“ ohne Netz vorhalten (18.10.2026: ohne vorheriges Öffnen dieser Seiten offline unbenutzbar)
-      try { if (!localStorage.getItem(`cfp_veh_${S.me.id}_${S.me.environment}`)) vehiclesCached().catch(() => {}); } catch {} }
+      vehCacheRefresh(); }
     catch { try { const c = JSON.parse(localStorage.getItem(mvKey) || 'null'); if (c) { mv = c.vehicles; mvOffline = c.at; } } catch {} }
     if (mvOffline || cases === null) html += `<div class="panel alert">${esc(t('offline_view'))}${mvOffline ? ` (${esc(t('as_of'))} ${fmtDT(mvOffline)})` : ''}</div>`;
     if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => `<section class="panel ${v.locked || v.coupled?.locked ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${coupledLockedChip(v.coupled)}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${esc(tn('open_reports_n', v.open_cases_total))}</span>` : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}</div>
@@ -867,7 +871,8 @@ async function fleetTodo() {
 
 // Listen der Prüftermin-Übersicht, die der Server bei 200 kappt (`lists_truncated`) → Zähler „200+“
 const TODO_TRUNC = { todo_defects_no_case: 'defects_without_case', todo_reinspection: 'reinspection_pending', todo_result_missing: 'result_missing' };
-const recentRepeat = (c) => c.last_repeat_at && Date.now() - Date.parse(c.last_repeat_at) < 3 * 86400000;
+// wie der Listenfilter repeat_days=3 (Server: ab Berliner Mitternacht vor zwei Tagen) – 20.10.2026: vorher 72 h ab jetzt, Startseite zählte Vorgänge, die die verlinkte Liste nicht zeigt
+const recentRepeat = (c) => !!c.last_repeat_at && BERLIN_FMT.format(new Date(c.last_repeat_at)) >= bDate(-2);
 function caseList(list, empty) {
   if (!list.length) return `<p class="muted">${esc(empty || t('no_cases'))}</p>`;
   return `<div class="list">${list.map((c) => `<a class="row p-${esc(c.priority)}" href="#/cases/${esc(c.id)}">
@@ -1073,9 +1078,20 @@ function bindOutbox() {
   };
 }
 
+// Offline-Fahrzeugliste auffrischen: fehlt sie oder ist sie älter als 5 Minuten (bzw. force nach eigener Änderung) – 20.10.2026: vorher nur
+// angelegt, wenn sie fehlte; nach Fahrzeugimport/-änderung/neuer Zuordnung blieb sie auf dem Gerät veraltet
+function vehCacheRefresh(force = false) {
+  if (!S.me || !navigator.onLine) return;
+  try {
+    const vkey = `cfp_veh_${S.me.id}_${S.me.environment}`;
+    const at = Number(localStorage.getItem(vkey + '_at')) || 0;
+    if (!force && localStorage.getItem(vkey) && Date.now() - at < 300000) return;
+  } catch {}
+  vehiclesCached().catch(() => {});
+}
 async function vehiclesCached() {
   const vkey = `cfp_veh_${S.me.id}_${S.me.environment}`;
-  try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability, coupled: v.coupled || null })))); } catch {} return vs; }
+  try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey + '_at', String(Date.now())); localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability, coupled: v.coupled || null })))); } catch {} return vs; }
   catch (err) { if (!err.offline) throw err; let vs = null; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; return vs; }
 }
 // Netz bricht beim Foto-Upload des direkten Sendens ab: restliche Fotos auf dem Gerät speichern und über den Postausgang nachreichen
@@ -1829,7 +1845,9 @@ async function viewVehicle(id, focusEv = null) {
   if (v.eval_excluded) html += `<div class="panel alert"><b>${esc(t('eval_excluded'))}</b> – ${esc(t('eval_excluded_hint'))}${v.eval_excluded_reason ? `<div class="small">${esc(v.eval_excluded_reason)}</div>` : ''}</div>`;
   html += `<div class="actions noprint"><a class="btn secondary" href="#/vehicles/${esc(v.id)}/timeline">${esc(t('timeline'))}</a><a class="btn secondary" href="#/emergency?v=${esc(v.id)}">☎ ${esc(t('em_title'))}</a>${isMgr() ? `<a class="btn secondary" href="#/vehicles/qr/${esc(v.id)}">${esc(t('qr_sticker'))}</a>` : ''}${S.me.role === 'owner' ? `<a class="btn secondary" href="#/audit?v=${esc(v.id)}" title="${esc(t('audit_veh_hint'))}">${esc(t('audit'))}</a>` : ''}<button type="button" class="btn secondary" id="prt">${esc(t('print'))}</button></div>`;
   if (isMgr()) html += `<details class="panel"><summary>${esc(t('edit_master'))}</summary><form id="evf">${vehicleForm(v)}<div class="actions"><button class="btn">${esc(t('save'))}</button>${v.active ? `<button type="button" class="btn secondary" id="deact">${esc(t('deactivate_vehicle'))}</button>` : `<button type="button" class="btn secondary" id="react">${esc(t('activate_vehicle'))}</button>`}<button type="button" class="btn secondary" id="evx">${esc(v.eval_excluded ? t('eval_include') : t('eval_exclude'))}</button></div></form></details>`;
-  if (d.telematics && d.telematics.length) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tm_live'))}</h3>${d.telematics.map((x) => `${x.reported_plate ? `<p class="small" style="color:var(--stop)" data-tmmism>⚠ ${esc(t('dq_telematics_plate_mismatch'))}: ${esc(provL(x.provider))} ${esc(x.external_id || '')} → ${esc(t('tm_reports'))} <b>${esc(x.reported_plate)}</b> · <a href="#/quality?f=telematics_plate_mismatch">${esc(t('show_in_dq'))} ›</a></p>` : ''}<dl class="kv"><dt>${esc(t('tm_source'))}</dt><dd>${esc(provL(x.provider))} (${esc(x.match_basis === 'vin' ? t('vin') : t('tm_mappings'))})</dd><dt>${esc(t('tm_time'))}</dt><dd>${fmtDT(x.gps_time || x.received_at)}${x.gps_time && tmAge(x.gps_time) ? ` <span class="chip">${esc(tmAge(x.gps_time))}</span>` : ''}</dd>${x.km !== null ? `<dt>${esc(t('km'))}</dt><dd>${fmtKm(x.km)}${x.km_rejected_below !== null && x.km_rejected_below !== undefined ? ` <span class="small" style="color:var(--mid)" data-tmkm>⚠ ${esc(tmKmRej('below', x.km_rejected_below))} · <a href="#/quality?f=telematics_km_rejected">${esc(t('show_in_dq'))} ›</a></span>` : x.km_rejected_above ? ` <span class="small" style="color:var(--mid)" data-tmkm="above">⚠ ${esc(tmKmRej('above', x.km_rejected_above.km, x.km_rejected_above.at))} · <a href="#/quality?f=telematics_km_rejected">${esc(t('show_in_dq'))} ›</a></span>` : ''}</dd>` : ''}${x.ignition !== null ? `<dt>${esc(t('tm_ignition'))}</dt><dd>${esc(t(x.ignition ? 'tm_on' : 'tm_off'))}</dd>` : ''}${x.lat !== null && x.lon !== null ? `<dt>${esc(t('tm_position'))}</dt><dd><a href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lon}#map=14/${x.lat}/${x.lon}" target="_blank" rel="noopener noreferrer">${x.lat.toFixed(4)}, ${x.lon.toFixed(4)}</a></dd>` : ''}</dl>`).join('')}</section>`;
+  // Link zur Datenqualität nur, wenn sie geöffnet werden darf (Inhaber/Leitung) und das Fahrzeug dort erscheint (in Betrieb, nicht ruhend) – 20.10.2026
+  const dqLink = (href) => (isMgr() && v.active && !v.eval_excluded ? ` · <a href="${href}">${esc(t('show_in_dq'))} ›</a>` : '');
+  if (d.telematics && d.telematics.length) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tm_live'))}</h3>${d.telematics.map((x) => `${x.reported_plate ? `<p class="small" style="color:var(--stop)" data-tmmism>⚠ ${esc(t('dq_telematics_plate_mismatch'))}: ${esc(provL(x.provider))} ${esc(x.external_id || '')} → ${esc(t('tm_reports'))} <b>${esc(x.reported_plate)}</b>${dqLink('#/quality?f=telematics_plate_mismatch')}</p>` : ''}<dl class="kv"><dt>${esc(t('tm_source'))}</dt><dd>${esc(provL(x.provider))} (${esc(x.match_basis === 'vin' ? t('vin') : t('tm_mappings'))})</dd><dt>${esc(t('tm_time'))}</dt><dd>${fmtDT(x.gps_time || x.received_at)}${x.gps_time && tmAge(x.gps_time) ? ` <span class="chip">${esc(tmAge(x.gps_time))}</span>` : ''}</dd>${x.km !== null ? `<dt>${esc(t('km'))}</dt><dd>${fmtKm(x.km)}${x.km_rejected_below !== null && x.km_rejected_below !== undefined ? ` <span class="small" style="color:var(--mid)" data-tmkm>⚠ ${esc(tmKmRej('below', x.km_rejected_below))}${dqLink('#/quality?f=telematics_km_rejected')}</span>` : x.km_rejected_above ? ` <span class="small" style="color:var(--mid)" data-tmkm="above">⚠ ${esc(tmKmRej('above', x.km_rejected_above.km, x.km_rejected_above.at))}${dqLink('#/quality?f=telematics_km_rejected')}</span>` : ''}</dd>` : ''}${x.ignition !== null ? `<dt>${esc(t('tm_ignition'))}</dt><dd>${esc(t(x.ignition ? 'tm_on' : 'tm_off'))}</dd>` : ''}${x.lat !== null && x.lon !== null ? `<dt>${esc(t('tm_position'))}</dt><dd><a href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lon}#map=14/${x.lat}/${x.lon}" target="_blank" rel="noopener noreferrer">${x.lat.toFixed(4)}, ${x.lon.toFixed(4)}</a></dd>` : ''}</dl>`).join('')}</section>`;
   if (d.tacho) html += `<section class="panel"><h3 style="margin-top:0">${esc(t('tacho_vu'))}</h3><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${d.tacho.last ? fmtD(d.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${d.tacho.due ? fmtD(d.tacho.due) + ' ' : ''}<span class="chip ${TST[d.tacho.status]}">${esc(t('tst_' + d.tacho.status))}</span></dd></dl>
     ${(d.tacho_downloads || []).length ? `<details id="vthist"><summary>${esc(t('history'))} (${d.tacho_downloads.length})</summary>${tachoHistList(d.tacho_downloads, isMgr())}</details>` : ''}
     <form id="tvf" class="actions" style="flex-wrap:wrap;align-items:flex-end"><div><label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${bDate()}"></div><div style="flex:1;min-width:200px"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"></div><button class="btn secondary">${esc(t('tacho_record'))}</button></form></section>`;
@@ -3437,7 +3455,7 @@ function tmPositions(list, r) {
   const none = list.filter((x) => !x.gps_time).length;
   const kmr = list.filter((x) => (x.km_rejected || []).length).length;
   return `<details class="panel" id="tmpos"${r.site || S.tmSite !== undefined ? ' open' : ''}><summary><b>${esc(t('tm_positions'))}</b> <span class="chip">${list.length}</span>${none ? ` <span class="chip mittel">${esc(t('tm_no_data'))}: ${none}</span>` : ''}${kmr ? ` <span class="chip mittel" data-tmkmsum>⚠ km: ${kmr}</span>` : ''}</summary>
-    <p class="small muted">${esc(t('tm_positions_hint'))}</p><div class="actions noprint" style="margin-top:0;flex-wrap:wrap;align-items:end">${(r.site_options || []).length > 1 || r.site ? `<div>${siteSelect('tmsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div>` : ''}<button type="button" class="btn secondary" id="tmcsv">${esc(t('export_csv'))}</button></div><div class="list">${list.map((x) => `<a class="row${x.gps_time ? '' : ' p-mittel'}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}"${x.kind === 'anhaenger' ? ' data-tmtrailer' : ''}>${plate(x.plate)}<span class="title" style="white-space:normal">${x.gps_time ? `${fmtDT(x.gps_time)} <span class="chip">${esc(tmAge(x.gps_time))}</span>` : esc(t('tm_no_data'))}</span><span class="sub">${x.kind === 'anhaenger' ? esc(t('trailer')) + (x.site ? ' · ' : '') : ''}${esc(x.site || '')}${x.providers.length ? ' · ' + esc(x.providers.join(', ')) : ''}</span>${(x.km_rejected || []).map((k) => `<span class="sub" style="color:var(--mid);white-space:normal" data-tmkm${k.direction === 'above' ? '="above"' : ''}>⚠ ${esc(provL(k.provider))} ${esc(k.external_id || '')}: ${fmtKm(k.km)} ${esc(tmKmRej(k.direction, k.recorded_km, k.recorded_at))}</span>`).join('')}</a>`).join('') || '<p class="muted">–</p>'}</div>${kmr ? `<p class="small noprint" style="margin:10px 0 0"><a href="#/quality?f=telematics_km_rejected">${esc(t('dq_telematics_km_rejected'))} – ${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`;
+    <p class="small muted">${esc(t('tm_positions_hint'))}</p><div class="actions noprint" style="margin-top:0;flex-wrap:wrap;align-items:end">${(r.site_options || []).length > 1 || r.site ? `<div>${siteSelect('tmsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div>` : ''}<button type="button" class="btn secondary" id="tmcsv">${esc(t('export_csv'))}</button></div><div class="list">${list.map((x) => `<a class="row${x.gps_time ? '' : ' p-mittel'}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}"${x.kind === 'anhaenger' ? ' data-tmtrailer' : ''}>${plate(x.plate)}<span class="title" style="white-space:normal">${x.gps_time ? `${fmtDT(x.gps_time)} <span class="chip">${esc(tmAge(x.gps_time))}</span>` : esc(t('tm_no_data'))}</span><span class="sub">${x.kind === 'anhaenger' ? esc(t('trailer')) + (x.site ? ' · ' : '') : ''}${esc(x.site || '')}${x.providers.length ? ' · ' + esc(x.providers.map(provL).join(', ')) : ''}</span>${(x.km_rejected || []).map((k) => `<span class="sub" style="color:var(--mid);white-space:normal" data-tmkm${k.direction === 'above' ? '="above"' : ''}>⚠ ${esc(provL(k.provider))} ${esc(k.external_id || '')}: ${fmtKm(k.km)} ${esc(tmKmRej(k.direction, k.recorded_km, k.recorded_at))}</span>`).join('')}</a>`).join('') || '<p class="muted">–</p>'}</div>${kmr ? `<p class="small noprint" style="margin:10px 0 0"><a href="#/quality?f=telematics_km_rejected">${esc(t('dq_telematics_km_rejected'))} – ${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`;
 }
 const TM_PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
 const provL = (p) => TM_PROV[p] || p; // Anbieter wie in der Kopfzeile („YellowFox“ statt „yellowfox“, 19.10.2026)
@@ -3474,9 +3492,13 @@ async function viewTelematics() {
 // ---------- Datenqualität (Inhaber/Fuhrparkleitung) ----------
 async function viewQuality(pre) {
   // Direktsprung mit Prüffilter (#/quality?f=<Prüfung>, z. B. aus „Heute zu tun“): Schweregrad-Filter zurücksetzen
-  if (pre && pre !== S.dqPre) { S.dqFilter = pre; S.dqSev = ''; }
+  const jump = !!pre && pre !== S.dqPre;
+  if (jump) { S.dqFilter = pre; S.dqSev = ''; }
   S.dqPre = pre || '';
-  const r = await api('GET', '/api/admin/data-quality' + (vsDef('dqSite') ? '?site=' + encodeURIComponent(vsDef('dqSite')) : ''));
+  const dqUrl = () => '/api/admin/data-quality' + (vsDef('dqSite') ? '?site=' + encodeURIComponent(vsDef('dqSite')) : '');
+  let r = await api('GET', dqUrl());
+  // Direktsprung, aber der Befund liegt außerhalb des gewählten (bzw. Heimat-)Standorts → Standort „Alle“ statt still eine fremde Liste (20.10.2026)
+  if (jump && vsDef('dqSite') && !r.counts[pre]) { S.dqSite = ''; r = await api('GET', dqUrl()); }
   const sevCls = { fehler: 'kritisch', luecke: 'mittel', hinweis: '' };
   // Filter nach Schweregrad (fehler/luecke/hinweis) und darin nach Prüfung; ein Prüffilter außerhalb des Schweregrads wird verworfen
   const sevOf = Object.fromEntries(r.items.map((i) => [i.check, i.severity]));
@@ -3978,7 +4000,7 @@ async function viewSettings() {
       $('#csvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${esc(t('imp_new'))}: ${r.counts.neu} · ${esc(t('imp_changed'))}: ${r.counts.geaendert} · ${esc(t('imp_same'))}: ${r.counts.unveraendert}</p>${skipped(r)}${pcHtml}${ikHtml}${siHtml}
         ${changed.length ? `<div class="list">${changed.slice(0, 200).map((x) => `<div class="row ${x.action === 'neu' ? '' : 'p-mittel'}"><span class="chip">${esc(t('line'))} ${x.line}</span><span class="title">${esc(x.plate)}</span><span class="chip">${esc(x.action === 'neu' ? t('imp_new') : x.action === 'unverändert' ? t('imp_same') : t('imp_changed'))}</span>${(x.changes && x.changes.length) || x.plate_conflict || x.year_unrecognized ? `<span class="sub" style="white-space:normal">${[...(x.plate_conflict ? [`⚠ ${esc(t('dq_duplicate_plate'))}`] : []), ...(x.year_unrecognized ? [`⚠ ${esc(t('imp_year_unrecognized').replace('{v}', x.year_unrecognized))}`] : []), ...(x.changes || []).map((c) => `${esc(FL[c.field] || c.field)}: ${esc(c.field === 'kind' && c.from ? t('vk_' + c.from) : c.from ?? '–')} → ${esc(c.field === 'kind' ? t('vk_' + c.to) : c.to)}`)].join(' · ')}</span>` : ''}</div>`).join('')}</div>${impMore(changed.length, 200)}` : ''}
         <p class="small muted">${esc(t('imp_keep_hint'))}</p><div class="actions"><button type="button" class="btn" id="csvgo"${r.preview.length ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
-      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}`; S.vehCache = null; } catch (err) { toast(err.message, true); } };
+      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
 }
