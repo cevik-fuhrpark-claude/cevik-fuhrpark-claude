@@ -15275,6 +15275,54 @@ await test('Backlog 102: Startseiten-Sprünge tragen den Standort des Zählers (
   S.me = { role: 'driver' }; S.caseVsite = undefined; f.applySiteJump('#/cases?vs=Hamburg'); eq(S.caseVsite, undefined, 'Fahrer ohne Standortfilter');
 });
 
+await test('Fehlersuche 20.10. (17): Telematik (große Zahl-ID, Meldung ohne km behält Hinweis, nachgereichter größerer Wert gezählt), Kalendernamen (Standort ohne/gewählt, Bußgeld-Test), Protokoll-Details UK/EN, Hilfe Disposition, UK-Kennzahlname', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const H = { authorization: 'Bearer integration-token-xyz' }; const an = U.own;
+  const post = (items) => an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items }, H);
+  // 1. Geräte-ID als JSON-Zahl über 2^53 → abgewiesen statt fremdes Gerät
+  db.prepare(`INSERT INTO telematics_mappings VALUES ('webfleet','9007199254740992',?, 'test','x','2026-10-01')`).run(V1);
+  const big = await an.req('POST', '/api/integration/v1/telematics', '{"provider":"webfleet","items":[{"external_id":9007199254740993,"gps_time":"2026-10-10T08:00:00Z","lat":50,"lon":8,"km":5000}]}', { ...H, 'content-type': 'application/json' });
+  eq(big.data.rejected, 1, JSON.stringify(big.data)); eq(db.prepare('SELECT COUNT(*) n FROM telematics_latest').get().n, 0, 'kein Stand gespeichert');
+  // 2. nachgereichter größerer Wert gegen späteren Wert desselben Tages: nicht übernommen und gezählt
+  eq((await post([{ external_id: 'D1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-10T16:00:00Z', km: 1000 }])).data.odometer_written, 1);
+  const late = (await post([{ external_id: 'D1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-10T08:00:00Z', km: 1200 }])).data;
+  eq(late.odometer_rejected, 1, JSON.stringify(late)); eq(late.odometer_written, 0);
+  eq(db.prepare(`SELECT MAX(km) m FROM odometer_readings WHERE vehicle_id=?`).get(V1).m, 1000, 'Akte bleibt');
+  // 3. abgewiesener Stand, danach Positionsmeldung ohne km → Hinweis bleibt
+  eq((await post([{ external_id: 'D1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-11T08:00:00Z', km: 900 }])).data.odometer_rejected, 1);
+  const st = async () => (await an.req('GET', '/api/integration/v1/telematics/status', undefined, H)).data.providers.find((p) => p.provider === 'webfleet').km_rejected;
+  eq(await st(), 1, 'nach Ablehnung');
+  await post([{ external_id: 'D1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-11T08:05:00Z', lat: 51, lon: 7 }]);
+  eq(await st(), 1, 'Positionsmeldung ohne km löscht den Hinweis nicht');
+  eq(db.prepare(`SELECT lat FROM telematics_latest WHERE vehicle_id=?`).get(V1).lat, 51, 'Position übernommen');
+  await post([{ external_id: 'D1', vin: 'WMA15SZZ2HM722774', gps_time: '2026-10-11T09:00:00Z', km: 1100 }]); eq(await st(), 0, 'plausibler Stand erledigt den Hinweis');
+  // 4. Kalendernamen
+  const { workshopPlanIcs } = await import('../src/reports.js'); const { maintenanceIcs } = await import('../src/maintenance.js'); const { finesIcs } = await import('../src/fines.js');
+  const nm = (ics) => (ics.match(/X-WR-CALNAME:(.*)/) || [])[1];
+  for (const l of ['de', 'uk', 'en']) {
+    ok(!/ ohne\r?$/.test(nm(workshopPlanIcs({ days: [], site: null, vehicle_site: 'ohne' }, 'production', l))), 'Werkstattplan ohne Standort ' + l);
+    ok(!/ ohne\r?$/.test(nm(maintenanceIcs({ rows: [], warn_days: 30, today: '2026-10-20', site: 'ohne' }, undefined, l)) || ' ohne'), 'Prüftermine ohne Standort ' + l);
+  }
+  eq(nm(maintenanceIcs({ rows: [], warn_days: 30, today: '2026-10-20', site: 'ohne' }, undefined, 'en')).trim(), 'Fleet inspection dates – no location');
+  eq(nm(maintenanceIcs({ rows: [], warn_days: 30, today: '2026-10-20', site: 'Dortmund' }, undefined, 'de')).trim(), 'Fuhrpark Prüftermine – Dortmund');
+  const fi = await U.fleet.get('/api/fines?format=ics'); eq(fi.status, 200);
+  ok(/X-WR-CALNAME:.*\((Test|Тест)\)/.test(new TextDecoder().decode(fi.data)), 'Bußgeld-Kalender der Testumgebung gekennzeichnet: ' + new TextDecoder().decode(fi.data).slice(0, 200));
+  ok(/_test_/.test(fi.headers.get('content-disposition')), 'Dateiname mit Umgebung');
+  const fu = await U.fleet.get('/api/cases?format=ics&vsite=ohne'); ok(/X-WR-CALNAME:.*(ohne Standort|no location|без)/.test(new TextDecoder().decode(fu.data)), 'Wiedervorlagen mit Standort');
+  // 5. Protokoll-Details in der Sprache
+  const I = await import('../public/i18n.js');
+  const en = I.auditDetailText('en', { site: 'ohne', kind: 'Ölwechsel' }); ok(!/ohne|Ölwechsel/.test(en), en);
+  const uk = I.auditDetailText('uk', { site: 'ohne', kind: 'Tachograph' }); ok(!/ohne/.test(uk) && uk.includes(I.STRINGS.uk.mk_tacho), uk);
+  // 6. Hilfe Disposition mit „Ausdrucke & Exporte“, Druckkopf Telematik, UK-Kennzahlname, Service Worker
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const hs = app.slice(app.indexOf('function helpSections(r)'), app.indexOf('\n}\n', app.indexOf('function helpSections(r)')) + 3);
+  const helpSections = new Function(hs + '; return helpSections;')();
+  ok(helpSections('dispatch').includes('exports') && !helpSections('driver').includes('exports'), 'Hilfe Disposition: Exporte');
+  ok(app.includes("r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.latest.vehicles"), 'Telematik-Druckkopf');
+  const kt = I.STRINGS.uk.kpi_total.split(' (')[0]; ok(I.STRINGS.uk.help_kpi_s.includes(kt) && I.STRINGS.uk.kpi_internal.includes(kt), 'UK: Kennzahlname wie Oberfläche');
+  ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/ics-texts.js'"), 'ics-texts.js im Offline-Cache');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

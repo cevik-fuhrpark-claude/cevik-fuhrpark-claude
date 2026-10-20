@@ -559,7 +559,7 @@ async function handleApi(request, env, ctx, url) {
       if (q.format === 'ics') {
         const w = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
         const warn = w && w.value !== '' && Number(w.value) >= 0 ? Number(w.value) : null; // wie Agent: 0 = Erinnerung am Fristtag, leer = keine
-        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${day}.ics"`, ...trunc } });
+        return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site, user.language, envName), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${envName}_${day}.ics"`, ...trunc } });
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
       await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site, ...(sel.truncated ? { truncated: true } : {}) });
@@ -583,7 +583,7 @@ async function handleApi(request, env, ctx, url) {
       // Texte in der Sprache der Person (DE/UK/EN), Status als Bezeichnung
       const I = icsLang(user.language);
       const ev = rows.filter((c) => c.followup_on).map((c) => ({ uid: `case-followup-${c.id}`, date: c.followup_on, summary: I.tx('followup', { no: c.case_no, plate: c.plate }), description: I.tx('followup_desc', { no: c.case_no, status: I.status(c.status) }) }));
-      return new Response(icsCalendar(`${I.tx('cal_followup')}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, ev.sort((x, y) => x.date.localeCompare(y.date))), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-wiedervorlagen_${envName}_${berlinDate()}.ics"` } });
+      return new Response(icsCalendar(`${I.tx('cal_followup')}${q.vsite ? ' – ' + (q.vsite === 'ohne' ? I.tx('no_site') : String(q.vsite).slice(0, 60)) : ''}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, ev.sort((x, y) => x.date.localeCompare(y.date))), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-wiedervorlagen_${envName}_${berlinDate()}.ics"` } });
     }
     if (q.format === 'csv') {
       if (user.role === 'driver') throw forbidden();

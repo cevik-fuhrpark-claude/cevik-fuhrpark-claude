@@ -2505,7 +2505,7 @@ async function viewFines() {
   render(html, 'more');
   const day = bDate();
   const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { downloadChecked(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}`), `fuhrpark-bussgelder_${envFn()}_${day}${fr.site ? '_' + fnPart(fr.site === 'ohne' ? t('cs_nosite') : fr.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
-  const fi = $('#fics'); if (fi) fi.onclick = async () => { try { downloadChecked(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${day}.ics`); } catch (err) { toast(err.message, true); } };
+  const fi = $('#fics'); if (fi) fi.onclick = async () => { try { downloadChecked(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${envFn()}_${day}.ics`); } catch (err) { toast(err.message, true); } };
   const fs = $('#fsite'); if (fs) fs.onchange = () => { S.fineSite = fs.value; viewFines(); };
   const fp = $('#fprt'); if (fp) fp.onclick = () => window.print();
   const nf = $('#nf');
@@ -3557,7 +3557,7 @@ async function viewTelematics() {
     <div class="stats"><div><b>${r.latest.vehicles}</b>${esc(t('tm_with_data'))}</div><div><b style="${r.unmatched_total ? 'color:var(--mid)' : ''}">${r.unmatched_total ?? r.unmatched.length}</b>${esc(t('tm_unmatched'))}</div><div><b>${r.mappings.length}</b>${esc(t('tm_mappings'))}</div></div>
     ${r.latest.last_received ? `<p class="small muted">${esc(t('tm_last'))}: ${fmtDT(r.latest.last_received)}</p>${(r.by_provider || []).length ? `<p class="small muted" id="tmprov">${r.by_provider.map((x) => `<b>${esc(TM_PROV[x.provider] || x.provider)}</b>: ${x.last_received ? `${fmtDT(x.last_received)} · ${esc(t('tm_devices').replace('{n}', x.devices))}${x.inactive_vehicle_reports ? ` · <a href="#/quality?f=telematics_vehicle_inactive" class="tm-inact">⚠ ${esc(t('tm_inact_reports').replace('{n}', x.inactive_vehicle_reports))}</a>` : ''}` : '–'}`).join(' · ')}</p>` : ''}` : r.unmatched.length ? '' : `<div class="panel">${esc(t('tm_none'))}</div>`}
     <div class="actions noprint" style="margin-top:0"><button type="button" class="btn secondary" id="tmprt">${esc(t('print'))}</button></div>
-    ${printHead([r.site ? `${t('site')}: ${r.site}` : '', r.latest.vehicles ? t('print_count').replace('{n}', (r.positions || []).length) : ''])}
+    ${printHead([r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.latest.vehicles ? t('print_count').replace('{n}', (r.positions || []).length) : ''])}
     ${(r.plate_mismatches || []).length ? `<section class="panel" id="tmmism"><h2 style="margin-top:0">${esc(t('dq_telematics_plate_mismatch'))} <span class="chip kritisch">${r.plate_mismatches.length}</span></h2><p class="small muted">${esc(t('tm_mismatch_hint'))}</p><div class="list">${r.plate_mismatches.map((x) => `<a class="row p-kritisch" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(provL(x.provider))} · ${esc(x.external_id || '')} → ${esc(t('tm_reports'))} <b>${esc(x.source_plate)}</b></span><span class="sub">${fmtDT(x.received_at)}</span></a>`).join('')}</div><p class="small"><a href="#/quality?f=telematics_plate_mismatch">${esc(t('show_in_dq'))} ›</a></p></section>` : ''}
     ${r.latest.vehicles ? tmPositions(r.positions || [], r) : ''}
     <h2>${esc(t('tm_unmatched'))}</h2>${r.unmatched_truncated ? `<p class="panel warn small" id="tmtrunc">${esc(t('tm_unmatched_truncated').replace('{n}', r.unmatched.length).replace('{m}', r.unmatched_total))}</p>` : ''}<div class="list">${r.unmatched.map((u, i) => `<div class="row p-mittel"><span class="chip">${esc(provL(u.provider))}</span><span class="title" style="white-space:normal">${esc(u.external_id)}${u.source_plate ? ' · ' + esc(u.source_plate) : ''}${u.source_vin ? ' · ' + esc(t('vin')) + ' ' + esc(u.source_vin) : ''}</span><span></span>
@@ -3705,8 +3705,10 @@ function helpSections(r) {
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy', 'settings');
   // Benutzer, Zugänge & Protokoll: Benutzerverwaltung hat Inhaber und Fuhrparkleitung (Protokoll nur Inhaber – im Text vermerkt)
   if (['owner', 'fleet'].includes(r)) parts.splice(parts.indexOf('stock') + 1, 0, 'access');
-  // Ausdrucke & Exporte: Rollen mit CSV-/Druck-Funktionen (Fahrer/Dispo nur Vorgangsliste drucken – dort genügt der Knopf)
+  // Ausdrucke & Exporte: Rollen mit CSV-/Kalender-/Druck-Funktionen (Disposition: CSV Vorgänge/Prüftermine/Fahrzeuge, Kalender Wiedervorlagen/
+  // Prüftermine/Werkstattplan – 20.10.2026 ergänzt; Fahrer nur Vorgangsliste drucken – dort genügt der Knopf)
   if (['owner', 'fleet', 'workshop'].includes(r)) parts.splice(parts.indexOf('stock') + 1, 0, 'exports');
+  if (r === 'dispatch') parts.splice(parts.indexOf('push'), 0, 'exports');
   if (r === 'dispatch') parts.unshift('dispo');
   if (r === 'driver') parts.unshift('myveh', 'myfines');
   return parts;

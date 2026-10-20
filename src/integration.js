@@ -255,7 +255,8 @@ export async function integrationRouter(request, env, ctx, url) {
     const kmOf = (x) => (typeof x === 'string' && /^\d{1,3}(\.\d{3})+$/.test(x.trim()) ? null : numOf(x));
     const rows = items.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})).map((it) => {
       // Kennungen nur als Text/Zahl (18.10.2026: Objekte wurden als „[object Object]“ gespeichert), Geräte-ID gekürzt wie bei der Bestätigung
-      const txt = (x) => (typeof x === 'string' ? x.trim() : typeof x === 'number' && Number.isFinite(x) ? String(x) : x === undefined || x === null ? '' : null);
+      // Zahlen nur als sichere Ganzzahl (20.10.2026: 9007199254740993 wurde beim JSON-Lesen zu …992 und traf ein fremdes Gerät) – größere IDs als Text senden
+      const txt = (x) => (typeof x === 'string' ? x.trim() : typeof x === 'number' && Number.isSafeInteger(x) ? String(x) : x === undefined || x === null ? '' : null);
       const e0 = txt(it.external_id); const v0 = txt(it.vin); const p0 = txt(it.plate);
       if (e0 === null || v0 === null || p0 === null) return { it, ext: '', vin: null, plate: null };
       // Geräte-ID länger als 80 Zeichen: abgewiesen statt still gekürzt (zwei lange IDs mit gleichem Anfang galten sonst als ein Gerät, 20.10.2026)
@@ -355,7 +356,7 @@ export async function integrationRouter(request, env, ctx, url) {
     if (latestRows.size) stmts.push(env.DB.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,source_plate,gps_time,received_at,lat,lon,km,speed,ignition)
       SELECT ${X('v')}, ?1, ${X('ext')}, ${X('basis')}, ${X('sp')}, ${X('gps')}, ?2, ${X('lat')}, ${X('lon')}, ${X('km')}, ${X('speed')}, ${X('ign')} FROM json_each(?3) WHERE 1
       ON CONFLICT(vehicle_id,provider) DO UPDATE SET external_id=excluded.external_id, match_basis=excluded.match_basis, source_plate=excluded.source_plate, gps_time=excluded.gps_time, received_at=excluded.received_at,
-        lat=excluded.lat, lon=excluded.lon, km=excluded.km, speed=excluded.speed, ignition=excluded.ignition
+        lat=excluded.lat, lon=excluded.lon, km=COALESCE(excluded.km, telematics_latest.km), speed=excluded.speed, ignition=excluded.ignition /* Meldung ohne km: letzter km-Wert bleibt – sonst verschwand der Hinweis „km abgewiesen“ ohne plausiblen Stand (20.10.2026) */
       WHERE excluded.gps_time IS NOT NULL AND (telematics_latest.gps_time IS NULL OR excluded.gps_time >= telematics_latest.gps_time)`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)
@@ -364,7 +365,8 @@ export async function integrationRouter(request, env, ctx, url) {
     if (odo.size) stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?1)
       WHERE ${X('km')} < (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${X('v')} AND o.measured_at <= ${X('t')} AND o.id <> ${X('id')} ORDER BY o.measured_at DESC LIMIT 1)
         OR ${NEXT_SMALLER}
-        OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at < ${X('t')} AND d.km > ${X('km')})`)
+        OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at < ${X('t')} AND d.km > ${X('km')})
+        OR EXISTS (SELECT 1 FROM odometer_readings d WHERE d.id=${X('id')} AND d.measured_at > ${X('t')} AND d.km < ${X('km')} AND (d.note IS NULL OR trim(d.note)=''))`)
       .bind(JSON.stringify([...odo.values()])));
     const odoPos = stmts.length;
     // Plausibilität: nie kleiner als der zuletzt erfasste km-Stand vor diesem Zeitpunkt (andere Quellen oder Vortage) und – wie bei der

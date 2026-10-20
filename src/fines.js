@@ -410,10 +410,10 @@ export function finesCsv(rows, csvCell, withDriver) {
 }
 // Fristenkalender: nur Antwortfristen laut Schreiben offener Vorgänge, ohne Fahrernamen (Kalender werden oft geteilt)
 // Texte in der Sprache der Person (lang; DE/UK/EN, sonst Deutsch); Behörde/Aktenzeichen wie gespeichert
-export function finesIcs(rows, warnDays, icsCalendar, site = null, lang = 'de') {
+export function finesIcs(rows, warnDays, icsCalendar, site = null, lang = 'de', envName = 'production') {
   const I = icsLang(lang);
   const open = rows.filter((f) => f.response_due && !['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status));
-  return icsCalendar(`${I.tx('cal_fines')}${site ? ' – ' + (site === 'ohne' ? I.tx('no_site') : site) : ''}`, open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due,
+  return icsCalendar(`${I.tx('cal_fines')}${site ? ' – ' + (site === 'ohne' ? I.tx('no_site') : site) : ''}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due,
     summary: I.tx('fine_due', { kind: I.label('fk_' + f.kind, KIND_DE[f.kind] || f.kind), plate: f.plate || f.plate_in_letter, no: f.fine_no }),
     description: `${f.authority}${f.reference ? ' · ' + I.tx('fine_ref', { ref: f.reference }) : ''} · ${I.tx('fine_by_letter')}`, alarmDays: warnDays })));
 }
