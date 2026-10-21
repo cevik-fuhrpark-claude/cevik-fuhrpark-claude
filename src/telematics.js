@@ -22,10 +22,10 @@ export async function telematicsOverview(env, user, query = {}) {
     // (gleiche Regel wie Datenqualität telematics_km_rejected, beide Richtungen seit 18.10.2026) – eine Abfrage;
     // wie die Datenqualität nur aktive, bewertete Fahrzeuge (ruhende sind aus allen Bewertungen ausgenommen, außer Betrieb genommene
     // meldet `inactive_vehicle_reports`; vorher zählten Übersicht/Status sie mit, 18.10.2026)
-    env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at,
-      (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > t.gps_time ORDER BY o.measured_at ASC LIMIT 1) AS next_json
+    env.DB.prepare(`SELECT t.vehicle_id, v.plate, t.provider, t.external_id, t.match_basis, t.source_plate, t.received_at, t.km, t.gps_time, COALESCE(t.km_at, t.gps_time) AS km_time, p.km AS prev_km, p.measured_at AS prev_at,
+      (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at ASC LIMIT 1) AS next_json
       FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
-      LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
+      LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at DESC LIMIT 1)
       WHERE v.active=1 AND v.eval_excluded=0 AND (t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL)) ORDER BY v.plate, t.provider`).all(),
     // Letzter Stand je bewertetem, aktivem Kraftfahrzeug; Anhänger nur, wenn sie ein eigenes Gerät haben (sonst fiele dessen Ausfall nirgends auf).
     // Ohne Daten zuerst, dann ältester Stand zuerst.
@@ -69,9 +69,11 @@ export async function telematicsOverview(env, user, query = {}) {
 // sofern dieser keine Begründung (Vermerk, z. B. Tachotausch) trägt. recorded_km/recorded_at = der Vergleichsstand.
 // Nur Hinweis, keine Korrektur, kein Grenzwert.
 export function kmRejection(r) {
-  if (r.km === null || r.km === undefined || !r.gps_time) return null;
+  // km_time: Zeitpunkt des gemeldeten km-Werts (eine spätere Meldung ohne km verschiebt nur gps_time, 21.10.2026)
+  const at = r.km_time || r.gps_time;
+  if (r.km === null || r.km === undefined || !at) return null;
   const km = Math.round(r.km);
-  const base = { vehicle_id: r.vehicle_id, plate: r.plate, provider: r.provider, external_id: r.external_id, km, gps_time: r.gps_time };
+  const base = { vehicle_id: r.vehicle_id, plate: r.plate, provider: r.provider, external_id: r.external_id, km, gps_time: at };
   if (r.prev_km !== null && r.prev_km !== undefined && km < r.prev_km) return { ...base, direction: 'below', recorded_km: r.prev_km, recorded_at: r.prev_at };
   if (r.next_json) {
     let n; try { n = JSON.parse(r.next_json); } catch { return null; }

@@ -728,7 +728,7 @@ async function workshopBoard() {
   // wie die verlinkte Liste (repeat_days=3) inkl. Vorab-Info („gemeldet“ mit Vorschlag dieser Werkstatt) – vorher zählte die Startseite n, die Liste n+1 (20.10.2026)
   const rep = open.filter((c) => recentRepeat(c));
   if (rep.length) lanes.unshift(['ws_repeat', rep]);
-  let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="#/cases?f=repeat">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
     const ov = await api('GET', '/api/maintenance');
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
@@ -746,13 +746,15 @@ async function workshopBoard() {
   } catch {}
   // Winterreifen: Lkw ohne Alpine-Symbol laut Erfassung als Arbeitsvorrat (umrüsten bzw. Erfassung nachholen) – nur Information, keine Sperre
   html += await wsWinter(vsDef('tireSite'));
-  return html + `<p><a href="#/cases">${esc(t('all'))}</a> · <a href="#/plan">${esc(t('wplan'))} ›</a></p>${helpLink('ws')}`;
+  return html + `<p><a href="${esc(hj('#/cases'))}">${esc(t('all'))}</a> · <a href="#/plan">${esc(t('wplan'))} ›</a></p>${helpLink('ws')}`;
 }
 // Sprünge von der Startseite: Zielliste mit dem Standort, für den der Zähler gilt (Backlog 102) – Leitung zählt flottenweit („alle“),
-// Disposition je nach Umschalter Standard-Standort oder alle; Werkstatt/Fahrer ohne Zusatz. Ziel liest `vs` in route() (applySiteJump).
+// Disposition je nach Umschalter Standard-Standort oder alle; Werkstatt „alle“ (seit 21.10.2026), Fahrer ohne Zusatz. Ziel liest `vs` in route() (applySiteJump).
 function hj(href) {
   const r = S.me && S.me.role; let s = null;
-  if (r === 'owner' || r === 'fleet') s = '*';
+  // Werkstatt: Zähler der Startseite gelten standortübergreifend (Aufträge bei ihr, auch fremder Fahrzeugstandorte) – mit Standard-Standort
+  // zeigte die Liste sonst weniger als der Zähler (21.10.2026)
+  if (r === 'owner' || r === 'fleet' || r === 'workshop') s = '*';
   else if (r === 'dispatch') s = S.me.home_site && !S.dispoAll ? S.me.home_site : '*';
   return s === null ? href : href + (href.includes('?') ? '&' : '?') + 'vs=' + encodeURIComponent(s);
 }
@@ -845,7 +847,9 @@ function dispoBoard(cs, defects = [], coupled = new Map()) {
 function dispoCases(cs, hasOther = false, coupled = new Map()) {
   const byV = new Map();
   const rank = (c) => (c.safety_lock ? 3 : c.status === 'wartet_teile' ? 2 : ['werkstatt_freigegeben', 'in_reparatur', 'abschlusskontrolle'].includes(c.status) ? 1 : 0);
-  for (const c of cs) { const r = rank(c); if (!r) continue; const cur = byV.get(c.vehicle_id); if (!cur || r > cur.r) byV.set(c.vehicle_id, { r, c }); }
+  // gleicher Rang: der früher begonnene Vorgang (Fahrzeug ist seit der ältesten Sperre nicht einplanbar – vorher zeigte „seit“ die jüngste, 21.10.2026)
+  const since = (r, c) => String(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at || '');
+  for (const c of cs) { const r = rank(c); if (!r) continue; const cur = byV.get(c.vehicle_id); if (!cur || r > cur.r || (r === cur.r && since(r, c) < since(cur.r, cur.c))) byV.set(c.vehicle_id, { r, c }); }
   const list = [...byV.values()].sort((a, b) => b.r - a.r || a.c.plate.localeCompare(b.c.plate));
   if (!list.length) return hasOther ? '' : `<section class="panel good"><b>${esc(t('dispo_all_ok'))}</b></section>`;
   return `<h2>${esc(t('dispo_not_plannable'))}</h2><div class="list">${list.map(({ r, c }) => `<a class="row ${r === 3 ? 'p-kritisch' : 'p-mittel'}" href="#/cases/${esc(c.id)}">${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(r === 3 ? t('locked') + ' – ' + t('do_not_drive') : t('st_' + c.status))}</span><span class="chip ${r === 3 ? 'kritisch' : 'mittel'}">${esc(t('since'))} ${fmtDT(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at)}</span><span class="sub">${esc(c.case_no)}${coupled.has(c.vehicle_id) ? ` · <b>${esc(t(coupled.get(c.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(c.vehicle_id).plate)}</b>` : ''}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.planned_date && c.status !== 'abschlusskontrolle' ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(c.planned_date) : ''}${partsEta(c)}</span></a>`).join('')}</div>`;

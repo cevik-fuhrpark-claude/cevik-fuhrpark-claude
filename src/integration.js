@@ -354,10 +354,10 @@ export async function integrationRouter(request, env, ctx, url) {
     const latePos = stmts.length;
     if (latestRows.size) stmts.push(env.DB.prepare(`SELECT COUNT(*) AS n FROM json_each(?2) j JOIN telematics_latest t ON t.vehicle_id=json_extract(j.value,'$.v') AND t.provider=?1
       WHERE t.gps_time IS NOT NULL AND (json_extract(j.value,'$.gps') IS NULL OR json_extract(j.value,'$.gps') < t.gps_time)`).bind(provider, JSON.stringify([...latestRows.values()])));
-    if (latestRows.size) stmts.push(env.DB.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,source_plate,gps_time,received_at,lat,lon,km,speed,ignition)
-      SELECT ${X('v')}, ?1, ${X('ext')}, ${X('basis')}, ${X('sp')}, ${X('gps')}, ?2, ${X('lat')}, ${X('lon')}, ${X('km')}, ${X('speed')}, ${X('ign')} FROM json_each(?3) WHERE 1
+    if (latestRows.size) stmts.push(env.DB.prepare(`INSERT INTO telematics_latest(vehicle_id,provider,external_id,match_basis,source_plate,gps_time,received_at,lat,lon,km,speed,ignition,km_at)
+      SELECT ${X('v')}, ?1, ${X('ext')}, ${X('basis')}, ${X('sp')}, ${X('gps')}, ?2, ${X('lat')}, ${X('lon')}, ${X('km')}, ${X('speed')}, ${X('ign')}, CASE WHEN ${X('km')} IS NOT NULL THEN ${X('gps')} END FROM json_each(?3) WHERE 1
       ON CONFLICT(vehicle_id,provider) DO UPDATE SET external_id=excluded.external_id, match_basis=excluded.match_basis, source_plate=excluded.source_plate, gps_time=excluded.gps_time, received_at=excluded.received_at,
-        lat=excluded.lat, lon=excluded.lon, km=COALESCE(excluded.km, telematics_latest.km), speed=excluded.speed, ignition=excluded.ignition /* Meldung ohne km: letzter km-Wert bleibt – sonst verschwand der Hinweis „km abgewiesen“ ohne plausiblen Stand (20.10.2026) */
+        lat=excluded.lat, lon=excluded.lon, km=COALESCE(excluded.km, telematics_latest.km), km_at=CASE WHEN excluded.km IS NOT NULL THEN excluded.gps_time ELSE telematics_latest.km_at END /* Vergleichszeitpunkt des km-Werts (21.10.2026) */, speed=excluded.speed, ignition=excluded.ignition /* Meldung ohne km: letzter km-Wert bleibt – sonst verschwand der Hinweis „km abgewiesen“ ohne plausiblen Stand (20.10.2026) */
       WHERE excluded.gps_time IS NOT NULL AND (telematics_latest.gps_time IS NULL OR excluded.gps_time >= telematics_latest.gps_time)`)
       .bind(provider, now, JSON.stringify([...latestRows.values()])));
     // Zähler odometer_rejected: Tageswerte kleiner als der zuvor erfasste km-Stand (gleiche Regel wie unten, gleiche Transaktion, vor dem Schreiben)

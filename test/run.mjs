@@ -15267,7 +15267,7 @@ await test('Backlog 102: Startseiten-Sprünge tragen den Standort des Zählers (
   const f = new Function('S', 'history', `${keys} ${grab('hj')} ${grab('applySiteJump')} return { hj, applySiteJump };`)(S, history);
   S.me = { role: 'fleet', home_site: 'Hamburg' }; eq(f.hj('#/cases'), '#/cases?vs=*'); eq(f.hj('#/plan?s=mdue'), '#/plan?s=mdue&vs=*');
   S.me = { role: 'dispatch', home_site: 'Hamburg' }; eq(f.hj('#/cases'), '#/cases?vs=Hamburg'); S.dispoAll = true; eq(f.hj('#/cases'), '#/cases?vs=*');
-  S.me = { role: 'workshop', home_site: 'Dortmund' }; eq(f.hj('#/plan'), '#/plan');
+  S.me = { role: 'workshop', home_site: 'Dortmund' }; eq(f.hj('#/plan'), '#/plan?vs=*', 'Werkstatt: Zähler standortübergreifend (21.10.2026)');
   S.me = { role: 'fleet' }; S.caseVsite = 'Dortmund';
   eq(f.applySiteJump('#/cases?f=repeat&vs=*'), '#/cases?f=repeat'); eq(S.caseVsite, ''); eq(replaced, '#/cases?f=repeat');
   eq(f.applySiteJump('#/vehicles?f=with_notes&vs=Hamburg'), '#/vehicles?f=with_notes'); eq(S.vehSite, 'Hamburg');
@@ -15852,6 +15852,31 @@ await test('Fehlersuche 21.10. (Kontrolle/Anmeldung): herabgestufter Kontroll-Vo
   // „Alle anderen abmelden“ beendet ebenfalls offene Anmeldungen
   const att2 = new Client(worker, e, 'att-self'); await att2.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' }); eq(chal(), 1);
   eq((await dev.post('/api/me/sessions/revoke-others')).status, 200); eq(chal(), 0, 'selbst: offene Anmeldung beendet');
+});
+
+await test('Fehlersuche 21.10. (Telematik/Startseite): Meldung ohne km verschiebt den Vergleichszeitpunkt des km-Werts nicht (kein falsches „km nicht übernommen“), Werkstatt-Startseite verlinkt standortübergreifend, Disposition „seit“ = älteste Sperre', async () => {
+  const { e, U, V1 } = await freshWorld(); const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const tel = (items) => an.req('POST', '/api/integration/v1/telematics?environment=test', { provider: 'webfleet', items }, H);
+  const vin = V1.slice(4); const base = Date.now() - 6 * 3600000; const iso = (h) => new Date(base + h * 3600000).toISOString();
+  const r1 = await tel([{ external_id: 'G1', vin, gps_time: iso(0), km: 100000, lat: 51, lon: 7 }]); eq(r1.status, 200, JSON.stringify(r1.data)); eq(r1.data.odometer_written, 1, JSON.stringify(r1.data));
+  // manueller Stand danach (größer), dann Positionsmeldung ohne km
+  e.DB.db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES ('m1',?,100180,?,'manuell',NULL,?)`).run(V1, iso(2), iso(2));
+  const st = async () => (await an.req('GET', '/api/integration/v1/telematics/status?environment=test', undefined, H)).data.providers.find((p) => p.provider === 'webfleet').km_rejected;
+  eq(await st(), 0, 'vor der Meldung ohne km');
+  eq((await tel([{ external_id: 'G1', vin, gps_time: iso(4), lat: 51.1, lon: 7.1 }])).status, 200);
+  eq(await st(), 0, 'Meldung ohne km: kein „km nicht übernommen“');
+  const dq = (await an.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, H)).data.items.filter((i) => i.check === 'telematics_km_rejected');
+  eq(dq.length, 0, JSON.stringify(dq));
+  const t = (await U.fleet.get(`/api/vehicles/${V1}`)).data.telematics.find((x) => x.provider === 'webfleet');
+  eq(t.km_rejected_above, null); eq(t.km_rejected_below, null); eq(t.gps_time, iso(4), 'Position aktuell'); eq(t.km_time, undefined, 'kein Zusatzfeld in der Akte');
+  const row = e.DB.db.prepare('SELECT km, km_at FROM telematics_latest WHERE vehicle_id=?').get(V1); eq(row.km, 100000); eq(row.km_at, iso(0));
+  // echte Abweisung bleibt erkennbar: neuer km-Wert kleiner als der manuelle Stand davor
+  eq((await tel([{ external_id: 'G1', vin, gps_time: iso(5), km: 100100 }])).status, 200);
+  eq(await st(), 1, 'kleinerer km-Wert nach manuellem Stand: Hinweis');
+  // App-Quelltext: Werkstatt-Links mit hj(), Disposition nimmt bei gleichem Rang die ältere Sperre
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("<a href=\"${esc(hj('#/cases?f=repeat'))}\">") && app.includes("<a href=\"${esc(hj('#/cases'))}\">${esc(t('all'))}</a>"), 'Werkstatt-Startseite');
+  ok(app.includes("(r === cur.r && since(r, c) < since(cur.r, cur.c))"), 'Disposition: älteste Sperre');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -196,14 +196,14 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     : [];
   // Letzter Telematik-Stand (nur Inhaber, Fuhrparkleitung, Disposition – Positionsdaten sind über die Fahrerzuordnung personenbeziehbar)
   const telematics = !tl && (isManager(user) || user.role === 'dispatch')
-    ? (await env.DB.prepare(`SELECT t.provider, t.external_id, t.match_basis, t.gps_time, t.received_at, t.lat, t.lon, t.km, t.speed, t.ignition, t.source_plate,
-        (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
-        (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > t.gps_time ORDER BY o.measured_at ASC LIMIT 1) AS next_json
+    ? (await env.DB.prepare(`SELECT t.provider, t.external_id, t.match_basis, t.gps_time, COALESCE(t.km_at, t.gps_time) AS km_time, t.received_at, t.lat, t.lon, t.km, t.speed, t.ignition, t.source_plate,
+        (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
+        (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at ASC LIMIT 1) AS next_json
         FROM telematics_latest t WHERE t.vehicle_id=? ORDER BY t.gps_time DESC`).bind(vehicleId).all()).results
       // Gerät meldet ein anderes Kennzeichen (gleiche Regel wie Datenqualität telematics_plate_mismatch) – nur Hinweis, keine Korrektur;
       // km kleiner als der zuvor erfasste Stand (gleiche Regel wie telematics_km_rejected) → km_rejected_below = erfasster Stand
       // oder größer als ein später erfasster Stand ohne Begründung → km_rejected_above = { km, at } (seit 18.10.2026, wie Datenqualität)
-      .map(({ source_plate, prev_km, next_json, ...x }) => { const rej = kmRejection({ ...x, prev_km, next_json });
+      .map(({ source_plate, prev_km, next_json, km_time, ...x }) => { const rej = kmRejection({ ...x, km_time, prev_km, next_json });
         return { ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null,
           km_rejected_below: rej && rej.direction === 'below' ? rej.recorded_km : null,
           km_rejected_above: rej && rej.direction === 'above' ? { km: rej.recorded_km, at: rej.recorded_at } : null }; })

@@ -162,12 +162,12 @@ export async function dataQuality(env, user, envName, query = {}) {
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
     // außerdem: Stände außer Betrieb genommener Fahrzeuge mit dem letzten Zeitpunkt „außer Betrieb genommen“ laut Protokoll (ohne Protokolleintrag kein Befund)
     // sowie der nächste spätere unbegründete km-Stand (nachgereichter Telematikwert größer → ebenfalls nicht übernommen, 17.10.2026)
-    env.DB.prepare(`SELECT t.vehicle_id, t.provider, t.external_id, t.source_plate, t.km, t.gps_time, p.km AS prev_km, p.measured_at AS prev_at,
-      (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > t.gps_time ORDER BY o.measured_at ASC LIMIT 1) AS next_json,
+    env.DB.prepare(`SELECT t.vehicle_id, t.provider, t.external_id, t.source_plate, t.km, t.gps_time, COALESCE(t.km_at, t.gps_time) AS km_time, p.km AS prev_km, p.measured_at AS prev_at,
+      (SELECT json_object('km', o.km, 'at', o.measured_at, 'note', o.note) FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at > COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at ASC LIMIT 1) AS next_json,
       v.active AS v_active, v.plate AS v_plate,
       CASE WHEN v.active=0 THEN (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=t.vehicle_id AND a.action='vehicle.deactivate') END AS deact_at
       FROM telematics_latest t JOIN vehicles v ON v.id=t.vehicle_id
-      LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= t.gps_time ORDER BY o.measured_at DESC LIMIT 1)
+      LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at DESC LIMIT 1)
       WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) OR v.active=0`).all(),
   ]);
   const truncatedChecks = [];
@@ -280,12 +280,12 @@ export async function dataQuality(env, user, envName, query = {}) {
       { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), day: berlinDate(r.gps_time), time: berlinDateTime(r.gps_time).slice(-5), since: berlinDate(r.deact_at) });
     const v = vById.get(r.vehicle_id); if (!v) continue;
     if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
-    if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`,
-      { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.gps_time), other_km: r.prev_km, other_day: berlinDate(r.prev_at), cmp: 'lt' });
-    else if (r.km !== null && r.gps_time && r.next_json) {
+    if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.km_time || r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`,
+      { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.km_time || r.gps_time), other_km: r.prev_km, other_day: berlinDate(r.prev_at), cmp: 'lt' });
+    else if (r.km !== null && (r.km_time || r.gps_time) && r.next_json) {
       const n = JSON.parse(r.next_json);
-      if (n.km < Math.round(r.km) && !(n.note && String(n.note).trim())) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.gps_time)}) > ${n.km} km (${berlinDate(n.at)})`,
-        { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.gps_time), other_km: n.km, other_day: berlinDate(n.at), cmp: 'gt' });
+      if (n.km < Math.round(r.km) && !(n.note && String(n.note).trim())) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.km_time || r.gps_time)}) > ${n.km} km (${berlinDate(n.at)})`,
+        { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.km_time || r.gps_time), other_km: n.km, other_day: berlinDate(n.at), cmp: 'gt' });
     }
   }
   const addD = (check, d, detail = null) => items.push({ check, severity: CHECKS[check], vehicle_id: null, plate: null, driver_id: d.id, driver_name: d.display_name, detail });
