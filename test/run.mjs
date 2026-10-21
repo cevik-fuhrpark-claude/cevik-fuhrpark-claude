@@ -15899,6 +15899,43 @@ await test('Startseite „Befunde (kritisch + handeln)“ → Management-Panel m
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].asev_act && (l === 'de' || STRINGS[l].asev_act !== STRINGS.de.asev_act), `${l}: asev_act`);
 });
 
+await test('Backlog 108: Telematik-Sammelaufruf – je Tag jüngster plausibler Eintrag (unplausibler jüngster blockiert früheren nicht), 12 Runden statt Speicherprüfung ab Tag 5, Abfragebudget', async () => {
+  const H = { authorization: 'Bearer integration-token-xyz' }; const VIN = 'WMA15SZZ2HM722774';
+  const item = (gps_time, km) => ({ external_id: 'S1', vin: VIN, gps_time, km });
+  // calls: Liste von Aufrufen (je Aufruf Liste von [Zeit, km]); manual: [[Zeit, km]] händische Stände ohne Begründung
+  const run = async (calls, manual) => {
+    const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+    manual.forEach(([t, km], i) => db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES(?,?,?,?,'manuell',NULL,?)`).run('m' + i, V1, km, t, t));
+    let w = 0, r = 0, nq = 0;
+    for (const c of calls) { const q0 = QSTAT.n; const x = (await U.own.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: c.map(([t, km]) => item(t, km)) }, H)); nq = Math.max(nq, QSTAT.n - q0); eq(x.status, 200, JSON.stringify(x.data)); w += x.data.odometer_written; r += x.data.odometer_rejected; }
+    return { w, r, nq, kms: db.prepare(`SELECT group_concat(km) k FROM (SELECT km FROM odometer_readings WHERE vehicle_id=? AND source='telematik:webfleet' ORDER BY measured_at)`).get(V1).k };
+  };
+  const same = async (entries, manual, exp) => {
+    const one = await run([entries], manual); const sep = await run(entries.map((x) => [x]), manual);
+    eq(`${one.w}/${one.r}/${one.kms}`, exp, 'ein Aufruf'); eq(`${sep.w}/${sep.r}/${sep.kms}`, exp, 'getrennte Aufrufe gleiches Ergebnis');
+    return one;
+  };
+  const M = [['2026-10-02T10:00:00.000Z', 1100]];
+  // (a) jüngster Eintrag des Tages zu groß (größer als späterer händischer Stand) → früherer plausibler Eintrag desselben Tages wird Tageswert
+  await same([['2026-10-01T06:00:00Z', 1050], ['2026-10-01T16:00:00Z', 1200]], M, '1/1/1050');
+  // umgekehrt: früher Eintrag unplausibel, späterer passt → späterer
+  await same([['2026-10-01T06:00:00Z', 1200], ['2026-10-01T16:00:00Z', 1050]], M, '1/1/1050');
+  // beide plausibel: jüngster ersetzt; späterer kleinerer Eintrag desselben Tages wird abgewiesen (Zähler wie bisher)
+  { const x = await run([[['2026-10-01T06:00:00Z', 1040], ['2026-10-01T16:00:00Z', 1060]]], M); eq(`${x.w}/${x.r}/${x.kms}`, '1/0/1060'); }
+  { const x = await run([[['2026-10-01T06:00:00Z', 1060], ['2026-10-01T16:00:00Z', 1050]]], M); eq(`${x.w}/${x.r}/${x.kms}`, '1/1/1060'); }
+  // (b) acht Tage, Tag 5 von der Datenbank abgewiesen (größer als händischer Stand am Abend) → Tage 6–8 trotzdem übernommen (vorher Speicherprüfung ab Tag 5)
+  const d8 = [1000, 1100, 1200, 1300, 9999, 1500, 1600, 1700].map((km, i) => [`2026-10-0${i + 1}T08:00:00Z`, km]);
+  const M5 = [['2026-10-05T20:00:00.000Z', 1450]];
+  const one = await run([d8.slice().reverse()], M5); const sep = await run(d8.map((x) => [x]), M5);
+  eq(`${one.w}/${one.r}/${one.kms}`, '7/1/1000,1100,1200,1300,1500,1600,1700', 'ein Aufruf'); eq(`${sep.r}/${sep.kms}`, `${one.r}/${one.kms}`, 'getrennte Aufrufe');
+  // 14 Tage mit je 3 Einträgen (Runden 1–12, Tage 13/14 in der letzten Runde): Abfragebudget
+  const d14 = []; for (let i = 0; i < 14; i++) for (let h = 0; h < 3; h++) d14.push([new Date(Date.parse('2026-09-20T06:00:00Z') + i * 86400000 + h * 4 * 3600000).toISOString(), 2000 + i * 100 + h * 10]);
+  const big = await run([d14], []); eq(`${big.w}/${big.r}`, '14/0', JSON.stringify(big)); ok(big.nq <= 40, 'Abfragen je Aufruf: ' + big.nq); console.log(`     14 Tage × 3 Einträge: ${big.nq} Abfragen`);
+  // Quelltext: keine Auswahl „nur jüngster Eintrag“ mehr im Speicher, 12 Runden
+  const fs = await import('node:fs'); const src = fs.readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
+  ok(src.includes('const ODO_ROUNDS = 12;') && src.includes('odo.get(key).list.push(') && !src.includes('if (!cur || gps > cur.t) odo.set('), 'alle Einträge an die Datenbank');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
