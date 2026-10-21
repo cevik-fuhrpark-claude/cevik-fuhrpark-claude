@@ -15693,6 +15693,24 @@ await test('Berechtigungsfehler (403) mit Grund: Aktion/Status maschinenlesbar, 
   void V1;
 });
 
+await test('Fahrzeugliste und /v1/availability: nächste Prüfung zählt eine nur berechnete (überfällige) SP mit – wie Prüftermin-Übersicht', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet; const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const y = Number(BERLIN_TODAY.slice(0, 4)); const m = Number(BERLIN_TODAY.slice(5, 7)); const t0 = y * 12 + m - 1 - 8;
+  eq((await F.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: `${y - 5}-03-01`, spec_source: 'Zulassungsbescheinigung (Test)' })).status, 200);
+  const hu = `${Math.floor(t0 / 12)}-${String(t0 % 12 + 1).padStart(2, '0')}-10`; // HU vor 8 Monaten, SP 6 Monate danach → überfällig
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: hu, interval_months: 12, evidence: 'Prüfbericht (Test)' })).status, 201);
+  const mo = (await an.req('GET', '/api/integration/v1/maintenance?environment=test', undefined, H)).data.rows.filter((r) => r.vehicle_id === V1);
+  const sp = mo.find((r) => r.kind === 'SP'); ok(sp && sp.virtual && sp.status === 'ueberfaellig', JSON.stringify(mo));
+  const av = (await an.req('GET', '/api/integration/v1/availability?environment=test', undefined, H)).data.vehicles.find((v) => v.id === V1);
+  eq(av.next_inspection_due, sp.next_due_date, 'Schnittstelle nennt die berechnete SP');
+  const lv = (await F.get('/api/vehicles')).data; const v = (lv.vehicles || lv).find((x) => x.id === V1);
+  eq(v.next_due, sp.next_due_date, 'App-Fahrzeugliste („Prüfung überfällig“) ebenso'); ok(v.next_due < BERLIN_TODAY);
+  // CSV der Fahrzeugliste nutzt denselben Wert
+  const csvL = await F.get('/api/vehicles?format=csv'); ok(csvL.status === 200);
+  // Fahrzeug ohne berechenbare Frist unverändert
+  const v2 = (lv.vehicles || lv).find((x) => x.id !== V1); eq(v2.next_due ?? null, null, 'ohne Prüfdaten keine Frist');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -72,6 +72,23 @@ export async function listVehicles(env, user, envName, query = {}) {
     if (isManager(user)) { const [an, ac] = String(v.af || '0|0').split('|'); v.agent_findings_open = Number(an) || 0; v.agent_findings_critical = Number(ac) || 0; }
     delete v.af;
     const fi = v.failed_insp ? v.failed_insp.split('|') : null; v.failed_inspection = fi ? { kind: fi[0], done_date: fi[1], result: fi[2] } : null; delete v.failed_insp; }
+  // HU/SP ohne eigenen Eintrag mit berechenbarer Frist (z. B. SP aus HU + Erstzulassung) zählt für „nächste Prüfung“ mit – wie Übersicht,
+  // Akte, Agent und Fahrer-Startseite (21.10.2026: Fahrzeugliste „Prüfung überfällig“ und /v1/availability übersahen eine überfällige berechnete SP)
+  if (rows.length) {
+    const hin = await loadHuSpInputs(env, rows.map((v) => v.id));
+    const wd = maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value);
+    const byId = new Map(rows.map((v) => [v.id, v]));
+    for (const [vid, x] of hin) {
+      const v = byId.get(vid); if (!v) continue;
+      const h = huSpFor(x, today, wd);
+      for (const kind of ['HU', 'SP']) {
+        const y = kind === 'HU' ? h.hu : h.sp;
+        if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
+        if (x.rules.some((r) => r.kind === kind && r.next_due_date)) continue;
+        if (!v.next_due || y.due < v.next_due) v.next_due = y.due;
+      }
+    }
+  }
   // gleiches Kennzeichen (ruhendes Doppel mit FIN-Tippfehler): das bewertete Fahrzeug gilt für die Kopplung (wie pickVehicleByPlate;
   // vorher gewann die zuletzt gelesene Zeile – das ruhende Doppel stand als „einsatzbereit“ im Gespann, die Sperre fehlte, 18.10.2026)
   const byPlate = new Map();
