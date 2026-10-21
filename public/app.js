@@ -102,7 +102,11 @@ async function api(method, path, body, extra = {}) {
   // Postausgang: Umgebung, in der die Meldung erfasst wurde (Inhaber kann die Ansicht inzwischen gewechselt haben – 18.10.2026)
   if (extra.env && S.me && S.me.role === 'owner') headers['x-cfp-env'] = extra.env;
   // Änderungen nur für die Person, die das Formular/den Postausgang erstellt hat (anderer Tab, andere Anmeldung → 409 user_mismatch)
-  if (method !== 'GET' && S.me && S.me.id && !path.startsWith('/api/logout')) headers['x-cfp-user'] = extra.asUser || S.me.id;
+  if (method !== 'GET' && S.me && S.me.id && !path.startsWith('/api/logout')) {
+    headers['x-cfp-user'] = extra.asUser || S.me.id;
+    // Umgebung, für die Formular/Postausgang gilt – Server weist bei inzwischen geänderter Kontoumgebung ab (env_mismatch, 21.10.2026)
+    if (S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;
+  }
   let b = body;
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
   let res;
@@ -127,7 +131,7 @@ async function api(method, path, body, extra = {}) {
     if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
     // inzwischen andere Person angemeldet (anderer Tab): Stand neu laden – Eingaben/Postausgang bleiben auf dem Gerät erhalten
-    if (code === 'user_mismatch') setTimeout(() => location.reload(), 2500);
+    if (code === 'user_mismatch' || code === 'env_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
   }
   // Fahrzeugstamm/Zuordnungen geändert → Offline-Fahrzeugliste auf diesem Gerät gleich auffrischen (20.10.2026)
@@ -1049,7 +1053,7 @@ const photosGet = (key) => idbDo('readonly', (st) => st.get(key));
 const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
 // vorübergehende Fehler beim Foto-Upload (Netz, Anmeldung beendet, andere Person, 429, 5xx): Fotos bleiben zum Nachreichen erhalten –
 // vorher galten 401/429/5xx als endgültig, die Fotos wurden gelöscht (20.10.2026)
-const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch'));
+const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch' || err.code === 'env_mismatch'));
 // Zeitlimit je Foto (verkleinert meist < 1 MB; 2 Minuten reichen auch bei sehr langsamem Netz)
 const PHOTO_TIMEOUT_MS = 120000;
 async function uploadCasePhotos(caseId, list, ox = {}) {
@@ -1091,7 +1095,7 @@ async function flushOutbox() {
           if (ph && ph.length && !target) skippedTxt = photosSkippedText(r); // Kontrolle ohne Ziel: bewusst nicht übertragen (nicht „fehlgeschlagen“)
           try { if (ph && ph.length && target) failed = await uploadCasePhotos(target, ph, ox); }
           catch (err) {
-            if (photoRetry(err)) { photoPending.set(item.body.request_key, { target, case_no: r.case_no }); kept++; if (err.status === 401 || err.code === 'user_mismatch') break; continue; }
+            if (photoRetry(err)) { photoPending.set(item.body.request_key, { target, case_no: r.case_no }); kept++; if (err.status === 401 || err.code === 'user_mismatch' || err.code === 'env_mismatch') break; continue; }
             throw err;
           }
           await photosDel(item.body.request_key).catch(() => {});
@@ -1101,7 +1105,7 @@ async function flushOutbox() {
       }
       catch (err) {
         if (err.offline || err.status === 429 || err.status >= 500) { kept++; continue; }
-        if (err.code === 'user_mismatch') { kept++; break; } // andere Person angemeldet: nichts senden, Eintrag bleibt
+        if (err.code === 'user_mismatch' || err.code === 'env_mismatch') { kept++; break; } // andere Person/Umgebung: nichts senden, Eintrag bleibt
         if (err.status === 401) { kept++; break; } // Anmeldung abgelaufen/beendet: kein „abgelehnt“ – nach dem Anmelden wird gesendet (19.10.2026)
         // Vom Server abgewiesen (z. B. Fahrzeug inzwischen außer Betrieb): nicht still verwerfen, sondern als „nicht gesendet“
         // auf dem Gerät behalten – Text zum Kopieren, erneut senden oder bewusst verwerfen (17.10.2026). Fotos bleiben bis dahin.
@@ -1314,7 +1318,7 @@ async function viewNew(preId) {
     } catch (err) {
       // Netzabbruch, Anmeldung inzwischen beendet (401) oder andere Person angemeldet (user_mismatch): Meldung für die Person sichern,
       // die sie erfasst hat – sie wird nach deren Anmeldung gesendet (21.10.2026: Formular und Eingaben gingen bei 401/user_mismatch verloren)
-      if (err.offline || err.status === 401 || err.code === 'user_mismatch') {
+      if (err.offline || err.status === 401 || err.code === 'user_mismatch' || err.code === 'env_mismatch') {
         const files = photoFiles;
         let stored = 0;
         if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
@@ -1749,7 +1753,7 @@ async function viewDepartureCheck(preId) {
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       sb.disabled = false;
-      if (err.offline || err.status === 401 || err.code === 'user_mismatch') { // wie Meldung (21.10.2026)
+      if (err.offline || err.status === 401 || err.code === 'user_mismatch' || err.code === 'env_mismatch') { // wie Meldung (21.10.2026)
         let stored = 0;
         if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/inspections', body, stored, who);

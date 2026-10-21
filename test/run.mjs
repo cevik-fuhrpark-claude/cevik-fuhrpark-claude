@@ -14388,7 +14388,7 @@ await test('Fehlersuche 20.10. (2): Prüftermin-Import nimmt verspätet erledigt
   eq(as.status, 400); ok(String(as.data.message).includes('Fahrer'), as.data.message);
   // 8. Oberfläche
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch'));"), 'Fotos bei 401/429/5xx behalten');
+  ok(app.includes("const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch' || err.code === 'env_mismatch'));"), 'Fotos bei 401/429/5xx behalten');
   ok(app.includes("if (photoRetry(err)) { photoPending.set("), 'Postausgang reicht Fotos nach');
   ok(app.includes("tn('outbox_photos_pending', np)"), 'nur Fotos ausstehend: eigener Text');
   ok(app.includes("u.environment === envShown"), 'Fahrerauswahl je Umgebung') ; ok(app.includes("t('no_drivers_env')"), 'Hinweis ohne Fahrer');
@@ -16550,9 +16550,24 @@ await test('Fehlersuche 21.10. (zwei Tabs): Abmelden/andere Person in einem Tab 
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("S.me = r.user; markSession(r.user.id);") && (app.match(/resetUserState\(\); markSession\(''\);/g) || []).length === 2, 'Anmeldung/Abmelden (Knopf, Leerlauf) markiert');
   ok(/window\.addEventListener\('storage', \(e\) => \{\n  if \(e\.key !== SESSION_MARK \|\| !S\.me \|\| S\.offlineStart\) return;\n  if \(\(e\.newValue \|\| ''\) !== S\.me\.id\) \{ resetUserState\(\); location\.reload\(\); \}/.test(app), 'andere Tabs reagieren');
-  eq((app.match(/if \(err\.offline \|\| err\.status === 401 \|\| err\.code === 'user_mismatch'\)/g) || []).length, 2, 'Meldung + Kontrolle sichern bei 401/user_mismatch');
+  eq((app.match(/if \(err\.offline \|\| err\.status === 401 \|\| err\.code === 'user_mismatch' \|\| err\.code === 'env_mismatch'\)/g) || []).length, 2, 'Meldung + Kontrolle sichern bei 401/user_mismatch/env_mismatch');
   eq((app.match(/outboxAdd\('\/api\/(cases|inspections)', body, stored, who\);/g) || []).length, 2, 'mit festgehaltener Person');
   ok(app.includes('function outboxAdd(path, body, photos = 0, who = outboxWho()) { if (!who) return; const list = outboxGet(who.key);') && app.includes('outboxSet(list, who.key); }'), 'Schlüssel der Person');
+});
+
+await test('Fehlersuche 21.10. (Umgebung gewechselt): veralteter Tab/Postausgang mit alter Umgebung → 409 env_mismatch, nichts angelegt; Inhaber und ohne Kopf unverändert', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const H = (envOf) => ({ 'content-type': 'application/json', 'x-cfp-user': U.driver.id, 'x-cfp-env-of': envOf });
+  const body = (k) => JSON.stringify({ vehicle_id: V1, description: 'Spiegel lose (Umgebungstest)', priority: 'niedrig', driveability: 'fahrbereit', request_key: k });
+  eq((await U.driver.req('POST', '/api/cases', body('ev-1'), H('test'))).status, 201, 'passende Umgebung');
+  const r = await U.driver.req('POST', '/api/cases', body('ev-2'), H('production')); eq(r.status, 409); eq(r.data.error, 'env_mismatch');
+  eq(e.DB.db.prepare(`SELECT COUNT(*) n FROM cases WHERE request_key='ev-2'`).get().n, 0, 'nichts angelegt');
+  eq((await U.driver.req('POST', '/api/cases', body('ev-3'), { 'content-type': 'application/json' })).status, 201, 'ohne Kopf (Schnittstelle/ältere App) unverändert');
+  eq((await U.own.req('POST', '/api/cases', body('ev-4'), { 'content-type': 'application/json', 'x-cfp-env-of': 'production', 'x-cfp-env': 'test' })).status, 201, 'Inhaber wählt je Anfrage');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].err_env_mismatch, l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;"), 'App sendet Umgebung');
+  ok(app.includes("if (err.code === 'user_mismatch' || err.code === 'env_mismatch') { kept++; break; }"), 'Postausgang behält Eintrag');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

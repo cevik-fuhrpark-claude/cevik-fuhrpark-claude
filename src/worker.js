@@ -149,6 +149,12 @@ async function handleApi(request, env, ctx, url) {
   if (claimedUser && m !== 'GET' && m !== 'HEAD' && path !== '/api/logout' && claimedUser !== user.id) {
     throw new HttpError(409, 'user_mismatch', 'Auf diesem Gerät ist inzwischen eine andere Person angemeldet – nichts gespeichert. Bitte Seite neu laden.');
   }
+  // Umgebung des Kontos inzwischen geändert (Test → Betrieb), Seite/Postausgang noch mit altem Stand: nichts in der neuen Umgebung anlegen
+  // (21.10.2026: ein veralteter Tab sandte eine Test-Meldung nach dem Umstellen in den Betrieb). Inhaber wählt die Umgebung je Anfrage (x-cfp-env).
+  const claimedEnv = request.headers.get('x-cfp-env-of');
+  if (claimedEnv && m !== 'GET' && m !== 'HEAD' && path !== '/api/logout' && user.role !== 'owner' && claimedEnv !== user.environment) {
+    throw new HttpError(409, 'env_mismatch', 'Die Umgebung dieses Kontos wurde inzwischen geändert – nichts gespeichert. Bitte Seite neu laden.');
+  }
   const envName = auth.effectiveEnv(user, request);
   usageEnv.set(request, envName);
   await guardSharedWrite(env, user, path, m);
