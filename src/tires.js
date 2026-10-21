@@ -235,7 +235,10 @@ export async function setTireSpec(env, user, vehicleId, body) {
   if (!/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).'); // wie der Import (20.10.2026)
   const verified = flag(body.verified, 'Geprüft') ? 1 : 0;
   // unbekanntes Fahrzeug → 404 (vorher Fremdschlüssel-Fehler = „Interner Fehler“, Fuzz 15.10.2026)
-  if (!(await env.DB.prepare('SELECT 1 FROM vehicles WHERE id=?').bind(vehicleId).first())) throw notFound();
+  const veh = await env.DB.prepare('SELECT kind FROM vehicles WHERE id=?').bind(vehicleId).first();
+  if (!veh) throw notFound();
+  // wie der Import: Lenk-/Lift-/Antriebsachse passt nicht zu einem Anhänger (21.10.2026: Einzelerfassung nahm sie „geprüft“ an)
+  if (veh.kind === 'anhaenger' && axle !== 'anhaenger') throw bad('validation', 'Achse passt nicht zum Anhänger.');
   const now = nowIso();
   // Ein am Fahrzeug geprüfter Wert wird nur durch eine neue Prüfung ersetzt (wie beim Import); jede Änderung im Protokoll (17.10.2026)
   const prev = await env.DB.prepare('SELECT size, verified FROM tire_specs WHERE vehicle_id=? AND axle=?').bind(vehicleId, axle).first();
@@ -382,7 +385,8 @@ export async function fleetTires(env, user, envName, query = {}) {
     const ageDays = oldest ? Math.round((Date.parse(today) - Date.parse(berlinDate(new Date(oldest)))) / 86400000) : null; // Berliner Kalendertage (18.10.2026: vorher 24-h-Blöcke – Messung 23:59 galt einen Tag jünger)
     const w = winterStatus(v.kind, winterMarks(evByV.get(v.id) || []));
     // Reifenalter laut DOT (nur erfasste DOT-Codes): ältester Reifen, Anzahl über Warnalter
-    const ages = Object.values(currentDots(evByV.get(v.id) || [])).filter(Boolean).map((d) => dotAge(d, today, ageYears));
+    // nur passende Positionen (nach Artwechsel Lkw → Anhänger zählte ein DOT der Lenkachse weiter, Akte zeigte ihn nicht; 21.10.2026)
+    const ages = Object.entries(currentDots(evByV.get(v.id) || [])).filter(([p, d]) => d && allowed.includes(p)).map(([, d]) => dotAge(d, today, ageYears));
     const oldestDot = ages.reduce((o, a) => (!o || a.dot_date < o.dot_date ? a : o), null);
     return { vehicle_id: v.id, plate: v.plate, kind: v.kind, site: v.site, status, winter: w.status, winter_missing: w.missing, winter_noncompliant: w.noncompliant, winter_order: v.kind === 'anhaenger' ? null : wo.open.get(v.id) || null, winter_closed_order: v.kind === 'anhaenger' ? null : wo.closedIfOpen(v.id, w.status, evByV.get(v.id) || [], v.kind),
       dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, spare_below_min: spareBelow, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };

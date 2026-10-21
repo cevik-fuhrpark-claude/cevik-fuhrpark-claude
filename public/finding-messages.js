@@ -273,6 +273,15 @@ export function localDateArg(v, lang) {
   return v;
 }
 
+// Reifenpositionen: gespeichert als Kürzel (VA-L, HA-L-aussen, AH1-R, Reserve …); Deutsch zeigt das Kürzel, UK/EN Klartext
+// (gemeinsam für App und Agentenbefunde – 21.10.2026: Befunde zeigten auf UK/EN „HA-L-aussen“/„Reserve“)
+export const POS_WORDS = { uk: { VA: 'Перед.', LA: 'Підйомна', HA: 'Задня', AH: 'Причіп', L: 'Л', R: 'П', aussen: 'зовн.', innen: 'внутр.', Reserve: 'Запасне колесо' },
+  en: { VA: 'Front', LA: 'Lift', HA: 'Rear', AH: 'Trailer', L: 'L', R: 'R', aussen: 'outer', innen: 'inner', Reserve: 'Spare wheel' } };
+export function posWord(code, lang) {
+  const w = POS_WORDS[lang]; if (!w || !code) return code; if (code === 'Reserve') return w.Reserve;
+  const m = /^(VA|LA|HA|AH)(\d?)-(L|R)(?:-(aussen|innen))?$/.exec(code); return m ? [w[m[1]] + (m[2] ? ' ' + m[2] : ''), w[m[3]], m[4] ? w[m[4]] : ''].filter(Boolean).join(' ') : code;
+}
+
 function fill(text, args, lang, dates = false) {
   return text.replace(PH, (_, name, fmt, list, forms) => {
     const v = args[name];
@@ -280,6 +289,7 @@ function fill(text, args, lang, dates = false) {
     if (forms) return pluralWord(v, forms, lang);
     if (fmt === 'km') return Number(v).toLocaleString(LOCALE[lang] || 'de-DE');
     if (list) { const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {}; return e[v] ?? FINDING_ENUMS.de[list]?.[v] ?? String(v); }
+    if (name === 'pos') return String(posWord(String(v), lang));
     if (dates && NUM_ARGS.has(name)) return String(localNumArg(v, lang));
     return String(dates && DATE_ARGS.has(name) ? localDateArg(v, lang) : v);
   });

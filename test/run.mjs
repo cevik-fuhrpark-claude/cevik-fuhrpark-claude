@@ -7371,9 +7371,9 @@ await test('Datenqualität: Telematik sendet nach „außer Betrieb nehmen“ we
   eq((await items()).length, 0, 'ohne Zeitpunkt kein Befund');
   eq(await wfInact(), inactBefore - 1, 'Zustand: ohne Protokollzeitpunkt zählt nichts');
   await env.DB.prepare(`UPDATE audit_log SET action='vehicle.deactivate' WHERE target=? AND action='vehicle.deactivate_x'`).bind(VID).run();
-  eq((await users.fleet.post(`/api/vehicles/${VID}/active`, { active: true })).status, 200);
+  const reAct = await users.fleet.post(`/api/vehicles/${VID}/active`, { active: true }); eq(reAct.status, 200);
   eq((await items()).length, 0, 'wieder in Betrieb: kein Befund');
-  eq((await users.fleet.post(`/api/vehicles/${V1}/active`, { active: true })).data.telematics_devices, 0, 'Aktivieren: kein Gerätehinweis');
+  eq(reAct.data.telematics_devices, 0, 'Aktivieren: kein Gerätehinweis');
   const plan = (await env.DB.prepare(`EXPLAIN QUERY PLAN SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=? AND a.action='vehicle.deactivate'`).bind(VID).all()).results.map((r) => r.detail).join(' ');
   ok(plan.includes('idx_audit_target_action'), 'Index genutzt: ' + plan);
   await env.DB.prepare('DELETE FROM telematics_latest WHERE vehicle_id=?').bind(VID).run();
@@ -13738,8 +13738,8 @@ await test('Oberfläche 19.10.: Druck ohne Bedienelemente (Foto-/Datei-Knopf, Zu
   ok(/h1, h2, h3 \{ break-after: avoid; \}/.test(css) && css.includes('@page guide') && css.includes('page: guide;'), 'Druck-CSS');
   ok(!/(noncompliant|missing)\.join\(', '\)/.test(app), 'Winterpositionen immer über posL');
   // posL wie in der App (ohne Browser): Funktion aus dem Quelltext auswerten
-  const src = app.slice(app.indexOf('const POS_WORDS'), app.indexOf('const fmtKm'));
-  const mk = (lang) => new Function('S', src + '; return posL;')({ lang });
+  const { posWord } = await import('../public/finding-messages.js'); ok(app.includes('const posL = (code) => posWord(code, S.lang);'), 'App nutzt gemeinsame Übersetzung');
+  const mk = (lang) => (code) => posWord(code, lang);
   eq(mk('de')('HA-L-aussen'), 'HA-L-aussen'); eq(mk('en')('HA-L-aussen'), 'Rear L outer'); eq(mk('en')('AH2-R'), 'Trailer 2 R'); eq(mk('en')('Reserve'), 'Spare wheel');
   eq(mk('uk')('VA-L'), 'Перед. Л'); eq(mk('uk')('XYZ'), 'XYZ', 'Unbekanntes bleibt');
 });
@@ -15183,7 +15183,7 @@ await test('Fehlersuche 20.10. (16): Führerscheinkontrolle am selben Tag korrig
   const order = vt.split('\n').slice(1).filter(Boolean).map((l) => l.split(';')[0].replace(/"/g, '')); ok(order[0].startsWith('ÖHR'), order.join('|'));
   ok(app.includes("`fuhrpark-fahrzeuge_${envFn()}${inact ? '_ausser-betrieb' : ''}_"), 'Dateiname App');
   // 5. erledigter Rückruf mit gespeicherter Altfrist zählt nicht als nächste Prüfung
-  ok(rd('src/vehicles.js').includes("m.next_due_date IS NOT NULL AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due"), 'Fahrzeugliste');
+  ok(rd('src/vehicles.js').includes("m.next_due_date IS NOT NULL AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due"), 'Fahrzeugliste');
   // 6. Startseite: ruhende Fahrzeuge nicht in der Leiste, nur als Anzahl; Filter „überfällig“ ohne ruhende
   const d0 = (await U.fleet.get('/api/dashboard')).data.vehicles;
   db.prepare("UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WDB9630051L917317'").run();
@@ -15756,6 +15756,51 @@ await test('Hinweise/Wiedervorlage: „nicht zugestellt“ an zugeordneten Fahre
   eq((await cmd(U.fleet, id2, 'set_followup', { followup_on: lim })).status, 200, 'genau ein Jahr erlaubt');
   ok(app.includes("if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }"), 'Formular: geändertes Datum ab heute');
   ok(app.includes('`fuhrpark-wiedervorlagen_${envFn()}_${bDate()}.ics`'), 'Kalenderdatei nennt die Umgebung');
+});
+
+await test('Fehlersuche 21.10. (Reifen/Fahrzeugakte): DOT nur passender Positionen, Reifenposition im Befund übersetzt, Achse am Anhänger, HU/SP-Frist in Fahrzeugliste/Akte nach Regel, Außer-Betrieb-Nahme nicht doppelt, Standortauswahl', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // 1. Reifen-Flotte: DOT einer Lkw-Position zählt nach Artwechsel zum Anhänger nicht mehr (wie Akte)
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 8, dot: 'DOT ABC 0115', request_key: rk() })).status, 201);
+  const row = async () => (await F.get('/api/tires/fleet')).data.rows.find((r) => r.vehicle_id === V1);
+  eq((await row()).dot_positions, 1, 'Lkw: DOT gezählt');
+  db.prepare(`UPDATE vehicles SET kind='anhaenger' WHERE id=?`).run(V1);
+  const r1 = await row(); eq(r1.dot_positions, 0, JSON.stringify(r1)); eq(r1.age_warn, 0); eq(r1.oldest_dot_date, null);
+  // 3. Einzelerfassung der Größe: Lenkachse am Anhänger abgewiesen (wie Import), Anhängerachse erlaubt
+  const sp = await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '315/80 R22.5', verified: true }); eq(sp.status, 400, JSON.stringify(sp.data));
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'anhaenger', size: '385/65 R22.5', verified: true })).status, 200);
+  db.prepare(`UPDATE vehicles SET kind='lkw' WHERE id=?`).run(V1);
+  // 2. Reifenposition im Agentenbefund auf UK/EN als Klartext, Deutsch als Kürzel
+  const { renderFindingMessage, posWord } = await import('../public/finding-messages.js');
+  const a = { plate: 'SZ-YC 5513', pos: 'HA-L-aussen', mm: 1, limit: 1.6, date: '2026-10-20' };
+  ok(renderFindingMessage('TIRE_TREAD', a, 'en', { dates: true }).startsWith('SZ-YC 5513 Rear L outer:'), renderFindingMessage('TIRE_TREAD', a, 'en', { dates: true }));
+  ok(renderFindingMessage('TIRE_TREAD', { ...a, pos: 'Reserve' }, 'uk', { dates: true }).startsWith('SZ-YC 5513 Запасне колесо:'), 'UK Reserverad');
+  ok(renderFindingMessage('TIRE_TREAD', a, 'de').startsWith('SZ-YC 5513 HA-L-aussen:'), 'DE Kürzel (gespeicherter Text unverändert)');
+  eq(posWord('AH2-R', 'en'), 'Trailer 2 R');
+  // 4. Fahrzeugliste/Akte: SP mit Nachweis-Datum, danach nicht SP-pflichtig → keine überfällige „nächste Prüfung“
+  const past = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10); const huLast = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', spec_source: 'Schein (Test)' })).status, 200);
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: huLast, evidence: 'TÜV (Test)' })).status, 201);
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'SP', next_due_date: past, evidence: 'Plakette SP (Test)' })).status, 201);
+  const nd = async () => (await F.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1).next_due;
+  eq(await nd(), past, 'SP-pflichtig: Nachweis-Datum gilt');
+  eq((await F.post(`/api/vehicles/${V1}/spec`, { zgm_class: '3_5_7_5', spec_source: 'Fahrzeugschein F.2 korrigiert (Test)', expected_updated_at: (await F.get(`/api/vehicles/${V1}`)).data.vehicle.updated_at })).status, 200);
+  const d = (await F.get(`/api/vehicles/${V1}`)).data; eq(d.hu_sp.sp.status, 'nicht_sp_pflichtig');
+  eq(await nd(), d.hu_sp.hu.due, 'Liste: nur noch HU nach Regel, keine SP');
+  ok(app.includes("const hs = ['HU', 'SP'].includes(m.kind) && d.hu_sp ? d.hu_sp[m.kind.toLowerCase()] : null;") && app.includes("t('hs_nicht_sp_pflichtig')"), 'Akte-Tabelle: Frist aus HU/SP-Regel');
+  // 5. Außer Betrieb nehmen: zweiter Aufruf überschreibt Grund/Datum nicht (409), Wieder-in-Betrieb-Nahme doppelt ebenso
+  eq((await F.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'verkauft an Händler (Test)' })).status, 200);
+  const n0 = db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.deactivate'`).get().n;
+  const r2 = await U.own.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'x' }); eq(r2.status, 409); eq(r2.data.error, 'already_inactive');
+  eq(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.deactivate'`).get().n, n0, 'kein zweiter Protokolleintrag');
+  eq((await F.get(`/api/vehicles/${V1}`)).data.inactive_info.reason, 'verkauft an Händler (Test)');
+  eq((await F.post(`/api/vehicles/${V1}/active`, { active: true })).status, 200);
+  eq((await F.post(`/api/vehicles/${V1}/active`, { active: true })).data.error, 'already_active');
+  const [p1, p2] = await Promise.all([F.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'parallel A' }), U.own.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'parallel B' })]);
+  eq([p1.status, p2.status].sort().join(','), '200,409', 'gleichzeitig: nur einer');
+  // 6. Fahrzeugliste: gewählter Standort ohne Fahrzeuge in der Auswahl bleibt sichtbar ausgewählt
+  ok(app.includes("${site && site !== 'ohne' && !sites.some((x) => sk(x) === sk(site)) ? `<option selected>${esc(site)}</option>` : ''}"), 'Standortauswahl');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -31,7 +31,7 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')) AS in_workshop,
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
       (SELECT MAX(measured_at) FROM odometer_readings o WHERE o.vehicle_id=v.id) AS last_km_at,
-      (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due, -- erledigter Rückruf hat keine Frist (wie Übersicht/Agent, 20.10.2026)
+      (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due, -- erledigter Rückruf hat keine Frist (wie Übersicht/Agent, 20.10.2026)
       -- nächste km-Fälligkeit (belegter Wert vor „km bei letzter Durchführung + Intervall“, wie ruleDueKm; HU/SP nur nach Datum)
       -- + Zeitpunkt der km-Grundlage dieser Regel und letzter km-Rücksprung (Tachotausch) – wie kmDue: danach kein Rest aus gemischten Zählern
       (SELECT x.k || '|' || x.kb || '|' || x.ldk || '|' || x.ldd || '|' || x.kind FROM (SELECT COALESCE(m.due_km, m.last_done_km + NULLIF(m.interval_km, 0)) AS k, COALESCE(m.km_basis_at, m.updated_at, '') AS kb,
@@ -83,8 +83,8 @@ export async function listVehicles(env, user, envName, query = {}) {
       const h = huSpFor(x, today, wd);
       for (const kind of ['HU', 'SP']) {
         const y = kind === 'HU' ? h.hu : h.sp;
+        // HU/SP immer nach der zentralen Regel (wie Übersicht/Agent/Akte): ein gespeicherter Rohwert galt sonst auch nach „nicht SP-pflichtig“ (21.10.2026)
         if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
-        if (x.rules.some((r) => r.kind === kind && r.next_due_date)) continue;
         if (!v.next_due || y.due < v.next_due) v.next_due = y.due;
       }
     }
@@ -556,17 +556,24 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
     const open = await env.DB.prepare(`SELECT COUNT(*) AS n FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(vehicleId).first();
     if (open.n) throw conflict('open_cases', `Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`);
   }
+  // schon im gewünschten Zustand (z. B. zweite Leitung mit veralteter Akte): nichts überschreiben – vorher ersetzten Datum, Grund und
+  // Person der Außer-Betrieb-Nahme in der Akte die ursprünglichen Angaben (21.10.2026)
+  const already = () => conflict(active ? 'already_active' : 'already_inactive', active ? 'Fahrzeug ist bereits in Betrieb.' : 'Fahrzeug ist bereits außer Betrieb.');
+  if (Number(v.active) === (active ? 1 : 0)) throw already();
   const now = nowIso();
   // Außer Betrieb nehmen beendet laufende Fahrerzuordnungen (Verlauf bleibt) – sonst galt der Fahrer weiter als zugeordnet und die
   // Zuordnung lebte bei Wieder-in-Betrieb-Nahme auf (17.10.2026)
   // offene Vorgänge zusätzlich im selben Stapel geprüft (18.10.2026: gleichzeitig angelegte Meldung blieb sonst offen am außer Betrieb genommenen Fahrzeug)
   const openGuard = `FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`;
   try {
+    // gleichzeitiger Wechsel: nur der erste ändert den Zustand (Guard im selben Stapel), der zweite erhält 409
     await env.DB.batch([
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*)=1 THEN 1 ELSE 0 END FROM vehicles WHERE id=? AND active<>?').bind(vehicleId, active ? 1 : 0), env.DB.prepare('DELETE FROM cmd_guard'),
       ...(active ? [] : [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END ${openGuard}`).bind(vehicleId), env.DB.prepare('DELETE FROM cmd_guard')]),
       env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, now, vehicleId),
       ...(active ? [] : [env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, vehicleId, now)])]);
   } catch (e) {
+    if (String(e && e.message).includes('CHECK') && Number((await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(vehicleId).first() || {}).active) === (active ? 1 : 0)) throw already();
     if (!active && String(e && e.message).includes('CHECK')) { const open = await env.DB.prepare(`SELECT COUNT(*) AS n ${openGuard}`).bind(vehicleId).first(); throw conflict('open_cases', `Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`); }
     throw e;
   }
