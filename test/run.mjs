@@ -15644,6 +15644,24 @@ await test('Fehlersuche 21.10.: Vertragsimport ohne „FIN Anhänger“, Vertrag
   eq(e.DB.db.prepare("SELECT COUNT(*) n FROM driver_documents WHERE driver_id=? AND title=?").get(d, nfc).n, 2, 'Titel NFC gespeichert');
 });
 
+await test('Kostenfreigabe-Markierung wird aufgehoben, wenn eine Buchung die Kosten unter die Grenze senkt (Fremdleistung ersetzt eigene Arbeit)', async () => {
+  const { U } = await freshWorld(); const O = U.own; const V1 = 'VIN:WMA15SZZ2HM722774';
+  eq((await O.put('/api/settings', { workshop_hourly_rate_net: '95', repair_cost_limit_net: '500' })).status, 200);
+  const cid = (await O.post('/api/cases', { vehicle_id: V1, description: 'Unfall Spiegel abgefahren', priority: 'mittel', driveability: 'fahrbereit', request_key: crypto.randomUUID() })).data.id;
+  const cmd = async (action, payload = {}, note = null) => { const c = (await O.get(`/api/cases/${cid}`)).data.case; return O.post(`/api/cases/${cid}/commands`, { action, command_id: crypto.randomUUID(), expected_version: c.version, note, payload }); };
+  eq((await cmd('approve_repair', { workshop_site: 'DORTMUND' }, 'Spiegel ersetzen')).status, 200); eq((await cmd('start_repair')).status, 200);
+  const w = await cmd('record_work', { hours: 8, work_date: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()), description: 'Demontage' });
+  eq(w.data.cost_limit_exceeded, true, JSON.stringify(w.data));
+  const x = await cmd('add_external_cost', { supplier: 'Fremdwerkstatt', amount_net: 300, covers_work_and_parts: true });
+  eq(x.status, 200); eq(x.data.cost_limit_cleared, true, JSON.stringify(x.data));
+  const d = (await O.get(`/api/cases/${cid}`)).data;
+  eq(d.case.version, x.data.version, 'Antwort nennt die neue Version'); eq(d.case.cost_over_limit_at, null); ok(!d.allowed_actions.includes('approve_costs'), 'keine Kostenfreigabe mehr angeboten');
+  ok(d.events.some((e) => e.action === 'cost_limit_cleared'), 'im Verlauf vermerkt');
+  // weitere Buchung über die Grenze markiert erneut
+  const y = await cmd('record_work', { hours: 3, work_date: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()), description: 'Nacharbeit' });
+  eq(y.status, 200); ok(!y.data.cost_limit_cleared, 'ersetzte Arbeit zählt nicht → bleibt unter der Grenze'); eq((await O.get(`/api/cases/${cid}`)).data.case.version, y.data.version);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

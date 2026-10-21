@@ -1180,7 +1180,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Grenze erst nach der letzten Buchung überschritten (Stundensatz erhöht, Grenze gesenkt, Satz nachgetragen – 18.10.2026: Freigabe
       // ohne Kostenfreigabe möglich): jetzt markieren (Hinweis an die Leitung) und die Freigabe abweisen
       // Markierung aus einer früheren Grenze/einem höheren Stundensatz: erst neu bewerten (Versions-Guard: neu laden, dann freigeben)
-      if (c.cost_over_limit_at && (await revalidateCostMarks(env, user.id, [c.id])).length) throw conflict('version_conflict', 'Kostenfreigabe nach geänderter Grenze nicht mehr nötig – bitte neu laden und erneut freigeben.');
+      if (c.cost_over_limit_at && (await revalidateCostMarks(env, user.id, [c.id])).length) throw conflict('version_conflict', 'Kostenfreigabe nicht mehr nötig – bitte neu laden und erneut freigeben.');
       if (c.cost_over_limit_at || await checkCostLimit(env, ctx, user, envName, c)) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten – keine Freigabe möglich.');
@@ -1246,9 +1246,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const still_locked = ['released', 'safety_lock_lifted'].includes(notifyKind) ? await otherLockCaseNo(env, updated) : null;
   if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked });
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
-  // Kostengrenze überschritten → checkCostLimit hat die Version um 1 erhöht (nur dann true); Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
-  const version = cost_limit_exceeded ? newVersion + 1 : newVersion;
-  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}) };
+  // schon markiert und Kosten jetzt nicht mehr über der Schwelle (z. B. Fremdleistung „ersetzt eigene Arbeit/Teile“): Markierung aufheben
+  // (21.10.2026: „Kostenfreigabe ausstehend“ blieb stehen, technische Freigabe endete mit 409)
+  const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
+  // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
+  const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
+  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}) };
 }
 
 // gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)
