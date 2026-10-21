@@ -18,7 +18,8 @@ export class HttpError extends Error {
 }
 
 export const bad = (code, message, extra) => new HttpError(400, code, message, extra);
-export const forbidden = (message = 'Keine Berechtigung für diese Aktion.') => new HttpError(403, 'forbidden', message);
+// extra.denied: maschinenlesbarer Grund (App übersetzt danach statt nur „Keine Berechtigung“) – 21.10.2026
+export const forbidden = (message = 'Keine Berechtigung für diese Aktion.', extra) => new HttpError(403, 'forbidden', message, extra);
 export const notFound = (message = 'Nicht gefunden.') => new HttpError(404, 'not_found', message);
 export const conflict = (code, message, extra) => new HttpError(409, code, message, extra);
 

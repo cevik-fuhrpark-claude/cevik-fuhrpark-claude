@@ -111,6 +111,8 @@ async function api(method, path, body, extra = {}) {
     // Häufige Fehler in der gewählten Sprache (Server-Texte sind deutsch): erst Code (err_*), sonst bekannter Text (Prüf- und Konfliktmeldungen); unbekannt: Server-Text
     const code = data && data.error;
     let tr = srvText(code, data && data.message);
+    // Berechtigungsgrund statt nur „Keine Berechtigung“ (Server liefert denied/status, 21.10.2026) – auch Deutsch ohne Status-Codes
+    if (code === 'forbidden' && data && typeof data.denied === 'string') { const fx = forbiddenText(data); if (fx) tr = fx; }
     // Lagerbestand: verfügbare Menge auch in UK/EN nennen (Server liefert sie als Zahl, 19.10.2026)
     if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
@@ -124,10 +126,21 @@ async function api(method, path, body, extra = {}) {
 }
 const VEH_CHANGE_RE = /^\/api\/(vehicles(\/import|\/[^/?]+\/(active|drivers))?|assignments\/[^/?]+)(\?|$)/;
 // Server-Meldung (deutsch) in der aktuellen Oberflächensprache: erst Code (err_*), sonst bekannter Text; unbekannt → null
+// 403 mit Grund aus dem Server (denied): Aktion/Status in der Oberflächensprache; unbekannter Grund → null
+function forbiddenText(d) {
+  const lb = (k, v) => { if (typeof v !== 'string' || !/^[a-z_]{1,40}$/.test(v)) return '–'; const x = t(k + v); return x === k + v ? '–' : x; }; // unbekannter Code → kein Rohcode
+  const st = (k) => lb(k, d.status);
+  if (d.denied === 'action_not_allowed') return t('err_action_not_allowed').replace('{a}', () => lb('act_', d.action)).replace('{s}', () => st('st_'));
+  if (d.denied === 'inspection_not_allowed') return t('err_inspection_not_allowed').replace('{r}', () => t('st_in_reparatur')).replace('{s}', () => st('st_'));
+  if (d.denied === 'fine_action_not_allowed') return t('err_fine_action_not_allowed').replace('{s}', () => st('fs_'));
+  return null;
+}
 function srvText(code, msg) {
   if (code === 'validation' && S.lang === 'de') return deLimitText(msg); // Zahlgrenzen im deutschen Format („0,01“, „100.000“)
   // Höchstzahl Fahrzeugdokumente (z. B. gleichzeitiger Upload): Zahl nennen statt nur „Zu viele Dateien“ (19.10.2026)
   { const m = code === 'too_many' && /^Maximal (\d+) Dokumente je Fahrzeug/.exec(msg || ''); if (m && S.lang !== 'de') return t('docs_full').replace('{max}', m[1]); }
+  // 403 mit eigener Begründung (z. B. „Nur der Inhaber darf …“): erst die bekannte Begründung, dann allgemein „Keine Berechtigung“ (21.10.2026)
+  if (code === 'forbidden' && S.lang !== 'de') return translateValidation(S.lang, msg) || (STRINGS[S.lang] && STRINGS[S.lang].err_forbidden) || null;
   return (code && S.lang !== 'de' && ((STRINGS[S.lang] && STRINGS[S.lang]['err_' + code]) || translateValidation(S.lang, msg))) || null;
 }
 

@@ -1,7 +1,7 @@
 # [CLAUDE] CEVIK Fuhrpark – Schnittstellen
 
 Basis-URL: die Worker-Adresse (z. B. `https://cevik-fuhrpark-claude.<konto>.workers.dev`).
-Alle Antworten JSON. Fehler: `{ "error": "<code>", "message": "<Text>" }` mit HTTP 400/401/403/404/409/410/413/429/500. `message` ist deutsch; die App zeigt Prüf- (400 `validation`) und Konfliktmeldungen (409) in der Oberflächensprache (`err_<code>` bzw. bekannter Text in `public/i18n.js`).
+Alle Antworten JSON. Fehler: `{ "error": "<code>", "message": "<Text>" }` mit HTTP 400/401/403/404/409/410/413/429/500. `message` ist deutsch; die App zeigt Prüf- (400 `validation`) und Konfliktmeldungen (409) in der Oberflächensprache (`err_<code>` bzw. bekannter Text in `public/i18n.js`). **403 `forbidden` (seit 21.10.2026):** feste Begründungen („Nur der Inhaber …“) übersetzt die App ebenfalls; Vorgangs-Befehl nicht erlaubt → zusätzlich `denied: "action_not_allowed"`, `action`, `status`; Kontrolle nach Reparatur außerhalb „in Reparatur“ → `denied: "inspection_not_allowed"`, `status`; Bußgeld-Aktion nicht möglich → `denied: "fine_action_not_allowed"`, `action`, `status` (additiv, `error`/`message` unverändert).
 
 ## 1. Integrations-API (Unternehmensbetriebssystem, n8n)
 Authentifizierung: `Authorization: Bearer <Token>` (Cloudflare-Secrets; ohne Secret antwortet die API mit 503):

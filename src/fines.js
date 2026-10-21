@@ -240,7 +240,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     }
     // unbekannte Aktion → 400 unknown_action (vorher 403 „ist hier nicht möglich“, 20.10.2026)
     if (!['confirm_driver', 'inform_driver', 'set_status', 'update'].includes(action)) throw bad('unknown_action', 'Unbekannte Aktion.');
-    if (!fineActions(user, f).includes(action)) throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`);
+    if (!fineActions(user, f).includes(action)) throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`, { denied: 'fine_action_not_allowed', action, status: f.status });
     if (body.expected_version !== undefined && Number(body.expected_version) !== f.version) throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
     switch (action) {
       case 'confirm_driver': {

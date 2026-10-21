@@ -15662,6 +15662,37 @@ await test('Kostenfreigabe-Markierung wird aufgehoben, wenn eine Buchung die Kos
   eq(y.status, 200); ok(!y.data.cost_limit_cleared, 'ersetzte Arbeit zählt nicht → bleibt unter der Grenze'); eq((await O.get(`/api/cases/${cid}`)).data.case.version, y.data.version);
 });
 
+await test('Berechtigungsfehler (403) mit Grund: Aktion/Status maschinenlesbar, alle festen Begründungen in UK/EN übersetzt', async () => {
+  const { U, cmd, newCase, toRepair, V1 } = await freshWorld();
+  // Vorgang: Werkstatt will einen gemeldeten Vorgang freigeben → reason, action, status (statt nur Text mit Codes)
+  const id = await newCase();
+  const r1 = await cmd(U.ws, id, 'approve_repair', { workshop_site: 'DORTMUND' });
+  eq(r1.status, 403); eq(r1.data.error, 'forbidden'); eq(r1.data.denied, 'action_not_allowed'); eq(r1.data.action, 'approve_repair'); eq(r1.data.status, 'gemeldet');
+  // Kontrolle nach Reparatur außerhalb „in Reparatur“
+  const r2 = await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items: [] });
+  eq(r2.status, 403, JSON.stringify(r2.data)); eq(r2.data.denied, 'inspection_not_allowed'); eq(r2.data.status, 'gemeldet');
+  // Bußgeld: „Fahrer informieren“ ohne ermittelten Fahrer
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: 'AZ-403-' + rk().slice(0, 6), offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1', plate_in_letter: 'SZ YC 5513', amount_eur: 30, response_due: BERLIN_TODAY });
+  eq(f.status, 201, JSON.stringify(f.data));
+  const r3 = await U.fleet.post(`/api/fines/${f.data.id}/commands`, { action: 'inform_driver' });
+  eq(r3.status, 403, JSON.stringify(r3.data)); eq(r3.data.denied, 'fine_action_not_allowed'); eq(r3.data.action, 'inform_driver'); eq(r3.data.status, 'eingegangen');
+  ok(await toRepair(), 'erlaubte Aktionen unverändert');
+  // Wächter: jede feste 403-Begründung im Server ist in UK/EN übersetzt; Vorlagen-Texte der App in allen Sprachen
+  const fs = await import('node:fs');
+  const { translateValidation: tv, STRINGS: STR } = await import('../public/i18n.js');
+  const src = fs.readdirSync(new URL('../src/', import.meta.url)).map((x) => fs.readFileSync(new URL('../src/' + x, import.meta.url), 'utf8')).join('\n');
+  const lits = [...src.matchAll(/(?:forbidden\(|HttpError\(403, 'forbidden', )'([^']+)'/g)].map((m) => m[1]);
+  ok(lits.length >= 15, 'feste 403-Begründungen gefunden'); lits.push('Keine Berechtigung für diese Aktion.');
+  for (const l of new Set(lits)) ok(tv('uk', l) && tv('en', l), `403-Begründung ohne Übersetzung (in V_MORE ergänzen): ${l}`);
+  for (const k of ['err_action_not_allowed', 'err_inspection_not_allowed', 'err_fine_action_not_allowed']) for (const l of ['de', 'uk', 'en']) ok(STR[l][k] && STR[l][k].includes('{s}'), `${k} (${l})`);
+  // Vorlagen mit Platzhalter liefern einen Grund (sonst bliebe UK/EN bei „No permission.“)
+  for (const m of src.matchAll(/forbidden\(`[^`]+`(, \{[^}]*\})?\)/g)) ok(m[1] && /denied: '/.test(m[1]), `forbidden-Vorlage ohne denied: ${m[0].slice(0, 80)}`);
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/code === 'forbidden' && S\.lang !== 'de'\) return translateValidation/.test(app), 'App übersetzt die Begründung vor „Keine Berechtigung“');
+  for (const reason of ['action_not_allowed', 'inspection_not_allowed', 'fine_action_not_allowed']) ok(app.includes(`d.denied === '${reason}'`), `App kennt ${reason}`);
+  void V1;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

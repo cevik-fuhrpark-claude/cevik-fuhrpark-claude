@@ -64,6 +64,7 @@ UI-Startseite: Sprung mit Standortfilter wie Zähler|ui-startseite-sprung-stando
 UI-Werkstatt-Befehl nach Funkloch nicht doppelt|ui-befehl-funkloch.py|/tmp/cfp-befehl-funkloch.log
 UI-Vorgang nennt berechnete SP, Nachweistext übersetzt|ui-vorgang-sp-berechnet.py|/tmp/cfp-vorgang-sp.log
 UI-Stammdaten auf gelesenem Stand, Bußgeld Anhänger/Übernahme|ui-stammdaten-stand-bussgeld-anhaenger.py|/tmp/cfp-stand-bussgeld.log
+UI-Berechtigungsfehler mit Grund (Kontrolle nach Reparatur, Status)|ui-berechtigung-grund.py|/tmp/cfp-berechtigung-grund.log
 UI-Kosten nur unbewertet (– statt 0 €)|ui-kosten-unbewertet.py|/tmp/cfp-kostenuv.log
 UI-Zeitleiste Hinweis bei Kürzung|ui-zeitleiste-hinweis.py|/tmp/cfp-zlhinweis.log
 UI-Datenqualität Hinweis bei Kappung|ui-dq-kappung.py|/tmp/cfp-dqkappung.log

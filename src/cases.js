@@ -893,7 +893,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   // Version zuerst (20.10.2026): veraltete Seite bekommt „bitte neu laden“ statt „nicht erlaubt“ (Status hat sich inzwischen geändert)
   if (c.version !== expectedVersion) throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.', { current_version: c.version });
   const allowed = allowedActions(user, c, access);
-  if (!allowed.includes(action)) throw forbidden(`Aktion „${action}“ ist für Ihre Rolle bzw. im Status „${c.status}“ nicht erlaubt.`);
+  if (!allowed.includes(action)) throw forbidden(`Aktion „${action}“ ist für Ihre Rolle bzw. im Status „${c.status}“ nicht erlaubt.`, { denied: 'action_not_allowed', action, status: c.status });
 
   const now = nowIso();
   const set = {};
@@ -1307,7 +1307,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
     const caseId = str(body.case_id, { required: true, max: 40, field: 'Vorgang' });
     const loaded = await loadCase(env, user, envName, caseId);
     c = loaded.c;
-    if (!allowedActions(user, c, loaded.access).includes('inspection')) throw forbidden('Kontrolle nach Reparatur ist nur im Status „in Reparatur“ durch die zuständige Werkstatt möglich.');
+    if (!allowedActions(user, c, loaded.access).includes('inspection')) throw forbidden('Kontrolle nach Reparatur ist nur im Status „in Reparatur“ durch die zuständige Werkstatt möglich.', { denied: 'inspection_not_allowed', status: c.status });
     vehicleId = c.vehicle_id;
   } else {
     if (!['driver', 'fleet', 'owner', 'workshop'].includes(user.role)) throw forbidden();
