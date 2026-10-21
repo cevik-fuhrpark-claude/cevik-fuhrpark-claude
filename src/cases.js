@@ -153,7 +153,7 @@ export async function listCases(env, user, envName, query, meta = null) {
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`
-    SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name, u.role AS reporter_role,
+    SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS reporter_role,
       (SELECT COUNT(*) FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen') AS open_items,
       (SELECT COUNT(*) FROM files f WHERE f.case_id=c.id) AS file_count,
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='repeat_finding') AS last_repeat_at,
@@ -235,7 +235,7 @@ function shapeCase(c, user) {
 export async function getCaseDetail(env, user, envName, caseId) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   const vehicle = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
-  const reporter = await env.DB.prepare('SELECT display_name, role FROM users WHERE id=?').bind(c.reporter_id).first();
+  const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role FROM users WHERE id=?`).bind(c.reporter_id).first();
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
@@ -245,9 +245,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at, uploaded_by FROM files WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
   // Fahrer sehen wie im Verlauf keine Namen anderer Personen, nur deren Rolle (17.10.2026: Restarbeiten/Kontrollen zeigten Namen von Werkstatt/Leitung)
   const ownName = (o, by, nameK) => (user.role === 'driver' && o[by] !== user.id ? { ...o, [nameK]: null, [nameK + '_role']: o[nameK.replace('_name', '_role')] } : o);
-  const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, u.role AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
+  const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
     .map((o) => hideDriverName(user, ownName(o, 'created_by', 'created_by_name'), 'created_by_name', 'created_by_role'));
-  const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, i.performed_by, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
+  const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, i.performed_by, u.display_name AS performed_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
     .map(({ performed_by, ...i }) => hideDriverName(user, ownName({ ...i, items: JSON.parse(i.items), performed_by }, 'performed_by', 'performed_by_name'), 'performed_by_name', 'performed_by_role'))
     .map(({ performed_by, ...i }) => i);
   // Folgeauftrag je Prüfpunkt nur verlinken, wenn die Person ihn öffnen darf – sonst nur die Nummer (21.10.2026: Fahrer/Werkstatt sahen

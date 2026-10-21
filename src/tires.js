@@ -126,7 +126,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
   // neuesten 200: Positionen mit älterem letzten Ereignis (z. B. Reserverad, Anhänger) fielen dann aus Akte und Winterstatus heraus,
   // während die Flottenübersicht sie zeigte.
   const [histRows, all] = await Promise.all([
-    env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, u.role AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
+    env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
     WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT ?`).bind(envName, vehicleId, TIRE_HIST_MAX + 1).all(),
     env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
   ]);

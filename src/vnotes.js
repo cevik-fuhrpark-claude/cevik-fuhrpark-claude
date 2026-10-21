@@ -21,7 +21,7 @@ export async function listNotes(env, user, envName, vehicleId, query = {}) {
   const archived = query.archived === '1';
   const today = berlinDate();
   // Archiv: archivierte und abgelaufene Hinweise (abgelaufen = „gültig bis“ vor heute), jüngstes Ende zuerst
-  const rows = (await env.DB.prepare(`SELECT n.id, n.text, n.for_driver, n.created_at, n.archived_at, n.valid_until, u.display_name AS created_by_name, u.role AS created_by_role, a.display_name AS archived_by_name
+  const rows = (await env.DB.prepare(`SELECT n.id, n.text, n.for_driver, n.created_at, n.archived_at, n.valid_until, u.display_name AS created_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS created_by_role, a.display_name AS archived_by_name
     FROM vehicle_notes n JOIN users u ON u.id=n.created_by LEFT JOIN users a ON a.id=n.archived_by
     WHERE n.vehicle_id=? AND n.environment=? AND ${archived ? 'NOT (' + noteActiveSql('n.') + ')' : noteActiveSql('n.')}
     ORDER BY ${archived ? 'COALESCE(n.archived_at, n.valid_until)' : 'n.created_at'} DESC, n.rowid DESC LIMIT ?`).bind(vehicleId, envName, today, NOTES_ARCHIVE_MAX + 1).all()).results;

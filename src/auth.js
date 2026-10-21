@@ -581,8 +581,8 @@ export async function updateUser(env, actor, userId, body) {
   const now = nowIso();
   // nur auf dem gelesenen Stand schreiben (Muster cmd_guard): vorher machte eine gleichzeitige Namensänderung eine Deaktivierung oder einen
   // Rollenwechsel still rückgängig (alle Felder absolut aus dem alten Stand zurückgeschrieben) – 17.10.2026
-  const stmts = [env.DB.prepare('UPDATE users SET role=?, environment=?, active=?, display_name=?, workshop_site=?, updated_at=? WHERE id=? AND updated_at=?')
-    .bind(role, environment, active, display, site, laterIso(target.updated_at), userId, target.updated_at),
+  const stmts = [env.DB.prepare('UPDATE users SET was_driver=CASE WHEN role=\'driver\' OR ?=\'driver\' THEN 1 ELSE was_driver END, role=?, environment=?, active=?, display_name=?, workshop_site=?, updated_at=? WHERE id=? AND updated_at=?')
+    .bind(role, role, environment, active, display, site, laterIso(target.updated_at), userId, target.updated_at),
   env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard')];
   // Inhaber deaktivieren/herabstufen: Handelnde Person muss noch aktiv in ihrer Rolle sein und danach mindestens ein aktiver Inhaber
   // übrig bleiben (19.10.2026: zwei Inhaber, die sich gleichzeitig gegenseitig deaktivierten, ließen keinen Inhaber zurück)

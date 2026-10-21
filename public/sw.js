@@ -58,7 +58,7 @@ self.addEventListener('push', (e) => {
   const work = [
     self.registration.showNotification(d.title || 'Fuhrpark', {
       body: d.body || '', tag: d.case_id || d.id, ...(d.lang ? { lang: d.lang, dir: 'ltr' } : {}), ...(d.ts ? { timestamp: d.ts } : {}), renotify: true, requireInteraction: !!d.urgent,
-      icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', data: { id: d.id, case_id: d.case_id, kind: d.kind, ref: d.ref },
+      icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', data: { id: d.id, case_id: d.case_id, kind: d.kind, ref: d.ref, env: d.env }, // env für den Klick (Umgebung des Hinweises; 21.10.2026 fehlte es → Inhaber landete im falschen Bereich)
     }),
     d.id ? fetch(`/api/notifications/${d.id}/received`, { method: 'POST', headers: { 'x-cfp': '1' }, credentials: 'include' }).catch(() => {}) : null,
     self.clients.matchAll({ type: 'window' }).then((cs) => cs.forEach((c) => c.postMessage({ type: 'push' }))),

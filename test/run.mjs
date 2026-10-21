@@ -16269,6 +16269,60 @@ await test('Fehlersuche 21.10. (Reifen/Berichte): Achsgrößen passend zur Fahrz
   const labels = new Set(rep.sites.map((x) => x.site)); for (const r of rep.rows) ok(!r.site || labels.has(r.site), `Zeile ${r.site} wie Standortsumme ${[...labels]}`);
 });
 
+await test('Fehlersuche 21.10. (Sicherheitsprüfung): Lesezugriff sieht Fahrernamen auch nach Rollenwechsel nicht (Migration 0069 was_driver), Push-Klick behält die Umgebung des Hinweises', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const C = await import('../src/cases.js');
+  // 1. Fahrer meldet + kontrolliert, wird danach Disposition → Lesezugriff sieht den Namen weiter nicht
+  const id = await newCase();
+  const items = C.CHECKLIST.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items })).status, 201);
+  const look = async () => {
+    const l = (await U.viewer.get('/api/cases')).data.cases.find((c) => c.id === id);
+    const d = (await U.viewer.get(`/api/cases/${id}`)).data;
+    const cr = (await U.viewer.get('/api/cases?format=csv')).data; const csv = typeof cr === 'string' ? cr : new TextDecoder().decode(cr);
+    const a = (await U.viewer.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
+    const insp = (a.inspections || []).filter((i) => i.kind === 'abfahrt');
+    return { l, d, csv, insp };
+  };
+  const chk = (r, when) => {
+    eq(r.l.reporter_name, null, `${when}: Liste`); ok(r.l.reporter_name_hidden, `${when}: Liste ausgeblendet`);
+    eq(r.d.reporter_name, null, `${when}: Detail`); ok(r.d.reporter_name_hidden, `${when}: Detail ausgeblendet`);
+    ok(!r.csv.includes('Fahrer W'), `${when}: CSV ohne Namen`);
+    ok(r.insp.length >= 1 && r.insp.every((i) => i.performed_by_name === null && i.performed_by_name_hidden), `${when}: Kontrollen in der Akte ${JSON.stringify(r.insp)}`);
+    ok(!('reporter_role' in r.l) && r.insp.every((i) => !('performed_by_role' in i)), `${when}: keine Rollenspalte`);
+  };
+  chk(await look(), 'als Fahrer');
+  eq(db.prepare('SELECT was_driver FROM users WHERE id=?').get(U.driver.id).was_driver, 0, 'heute Fahrer – Spalte erst beim Wechsel gesetzt');
+  eq((await U.own.req('PATCH', `/api/users/${U.driver.id}`, { role: 'dispatch' })).status, 200);
+  eq(db.prepare('SELECT was_driver FROM users WHERE id=?').get(U.driver.id).was_driver, 1, 'was_driver nach Wechsel');
+  chk(await look(), 'nach Wechsel zu Disposition');
+  // Leitung sieht den Namen weiter
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.reporter_name, 'Fahrer W', 'Leitung sieht Namen');
+  // Konto, das nie Fahrer war, bleibt sichtbar
+  const idF = await newCase({}, U.fleet);
+  eq((await U.viewer.get(`/api/cases/${idF}`)).data.reporter_name, 'Leitung', 'Leitung als Melder sichtbar');
+  // 2. Nachtrag der Migration: früherer Fahrer laut Protokoll/Vorgangsverlauf
+  const mig = (await import('node:fs')).readFileSync(new URL('../migrations/0069_users_was_driver.sql', import.meta.url), 'utf8');
+  const upd = mig.slice(mig.indexOf('UPDATE users'));
+  db.prepare('UPDATE users SET was_driver=0').run();
+  db.prepare(upd).run();
+  eq(db.prepare('SELECT was_driver FROM users WHERE id=?').get(U.driver.id).was_driver, 1, 'Nachtrag: früherer Fahrer');
+  eq(db.prepare('SELECT was_driver FROM users WHERE id=?').get(U.fleet.id).was_driver, 0, 'Nachtrag: Leitung nicht');
+  // 3. Service Worker: env der Push-Nachricht landet in notification.data und im geöffneten Fenster
+  const code = (await import('node:fs')).readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const L = {}; let shown; let opened; const of = globalThis.fetch;
+  const self = { addEventListener: (n, f) => (L[n] = f), registration: { showNotification: async (t, o) => { shown = o; } },
+    clients: { matchAll: async () => [], openWindow: async (u) => { opened = u; }, claim: async () => {} }, skipWaiting: async () => {} };
+  globalThis.fetch = async () => ({ ok: true });
+  try {
+    new Function('self', 'location', 'caches', code)(self, { origin: 'http://x' }, {});
+    const ps = []; L.push({ data: { json: () => ({ id: 'n1', title: 'T', body: 'B', case_id: 'c1', env: 'test' }) }, waitUntil: (p) => ps.push(p) }); await Promise.all(ps);
+    eq(shown.data.env, 'test', 'env in notification.data');
+    const ps2 = []; L.notificationclick({ notification: { close() {}, data: shown.data }, waitUntil: (p) => ps2.push(p) }); await Promise.all(ps2);
+    eq(opened, '/?env=test#/cases/c1', 'Fenster mit Umgebung');
+  } finally { globalThis.fetch = of; }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
