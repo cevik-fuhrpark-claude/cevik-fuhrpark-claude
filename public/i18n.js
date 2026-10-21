@@ -941,6 +941,8 @@ export function deLimitText(msg) {
   if ((m = msg.match(/^(.{1,60}): (höchstens|mindestens) (-?[\d.e+]+)\.$/))) return `${m[1]}: ${m[2]} ${fmtLimit('de', m[3])}.`;
   return null;
 }
+Object.assign(VALIDATION_TEXTS.uk, { csv_quote: 'Рядок {n}: лапки не закрито – перевірте файл.' });
+Object.assign(VALIDATION_TEXTS.en, { csv_quote: 'Line {n}: quotation mark not closed – please check the file.' });
 Object.assign(VALIDATION_TEXTS.uk, { int_sep: '{f}: «{v}» – вводьте без розділювача тисяч (напр. {x}).' });
 Object.assign(VALIDATION_TEXTS.en, { int_sep: '{f}: “{v}” – please enter without thousands separator (e.g. {x}).' });
 export function translateValidation(lang, msg) {
@@ -965,6 +967,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): ganze Zahl\.$/))) return T.integer.replace('{f}', f(m[1]));
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): höchstens 2 Nachkommastellen\.$/))) return T.cents.replace('{f}', f(m[1]));
   if ((m = msg.match(/^Maximal (\d{1,6}) Zeilen je Import\.$/))) return T.max_rows.replace('{n}', m[1]);
+  if ((m = msg.match(/^Zeile (\d{1,7}): Anführungszeichen nicht geschlossen – bitte die Datei prüfen\.$/)) && T.csv_quote) return T.csv_quote.replace('{n}', m[1]);
   if ((m = msg.match(/^Höchstens (\d{1,4}) aktive Hinweise je Fahrzeug – bitte erledigte archivieren\.$/))) return T.notes_max.replace('{n}', m[1]);
   if ((m = msg.match(/^Fahrzeugart unbekannt: (.{0,60}) \(Lkw oder Anhänger\)$/))) return T.kind_unknown.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Artikel doppelt gezählt: (.{1,200})$/))) return T.counted_twice.replace('{v}', () => m[1]);
@@ -1600,9 +1603,9 @@ export function auditDetailText(lang, detail, refs) {
 Object.assign(STRINGS.de, { ws_nicht_pflichtig: 'Winter: keine Pflicht', tk_massenspeicher: 'Massenspeicher', dex_truncated: 'Datenauskunft gekürzt: In {t} sind nur die neuesten Einträge enthalten (Zeilengrenze). Vor der Weitergabe ergänzen (z. B. aus der Datensicherung).' });
 Object.assign(STRINGS.uk, { ws_nicht_pflichtig: 'Зима: не обов’язково', tk_massenspeicher: 'Пам’ять тахографа', dex_truncated: 'Відповідь на запит даних скорочено: у {t} є лише найновіші записи (ліміт рядків). Доповніть перед передачею (наприклад, з резервної копії).' });
 Object.assign(STRINGS.en, { ws_nicht_pflichtig: 'Winter: not required', tk_massenspeicher: 'Vehicle unit', dex_truncated: 'Data access report shortened: {t} only contain the newest entries (row limit). Complete it before passing it on (e.g. from the backup).' });
-Object.assign(STRINGS.de, { sla_immediate: 'sofort', driver_inactive: 'Ausgeschieden/inaktiv', ddoc_col_detail: 'Klassen / Nummer' });
-Object.assign(STRINGS.uk, { driver_inactive: 'Звільнений/неактивний', ddoc_col_detail: 'Категорії / номер' });
-Object.assign(STRINGS.en, { driver_inactive: 'Former/inactive', ddoc_col_detail: 'Classes / number' });
+Object.assign(STRINGS.de, { sla_immediate: 'sofort', driver_inactive: 'Ausgeschieden/inaktiv', ddoc_col_detail: 'Klassen / Nummer', csv_mixed_encoding: 'Die Datei hat eine gemischte Zeichenkodierung (Umlaute teils UTF-8, teils Windows). Bitte in Excel als „CSV UTF-8“ neu speichern und erneut wählen.' });
+Object.assign(STRINGS.uk, { driver_inactive: 'Звільнений/неактивний', ddoc_col_detail: 'Категорії / номер', csv_mixed_encoding: 'Файл має змішане кодування символів (частково UTF-8, частково Windows). Збережіть його в Excel як «CSV UTF-8» і виберіть знову.' });
+Object.assign(STRINGS.en, { driver_inactive: 'Former/inactive', ddoc_col_detail: 'Classes / number', csv_mixed_encoding: 'The file has mixed character encoding (partly UTF-8, partly Windows). Please save it in Excel as “CSV UTF-8” and choose it again.' });
 Object.assign(STRINGS.uk, { sla_immediate: 'одразу' });
 Object.assign(STRINGS.en, { sla_immediate: 'immediately' });
 Object.assign(STRINGS.de, { au_target: 'Betrifft', au_access: 'Zugang & Sicherheit' });

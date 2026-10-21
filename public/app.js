@@ -3,7 +3,7 @@ import { caseDescText, stockNoteText } from './check-labels.js';
 import { STRINGS, PLURALS, CHECK_LABELS, translateValidation, deLimitText, translateImportReason, translateNextAction, translateLockReason, auditActionLabel, auditDetailText } from './i18n.js';
 import { findingMessage, posWord } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
-import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile } from './csv.js';
+import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile as readCsvRaw } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -12,6 +12,11 @@ const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase();
 const sortPref = (key, allowed, def, set) => { const k = 'cfp_sort_' + key; if (set !== undefined) { try { sessionStorage.setItem(k, set); } catch {} return set; } let v = ''; try { v = sessionStorage.getItem(k) || ''; } catch {} return allowed.includes(v) ? v : def; };
 const CASE_SORTS = ['priority', 'oldest', 'updated'], VEH_SORTS = ['plate', 'next_due', 'km_due', 'check_oldest', 'km_desc', 'findings'];
 let lastActivity = Date.now(), lastApiAt = 0, idleBusy = false; // Leerlauf-Abmeldung (siehe noteActivity)
+// CSV-Datei lesen; gemischte Zeichenkodierung → Meldung in der App-Sprache (unbehandelte Ablehnung mit status → Toast)
+const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e) { if (e && e.code === 'csv_mixed_encoding') e.message = t('csv_mixed_encoding'); throw e; } };
+// Anfrageschlüssel je Formularinhalt: gleicher Inhalt (Wiederholung nach verlorener Antwort) = gleicher Schlüssel, geänderter Inhalt = neue Buchung
+// (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
+const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = crypto.randomUUID(); form.dataset.rkSig = sig; } return form.dataset.rk; };
 window.__cfpBooted = true; // Module vollständig geladen – Start-Wächter (boot.js) bleibt still
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -102,7 +107,10 @@ async function api(method, path, body, extra = {}) {
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
   let res;
   if (!extra.bg) lastApiAt = Date.now(); // Hintergrund-Abfragen (Zahl am Glockensymbol) zählen nicht als Bedienung – auch serverseitig nicht (x-cfp-bg)
-  try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin' }); }
+  // timeoutMs: Zeitlimit (Foto-Uploads) – ohne Antwort gilt die Anfrage als Netzabbruch (21.10.2026: „Lade Foto 2/5“ hing ohne Ende,
+  // nach Neuladen fehlten die restlichen Fotos still); dann greift der Postausgang für die restlichen Fotos
+  const sig = extra.timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(extra.timeoutMs) : undefined;
+  try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
@@ -1034,9 +1042,11 @@ const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
 // vorübergehende Fehler beim Foto-Upload (Netz, Anmeldung beendet, andere Person, 429, 5xx): Fotos bleiben zum Nachreichen erhalten –
 // vorher galten 401/429/5xx als endgültig, die Fotos wurden gelöscht (20.10.2026)
 const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch'));
+// Zeitlimit je Foto (verkleinert meist < 1 MB; 2 Minuten reichen auch bei sehr langsamem Netz)
+const PHOTO_TIMEOUT_MS = 120000;
 async function uploadCasePhotos(caseId, list, ox = {}) {
   let failed = 0;
-  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (photoRetry(err)) throw err; failed++; } }
+  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (photoRetry(err)) throw err; failed++; } }
   return failed;
 }
 let flushing = false;
@@ -1244,34 +1254,39 @@ async function viewNew(preId) {
   $('#vq').oninput = () => { const q = $('#vq').value.toLowerCase().replace(/[\s-]/g, ''); $$('.vehpick label').forEach((l) => { l.hidden = !!q && !l.textContent.toLowerCase().replace(/[\s-]/g, '').includes(q); const r = $('input', l); if (l.hidden && r && r.checked) r.checked = false; }); if (q) $$('details').forEach((d) => (d.open = true)); };
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
+    // Knopf/Fotos beim Absenden festhalten: wechselt der Fahrer während des Hochladens die Seite, laufen die Fotos weiter, ohne dass die
+    // neue Seite überschrieben oder verlassen wird (21.10.2026: Abfahrtskontrolle war nach dem Sprung zum Vorgang leer)
+    const sb = $('#sb');
     const veh = $('input[name=veh]:checked');
     // Prüfung in der App-Sprache (Browser-Meldungen wären in der Gerätesprache)
     if (!veh) { toast(t('choose_vehicle'), true); const vp = $('.vehpick'); if (vp) { vp.setAttribute('role', 'radiogroup'); markInvalid(vp, t('choose_vehicle')); } $('#vq').focus(); return; }
     if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
-    $('#sb').disabled = true;
+    sb.disabled = true;
+    const photoFiles = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
     try {
       const r = await api('POST', '/api/cases', body);
-      const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
+      const files = photoFiles;
       let failed = 0;
       let later = 0;
       for (const [i, file] of files.entries()) {
-        $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
+        sb.textContent = `${t('uploading')} ${i + 1}/${files.length}`;
         try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (photoRetry(err)) { later = await photosLater('/api/cases', body, r, r.id, files.slice(i)); break; } failed++; }
       }
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
-      location.hash = '#/cases/' + r.id;
+      if (sb.isConnected) location.hash = '#/cases/' + r.id;
     } catch (err) {
       if (err.offline) {
-        const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
+        const files = photoFiles;
         let stored = 0;
         if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/cases', body, stored);
+        if (!sb.isConnected) { toast(t('outbox_saved')); return; }
         render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
       }
-      toast(err.message, true); $('#sb').disabled = false;
+      toast(err.message, true); sb.disabled = false;
     }
   };
 }
@@ -1404,13 +1419,23 @@ async function viewCase(id) {
   // Fehler gesammelt in einer Meldung nach dem Neuaufbau (sonst überdeckt eine Meldung die andere)
   const fi = $('#file'); if (fi) fi.onchange = async () => {
     const all = [...fi.files]; const take = all.slice(0, filesFree); const skipped = all.slice(filesFree); const errs = [];
-    for (const file of take) {
-      try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${c.id}/files`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
-      catch (err) { errs.push(`${file.name}: ${err.message}`); }
+    // Fortschritt sichtbar; bei Netzabbruch die restlichen Fotos in den Postausgang (21.10.2026: 16 s ohne Anzeige, danach „Keine Verbindung“
+    // für Fotos, die schon am Server lagen, und der Rest war verloren)
+    const prog = document.createElement('span'); prog.className = 'small muted'; prog.setAttribute('role', 'status'); fi.after(prog); fi.disabled = true;
+    let later = 0;
+    for (const [i, file] of take.entries()) {
+      prog.textContent = ` ${t('uploading')} ${i + 1}/${take.length}`;
+      try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
+      catch (err) {
+        if (photoRetry(err)) { later = await photosLater('/api/cases', { request_key: uid() }, c, c.id, take.slice(i)); if (!later) errs.push(`${file.name}: ${err.message}`); break; }
+        errs.push(`${file.name}: ${err.message}`);
+      }
     }
-    await viewCase(c.id);
+    prog.remove(); fi.disabled = false;
+    if (later) toast(tn('photos_stored', later));
+    await viewCase(c.id).catch(() => {});
     if (skipped.length) errs.unshift(tn('files_skipped', skipped.length).replace('{max}', PHOTO_MAX).replace('{names}', skipped.map((f) => f.name).join(', ')));
-    if (errs.length) toast(errs.join(' · '), true); else if (take.length) toast('✓');
+    if (errs.length) toast(errs.join(' · '), true); else if (take.length && !later) toast('✓');
   };
 }
 
@@ -1667,13 +1692,14 @@ async function viewDepartureCheck(preId) {
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
+    const sb = $('#sb'); // festhalten – Seitenwechsel während des Hochladens (siehe Meldung)
     // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)
     if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
     const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const hasDefect = body.items.some((i) => i.result === 'mangel');
     try {
-      $('#sb').disabled = true;
+      sb.disabled = true;
       const r = await api('POST', '/api/inspections', body);
       // Fotos gehören zum Mangel: an den (ersten) Folgeauftrag hängen; ohne Mangel wird nichts hochgeladen
       let failed = 0;
@@ -1681,17 +1707,18 @@ async function viewDepartureCheck(preId) {
       const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
       if (files.length && fTarget) for (const [i, file] of files.entries()) {
-        $('#sb').textContent = `${t('uploading')} ${i + 1}/${files.length}`;
+        sb.textContent = `${t('uploading')} ${i + 1}/${files.length}`;
         try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (photoRetry(err)) { later = await photosLater('/api/inspections', body, r, fTarget, files.slice(i)); break; } failed++; }
       }
       toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
-      location.hash = fTarget ? '#/cases/' + fTarget : '#/';
+      if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
-      $('#sb').disabled = false;
+      sb.disabled = false;
       if (err.offline) {
         let stored = 0;
         if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/inspections', body, stored);
+        if (!sb.isConnected) { toast(t('outbox_saved')); return; }
         const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
         render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}${files.length && !hasDefect ? `<p class="small">${esc(t('check_photos_skipped'))}</p>` : files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
         return;
@@ -2521,7 +2548,7 @@ async function viewStockItem(id) {
   // Entnahme: Wert = hinterlegter Artikelpreis (Server übernimmt ihn) – Preisfeld dann aus, Hinweis an
   const mfType = $('#mf [name=type]'); const mfSync = () => { const fixed = mfType.value === 'entnahme' && !!$('#mfpricehint'); $('#mfprice').hidden = fixed; $('#mf [name=unit_price_net]').disabled = fixed; if ($('#mfpricehint')) $('#mfpricehint').hidden = !fixed; };
   mfType.onchange = mfSync; mfSync();
-  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = e.target.dataset.rk || (e.target.dataset.rk = crypto.randomUUID()); try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   // Artikel-Stammdaten: alle Felder senden (leer = entfernen); Deaktivieren mit Restbestand nur nach Rückfrage
   $('#itedf').onsubmit = async (e) => { e.preventDefault(); const g = (k) => e.target.elements.namedItem(k);
     const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
@@ -2536,7 +2563,7 @@ async function viewStockItem(id) {
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = e.target.dataset.rk || (e.target.dataset.rk = crypto.randomUUID());
+  if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }
 

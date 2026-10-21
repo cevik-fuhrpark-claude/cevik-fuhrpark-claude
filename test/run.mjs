@@ -8751,7 +8751,7 @@ await test('Vorgangsdateien: Höchstzahl vor dem Hochladen sichtbar (freie Plät
   ok(v.includes('const filesFree = Math.max(0, PHOTO_MAX - d.files.length);'), 'freie Plätze aus PHOTO_MAX');
   ok(v.includes('id="filesfull"') && v.includes('id="filesfree"'), 'Hinweise voll / freie Plätze');
   ok(v.includes('all.slice(0, filesFree)') && v.includes("tn('files_skipped', skipped.length)"), 'nur freie hochladen, Rest genannt');
-  ok(/await viewCase\(c\.id\);\s*if \(skipped\.length\)/.test(v), 'Meldung nach dem Neuaufbau');
+  ok(/await viewCase\(c\.id\)(\.catch\(\(\) => \{\}\))?;\s*if \(skipped\.length\)/.test(v), 'Meldung nach dem Neuaufbau');
   for (const k of ['files_free', 'files_full', 'files_skipped']) eq((i18n.match(new RegExp(`${k}: '`, 'g')) || []).length, 3, `${k} DE/UK/EN`);
 });
 
@@ -11812,7 +11812,7 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: S\.me\.id, user_name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
   ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
-  eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 2, 'Fotos bei Netzabbruch nachreichen (Meldung + Abfahrtskontrolle)');
+  eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 3, 'Fotos bei Netzabbruch nachreichen (Meldung + Abfahrtskontrolle + Fotos am Vorgang, 21.10.2026)');
   const { num } = await import('../src/util.js'); eq(num('4,750', { decimalComma: true }), 4.75); eq(num('1.234,50'), 1234.5);
   // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
   const { agentBasics } = await import('../src/agent.js');
@@ -16491,6 +16491,58 @@ await test('Leistung 21.10. Kostenbericht: km je Zeitraum/Monat per Index-Suchen
     }
   }
   eq(cases, 200);
+});
+
+await test('Fehlersuche 21.10. (CSV-Importe): offenes Anführungszeichen abgewiesen, Leerzeichen vor Anführungszeichen, „sep=;“, gemischte Kodierung abgewiesen, Spaltenvorrang Nachweis/Referenz vor Datumsspalten', async () => {
+  const { parseCsv } = await import('../src/util.js');
+  const { decodeCsvBytes } = await import('../public/csv.js');
+  const { translateValidation } = await import('../public/i18n.js');
+  // 1. Anführungszeichen bis Dateiende offen → 400 mit Zeile (vorher Rest der Datei still in einer Zelle)
+  let err = null; try { parseCsv('A;B\nx;"offen\ny;z\n'); } catch (e2) { err = e2; }
+  ok(err && err.status === 400 && err.code === 'csv_quote' && /Zeile 2/.test(err.message), String(err && err.message));
+  ok(/^Line 2: quotation mark/.test(translateValidation('en', err.message)) && /^Рядок 2/.test(translateValidation('uk', err.message)), 'übersetzt');
+  eq(JSON.stringify(parseCsv('A;B\n"a ""x"" b";2\n"mehr\nzeilig";3')), JSON.stringify([['A', 'B'], ['a "x" b', '2'], ['mehr\nzeilig', '3']]), 'gültige Anführungszeichen unverändert');
+  eq(JSON.stringify(parseCsv('A;B\n12" Felge;2')), JSON.stringify([['A', 'B'], ['12" Felge', '2']]), 'Zoll-Zeichen mitten im Wert');
+  // 2. Leerzeichen nach dem Trenner vor dem Anführungszeichen
+  eq(JSON.stringify(parseCsv('FIN, Standort, Hersteller\nW1, "Köln, Nord", MAN')[1]), JSON.stringify(['W1', 'Köln, Nord', 'MAN']), 'Spalten bleiben');
+  // 3. sep=-Zeile
+  eq(JSON.stringify(parseCsv('sep=;\r\nKennzeichen;FIN\nA 1;W1')), JSON.stringify([['Kennzeichen', 'FIN'], ['A 1', 'W1']]), 'sep=; entfernt');
+  eq(JSON.stringify(parseCsv('sep=,\nKennzeichen,FIN;x\nA 1,W1;y')[1]), JSON.stringify(['A 1', 'W1;y']), 'Trenner aus sep=');
+  // 4. Kodierung: reines Windows-1252 weiter gelesen, gemischt abgewiesen
+  const w1252 = Uint8Array.from([0x4B, 0xF6, 0x6C, 0x6E, 0x3B, 0x47, 0x69, 0x65, 0xDF, 0x65, 0x6E]); // „Köln;Gießen“
+  eq(decodeCsvBytes(w1252), 'Köln;Gießen', 'Windows-1252');
+  const mixed = new Uint8Array([...new TextEncoder().encode('Standort\nKöln\n'), ...w1252]);
+  let me = null; try { decodeCsvBytes(mixed); } catch (e3) { me = e3; } ok(me && me.code === 'csv_mixed_encoding' && me.status === 400, 'gemischt abgewiesen');
+  eq(decodeCsvBytes(new TextEncoder().encode('﻿Köln')), 'Köln', 'UTF-8 mit BOM');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("e.code === 'csv_mixed_encoding') e.message = t('csv_mixed_encoding')"), 'App-Meldung in der Sprache');
+  // 5. Spaltenvorrang: Nachweis vor „Belegdatum“, Referenz vor „Rückrufdatum“
+  const { e, U } = await freshWorld(); const db = e.DB.db; const H = { 'content-type': 'text/csv' };
+  const r1 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Belegdatum;Nächster Termin;Nachweis\nSZ-YC 5513;UVV;15.03.2026;31.03.2099;Prüfbericht Dekra 4711', H);
+  eq(r1.status, 200, JSON.stringify(r1.data));
+  eq(db.prepare(`SELECT evidence FROM maintenance_rules WHERE vehicle_id='VIN:WMA15SZZ2HM722774' AND kind='UVV'`).get().evidence, 'Prüfbericht Dekra 4711', 'Nachweis-Spalte');
+  const r2 = await U.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Rückrufdatum;Referenznummer;Frist;Beschreibung\nWMA15SZZ2HM722774;01.09.2026;RA-77;31.12.2099;Bremsleitung prüfen', H);
+  eq(r2.status, 200, JSON.stringify(r2.data)); eq(r2.data.rows[0].reference, 'RA-77', 'Referenz-Spalte');
+  const r3 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Nächster Termin;Nachweis\nSZ-YC 5513;HU;31.03.2099;"Plakette\nSZ-KC 5515;HU;30.04.2099;x', H);
+  eq(r3.status, 400, 'offenes Anführungszeichen im Import'); eq(r3.data.error, 'csv_quote');
+});
+
+await test('Fehlersuche 21.10. (langsames Netz): Lagerbuchung mit gleichem Schlüssel und anderem Inhalt → 409, Wiederholung → duplicate; Meldung/Kontrolle springen nach Seitenwechsel nicht, Foto-Zeitlimit, Fotos am Vorgang in den Postausgang', async () => {
+  const { U } = await freshWorld();
+  const it = await U.ws.post('/api/stock', { name: 'Ölfilter Netztest', part_number: 'OF-NZ', unit_price_net: '12', initial_qty: 10 }); eq(it.status, 201, JSON.stringify(it.data));
+  const id = it.data.id || it.data.item.id;
+  const a = await U.ws.post(`/api/stock/${id}/movements`, { type: 'entnahme', qty: '5', request_key: 'nz-rk-1' }); eq(a.status, 201, JSON.stringify(a.data));
+  const again = await U.ws.post(`/api/stock/${id}/movements`, { type: 'entnahme', qty: '5', request_key: 'nz-rk-1' }); ok(again.status < 300 && again.data.duplicate, 'Wiederholung');
+  const other = await U.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: '8', request_key: 'nz-rk-1' }); eq(other.status, 409, 'anderer Inhalt'); eq(other.data.error, 'request_key_reused');
+  eq((await U.ws.post(`/api/stock/${id}/movements`, { type: 'entnahme', qty: '4', request_key: 'nz-rk-1' })).status, 409, 'andere Menge');
+  eq((await U.ws.get(`/api/stock/${id}`)).data.item.on_hand, 5, 'nur einmal gebucht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const vn = app.slice(app.indexOf("  $('#f').onsubmit = async (e) => {\n    e.preventDefault();\n    // Knopf/Fotos"), app.indexOf('// Geplanter Werkstatttermin/Prüftermin am eigenen Fahrzeug'));
+  ok(vn.length > 500 && vn.includes("if (sb.isConnected) location.hash = '#/cases/' + r.id;") && !vn.split("const sb = $('#sb');")[1].includes("$('#sb')") && !vn.split('const photoFiles')[1].split('\n').slice(1).join('\n').includes("$('#ph')"), 'Meldung: Knopf/Fotos festgehalten');
+  const vc = app.slice(app.indexOf('    // km-Stand wie der Server prüfen'), app.indexOf('    // km-Stand wie der Server prüfen') + 4000);
+  ok(vc.includes("if (sb.isConnected) location.hash = fTarget") && (vc.match(/if \(!sb\.isConnected\) \{ toast\(t\('outbox_saved'\)\); return; \}/g) || []).length === 1, 'Kontrolle: kein Sprung/Überschreiben nach Seitenwechsel');
+  ok(/signal: sig/.test(app) && /timeoutMs: PHOTO_TIMEOUT_MS, \.\.\.ox/.test(app), 'Foto-Zeitlimit');
+  ok(app.includes("b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b);"), 'Lager: Schlüssel je Inhalt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

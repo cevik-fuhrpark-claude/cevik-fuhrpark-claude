@@ -382,17 +382,20 @@ export async function csvResponseDatesDe(res) {
 
 export function parseCsv(text) {
   // NFC: zerlegte Umlaute (z. B. Mac-Export „Ku\u0308ndigungsfrist“) wie zusammengesetzte behandeln – Spalten/Werte/Dubletten (19.10.2026)
-  const src = String(text || '').replace(/^\uFEFF/, '').normalize('NFC');
+  let src = String(text || '').replace(/^\uFEFF/, '').normalize('NFC');
+  // Excel-Hinweiszeile „sep=;“ am Dateianfang: Trenner übernehmen, Zeile entfernen (21.10.2026: sonst galt sie als Kopfzeile → „Spalte fehlt“)
+  const sepLine = /^sep=(.)\r?(?:\n|$)/i.exec(src);
+  if (sepLine) src = src.slice(sepLine[0].length);
   const firstLine = src.split(/\r?\n/, 1)[0] || '';
   // Trenner aus der Kopfzeile: Semikolon (Excel DE), Tabulator (Excel „Unicode-Text“), sonst Komma
-  const sep = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
+  const sep = sepLine ? sepLine[1] : firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
   const rows = []; let row = []; let cell = ''; let q = false; let lineNo = 1; let start = 1;
   const pushRow = () => { if (row.some((x) => x !== '')) { Object.defineProperty(row, 'line', { value: start, enumerable: false }); rows.push(row); } };
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     if (q) {
       if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else { cell += c; if (c === '\n') lineNo++; }
-    } else if (c === '"' && cell === '') q = true;
+    } else if (c === '"' && cell.trim() === '') { q = true; cell = ''; } // auch nach Leerzeichen hinter dem Trenner („a, \"Köln, Nord\"“; 21.10.2026 verschob es die Spalten)
     else if (c === sep) { row.push(cell.trim()); cell = ''; }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++;
@@ -401,6 +404,8 @@ export function parseCsv(text) {
       row = []; lineNo++; start = lineNo;
     } else cell += c;
   }
+  // Anführungszeichen bis zum Dateiende offen: Rest der Datei stünde sonst still in einer Zelle (21.10.2026: Zeilen fehlten ohne Meldung)
+  if (q) throw bad('csv_quote', `Zeile ${start}: Anführungszeichen nicht geschlossen – bitte die Datei prüfen.`);
   row.push(cell.trim());
   pushRow();
   return rows;

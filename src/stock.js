@@ -180,9 +180,10 @@ export async function addMovement(env, user, envName, id, body) {
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
   let qty = r3(num(body.qty, { min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   const rkey = requestKey(body);
-  const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
-  // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“)
-  if (dup && (dup.item_id !== id || dup.transfer_id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
+  const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id, type, qty FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
+  // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“);
+  // gleiche Buchungsart und Menge (21.10.2026: nach verlorener Antwort korrigierte „Zugang 8“ statt „Entnahme 5“ wurde still verworfen)
+  if (dup && (dup.item_id !== id || dup.transfer_id || dup.type !== type || Math.abs(Number(dup.qty) - (type === 'entnahme' ? -qty : qty)) > 1e-9)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (dup) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
   if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');

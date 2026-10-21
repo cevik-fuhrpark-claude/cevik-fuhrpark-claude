@@ -110,6 +110,10 @@ export function decodeCsvBytes(input) {
   if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(b.subarray(2));
   if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(b.subarray(2));
   const bom = b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF;
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(bom ? b.subarray(3) : b); } catch { return new TextDecoder('windows-1252').decode(b); }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bom ? b.subarray(3) : b); } catch { /* kein reines UTF-8 */ }
+  // Gemischte Kodierung (UTF-8-Datei mit angehängten Windows-1252-Zeilen): als Windows-1252 gelesen würden alle UTF-8-Umlaute zu „Ã¶“ –
+  // still gespeichert (21.10.2026). Typische UTF-8-Folge C2/C3 + 80–BF gefunden → abweisen (App: „als CSV UTF-8 neu speichern“).
+  for (let i = 0; i + 1 < b.length; i++) if ((b[i] === 0xC2 || b[i] === 0xC3) && b[i + 1] >= 0x80 && b[i + 1] <= 0xBF) throw Object.assign(new Error('csv_mixed_encoding'), { code: 'csv_mixed_encoding', status: 400 });
+  return new TextDecoder('windows-1252').decode(b);
 }
 export async function readCsvFile(file) { return decodeCsvBytes(await file.arrayBuffer()); }

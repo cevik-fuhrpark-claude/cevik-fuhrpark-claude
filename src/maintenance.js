@@ -347,6 +347,13 @@ export function maintenanceCsv(ov) {
 }
 
 // Import: Kopfzeile mit Kennzeichen und/oder FIN, Art, Nächster Termin (oder Letzte Prüfung + Intervall), Nachweis.
+// Spalte nach Namensliste: zuerst exakter Name, dann Anfang des Namens – jeweils in der Reihenfolge der Liste (wie `pick` in tacho.js)
+const headCol = (head, names, ok = () => true) => {
+  for (const n of names) { const i = head.findIndex((h) => h.trim() === n && ok(h)); if (i >= 0) return i; }
+  for (const n of names) { const i = head.findIndex((h) => h.trim().startsWith(n) && ok(h)); if (i >= 0) return i; }
+  return -1;
+};
+const notDateHead = (h) => !/datum|\bvom\b|\bam\b|\bdate\b/.test(h);
 export async function importMaintenanceCsv(env, user, text, { dryRun = false } = {}) {
   if (!WRITE_ROLES.includes(user.role)) throw forbidden('Nur Inhaber und Fuhrparkleitung dürfen Prüftermine importieren.');
   const table = parseCsv(text);
@@ -354,13 +361,15 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (table.length - 1 > MAX_ROWS) throw bad('validation', `Maximal ${MAX_ROWS} Zeilen je Import.`);
   const head = table[0].map((h) => h.toLowerCase());
   // Datums-/Monatsspalten nie aus km-Spalten lesen („Fällig bei km“, „Intervall km“, „km bei letzter Prüfung“)
-  const col = (names) => head.findIndex((h) => !h.includes('km') && names.some((n) => h.startsWith(n)));
+  // Vorrang nach Namensliste (erst exakter Name, dann Anfang), nicht nach Spaltenposition – „Belegdatum“ vor „Nachweis“ wurde sonst als
+  // Nachweis gelesen (21.10.2026); Nachweis/Quelle/Beleg nie aus Datumsspalten
+  const col = (names, ok = () => true) => headCol(head, names, (h) => !h.includes('km') && ok(h));
   const kmCol = (test) => head.findIndex((h) => h.includes('km') && test(h));
   const ck = { due: kmCol((h) => /f(ä|ae)llig/.test(h) && !/prognose|voraussichtlich|rest/.test(h)),
     last: kmCol((h) => /letzte|zuletzt/.test(h) && h !== 'letzter km-stand'), // „Letzter km-Stand“ = aktueller Zählerstand, nicht die Prüfung
     interval: kmCol((h) => h.startsWith('intervall')) };
   const ci = { plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), kind: col(['art', 'prüfart', 'pruefart', 'prüfung', 'pruefung']),
-    due: col(['nächste', 'naechste', 'fällig', 'faellig', 'termin']), last: col(['letzte', 'zuletzt']), interval: col(['intervall']), evidence: col(['nachweis', 'quelle', 'beleg']) };
+    due: col(['nächste', 'naechste', 'fällig', 'faellig', 'termin']), last: col(['letzte', 'zuletzt']), interval: col(['intervall']), evidence: col(['nachweis', 'quelle', 'beleg'], notDateHead) };
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
   if (ci.kind < 0 || ci.evidence < 0) throw bad('validation', 'Spalten Art und Nachweis erforderlich.');
   if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
@@ -642,8 +651,8 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   if (table.length - 1 > MAX_ROWS) throw bad('validation', `Maximal ${MAX_ROWS} Zeilen je Import.`);
   const head = table[0].map((h) => h.toLowerCase());
-  const col = (names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const ci = { plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell', 'vin']), ref: col(['referenz', 'rückruf', 'rueckruf', 'aktion', 'kba', 'nachweis']),
+  const col = (names, ok) => headCol(head, names, ok); // Vorrang nach Namensliste; Referenz nie aus „Rückrufdatum“ o. Ä. (21.10.2026)
+  const ci = { plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell', 'vin']), ref: col(['referenz', 'rückruf', 'rueckruf', 'aktion', 'kba', 'nachweis'], notDateHead),
     due: col(['frist', 'fällig', 'faellig', 'nächster', 'naechster', 'termin']), note: col(['bemerkung', 'beschreibung', 'maßnahme', 'massnahme']) };
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Kennzeichen oder FIN erforderlich.');
   if (ci.ref < 0) throw bad('validation', 'Spalte „Referenz“ (Rückrufnummer laut Schreiben) erforderlich.');
