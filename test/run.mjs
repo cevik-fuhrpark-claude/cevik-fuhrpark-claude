@@ -10836,7 +10836,7 @@ await test('Fehlersuche 17.10. (3): Kontrolle (Prüfpunkt null, Vermerk vor Folg
   // 4. Dubletten-Kette: während A→B geprüft wird, wird B Dublette von C → A 409
   const A = await newCase(); const B = await newCase(); const C = await newCase();
   const verB = (await U.fleet.get(`/api/cases/${B}`)).data.case.version; let hook = true; const p0 = e.DB.prepare.bind(e.DB);
-  e.DB.prepare = (sql) => { const st = p0(sql); if (!sql.startsWith('SELECT id, case_no, vehicle_id, duplicate_of FROM cases')) return st;
+  e.DB.prepare = (sql) => { const st = p0(sql); if (!sql.startsWith('SELECT id, case_no, vehicle_id, duplicate_of, status FROM cases')) return st;
     const w = (x) => new Proxy(x, { get(t, k) { if (k === 'bind') return (...a) => w(t.bind(...a));
       if (k === 'first') return async () => { const r = await t.first(); if (hook) { hook = false; eq((await U.fleet.post(`/api/cases/${B}/commands`, { action: 'reject', command_id: rk(), expected_version: verB, payload: { duplicate_of: C }, note: 'doppelt' })).status, 200); } return r; };
       const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
@@ -13892,7 +13892,7 @@ await test('Backlog 94 (19.10.): HU/SP-Fälligkeit laut Nachweis mit Tag – Age
   let past = shift(BERLIN_TODAY, -10); if (isME(past)) past = shift(past, -1);
   const mkV = async (n, due) => { const V = `VIN:WSM0000000009400${n}`; ok([200, 201].includes((await U.own.post('/api/vehicles', { plate: `SZ-BL 94${n}`, vin: V.slice(4), site: 'Dortmund' })).status), 'Fahrzeug');
     eq((await F.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test F.2' })).status, 200);
-    const r = await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', next_due_date: due, evidence: 'Plakette (Test)' }); eq(r.status, 201); return r.data.id; };
+    const r = await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', next_due_date: due, evidence: 'Plakette (Test)' }); eq(r.status, 201); return `${V}|HU`; }; // Befundschlüssel je Fahrzeug/Prüfart (seit 21.10.2026)
   const meDate = (() => { const y = +BERLIN_TODAY.slice(0, 4) + 1; return `${y}-01-31`; })();
   const idSoon = await mkV('1', soon); const idPast = await mkV('2', past); const idMe = await mkV('3', meDate);
   eq((await F.post('/api/agent/run')).status, 200);
@@ -16141,6 +16141,86 @@ await test('Fehlersuche 21.10. (Nutzung/Auskunft/Schnittstelle): Statistik ohne 
   // 6. Standort nur aus Leerzeichen = keine Auswahl
   const all = (await anon.req('GET', '/api/integration/v1/vehicles', undefined, H)).data.vehicles.length; ok(all > 0);
   const sp = (await anon.req('GET', '/api/integration/v1/vehicles?site=%20%20', undefined, H)).data; eq(sp.vehicles.length, all); ok(!sp.site, 'keine Auswahl');
+});
+
+await test('Fehlersuche 21.10. (Fuhrparkagent): HU/SP-Befund behält beim Termin-Planen seinen Schlüssel (kein zweiter Master-Eintrag, keine erneute Erinnerung, Altschlüssel umgeschlüsselt), kritischer Push + Erinnerung mit Push-Geräten ≤ 40 Abfragen, eigene Agent-Pushs nicht „nicht zugestellt“', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const own = U.own; const V2 = 'VIN:WDB9630051L917317';
+  own.id = db.prepare("SELECT id FROM users WHERE role='owner'").get().id;
+  const d = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  // Push-Gerät für den Inhaber (Budget mit Zustellung)
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  eq((await own.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/agent-1', keys: { p256dh: b64urlEncode(pub), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) }, device_label: 'Handy' })).status, 200);
+  db.prepare("UPDATE vehicles SET zgm_class='ueber_12', first_registration='2020-01-15' WHERE id=?").run(V2);
+  eq((await own.post(`/api/vehicles/${V2}/maintenance`, { kind: 'HU', last_done_date: d(-245), evidence: 'HU-Bericht' })).status, 201);
+  // zusätzlich ein kritischer Befund im selben Lauf (UVV verkehrsunsicher, kein Vorgang)
+  const rule = await own.post(`/api/vehicles/${V2}/maintenance`, { kind: 'UVV', last_done_date: d(-400), interval_months: 12, evidence: 'UVV alt' }); eq(rule.status, 201);
+  eq((await own.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: d(-2), evidence: 'UVV-Protokoll 1', result: 'verkehrsunsicher' })).status, 200);
+  const run = async () => { const q0 = QSTAT.n; const r = await own.post('/api/agent/run'); eq(r.status, 200, JSON.stringify(r.data)); return QSTAT.n - q0; };
+  const q1 = await run(); ok(q1 <= 40, `Agent mit Push-Gerät, kritischem Befund und Erinnerung: ${q1} Abfragen`);
+  const fOf = () => db.prepare("SELECT id, subject_key, status FROM agent_findings WHERE environment='production' AND finding_code='MAINTENANCE_OVERDUE' AND vehicle_id=?").all(V2);
+  const f1 = fOf(); eq(f1.length, 1); eq(f1[0].subject_key, `${V2}|SP`);
+  ok(db.prepare("SELECT COUNT(*) n FROM notifications WHERE kind='agent' AND user_id=?").get(own.id).n >= 1, 'kritischer Push');
+  ok(db.prepare("SELECT COUNT(*) n FROM notifications WHERE kind='agent_reminder' AND user_id=?").get(own.id).n === 1, 'eine Erinnerung');
+  const inbox = () => db.prepare("SELECT COUNT(*) n FROM master_inbox WHERE environment='production' AND finding_id=?").get(f1[0].id).n;
+  eq(inbox(), 1);
+  // Termin planen legt den SP-Eintrag an → derselbe Befund, keine neue Übergabe/Erinnerung
+  eq((await own.post(`/api/vehicles/${V2}/husp/SP/plan`, { planned_date: d(3) })).status, 200);
+  const spRule = db.prepare("SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind='SP'").get(V2).id;
+  await run();
+  const f2 = fOf(); eq(JSON.stringify(f2), JSON.stringify(f1), 'gleicher Befund, offen'); eq(inbox(), 1, 'kein zweiter Master-Eintrag');
+  eq(db.prepare("SELECT COUNT(*) n FROM master_inbox WHERE environment='production'").get().n, db.prepare("SELECT COUNT(*) n FROM agent_findings WHERE environment='production' AND severity IN ('handeln','kritisch')").get().n, 'je Befund ein Eintrag');
+  eq(db.prepare("SELECT COUNT(*) n FROM notifications WHERE kind='agent_reminder' AND user_id=?").get(own.id).n, 1, 'keine erneute Erinnerung');
+  // Altbestand: Befund noch mit Eintrags-ID als Schlüssel (vor 21.10.2026) → einmal umgeschlüsselt, ohne neue Übergabe
+  const { sha256Hex } = await import('../src/util.js');
+  const fp = await sha256Hex(`MAINTENANCE_OVERDUE|${spRule}|handeln|1`);
+  db.prepare('UPDATE agent_findings SET subject_key=?, fingerprint=? WHERE id=?').run(spRule, fp, f1[0].id);
+  await run();
+  eq(JSON.stringify(fOf()), JSON.stringify(f1), 'umgeschlüsselt, gleiche ID'); eq(inbox(), 1, 'keine neue Übergabe');
+  // eigene Agent-Pushs ohne Gerät: kein „Dringend nicht zugestellt“
+  db.prepare("UPDATE notifications SET push_status='no_subscription' WHERE kind IN ('agent','agent_reminder')").run();
+  await run();
+  eq(db.prepare("SELECT COUNT(*) n FROM agent_findings WHERE finding_code='URGENT_NOT_DELIVERED' AND status='offen'").get().n, 0);
+});
+
+await test('Fehlersuche 21.10. (Vorgangsbefehle/Protokoll): Kontrolle nach „Dublette“ hängt an das Original, Dublette nur zu offenem Vorgang, gleiche Befehlskennung mit anderem Inhalt → 409 (Migration 0068), Hinweise bei Sperre/sicherheitsrelevanten Restarbeiten, Protokoll übersetzt Nachweis-/Auslese-/Achsen-Codes, Datenauskunft gekürzt mit Hinweis', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const C = await import('../src/cases.js');
+  // 1. Meldung + Kontrollvorgang, Kontrollvorgang als Dublette abgelehnt → nächste Kontrolle: Vermerk am Original
+  const orig = await newCase();
+  const ab = C.CHECKLIST.map((i) => ({ key: i.key, result: i.key === 'beleuchtung' ? 'mangel' : 'ok', note: i.key === 'beleuchtung' ? 'Rücklicht' : null }));
+  ok(ab.some((x) => x.result === 'mangel'), 'Prüfpunkt beleuchtung vorhanden');
+  const k1 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: ab }); eq(k1.status, 201, JSON.stringify(k1.data));
+  const kc = k1.data.followups[0].id;
+  eq((await cmd(U.fleet, kc, 'reject', { duplicate_of: orig }, 'Dublette')).status, 200);
+  const n0 = db.prepare("SELECT COUNT(*) n FROM cases").get().n;
+  const k2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: ab }); eq(k2.status, 201);
+  eq(db.prepare("SELECT COUNT(*) n FROM cases").get().n, n0, 'kein neuer Vorgang'); eq(k2.data.followups[0].id, orig, 'Original (eigene Meldung)'); ok(k2.data.followups[0].repeat);
+  ok(db.prepare("SELECT COUNT(*) n FROM case_events WHERE case_id=? AND action='repeat_finding'").get(orig).n >= 1, 'Vermerk am Original');
+  // 2. Dublette eines abgeschlossenen Vorgangs → 400
+  const closed = await newCase(); eq((await cmd(U.fleet, closed, 'reject', {}, 'kein Mangel')).status, 200);
+  const other = await newCase();
+  const dr = await cmd(U.fleet, other, 'reject', { duplicate_of: closed }, 'Dublette'); eq(dr.status, 400); eq(dr.data.error, 'duplicate_closed');
+  // 3. gleiche command_id, anderer Inhalt
+  const id = await toRepair(); const cid = rk();
+  const v = (await U.ws.get(`/api/cases/${id}`)).data.case.version;
+  eq((await U.ws.post(`/api/cases/${id}/commands`, { action: 'record_work', command_id: cid, expected_version: v, payload: { hours: 2, description: 'A' } })).status, 200);
+  const again = await U.ws.post(`/api/cases/${id}/commands`, { action: 'record_work', command_id: cid, expected_version: v, payload: { hours: 2, description: 'A' } });
+  eq(again.status, 200); ok(again.data.duplicate, 'gleiche Wiederholung bleibt „duplicate“');
+  const diff = await U.ws.post(`/api/cases/${id}/commands`, { action: 'record_work', command_id: cid, expected_version: v, payload: { hours: 8, description: 'B' } });
+  eq(diff.status, 409); eq(diff.data.error, 'command_id_reused');
+  db.prepare('UPDATE case_events SET command_hash=NULL WHERE command_id=?').run(cid);
+  ok((await U.ws.post(`/api/cases/${id}/commands`, { action: 'record_work', command_id: cid, expected_version: v, payload: { hours: 8, description: 'B' } })).data.duplicate, 'Altbestand ohne Prüfsumme: wie bisher');
+  // 4./5./6. Oberfläche und Texte
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`action === 'reject' && c.safety_lock) f.push(\`<p class="panel warn small" id="rejlock">`) && app.includes('id="relsafety"'), 'Hinweise vor dem Absenden');
+  ok((app.match(/dexTrunc\((r|x)\); download\(/g) || []).length === 2, 'Datenauskunft: Kürzungshinweis an beiden Stellen');
+  const I = await import('../public/i18n.js');
+  const exp = { de: ['Art: Führerschein', 'nur als Verlauf gespeichert: ja', 'Art: Massenspeicher', 'Achse: Lenkachse', 'am Fahrzeug geprüft: ja'], uk: ['Посвідчення водія', 'збережено лише як історію', 'Пам’ять тахографа', 'Кермова вісь'], en: ['Kind: Driving licence', 'saved as history only: yes', 'Kind: Vehicle unit', 'Axle: Steer axle', 'checked on the vehicle: yes'] };
+  for (const [l, xs] of Object.entries(exp)) {
+    const txt = [I.auditDetailText(l, { kind: 'fuehrerschein', history_only: true }), I.auditDetailText(l, { kind: 'massenspeicher' }), I.auditDetailText(l, { axle: 'lenkachse', from: null, to: '315/80 R22.5', verified: true })].join(' | ');
+    for (const x of xs) ok(txt.includes(x), `${l}: ${x} in ${txt}`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

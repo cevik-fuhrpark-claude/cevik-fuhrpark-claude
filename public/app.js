@@ -1145,6 +1145,8 @@ function bindOutbox() {
 
 // Offline-Fahrzeugliste auffrischen: fehlt sie oder ist sie älter als 5 Minuten (bzw. force nach eigener Änderung) – 20.10.2026: vorher nur
 // angelegt, wenn sie fehlte; nach Fahrzeugimport/-änderung/neuer Zuordnung blieb sie auf dem Gerät veraltet
+// Datenauskunft mit gekappten Abschnitten: Hinweis wie bei der Datensicherung (21.10.2026: Vermerk stand nur in der Datei)
+function dexTrunc(x) { const tr = x && x.meta && Array.isArray(x.meta.truncated) ? x.meta.truncated : []; if (tr.length) toast(t('dex_truncated').replace('{t}', tr.join(', ')), true); }
 function vehCacheRefresh(force = false) {
   if (!S.me || !navigator.onLine) return;
   try {
@@ -1522,6 +1524,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     if (li && rw && li <= rw) f.push(`<p class="panel warn small" id="rwinsp">${esc(t('err_inspection_after_rework_missing'))}</p>`);
   }
   if (action === 'technical_release' && c.cost_over_limit_at) f.push(`<p class="panel warn small" id="relcost">${esc(t('err_cost_approval_open'))}</p>`);
+  // 21.10.2026: Server weist in diesen Zuständen immer ab – Hinweis vor dem Absenden (wie Kostenfreigabe)
+  if (action === 'reject' && c.safety_lock) f.push(`<p class="panel warn small" id="rejlock">${esc(t('err_safety_lock_active'))}</p>`);
+  if (['technical_release', 'lift_safety_lock'].includes(action) && d && Array.isArray(d.open_items) && d.open_items.some((o) => o.status === 'offen' && o.safety_relevant)) f.push(`<p class="panel warn small" id="relsafety">${esc(t('err_safety_items_open'))}</p>`);
   if (['technical_release', 'lift_safety_lock'].includes(action)) f.push(`<label class="check"><input type="checkbox" name="confirm" required> ${esc(t('confirm'))}</label>`);
   const noteLabel = action === 'approve_repair' ? t('scope') : ['technical_release'].includes(action) ? t('evidence') : needsNote.includes(action) ? t('reason') : t('note');
   f.push(`<label>${esc(noteLabel)}</label><textarea name="note"${needsNote.includes(action) ? ' required minlength="3"' : ''}${action === 'set_followup' ? ' maxlength="300"' : ''}>${action === 'set_followup' ? esc(c.followup_note || '') : ''}</textarea>`);
@@ -2736,7 +2741,7 @@ async function viewDriver(id) {
   }
   render(html, 'more');
   $('#ddprt').onclick = () => window.print();
-  const dx = $('#ddex'); if (dx) dx.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const r = await api('GET', `/api/drivers/${id}/data-export`); download(r instanceof Blob ? r : new Blob([JSON.stringify(r, null, 1)], { type: 'application/json' }), `datenauskunft_fahrer_${String(d.personnel_no || d.display_name || id).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || String(id).slice(0, 8)}_${bDate()}.json`); } catch (err) { toast(err.message, true); } };
+  const dx = $('#ddex'); if (dx) dx.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const r = await api('GET', `/api/drivers/${id}/data-export`); dexTrunc(r); download(r instanceof Blob ? r : new Blob([JSON.stringify(r, null, 1)], { type: 'application/json' }), `datenauskunft_fahrer_${String(d.personnel_no || d.display_name || id).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || String(id).slice(0, 8)}_${bDate()}.json`); } catch (err) { toast(err.message, true); } };
   const post = async (path, b) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', path, b); toast(r && r.older_than_current ? t('ddoc_older_saved') : '✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
   bindTachoCancel(document, () => viewDriver(id));
   // Nachweis stornieren (Tippfehler): bleibt mit Begründung im Verlauf, der neueste verbliebene gilt wieder
@@ -4034,7 +4039,7 @@ async function viewUsers() {
   $('#uprt').onclick = () => window.print();
   $('#ucsv').onclick = () => download(new Blob([usersCsv(us, t, wsName, fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-benutzer_${bDate()}.csv`);
   $$('[data-revoke]').forEach((b) => (b.onclick = async () => { if (!confirm(t('revoke_sessions_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.revoke}/revoke-sessions`); toast(t('revoked_n').replace('{n}', r.sessions).replace('{p}', r.push_devices)); viewUsers(); } catch (err) { toast(err.message, true); } }));
-  $$('[data-dex]').forEach((b) => (b.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const x = await api('GET', `/api/admin/users/${b.dataset.dex}/data-export`); download(x instanceof Blob ? x : new Blob([JSON.stringify(x, null, 1)], { type: 'application/json' }), `datenauskunft_${b.dataset.user}_${bDate()}.json`); } catch (err) { toast(err.message, true); } }));
+  $$('[data-dex]').forEach((b) => (b.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const x = await api('GET', `/api/admin/users/${b.dataset.dex}/data-export`); dexTrunc(x); download(x instanceof Blob ? x : new Blob([JSON.stringify(x, null, 1)], { type: 'application/json' }), `datenauskunft_${b.dataset.user}_${bDate()}.json`); } catch (err) { toast(err.message, true); } }));
   $$('[data-tfr]').forEach((b) => (b.onclick = async () => { if (!confirm(t('tf_reset_confirm').replace('{name}', b.dataset.name))) return; try { await api('POST', `/api/users/${b.dataset.tfr}/totp-reset`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   $$('[data-unlock]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unlock}/unlock`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   const showInvite = (token) => { const link = `${location.origin}/#/invite/${token}`; $('#inv').innerHTML = `<div class="panel good"><p>${esc(t('invite_link'))}</p><input readonly value="${esc(link)}" id="il"><div class="actions"><button class="btn" id="cp">${esc(t('copy'))}</button></div><p class="small muted">${esc(t('invite_qr_hint'))}</p><div class="qr">${(() => { try { return qrSvg(link, { label: t('invite_link') }); } catch { return ''; } })()}</div></div>`; $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(link); toast(t('copied')); } catch { $('#il').select(); } }; window.scrollTo(0, 0); };

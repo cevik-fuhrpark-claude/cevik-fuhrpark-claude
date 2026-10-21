@@ -918,9 +918,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const { c, access } = await loadCase(env, user, envName, caseId);
 
   // Idempotenz: gleicher Befehl bereits ausgeführt -> aktuellen Stand liefern
-  const done = await env.DB.prepare('SELECT id, action FROM case_events WHERE case_id=? AND command_id=?').bind(c.id, commandId).first();
+  const done = await env.DB.prepare('SELECT id, action, command_hash FROM case_events WHERE case_id=? AND command_id=?').bind(c.id, commandId).first();
   // dieselbe Kennung für eine andere Aktion: nicht still „duplicate“ (sonst glaubt ein Schnittstellen-Client, die Aktion sei ausgeführt) – 18.10.2026
   if (done && done.action !== action) throw conflict('command_id_reused', 'Diese Befehlskennung wurde bereits für eine andere Aktion verwendet.');
+  // … ebenso mit anderem Inhalt (21.10.2026, Migration 0068: 8 h statt 2 h bzw. anderes Datum mit derselben Kennung → still „duplicate“)
+  const commandHash = await sha256Hex(JSON.stringify([action, p, note || null]));
+  if (done && done.command_hash && done.command_hash !== commandHash) throw conflict('command_id_reused', 'Diese Befehlskennung wurde bereits mit anderem Inhalt verwendet.');
   if (done) return { ok: true, duplicate: true, version: c.version };
 
   // Version zuerst (20.10.2026): veraltete Seite bekommt „bitte neu laden“ statt „nicht erlaubt“ (Status hat sich inzwischen geändert)
@@ -1031,13 +1034,15 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (c.suggested_workshop_site && !c.workshop_site) extra.push(hideSuggestedSite(env, now, c));
       // optional als Dublette eines anderen Vorgangs desselben Fahrzeugs (gleiche Umgebung); Grund wird dann vorbelegt
       if (p.duplicate_of) {
-        const o = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of FROM cases WHERE id=? AND environment=?').bind(String(p.duplicate_of).slice(0, 40), envName).first();
+        const o = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of, status FROM cases WHERE id=? AND environment=?').bind(String(p.duplicate_of).slice(0, 40), envName).first();
         if (!o || o.id === c.id) throw bad('validation', 'Ursprünglicher Vorgang nicht gefunden.');
         if (o.vehicle_id !== c.vehicle_id) throw bad('validation', 'Dublette nur zu einem Vorgang desselben Fahrzeugs.');
         if (o.duplicate_of) throw bad('validation', `Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`);
+        // nur zu einem offenen Vorgang (wie die Auswahl der App; 21.10.2026: Dublette eines abgeschlossenen Vorgangs schloss den Mangel, er war nirgends mehr offen)
+        if (['fahrzeug_freigegeben', 'abgelehnt'].includes(o.status)) throw bad('duplicate_closed', `Vorgang ${o.case_no} ist bereits abgeschlossen – Dublette nur zu einem offenen Vorgang.`);
         set.duplicate_of = o.id; payload.duplicate_of = o.id; payload.duplicate_of_no = o.case_no;
         // im selben Stapel prüfen, dass das Original weiterhin keine Dublette ist (gleichzeitiges Ablehnen ergab sonst Kette/Ring, 17.10.2026)
-        extra.push(env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN duplicate_of IS NULL THEN 1 ELSE 0 END FROM cases WHERE id=?').bind(o.id), env.DB.prepare('DELETE FROM cmd_guard'));
+        extra.push(env.DB.prepare("INSERT INTO cmd_guard(ok) SELECT CASE WHEN duplicate_of IS NULL AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END FROM cases WHERE id=?").bind(o.id), env.DB.prepare('DELETE FROM cmd_guard'));
         // Dubletten, die bisher auf diesen Vorgang zeigten, auf das neue Original umhängen (keine Kette Dublette → Dublette)
         const moved = (await env.DB.prepare('SELECT case_no FROM cases WHERE duplicate_of=? AND environment=? ORDER BY created_at').bind(c.id, envName).all()).results.map((x) => x.case_no);
         if (moved.length) {
@@ -1243,9 +1248,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cols = Object.keys(set);
   const upd = env.DB.prepare(`UPDATE cases SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`)
     .bind(...cols.map((k) => set[k]), c.id, c.version);
-  const ev = env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,command_id,created_at)
-    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM cases WHERE id=? AND version=?)`)
-    .bind(uuid(), c.id, envName, user.id, user.role, action, c.status, toStatus, c.version, newVersion, note, JSON.stringify(payload), commandId, now, c.id, newVersion);
+  const ev = env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,command_id,created_at,command_hash)
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM cases WHERE id=? AND version=?)`)
+    .bind(uuid(), c.id, envName, user.id, user.role, action, c.status, toStatus, c.version, newVersion, note, JSON.stringify(payload), commandId, now, commandHash, c.id, newVersion);
   // Guard: schlägt fehl (CHECK), wenn das UPDATE keine Zeile getroffen hat -> gesamte Transaktion wird zurückgerollt
   const guard = env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()');
   const cleanup = env.DB.prepare('DELETE FROM cmd_guard');
@@ -1389,8 +1394,13 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   // Nur wenn der offene Vorgang mindestens so dringend ist; ein sicherheitsrelevanter Mangel braucht dort eine aktive Sperre.
   const openByItem = new Map(); // Prüfpunkt → offene Vorgänge (jüngste zuerst)
   if (kind === 'abfahrt' && defects.length) {
-    for (const r of (await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version, check_item, reporter_id=? AS own FROM cases WHERE vehicle_id=? AND environment=? AND origin='kontrolle'
-      AND check_item IN (SELECT value FROM json_each(?)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(user.id, vehicleId, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
+    // + offenes Original eines als Dublette abgelehnten Kontroll-Vorgangs desselben Prüfpunkts (21.10.2026: nach „Dublette“ legte jede weitere
+    // Kontrolle wieder einen neuen – ggf. gesperrten – Vorgang an)
+    for (const r of (await env.DB.prepare(`SELECT * FROM (SELECT id, case_no, priority, safety_lock, status, version, check_item, reporter_id=?1 AS own, created_at FROM cases WHERE vehicle_id=?2 AND environment=?3 AND origin='kontrolle'
+      AND check_item IN (SELECT value FROM json_each(?4)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+      UNION SELECT o.id, o.case_no, o.priority, o.safety_lock, o.status, o.version, d.check_item, o.reporter_id=?1 AS own, o.created_at FROM cases d JOIN cases o ON o.id=d.duplicate_of
+      WHERE d.vehicle_id=?2 AND d.environment=?3 AND d.origin='kontrolle' AND d.status='abgelehnt' AND d.check_item IN (SELECT value FROM json_each(?4))
+      AND o.environment=?3 AND o.vehicle_id=?2 AND o.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY created_at DESC`).bind(user.id, vehicleId, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
       if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, []); openByItem.get(r.check_item).push(r);
     }
   }

@@ -1,7 +1,7 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
 import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate, oneOf, str, notFound, conflict, rateOf } from './util.js';
-import { notifyUsers } from './notify.js';
+import { notifyUsers, deliverPush } from './notify.js';
 import { audit } from './auth.js';
 import { tireFindings } from './tires.js';
 import { stockFindings } from './stock.js';
@@ -115,6 +115,9 @@ const BASICS_SQL = `SELECT
      FROM notifications n
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
      AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 AND n.hidden_at IS NULL
+     -- eigene Agent-Pushs an Leitung/Inhaber nicht (Inhalt steht ohnehin im Master-Eingang; 21.10.2026: Leitung ohne Push-Gerät bekam
+     -- „telefonisch informieren“ über sich selbst, 48 h offen)
+     AND n.kind NOT IN ('agent','agent_reminder')
      AND n.user_id IN (SELECT id FROM users WHERE active=1)) q
      -- erledigt, wenn der Vorgang abgeschlossen ist oder die Person ihn seitdem selbst bearbeitet hat (vorher meldete der Agent bis 48 h
      -- „nicht zugestellt – telefonisch informieren“, obwohl die Werkstatt den Auftrag längst übernommen/erledigt hatte, 20.10.2026)
@@ -329,17 +332,20 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const res = huSpFor(x, todayB, warnDays);
       for (const kind of ['HU', 'SP']) {
         const h = kind === 'HU' ? res.hu : res.sp;
-        const subject = res.rules[kind] || `${vid}|${kind}`;
+        // fester Schlüssel je Fahrzeug und Prüfart (21.10.2026: war die Eintrags-ID, sobald es einen gab – „Termin planen“/„Auftrag erstellen“ bei
+        // nur berechneter Frist legte den Eintrag an → Befund wechselte den Schlüssel: zweiter Master-Eintrag, erneute Erinnerung). Bisheriger
+        // Schlüssel (Eintrags-ID) als legacy_subject: vorhandene Befunde werden einmal umgeschlüsselt, ohne neue Übergabe.
+        const subject = `${vid}|${kind}`; const legacy_subject = res.rules[kind] || null;
         const m = (d) => `${d.slice(5, 7)}/${d.slice(0, 4)}`;
         // Fälligkeit laut Nachweis mit Tag (nicht Monatsende): die App rechnet mit diesem Tag – Befund nennt ihn (Backlog 94, 19.10.2026)
         const dayDue = (d) => { const [yy, mm, dd] = d.slice(0, 10).split('-').map(Number); return new Date(Date.UTC(yy, mm, 0)).getUTCDate() !== dd; };
         const dDe = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`; // deutsch gespeichert, Anzeige je Sprache (DATE_ARGS)
         // „6 Monate nach HU“ nur nennen, wenn die Fälligkeit tatsächlich daraus folgt (erste SP nach Erstzulassung hat eine andere Grundlage, 18.10.2026)
         const huPlus6 = (d) => { const t = Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1 + 6; return `${String(t % 12 + 1).padStart(2, '0')}/${Math.floor(t / 12)}`; };
-        if (h.status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject, vehicle_id: vid, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
+        if (h.status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject, legacy_subject, vehicle_id: vid, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
           ...(dayDue(h.due) ? fm('HUSP_OVERDUE_DAY', { plate: x.v.plate, kind: H_LABEL[kind], due: dDe(h.due) }) : fm('HUSP_OVERDUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), hu: kind === 'SP' && res.hu.last_done && m(h.due) === huPlus6(res.hu.last_done) ? res.hu.last_done : null })),
           next_action: 'Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.' });
-        else if (h.status === 'bald_faellig') add({ code: 'MAINTENANCE_DUE', subject, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
+        else if (h.status === 'bald_faellig') add({ code: 'MAINTENANCE_DUE', subject, legacy_subject, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
           ...fm(dayDue(h.due) ? 'HUSP_DUE_DAY' : 'HUSP_DUE', { plate: x.v.plate, kind: H_LABEL[kind], due: dayDue(h.due) ? dDe(h.due) : m(h.due), planned: h.planned_date || null }), next_action: h.planned_date ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
         else if (h.status === 'ungeklaert' && x.rules.length) add({ code: 'INSPECTION_UNCLEAR', subject: `${vid}|${kind}|unklar`, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
           ...fm('INSPECTION_UNCLEAR', { plate: x.v.plate, kind: H_LABEL[kind], note: h.notes[h.notes.length - 1] || 'Grundlage fehlt', nc: h.note_codes?.[h.note_codes.length - 1] || null }), next_action: 'Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.' });
@@ -444,12 +450,19 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // Fingerabdrücke gemeinsam berechnen (nicht 3000× nacheinander warten)
     const fingerprints = await Promise.all(unique.map((f) => sha256Hex(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`)));
     const rows = [];
+    const renames = [];
     const candidates = [];
     for (let i = 0; i < unique.length; i++) {
       const f = unique[i]; const fingerprint = fingerprints[i];
-      const existing = existingMap.get(`${f.code}|${f.subject}`);
+      let existing = existingMap.get(`${f.code}|${f.subject}`);
+      let legacyFp = null;
+      if (!existing && f.legacy_subject && existingMap.has(`${f.code}|${f.legacy_subject}`)) {
+        existing = existingMap.get(`${f.code}|${f.legacy_subject}`);
+        renames.push(env.DB.prepare('UPDATE agent_findings SET subject_key=? WHERE id=?').bind(f.subject, existing.id));
+        legacyFp = await sha256Hex(`${f.code}|${f.legacy_subject}|${f.severity}|${f.requires_decision}`);
+      }
       const findingId = existing ? existing.id : uuid();
-      const changed = !existing || existing.status !== 'offen' || existing.fingerprint !== fingerprint;
+      const changed = !existing || existing.status !== 'offen' || (existing.fingerprint !== fingerprint && existing.fingerprint !== legacyFp);
       const row = { id: findingId, code: f.code, subject: f.subject, case_id: f.case_id ?? null, vehicle_id: f.vehicle_id ?? null, severity: f.severity, message: f.message, message_args: f.message_args ?? null,
         next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint };
       // Unveränderte offene Befunde nicht erneut schreiben
@@ -465,13 +478,13 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const eventIds = await Promise.all(candidates.map((c) => sha256Hex(c.eventInput)));
     candidates.forEach((c, i) => { c.eventId = eventIds[i]; delete c.eventInput; });
     const J = (k) => `json_extract(value,'$.${k}')`;
-    const upserts = chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,message_args,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
+    const upserts = [...renames, ...chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,message_args,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
       SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('message_args')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ?2, ?2
       FROM json_each(?3) WHERE 1
       ON CONFLICT(environment, finding_code, subject_key) DO UPDATE SET case_id=excluded.case_id, vehicle_id=excluded.vehicle_id, severity=excluded.severity, message=excluded.message, message_args=excluded.message_args,
         next_action=excluded.next_action, owner_role=excluded.owner_role, requires_decision=excluded.requires_decision, fingerprint=excluded.fingerprint, last_seen=excluded.last_seen,
         first_seen=CASE WHEN agent_findings.status='erledigt' THEN excluded.first_seen ELSE agent_findings.first_seen END, status='offen', resolved_at=NULL`)
-      .bind(environment, now, JSON.stringify(part)));
+      .bind(environment, now, JSON.stringify(part)))];
     // Gekappte Prüfungslisten (> 200 Einträge, nur die jüngsten gelesen): offene Befunde dieser Codes nicht als „erledigt“ schließen –
     // sie wurden nur nicht gelesen (19.10.2026; vorher erledigten sich ältere Prüfmängel still)
     const EV_CODE = { defects_without_case: 'INSPECTION_DEFECTS_NO_CASE', reinspection_pending: 'REINSPECTION_PENDING', result_missing: 'INSPECTION_RESULT_MISSING' };
@@ -517,23 +530,27 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     let ids = null;
     const recipients = async () => ids || (ids = fleetUsers.map((r) => r.id)); // Empfänger wurden zu Beginn des Laufs geladen
     const langOf = new Map(fleetUsers.map((u) => [u.id, u.language]));
+    const toDeliver = [];
     if (newCritical.length) {
       await recipients();
       // Abfragebudget: ab 2 neuen kritischen Befunden eine Sammelmeldung statt Einzel-Pushs (je Push ≈ 4 Abfragen; Agent liegt bei ≈ 44 von 50)
       if (newCritical.length > 1) {
-        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', title: AGENT_PUSH_T.de.agent, body: '', eventKey: `agent:${runId}`, caseId: null, localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: AGENT_PUSH_T[l].critical_n.replace('{n}', newCritical.length) + (environment === 'test' ? ' · TEST' : '') }), langOf, urgent: true });
+        toDeliver.push(...await notifyUsers(env, ctx, environment, ids, { defer: true, kind: 'agent', title: AGENT_PUSH_T.de.agent, body: '', eventKey: `agent:${runId}`, caseId: null, localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: AGENT_PUSH_T[l].critical_n.replace('{n}', newCritical.length) + (environment === 'test' ? ' · TEST' : '') }), langOf, urgent: true }));
       } else for (const { eventId, f } of newCritical) {
-        await notifyUsers(env, ctx, environment, ids, { kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: criticalBody(f.code, l, environment) }), langOf, title: AGENT_PUSH_T.de.agent, body: criticalBody(f.code, 'de', environment), eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true,
-          ref: !f.case_id && f.vehicle_id ? `vehicle:${f.vehicle_id}` : null }); // Befund ohne Vorgang → Tippen öffnet die Fahrzeugakte
+        toDeliver.push(...await notifyUsers(env, ctx, environment, ids, { defer: true, kind: 'agent', localize: (l) => ({ title: AGENT_PUSH_T[l].agent, body: criticalBody(f.code, l, environment) }), langOf, title: AGENT_PUSH_T.de.agent, body: criticalBody(f.code, 'de', environment), eventKey: `agent:${eventId}`, caseId: f.case_id, urgent: true,
+          ref: !f.case_id && f.vehicle_id ? `vehicle:${f.vehicle_id}` : null })); // Befund ohne Vorgang → Tippen öffnet die Fahrzeugakte
       }
     }
 
     // Neue Termine/Fristen (Prüftermine, Behördenfristen): eine ruhige Sammel-Erinnerung je Lauf, ohne Details im Push-Text
     if (newReminders.length) {
       const codes = newReminders.map((f) => f.code);
-      await notifyUsers(env, ctx, environment, await recipients(), { kind: 'agent_reminder', title: AGENT_PUSH_T.de.reminder, body: reminderBody(codes, 'de', environment), langOf,
-        localize: (l) => ({ title: AGENT_PUSH_T[l].reminder, body: reminderBody(codes, l, environment) }), eventKey: `agent-reminder:${runId}`, caseId: null, urgent: false });
+      toDeliver.push(...await notifyUsers(env, ctx, environment, await recipients(), { defer: true, kind: 'agent_reminder', title: AGENT_PUSH_T.de.reminder, body: reminderBody(codes, 'de', environment), langOf,
+        localize: (l) => ({ title: AGENT_PUSH_T[l].reminder, body: reminderBody(codes, l, environment) }), eventKey: `agent-reminder:${runId}`, caseId: null, urgent: false }));
     }
+
+    // eine gemeinsame Zustellung für kritische Pushs und Sammel-Erinnerung (21.10.2026: zwei Zustellungen sprengten mit Push-Geräten das Agent-Budget 40)
+    if (toDeliver.length) { const job = deliverPush(env, toDeliver); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }
 
     // Nach dem Sammel-Upsert sind genau die in diesem Lauf gefundenen Befunde offen, alle anderen erledigt – keine Zählabfrage nötig
     const openCount = unique.length;

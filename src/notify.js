@@ -290,7 +290,7 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
 
 // localize(lang) → { title?, body? } je Sprache der Person (langOf: Map Benutzer-ID → Sprache); ohne Angabe gilt title/body für alle
 // ref: Bezug ohne Vorgang ('vehicle:<id>', 'fine:<id>') – Ziel beim Tippen auf Hinweis/Push
-export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null, ref = null, onlyEndpoint = null }) {
+export async function notifyUsers(env, ctx, environment, userIds, { kind, title, body, eventKey, caseId = null, urgent = false, localize = null, langOf = null, ref = null, onlyEndpoint = null, defer = false }) {
   const now = nowIso();
   const langFor = (uid) => (langOf && LANGS.includes(langOf.get(uid)) ? langOf.get(uid) : 'de');
   const text = (uid) => {
@@ -300,6 +300,8 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
   // Sprache des Textes (für die Vorlesefunktion des Geräts) nur, wenn sie feststeht: übersetzt (localize) oder vom Aufrufer genannt (langOf)
   const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now, lang: localize || langOf ? langFor(uid) : null, ref: NOTIF_REF.test(ref || '') ? ref : null }));
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at, environment: r.environment, ref: r.ref, ...(onlyEndpoint ? { only_endpoint: onlyEndpoint } : {}) }));
+  // defer: Aufrufer stellt mehrere Hinweise gemeinsam zu (Fuhrparkagent: kritischer Push + Sammel-Erinnerung in einer Zustellung – Abfragebudget)
+  if (defer) return created;
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;

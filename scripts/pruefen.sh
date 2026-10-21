@@ -44,6 +44,7 @@ UI-Postausgang: Umgebung gewechselt, Werkstatt offline melden|ui-postausgang-umg
 UI-Foto nachreichen nach Netzabbruch beim direkten Senden|ui-foto-netzabbruch.py|/tmp/cfp-foto-netz.log
 UI-Auftragstexte (Prüftermin) in der App-Sprache|ui-auftragstexte.py|/tmp/cfp-auftragstexte.log
 UI-Aktionsformular bleibt offen, Vertrag km-Grundlage|ui-aktionsformular.py|/tmp/cfp-aktionsformular.log
+UI-Sperrhinweis vor Ablehnen/Sperre aufheben|ui-sperrhinweis.py|/tmp/cfp-sperrhinweis.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log
 UI-Import-Hinweise in der App-Sprache|ui-importhinweise.py|/tmp/cfp-import.log

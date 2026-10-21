@@ -194,7 +194,7 @@ CSV-Exporte (`format=csv`): UTF-8 mit BOM, Semikolon, CRLF; Kalendertage TT.MM.J
 
 ### Befehle auf Vorgängen
 `POST /api/cases/:id/commands` mit `{ action, command_id, expected_version, note, payload }`.
-Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` → 409 `version_conflict`.
+Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` → 409 `version_conflict`. Seit 21.10.2026 (Migration 0068): gleiche `command_id` mit anderer Aktion **oder anderem Inhalt** (`payload`/`note`) → 409 `command_id_reused` (vorher bei gleicher Aktion still `duplicate`); Befehle vor dem 21.10. ohne gespeicherte Prüfsumme gelten weiter als Wiederholung.
 
 | Aktion | Rolle | Status vorher → nachher | Pflicht |
 |---|---|---|---|
@@ -202,7 +202,7 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 | `change_priority` | fleet/owner | offen | `payload.priority`, Begründung |
 | `set_safety_lock` / `lift_safety_lock` | fleet/owner | jeder offene | Grund; Aufheben + `confirm`, keine offenen sicherheitsrel. Restarbeiten; Hinweis auch an Fahrer des fest gekoppelten Fahrzeugs (Lkw ↔ Anhänger laut Stammliste; ebenso Freigabe und Meldung mit Sperre; seit 17.10.2026) |
 | `approve_repair` | fleet/owner | gemeldet → werkstatt_freigegeben | `workshop_site`, Umfang |
-| `reject` | fleet/owner | gemeldet → abgelehnt | Grund; nicht bei aktiver Sperre; optional `payload.duplicate_of` = Vorgang desselben Fahrzeugs (keine Dublette einer Dublette) → `cases.duplicate_of`, Grund ohne Eingabe „Dublette von <Nr.>“; Dubletten, die bisher auf den abgelehnten Vorgang zeigten, werden auf das neue Original umgehängt (Verlauf `moved_duplicates[]`, seit 17.10.2026); Vorgangsdetail liefert `duplicate_of` bzw. `duplicates[]` |
+| `reject` | fleet/owner | gemeldet → abgelehnt | Grund; nicht bei aktiver Sperre; optional `payload.duplicate_of` = Vorgang desselben Fahrzeugs (keine Dublette einer Dublette; seit 21.10.2026 nur zu einem **offenen** Vorgang, sonst 400 `duplicate_closed`; eine spätere Abfahrtskontrolle mit demselben Mangel hängt den Vermerk „erneut festgestellt“ an das offene Original) → `cases.duplicate_of`, Grund ohne Eingabe „Dublette von <Nr.>“; Dubletten, die bisher auf den abgelehnten Vorgang zeigten, werden auf das neue Original umgehängt (Verlauf `moved_duplicates[]`, seit 17.10.2026); Vorgangsdetail liefert `duplicate_of` bzw. `duplicates[]` |
 | `acknowledge` | Werkstatt (Standort) | werkstatt_freigegeben (Übernahme) | – |
 | `start_repair` | Werkstatt | werkstatt_freigegeben → in_reparatur | – |
 | `wait_parts` / `resume_repair` | Werkstatt | in_reparatur ↔ wartet_teile | Teile-Vermerk; optional `payload.parts_expected_date` (Liefertermin laut Lieferant, ab heute, ≤ 1 Jahr); `resume_repair` leert ihn |
