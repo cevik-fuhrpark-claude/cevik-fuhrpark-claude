@@ -13738,7 +13738,7 @@ await test('Oberfläche 19.10.: Druck ohne Bedienelemente (Foto-/Datei-Knopf, Zu
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   ok(app.includes('<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t(\'add_photos\'))}'), 'Fotos hinzufügen nicht im Druck');
   ok(app.includes('<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t(\'upload\'))}'), 'Bußgeld-Upload nicht im Druck');
-  ok(app.includes('<p class="noprint"><a href="#/fines">') && app.includes('<p class="noprint"><a href="#/drivers">'), 'Zurück-Links nicht im Druck');
+  ok(app.includes('<p class="noprint"><a class="backlink" href="#/fines">') && app.includes('<p class="noprint"><a class="backlink" href="#/drivers">'), 'Zurück-Links nicht im Druck');
   ok(/data-title="\$\{esc\(v\.plate\)\} · \$\{esc\(t\('vehicle_file'\)\)\}">\$\{esc\(t\('vehicle_file'\)\)\}<\/h1><p class="print-only small">/.test(app), 'Akte: Druckkopf unter dem Titel');
   ok(/h1, h2, h3 \{ break-after: avoid; \}/.test(css) && css.includes('@page guide') && css.includes('page: guide;'), 'Druck-CSS');
   ok(!/(noncompliant|missing)\.join\(', '\)/.test(app), 'Winterpositionen immer über posL');
@@ -14316,7 +14316,7 @@ await test('Fehlersuche 20.10. (Vorgang/Fahrzeugliste/Hilfe): veraltete Seite �
   eq(translateValidation('en', 'Höchstens 24 Stunden je Person und Arbeitstag – am 18.10.2026 sind bereits 20,5 h erfasst.').includes('18/10/2026'), true, 'EN-Datum');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("String(v.planned_inspection_kind).split(', ').map(mk)"), 'geplante Prüfart übersetzt');
-  ok(app.includes(".replace(/[\\s-]/g, '')"), 'Fahrzeugsuche ohne Bindestrich');
+  ok(app.includes("const q = searchKey($('#q').value);"), 'Fahrzeugsuche ohne Bindestrich (seit 21.10. searchKey)');
   ok(app.includes("['all', t('filter_all'), bySite.length]"), 'Art-Reiter je Standort');
   ok(app.includes("S.unread = 0; refreshUnread(); route();"), 'Glocke nach Umgebungswechsel');
   ok(app.includes("${eur3(p.unit_price_net)}") && app.includes("o.safety_relevant && o.status === 'offen' ? 'p-kritisch'"), 'Stückpreis/erledigte Restarbeit');
@@ -16603,6 +16603,28 @@ await test('Fehlersuche 21.10. (Datumseingaben): Fälligkeit von Prüfterminen u
   eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Test', start_date: '2026-01-01', end_date: y(-1), evidence: 'Vertrag' })).status, 201, 'Vertrag innerhalb');
   eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 1000, measured_on: ` ${today} ` })).status, 201, 'Ablesedatum mit Leerzeichen');
   const { translateValidation } = await import('../public/i18n.js'); for (const l of ['uk', 'en']) ok(!/Fälligkeit/.test(translateValidation(l, util.DUE_FAR_MSG) || 'Fälligkeit'), l);
+});
+
+await test('Fehlersuche 21.10. (Suche/Kennzeichen): kyrillische Doppelgänger im Kennzeichen (Bußgeld) richtig bzw. gar nicht zugeordnet, Vorgangssuche mit Punkt/Schrägstrich/Gedankenstrich, Kennzeichen-Reihenfolge deutsch + numerisch', async () => {
+  const { e, U } = await freshWorld();
+  const util = await import('../src/util.js');
+  eq(util.normPlate('SZ YС 5501'), 'SZYC5501', 'С kyrillisch'); eq(util.normPlate('АВ-СD 1'), 'ABCD1'); eq(util.normPlate('SZ ЖC 1'), '', 'fremder Buchstabe → nicht vergleichbar'); eq(util.normPlate('öhr x 1'), 'ÖHRX1');
+  const mk = async (plate, vin) => eq((await U.own.post('/api/vehicles', { plate, vin, site: 'Dortmund' })).status, 201, plate);
+  await mk('SZ-YC 5501', 'WDB96340310889001'); await mk('SZ-Y 5501', 'WDB96340310889002'); await mk('SZ.YC 77', 'WDB96340310889003'); await mk('SZ–AB 200', 'WDB96340310889004'); await mk('SZ-YC 10', 'WDB96340310889005'); await mk('SZ-YC 9', 'WDB96340310889006'); await mk('ÖHR-X 1', 'WDB96340310889007');
+  const fine = (ref, plate) => U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: ref, offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), location: 'B1', plate_in_letter: plate, amount_eur: 70 });
+  const f1 = await fine('AZ-KYR-1', 'SZ YС 5501'); eq(f1.status, 201, JSON.stringify(f1.data));
+  eq(e.DB.db.prepare('SELECT v.plate FROM fines f JOIN vehicles v ON v.id=f.vehicle_id WHERE f.reference=?').get('AZ-KYR-1')?.plate, 'SZ-YC 5501', 'richtiges Fahrzeug');
+  eq((await fine('AZ-KYR-2', 'SZ ЖC 5501')).status, 201); eq(e.DB.db.prepare('SELECT vehicle_id FROM fines WHERE reference=?').get('AZ-KYR-2').vehicle_id, null, 'nicht vergleichbar → keine Zuordnung');
+  for (const [plate, q] of [['SZ.YC 77', 'SZYC77'], ['SZ.YC 77', 'sz-yc 77'], ['SZ–AB 200', 'SZ-AB 200']]) {
+    const vid = e.DB.db.prepare('SELECT id FROM vehicles WHERE plate=?').get(plate).id;
+    eq((await U.fleet.post('/api/cases', { vehicle_id: vid, description: 'Suchtest Kennzeichen', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'st-' + q })).status, 201);
+    const r = await U.fleet.get('/api/cases?status=all&q=' + encodeURIComponent(q)); ok(r.data.cases.some((c) => c.vehicle_id === vid), `Suche ${q} findet ${plate}`);
+  }
+  const plates = (await U.fleet.get('/api/vehicles')).data.vehicles.map((v) => v.plate).filter((p) => /^(SZ-YC (9|10|5501)|ÖHR-X 1)$/.test(p));
+  eq(plates.join('|'), 'ÖHR-X 1|SZ-YC 9|SZ-YC 10|SZ-YC 5501', 'deutsch + numerisch');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/replace\(\/\[\\s-\]\/g, ''\)/.test(app) && (app.match(/searchKey\(/g) || []).length >= 4, 'Oberfläche: Suchschlüssel ohne Punkt/Schrägstrich/Gedankenstrich');
+  ok(!/\.plate\)?\.localeCompare\(/.test(app), 'Oberfläche: Kennzeichen-Reihenfolge über plateCmp');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

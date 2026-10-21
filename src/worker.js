@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, pointDec } from './util.js';
+import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, pointDec } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -268,7 +268,7 @@ async function handleApi(request, env, ctx, url) {
       // Auswahl der Liste (Standort/Art/Verfügbarkeit/Suche) in angezeigter Reihenfolge – wie Druck und Vorgangs-CSV
       // (20.10.2026: Export enthielt bei Filter „Hamburg“ alle Fahrzeuge); ohne „ids“ der ganze Bestand
       const ids = url.searchParams.get('ids');
-      const rows = ids === null ? [...list].sort((a, b) => String(a.plate).localeCompare(String(b.plate), 'de')) /* wie die Liste (Umlaute nicht ans Ende) */ : (() => { const pos = new Map(ids.split(',').slice(0, 2000).map((x, i) => [x, i]));
+      const rows = ids === null ? [...list].sort((a, b) => plateCmp(a.plate, b.plate)) /* wie die Liste (Umlaute nicht ans Ende) */ : (() => { const pos = new Map(ids.split(',').slice(0, 2000).map((x, i) => [x, i]));
         return list.filter((v) => pos.has(v.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); })();
       return new Response(veh.vehiclesCsv(rows, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${envName}_${berlinDate()}.csv"` } });
     }

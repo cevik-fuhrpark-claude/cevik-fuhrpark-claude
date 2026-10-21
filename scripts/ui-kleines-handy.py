@@ -42,5 +42,13 @@ async def main():
                     if 'check' in route and (not m['n'] or m['minText'] < 100): bad.append(f"Prüfpunkt-Text {m['minText']} px")
                     if pct == 150 and 'check' in route: await q.screenshot(path=f'/tmp/cfp-kleines-handy-{lang}.png', full_page=False)
                     _r(f'FEHLER: {lang} {pct}% {route}: ' + '; '.join(bad) if bad else f"ok: {lang} {pct}% {route} (Text ≥ {m['minText'] or 0:.0f} px, Tabbar {m['tabH']} px)")
+        # Tippziele ≥ 44 px: Zurück-Link im Vorgang, Filterknöpfe (Vorgänge, Hinweise)
+        c = await q.evaluate(JS, ['POST', '/api/cases', {'vehicle_id': vid, 'description': 'Spiegel lose (Tippziel)', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': UN + '-c'}])
+        if c['s'] != 201: _r(f'FEHLER: Meldung {c}')
+        await q.evaluate(SCALE, 100)
+        for route, sel in [(f"#/cases/{c['d']['id']}", '.backlink'), ('#/cases', '.seg-tabs a')]:
+            await q.goto(B + '/' + route); await q.wait_for_timeout(1200)
+            hs = await q.evaluate(f"() => [...document.querySelectorAll('{sel}')].map((e) => e.getBoundingClientRect().height)")
+            _r(f'ok: Tippziel {sel} ≥ 44 px ({min(hs):.0f})' if hs and min(hs) >= 44 else f'FEHLER: Tippziel {sel} {hs}')
         await br.close()
 asyncio.run(main())

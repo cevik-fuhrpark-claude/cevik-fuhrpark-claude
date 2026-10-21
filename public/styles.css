@@ -228,7 +228,10 @@ th { color: var(--steel); font-weight: 600; }
 .center { min-height: 70vh; display: grid; place-items: center; }
 .narrow { max-width: 440px; width: 100%; }
 .seg-tabs { display: flex; gap: 4px; margin: 0 0 12px; flex-wrap: wrap; }
-.seg-tabs a { padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--rule); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+/* Tippziele ≥ 44 px (21.10.2026: Zurück-Link 20 px, Filterknöpfe 40 px, „Alle“/„Werkstattplan“ 20 px hoch) */
+.backlink, .navlinks a { display: inline-flex; align-items: center; min-height: 44px; padding-right: 12px; }
+.navlinks { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.seg-tabs a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--rule); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
 .seg-tabs a.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 @media (prefers-reduced-motion: no-preference) { .toast { animation: rise 0.2s ease-out; } @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } } }

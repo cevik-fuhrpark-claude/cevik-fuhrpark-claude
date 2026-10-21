@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -135,7 +135,7 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Suche: Beschreibung, Vorgangsnummer, Kennzeichen (ohne Leerzeichen/Bindestriche), Platzhalter werden nicht ausgewertet
   const q = String(query.q || '').trim().slice(0, 60);
   if (q.length >= 2) {
-    const plateKey = q.toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+    const plateKey = normPlate(q); // gleiche Regel wie Zuordnungen (Punkt, Schrägstrich, geschützte Leerzeichen, Gedankenstrich; 21.10.2026)
     // LIKE in SQLite/D1 ignoriert Groß-/Kleinschreibung nur für A–Z: „гальма“ fände „Гальма …“ nicht, „öl“ nicht „Ölwechsel“.
     // Deshalb je Suchwort Schreibweisen-Varianten (wie eingegeben, klein, GROSS, Wortanfang groß); mehrere Wörter: alle müssen
     // in der Beschreibung vorkommen (Reihenfolge egal, höchstens 5) – eine Abfrage, keine Schemaänderung.
@@ -148,7 +148,7 @@ export async function listCases(env, user, envName, query, meta = null) {
       // instr statt LIKE (D1: Muster über 50 Byte → Fehler, 19.10.2026); lower() wie LIKE für A–Z, Varianten für andere Buchstaben
       wordSql.push(`(${vs.map(() => `instr(lower(c.description), lower(?)) > 0`).join(' OR ')})`); wordArgs.push(...vs);
     }
-    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(REPLACE(REPLACE(UPPER(v.plate),' ',''),'-',''), ?) > 0)`);
+    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0)`);
     args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000');
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);

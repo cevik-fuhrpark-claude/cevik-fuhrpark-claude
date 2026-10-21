@@ -486,9 +486,18 @@ export const PLATE_KEY_SQL = (x) => PLATE_STRIP.reduce((acc, ch) => `REPLACE(${a
 // Gespann-Kopplung in SQL: ein Fahrzeug zählt nur, wenn es bewertet ist oder es kein bewertetes aktives Fahrzeug gleicher Art mit dem
 // Kennzeichen gibt (ruhendes Doppel mit FIN-Tippfehler, wie pickVehicleByPlate/„Mein Fahrzeug“; 18.10.2026)
 export const COUPLING_PREFERRED_SQL = (a) => `(COALESCE(${a}.eval_excluded,0)=0 OR NOT EXISTS (SELECT 1 FROM vehicles y WHERE y.active=1 AND y.kind=${a}.kind AND COALESCE(y.eval_excluded,0)=0 AND ${PLATE_KEY_SQL('y.plate')}=${PLATE_KEY_SQL(a + '.plate')}))`;
-export const normPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '');
+// Kyrillische Buchstaben, die wie lateinische aussehen (ukrainische Tastatur), werden umgesetzt; bleibt danach ein anderer Buchstabe übrig
+// (z. B. „Ж“), gilt das Kennzeichen als nicht vergleichbar ('') – vorher wurde er still gestrichen: „SZ YС 5501“ (С kyrillisch) traf
+// „SZ-Y 5501“ statt „SZ-YC 5501“ (21.10.2026)
+const PLATE_CYR = { 'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X', 'І': 'I' };
+export const normPlate = (p) => {
+  const t = String(p || '').toUpperCase().replace(/[АВЕКМНОРСТУХІ]/g, (c) => PLATE_CYR[c]);
+  return /[^\P{L}A-ZÄÖÜ]/u.test(t) ? '' : t.replace(/[^A-Z0-9ÄÖÜ]/g, '');
+};
 // Fahrzeug zu einem Kennzeichen aus einem Schreiben/Gerät: zuerst aktive bewertete, dann ruhende (eval_excluded), dann außer Betrieb.
 // Mehrere Treffer in derselben Stufe = mehrdeutig → kein Fahrzeug (lieber manuell klären als falscher Fahrer/falsche Position).
+// Kennzeichen-Reihenfolge: deutsch (Ö nicht hinter Z) und Ziffern als Zahl („SZ-YC 9“ < „SZ-YC 10“ < „SZ-YC 5501“; 21.10.2026)
+export const plateCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'de', { numeric: true });
 export function pickVehicleByPlate(vehicles, plate) {
   const k = normPlate(plate); if (!k) return { vehicle: null, ambiguous: false };
   const hits = vehicles.filter((v) => normPlate(v.plate) === k);
