@@ -835,6 +835,16 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     : internal.maintenance_event_id ? ['maintenance_event_id=?2', internal.maintenance_event_id] : null;
   const openSql = oneOpen ? `FROM cases WHERE environment=?1 AND ${oneOpen[0]} AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')` : '';
   const guard = oneOpen ? [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*) <= 1 THEN 1 ELSE 0 END ${openSql}`).bind(envName, oneOpen[1]), env.DB.prepare('DELETE FROM cmd_guard')] : [];
+  // Abfahrtskontrolle (Backlog 106, 21.10.2026): zwei gleichzeitig eingehende Kontrollen mit demselben Mangel legten zwei Vorgänge an – die
+  // Vorabprüfung „offener Vorgang desselben Prüfpunkts“ las den Stand vor dem Stapel. Gleiche Regel wie in submitInspection im Stapel geprüft;
+  // trifft sie jetzt zu, rollt der Stapel zurück und die Kontrolle wird einmal neu bewertet (dann Vermerk „erneut festgestellt“).
+  const kg = internal.kontrolle_guard;
+  const kgRows = kg ? rows.filter((r) => r.origin === 'kontrolle' && r.check_item && kg.has(r.check_item)).map((r) => ({ v: r.vehicle_id, item: r.check_item, ...kg.get(r.check_item) })) : [];
+  if (kgRows.length) guard.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM json_each(?2) j JOIN cases o ON o.environment=?1
+      AND o.vehicle_id=json_extract(j.value,'$.v') AND o.origin='kontrolle' AND o.check_item=json_extract(j.value,'$.item') AND o.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+      AND o.id NOT IN (SELECT value FROM json_each(?3))
+      AND (json_extract(j.value,'$.cmp')=0 OR (CASE o.priority WHEN 'kritisch' THEN 2 WHEN 'mittel' THEN 1 ELSE 0 END) >= json_extract(j.value,'$.rank'))
+      AND (json_extract(j.value,'$.safety')=0 OR o.safety_lock=1)) THEN 0 ELSE 1 END`).bind(envName, JSON.stringify(kgRows), JSON.stringify(rows.map((r) => r.id))), env.DB.prepare('DELETE FROM cmd_guard'));
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
@@ -857,6 +867,10 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
         const off = await env.DB.prepare('SELECT 1 FROM vehicles WHERE active=0 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first();
         throw bad('validation', off ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.');
       }
+    }
+    if (kgRows.length && String(e && e.message).includes('CHECK')) {
+      const again0 = await byKey();
+      if (!specs.every((x) => again0.get(x.requestKey)?.content_hash === x.contentHash)) throw conflict('inspection_race', 'Ein gleichartiger Mangel wurde gerade gemeldet. Bitte die Kontrolle erneut senden.');
     }
     if (oneOpen && String(e && e.message).includes('CHECK')) {
       const o = await env.DB.prepare(`SELECT id, case_no ${openSql} ORDER BY created_at LIMIT 1`).bind(envName, oneOpen[1]).first();
@@ -1291,7 +1305,7 @@ export const CHECKLIST = [
   { key: 'probefahrt', group: 'Abschluss' },
 ];
 
-export async function submitInspection(env, ctx, user, envName, body) {
+export async function submitInspection(env, ctx, user, envName, body, retried = false) {
   const kind = oneOf(body.kind, ['nach_reparatur', 'abfahrt'], 'Kontrollart');
   const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
   const id = 'insp-' + (await sha256Hex(`${user.id}:${requestKey}`)).slice(0, 32);
@@ -1375,6 +1389,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
   }
   const toCreate = [];
   const slots = [];
+  const kGuard = new Map(); // Prüfpunkt → Bedingung „wäre ein offener Vorgang wiederverwendet worden?“ (Backlog 106, Stapelprüfung in createCases)
   for (const d of defects) {
     const prio = d.followup_priority || (d.safety_relevant ? 'kritisch' : 'mittel');
     // Priorität nur vergleichen, wenn sie ausdrücklich gewählt oder sicherheitsrelevant ist – sonst gilt jeder offene Vorgang des Prüfpunkts
@@ -1390,6 +1405,7 @@ export async function submitInspection(env, ctx, user, envName, body) {
     }
     slots.push({ d, at: followups.length });
     followups.push(null);
+    if (kind === 'abfahrt') kGuard.set(d.key, { cmp: cmpPrio ? 1 : 0, rank: RANK[prio], safety: d.safety_relevant ? 1 : 0 });
     toCreate.push({
       vehicle_id: vehicleId,
       description: `[Kontrolle ${kind === 'nach_reparatur' ? 'nach Reparatur' : 'Abfahrt'}] ${d.key}: ${d.note}`,
@@ -1404,7 +1420,12 @@ export async function submitInspection(env, ctx, user, envName, body) {
       parent_case_id: c?.id || null,
     });
   }
-  const created = await createCases(env, ctx, user, envName, toCreate);
+  let created;
+  try { created = await createCases(env, ctx, user, envName, toCreate, kGuard.size ? { kontrolle_guard: kGuard } : {}); } catch (e) {
+    // gleichzeitig eingegangene Kontrolle hat denselben Mangel angelegt: einmal neu bewerten (findet jetzt den offenen Vorgang)
+    if (e && e.code === 'inspection_race' && !retried) return submitInspection(env, ctx, user, envName, body, true);
+    throw e;
+  }
   slots.forEach(({ d, at }, n) => {
     const res = created[n];
     d.followup_case_id = res.id;

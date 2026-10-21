@@ -15936,6 +15936,36 @@ await test('Backlog 108: Telematik-Sammelaufruf – je Tag jüngster plausibler 
   ok(src.includes('const ODO_ROUNDS = 12;') && src.includes('odo.get(key).list.push(') && !src.includes('if (!cur || gps > cur.t) odo.set('), 'alle Einträge an die Datenbank');
 });
 
+await test('Backlog 106: zwei gleichzeitig eingehende Abfahrtskontrollen mit demselben Mangel → ein Vorgang + Vermerk „erneut festgestellt“ (verschiedene Mängel weiter zwei Vorgänge)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const { CHECKLIST } = await import('../src/cases.js');
+  const items = (k, extra) => CHECKLIST.map((i, n) => (n === k ? { key: i.key, result: 'mangel', note: 'Bremse zieht einseitig', ...extra } : { key: i.key, result: 'ok' }));
+  const open = (key) => db.prepare(`SELECT id, safety_lock FROM cases WHERE vehicle_id=? AND origin='kontrolle' AND check_item=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).all(V1, key);
+  // 1. sicherheitsrelevant, Fahrer + Leitung gleichzeitig
+  const two = await Promise.all([U.driver, U.fleet].map((c) => c.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(0, { safety_relevant: true }) })));
+  eq(two.map((x) => x.status).join(','), '201,201', JSON.stringify(two.map((x) => x.data)));
+  const o1 = open(CHECKLIST[0].key); eq(o1.length, 1, 'ein offener Vorgang'); eq(o1[0].safety_lock, 1);
+  const fu = two.map((x) => x.data.followups[0]); eq(fu.filter((f) => f.repeat).length, 1, 'eine Kontrolle als Wiederholung'); eq(fu[0].id, fu[1].id, 'beide verweisen auf denselben Vorgang');
+  eq(db.prepare(`SELECT COUNT(*) n FROM case_events WHERE case_id=? AND action='repeat_finding'`).get(o1[0].id).n, 1, 'Vermerk am Vorgang');
+  eq(db.prepare(`SELECT COUNT(*) n FROM inspections WHERE vehicle_id=?`).get(V1).n, 2, 'beide Kontrollen gespeichert');
+  // 2. nicht sicherheitsrelevant, ohne Priorität
+  const two2 = await Promise.all([U.driver, U.fleet].map((c) => c.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(1) })));
+  eq(two2.map((x) => x.status).join(','), '201,201'); eq(open(CHECKLIST[1].key).length, 1, 'ein Vorgang (nicht sicherheitsrelevant)');
+  // 3. verschiedene Mängel gleichzeitig: zwei Vorgänge (keine falsche Wiederholung)
+  const two3 = await Promise.all([[U.driver, 2], [U.fleet, 3]].map(([c, k]) => c.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(k) })));
+  eq(two3.map((x) => x.status).join(','), '201,201'); eq(open(CHECKLIST[2].key).length + open(CHECKLIST[3].key).length, 2);
+  ok(two3.every((x) => !x.data.followups[0].repeat), 'keine Wiederholung');
+  // 4. offener Vorgang „niedrig“ ohne Sperre + gleichzeitig zwei sicherheitsrelevante Meldungen: ein neuer gesperrter Vorgang, nicht zwei
+  db.prepare(`UPDATE cases SET priority='niedrig', safety_lock=0 WHERE id=?`).run(open(CHECKLIST[1].key)[0].id);
+  const two4 = await Promise.all([U.driver, U.fleet].map((c) => c.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(1, { safety_relevant: true }) })));
+  eq(two4.map((x) => x.status).join(','), '201,201'); const o4 = open(CHECKLIST[1].key); eq(o4.length, 2, 'alter + ein neuer'); eq(o4.filter((x) => x.safety_lock).length, 1, 'ein gesperrter');
+  // Wiederholung derselben Kontrolle (Postausgang) bleibt Dublette
+  const k5 = rk(); const a5 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: k5, items: items(4) }); const b5 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: k5, items: items(4) });
+  eq(b5.data.duplicate, true); eq(b5.data.followups[0].id, a5.data.followups[0].id);
+  const { translateValidation } = await import('../public/i18n.js'); const M = 'Ein gleichartiger Mangel wurde gerade gemeldet. Bitte die Kontrolle erneut senden.';
+  for (const l of ['uk', 'en']) ok(translateValidation(l, M) && translateValidation(l, M) !== M, `${l}: Meldung übersetzt`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
