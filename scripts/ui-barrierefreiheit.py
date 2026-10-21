@@ -50,6 +50,26 @@ with sync_playwright() as p:
         q.keyboard.press('Tab')
         sh=q.evaluate("()=>{const e=document.activeElement; return e&&e!==document.body?getComputedStyle(e).boxShadow:'body'}")
         check(sh not in ('none','body',''),f'{lang} {w}px: Fokus mit Ring ({sh})')
+        # Formularfehler am Feld (Backlog 110): Meldung ohne Beschreibung → #d aria-invalid + sichtbarer Hinweis, Eingabe hebt auf
+        if not q.locator('input[name=veh]:checked').count(): q.locator('.vehpick label').first.click()
+        q.evaluate("()=>document.getElementById('sb').click()"); q.wait_for_selector('#d[aria-invalid=true]',timeout=5000)
+        hint=q.evaluate("()=>{const d=document.getElementById('d'); const p=document.getElementById(d.getAttribute('aria-describedby')||'x'); return p?p.textContent:''}")
+        check(len(hint)>3,f'{lang} {w}px: Beschreibung mit Feldhinweis „{hint}“')
+        tb=q.locator('.toast.err').last.bounding_box() if q.locator('.toast.err').count() else None
+        check(tb and tb['y']+tb['height']<h/2,f'{lang} {w}px: Fehlermeldung oben (Backlog 111) {tb and round(tb["y"])}')
+        if SHOTS and w==390: q.locator('#d').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/feldfehler_{lang}_{w}.png')
+        q.fill('#d','Spiegel wackelt')
+        check(q.get_attribute('#d','aria-invalid') is None and q.locator('.fielderr').count()==0,f'{lang} {w}px: Hinweis nach Eingabe weg')
+        # Abfahrtskontrolle ohne Antworten → Radiogruppe aria-invalid mit Hinweis, Antwort hebt auf
+        q.goto(B+'/#/check'); q.wait_for_selector('#v')
+        if not q.input_value('#v'): q.select_option('#v',index=1)
+        q.evaluate("()=>document.getElementById('sb').click()"); q.wait_for_selector('.seg[aria-invalid=true]',timeout=5000)
+        hint=q.evaluate("()=>{const g=document.querySelector('.seg[aria-invalid=true]'); const p=document.getElementById(g.getAttribute('aria-describedby')||'x'); return p?p.textContent:''}")
+        check(len(hint)>3,f'{lang} {w}px: Kontrolle mit Feldhinweis „{hint}“')
+        check(q.locator('.fielderr').count()==1 and q.locator('.seg[aria-invalid=true]').count()>1,f'{lang} {w}px: ein Hinweistext, alle offenen Gruppen markiert')
+        if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/kontrollfehler_{lang}_{w}.png')
+        q.locator('.seg[aria-invalid=true] input[value=ok]').first.check(force=True)
+        check(q.evaluate("()=>{const r=document.querySelector('.checkitem'); return !r.querySelector('.seg').hasAttribute('aria-invalid') && !document.querySelector('#'+CSS.escape('err_cl_'+r.dataset.key))}"),f'{lang} {w}px: Hinweis nach Antwort weg')
         # Vorgang: Aktionsformular holt den Fokus, Abbrechen gibt ihn zurück; Kommentar → Erfolg mit Wort in der Live-Region
         q.goto(B+f'/#/cases/{cid}'); q.wait_for_selector('#ct')
         ab=q.locator('button[data-act]').first

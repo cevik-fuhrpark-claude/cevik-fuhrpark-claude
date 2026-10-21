@@ -175,6 +175,19 @@ function toast(msg, err = false) {
   document.body.appendChild(el);
 }
 
+// Fehlende/ungültige Angabe am Feld selbst kenntlich machen (Backlog 110, 21.10.2026): aria-invalid + aria-describedby auf einen
+// sichtbaren Hinweis unter dem Feld/der Gruppe – der Toast verschwindet wieder, der Hinweis bleibt bis zur nächsten Eingabe
+function markInvalid(el, msg, after = el) {
+  if (!el) return;
+  const id = 'err_' + String(el.id || el.getAttribute('aria-labelledby') || el.getAttribute('name') || 'feld').replace(/[^\w-]/g, '_');
+  let p = document.getElementById(id);
+  if (!p) { p = document.createElement('p'); p.id = id; p.className = 'small fielderr'; after.insertAdjacentElement('afterend', p); }
+  p.textContent = msg;
+  el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', id);
+  const clear = () => { el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); p.remove(); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
+  el.addEventListener('input', clear); el.addEventListener('change', clear);
+}
+
 // ---------- Rahmen ----------
 const ICON = {
   home: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
@@ -1231,8 +1244,8 @@ async function viewNew(preId) {
     e.preventDefault();
     const veh = $('input[name=veh]:checked');
     // Prüfung in der App-Sprache (Browser-Meldungen wären in der Gerätesprache)
-    if (!veh) { toast(t('choose_vehicle'), true); $('#vq').focus(); return; }
-    if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); $('#d').focus(); return; }
+    if (!veh) { toast(t('choose_vehicle'), true); const vp = $('.vehpick'); if (vp) { vp.setAttribute('role', 'radiogroup'); markInvalid(vp, t('choose_vehicle')); } $('#vq').focus(); return; }
+    if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
     $('#sb').disabled = true;
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
@@ -1595,13 +1608,18 @@ function bindChecklist(form) {
       shown = true; setTimeout(() => (shown = false), 0);
       e.target.scrollIntoView({ block: 'center' }); e.target.focus({ preventScroll: true });
       toast(t(e.target.id === 'km' ? 'km_invalid' : 'defect_note_missing'), true);
+      markInvalid(e.target, t(e.target.id === 'km' ? 'km_invalid' : 'defect_note_missing'));
       return;
     }
     if (!row || e.target.type !== 'radio') return;
     e.preventDefault();
     row.classList.add('missing');
+    // jede offene Gruppe aria-invalid; sichtbarer Hinweistext nur unter der ersten (sonst 18 gleiche Zeilen)
+    const seg = $('.seg', row);
+    if (seg && !seg.hasAttribute('aria-invalid')) { seg.setAttribute('aria-invalid', 'true'); seg.addEventListener('change', () => seg.removeAttribute('aria-invalid'), { once: true }); }
     if (shown) return;
     shown = true; setTimeout(() => (shown = false), 0);
+    if (seg) markInvalid(seg, t('check_answer_missing'), row);
     const open = $$('.checkitem', form).filter((r) => !$('input[type=radio]:checked', r)).length;
     row.scrollIntoView({ block: 'center' });
     $('input[type=radio]', row).focus({ preventScroll: true });
