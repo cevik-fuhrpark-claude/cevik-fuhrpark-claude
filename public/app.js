@@ -332,7 +332,7 @@ async function route() {
   try {
     if (!S.me && !pub) {
       try {
-        const r = await api('GET', '/api/me'); S.me = r.user; lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false;
+        const r = await api('GET', '/api/me'); S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false;
         // offline gewählte Sprache jetzt speichern (18.10.2026: ging beim nächsten Start mit Netz verloren)
         let pl = null; try { pl = localStorage.getItem('cfp_lang_pending'); } catch {}
         const m = pl && pl.match(/^(.+):(de|uk|en)$/);
@@ -450,6 +450,14 @@ function resetUserState() {
   S.me = null; S.viewEnv = null; S.unread = 0;
   try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}
 }
+// Anmeldung über Tabs hinweg (21.10.2026): Abmelden oder Anmeldung einer anderen Person in einem Tab → andere Tabs laden neu, statt
+// weiter die Ansicht (und das Menü) der vorherigen Person zu zeigen (geteiltes Tablet). Gleiche Person erneut angemeldet: kein Ereignis.
+const SESSION_MARK = 'cfp_session_user';
+function markSession(id) { try { if (localStorage.getItem(SESSION_MARK) !== id) localStorage.setItem(SESSION_MARK, id); } catch {} }
+window.addEventListener('storage', (e) => {
+  if (e.key !== SESSION_MARK || !S.me || S.offlineStart) return;
+  if ((e.newValue || '') !== S.me.id) { resetUserState(); location.reload(); }
+});
 function clearOfflineData() {
   try { for (const k of Object.keys(localStorage)) if (k === OFFLINE_KEY || k.startsWith('cfp_veh_') || k.startsWith('cfp_myveh_') || k.startsWith('cfp_emerg_') || k.startsWith('cfp_inv_')) localStorage.removeItem(k); } catch {}
 }
@@ -494,7 +502,7 @@ async function checkIdle() {
   if (!ms || idleBusy || left > 0) return;
   idleBusy = true;
   try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }).catch(() => {}); } catch {}
-  clearOfflineData(); resetUserState(); idleBusy = false;
+  clearOfflineData(); resetUserState(); markSession(''); idleBusy = false;
   location.hash = '#/login'; toast(t('idle_signed_out'));
 }
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, noteActivity, { passive: true, capture: true }));
@@ -1240,7 +1248,9 @@ async function logoutOutboxOk() {
   const pend = outboxGet().filter((x) => !x.failed).length;
   return !pend || confirm(tn('logout_outbox_confirm', pend));
 }
-function outboxAdd(path, body, photos = 0) { const list = outboxGet(); const pl = outboxPlate(body.vehicle_id); if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, photos, ...(pl && pl !== String(body.vehicle_id || '').replace(/^VIN:/, '') ? { plate: pl } : {}), saved_at: new Date().toISOString(), user_id: S.me.id, user_name: S.me.display_name, env: S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment }); outboxSet(list); }
+// who: beim Absenden festgehaltene Person (outboxWho) – nach 401 ist S.me schon zurückgesetzt (Anmeldung in anderem Tab beendet, 21.10.2026)
+const outboxWho = () => (S.me ? { id: S.me.id, name: S.me.display_name, env: S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment, key: outboxKey() } : null);
+function outboxAdd(path, body, photos = 0, who = outboxWho()) { if (!who) return; const list = outboxGet(who.key); const pl = S.me ? outboxPlate(body.vehicle_id) : null; if (!list.some((x) => x.body.request_key === body.request_key)) list.push({ path, body, photos, ...(pl && pl !== String(body.vehicle_id || '').replace(/^VIN:/, '') ? { plate: pl } : {}), saved_at: new Date().toISOString(), user_id: who.id, user_name: who.name, env: who.env }); outboxSet(list, who.key); }
 
 // ---------- Neue Meldung ----------
 async function viewNew(preId) {
@@ -1291,6 +1301,7 @@ async function viewNew(preId) {
     if (!veh) { toast(t('choose_vehicle'), true); const vp = $('.vehpick'); if (vp) { vp.setAttribute('role', 'radiogroup'); markInvalid(vp, t('choose_vehicle')); } $('#vq').focus(); return; }
     if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
     sb.disabled = true;
+    const who = outboxWho();
     const photoFiles = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
@@ -1301,12 +1312,14 @@ async function viewNew(preId) {
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
       if (sb.isConnected) location.hash = '#/cases/' + r.id;
     } catch (err) {
-      if (err.offline) {
+      // Netzabbruch, Anmeldung inzwischen beendet (401) oder andere Person angemeldet (user_mismatch): Meldung für die Person sichern,
+      // die sie erfasst hat – sie wird nach deren Anmeldung gesendet (21.10.2026: Formular und Eingaben gingen bei 401/user_mismatch verloren)
+      if (err.offline || err.status === 401 || err.code === 'user_mismatch') {
         const files = photoFiles;
         let stored = 0;
         if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
-        outboxAdd('/api/cases', body, stored);
-        if (!sb.isConnected) { toast(t('outbox_saved')); return; }
+        outboxAdd('/api/cases', body, stored, who);
+        if (!err.offline || !sb.isConnected) { toast(t(err.offline ? 'outbox_saved' : 'outbox_saved_login')); return; }
         render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
       }
@@ -1717,6 +1730,7 @@ async function viewDepartureCheck(preId) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const sb = $('#sb'); // festhalten – Seitenwechsel während des Hochladens (siehe Meldung)
+    const who = outboxWho();
     // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)
     if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
@@ -1735,11 +1749,11 @@ async function viewDepartureCheck(preId) {
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       sb.disabled = false;
-      if (err.offline) {
+      if (err.offline || err.status === 401 || err.code === 'user_mismatch') { // wie Meldung (21.10.2026)
         let stored = 0;
         if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
-        outboxAdd('/api/inspections', body, stored);
-        if (!sb.isConnected) { toast(t('outbox_saved')); return; }
+        outboxAdd('/api/inspections', body, stored, who);
+        if (!err.offline || !sb.isConnected) { toast(t(err.offline ? 'outbox_saved' : 'outbox_saved_login')); return; }
         const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
         render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}${files.length && !hasDefect ? `<p class="small">${esc(t('check_photos_skipped'))}</p>` : files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');
         return;
@@ -4012,7 +4026,7 @@ function viewMore(open) {
   const tfa = $('#tfa');
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
-  $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); location.hash = '#/login'; };
+  $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); markSession(''); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)));
     // Passwörter nicht im offenen Formular stehen lassen; der Server meldet andere Geräte ab (19.10.2026)
     e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast('✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };

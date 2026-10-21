@@ -11810,7 +11810,7 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   eq((await U.driver.req('GET', '/api/cases', undefined, { 'x-cfp-user': U.ws.id })).status, 200, 'Lesen unberührt');
   const { STRINGS: S2 } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['err_user_mismatch', 'err_request_key_reused', 'outbox_orphan', 'logout_outbox_confirm']) ok(S2[l][k], `${l} ${k}`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: S\.me\.id, user_name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
+  ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: who\.id, user_name: who\.name, env: who\.env/.test(app) && /const outboxWho = \(\) => \(S\.me \? \{ id: S\.me\.id, name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
   ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
   eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 1, 'Fotos am Vorgang bei Netzabbruch nachreichen');
   ok(app.includes("if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i)); break; }") && (app.match(/await uploadPhotosSafe\('\/api\/(cases|inspections)'/g) || []).length === 2, 'Meldung + Abfahrtskontrolle: Fotos vorab gesichert (Backlog 113)');
@@ -15950,7 +15950,7 @@ await test('Backlog 106: zwei gleichzeitig eingehende Abfahrtskontrollen mit dem
   const two = await Promise.all([U.driver, U.fleet].map((c) => c.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(0, { safety_relevant: true }) })));
   eq(two.map((x) => x.status).join(','), '201,201', JSON.stringify(two.map((x) => x.data)));
   const o1 = open(CHECKLIST[0].key); eq(o1.length, 1, 'ein offener Vorgang'); eq(o1[0].safety_lock, 1);
-  const fu = two.map((x) => x.data.followups[0]); eq(fu.filter((f) => f.repeat).length, 1, 'eine Kontrolle als Wiederholung'); eq(fu[0].id, fu[1].id, 'beide verweisen auf denselben Vorgang');
+  const fu = two.map((x) => x.data.followups[0]); eq(fu.filter((f) => f.repeat).length, 1, 'eine Kontrolle als Wiederholung'); eq(fu[0].case_no, fu[1].case_no, 'beide verweisen auf denselben Vorgang'); // Nummer: wird die Fahrer-Kontrolle zur Wiederholung am Vorgang der Leitung, bekommt der Fahrer nur die Nummer (keine ID) – Reihenfolge der parallelen Anfragen zufällig (21.10.2026 sporadisch rot)
   eq(db.prepare(`SELECT COUNT(*) n FROM case_events WHERE case_id=? AND action='repeat_finding'`).get(o1[0].id).n, 1, 'Vermerk am Vorgang');
   eq(db.prepare(`SELECT COUNT(*) n FROM inspections WHERE vehicle_id=?`).get(V1).n, 2, 'beide Kontrollen gespeichert');
   // 2. nicht sicherheitsrelevant, ohne Priorität
@@ -16541,9 +16541,18 @@ await test('Fehlersuche 21.10. (langsames Netz): Lagerbuchung mit gleichem Schl�
   const vn = app.slice(app.indexOf("  $('#f').onsubmit = async (e) => {\n    e.preventDefault();\n    // Knopf/Fotos"), app.indexOf('// Geplanter Werkstatttermin/Prüftermin am eigenen Fahrzeug'));
   ok(vn.length > 500 && vn.includes("if (sb.isConnected) location.hash = '#/cases/' + r.id;") && !vn.split("const sb = $('#sb');")[1].includes("$('#sb')") && !vn.split('const photoFiles')[1].split('\n').slice(1).join('\n').includes("$('#ph')"), 'Meldung: Knopf/Fotos festgehalten');
   const vc = app.slice(app.indexOf('    // km-Stand wie der Server prüfen'), app.indexOf('    // km-Stand wie der Server prüfen') + 4000);
-  ok(vc.includes("if (sb.isConnected) location.hash = fTarget") && (vc.match(/if \(!sb\.isConnected\) \{ toast\(t\('outbox_saved'\)\); return; \}/g) || []).length === 1, 'Kontrolle: kein Sprung/Überschreiben nach Seitenwechsel');
+  ok(vc.includes("if (sb.isConnected) location.hash = fTarget") && (vc.match(/if \(!err\.offline \|\| !sb\.isConnected\) \{ toast\(t\(err\.offline \? 'outbox_saved' : 'outbox_saved_login'\)\); return; \}/g) || []).length === 1, 'Kontrolle: kein Sprung/Überschreiben nach Seitenwechsel');
   ok(/signal: sig/.test(app) && /timeoutMs: PHOTO_TIMEOUT_MS, \.\.\.ox/.test(app), 'Foto-Zeitlimit');
   ok(app.includes("b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b);"), 'Lager: Schlüssel je Inhalt');
+});
+
+await test('Fehlersuche 21.10. (zwei Tabs): Abmelden/andere Person in einem Tab lädt die anderen neu; Meldung/Kontrolle bei 401 oder user_mismatch im Postausgang der erfassenden Person', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.me = r.user; markSession(r.user.id);") && (app.match(/resetUserState\(\); markSession\(''\);/g) || []).length === 2, 'Anmeldung/Abmelden (Knopf, Leerlauf) markiert');
+  ok(/window\.addEventListener\('storage', \(e\) => \{\n  if \(e\.key !== SESSION_MARK \|\| !S\.me \|\| S\.offlineStart\) return;\n  if \(\(e\.newValue \|\| ''\) !== S\.me\.id\) \{ resetUserState\(\); location\.reload\(\); \}/.test(app), 'andere Tabs reagieren');
+  eq((app.match(/if \(err\.offline \|\| err\.status === 401 \|\| err\.code === 'user_mismatch'\)/g) || []).length, 2, 'Meldung + Kontrolle sichern bei 401/user_mismatch');
+  eq((app.match(/outboxAdd\('\/api\/(cases|inspections)', body, stored, who\);/g) || []).length, 2, 'mit festgehaltener Person');
+  ok(app.includes('function outboxAdd(path, body, photos = 0, who = outboxWho()) { if (!who) return; const list = outboxGet(who.key);') && app.includes('outboxSet(list, who.key); }'), 'Schlüssel der Person');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
