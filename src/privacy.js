@@ -94,7 +94,9 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     // Auslesungen, Master-Entscheidungen, Verträge, Versicherungsfälle, Bußgelder und Übernahmen von Vorgängen in der Auskunft)
     // Art. 15 Abs. 4 DSGVO: Handlungen an Daten anderer Personen ohne deren Namen/Vermerke (20.10.2026: Auskunft der Leitung enthielt Name, Ergebnis-
     // Vermerk geprüfter Fahrer, angelegte Fahrer, zugeordnete und eingeladene Personen)
-    license_checks_performed: q('SELECT checked_on, result, created_at FROM driver_license_checks WHERE checked_by=? ORDER BY checked_on', userId),
+    // auch Stornos (Migration 0065, wie Nachweise/Auslesungen; 21.10.2026)
+    license_checks_performed: q(`SELECT checked_on, result, created_at, cancelled_at, CASE WHEN checked_by=?1 THEN 1 ELSE 0 END AS checked, CASE WHEN cancelled_by=?1 THEN 1 ELSE 0 END AS cancelled
+      FROM driver_license_checks WHERE checked_by=?1 OR cancelled_by=?1 ORDER BY checked_on`, userId),
     tacho_downloads_recorded: q(`SELECT t.kind, t.downloaded_on, t.evidence, t.created_at, t.cancelled_at, t.cancel_reason, CASE WHEN t.created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN t.cancelled_by=?1 THEN 1 ELSE 0 END AS cancelled
       FROM tacho_downloads t WHERE t.created_by=?1 OR t.cancelled_by=?1 ORDER BY t.created_at`, userId),
     master_decisions: q('SELECT environment, received_at, decision_status, decision_note, decided_at FROM master_inbox WHERE decided_by=? ORDER BY decided_at', userId),
@@ -115,17 +117,17 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     // 19.10.2026 ergänzt: Zuordnungen/Einladungen, die die Person vorgenommen hat, Lagerartikel (angelegt/bestellt), geänderte Einstellungen –
     // in EINER Abfrage (Abfragebudget ≤ 50 je Aufruf), unten in Abschnitte aufgeteilt
     _made_by: env.DB.prepare(`SELECT
-      (SELECT json_group_array(json_object('valid_from', valid_from, 'valid_to', valid_to, 'evidence', evidence, 'created_at', created_at, 'plate', plate)) FROM (SELECT d.valid_from, d.valid_to, d.evidence, d.created_at, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.created_by=?1 ORDER BY d.created_at LIMIT ?2)) AS vehicle_assignments_made,
-      (SELECT json_group_array(json_object('created_at', created_at, 'expires_at', expires_at, 'used_at', used_at)) FROM (SELECT i.created_at, i.expires_at, i.used_at FROM invites i WHERE i.created_by=?1 ORDER BY i.created_at LIMIT ?2)) AS invites_created,
-      (SELECT json_group_array(json_object('environment', environment, 'site', site, 'name', name, 'part_number', part_number, 'created_at', created_at, 'ordered_on', ordered_on, 'ordered_qty', ordered_qty, 'created', created, 'ordered', ordered)) FROM (SELECT environment, site, name, part_number, created_at, ordered_on, ordered_qty, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN ordered_by=?1 THEN 1 ELSE 0 END AS ordered FROM stock_items WHERE created_by=?1 OR ordered_by=?1 ORDER BY created_at LIMIT ?2)) AS stock_items_edited,
-      (SELECT json_group_array(json_object('key', key, 'updated_at', updated_at)) FROM (SELECT key, updated_at FROM settings WHERE updated_by=?1 ORDER BY updated_at LIMIT ?2)) AS settings_changed`).bind(userId, LIMIT + 1),
+      (SELECT json_group_array(json_object('valid_from', valid_from, 'valid_to', valid_to, 'evidence', evidence, 'created_at', created_at, 'plate', plate)) FROM (SELECT * FROM (SELECT d.valid_from, d.valid_to, d.evidence, d.created_at, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.created_by=?1 ORDER BY d.created_at DESC LIMIT ?2) ORDER BY created_at)) AS vehicle_assignments_made,
+      (SELECT json_group_array(json_object('created_at', created_at, 'expires_at', expires_at, 'used_at', used_at)) FROM (SELECT * FROM (SELECT i.created_at, i.expires_at, i.used_at FROM invites i WHERE i.created_by=?1 ORDER BY i.created_at DESC LIMIT ?2) ORDER BY created_at)) AS invites_created,
+      (SELECT json_group_array(json_object('environment', environment, 'site', site, 'name', name, 'part_number', part_number, 'created_at', created_at, 'ordered_on', ordered_on, 'ordered_qty', ordered_qty, 'created', created, 'ordered', ordered)) FROM (SELECT * FROM (SELECT environment, site, name, part_number, created_at, ordered_on, ordered_qty, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN ordered_by=?1 THEN 1 ELSE 0 END AS ordered FROM stock_items WHERE created_by=?1 OR ordered_by=?1 ORDER BY created_at DESC LIMIT ?2) ORDER BY created_at)) AS stock_items_edited,
+      (SELECT json_group_array(json_object('key', key, 'updated_at', updated_at)) FROM (SELECT * FROM (SELECT key, updated_at FROM settings WHERE updated_by=?1 ORDER BY updated_at DESC LIMIT ?2) ORDER BY updated_at)) AS settings_changed`).bind(userId, LIMIT + 1),
   };
   const names = Object.keys(stmts);
   const res = await env.DB.batch(names.map((n) => stmts[n]));
   const data = {};
   const truncated = [];
   names.forEach((n, i) => {
-    if (n === '_made_by') { const row = (res[i].results || [])[0] || {}; for (const [k, j] of Object.entries(row)) { const r = JSON.parse(j || '[]'); if (r.length > LIMIT) truncated.push(k); data[k] = r.slice(0, LIMIT); } return; }
+    if (n === '_made_by') { const row = (res[i].results || [])[0] || {}; for (const [k, j] of Object.entries(row)) { const r = JSON.parse(j || '[]'); if (r.length > LIMIT) truncated.push(k); data[k] = r.slice(-LIMIT); } return; } // neueste LIMIT Zeilen (21.10.2026: waren die ältesten)
     const r = res[i].results || []; if (r.length > LIMIT) truncated.push(n); data[n] = r.length > LIMIT ? (n === 'sessions' ? r.slice(0, LIMIT) : r.slice(-LIMIT)) /* nur Sitzungen sind absteigend sortiert */ : r;
   });
   // Art. 15 Abs. 4 DSGVO: eigene Protokolleinträge ohne Namen/Vermerke Dritter (20.10.2026: `detail` enthielt z. B. Namen angelegter Fahrer,

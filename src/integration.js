@@ -127,7 +127,8 @@ export async function integrationRouter(request, env, ctx, url) {
     // since als Zeitpunkt lesen (auch mit Zeitzone, z. B. +02:00) und in UTC vergleichen – Textvergleich ließ Vorgänge stumm aus (17.10.2026)
     // ohne Zeitzone: Uhrzeit = UTC (wie Telematik), reines Datum = Beginn des Berliner Kalendertags (19.10.2026: hing von der Laufzeitumgebung ab bzw.
     // ein Datum galt als 00:00 UTC = 02:00 Berlin – Vorgänge zwischen 00:00 und 02:00 fehlten)
-    const sinceIn = url.searchParams.get('since');
+    // unkodiertes „+02:00“ kommt als Leerzeichen an (curl/Handaufruf) – als „+“ lesen (21.10.2026: 400)
+    const sinceIn = (url.searchParams.get('since') || '').replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?) (\d{2}:?\d{2})$/, '$1+$2') || null;
     const sinceRaw = sinceIn && /^\d{4}-\d{2}-\d{2}$/.test(sinceIn) && isCalendarDate(sinceIn) ? berlinDayStartIso(sinceIn)
       : sinceIn && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(sinceIn) ? sinceIn + 'Z' : sinceIn;
     const sinceMs = sinceRaw ? Date.parse(sinceRaw) : 0;

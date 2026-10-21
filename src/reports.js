@@ -23,7 +23,7 @@ export function siteLabels(vehicles) {
 export function siteSelection(vehicles, raw) {
   const label = siteLabels(vehicles);
   const options = [...new Set(label.values())].sort((a, b) => (a === 'ohne') - (b === 'ohne') || a.localeCompare(b, 'de'));
-  const r = raw ? String(raw).slice(0, 60) : null;
+  const r = raw && String(raw).trim() ? String(raw).slice(0, 60) : null; // nur Leerzeichen = keine Auswahl (21.10.2026: filterte auf „ohne Standort“)
   const key = r ? siteKey(r === 'ohne' ? null : r) : null;
   return { options, label, site: key ? (label.get(key) || r) : null, match: (s) => !key || siteKey(s) === key };
 }

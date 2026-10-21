@@ -16107,6 +16107,42 @@ await test('Fehlersuche 21.10. (Rechte/Umgebungen): Vorgang zeigt Folgeauftrag/U
   ok(app.includes('it.followup_case_id ? ` → <a') && app.includes('d.parent.id ? `<a'), 'Link nur mit Kennung');
 });
 
+await test('Fehlersuche 21.10. (Nutzung/Auskunft/Schnittstelle): Statistik ohne freie Wörter auch bei 400/403, Auskunft mit Stornos von Führerscheinkontrollen und neuesten 5000 Einträgen, Prüfhistorie nur mit „bis“, since mit unkodiertem „+“, Standort nur Leerzeichen = keine Auswahl', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  // 1. Nutzungsstatistik
+  const { featureOf } = await import('../src/usage.js');
+  eq(featureOf('GET', '/api/admin/users/hans-mueller/data-export', null, 403), 'GET admin/:id/:id/:id');
+  eq(featureOf('GET', '/api/drivers/hans-mueller/data-export', null, 400), 'GET drivers/:id/:id');
+  eq(featureOf('POST', '/api/cases/x1/commands', 'add_part', 409), 'POST cases/:id/:id:add_part', 'Befehlsname bleibt bei Konflikten');
+  eq(featureOf('GET', '/api/vehicles', null, 200), 'GET vehicles', 'Erfolg unverändert');
+  // 2. Datenauskunft: Storno einer fremden Führerscheinkontrolle
+  const fl2r = await U.own.post('/api/users', { username: 'w.fuhrpark2', display_name: 'Leitung 2', role: 'fleet', environment: 'test' });
+  const fl2 = new Client(worker, e, 'w.fuhrpark2'); await fl2.post('/api/invite/accept', { token: fl2r.data.invite_token, password: 'Sicheres-Passwort-2026' }); fl2.id = fl2r.data.id;
+  const d = await U.fleet.post('/api/drivers', { display_name: 'Dieter Fahrer' }); eq(d.status, 201);
+  const lc = await U.fleet.post(`/api/drivers/${d.data.id}/license-checks`, { checked_on: day(-1), result: 'in_ordnung' }); eq(lc.status, 201);
+  eq((await fl2.post(`/api/drivers/${d.data.id}/license-checks/${lc.data.id}/cancel`, { reason: 'falsche Person erfasst' })).status, 200);
+  const ex2 = (await U.own.get(`/api/admin/users/${fl2.id}/data-export`)).data.license_checks_performed;
+  eq(ex2.length, 1); eq(`${ex2[0].checked}/${ex2[0].cancelled}`, '0/1'); ok(ex2[0].cancelled_at, 'Storno-Zeitpunkt');
+  const ex1 = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data.license_checks_performed; eq(`${ex1[0].checked}/${ex1[0].cancelled}`, '1/0');
+  // 3. gekappte Abschnitte aus der Sammelabfrage: die neuesten 5000
+  const ins = db.prepare('INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)');
+  db.exec('BEGIN'); for (let i = 0; i < 5002; i++) ins.run('k' + String(i).padStart(4, '0'), 'x', fl2.id, new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString()); db.exec('COMMIT');
+  const ex3 = await U.own.get(`/api/admin/users/${fl2.id}/data-export`); eq(ex3.status, 200);
+  const sc = ex3.data.settings_changed; eq(sc.length, 5000); eq(sc[0].key, 'k0002', 'älteste entfallen'); eq(sc[4999].key, 'k5001', 'neueste enthalten');
+  ok(JSON.stringify(ex3.data.meta || ex3.data).includes('settings_changed'), 'als gekappt gemeldet');
+  // 4. Prüfhistorie nur mit „bis“ (Vorjahr) → ab Jahresbeginn dieses Jahres
+  const anon = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const y = Number(BERLIN_TODAY.slice(0, 4)) - 1;
+  const h = await anon.req('GET', `/api/integration/v1/maintenance/history?to=${y}-06-30`, undefined, H); eq(h.status, 200, JSON.stringify(h.data));
+  eq((await U.fleet.get(`/api/maintenance/history?to=${y}-06-30`)).status, 200, 'App ebenso');
+  // 5. since mit unkodiertem „+“ (kommt als Leerzeichen an)
+  eq((await anon.req('GET', '/api/integration/v1/cases?since=2026-10-17T09:59:59+02:00', undefined, H)).status, 200);
+  eq((await anon.req('GET', '/api/integration/v1/cases?since=2026-10-17T09:59:59 x', undefined, H)).status, 400, 'anderes bleibt ungültig');
+  // 6. Standort nur aus Leerzeichen = keine Auswahl
+  const all = (await anon.req('GET', '/api/integration/v1/vehicles', undefined, H)).data.vehicles.length; ok(all > 0);
+  const sp = (await anon.req('GET', '/api/integration/v1/vehicles?site=%20%20', undefined, H)).data; eq(sp.vehicles.length, all); ok(!sp.site, 'keine Auswahl');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

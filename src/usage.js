@@ -13,11 +13,13 @@ const AREA = { cases: 'cases', vehicles: 'vehicles', contracts: 'vehicles', tire
 
 // Pfadsegmente, die Einzelobjekte bezeichnen (UUID, Vorgangsnummer, FIN, Token, Zahlen), werden zu ':id'
 export function featureOf(method, path, action, status = 200) {
-  // nicht gefunden (404/405): freie Wörter aus der Adresse nie speichern („cases/hans-mueller-krank“) – nach dem Bereich alles „:id“,
+  // Fehler (nicht gefunden 404/405 u. a.): freie Wörter aus der Adresse nie speichern („cases/hans-mueller-krank“) – nach dem Bereich alles „:id“,
   // unbekannter Bereich „…“ (19.10.2026)
-  if (status === 404 || status === 405) {
+  // 21.10.2026: ebenso bei allen anderen Fehlern (400/403/409 …) – „admin/users/hans-mueller/data-export“ mit 403 stand im Klartext in der Statistik
+  if (status >= 400) {
     const segs = path.replace(/^\/api\//, '').split('/').filter(Boolean).slice(0, 5);
-    return `${method} ${Object.hasOwn(AREA, segs[0] || '') ? [segs[0], ...segs.slice(1).map(() => ':id')].join('/') : '…'}`;
+    const act = status !== 404 && status !== 405 && typeof action === 'string' && /^[a-z_]{2,32}$/.test(action) ? `:${action}` : '';
+    return `${method} ${Object.hasOwn(AREA, segs[0] || '') ? [segs[0], ...segs.slice(1).map(() => ':id')].join('/') : '…'}${act}`.slice(0, 80);
   }
   // Befehle: nur bekannte, kurze Befehlsnamen anhängen (keine freien Inhalte)
   const act = typeof action === 'string' && /^[a-z_]{2,32}$/.test(action) ? `:${action}` : '';

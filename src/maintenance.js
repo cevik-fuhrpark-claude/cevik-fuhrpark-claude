@@ -753,7 +753,8 @@ export const HISTORY_MAX = 5000;
 export async function maintenanceHistory(env, user, query = {}, envName = 'production') {
   if (!['owner', 'fleet', 'viewer'].includes(user.role)) throw forbidden();
   const today = berlinDate();
-  const from = query.from || `${today.slice(0, 4)}-01-01`; const to = query.to || today;
+  // ohne „Von“: Jahresbeginn des „Bis“-Jahres (21.10.2026: „bis 2025-06-30“ allein → 400 „Von liegt nach bis“)
+  const to = query.to || today; const from = query.from || (isCalendarDate(to) ? `${to.slice(0, 4)}-01-01` : `${today.slice(0, 4)}-01-01`);
   for (const d of [from, to]) if (!isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
   const kind = query.kind ? String(query.kind).slice(0, 40) : null;
