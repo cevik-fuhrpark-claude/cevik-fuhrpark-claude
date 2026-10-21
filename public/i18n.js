@@ -1192,6 +1192,9 @@ Object.assign(STRINGS.en, { tires_winter_closed: 'Winter order closed, status op
 // [CLAUDE] Hinweis beim Speichern: Kennzeichen schon an einem anderen Fahrzeug (13.10.2026)
 Object.assign(STRINGS.de, { dup_plate_warn: 'Hinweis: Kennzeichen {p} ist auch an einem anderen Fahrzeug vergeben (FIN {list}). Gespeichert – bitte FIN prüfen: Tippfehler oder Doppelanlage? Siehe Datenqualität.' });
 Object.assign(STRINGS.uk, { dup_plate_warn: 'Увага: номер {p} уже призначено іншому транспортному засобу (VIN {list}). Збережено – перевірте VIN: помилка введення чи дубль? Див. «Якість даних».' });
+Object.assign(STRINGS.de, { trailer_renamed_warn: 'Achtung: Zugmaschine {list} führt noch das alte Anhänger-Kennzeichen {old} – das Gespann ist gelöst (Sperren am Anhänger erreichen den Fahrer nicht). Bitte dort unter „Stammdaten bearbeiten“ das neue Anhänger-Kennzeichen eintragen.' });
+Object.assign(STRINGS.uk, { trailer_renamed_warn: 'Увага: тягач {list} ще має старий номер причепа {old} – зчіпку розірвано (блокування причепа не доходять до водія). Внесіть новий номер причепа у «Редагувати дані» тягача.' });
+Object.assign(STRINGS.en, { trailer_renamed_warn: 'Attention: tractor {list} still has the old trailer plate {old} – the combination is uncoupled (trailer locks do not reach the driver). Please enter the new trailer plate under “Edit master data” on the tractor.' });
 Object.assign(STRINGS.en, { dup_plate_warn: 'Note: plate {p} is also assigned to another vehicle (VIN {list}). Saved – please check the VIN: typo or duplicate entry? See data quality.' });
 Object.assign(STRINGS.de, { imp_status_inactive: 'Status „verkauft/abgemeldet“ in der Datei ({n}), Fahrzeug ist bzw. wird aktiv – bei Bedarf in der Fahrzeugakte außer Betrieb nehmen' });
 Object.assign(STRINGS.uk, { imp_status_inactive: 'Статус «продано/знято з обліку» у файлі ({n}), але транспорт активний або буде активним – за потреби виведіть з експлуатації в картці транспорту' });

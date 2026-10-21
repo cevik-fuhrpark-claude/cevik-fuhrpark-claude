@@ -16627,6 +16627,21 @@ await test('Fehlersuche 21.10. (Suche/Kennzeichen): kyrillische Doppelgänger im
   ok(!/\.plate\)?\.localeCompare\(/.test(app), 'Oberfläche: Kennzeichen-Reihenfolge über plateCmp');
 });
 
+await test('Fehlersuche 21.10. (Umkennzeichnung): Anhänger umgekennzeichnet → Antwort nennt Zugmaschinen mit altem Anhänger-Kennzeichen (Hinweis DE/UK/EN); Kennzeichenwechsel per Fahrzeugimport im Protokoll', async () => {
+  const { e, U } = await freshWorld();
+  eq((await U.own.post('/api/vehicles', { plate: 'UK-ZM 1', vin: 'WDB96340310890001', site: 'Dortmund', trailer_plate: 'UK-AH 200' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'UK-AH 200', vin: 'WDB96340310890002', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  const r = await U.own.post('/api/vehicles', { plate: 'UK-AH 777', vin: 'WDB96340310890002', site: 'Dortmund', kind: 'anhaenger', keep_active: true });
+  eq(r.status, 201); eq(r.data.trailer_plate_old, 'UK-AH 200'); eq((r.data.trailer_of_trucks || []).map((x) => x.plate).join(), 'UK-ZM 1');
+  const r2 = await U.own.post('/api/vehicles', { plate: 'UK-AH 777', vin: 'WDB96340310890002', site: 'Hamm', kind: 'anhaenger', keep_active: true });
+  eq(r2.data.trailer_of_trucks, undefined, 'ohne Kennzeichenwechsel kein Hinweis');
+  const csv = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nUK-ZM 2;Dortmund;in Betrieb;TEST;2020;WDB96340310890001;UK-AH 777';
+  eq((await U.own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200);
+  const log = e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='vehicle.upsert' AND target='VIN:WDB96340310890001' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
+  ok(log && JSON.parse(log.detail).plate_old === 'UK-ZM 1' && JSON.parse(log.detail).plate === 'UK-ZM 2', 'Import-Kennzeichenwechsel protokolliert ' + JSON.stringify(log));
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].trailer_renamed_warn && STRINGS[l].trailer_renamed_warn.includes('{old}') && STRINGS[l].trailer_renamed_warn.includes('{list}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

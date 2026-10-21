@@ -530,7 +530,12 @@ export async function upsertVehicle(env, user, body) {
   const duplicates = (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>?').bind(row.id).all()).results
     .filter((v) => normPlate(v.plate) === k).map((v) => ({ id: v.id, plate: v.plate, active: !!v.active, eval_excluded: !!v.eval_excluded }));
   await audit(env, user.id, 'vehicle.upsert', row.id, { plate: row.plate, ...(duplicates.length ? { duplicate_plate_of: duplicates.map((d) => d.id) } : {}), ...(changes || {}), ...(before ? {} : { created: true }) });
-  return { id: row.id, duplicate_plates: duplicates };
+  // Anhänger umgekennzeichnet: Zugmaschinen koppeln über das Anhänger-Kennzeichen (Stammliste) – ohne Nachtrag dort ist das Gespann gelöst
+  // (Sperre am Anhänger erreicht den Fahrer der Zugmaschine nicht mehr). Nicht automatisch geändert (offene Frage), aber deutlich gemeldet (21.10.2026)
+  const trailerOf = before && before.kind === 'anhaenger' && normPlate(before.plate) && normPlate(before.plate) !== k
+    ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
+      .filter((v) => normPlate(v.trailer_plate) === normPlate(before.plate)).map((v) => ({ id: v.id, plate: v.plate })) : [];
+  return { id: row.id, duplicate_plates: duplicates, ...(trailerOf.length ? { trailer_of_trucks: trailerOf, trailer_plate_old: before.plate } : {}) };
 }
 
 // Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent
@@ -1154,6 +1159,12 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   await upsertVehicleRows(env, [...rows.values()], { keepExisting: true, actorId: user.id });
   result.imported = rows.size;
   await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length, ...result.counts });
+  // Kennzeichenwechsel je Fahrzeug ins Protokoll wie bei „Stammdaten bearbeiten“ (`plate_old`) – sonst war das alte Kennzeichen nach dem Import
+  // nirgends mehr erkennbar (spätes Bußgeld zum alten Kennzeichen nicht zurückführbar; 21.10.2026); eine Anweisung für alle
+  const plateLog = result.preview.filter((pv) => (pv.changes || []).some((c) => c.field === 'plate'))
+    .map((pv) => ({ id: 'VIN:' + pv.vin, detail: JSON.stringify({ plate: pv.plate, plate_old: pv.changes.find((c) => c.field === 'plate').from }) }));
+  if (plateLog.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+    SELECT lower(hex(randomblob(16))), ?1, 'vehicle.upsert', json_extract(value,'$.id'), json_extract(value,'$.detail'), ?2 FROM json_each(?3)`).bind(user.id, nowIso(), JSON.stringify(plateLog)).run();
   return result;
 }
 

@@ -1813,6 +1813,9 @@ async function saveVehicleForm(form, edit = false) {
     const lst = d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '') + (!x.active ? ' (' + t('inactive_vehicles') + ')' : x.eval_excluded ? ' (' + t('eval_excluded') + ')' : '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '');
     setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(b.plate || '').toUpperCase()).replace('{list}', lst), true), 400);
   }
+  // Anhänger umgekennzeichnet: Zugmaschinen tragen noch das alte Anhänger-Kennzeichen → Gespann gelöst, bis dort nachgetragen
+  const tr = r && r.trailer_of_trucks;
+  if (tr && tr.length) setTimeout(() => toast(t('trailer_renamed_warn').replace('{old}', r.trailer_plate_old).replace('{list}', tr.map((x) => x.plate).join(', ')), true), d && d.length ? 6000 : 400);
   return r;
 }
 // Direktsprung mit Filter (z. B. „Heute zu tun“ → #/vehicles?f=with_findings): Filter übernehmen, Adresse ohne Parameter
