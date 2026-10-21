@@ -44,7 +44,10 @@ with sync_playwright() as p:
         pl = api('POST', f'/api/vehicles/{vid}/husp/SP/plan', {'planned_date': (today + datetime.timedelta(days=7)).isoformat()})
         check(pl['s'] == 200, f'{lang}: SP-Termin geplant ({pl["s"]} {str(pl["d"])[:80]})')
         q.goto(B + '/#/maintenance'); q.wait_for_selector(f'text={plate}', timeout=10000)
-        body = q.locator('main').inner_text() if q.locator('main').count() else q.inner_text('body')
+        # Liste kann unter Last noch einmal neu aufgebaut werden (Hintergrund-Abfrage) – auf den übersetzten Text warten statt sofort lesen
+        try: q.wait_for_function('(t) => document.body.innerText.includes(t)', arg=EV[lang], timeout=10000)
+        except Exception: pass
+        body = q.inner_text('body')
         check(EV[lang] in body and (lang == 'de' or EV['de'] not in body), f'{lang}: Nachweistext übersetzt')
         if SHOTS: q.screenshot(path=f'{SHOTS}/vorgang-sp-liste-{lang}-{w}.png')
         c.close()

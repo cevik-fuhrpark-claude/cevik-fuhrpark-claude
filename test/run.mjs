@@ -15573,6 +15573,42 @@ await test('Fehlersuche 21.10. (5): Fahrzeugstamm – Import mit vielen Artwechs
   eq((fmsg.match(/FINE_VEHICLE_MATCHABLE:/g) || []).length, 3); eq((fmsg.match(/FINE_VEHICLE_TRAILER:/g) || []).length, 3);
 });
 
+await test('Backlog 105: zGM/Erstzulassung-Formular auf gelesenem Stand (409 statt still überschreiben)', async () => {
+  const { e, U } = await freshWorld(); const V1 = 'VIN:WMA15SZZ2HM722774';
+  const v0 = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle; await new Promise((r) => setTimeout(r, 3));
+  eq((await U.own.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2020-01-10', spec_source: 'Fahrzeugschein', expected_updated_at: v0.updated_at })).status, 200);
+  const late = await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: '7_5_12', spec_source: 'Fahrzeugschein alt', expected_updated_at: v0.updated_at });
+  eq(late.status, 409, JSON.stringify(late.data)); eq(late.data.error, 'version_conflict');
+  eq(e.DB.db.prepare('SELECT zgm_class, first_registration FROM vehicles WHERE id=?').get(V1).first_registration, '2020-01-10', 'erste Änderung bleibt');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', spec_source: 'ohne Stand' })).status, 200, 'ohne Stand wie bisher');
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('<form id="specf"><input type="hidden" name="expected_updated_at"'), 'Formular sendet Stand');
+});
+
+await test('Backlog 104: Datenauskunft Bußgeld nach Fahrerwechsel – abgelöster Fahrer mit eigenem Zeitraum, neuer ohne Verlauf des Vorgängers, Leitung ohne Vermerktexte, Abfragebudget', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet;
+  const inv = async (b) => { const x = await U.own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const D2 = await inv({ username: 'w.fahrer2', display_name: 'Fahrer Zwei', role: 'driver', environment: 'test' });
+  const f = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-07T09:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X', reference: 'FX-DA-1' })).data;
+  const ver = async () => (await F.get(`/api/fines/${f.id}`)).data.fine.version;
+  const go = async (action, payload, note) => { const r = await F.post(`/api/fines/${f.id}/commands`, { action, payload, note, expected_version: await ver() }); eq(r.status, 200, action + ' ' + JSON.stringify(r.data)); await new Promise((z) => setTimeout(z, 3)); };
+  await go('confirm_driver', { driver_id: U.driver.id, basis: 'manuell', evidence: 'Tourenplan' }, 'erst A');
+  await go('inform_driver');
+  eq((await U.driver.post(`/api/fines/${f.id}/commands`, { action: 'driver_ack' })).status, 200); await new Promise((z) => setTimeout(z, 3));
+  await go('set_status', { status: 'eingegangen' }, 'A bestreitet');
+  await go('confirm_driver', { driver_id: D2.id, basis: 'fahrerangabe', evidence: 'Angabe A' }, 'jetzt B');
+  await go('inform_driver');
+  const q0 = QSTAT.n; const xa = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data; const nq = QSTAT.n - q0;
+  ok(nq <= 50, 'Auskunft: Abfragen ' + nq);
+  eq(xa.fines_as_driver.length, 1, 'abgelöster Fahrer: Schreiben enthalten'); eq(xa.fines_as_driver[0].driver_status, 'abgelöst'); eq(xa.fines_as_driver[0].driver_evidence, null, 'keine Ermittlungsangaben zu B');
+  eq(xa.fine_events_as_driver.map((x) => x.action).join(), 'create,confirm_driver,inform_driver,driver_ack,set_status', JSON.stringify(xa.fine_events_as_driver));
+  const xb = (await U.own.get(`/api/admin/users/${D2.id}/data-export`)).data;
+  eq(xb.fines_as_driver[0].driver_status, 'aktuell'); eq(xb.fines_as_driver[0].driver_evidence, 'Angabe A');
+  eq(xb.fine_events_as_driver.map((x) => x.action).join(), 'create,confirm_driver,inform_driver', JSON.stringify(xb.fine_events_as_driver));
+  ok(!xb.fine_events_as_driver.some((x) => x.note === 'A bestreitet'), 'kein Vermerk über den Vorgänger');
+  const xl = (await U.own.get(`/api/admin/users/${F.id}/data-export`)).data;
+  ok(xl.fine_events.length >= 5 && xl.fine_events.every((x) => !('note' in x)), 'Leitung ohne Vermerktexte'); ok(xl.fine_events.some((x) => x.with_note === 1));
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

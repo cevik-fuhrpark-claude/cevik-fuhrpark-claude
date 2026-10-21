@@ -53,8 +53,22 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     notifications: q('SELECT environment, kind, title, body, created_at, push_status, opened_at, acknowledged_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
     odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
     // 18.10.2026: Nachweis der Fahrerermittlung, Betrag, Frist und Verlauf (auch Einträge der Leitung) gehören zur Auskunft der betroffenen Person
-    fines_as_driver: q('SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, amount_eur, response_due, status, driver_basis, driver_evidence, driver_confirmed_at, driver_informed_at, driver_ack_at, created_at FROM fines WHERE driver_id=? ORDER BY offense_at', userId),
-    fine_events_as_driver: q(`SELECT f.fine_no, e.action, e.note, e.created_at FROM fine_events e JOIN fines f ON f.id=e.fine_id WHERE f.driver_id=? ORDER BY e.created_at`, userId),
+    // 21.10.2026 (Backlog 104): auch Schreiben, bei denen die Person ermittelt war und später abgelöst wurde (Verlauf `fine_events.payload`);
+    // `driver_status` aktuell/abgelöst, Ermittlungsangaben nur, solange sie die Person betreffen
+    fines_as_driver: q(`SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, amount_eur, response_due, status,
+        CASE WHEN driver_id=?1 THEN 'aktuell' ELSE 'abgelöst' END AS driver_status,
+        CASE WHEN driver_id=?1 THEN driver_basis END AS driver_basis, CASE WHEN driver_id=?1 THEN driver_evidence END AS driver_evidence,
+        CASE WHEN driver_id=?1 THEN driver_confirmed_at END AS driver_confirmed_at, CASE WHEN driver_id=?1 THEN driver_informed_at END AS driver_informed_at,
+        CASE WHEN driver_id=?1 THEN driver_ack_at END AS driver_ack_at, created_at FROM fines
+      WHERE driver_id=?1 OR id IN (SELECT fine_id FROM fine_events WHERE json_valid(payload) AND (json_extract(payload,'$.driver_id')=?1 OR json_extract(payload,'$.driver_reset.driver_id')=?1)) ORDER BY offense_at`, userId),
+    // Verlauf nur bis zur ersten Ermittlung überhaupt und für den eigenen Ermittlungszeitraum (bis einschließlich der Rücksetzung) – nicht die Zeit
+    // eines anderen Fahrers (vorher sah der neue Fahrer Vermerke über den Vorgänger, der abgelöste fehlte ganz)
+    fine_events_as_driver: q(`SELECT f.fine_no, e.action, e.note, e.created_at FROM fine_events e JOIN fines f ON f.id=e.fine_id
+      WHERE (f.driver_id=?1 OR f.id IN (SELECT fine_id FROM fine_events WHERE json_valid(payload) AND (json_extract(payload,'$.driver_id')=?1 OR json_extract(payload,'$.driver_reset.driver_id')=?1)))
+        AND (e.created_at < COALESCE((SELECT MIN(x.created_at) FROM fine_events x WHERE x.fine_id=f.id AND json_valid(x.payload) AND json_extract(x.payload,'$.driver_id') IS NOT NULL), '9999')
+          OR EXISTS (SELECT 1 FROM fine_events st WHERE st.fine_id=f.id AND json_valid(st.payload) AND json_extract(st.payload,'$.driver_id')=?1 AND st.created_at<=e.created_at
+            AND NOT EXISTS (SELECT 1 FROM fine_events r WHERE r.fine_id=f.id AND json_valid(r.payload) AND json_extract(r.payload,'$.driver_reset.driver_id')=?1 AND r.created_at>=st.created_at AND r.created_at<e.created_at)))
+      ORDER BY e.created_at`, userId),
     vehicle_notes_written: q(`SELECT n.environment, n.text, n.for_driver, n.created_at, n.valid_until, n.archived_at, v.plate FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.created_by=? ORDER BY n.created_at`, userId),
     // weitere Erfassungen dieser Person (17.10.2026 ergänzt – vorher fehlten u. a. Reifenmessungen und Teile in der Auskunft)
     tire_events_recorded: q(`SELECT t.environment, t.position, t.event_type, t.tread_mm, t.pressure_bar, t.dot, t.created_at, v.plate FROM tire_events t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.recorded_by=? ORDER BY t.created_at`, userId),
@@ -64,7 +78,8 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     open_items: q(`SELECT c.case_no, o.description, o.status, o.created_at, o.resolved_at, CASE WHEN o.created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN o.resolved_by=?1 THEN 1 ELSE 0 END AS resolved FROM open_items o JOIN cases c ON c.id=o.case_id WHERE o.created_by=?1 OR o.resolved_by=?1 ORDER BY o.created_at`, userId),
     stock_movements: q(`SELECT m.environment, m.type, m.qty, m.note, m.created_at, i.name FROM stock_movements m JOIN stock_items i ON i.id=m.item_id WHERE m.user_id=? ORDER BY m.created_at`, userId),
     maintenance_recorded: q(`SELECT e.kind, e.done_date, e.result, e.created_at, v.plate FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id WHERE e.recorded_by=? ORDER BY e.created_at`, userId),
-    fine_events: q(`SELECT f.fine_no, e.action, e.note, e.created_at FROM fine_events e JOIN fines f ON f.id=e.fine_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
+    // eigene Handlungen an Bußgeldern ohne Vermerktext (Vermerke betreffen meist den ermittelten Fahrer – Art. 15 Abs. 4 DSGVO, wie 20.10.2026), nur ob einer vorliegt
+    fine_events: q(`SELECT f.fine_no, e.action, CASE WHEN e.note IS NOT NULL AND e.note<>'' THEN 1 ELSE 0 END AS with_note, e.created_at FROM fine_events e JOIN fines f ON f.id=e.fine_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
     audit_as_actor: q('SELECT action, target, detail, created_at FROM audit_log WHERE actor_id=? ORDER BY created_at', userId),
     // auch Fahrzeugzuordnungen der Person (Ziel = Fahrzeug, Person nur im Detail; gleiche Regel wie Protokoll je Person, 20.10.2026)
     audit_about: q(`SELECT actor_id, action, detail, created_at FROM audit_log WHERE target IN (?1, ?2) OR (target IN (SELECT vehicle_id FROM driver_vehicles WHERE user_id = ?1)

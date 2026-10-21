@@ -830,7 +830,10 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   }
   const ez = body.first_registration ? str(body.first_registration, { max: 10, field: 'Erstzulassung' }) : null;
   if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
-  await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=?').bind(cls, kg, ez, source, nowIso(), vehicleId).run();
+  // gelesener Stand (Formular sendet `expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026, Backlog 105)
+  const expected = body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
+  const up = await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=? AND (? IS NULL OR updated_at=?)').bind(cls, kg, ez, source, nowIso(), vehicleId, expected, expected).run();
+  if (expected && !(up.meta && up.meta.changes)) throw conflict('version_conflict', 'Inzwischen von jemand anderem geändert – bitte neu laden.');
   await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez }, source });
   const sync = await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
   return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
