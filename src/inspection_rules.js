@@ -54,6 +54,12 @@ const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.pa
 const deD = (d) => (d && /^\d{4}-\d{2}-\d{2}/.test(d) ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}` : d);
 export const fmtMonth = (d) => (d ? `${d.slice(5, 7)}/${d.slice(0, 4)}` : null);
 
+// Widerspruch zweier Fristen: ungeklärt, außer beide sind schon verstrichen – dann ist die Prüfung nach jeder Lesart überfällig
+// (22.10.2026: Fahrzeugliste zeigte „überfällig“, Übersicht/Agent nur „ungeklärt“ ohne Handlungsbefund)
+function conflictStatus(a, b, today, warnDays) {
+  return statusFor(a > b ? a : b, today, warnDays) === 'ueberfaellig' ? 'ueberfaellig' : 'ungeklaert';
+}
+
 function statusFor(due, today, warnDays) {
   const d = daysBetween(today, due);
   return d < 0 ? 'ueberfaellig' : d <= warnDays ? 'bald_faellig' : 'ok';
@@ -93,7 +99,7 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
   const huDoc = documented.HU && documented.HU.due ? documented.HU.due : null;
   if (huDoc && huCalc && huDoc.slice(0, 7) !== huCalc.slice(0, 7)) {
     note(hu, 'hu_conflict', `Widerspruch: Nachweis nennt ${fmtMonth(huDoc)}, Berechnung aus letzter HU ergibt ${fmtMonth(huCalc)}.`, { doc: fmtMonth(huDoc), calc: fmtMonth(huCalc) });
-    hu.due = huDoc; hu.due_basis = 'nachweis'; hu.status = 'ungeklaert';
+    hu.due = huDoc; hu.due_basis = 'nachweis'; hu.status = conflictStatus(huDoc, huCalc, today, warnDays);
   } else if (huDoc || huCalc) {
     hu.due = huDoc || huCalc; hu.due_basis = huDoc ? 'nachweis' : 'berechnet';
     hu.status = statusFor(hu.due, today, warnDays);
@@ -125,7 +131,7 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
   const spDoc = documented.SP && documented.SP.due ? documented.SP.due : null;
   const useDoc = (code, text) => { sp.due = spDoc; sp.due_basis = 'nachweis'; sp.status = statusFor(spDoc, today, warnDays); note(sp, code, text); return { hu, sp, ...RULE_INFO }; };
   // Nachweis widerspricht der ersten SP-Frist aus der Erstzulassung: Fälligkeit laut Nachweis, Status ungeklärt (nie still übergehen)
-  const firstConflict = () => { sp.due = spDoc; sp.due_basis = 'nachweis'; sp.status = 'ungeklaert'; sp.prognosis = firstSpDue;
+  const firstConflict = () => { sp.due = spDoc; sp.due_basis = 'nachweis'; sp.status = conflictStatus(spDoc, firstSpDue, today, warnDays); sp.prognosis = firstSpDue;
     note(sp, 'sp_first_conflict', `Widerspruch: Nachweis nennt ${fmtMonth(spDoc)}, erste SP ${firstSpMonths} Monate nach Erstzulassung ergibt ${fmtMonth(firstSpDue)}.`, { doc: fmtMonth(spDoc), calc: fmtMonth(firstSpDue), m: firstSpMonths }); return { hu, sp, ...RULE_INFO }; };
 
   if (!lastHu) {
@@ -172,7 +178,7 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
     note(sp, 'sp_start_unclear', 'Erstzulassung fehlt und keine SP belegt – Beginn der SP-Pflicht unklar.');
     sp.prognosis = cycleDue;
     // abweichender Nachweis bleibt sichtbar (Fälligkeit laut Nachweis, Status ungeklärt) – 19.10.2026
-    if (spDoc) { sp.due = spDoc; sp.due_basis = 'nachweis'; note(sp, 'sp_conflict', `Widerspruch: Nachweis nennt ${fmtMonth(spDoc)}, Berechnung (6 Monate nach HU ${deD(lastHu.done_date)}) ergibt ${fmtMonth(cycleDue)}.`, { doc: fmtMonth(spDoc), calc: fmtMonth(cycleDue), hu: lastHu.done_date }); }
+    if (spDoc) { sp.due = spDoc; sp.due_basis = 'nachweis'; sp.status = conflictStatus(spDoc, cycleDue, today, warnDays); note(sp, 'sp_conflict', `Widerspruch: Nachweis nennt ${fmtMonth(spDoc)}, Berechnung (6 Monate nach HU ${deD(lastHu.done_date)}) ergibt ${fmtMonth(cycleDue)}.`, { doc: fmtMonth(spDoc), calc: fmtMonth(cycleDue), hu: lastHu.done_date }); }
     return { hu, sp, ...RULE_INFO };
   }
 
@@ -213,7 +219,7 @@ export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULT
   } else {
     sp.due = cycleDue; sp.due_basis = 'berechnet';
     if (spDoc && spDoc.slice(0, 7) !== cycleDue.slice(0, 7)) {
-      sp.status = 'ungeklaert'; sp.due = spDoc; sp.due_basis = 'nachweis';
+      sp.status = conflictStatus(spDoc, cycleDue, today, warnDays); sp.due = spDoc; sp.due_basis = 'nachweis';
       note(sp, 'sp_conflict', `Widerspruch: Nachweis nennt ${fmtMonth(spDoc)}, Berechnung (6 Monate nach HU ${deD(lastHu.done_date)}) ergibt ${fmtMonth(cycleDue)}.`, { doc: fmtMonth(spDoc), calc: fmtMonth(cycleDue), hu: lastHu.done_date });
     } else sp.status = statusFor(cycleDue, today, warnDays);
   }

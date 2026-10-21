@@ -4,7 +4,7 @@ import { caseDescText } from '../public/check-labels.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
-import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
+import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
 import { sha256Hex, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt } from './notify.js';
@@ -42,7 +42,7 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT MIN(c.planned_date) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile') AND c.planned_date >= ?) AS planned_workshop_date,
       (SELECT m.planned_date || '|' || group_concat(m.kind, ', ') FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.planned_date = (SELECT MIN(m2.planned_date) FROM maintenance_rules m2 WHERE m2.vehicle_id=v.id AND m2.planned_date >= ?)) AS planned_inspection,
       (SELECT MAX(c.parts_expected_date) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status='wartet_teile') AS parts_expected_date,
-      -- jüngste Prüfung (≤ 365 Tage) mit gefährlichen Mängeln/verkehrsunsicher, keine neuere derselben Art, kein Vorgang seitdem (wie „Prüfmangel ohne Auftrag“)
+      -- jüngste Prüfung (≤ 12 Monate) mit gefährlichen Mängeln/verkehrsunsicher, keine neuere derselben Art, kein Vorgang seitdem (wie „Prüfmangel ohne Auftrag“)
       (SELECT e.kind || '|' || e.done_date || '|' || e.result FROM maintenance_events e WHERE e.vehicle_id=v.id AND v.eval_excluded=0 AND e.done_date >= ?
         AND e.result IN ('gefaehrliche_maengel','verkehrsunsicher')
         AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
@@ -145,10 +145,14 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     let reason = null; try { reason = JSON.parse(deact.detail || '{}').reason || null; } catch { reason = null; }
     inactiveInfo = isManager(user) ? { since: deact.created_at, reason, by_name: deact.display_name || null } : { since: deact.created_at };
   }
-  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id
+  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id, reporter_id, suggested_workshop_site
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
+  // Vorgänge, die die Person öffnen darf – Verweise (Kontrolle, Reifenereignis) nur darauf verlinken (22.10.2026: Werkstatt sah in Akte/Zeitleiste
+  // „Details“-Links auf Vorgänge einer anderen Werkstatt → „Vorgang nicht gefunden“)
+  const okCase = ['owner', 'fleet', 'dispatch', 'viewer'].includes(user.role) ? null : new Set(allCases.filter((c) => caseAccess(user, c)).map((c) => c.id));
   if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');
+  caseRows = caseRows.map(({ reporter_id: _r, suggested_workshop_site: _s, ...c }) => c);
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.case_id, u.display_name AS performed_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS performed_by_role
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT ?`).bind(vehicleId, envName, inspCap).all()).results;
   // letzte Abfahrtskontrolle (nur Information); meist in den letzten 50 Kontrollen enthalten, sonst gezielt nachladen
@@ -158,6 +162,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const inspectionsTruncated = !tl && inspections.length > 50; if (inspectionsTruncated) inspections.length = 50;
   for (const i of inspections) hideDriverName(user, i, 'performed_by_name', 'performed_by_role');
   if (lastCheck && !inspections.includes(lastCheck)) hideDriverName(user, lastCheck, 'performed_by_name', 'performed_by_role');
+  if (okCase) for (const i of [...inspections, ...(lastCheck ? [lastCheck] : [])]) if (i.case_id && !okCase.has(i.case_id)) i.case_id = null;
   // Wiederkehrende Mängel: gleicher Prüfpunkt mindestens 2× als Mangel in Kontrollen der letzten 90 Tage
   const recurring = tl ? [] : (await env.DB.prepare(`SELECT json_extract(j.value,'$.key') AS item, COUNT(*) AS n, MAX(i.created_at) AS last_at
     FROM inspections i, json_each(i.items) j WHERE i.vehicle_id=? AND i.environment=? AND i.created_at >= ? AND json_extract(j.value,'$.result')='mangel'
@@ -232,6 +237,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Sicherheitssperre aus allen Vorgängen (Werkstatt sieht nur eigene/übernommene – Kennzeichen zeigte dort sonst kein Schloss, 20.10.2026)
   const locked = allCases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   const out = { locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
+  if (okCase) Object.defineProperty(out, '_okCase', { value: okCase, enumerable: false });
   if (isManager(user)) {
     if (!tl) {
     out.costs = await vehicleCosts(env, envName, vehicleId);
@@ -364,7 +370,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   if (user.role !== 'driver') {
     const tires = (await env.DB.prepare(`SELECT created_at, position, event_type, tread_mm, odometer_km, case_id FROM tire_events WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC LIMIT ?`)
       .bind(vehicleId, envName, cap).all()).results;
-    for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: t.case_id });
+    for (const t of tires) add('tire', t.created_at, { position: t.position, tire_event: t.event_type, tread_mm: t.tread_mm, km: t.odometer_km, case_id: d._okCase && !d._okCase.has(t.case_id) ? null : t.case_id });
     // Hinweise zum Fahrzeug: angelegt und archiviert (nur wenn der Bereich gewünscht ist – spart sonst die Abfrage)
     if (!want.size || want.has('note')) {
       const today = berlinDate();
@@ -685,7 +691,8 @@ export async function myVehicles(env, user, envName) {
       for (const kind of ['HU', 'SP']) {
         const y = kind === 'HU' ? h.hu : h.sp;
         if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
-        if (rules.results.some((r) => r.vehicle_id === vid && r.kind === kind && r.next_due_date)) continue;
+        // HU/SP immer nach der zentralen Regel (wie Akte/Fahrzeugliste/Übersicht) – der gespeicherte Rohwert zeigte z. B. eine alte SP-Plakette
+        // eines nicht SP-pflichtigen Lkw als „überfällig“ (22.10.2026)
         if (!virtBy.has(vid)) virtBy.set(vid, []);
         virtBy.get(vid).push({ vehicle_id: vid, kind, next_due_date: y.due, planned_date: y.planned_date || null });
       }
@@ -713,7 +720,7 @@ export async function myVehicles(env, user, envName) {
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
         parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null })),
-      next_inspections: [...rules.results.filter((r) => r.vehicle_id === v.id && r.next_due_date && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(v.id) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null })),
+      next_inspections: [...rules.results.filter((r) => r.vehicle_id === v.id && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(v.id) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null })),
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),

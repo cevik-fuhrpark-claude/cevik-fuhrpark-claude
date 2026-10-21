@@ -2,6 +2,7 @@
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam, berlinWindowStartIso , commaDec, pointDec, kmNum } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
+import { caseAccess } from './cases.js';
 
 export const AXLES = ['lenkachse', 'liftachse', 'antriebsachse', 'anhaenger'];
 // Achse passt zur Fahrzeugart (Anhänger nur „anhaenger“) – nach Artwechsel Lkw → Anhänger bleiben alte Lkw-Achsgrößen gespeichert, gelten aber nicht (21.10.2026)
@@ -87,13 +88,15 @@ export function winterStatus(kind, { marks, seen }) {
 export const WINTER_CLOSED_DAYS = 60;
 export async function winterOrders(env, envName, vehicleId = null) {
   const since = berlinWindowStartIso(WINTER_CLOSED_DAYS); // 60 Berliner Kalendertage einschließlich heute (19.10.2026; vorher 24-h-Blöcke)
-  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no, status, closed_at FROM cases WHERE environment=? AND tire_order='winter'
+  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no, status, closed_at, reporter_id, workshop_site, suggested_workshop_site FROM cases WHERE environment=? AND tire_order='winter'
     AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at >= ?))${vehicleId ? ' AND vehicle_id=?' : ''} ORDER BY closed_at DESC`)
     .bind(...(vehicleId ? [envName, since, vehicleId] : [envName, since])).all()).results;
   const open = new Map(); const closed = new Map();
   for (const x of r) {
-    if (x.status !== 'fahrzeug_freigegeben') open.set(x.vehicle_id, { id: x.id, case_no: x.case_no });
-    else if (!closed.has(x.vehicle_id)) closed.set(x.vehicle_id, { id: x.id, case_no: x.case_no, closed_at: x.closed_at });
+    // Zugriffsfelder nicht enumerierbar mitführen (nur für caseAccess, nie in der Antwort)
+    const acc = (o) => Object.defineProperty(o, 'acc', { value: { status: x.status, reporter_id: x.reporter_id, workshop_site: x.workshop_site, suggested_workshop_site: x.suggested_workshop_site }, enumerable: false });
+    if (x.status !== 'fahrzeug_freigegeben') open.set(x.vehicle_id, acc({ id: x.id, case_no: x.case_no }));
+    else if (!closed.has(x.vehicle_id)) closed.set(x.vehicle_id, acc({ id: x.id, case_no: x.case_no, closed_at: x.closed_at }));
   }
   // Hinweis nur bei offener Lage ohne neuen Auftrag
   // events/kind (optional; Ereignisse des Fahrzeugs mit created_at, neueste zuerst): war die Winterlage beim Abschluss oder danach schon
@@ -113,6 +116,14 @@ const canWrite = (u) => ['owner', 'fleet', 'workshop'].includes(u.role);
 const canMeasure = (u) => ['owner', 'fleet', 'workshop', 'driver'].includes(u.role);
 
 export const TIRE_HIST_MAX = 200;
+// Auftrag nur mit Kennung (= Link), wenn die Person ihn öffnen darf – sonst nur die Nummer (22.10.2026: Werkstatt München sah den Link
+// auf den Winterreifen-Auftrag der Werkstatt Dortmund → „Vorgang nicht gefunden“; Regel wie Folgeaufträge/Dubletten in cases.js)
+function linkable(user, o) {
+  if (!o) return null;
+  if (!o.acc || caseAccess(user, o.acc)) return { ...o };
+  const { id: _id, ...rest } = o; return rest;
+}
+
 export async function tireOverview(env, user, envName, vehicleId) {
   if (user.role === 'driver') {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
@@ -165,7 +176,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: treadStatus(position, x.tread_mm, warn),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: wOrder, closed_order: wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null }; })() };
+  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: linkable(user, wOrder), closed_order: linkable(user, wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null) }; })() };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {

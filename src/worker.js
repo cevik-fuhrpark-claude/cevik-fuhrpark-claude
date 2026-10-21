@@ -99,7 +99,7 @@ const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\
   /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
-  if (await testMasterReadonly(env)) throw new HttpError(403, 'test_readonly', 'Testkonto: gemeinsame Stammdaten (Fahrzeuge, Prüftermine, km-Stände, Reifen) sind nur lesbar – Einstellung des Inhabers.');
+  if (await testMasterReadonly(env)) throw new HttpError(403, 'test_readonly', 'Testkonto: gemeinsame Stammdaten (Fahrzeuge, Prüftermine, km-Stände, Reifen, Verträge) sind nur lesbar – Einstellung des Inhabers.');
 }
 
 async function handleApi(request, env, ctx, url) {
@@ -163,7 +163,9 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user, await readJson(request).catch(() => ({}))) });
   if (path === '/api/me' && m === 'GET') {
     const row = await env.DB.prepare('SELECT language, home_site, totp_enabled_at FROM users WHERE id=?').bind(user.id).first();
-    return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null, totp_enabled: !!row.totp_enabled_at }, active_environment: envName });
+    return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null, totp_enabled: !!row.totp_enabled_at,
+      // Testkonto mit „gemeinsame Stammdaten nur lesen“: App zeigt den Hinweis an der Akte (22.10.2026; vorher erst die Fehlermeldung beim Speichern)
+      shared_readonly: user.role !== 'owner' && user.environment === 'test' && await testMasterReadonly(env) }, active_environment: envName });
   }
   if (path === '/api/me' && m === 'PATCH') {
     const b = await readJson(request);

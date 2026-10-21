@@ -82,6 +82,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
     check.due = addMonthsIso(lastCheck.checked_on, checkMonths);
     const left = days(today, check.due);
     // Vorwarnung höchstens Kontrollabstand − 1 Tag (wie Auslesungen, tachoStatus): sonst stand die Akte bei Vorwarnung ≥ Abstand schon am Kontrolltag auf „bald fällig“ (19.10.2026)
+    check.days = left;
     check.status = left < 0 ? 'faellig' : left <= Math.min(warnDays, days(lastCheck.checked_on, check.due) - 1) ? 'bald' : 'ok';
   }
   const hasLicense = docs.some((x) => !x.superseded && x.kind === 'fuehrerschein');
@@ -341,6 +342,9 @@ export async function driverFindings(env, environment, settings = null) {
     }
     if (d.status.check.status === 'faellig') out.push({ code: 'LICENSE_CHECK_DUE', subject: `${d.id}|fs_kontrolle`, severity: 'handeln', requires_decision: 0,
       ...fm('LICENSE_CHECK_DUE', { name: d.display_name, last: d.status.check.last }), next_action: 'Original-Führerschein vorlegen lassen und Kontrolle erfassen.' });
+    // Vorwarnung wie in der Fahrerakte („bald fällig“ = Hinweis) – bis 22.10.2026 meldete der Agent erst ab Fälligkeit
+    else if (d.status.check.status === 'bald') out.push({ code: 'LICENSE_CHECK_DUE_SOON', subject: `${d.id}|fs_kontrolle`, severity: 'hinweis', requires_decision: 0,
+      ...fm('LICENSE_CHECK_DUE_SOON', { name: d.display_name, last: d.status.check.last, date: d.status.check.due, days: d.status.check.days }), next_action: 'Termin für die Führerscheinkontrolle vereinbaren.' });
     else if (d.status.check.status === 'mangel') out.push({ code: 'LICENSE_CHECK_FAILED', subject: `${d.id}|fs_kontrolle`, severity: 'kritisch', requires_decision: 1,
       ...fm('LICENSE_CHECK_FAILED', { name: d.display_name, last: d.status.check.last }), next_action: 'Einsatz klären; Führerschein prüfen.' });
   }

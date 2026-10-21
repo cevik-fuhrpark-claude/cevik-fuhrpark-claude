@@ -16642,6 +16642,86 @@ await test('Fehlersuche 21.10. (Umkennzeichnung): Anhänger umgekennzeichnet →
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].trailer_renamed_warn && STRINGS[l].trailer_renamed_warn.includes('{old}') && STRINGS[l].trailer_renamed_warn.includes('{list}'), l);
 });
 
+await test('Fehlersuche 22.10. (Konsistenz/Rollen/Tastatur): HU/SP-Widerspruch mit verstrichenen Fristen überfällig, Fahrer-Startseite HU/SP nach Regel, Agent-Hinweise Vertrag unter Übernahme-km und Führerscheinkontrolle bald fällig, Auftragslinks nur mit Zugriff, Testkonto-Hinweis, Tastatur', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  // 1. Widerspruch Nachweis ↔ Berechnung: ungeklärt, solange eine der beiden Fristen noch läuft; beide verstrichen → überfällig
+  const L = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: null };
+  const hu = (today) => computeHuSp(L, [{ kind: 'HU', done_date: '2025-05-10' }], { today, documented: { HU: { due: '2026-03-28' } } }).hu;
+  eq(hu('2026-04-15').status, 'ungeklaert', 'Berechnung 05/2026 läuft noch'); eq(hu('2026-10-22').status, 'ueberfaellig', 'beide verstrichen');
+  ok(hu('2026-10-22').note_codes.some((x) => x.code === 'hu_conflict'), 'Widerspruch bleibt als Hinweis'); eq(hu('2026-10-22').due, '2026-03-28', 'Nachweis nicht überschrieben');
+  const sp = (today, ev = []) => computeHuSp(L, [{ kind: 'HU', done_date: '2026-01-15' }, ...ev], { today, documented: { SP: { due: '2026-03-31' } } }).sp;
+  eq(sp('2026-05-01').status, 'ungeklaert'); eq(sp('2026-09-01').status, 'ueberfaellig', 'Nachweis 03/2026 und Berechnung 07/2026 verstrichen');
+  eq(sp('2026-09-01', [{ kind: 'SP', done_date: '2025-08-01' }]).status, 'ueberfaellig', 'auch mit SP-Nachweis als Grundlage');
+  eq(sp('2026-05-01', [{ kind: 'SP', done_date: '2025-08-01' }]).status, 'ungeklaert');
+  const { U, e } = await freshWorld(); const F = U.fleet;
+  // 2. Fahrer-Startseite: HU/SP nach der zentralen Regel – alte SP-Plakette eines nicht SP-pflichtigen Lkw erscheint nicht als „überfällig“
+  const V = 'VIN:WMA15SZZ2HM722774';
+  const past = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10); const huLast = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Schein (Test)' })).status, 200);
+  eq((await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', last_done_date: huLast, evidence: 'TÜV (Test)' })).status, 201);
+  eq((await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'SP', next_due_date: past, evidence: 'Plakette SP (Test)' })).status, 201);
+  eq((await F.post(`/api/vehicles/${V}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  const myIns = async () => (await U.driver.get('/api/me/vehicles')).data.vehicles[0].next_inspections;
+  ok((await myIns()).some((r) => r.kind === 'SP' && r.next_due_date === past), 'SP-pflichtig: Nachweis gilt');
+  eq((await F.post(`/api/vehicles/${V}/spec`, { zgm_class: '3_5_7_5', spec_source: 'Schein korrigiert (Test)', expected_updated_at: (await F.get(`/api/vehicles/${V}`)).data.vehicle.updated_at })).status, 200);
+  const d0 = (await F.get(`/api/vehicles/${V}`)).data; eq(d0.hu_sp.sp.status, 'nicht_sp_pflichtig');
+  const mi = await myIns(); ok(!mi.some((r) => r.kind === 'SP'), 'nicht SP-pflichtig: keine SP auf der Fahrer-Startseite ' + JSON.stringify(mi));
+  ok(mi.some((r) => r.kind === 'HU' && r.next_due_date === d0.hu_sp.hu.due), 'HU wie Akte');
+  // 3. Agent: Vertrag mit km-Stand unter „km bei Übernahme“ (Übersicht/Datenqualität melden es schon) und Führerscheinkontrolle bald fällig
+  const vid = d0.vehicle.id;
+  eq((await F.post(`/api/vehicles/${V}/odometer`, { km: 20000 })).status, 201);
+  eq((await F.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'KU-Leasing', contract_no: 'L-9', start_date: BERLIN_TODAY, end_date: '2029-01-31', km_allowance: 150000, start_km: 120000, evidence: 'Vertrag' })).status, 201);
+  eq((await F.get(`/api/vehicles/${V}`)).data.contracts[0].status.km.status, 'unter_start');
+  eq((await U.own.put('/api/settings', { license_check_months: 1, driver_doc_warn_days: 30 })).status, 200);
+  const did = (await F.post('/api/drivers', { display_name: 'Fahrer Bald', user_id: U.driver.id })).data.id; ok(did);
+  const chk = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 25 * 864e5).toISOString().slice(0, 10);
+  eq((await F.post(`/api/drivers/${did}/license-checks`, { checked_on: chk, result: 'in_ordnung' })).status, 201);
+  eq((await F.get(`/api/drivers/${did}`)).data.status.check.status, 'bald');
+  eq((await F.post('/api/agent/run')).status, 200);
+  const fs = (await F.get('/api/master')).data.findings;
+  const cb = fs.find((f) => f.finding_code === 'CONTRACT_KM_BELOW_START' && f.vehicle_id === vid); ok(cb, 'Vertragsbefund'); eq(cb.severity, 'hinweis');
+  const lc = fs.find((f) => f.finding_code === 'LICENSE_CHECK_DUE_SOON'); ok(lc && /Fahrer Bald/.test(lc.message), 'Kontrolle bald fällig'); eq(lc.severity, 'hinweis');
+  const { renderFindingMessage } = await import('../public/finding-messages.js'); const { findingLabel } = await import('../public/finding-labels.js');
+  for (const f of [cb, lc]) for (const lang of ['uk', 'en']) {
+    const m = renderFindingMessage(f.finding_code, JSON.parse(f.message_args).a, lang, { dates: true }); ok(m && !/[äöüß]|Kontrolle|Übernahme/.test(m), `${f.finding_code} ${lang}: ${m}`);
+    ok(findingLabel(f.finding_code, lang) && findingLabel(f.finding_code, lang) !== findingLabel(f.finding_code, 'de'), lang);
+  }
+  ok(/120\.000 km/.test(cb.message) && /20\.000 km/.test(cb.message), cb.message);
+  eq((await U.own.put('/api/settings', { license_check_months: '', driver_doc_warn_days: '' })).status, 200);
+  // 4. Links auf Aufträge nur mit Zugriff: Winterreifen-Auftrag und Kontrolle zu einem Dortmunder Vorgang für Werkstatt München nur als Nummer
+  const wo = await F.post(`/api/vehicles/${V}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(wo.status, 201);
+  const tw = (c) => c.get(`/api/vehicles/${V}/tires`);
+  const woM = (await tw(U.wsMuc)).data.winter.open_order; ok(woM && woM.case_no && !woM.id, 'München: nur Nummer ' + JSON.stringify(woM));
+  const woD = (await tw(U.ws)).data.winter.open_order; ok(woD && woD.id, 'Dortmund: mit Link'); ok(!('acc' in woD) && !JSON.stringify(woD).includes('workshop_site'), 'keine Zugriffsfelder in der Antwort');
+  ok((await tw(F)).data.winter.open_order.id, 'Leitung: mit Link');
+  await e.DB.prepare(`INSERT INTO inspections(id, environment, vehicle_id, case_id, kind, template_version, performed_by, items, result, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .bind('insp-502', 'test', vid, woD.id, 'nach_reparatur', 'v1', U.ws.id, '[]', 'ok', new Date().toISOString()).run();
+  const ins = async (c) => (await c.get(`/api/vehicles/${V}`)).data.inspections.find((i) => i.kind === 'nach_reparatur');
+  eq((await ins(U.wsMuc)).case_id, null, 'Akte München: ohne Link'); eq((await ins(U.ws)).case_id, woD.id, 'Akte Dortmund: Link'); eq((await ins(F)).case_id, woD.id);
+  const tl = async (c) => (await c.get(`/api/vehicles/${V}/timeline`)).data.items.find((i) => i.type === 'inspection' && i.inspection_kind === 'nach_reparatur');
+  eq((await tl(U.wsMuc)).case_id, null, 'Zeitleiste München'); eq((await tl(U.ws)).case_id, woD.id, 'Zeitleiste Dortmund');
+  ok(!('reporter_id' in (await U.ws.get(`/api/vehicles/${V}`)).data.cases[0]), 'Vorgangsliste der Akte ohne Melder-Kennung');
+  // 5. Testkonto + „gemeinsame Stammdaten nur lesen“: /api/me meldet es, App zeigt den Hinweis; Fehlertext nennt Verträge
+  eq((await F.get('/api/me')).data.user.shared_readonly, false);
+  eq((await U.own.put('/api/settings', { test_master_readonly: true })).status, 200);
+  eq((await F.get('/api/me')).data.user.shared_readonly, true, 'Test-Leitung'); eq((await U.own.get('/api/me')).data.user.shared_readonly, false, 'Inhaber nie');
+  const ro = await F.post(`/api/vehicles/${V}/odometer`, { km: 30000 }); eq(ro.status, 403); ok(/Verträge/.test(ro.data.message), ro.data.message);
+  eq((await U.own.put('/api/settings', { test_master_readonly: false })).status, 200);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].shared_readonly_note && STRINGS[l].locked_cases && STRINGS[l].page_unavailable && STRINGS[l].to_overview, l);
+  ok(/договори/.test(STRINGS.uk.err_test_readonly) && /contracts/.test(STRINGS.en.err_test_readonly), 'Fehlertext UK/EN nennt Verträge');
+  // 6. Oberfläche (Quelltext): erledigter Rückruf nicht in „Heute zu tun“, Kachel „Gesperrte Vorgänge“, Notfallseite ohne Melden-Link für Lesezugriff, Tastatur
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("r.next_due_date <= in7 && r.date_status !== 'erledigt'"), 'Heute zu tun ohne erledigte');
+  ok(app.includes("<div><b>${d.locked}</b>${esc(t('locked_cases'))}</div>"), 'Kachel zählt Vorgänge und heißt so');
+  ok(app.includes("${mayReport() ? `<a href=\"${vid ? `#/new/${esc(vid)}` : '#/new'}\">"), 'Panne & Notfall: Melden nur mit Recht');
+  ok(app.includes(`\${key === active ? ' aria-current="page"' : ''}`), 'aktive Seite aria-current');
+  ok(!app.includes('role="tablist"') && !app.includes('role="tab"'), 'keine Tab-Rollen ohne Pfeiltasten');
+  ok(app.includes("if (e.key !== 'Escape'") && app.includes("e.target.closest('#af')") && app.includes("form[data-mdone]"), 'Escape schließt Formulare');
+  ok(app.includes('keep.focus = ') && app.includes('focusRestore(k.focus)'), 'Fokus bleibt nach Neuaufbau derselben Seite');
+  ok(app.includes(`<h1 tabindex="-1" id="errh">`) && app.includes('role="alert"><p>${esc(e.message)}'), 'Fehlerseite mit Überschrift und Ansage');
+  ok(app.includes('S.me.shared_readonly ?'), 'Hinweis Testkonto in der Akte');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

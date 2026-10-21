@@ -336,6 +336,10 @@ export async function contractFindings(env, settings) {
     else if (s.km && s.km.status === 'zaehler') out.push({ ...base, code: 'CONTRACT_KM_UNCLEAR', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
       ...fm('CONTRACT_KM_UNCLEAR', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, at: s.km.drop_at ? berlinDate(s.km.drop_at) : null }),
       next_action: 'km-Stand bei Übernahme bzw. Tausch laut Beleg prüfen und im Vertrag „km bei Übernahme … geprüft“ bestätigen.' });
+    // km-Stand unter „km bei Übernahme“: Übersicht und Datenqualität melden es, der Agent bis 22.10.2026 nicht
+    else if (s.km && s.km.status === 'unter_start') out.push({ ...base, code: 'CONTRACT_KM_BELOW_START', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
+      ...fm('CONTRACT_KM_BELOW_START', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, km: s.km.current_km, start: s.km.start_km }),
+      next_action: '„km bei Übernahme“ im Vertrag laut Beleg bzw. den letzten km-Stand prüfen und korrigieren.' });
   }
   return out;
 }

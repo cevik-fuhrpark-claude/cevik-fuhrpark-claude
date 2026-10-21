@@ -42,7 +42,7 @@ async function checkToken(request, env) {
 
 // Datensparsamkeit: Befunde aus Fahrerakte/Fahrerkarte nennen in der App den Fahrernamen (Sichtbarkeit laut Freigabe nur Inhaber/
 // Fuhrparkleitung). Über die technische Schnittstelle wird der Name ersetzt; Code, Schweregrad, Frist und subject_key (Fahrer-ID) bleiben.
-const PERSON_FINDINGS = ['DRIVER_DOC_EXPIRED', 'DRIVER_DOC_EXPIRES_SOON', 'LICENSE_CHECK_DUE', 'LICENSE_CHECK_FAILED', 'TACHO_CARD_OVERDUE', 'TACHO_CARD_DUE'];
+const PERSON_FINDINGS = ['DRIVER_DOC_EXPIRED', 'DRIVER_DOC_EXPIRES_SOON', 'LICENSE_CHECK_DUE', 'LICENSE_CHECK_DUE_SOON', 'LICENSE_CHECK_FAILED', 'TACHO_CARD_OVERDUE', 'TACHO_CARD_DUE'];
 const REDACTED = 'Fahrer/in (Name nur in der App)';
 async function personNames(env, environment) {
   const rows = (await env.DB.prepare(`SELECT f.id, d.display_name AS name FROM agent_findings f JOIN drivers d ON d.id = substr(f.subject_key, 1, instr(f.subject_key || '|', '|') - 1)

@@ -177,7 +177,7 @@ function noResultSql(recordedBy = null, limit = 200, vf = null) {
       ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), ...REQUIRED_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), ...(recordedBy ? [recordedBy] : [])]];
 }
 
-// Prüfungen der letzten 365 Tage mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
+// Prüfungen der letzten 12 Monate (wie Fahrzeugliste/Akte, 22.10.2026) mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
 // (nicht abgelehnter) Vorgang zum Fahrzeug angelegt wurde – Grundlage für Datenqualität und „Heute zu tun“. Keine Frist angenommen.
 // Ist danach bereits eine neuere Durchführung derselben Prüfart eingetragen (Nachprüfung, z. B. nach Reparatur außerhalb der App), gilt
 // die ältere als überholt: Zeigt die neuere erneut Mängel, erscheint stattdessen sie selbst.
@@ -192,10 +192,10 @@ function defectsWithoutCaseSql(envName, limit = 200, vf = null) {
       AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date) -- Berliner Tag (Auftrag 00:30 Uhr am Prüftag zählt, 17.10.2026)
       AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), berlinDate(new Date(Date.now() - 365 * 86400000).toISOString()), envName]];
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), addMonths(berlinDate(), -12), envName]];
 }
 
-// Mängelauftrag aus Prüfung technisch freigegeben (≤ 365 Tage nach der Prüfung), kein weiterer offener Auftrag dazu und seitdem keine neuere
+// Mängelauftrag aus Prüfung technisch freigegeben (≤ 12 Monate nach der Prüfung), kein weiterer offener Auftrag dazu und seitdem keine neuere
 // Durchführung derselben Prüfart am Fahrzeug eingetragen → Nachprüfung/Wiedervorführung mit Nachweis in der Akte eintragen. Keine Frist angenommen
 // (sie steht im Prüfbericht). Je Prüfung nur der zuletzt freigegebene Auftrag.
 export function reinspectionPendingQuery(env, envName) {
@@ -211,7 +211,7 @@ function reinspectionPendingSql(envName, limit = 200, vf = null) {
       AND NOT EXISTS (SELECT 1 FROM cases c2 WHERE c2.maintenance_event_id=e.id AND c2.environment=c.environment AND c2.status NOT IN ('fahrzeug_freigegeben','abgelehnt'))
       AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-      ORDER BY c.closed_at DESC LIMIT ${Number(limit)}`, [envName, ...(vf ? [vf] : []), berlinDate(new Date(Date.now() - 365 * 86400000).toISOString())]];
+      ORDER BY c.closed_at DESC LIMIT ${Number(limit)}`, [envName, ...(vf ? [vf] : []), addMonths(berlinDate(), -12)]];
 }
 
 // Die drei Prüfungs-Listen (Prüfmängel ohne Auftrag, ausstehende Nachprüfung, Pflichtprüfung ohne Ergebnis) in EINER D1-Abfrage –
