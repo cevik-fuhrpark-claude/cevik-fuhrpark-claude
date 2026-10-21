@@ -201,7 +201,15 @@ export async function updateContract(env, user, id, body, envName) {
         : (['start_km', 'start_date'].some((k) => changed.includes(k)) || (!c.km_allowance && f.km_allowance)) ? contractKmBasis(await dropOf(env, c.vehicle_id), f.start_date, laterIso(c.updated_at)) : null).run();
   if (!(r.meta && r.meta.changes)) {
     const why = await env.DB.prepare(`SELECT ${DUP} AS dup, ${CLAIM} AS claim`).bind(f.kind, f.partner, f.contract_no, f.start_date, null, null, null, null, null, null, null, null, null, id, null, c.vehicle_id).first();
-    if (why && why.claim) throw conflict('contract_in_claim', 'Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.');
+    if (why && why.claim) {
+      // Fall der anderen Umgebung benennen (21.10.2026: ein Test-Versicherungsfall sperrte den echten Vertrag, im Betrieb war kein Fall zu finden)
+      const refs = (await env.DB.prepare(`SELECT c.case_no, ic.environment FROM insurance_claims ic LEFT JOIN cases c ON c.id=ic.case_id WHERE ic.contract_id=? ORDER BY ic.created_at LIMIT 5`).bind(id).all()).results;
+      const own = refs.some((x) => x.environment === envName);
+      const other = refs.find((x) => x.environment !== envName);
+      const extra = { claim_cases: refs.map((x) => ({ case_no: x.case_no || null, environment: x.environment })) };
+      if (!own && other) throw conflict('contract_in_claim', other.environment === 'test' ? 'Ein Versicherungsfall der Testumgebung verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.' : 'Ein Versicherungsfall des Betriebs verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.', extra);
+      throw conflict('contract_in_claim', 'Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.', extra);
+    }
     if (why && why.dup) throw conflict('duplicate_contract', 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).');
     throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   }

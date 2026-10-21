@@ -250,6 +250,16 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, i.performed_by, u.display_name AS performed_by_name, u.role AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results
     .map(({ performed_by, ...i }) => hideDriverName(user, ownName({ ...i, items: JSON.parse(i.items), performed_by }, 'performed_by', 'performed_by_name'), 'performed_by_name', 'performed_by_role'))
     .map(({ performed_by, ...i }) => i);
+  // Folgeauftrag je Prüfpunkt nur verlinken, wenn die Person ihn öffnen darf – sonst nur die Nummer (21.10.2026: Fahrer/Werkstatt sahen
+  // die Kennung eines an eine andere Werkstatt übergebenen bzw. fremden Vorgangs, Link → 404; Regel wie bei Folgeaufträgen/Dubletten)
+  if (!['owner', 'fleet', 'dispatch', 'viewer'].includes(user.role)) {
+    const fids = [...new Set(inspections.flatMap((i) => (Array.isArray(i.items) ? i.items : []).map((it) => it && it.followup_case_id).filter(Boolean)))];
+    if (fids.length) {
+      const okIds = new Set((await env.DB.prepare(`SELECT id, status, reporter_id, workshop_site, suggested_workshop_site FROM cases WHERE environment=? AND id IN (SELECT value FROM json_each(?))`).bind(c.environment, JSON.stringify(fids)).all()).results
+        .filter((x) => caseAccess(user, x)).map((x) => x.id));
+      for (const i of inspections) for (const it of (Array.isArray(i.items) ? i.items : [])) if (it && it.followup_case_id && !okIds.has(it.followup_case_id)) delete it.followup_case_id;
+    }
+  }
   // Folgeaufträge und als Dublette geschlossene Meldungen zu diesem Vorgang in einer Abfrage
   // nur Vorgänge, die die Person selbst öffnen darf (17.10.2026: Fahrer sah Beschreibung fremder Folgeaufträge der Werkstatt, Link → 404)
   const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, description, created_at, parent_case_id, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results
@@ -259,7 +269,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // Original ohne Zugriff (z. B. Meldung eines anderen Fahrers): nur die Nummer, weder Kennung noch Status (17.10.2026, wie Folgeaufträge)
   const dupRow = c.duplicate_of ? await env.DB.prepare('SELECT id, case_no, status, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE id=?').bind(c.duplicate_of).first() : null;
   const duplicateOf = dupRow ? (caseAccess(user, dupRow) ? { id: dupRow.id, case_no: dupRow.case_no, status: dupRow.status } : { case_no: dupRow.case_no }) : null;
-  const parent = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no FROM cases WHERE id=? AND environment=?').bind(c.parent_case_id, c.environment).first() : null;
+  // Ursprungsvorgang ohne Zugriff (z. B. bei einer anderen Werkstatt): nur die Nummer, keine Kennung (21.10.2026, wie duplicate_of)
+  const parentRow = c.parent_case_id ? await env.DB.prepare('SELECT id, case_no, status, reporter_id, workshop_site, suggested_workshop_site FROM cases WHERE id=? AND environment=?').bind(c.parent_case_id, c.environment).first() : null;
+  const parent = parentRow ? (caseAccess(user, parentRow) ? { id: parentRow.id, case_no: parentRow.case_no } : { case_no: parentRow.case_no }) : null;
   // Prüfung des Mängelauftrags + jüngste spätere Durchführung derselben Prüfart am Fahrzeug (= eingetragene Nachprüfung)
   const mevent = c.maintenance_event_id ? await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result,
       (SELECT json_object('done_date', n.done_date, 'result', n.result, 'evidence', n.evidence) FROM maintenance_events n WHERE n.vehicle_id=e.vehicle_id AND n.kind=e.kind AND n.id<>e.id
@@ -275,7 +287,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const hiddenNotes = canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'];
   const hiddenPayloads = [...(canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost']), ...(seesWork ? [] : ['add_part', 'record_work'])];
   const detail = {
-    case: shapeCase(c, user), access, vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
+    // Fahrer: nur die Fahrzeugangaben der Fahrer-Fahrzeugliste (21.10.2026: Vorgang lieferte den ganzen Stammsatz inkl. FIN und Vermerken der Leitung)
+    case: shapeCase(c, user), access, vehicle: user.role === 'driver' && vehicle ? { id: vehicle.id, plate: vehicle.plate, kind: vehicle.kind, site: vehicle.site, manufacturer: vehicle.manufacturer, trailer_plate: vehicle.trailer_plate, active: vehicle.active } : vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null, ...(hiddenNotes.includes(e.action) && e.note ? { note: null, note_hidden: true } : {}) } : e)),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
@@ -1312,10 +1325,12 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   // Wiederholung (Antwort ging verloren, Postausgang sendet erneut): dieselben Folgeaufträge wie beim ersten Senden zurückgeben –
   // sonst ließen sich die Fotos nicht mehr anhängen (17.10.2026). Vor allen Zustandsprüfungen: eine bereits gespeicherte Kontrolle wurde
   // sonst abgewiesen, wenn das Fahrzeug inzwischen außer Betrieb war, die Durchführung > 7 Tage zurücklag oder der Vorgang weiter war (20.10.2026)
+  // Fahrer: erneut festgestellter Mangel am Vorgang eines anderen Fahrers → nur Nummer und „bereits gemeldet“, keine Kennung (21.10.2026)
+  const fuForUser = (f) => (f && user.role === 'driver' && f.repeat && !f.own ? { case_no: f.case_no, duplicate: true, repeat: true } : f);
   const asDuplicate = (already) => {
     let its = []; try { its = JSON.parse(already.items || '[]') || []; } catch { its = []; }
     const fu = its.filter((i) => i && i.result === 'mangel' && i.followup_case_id).map((i) => ({ id: i.followup_case_id, case_no: i.followup_case_no, duplicate: true, ...(i.repeat ? { repeat: true } : {}), ...(i.repeat_own ? { own: true } : {}) }));
-    return { id, result: already.result, followups: fu, duplicate: true };
+    return { id, result: already.result, followups: fu.map(fuForUser), duplicate: true };
   };
   {
     const already = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first();
@@ -1497,7 +1512,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
       kmRejected = last && odo < last.km ? { km: odo, previous_km: last.km, previous_at: last.measured_at } : later && odo > later.km ? { km: odo, next_km: later.km, next_at: later.measured_at } : { km: odo };
     }
   }
-  return { id, result: defects.length ? 'maengel' : 'ok', followups, km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt };
+  return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt };
 }
 
 // ---------- Dateien ----------

@@ -16061,6 +16061,52 @@ await test('Fehlersuche 21.10. (Verträge): Import nimmt „Kennzeichen Anhänge
   eq(r2.map((x) => x.status).sort().join(','), 'fulfilled,rejected');
 });
 
+await test('Fehlersuche 21.10. (Rechte/Umgebungen): Vorgang zeigt Folgeauftrag/Ursprung ohne Zugriff nur als Nummer, Fahrer bekommt nur Fahrer-Fahrzeugangaben, Wiederholung am fremden Vorgang ohne Kennung, Test-Versicherungsfall wird beim Vertrag benannt, Offline-Fahrzeugliste je Ansicht', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld(); const own = U.own;
+  const C = await import('../src/cases.js');
+  // 1./2. Kontrolle nach Reparatur mit Mangel → Folgeauftrag, an München übergeben
+  const id = await toRepair();
+  const items = C.CHECKLIST.map((i, n) => ({ key: i.key, result: n === 0 ? 'mangel' : 'ok', note: n === 0 ? 'Mangel nach Reparatur' : null }));
+  const ir = await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items }); eq(ir.status, 201, JSON.stringify(ir.data));
+  const fu = ir.data.followups[0]; ok(fu && fu.id, 'Folgeauftrag');
+  eq((await cmd(U.fleet, fu.id, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'an MUC')).status, 200);
+  const itemOf = (d) => d.inspections.flatMap((i) => i.items).find((x) => x.followup_case_no);
+  const dD = (await U.driver.get(`/api/cases/${id}`)).data;
+  eq(itemOf(dD).followup_case_no, fu.case_no, 'Fahrer: Nummer bleibt'); eq(itemOf(dD).followup_case_id, undefined, 'Fahrer: keine Kennung des fremden Folgeauftrags');
+  eq(itemOf((await U.ws.get(`/api/cases/${id}`)).data).followup_case_id, fu.id, 'Werkstatt DO hat den Folgeauftrag selbst angelegt (Lesezugriff): Link bleibt');
+  eq(itemOf((await U.fleet.get(`/api/cases/${id}`)).data).followup_case_id, fu.id, 'Leitung: Link bleibt');
+  const pM = (await U.wsMuc.get(`/api/cases/${fu.id}`)).data.parent; eq(JSON.stringify(pM), JSON.stringify({ case_no: (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no }), 'München: Ursprung nur als Nummer');
+  eq((await U.fleet.get(`/api/cases/${fu.id}`)).data.parent.id, id, 'Leitung: Ursprung mit Kennung');
+  // 3. Fahrer: nur die Angaben der Fahrer-Fahrzeugliste
+  e.DB.db.prepare(`UPDATE vehicles SET eval_excluded_reason='interner Vermerk', telematics_note='T' WHERE id=?`).run(V1);
+  const vD = dD.vehicle; eq(Object.keys(vD).sort().join(','), 'active,id,kind,manufacturer,plate,site,trailer_plate', 'Fahrer-Felder');
+  ok(!('vin' in vD) && !('eval_excluded_reason' in vD), 'keine FIN/Vermerke'); ok('vin' in (await U.fleet.get(`/api/cases/${id}`)).data.vehicle, 'Leitung: voller Stammsatz');
+  // 4. zweiter Fahrer meldet denselben Mangel → Nummer ohne Kennung; eigener Wiederholungsfall behält die Kennung
+  const d2r = await own.post('/api/users', { username: 'w.fahrer2', display_name: 'Fahrer Z', role: 'driver', environment: 'test' });
+  const d2 = new Client(worker, e, 'w.fahrer2'); await d2.post('/api/invite/accept', { token: d2r.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const ab = C.CHECKLIST.map((i, n) => ({ key: i.key, result: n === 1 ? 'mangel' : 'ok', note: n === 1 ? 'Spiegel' : null }));
+  const a1 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: ab }); eq(a1.status, 201, JSON.stringify(a1.data));
+  const a1b = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: ab });
+  ok(a1b.data.followups[0].id && a1b.data.followups[0].own, 'eigene Wiederholung mit Kennung');
+  const k2 = rk(); const a2 = await d2.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: k2, items: ab });
+  eq(JSON.stringify(a2.data.followups), JSON.stringify([{ case_no: a1.data.followups[0].case_no, duplicate: true, repeat: true }]), 'fremder Vorgang: nur Nummer');
+  const a2r = await d2.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: k2, items: ab });
+  eq(a2r.data.followups[0].id, undefined, 'auch beim erneuten Senden (Postausgang)');
+  // 5. Versicherungsfall der Testumgebung sperrt den Vertrag – Meldung im Betrieb nennt die Umgebung
+  const kv = (await own.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Muster AG', contract_no: 'P-1', evidence: 'Police P-1' })).data.id;
+  const cl = await U.fleet.put(`/api/cases/${await newCase()}/claim`, { insurer: 'Muster AG', contract_id: kv, reported_on: BERLIN_TODAY, evidence: 'Telefon' }); eq(cl.status, 200, JSON.stringify(cl.data));
+  const ct = (await own.get('/api/contracts')).data.contracts.find((c) => c.id === kv);
+  const up = await own.patch(`/api/contracts/${kv}`, { kind: 'leasing', expected_updated_at: ct.updated_at });
+  eq(up.status, 409); eq(up.data.error, 'contract_in_claim'); ok(/Testumgebung/.test(up.data.message), up.data.message);
+  eq(up.data.claim_cases[0].environment, 'test');
+  const upT = await U.fleet.patch(`/api/contracts/${kv}`, { kind: 'leasing', expected_updated_at: ct.updated_at });
+  eq(upT.status, 409); ok(!/Testumgebung/.test(upT.data.message), 'eigene Umgebung: bisherige Meldung');
+  // 6. Oberfläche: Offline-Fahrzeugliste und Kennzeichen im Postausgang je Ansicht (envFn), Links nur mit Kennung
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!app.includes('cfp_veh_${S.me.id}_${S.me.environment}') && (app.match(/cfp_veh_\$\{S\.me\.id\}_\$\{envFn\(\)\}/g) || []).length === 3, 'cfp_veh_ mit envFn()');
+  ok(app.includes('it.followup_case_id ? ` → <a') && app.includes('d.parent.id ? `<a'), 'Link nur mit Kennung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
