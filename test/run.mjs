@@ -1455,7 +1455,7 @@ await test('Browser-Prüfhinweise in der App-Sprache: Pflicht/Auswahl/Länge/Ber
   eq(fn({ validity: { valid: true }, type: 'text' }), '');
   ok(/document\.addEventListener\('invalid', [\s\S]{0,300}\}, true\);/.test(app), 'invalid in der Erfassungsphase (Ereignis steigt nicht auf)');
   ok(/document\.addEventListener\('input', clearNativeValidity, true\)/.test(app) && /document\.addEventListener\('change', clearNativeValidity, true\)/.test(app), 'Aufheben vor den Feldprüfungen');
-  const ts = app.slice(app.indexOf('function toast('), app.indexOf('function toast(') + 1200);
+  const ts = app.slice(app.indexOf('function toast('), app.indexOf('function toast(') + 2200);
   ok(/querySelectorAll\('\.toast\.err'\)\.forEach\(\(x\) => x\.remove\(\)\)/.test(ts) && /Math\.min\(20000, Math\.max\(6000/.test(ts) && /addEventListener\('click', \(\) => el\.remove\(\)\)/.test(ts), 'Fehlermeldung: eine gleichzeitig, Dauer nach Länge, Antippen schließt');
   ok(app.indexOf("addEventListener('input', clearNativeValidity, true)") < app.indexOf("el.inputMode === 'decimal') el.setCustomValidity"), 'Reihenfolge');
 });
