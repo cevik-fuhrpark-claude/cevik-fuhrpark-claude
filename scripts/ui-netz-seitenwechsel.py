@@ -72,6 +72,26 @@ with sync_playwright() as p:
     check(len(c)==1 and len(api('GET',f"/api/cases/{c[0]['id']}")['d'].get('files',[]))==3,'Meldung mit 3 Fotos angekommen')
     if SHOTS: q.screenshot(path=f'{SHOTS}/netz_kontrolle_de_390.png')
     check(not q.errs,f'keine Skriptfehler {q.errs}'); ctx.close()
+    # (1b) App wird während des Hochladens beendet (Anfrage ab Foto 2 hängt, Neuladen) – Fotos lagen vorab im Postausgang (Backlog 113)
+    ctx,q=device('nz.fahrer',390,844,'de')
+    q.goto(B+'/#/new'); q.wait_for_selector('#d'); q.locator(f'input[name=veh][value="{vid}"]').check(force=True); q.fill('#d','Spiegel links lose (Abbruchtest)')
+    q.set_input_files('#ph',photos(5,'k')); st0={'n':0}
+    def hold(route):
+        st0['n']+=1
+        if st0['n']>=2: return  # keine Antwort (hängt)
+        route.continue_()
+    q.route('**/api/cases/*/files',hold); q.click('#sb')
+    for i in range(60):
+        if st0['n']>=2: break
+        q.wait_for_timeout(250)
+    ob=q.evaluate("Object.entries(localStorage).filter(([k])=>k.startsWith('cfp_outbox_')).flatMap(([k,v])=>JSON.parse(v))")
+    check(len(ob)==1 and ob[0].get('photos')==5 and ob[0].get('photo_target'),f'Fotos vor dem Hochladen gesichert: {ob}')
+    q.unroute_all(behavior='ignoreErrors'); q.reload(); q.wait_for_timeout(4000)
+    c=[x for x in api('GET','/api/cases?f=all')['d']['cases'] if 'Abbruchtest' in x['description']]
+    n=len(api('GET',f"/api/cases/{c[0]['id']}")['d'].get('files',[])) if c else -1
+    ob=q.evaluate("Object.entries(localStorage).filter(([k])=>k.startsWith('cfp_outbox_')).flatMap(([k,v])=>JSON.parse(v))")
+    check(len(c)==1 and n==5 and not ob,f'nach Neustart alle 5 Fotos nachgereicht, keine Dubletten (Fotos: {n}, Postausgang: {len(ob)})')
+    check(not q.errs,f'keine Skriptfehler {q.errs}'); ctx.close()
     # (2) Werkstatt reicht Fotos nach (UK 820): Antwort auf Foto 2 verloren, danach Netz weg
     user('nz.ws','workshop',workshop_site=site)
     cid=api('POST','/api/cases',{'vehicle_id':vid,'description':'Bremse vorne quietscht','priority':'mittel','driveability':'fahrbereit','request_key':'nz-ws-1'})['d']['id']

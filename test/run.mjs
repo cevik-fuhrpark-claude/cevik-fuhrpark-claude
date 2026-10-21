@@ -11812,7 +11812,8 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: S\.me\.id, user_name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
   ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
-  eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 3, 'Fotos bei Netzabbruch nachreichen (Meldung + Abfahrtskontrolle + Fotos am Vorgang, 21.10.2026)');
+  eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 1, 'Fotos am Vorgang bei Netzabbruch nachreichen');
+  ok(app.includes("if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i)); break; }") && (app.match(/await uploadPhotosSafe\('\/api\/(cases|inspections)'/g) || []).length === 2, 'Meldung + Abfahrtskontrolle: Fotos vorab gesichert (Backlog 113)');
   const { num } = await import('../src/util.js'); eq(num('4,750', { decimalComma: true }), 4.75); eq(num('1.234,50'), 1234.5);
   // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
   const { agentBasics } = await import('../src/agent.js');

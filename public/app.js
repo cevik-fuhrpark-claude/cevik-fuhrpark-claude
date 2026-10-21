@@ -1066,6 +1066,7 @@ async function flushOutbox() {
   try {
     for (const item of list) {
       if (!S.me) { kept++; break; } // Anmeldung beendet: nichts mehr ohne Konto senden
+      if (PHOTO_UPLOADING.has(item.body.request_key)) { kept++; continue; } // lädt gerade im Vordergrund hoch (uploadPhotosSafe)
       try {
         // Meldung/Kontrolle schon angekommen, nur die Fotos fehlen noch (Netz brach beim Hochladen ab): nur Fotos nachreichen
         let r = item.photo_target ? { id: item.photo_target, followups: [{ id: item.photo_target }], case_no: item.case_no } : null;
@@ -1205,6 +1206,34 @@ async function photosLater(path, body, r, target, files) {
     return list.length;
   } catch { return 0; }
 }
+// Fotos einer gerade angelegten Meldung/Kontrolle: zuerst auf dem Gerät sichern (Postausgang mit Ziel-Vorgang), dann einzeln hochladen;
+// erst wenn alle angekommen sind, wird die Sicherung gelöscht. Wird die App während des Hochladens beendet (Handy gesperrt, Speicher),
+// reicht der Postausgang die Fotos beim nächsten Start nach – der Server erkennt schon hochgeladene am Inhalt (Backlog 113, 21.10.2026).
+// Solange hier hochgeladen wird, überspringt flushOutbox diesen Eintrag (keine parallelen Uploads derselben Fotos).
+const PHOTO_UPLOADING = new Set();
+async function uploadPhotosSafe(path, body, r, target, files, sb) {
+  const key = body.request_key; let failed = 0; let later = 0; let list = null; let backed = false;
+  try { list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); } catch { list = null; }
+  if (list) {
+    try {
+      await photosPut(key, list); outboxAdd(path, body, list.length);
+      outboxSet(outboxGet().map((x) => (x.body.request_key === key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)));
+      backed = true;
+    } catch { backed = false; }
+  }
+  PHOTO_UPLOADING.add(key);
+  try {
+    for (const [i, file] of files.entries()) {
+      if (sb) sb.textContent = `${t('uploading')} ${i + 1}/${files.length}`;
+      try { failed += await uploadCasePhotos(target, [list ? list[i] : { blob: await prepareUpload(file), name: file.name }]); } catch (err) {
+        if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i)); break; }
+        failed++;
+      }
+    }
+  } finally { PHOTO_UPLOADING.delete(key); }
+  if (backed && !later) { outboxSet(outboxGet().filter((x) => x.body.request_key !== key)); await photosDel(key).catch(() => {}); }
+  return { failed, later };
+}
 // Abmelden mit unversendeten Meldungen: vorher senden versuchen, sonst ausdrücklich bestätigen (sie bleiben auf dem Gerät für diese Person – 18.10.2026)
 async function logoutOutboxOk() {
   if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
@@ -1268,12 +1297,7 @@ async function viewNew(preId) {
     try {
       const r = await api('POST', '/api/cases', body);
       const files = photoFiles;
-      let failed = 0;
-      let later = 0;
-      for (const [i, file] of files.entries()) {
-        sb.textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(r.id, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (photoRetry(err)) { later = await photosLater('/api/cases', body, r, r.id, files.slice(i)); break; } failed++; }
-      }
+      const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, sb) : { failed: 0, later: 0 };
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
       if (sb.isConnected) location.hash = '#/cases/' + r.id;
     } catch (err) {
@@ -1706,10 +1730,7 @@ async function viewDepartureCheck(preId) {
       // Ziel: erster eigener Folgeauftrag; ein Wiederholungsvermerk an einem fremden Vorgang ist für Fahrer nicht sichtbar (17.10.2026)
       const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
-      if (files.length && fTarget) for (const [i, file] of files.entries()) {
-        sb.textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-        try { failed += await uploadCasePhotos(fTarget, [{ blob: await prepareUpload(file), name: file.name }]); } catch (err) { if (photoRetry(err)) { later = await photosLater('/api/inspections', body, r, fTarget, files.slice(i)); break; } failed++; }
-      }
+      if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb));
       toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
