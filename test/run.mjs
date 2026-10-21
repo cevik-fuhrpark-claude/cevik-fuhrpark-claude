@@ -7658,12 +7658,12 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
   // „Heute zu tun“ (Leitung): Gruppe „Fahrzeuge mit kritischen Agentenbefunden“ aus derselben Liste, Direktsprung in die gefilterte Fahrzeugliste
   { const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(/async function fleetTodo[\s\S]*?\/api\/vehicles'\)\.then\(\(r\) => r\.vehicles\.filter\(\(v\) => v\.agent_findings_critical > 0\)\)[\s\S]*?\['todo_vfind_crit', af,/.test(app), '„Heute zu tun“: Gruppe kritische Agentenbefunde');
-    ok(app.includes("href=\"${hj('#/vehicles?f=with_findings')}\"") && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
+    ok(app.includes("href=\"${hj('#/vehicles?f=with_findings_crit')}\"") && /\[\/\^#\\\/vehicles\(\?:\\\?f=\\w\+\)\?\$\/, viewVehicles\]/.test(app), 'Route #/vehicles?f= + Link');
     ok(/printHead\(\[`\$\{t\('period'\)\}: \$\{fmtMonth\(from\)\} – \$\{fmtMonth\(to\)\}`[\s\S]*?id="costprt"[\s\S]*?class="list print-summary"[\s\S]*?\$\('#costprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Kosten je Fahrzeug druckbar (Zeitraum/Standort im Vermerk, Fahrzeugzeilen zusammengefasst)');
     ok(/async function viewKpi[\s\S]*?printHead\(\[`\$\{t\('period'\)\}[\s\S]*?id="kpiprt"[\s\S]*?\$\('#kpiprt'\)\.onclick = async \(\) => \{[^\n]*window\.print\(\)/.test(app), 'Kennzahlen druckbar');
     ok(/@media print[\s\S]*?\.print-summary details:not\(\[open\]\) \{ display: block !important; \}/.test((await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Druck-CSS: zugeklappte Zeilen als Zusammenfassung');
     ok(/const PRINT_OPEN = '#mhist, #vaf[^']*';/.test(app) && /addEventListener\('beforeprint'[^\n]*PRINT_OPEN/.test(app) && /addEventListener\('afterprint'[^\n]*PRINT_OPEN/.test(app), 'Druck: Prüfhistorie und Agentenbefunde der Akte werden mitgedruckt');
-    ok(/VEH_AV_LINK\.includes\(hf\) && \(hf !== 'with_findings' \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
+    ok(/VEH_AV_LINK\.includes\(hf\) && \(!hf\.startsWith\('with_findings'\) \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
     ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
@@ -7673,7 +7673,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     eq(crit, env.DB.db.prepare("SELECT COUNT(DISTINCT f.vehicle_id) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen' AND f.severity='kritisch'").get().n, 'Anzahl Fahrzeuge mit kritischen Befunden = Datenbank'); }
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['todo_vfind_crit', 'show_in_vlist', 'driver_file']) ok(STRINGS[l][k], `${l}: ${k}`);
-  for (const l of ['de', 'uk', 'en']) for (const k of ['av_with_findings', 'vfind_n', 'vfind_crit', 'vsort_findings', 'af_shown', 'af_filter']) ok(STRINGS[l][k] && (['av_with_findings', 'vsort_findings', 'af_filter'].includes(k) || STRINGS[l][k].includes('{n}')), `${l}: ${k}`);
+  for (const l of ['de', 'uk', 'en']) for (const k of ['av_with_findings', 'av_with_findings_crit', 'vfind_n', 'vfind_crit', 'vsort_findings', 'af_shown', 'af_filter']) ok(STRINGS[l][k] && (['av_with_findings', 'av_with_findings_crit', 'vsort_findings', 'af_filter'].includes(k) || STRINGS[l][k].includes('{n}')), `${l}: ${k}`);
 });
 
 await test('Agentenbefunde als CSV (Browser, Management-Panel): Spalten DE/UK/EN, Meldung in der App-Sprache, Formelschutz, eine Zeile je Befund', async () => {
@@ -15257,7 +15257,7 @@ await test('Backlog 100: Unterweisungen mit langem, gleich beginnendem Titel –
 await test('Backlog 102: Startseiten-Sprünge tragen den Standort des Zählers (vs), Router setzt den Listenfilter und entfernt vs', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const home = app.slice(app.indexOf('async function viewHome()'), app.indexOf('async function viewCases()'));
-  for (const l of ['#/cases', '#/cases?f=repeat', '#/plan', '#/plan?s=mdue', '#/quality?f=inspection_no_result', '#/tires?f=winter_bad', '#/vehicles?f=with_findings', '#/vehicles?f=with_notes'])
+  for (const l of ['#/cases', '#/cases?f=repeat', '#/plan', '#/plan?s=mdue', '#/quality?f=inspection_no_result', '#/tires?f=winter_bad', '#/vehicles?f=with_findings_crit', '#/vehicles?f=with_notes'])
     ok(home.includes(`href="\${hj('${l}')}"`) && !home.includes(`href="${l}"`), 'Startseite: ' + l);
   ok(app.includes('h = applySiteJump(h);') && /VS_KEYS = \{ cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite' \}/.test(app), 'Router');
   // Logik der Hilfsfunktionen isoliert prüfen
@@ -15877,6 +15877,8 @@ await test('Fehlersuche 21.10. (Telematik/Startseite): Meldung ohne km verschieb
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("<a href=\"${esc(hj('#/cases?f=repeat'))}\">") && app.includes("<a href=\"${esc(hj('#/cases'))}\">${esc(t('all'))}</a>"), 'Werkstatt-Startseite');
   ok(app.includes("(r === cur.r && since(r, c) < since(cur.r, cur.c))"), 'Disposition: älteste Sperre');
+  // Startseite „Fahrzeuge mit kritischen Agentenbefunden“ → Filter nur kritische (Zähler = Liste)
+  ok(app.includes("av === 'with_findings_crit' ? v.agent_findings_critical > 0") && app.includes("hj('#/vehicles?f=with_findings_crit')"), 'kritischer Befund-Filter');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
