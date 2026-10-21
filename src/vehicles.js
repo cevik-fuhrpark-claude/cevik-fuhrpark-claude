@@ -838,6 +838,13 @@ export async function ensureHuSpRule(env, user, vehicleId, kind) {
   }
 }
 
+// Gegenstück zu ensureHuSpRule: nur einen unbenutzten Eintrag (keine Durchführung, kein Termin, kein Auftrag) löschen, mit Protokoll
+export async function dropUnusedHuSpRule(env, user, ruleId, vehicleId, kind) {
+  const r = await env.DB.prepare(`DELETE FROM maintenance_rules WHERE id=? AND planned_date IS NULL AND last_done_date IS NULL
+    AND NOT EXISTS (SELECT 1 FROM maintenance_events WHERE rule_id=?1) AND NOT EXISTS (SELECT 1 FROM cases WHERE maintenance_rule_id=?1)`).bind(ruleId).run();
+  if (r && r.meta && r.meta.changes) await audit(env, user.id, 'maintenance.husp_rule_undo', vehicleId, { kind });
+}
+
 // Prüfrelevante Fahrzeugdaten: zulässige Gesamtmasse (F.2), Erstzulassung (B) – nur mit Nachweis
 export async function setVehicleSpec(env, user, vehicleId, body) {
   if (!isManager(user)) throw forbidden();

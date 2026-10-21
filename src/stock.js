@@ -95,7 +95,8 @@ export async function itemDetail(env, user, envName, id) {
 
 // Gleiche Bezeichnung + Teilenummer ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen (der eindeutige Index unterscheidet
 // „Bremsbelag/A-1“ und „bremsbelag/a-1“ – Bestand verteilte sich auf zwei Artikel, 19.10.2026). Auch deaktivierte zählen (wie der Index).
-const itemKey = (name, pn) => `${String(pn || '').trim().toLocaleLowerCase('de')}\u0000${String(name || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de')}`;
+// Trenner U+001F (nicht NUL: wird seit Migration 0067 gespeichert, JSON-Sammelabfragen der Sicherung kürzten Texte an NUL)
+const itemKey = (name, pn) => `${String(pn || '').trim().toLocaleLowerCase('de')}\u001f${String(name || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de')}`;
 async function assertNoTwin(env, envName, site, name, pn, exceptId = null) {
   const k = itemKey(name, pn);
   const rows = (await env.DB.prepare('SELECT id, name, part_number FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;
@@ -115,10 +116,11 @@ export async function createItem(env, user, envName, body) {
   const id = uuid();
   const now = nowIso();
   try {
-    await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
+    await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at,item_key)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
       stdUnit(str(body.unit, { max: 20, field: 'Einheit' })), r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })), str(body.location, { max: 80, field: 'Ort' }),
-      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now).run();
+      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now,
+      itemKey(str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }))).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
     throw e;
@@ -151,14 +153,18 @@ export async function updateItem(env, user, envName, id, body) {
     // Bestellvermerk beim Deaktivieren in SQL nach dem aktuellen Stand beenden (parallel gesetzter Vermerk blieb sonst am inaktiven Artikel).
     const cols = changed.filter((k) => k !== 'active');
     const deact = changed.includes('active') && !fields.active ? 1 : 0;
-    const set = [...cols.map((k) => `${k}=?`), ...(changed.includes('active') ? ['active=?'] : []), 'updated_at=?',
+    const rekey = changed.includes('name') || changed.includes('part_number');
+    const set = [...cols.map((k) => `${k}=?`), ...(rekey ? ['item_key=?'] : []), ...(changed.includes('active') ? ['active=?'] : []), 'updated_at=?',
       ...(deact ? ['ordered_qty=NULL', 'ordered_on=NULL', 'ordered_eta=NULL', 'ordered_note=NULL', 'ordered_by=NULL'] : [])];
     const [before] = await env.DB.batch([env.DB.prepare('SELECT ordered_on FROM stock_items WHERE id=?').bind(id),
-      env.DB.prepare(`UPDATE stock_items SET ${set.join(', ')} WHERE id=?`).bind(...cols.map((k) => fields[k]), ...(changed.includes('active') ? [fields.active] : []), nowIso(), id)]);
+      // mit gelesenem Stand auch im Schreiben selbst prüfen (21.10.2026: zwei gleichzeitige Speichern bekamen beide 200, das spätere gewann still)
+      env.DB.prepare(`UPDATE stock_items SET ${set.join(', ')} WHERE id=?${expected ? ' AND updated_at=?' : ''}`).bind(...cols.map((k) => fields[k]), ...(rekey ? [itemKey(fields.name, fields.part_number)] : []), ...(changed.includes('active') ? [fields.active] : []), nowIso(), id, ...(expected ? [expected] : [])),
+      ...(expected ? [env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard')] : [])]);
     if (deact && before.results[0] && before.results[0].ordered_on) changed.push('order_cleared');
   } catch (e) {
     // Umbenennen auf Bezeichnung/Teilenummer eines anderen Artikels im selben Lager (eindeutiger Index) – vorher „Interner Fehler“
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
+    if (expected && String(e.message).includes('CHECK')) throw conflict('version_conflict', 'Artikel wurde zwischenzeitlich geändert. Bitte neu laden.');
     throw e;
   }
   await audit(env, user.id, 'stock.update', null, { item: id, name: fields.name, site: it.site, changed: Object.fromEntries(changed.filter((k) => k !== 'order_cleared').map((k) => [k, { from: it[k], to: fields[k] }])),
@@ -255,7 +261,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   const prevT = rkey ? await env.DB.prepare('SELECT transfer_id, item_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
   // Schlüssel einer Umlagerung eines anderen Artikels ist keine Wiederholung (18.10.2026: Umlagerung B wurde still als „duplicate“ von A beantwortet, nichts gebucht)
   if (prevT && (!prevT.transfer_id || prevT.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
-  if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, on_hand: await onHand(env, id) };
+  if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, qty, on_hand: await onHand(env, id) };
   const avail = await onHand(env, id);
   if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
   const note = str(body.note, { max: 300, field: 'Bemerkung' });
@@ -268,8 +274,8 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   const now = nowIso(); const tid = uuid(); const stmts = []; let created = false;
   if (!target) {
     target = { id: uuid(), site: toSite, unit: it.unit, unit_price_net: it.unit_price_net, active: 1 }; created = true;
-    stmts.push(env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?)`)
-      .bind(target.id, envName, toSite, it.part_number, it.name, it.unit, it.unit_price_net, user.id, now, now));
+    stmts.push(env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at,item_key) VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?,?)`)
+      .bind(target.id, envName, toSite, it.part_number, it.name, it.unit, it.unit_price_net, user.id, now, now, k));
   } else {
     // gleiche Standardeinheit (Altbestand „Stück“ gegen „Stk“) gilt als gleich (18.10.2026)
     if (stdUnit(target.unit) !== stdUnit(it.unit)) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`);
@@ -284,7 +290,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
     if (rkey && String(e && e.message).includes('request_key')) {
       const p2 = await env.DB.prepare('SELECT transfer_id, item_id FROM stock_movements WHERE request_key=?').bind(rkey).first();
       if (p2 && (!p2.transfer_id || p2.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
-      if (p2) return { ok: true, duplicate: true, transfer_id: p2.transfer_id, on_hand: await onHand(env, id) };
+      if (p2) return { ok: true, duplicate: true, transfer_id: p2.transfer_id, qty, on_hand: await onHand(env, id) };
     }
     if (isCheck(e)) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
     // gleichzeitig angelegter Zielartikel (eindeutiger Index): einmal neu – dann wird er gefunden (vorher „Interner Fehler“)
@@ -292,7 +298,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
     throw e;
   }
   await audit(env, user.id, 'stock.transfer', null, { item: it.id, from: it.site, to: toSite, qty, target: target.id, created });
-  return { ok: true, transfer_id: tid, on_hand: r3(avail - qty), target_item_id: target.id, target_created: created };
+  return { ok: true, transfer_id: tid, qty /* gebuchte Menge (App-Bestätigung; Eingabe „1.000,5“ ergab dort NaN, 21.10.2026) */, on_hand: r3(avail - qty), target_item_id: target.id, target_created: created };
 }
 
 // Für den Werkstattbefehl add_part: liefert Artikel + Statement für die Entnahme (in derselben Transaktion)
@@ -610,7 +616,7 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
       result.created++; row.action = 'neu';
       const id = uuid(); row.item_id = id;
       // gleichzeitig angelegt (zweiter Import/Formular): der eindeutige Index weist die Zeile ab → ganzer Stapel abgewiesen, Meldung unten
-      newItems.push({ id, pn, name, unit, min, loc, price });
+      newItems.push({ id, pn, name, unit, min, loc, price, key });
       if (qty) newStock.push({ id: uuid(), item: id, q: qty, price });
     }
     result.rows.push(row);
@@ -618,9 +624,9 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   if (!dryRun && newItems.length) {
     // ein einziger Stapel = alles oder nichts (20.10.2026: Teilstapel blieben bei späterem UNIQUE-Fehler gebucht, ohne Protokoll);
     // Artikel und Anfangsbestände je in EINER Anweisung (21.10.2026: vorher je Zeile – 100 Artikel mit Bestand = 206 D1-Abfragen, Budget 50)
-    const stmts = [env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at)
+    const stmts = [env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at,item_key)
       SELECT json_extract(j.value,'$.id'),?,?,json_extract(j.value,'$.pn'),json_extract(j.value,'$.name'),json_extract(j.value,'$.unit'),json_extract(j.value,'$.min'),
-        json_extract(j.value,'$.loc'),json_extract(j.value,'$.price'),?,?,? FROM json_each(?) j`).bind(envName, site, user.id, now, now, JSON.stringify(newItems))];
+        json_extract(j.value,'$.loc'),json_extract(j.value,'$.price'),?,?,?,json_extract(j.value,'$.key') FROM json_each(?) j`).bind(envName, site, user.id, now, now, JSON.stringify(newItems))];
     if (newStock.length) stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
       SELECT json_extract(j.value,'$.id'),?,json_extract(j.value,'$.item'),'zugang',json_extract(j.value,'$.q'),NULL,json_extract(j.value,'$.price'),NULL,NULL,'Anfangsbestand (Import)',?,?,NULL
       FROM json_each(?) j`).bind(envName, user.id, now, JSON.stringify(newStock)));

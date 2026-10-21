@@ -1403,6 +1403,7 @@ const AUDIT_ACTIONS = {
   'maintenance.export_ics': ['Prüftermine exportiert (Kalender)', 'Огляди експортовано (календар)', 'Inspections exported (calendar)'],
   'maintenance.history_export': ['Prüfhistorie exportiert', 'Історію оглядів експортовано', 'Inspection history exported'],
   'maintenance.husp_rule': ['HU/SP-Eintrag angelegt', 'Запис HU/SP створено', 'HU/SP entry created'],
+  'maintenance.husp_rule_undo': ['HU/SP-Eintrag zurückgenommen (Aktion abgewiesen)', 'Запис HU/SP скасовано (дію відхилено)', 'HU/SP entry withdrawn (action rejected)'],
   'maintenance.husp_recalc': ['HU/SP-Frist neu berechnet', 'Строк HU/SP перераховано', 'HU/SP deadline recalculated'],
   'maintenance.husp_migration': ['HU/SP-Regeln umgestellt', 'Правила HU/SP змінено', 'HU/SP rules changed'],
   'tires.import': ['Reifen importiert', 'Шини імпортовано', 'Tyres imported'],

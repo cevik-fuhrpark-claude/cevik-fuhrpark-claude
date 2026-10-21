@@ -356,9 +356,16 @@ async function handleApi(request, env, ctx, url) {
     if (mm[3] === 'complete' && (!String(body.done_date || '').trim() || !String(body.evidence || '').trim())) throw new HttpError(400, 'validation', 'Datum und Nachweis angeben.');
     if (mm[3] === 'plan' && !String(body.planned_date || '').trim()) throw new HttpError(400, 'validation', 'Termin angeben.');
     const rule = await veh.ensureHuSpRule(env, user, mm[1], mm[2]);
-    if (mm[3] === 'complete') return json({ ...(await veh.completeMaintenance(env, user, rule.id, body, { ctx, envName })), rule_id: rule.id });
-    if (mm[3] === 'plan') return json({ ...(await veh.planMaintenance(env, user, rule.id, body)), rule_id: rule.id });
-    return json({ ...(await cases.orderFromMaintenance(env, ctx, user, envName, rule.id, body)), rule_id: rule.id }, 201);
+    try {
+      if (mm[3] === 'complete') return json({ ...(await veh.completeMaintenance(env, user, rule.id, body, { ctx, envName })), rule_id: rule.id });
+      if (mm[3] === 'plan') return json({ ...(await veh.planMaintenance(env, user, rule.id, body)), rule_id: rule.id });
+      return json({ ...(await cases.orderFromMaintenance(env, ctx, user, envName, rule.id, body)), rule_id: rule.id }, 201);
+    } catch (e) {
+      // Aktion abgewiesen (z. B. Termin/Datum in ferner Zukunft, unbekannte Werkstatt): soeben angelegten, noch unbenutzten Eintrag wieder
+      // entfernen – sonst stand HU/SP danach als echter Eintrag „Frist ungeklärt“ in der Übersicht (21.10.2026)
+      if (rule.created && e instanceof HttpError && e.status < 500) await veh.dropUnusedHuSpRule(env, user, rule.id, mm[1], mm[2]);
+      throw e;
+    }
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));

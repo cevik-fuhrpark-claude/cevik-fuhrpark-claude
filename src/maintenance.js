@@ -469,6 +469,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 
   const now = nowIso();
   const stmts = []; const creates = []; const updates = []; const rowOf = new Map(); // Anweisung → Zeile der Vorschau (gleichzeitig geändert)
+  const huspSim = []; // HU/SP-Zeilen: Termin der Vorschau nach StVZO Anl. VIII aus den neuen Angaben (21.10.2026)
   // HU/SP ohne eigenen Eintrag: der eigene Export schreibt die nur berechnete Frist (Zeile „virtual“) in „Nächster Termin“. Entspricht der Wert
   // genau dieser Berechnung, ist er kein Nachweis (21.10.2026: wurde als Nachweis gespeichert und später nie neu berechnet → „Frist ungeklärt“
   // nach der nächsten HU bzw. verspätete SP als „Letzte Prüfung nach dem Termin“ abgewiesen)
@@ -540,6 +541,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       if (cur && changed && action === 'unverändert') action = 'aktualisiert';
     }
     const dueKmEff = p.husp ? null : ruleDueKm({ due_km: km.due, last_done_km: km.last, interval_km: km.interval });
+    // Grundlage des Termins wie unten gespeichert (für die HU/SP-Berechnung der Vorschau)
+    const dsrc = !cur ? p.dueSource : (p.next && p.dueSource === 'nachweis') || keepDoc ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null);
+    if (p.husp && action !== 'unverändert') huspSim.push({ vehicle_id: p.vehicle_id, kind: p.kind, next, last, dsrc, evidence: p.evidence, row: result.rows.length });
     result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, next_due_km: dueKmEff, previous_due_km: cur && !p.husp ? ruleDueKm(cur) : null, last_done_km: p.husp ? null : km.last, interval_km: p.husp ? null : km.interval, matched_by: p.matchedBy, action });
     if (action === 'neu') {
       result.created++;
@@ -568,6 +572,25 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     } else result.unchanged++;
   }
   result.skipped.sort((a, b) => a.line - b.line);
+  // HU/SP ohne belegten Termin: Vorschau (und Antwort nach dem Übernehmen) zeigt den Termin, der sich aus der neuen Durchführung berechnet
+  // (21.10.2026: vorher „–“, erst syncHuSpDues rechnete ihn nach dem Übernehmen aus). Nur Anzeige – gespeichert wird weiter über syncHuSpDues.
+  if (huspSim.some((h) => !h.next)) {
+    const hin = await loadHuSpInputs(env, [...new Set(huspSim.map((h) => h.vehicle_id))]); const todayS = berlinDate();
+    for (const h of huspSim) {
+      const x = hin.get(h.vehicle_id); if (!x) continue;
+      const r0 = x.rules.find((q) => q.kind === h.kind);
+      if (r0) Object.assign(r0, { next_due_date: h.next, last_done_date: h.last, due_source: h.dsrc });
+      else x.rules.push({ id: null, vehicle_id: h.vehicle_id, kind: h.kind, next_due_date: h.next, due_source: h.dsrc, planned_date: null, last_done_date: h.last, evidence: h.evidence });
+      if (h.last && !x.events.some((e) => e.kind === h.kind && e.done_date === h.last)) x.events.push({ vehicle_id: h.vehicle_id, kind: h.kind, done_date: h.last, evidence: h.evidence, result: null });
+    }
+    for (const h of huspSim) {
+      if (h.next) continue;
+      const x = hin.get(h.vehicle_id); if (!x) continue;
+      const y = huSpFor(x, todayS, 0)[h.kind === 'HU' ? 'hu' : 'sp'];
+      const row = result.rows[h.row];
+      if (row && y && y.due && y.due_basis === 'berechnet') { row.next_due_date = y.due; row.next_due_basis = 'berechnet'; }
+    }
+  }
   if (!dryRun) {
     const { missed, missedUpd, missedIdx } = await runBatchesCounting(env, stmts, creates, updates);
     for (const i of missedIdx) if (rowOf.has(i)) result.rows[rowOf.get(i)].action = 'unverändert'; // Zeilenliste wie die Zähler
@@ -698,12 +721,14 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
 // Texte in der Sprache der Person (lang; DE/UK/EN, sonst Deutsch) – Nachweis bleibt wie gespeichert
 export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de') {
   const I = icsLang(lang);
+  // vom System erzeugte Zusätze im Nachweis je Sprache wie in der App (mEv; 21.10.2026: Plaketten-Hinweis stand im UK/EN-Kalender deutsch)
+  const icsEv = (e) => (e ? String(e).replace(' · Durchführung: ', ' · ' + I.tx('ev_done_label') + ': ').replace(/\(Plakette ([^():]+): fällig bis Monatsende\)/, (_, m) => I.tx('ev_plaque_month', { m })) : '–');
   // HU/SP: fachliche UID je Fahrzeug und Prüfart – eine berechnete Zeile (ohne Eintrag) behält beim späteren Anlegen des Eintrags ihre UID,
   // ein erneuter Import ersetzt den Termin statt ihn zu verdoppeln; berechnete Zeile ohne leeren „Nachweis:“ (20.10.2026)
   // erledigter Rückruf: gespeicherte Frist zählt nicht mehr (wie Übersicht/Agent; 20.10.2026)
   const uidOf = (r) => (r.kind === 'HU' || r.kind === 'SP' ? `husp-${r.vehicle_id}-${r.kind}` : r.id);
   const events = ov.rows.filter((r) => r.next_due_date && r.date_status !== 'erledigt').map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
-    description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence === HUSP_RULE_EVIDENCE ? I.tx('ev_husp_rule') : (r.evidence || '–') })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
+    description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence === HUSP_RULE_EVIDENCE ? I.tx('ev_husp_rule') : icsEv(r.evidence) })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();
   for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${uidOf(r)}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),

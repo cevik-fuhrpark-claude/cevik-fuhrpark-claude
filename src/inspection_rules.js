@@ -277,7 +277,9 @@ export async function syncHuSpDues(env, { today, warnDays, actorId = null, vehic
       const r = x.rules.find((q) => q.kind === kind);
       if (!r || r.due_source === 'nachweis') continue;
       const readDue = r.next_due_date || null;
-      const target = kind === 'HU' ? (res.hu.due_basis === 'berechnet' ? res.hu.due : r.next_due_date) : res.sp.due;
+      // HU: eine früher berechnete Frist, die nicht mehr berechenbar ist (z. B. Masse korrigiert), wird geleert – sonst zeigten Fahrer-Startseite
+      // und Akte-Tabelle weiter das alte Datum, obwohl die Frist „ungeklärt“ ist (21.10.2026); Altbestand ohne Grundlage bleibt
+      const target = kind === 'HU' ? (res.hu.due_basis === 'berechnet' ? res.hu.due : (r.due_source === 'berechnet' ? null : r.next_due_date)) : res.sp.due;
       if ((target || null) !== (r.next_due_date || null)) {
         changes.push({ vehicle_id: x.v.id, plate: x.v.plate, kind, from: r.next_due_date || null, to: target || null, status: kind === 'HU' ? res.hu.status : res.sp.status });
         // nur auf dem gelesenen Stand (18.10.2026): ein gleichzeitig eingetragener Nachweis wurde sonst mit „berechnet“ überschrieben

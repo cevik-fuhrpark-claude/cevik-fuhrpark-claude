@@ -87,7 +87,7 @@ with sync_playwright() as p:
         check(grp.evaluate('e=>e.open'),f'Start {lang} {w}px: Gruppe aufgeklappt (kritisch)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'Start {lang} {w}px: kein Querscrollen')
         if SHOTS: grp.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/start_{lang}_{w}.png')
-        q.click('#todovfind'); q.wait_for_selector('[data-av="with_findings"]:not(.secondary)')
+        q.click('#todovfind'); q.wait_for_selector('[data-av="with_findings_crit"]:not(.secondary)')
         check(q.evaluate('()=>location.hash')=='#/vehicles',f'Start → Liste {lang} {w}px: Adresse ohne Parameter')
         check(q.eval_on_selector('#vsort','e=>e.value')=='findings' and 'PS-ANL 2' in q.inner_text('#vl a.row >> nth=0'),f'Start → Liste {lang} {w}px: kritische zuerst')
         check(not errs,f'Start {lang} {w}px: keine Skriptfehler {errs}')

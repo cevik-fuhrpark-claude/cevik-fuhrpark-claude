@@ -15966,6 +15966,78 @@ await test('Backlog 106: zwei gleichzeitig eingehende Abfahrtskontrollen mit dem
   for (const l of ['uk', 'en']) ok(translateValidation(l, M) && translateValidation(l, M) !== M, `${l}: Meldung übersetzt`);
 });
 
+await test('Fehlersuche 21.10. (Lager/Prüftermine): Artikeländerung mit gelesenem Stand im Schreiben, Artikel-Dublette auch gleichzeitig (Migration 0067), Umlagerung meldet gebuchte Menge, HU/SP-Termin in der Import-Vorschau, abgewiesene HU/SP-Aktion ohne Eintrag, nicht mehr berechenbare HU-Frist geleert, Plaketten-Hinweis im Kalender je Sprache', async () => {
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  // 1. Artikel-Stammdaten: zwei gleichzeitige Speichern auf demselben Stand → eines 409 (UPDATE von A wartet, bis B gelesen hat)
+  {
+    const id = (await F.post('/api/stock', { site: 'DORTMUND', name: 'Bremsbelag', part_number: 'A-1', initial_qty: '10', unit_price_net: '5' })).data.id;
+    const d = (await F.get('/api/stock/' + id)).data.item;
+    const ob = e.DB.batch.bind(e.DB); const op = e.DB.prepare.bind(e.DB);
+    let release; const gate = new Promise((r) => (release = r)); let held = false; let reads = 0;
+    e.DB.prepare = (sql) => { if (sql.startsWith('SELECT * FROM stock_items WHERE id=? AND environment=?')) { reads++; if (reads === 2) setTimeout(release, 5); } return op(sql); };
+    e.DB.batch = async (st) => { if (!held && st.some((x) => /UPDATE stock_items SET/.test(x.sql))) { held = true; await gate; } return ob(st); };
+    const pA = F.patch('/api/stock/' + id, { min_qty: '4', expected_updated_at: d.updated_at }); await new Promise((r) => setTimeout(r, 20));
+    const pB = U.ws.patch('/api/stock/' + id, { min_qty: '8', expected_updated_at: d.updated_at });
+    const [a, b] = await Promise.all([pA, pB]); e.DB.batch = ob; e.DB.prepare = op;
+    eq([a.status, b.status].sort().join(','), '200,409', JSON.stringify([a.data, b.data]));
+    eq([a, b].find((x) => x.status === 409).data.error, 'version_conflict');
+    // ohne gelesenen Stand wie bisher
+    eq((await F.patch('/api/stock/' + id, { min_qty: '6' })).status, 200);
+    // 3. Umlagerung „1.000,5“: Antwort nennt die gebuchte Menge, App nutzt sie
+    eq((await F.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: '1000', request_key: rk() })).status, 201);
+    const tr = await F.post(`/api/stock/${id}/transfer`, { to_site: 'MUENCHEN', qty: '1.000,5', request_key: rk() });
+    eq(tr.status, 201, JSON.stringify(tr.data)); eq(tr.data.qty, 1000.5);
+    const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(app.includes("toast(t('transfer_done').replace('{q}', fmtNum(r.qty))"), 'Toast mit gebuchter Menge');
+    ok(app.includes("x.next_due_basis === 'berechnet' ? ` <span class=\"small muted\">${esc(t('db_berechnet'))}</span>` : ''"), 'Vorschau kennzeichnet berechnete HU/SP-Termine');
+  }
+  // 2. gleichzeitiges Anlegen „Ölfilter/OF-1“ und „ölfilter/of-1“ → ein Artikel (Insert von A wartet, bis B die Dublettenprüfung gelesen hat)
+  {
+    const op = e.DB.prepare.bind(e.DB); let release; const gate = new Promise((r) => (release = r)); let held = false; let reads = 0;
+    e.DB.prepare = (sql) => {
+      const st = op(sql);
+      if (sql.startsWith('SELECT id, name, part_number FROM stock_items WHERE environment=? AND site=?')) { reads++; if (reads === 2) setTimeout(release, 5); }
+      if (sql.includes('INSERT INTO stock_items') && !held) { held = true; const b0 = st.bind.bind(st); st.bind = (...a) => { const b = b0(...a); const r0 = b.run.bind(b); b.run = async () => { await gate; return r0(); }; return b; }; }
+      return st;
+    };
+    const pA = F.post('/api/stock', { site: 'DORTMUND', name: 'Ölfilter', part_number: 'OF-1', initial_qty: '3' }); await new Promise((r) => setTimeout(r, 20));
+    const pB = U.ws.post('/api/stock', { site: 'DORTMUND', name: 'ölfilter', part_number: 'of-1', initial_qty: '2' });
+    const [a, b] = await Promise.all([pA, pB]); e.DB.prepare = op;
+    eq([a.status, b.status].sort().join(','), '201,409', JSON.stringify([a.data, b.data]));
+    eq(db.prepare(`SELECT COUNT(*) n FROM stock_items WHERE environment='test' AND site='DORTMUND' AND lower(part_number)='of-1'`).get().n, 1);
+    eq(db.prepare(`SELECT item_key k FROM stock_items WHERE part_number IN ('OF-1','of-1')`).get().k, 'of-1\u001fölfilter', 'Schlüssel mit Umlaut klein');
+    // Umbenennen auf eine Schreibvariante eines anderen Artikels: 409 wie bisher
+    const id2 = (await F.post('/api/stock', { site: 'DORTMUND', name: 'Luftfilter', part_number: 'LF-1' })).data.id;
+    eq((await F.patch('/api/stock/' + id2, { name: 'ÖLFILTER', part_number: 'Of-1' })).status, 409);
+  }
+  // Prüftermine: Lkw > 12 t
+  eq((await F.post(`/api/vehicles/${V1}/spec`, { spec_source: 'Fahrzeugschein', zgm_kg: 18000, first_registration: '2016-03-01' })).status, 200);
+  const cnt = () => db.prepare('SELECT COUNT(*) n FROM maintenance_rules WHERE vehicle_id=?').get(V1).n;
+  // 5. abgewiesene HU/SP-Aktion (Termin/Durchführung in ferner Zukunft) hinterlässt keinen Eintrag; gültige Aktion legt ihn an
+  eq(cnt(), 0);
+  eq((await U.ws.post(`/api/vehicles/${V1}/husp/HU/plan`, { planned_date: '2099-01-01' })).status, 400); eq(cnt(), 0, 'Termin abgewiesen: kein Eintrag');
+  eq((await F.post(`/api/vehicles/${V1}/husp/SP/complete`, { done_date: '2999-01-01', evidence: 'x' })).status, 400); eq(cnt(), 0, 'Durchführung abgewiesen: kein Eintrag');
+  eq(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='maintenance.husp_rule_undo'`).get().n, 2, 'Rücknahme protokolliert');
+  // 4. Import-Vorschau: HU mit neuer Durchführung zeigt den berechneten Termin (vorher „–“)
+  const imp = (q, text) => F.req('POST', '/api/maintenance/import' + q, text, { 'content-type': 'text/csv' });
+  eq((await F.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', evidence: 'HU-Bericht 1', last_done_date: '2025-11-10' })).status, 201);
+  const csv = 'Kennzeichen;Prüfart;Letzte Prüfung;Nachweis\nSZ-YC 5513;HU;2026-10-15;DEKRA 4711';
+  const pv = (await imp('?dry_run=1', csv)).data.rows[0];
+  eq(`${pv.action}/${pv.next_due_date}/${pv.next_due_basis}/${pv.previous_due_date}`, 'aktualisiert/2027-10-31/berechnet/2026-11-30');
+  const ap = (await imp('', csv)).data.rows[0]; eq(ap.next_due_date, '2027-10-31', 'Antwort nach dem Übernehmen');
+  eq(db.prepare(`SELECT next_due_date d FROM maintenance_rules WHERE vehicle_id=? AND kind='HU'`).get(V1).d, '2027-10-31', 'gespeichert = Vorschau');
+  // 6. berechnete HU-Frist, die nicht mehr berechenbar ist (Masse auf 3,5 t korrigiert) → gespeicherter Wert geleert (Fahrer-Startseite/Akte)
+  eq((await F.post(`/api/vehicles/${V1}/spec`, { spec_source: 'Fahrzeugschein korrigiert', zgm_kg: 3500, first_registration: '2016-03-01' })).status, 200);
+  eq(db.prepare(`SELECT next_due_date d FROM maintenance_rules WHERE vehicle_id=? AND kind='HU'`).get(V1).d, null);
+  // 7. Kalender: Plaketten-Hinweis aus dem Import in der Sprache der Person
+  eq((await imp('', 'Kennzeichen;Prüfart;Nächster Termin;Nachweis\nSZ-KC 5515;UVV;10/2027;Prüfbuch S. 4')).status, 200);
+  for (const [lang, exp] of [['en', '(sticker 10/2027: due by end of month)'], ['uk', '(наліпка 10/2027: до кінця місяця)'], ['de', '(Plakette 10/2027: fällig bis Monatsende)']]) {
+    db.prepare('UPDATE users SET language=? WHERE id=?').run(lang, F.id);
+    const r = await F.get('/api/maintenance?format=ics'); const txt = (typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data)).replace(/\r\n /g, '');
+    ok(txt.includes(exp), `${lang}: ${exp}`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
