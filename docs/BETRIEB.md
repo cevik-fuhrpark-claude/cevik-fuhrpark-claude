@@ -80,13 +80,18 @@ Hilfe in der App: „Ausdrucke & Exporte“; Benutzerverwaltung, Zugangsprüfung
 **Automatisch (ohne Zutun):** Cloudflare D1 „Time Travel“ hält jeden Datenbankstand zum Zurückspielen bereit – im Gratis-Tarif 7 Tage, im Workers-Paid-Tarif 30 Tage.
 
 **Manuell (Inhaber):** „Mehr → Einstellungen → Sicherung herunterladen“ erzeugt eine JSON-Datei mit allen Fachdaten
-(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen inkl. Historie, Reifen, Lager, Bußgelder, Fahrerakte, Auslesungen, Befunde, Telematik-Zuordnungen, Protokoll). Nicht enthalten: Passwörter,
-Sitzungen, Einladungs-/Integrations-Token, Push-Schlüssel und Dateiinhalte (nur deren Metadaten). Empfehlung: monatlich
+(Fahrzeuge, Vorgänge, Arbeiten, Teile, Kosten, Prüfungen inkl. Historie, Reifen, Lager, Bußgelder, Fahrerakte, Auslesungen, Befunde, Telematik-Zuordnungen, Protokoll). Nicht enthalten (Liste `EXCLUDED` in `src/backup.js`, ein Test erzwingt sie):
+Passwörter, **Zwei-Faktor-Geheimnisse und Ersatzcodes** (nach einer Wiederherstellung muss jede Person die Zwei-Faktor-Anmeldung neu
+einrichten), Sitzungen, Einladungslinks, Push-Geräteschlüssel und VAPID-Schlüssel, bekannte Geräte, offene Zwei-Faktor-Anmeldungen,
+Anmelde-Fehlversuche/-Sperren und Mengenbegrenzung (kurzlebig), Nutzungsstatistik, Laufprotokoll des Agenten, technische Sperrtabelle
+sowie Dateiinhalte (nur deren Metadaten). Integrations-Token liegen ohnehin nur als Cloudflare-Secret vor. Empfehlung: monatlich
 herunterladen und im eigenen Drive ablegen. Jeder Export steht im Audit-Log.
 
 **Probe der JSON-Sicherung (lokal, ohne echte Datenbank):** `node --experimental-sqlite scripts/sicherung-probe.mjs <sicherung.json>`
-spielt die Datei in eine frische In-Memory-Datenbank mit aktuellem Schema ein und vergleicht je Tabelle die Zeilenzahl sowie die
-Fremdschlüssel. Ein automatischer Test macht das bei jedem `npm test` mit der Sicherung der Testdaten. Die JSON-Sicherung ist ein
+spielt die Datei in eine frische In-Memory-Datenbank mit aktuellem Schema ein und prüft (seit 21.10.2026): jede Pflicht-Tabelle
+vorhanden („fehlt in Sicherung“), Zeilenzahl je Tabelle gegen die beim Export notierte Anzahl (`counts`), Spalten gegen das Schema
+(fehlende Spalte = Fehler, wenn die Sicherung denselben Migrationsstand hat; bei älteren Sicherungen nur Hinweis „⚠“, ebenso
+unbekannte Spalten) sowie die Fremdschlüssel. Ein automatischer Test macht das bei jedem `npm test` mit der Sicherung der Testdaten. Die JSON-Sicherung ist ein
 Archiv der Fachdaten – Benutzer müssten nach einer Wiederherstellung daraus neu eingeladen werden (keine Passwörter enthalten).
 Zeilengrenze: je Tabelle höchstens 200 000 Zeilen. Darüber enthält die Sicherung die **neuesten** 200 000 Zeilen, `truncated[]` nennt die Tabelle,
 die App warnt nach dem Herunterladen und die Probe meldet „UNVOLLSTÄNDIG“ (seit 18.10.2026; vorher fielen still die neuesten Zeilen weg). Dann D1 Time Travel nutzen.

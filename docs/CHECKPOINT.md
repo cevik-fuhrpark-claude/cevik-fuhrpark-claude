@@ -49,7 +49,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 489 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 8 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 490 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -70,7 +70,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - Hilfetexte (`help_*_s`): neue Absätze direkt im Grundtext je Sprache ergänzen (Trenner `|`), keine `+=`-Nachträge am Dateiende (13.10.2026 alle Nachträge zusammengeführt).
 - Fristen, Preise, km-Stände nur aus Belegen/Einstellungen – nie schätzen oder vorgeben (fehlend = „ungeklärt“/„unbewertet“).
 - Arbeitsklon: lokaler Zweig `main` kann veraltet sein – immer auf `origin/main` aufsetzen (`git fetch && git checkout -B main origin/main`).
-- Datums-/Uhrzeitlogik oder Tests mit festen Daten geändert → zusätzlich `npm run zeitreise` (≈ 2 Min., 8 Zeitpunkte inkl. Zeitumstellung/Silvester); `--schnell` enthält sie nicht (15.10.2026: 2 rote Zeitpunkte erst so entdeckt).
+- Datums-/Uhrzeitlogik oder Tests mit festen Daten geändert → zusätzlich `npm run zeitreise` (≈ 50 Min. bei ~5 Min. je Lauf, 10 Zeitpunkte inkl. Zeitumstellung/Silvester); `--schnell` enthält sie nicht (15.10.2026: 2 rote Zeitpunkte erst so entdeckt).
 - Neuer Test → Testanzahl in `README.md` und hier unter „Tests“ anpassen (Wächter-Test vergleicht beide mit der tatsächlichen Anzahl).
 - Wird `pruefen.sh --ohne-tests` benutzt, läuft der Robustheits-Lauf nicht mit – dann `npm run -s fuzz` separat ausführen (17.10.2026: war unbemerkt rot).
 - Neues UI-Skript nie unter einem vorhandenen Dateinamen anlegen (vorher `ls scripts/`; 19.10.2026 wurde `ui-postausgang-umgebung.py` überschrieben, Wächter-Test fand den doppelten Eintrag).

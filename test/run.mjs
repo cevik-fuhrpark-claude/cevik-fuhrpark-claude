@@ -19,6 +19,8 @@ const rk = () => crypto.randomUUID();
 const deD = (iso) => iso.split('-').reverse().join('.'); // CSV-Exporte: Kalendertage als TT.MM.JJJJ
 // Testdaten relativ zum heutigen Berliner Datum, damit die Suite an jedem Tag gleich läuft (Prüfung: scripts/zeitreise-test.sh)
 const BERLIN_TODAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
+// Berliner Kalendertag ± n Tage (nicht n × 24 h: am 25-/23-Stunden-Tag der Zeitumstellung ergab das abends „gestern“ = heute; 21.10.2026)
+const bDayOff = (n) => new Date(Date.parse(new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()) + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 const BERLIN_YM = BERLIN_TODAY.slice(0, 7);
 const COST_TO = BERLIN_YM > '2026-12' ? BERLIN_YM : '2026-12'; // Testdaten teils fest auf 10/2026, teils heute gebucht
 const HU_LAST = `${Number(BERLIN_TODAY.slice(0, 4)) - 1}${BERLIN_TODAY.slice(4, 8)}01`;
@@ -2573,7 +2575,7 @@ await test('Datenqualität: Widersprüche und Lücken aus Stammdaten, nur Inhabe
     eq((await owner.post('/api/vehicles', { plate, vin, site, ...extra })).status, 201);
   }
   // Prüfung mit erheblichen Mängeln ohne Vorgang danach → Hinweis; nach einer Meldung zum Fahrzeug nicht mehr
-  const dqDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 3 * 86400000));
+  const dqDay = bDayOff(-3);
   const dqRule = await users.fleet.post('/api/vehicles/VIN:WDB96340310999002/maintenance', { kind: 'UVV', last_done_date: '2025-01-10', interval_months: 12, evidence: 'DQ-Test' });
   eq((await users.fleet.post(`/api/maintenance/${dqRule.data.id}/complete`, { done_date: dqDay, evidence: 'UVV-Protokoll DQ', result: 'erhebliche_maengel' })).status, 200);
   const before = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles').first()).n;
@@ -5842,9 +5844,9 @@ await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji)
 });
 await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in der Vergangenheit, änderbar, sichtbar für Disposition/Liste/API, beim Fortsetzen geleert', async () => {
   const VM = 'VIN:WDB96340310888888';
-  const tomorrow = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + 86400000));
-  const later = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + 5 * 86400000));
-  const yesterday = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 86400000));
+  const tomorrow = bDayOff(1);
+  const later = bDayOff(5);
+  const yesterday = bDayOff(-1);
   const c = await users.driver.post('/api/cases', { vehicle_id: VM, description: 'Luftfederbalg hinten undicht', priority: 'mittel', request_key: rk() });
   eq(c.status, 201);
   const cmd = async (u, action, payload = {}, note = null) => {
@@ -5896,7 +5898,7 @@ await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in de
   ok(k0.by_site.some((x) => x.site === 'DORTMUND' && x.kept >= 1), 'je Werkstatt');
   // Termin liegt (laut Verlauf) 3 Tage zurück → offen überschritten; nach Fortsetzen: überschritten um 3 Tage
   eq((await cmd(users.ws, 'set_parts_eta', { parts_expected_date: tomorrow })).status, 200);
-  const past3 = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 3 * 86400000));
+  const past3 = bDayOff(-3);
   env.DB.db.prepare(`UPDATE case_events SET payload=? WHERE case_id=? AND action='set_parts_eta' AND created_at=(SELECT MAX(created_at) FROM case_events WHERE case_id=? AND action='set_parts_eta')`)
     .run(JSON.stringify({ from: null, to: past3 }), c.data.id, c.data.id);
   const k1 = await kpi();
@@ -5993,7 +5995,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
 
 await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, geplanter Termin übernommen, kein zweiter offener Auftrag, Erledigung erkannt', async () => {
   const VM = 'VIN:WDB96340310888888';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   const rule = await users.fleet.post(`/api/vehicles/${VM}/maintenance`, { kind: 'Bremsen', last_done_date: day(-400), interval_months: 12, evidence: 'Auftragstest' });
   eq(rule.status, 201);
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(3) })).status, 200);
@@ -6040,7 +6042,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
 
 await test('Werkstattauftrag aus Prüftermin: nach technischer Freigabe ohne Eintragung in der Akte erscheint der Hinweis, nach Eintragung nicht mehr', async () => {
   const VM = 'VIN:WDB96340310888888';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   const rule = await users.fleet.post(`/api/vehicles/${VM}/maintenance`, { kind: 'Hydraulik/Aufbau', last_done_date: day(-400), interval_months: 12, evidence: 'Auftragstest 2' });
   const o = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() });
   eq(o.status, 201);
@@ -6065,7 +6067,7 @@ await test('Werkstattauftrag aus Prüftermin: nach technischer Freigabe ohne Ein
 
 await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen Mängeln, Vorbelegung aus Ergebnis, kein zweiter offener Auftrag, Hinweis in Übersicht/Datenqualität entfällt', async () => {
   const VD = 'VIN:WDB96340310777777';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   eq((await owner.post('/api/vehicles', { plate: 'MD-XY 77', vin: 'WDB96340310777777', site: 'Dortmund' })).status, 201);
   const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'MD-Test' });
   eq(rule.status, 201);
@@ -6121,7 +6123,7 @@ await test('Werkstattauftrag aus Prüfmangel: nur bei erheblichen/gefährlichen 
 
 await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis (Übersicht, Agent), nach Eintragung der Nachprüfung erledigt; Fahrer ohne Zugriff', async () => {
   const VR = 'VIN:WDB96340310666666';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   eq((await owner.post('/api/vehicles', { plate: 'NP-XY 66', vin: 'WDB96340310666666', site: 'Dortmund' })).status, 201);
   const rule = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'NP-Test' });
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-5), evidence: 'UVV-Protokoll 5501', result: 'erhebliche_maengel' })).status, 200);
@@ -6221,7 +6223,7 @@ await test('Nachprüfung nach Mängelauftrag: nach technischer Freigabe Hinweis 
 
 await test('Integrations-API /v1/maintenance: additiv Prüfmängel ohne Auftrag und ausstehende Nachprüfungen je Umgebung; /v1/cases mit maintenance_event_id', async () => {
   const VI = 'VIN:WDB96340310555555';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   const H = { authorization: 'Bearer integration-token-xyz' };
   eq((await owner.post('/api/vehicles', { plate: 'IA-XY 55', vin: 'WDB96340310555555', site: 'Dortmund' })).status, 201);
   const rule = await users.fleet.post(`/api/vehicles/${VI}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'IA-Test' });
@@ -6246,7 +6248,7 @@ await test('Integrations-API /v1/maintenance: additiv Prüfmängel ohne Auftrag 
 
 await test('Prüfmangel ohne Auftrag ist überholt, sobald eine neuere Durchführung derselben Prüfart eingetragen ist (Nachprüfung außerhalb der App); erneute Mängel zählen an der neueren', async () => {
   const VD = 'VIN:WDB96340310888881';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   eq((await owner.post('/api/vehicles', { plate: 'UH-XY 81', vin: 'WDB96340310888881', site: 'Dortmund' })).status, 201);
   const uvv = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'UH-Test' });
   const tacho = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'Tachograph', last_done_date: day(-400), interval_months: 24, evidence: 'UH-Test' });
@@ -6277,7 +6279,7 @@ await test('Prüfmangel ohne Auftrag ist überholt, sobald eine neuere Durchfüh
 
 await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dringender Hinweis an Leitung/Dispo (nicht an Erfassende, nicht für alte Berichte), Datum nicht in der Zukunft; Dispo sieht „Prüfung nicht bestanden“', async () => {
   const VD = 'VIN:WDB96340310888882';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   eq((await owner.post('/api/vehicles', { plate: 'GM-XY 82', vin: 'WDB96340310888882', site: 'Dortmund' })).status, 201);
   const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'GM-Test' });
   const fut = await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(2), evidence: 'GM 0' });
@@ -6344,7 +6346,7 @@ await test('Prüfung mit gefährlichen Mängeln/verkehrsunsicher: sofortiger dri
 
 await test('Prüfergebnis nachtragen (nie überschreiben, Sofort-Hinweis wie beim Erfassen) und Datenqualität „Pflichtprüfung ohne Prüfergebnis“', async () => {
   const VD = 'VIN:WDB96340310888884';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   eq((await owner.post('/api/vehicles', { plate: 'NR-XY 84', vin: 'WDB96340310888884', site: 'Dortmund' })).status, 201);
   const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'NR-Test' });
   eq((await users.fleet.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-2), evidence: 'NR 1' })).status, 200);
@@ -6565,7 +6567,7 @@ await test('Datumsfelder: nur echte Kalenderdaten (31.04./30.02. abgewiesen) in 
 
 await test('Startseite Werkstatt „Prüfergebnis fehlt“: nur selbst erfasste Pflichtprüfungen ohne Ergebnis, verschwindet nach Nachtragen', async () => {
   const VD = 'VIN:WDB96340310888886';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   eq((await owner.post('/api/vehicles', { plate: 'NR-XY 86', vin: 'WDB96340310888886', site: 'Dortmund' })).status, 201);
   const mine = async (u) => (await u.get('/api/me/inspections-without-result')).data.items.filter((i) => i.vehicle_id === VD);
   const rule = await users.fleet.post(`/api/vehicles/${VD}/maintenance`, { kind: 'SP', last_done_date: day(-200), interval_months: 6, evidence: 'NR86' });
@@ -11357,7 +11359,7 @@ await test('Fehlersuche 17.10. (10): Datensicherung (ein Stand, Kommazahlen gena
 });
 await test('Backlog 89: Verlaufsvermerke der Kontrolle als Code/Werte im payload, App übersetzt ohne Textmuster (ältere Einträge weiter per Muster)', async () => {
   const VM = 'VIN:WDB96340310888888';
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   const rule = await users.fleet.post(`/api/vehicles/${VM}/maintenance`, { kind: 'Verbandkasten', last_done_date: day(-400), interval_months: 12, evidence: 'Test 89' });
   eq(rule.status, 201, JSON.stringify(rule.data));
   const o = await users.fleet.post(`/api/maintenance/${rule.data.id}/order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o.status, 201);
@@ -11484,7 +11486,7 @@ await test('Fehlersuche 18.10. (2): Anmeldung (Passwort mit Leerzeichen, Link na
 });
 await test('Fehlersuche 18.10. (3): Reifengrößen-Import (FIN doppelt mit anderer Größe), Auslesungen-Import (Spaltenvorrang), unbenannte Nachweise einzeln, interner Vermerk nicht beim Fahrer', async () => {
   const { e, U, V1 } = await freshWorld(); const F = U.fleet;
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   const csv = 'Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Antriebsachse\nListe A;SZ-YC 5513;WMA15SZZ2HM722774;385/65 R22.5;315/80 R22.5\nListe B;SZ-YC 5513;WMA15SZZ2HM722774;385/55 R22.5;315/80 R22.5\n';
   const tr = await U.own.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' }); eq(tr.status, 200);
   eq(tr.data.skipped.length, 1, JSON.stringify(tr.data.skipped)); eq(tr.data.skipped[0].line, 3); ok(/^FIN doppelt in der Datei mit abweichender Größe \(Zeile 2\)/.test(tr.data.skipped[0].reason));
@@ -11511,7 +11513,7 @@ await test('Fehlersuche 18.10. (3): Reifengrößen-Import (FIN doppelt mit ander
   eq((await F.get('/api/drivers/' + d1)).data.driver.note, 'intern: nur für die Leitung');
 });
 await test('Fehlersuche 18.10. (4): km-Grundlage bei nachgetragener Durchführung vor Tachotausch, km-Fälligkeit mit km der Durchführung, Rest 0 = fällig, Import erledigt geplanten Termin, außer Betrieb atomar, keep_active "0", Verträge (ruhend, Folgevertrag, Umlaute, confirm "false")', async () => {
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const day = (n) => bDayOff(n);
   { const { e, U, V1 } = await freshWorld(); const F = U.fleet;
     eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 290000, measured_on: day(-40) })).status, 201);
     eq((await F.post(`/api/vehicles/${V1}/odometer`, { km: 300000, measured_on: day(-20) })).status, 201);
@@ -11593,7 +11595,7 @@ await test('Fehlersuche 18.10. (5): Oberfläche – Service Worker speichert nur
 await test('Fehlersuche 18.10. (6): Bußgeld (Nummer erst nach Prüfung, Jahr vor 2000, Kandidat nach Rollenwechsel bestätigbar), Lager (Journal symmetrisch gerundet, Mindestbestand 3 Stellen, Formular auf gelesenem Stand), Hinweise (vorgeschlagene Werkstatt ausgeblendet, „nicht fahrbereit“ nach Bewertung nicht mehr dringend, Ruhezeit-Freigabe einmal), Kostenmarkierung erhöht Version', async () => {
   const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
   const year = BERLIN_TODAY.slice(0, 4);
-  const base = { kind: 'anhoerung', offense_type: 'parken', offense_at: `${new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() - 86400000))}T08:00`, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X' };
+  const base = { kind: 'anhoerung', offense_type: 'parken', offense_at: `${bDayOff(-1)}T08:00`, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X' };
   eq((await U.fleet.post('/api/fines', { ...base, amount_eur: 'abc' })).status, 400);
   eq((await U.fleet.post('/api/fines', { ...base, location: 'x'.repeat(300) })).status, 400);
   { const r = await U.fleet.post('/api/fines', { ...base, offense_at: '1926-10-01T10:00' }); eq(r.status, 400); eq(r.data.message, 'Tatzeit vor 2000 – bitte Jahr prüfen.'); }
@@ -12967,7 +12969,9 @@ await test('Fehlersuche 18.10. (30): Abmelden meldet Push-Gerät der Anmeldung a
     const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
     for (const i of [1, 2]) await U.fleet.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/rz' + i, keys: { p256dh: pub, auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } });
     const hm = (ms) => new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
-    const now = Date.now();
+    // Zeitfenster ohne Zeitumstellung (sonst liegt „Ende + 10 Min.“ nach der Rückstellung wieder in der Ruhezeit; 21.10.2026)
+    const offs = (ms) => { const d = new Date(ms); return (+new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hourCycle: 'h23' }).format(d) - d.getUTCHours() + 24) % 24; };
+    const now0 = Date.now(); const now = offs(now0 - 3600e3) === offs(now0 + 3 * 3600e3) ? now0 : now0 + 6 * 3600e3;
     eq((await U.fleet.put('/api/me/notify-prefs', { quiet: { from: hm(now - 3600e3), to: hm(now + 2 * 3600e3) } })).status, 200);
     e.__nowMs = now;
     for (const i of [1, 2, 3]) await notifyUsers(e, null, 'test', [U.fleet.id], { kind: 'agent_reminder', title: 'T', body: 'B' + i, eventKey: 'rz' + i });
@@ -16146,7 +16150,7 @@ await test('Fehlersuche 21.10. (Nutzung/Auskunft/Schnittstelle): Statistik ohne 
 await test('Fehlersuche 21.10. (Fuhrparkagent): HU/SP-Befund behält beim Termin-Planen seinen Schlüssel (kein zweiter Master-Eintrag, keine erneute Erinnerung, Altschlüssel umgeschlüsselt), kritischer Push + Erinnerung mit Push-Geräten ≤ 40 Abfragen, eigene Agent-Pushs nicht „nicht zugestellt“', async () => {
   const { e, U } = await freshWorld(); const db = e.DB.db; const own = U.own; const V2 = 'VIN:WDB9630051L917317';
   own.id = db.prepare("SELECT id FROM users WHERE role='owner'").get().id;
-  const d = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 86400000));
+  const d = (n) => bDayOff(n);
   // Push-Gerät für den Inhaber (Budget mit Zustellung)
   const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
   const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
@@ -16321,6 +16325,40 @@ await test('Fehlersuche 21.10. (Sicherheitsprüfung): Lesezugriff sieht Fahrerna
     const ps2 = []; L.notificationclick({ notification: { close() {}, data: shown.data }, waitUntil: (p) => ps2.push(p) }); await Promise.all(ps2);
     eq(opened, '/?env=test#/cases/c1', 'Fenster mit Umgebung');
   } finally { globalThis.fetch = of; }
+});
+
+await test('Fehlersuche 21.10. (Datensicherung/Datenauskunft): Probe meldet fehlende Tabelle, fehlende Spalte und Zeilen unter dem Export-Zähler; Datenauskunft mit km-Bemerkung, Hinweis-Zustellung/-Ausblenden und Anmelde-Fehlversuchen', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  await newCase();
+  const { restoreInto, requiredTables } = await import('../scripts/sicherung-probe.mjs');
+  const { ensureSchema } = await import('../src/worker.js');
+  const b = await U.own.get('/api/admin/backup'); eq(b.status, 200);
+  const j0 = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
+  const req = await requiredTables(); ok(req.includes('users') && req.includes('drivers') && req.includes('cases'), 'Pflicht-Tabellen');
+  const probe = (mut) => { const j = JSON.parse(JSON.stringify(j0)); mut(j); const f = makeEnv(); return ensureSchema(f).then(() => restoreInto(f.DB.db, j, { required: req })); };
+  const r0 = await probe(() => {}); ok(r0.ok, JSON.stringify(r0.tables.filter((t) => !t.ok))); eq(r0.warnings.length, 0, JSON.stringify(r0.warnings)); ok(r0.same_schema);
+  const r1 = await probe((j) => { delete j.data.drivers; });
+  ok(!r1.ok && r1.tables.some((t) => t.table === 'drivers' && t.error === 'fehlt in Sicherung'), 'fehlende Tabelle');
+  const r2 = await probe((j) => { for (const r of j.data.cases) delete r.version; });
+  ok(!r2.ok && /Spalten fehlen: version/.test(r2.tables.find((t) => t.table === 'cases').error || ''), 'fehlende Spalte bei gleichem Stand');
+  const r3 = await probe((j) => { for (const r of j.data.cases) delete r.version; j.data._migrations.pop(); });
+  ok(r3.ok === r3.tables.every((t) => t.ok) && r3.tables.find((t) => t.table === 'cases').ok && r3.warnings.some((w) => /cases: Spalten fehlen/.test(w)), 'ältere Sicherung: nur Hinweis');
+  const r4 = await probe((j) => { j.data.cases.pop(); });
+  ok(!r4.ok && /laut Export/.test(r4.tables.find((t) => t.table === 'cases').error || ''), 'Zeilen unter Export-Zähler');
+  const r5 = await probe((j) => { j.data.cases[0].spalte_x = 1; });
+  ok(r5.ok && r5.warnings.some((w) => /unbekannte Spalten.*spalte_x/.test(w)), 'unbekannte Spalte: Hinweis');
+  // Datenauskunft
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES ('o1',?,123456,?,'manuell',?,?,'Tacho getauscht')`).run(db.prepare("SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'").get().id, now, U.driver.id, now);
+  db.prepare(`UPDATE notifications SET hidden_at=?, device_received_at=? WHERE user_id=?`).run(now, now, U.fleet.id);
+  const an = new Client(worker, e, 'anon2');
+  eq((await an.post('/api/login', { username: 'w.fahrer', password: 'falsch-falsch-1' })).status, 401);
+  const xd = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
+  ok(xd.odometer_recorded.some((o) => o.note === 'Tacho getauscht'), 'km-Bemerkung');
+  ok(Array.isArray(xd.login_attempts) && xd.login_attempts.length === 1 && xd.login_attempts[0].failures >= 1, JSON.stringify(xd.login_attempts));
+  const xf = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data;
+  eq(xf.login_attempts.length, 0, 'keine Fehlversuche');
+  ok(xf.notifications.length && xf.notifications.every((n) => 'hidden_at' in n && 'device_received_at' in n && 'push_accepted_at' in n), 'Hinweis-Zustellung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

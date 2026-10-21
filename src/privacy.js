@@ -50,8 +50,8 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     work_entries: q(`SELECT c.case_no, w.* FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE w.user_id=? ORDER BY w.created_at`, userId),
     inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.items, i.created_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),
     files_uploaded: q('SELECT filename, content_type, size, created_at, case_id, vehicle_id, doc_kind, doc_note, doc_valid_until FROM files WHERE uploaded_by=? ORDER BY created_at', userId),
-    notifications: q('SELECT environment, kind, title, body, created_at, push_status, opened_at, acknowledged_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
-    odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
+    notifications: q('SELECT environment, kind, title, body, created_at, push_status, push_accepted_at, device_received_at, opened_at, acknowledged_at, hidden_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
+    odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, o.note, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
     // 18.10.2026: Nachweis der Fahrerermittlung, Betrag, Frist und Verlauf (auch Einträge der Leitung) gehören zur Auskunft der betroffenen Person
     // 21.10.2026 (Backlog 104): auch Schreiben, bei denen die Person ermittelt war und später abgelöst wurde (Verlauf `fine_events.payload`);
     // `driver_status` aktuell/abgelöst, Ermittlungsangaben nur, solange sie die Person betreffen
@@ -115,12 +115,14 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     maintenance_rules_created: q(`SELECT m.kind, m.created_at, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.created_by=? ORDER BY m.created_at`, userId),
     telematics_mappings_confirmed: q('SELECT provider, external_id, evidence, confirmed_at FROM telematics_mappings WHERE confirmed_by=? ORDER BY confirmed_at', userId),
     // 19.10.2026 ergänzt: Zuordnungen/Einladungen, die die Person vorgenommen hat, Lagerartikel (angelegt/bestellt), geänderte Einstellungen –
-    // in EINER Abfrage (Abfragebudget ≤ 50 je Aufruf), unten in Abschnitte aufgeteilt
+    // in EINER Abfrage (Abfragebudget ≤ 50 je Aufruf), unten in Abschnitte aufgeteilt; 21.10.2026: Anmelde-Fehlversuche/Sperre (`login_attempts`,
+    // Schlüssel = Benutzername; offene Zwei-Faktor-Anmeldungen `login_challenges` leben 5 Min. und bleiben bewusst außen vor)
     _made_by: env.DB.prepare(`SELECT
       (SELECT json_group_array(json_object('valid_from', valid_from, 'valid_to', valid_to, 'evidence', evidence, 'created_at', created_at, 'plate', plate)) FROM (SELECT * FROM (SELECT d.valid_from, d.valid_to, d.evidence, d.created_at, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.created_by=?1 ORDER BY d.created_at DESC LIMIT ?2) ORDER BY created_at)) AS vehicle_assignments_made,
       (SELECT json_group_array(json_object('created_at', created_at, 'expires_at', expires_at, 'used_at', used_at)) FROM (SELECT * FROM (SELECT i.created_at, i.expires_at, i.used_at FROM invites i WHERE i.created_by=?1 ORDER BY i.created_at DESC LIMIT ?2) ORDER BY created_at)) AS invites_created,
       (SELECT json_group_array(json_object('environment', environment, 'site', site, 'name', name, 'part_number', part_number, 'created_at', created_at, 'ordered_on', ordered_on, 'ordered_qty', ordered_qty, 'created', created, 'ordered', ordered)) FROM (SELECT * FROM (SELECT environment, site, name, part_number, created_at, ordered_on, ordered_qty, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN ordered_by=?1 THEN 1 ELSE 0 END AS ordered FROM stock_items WHERE created_by=?1 OR ordered_by=?1 ORDER BY created_at DESC LIMIT ?2) ORDER BY created_at)) AS stock_items_edited,
-      (SELECT json_group_array(json_object('key', key, 'updated_at', updated_at)) FROM (SELECT * FROM (SELECT key, updated_at FROM settings WHERE updated_by=?1 ORDER BY updated_at DESC LIMIT ?2) ORDER BY updated_at)) AS settings_changed`).bind(userId, LIMIT + 1),
+      (SELECT json_group_array(json_object('key', key, 'updated_at', updated_at)) FROM (SELECT * FROM (SELECT key, updated_at FROM settings WHERE updated_by=?1 ORDER BY updated_at DESC LIMIT ?2) ORDER BY updated_at)) AS settings_changed,
+      (SELECT json_group_array(json_object('failures', failures, 'locked_until', locked_until, 'updated_at', updated_at)) FROM login_attempts WHERE key IN (SELECT username FROM users WHERE id=?1 UNION SELECT lower(username) FROM users WHERE id=?1)) AS login_attempts`).bind(userId, LIMIT + 1),
   };
   const names = Object.keys(stmts);
   const res = await env.DB.batch(names.map((n) => stmts[n]));
