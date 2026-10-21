@@ -97,9 +97,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded FROM vehicles WHERE active=1').all(),
     // letzter km-Stand je Fahrzeug; dazu der späteste Rücksprung OHNE Begründung (Ablesung kleiner als die unmittelbar vorherige, z. B. aus
     // „Prüfung erledigt“ oder Import – die Akte verlangt sonst eine Begründung) mit Anzahl – eine Abfrage (Abfragebudget)
-    env.DB.prepare(`WITH w AS (SELECT vehicle_id, km, measured_at, source, note, LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) AS prev_km FROM odometer_readings),
-      u AS (SELECT vehicle_id, km, prev_km, measured_at, source, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at DESC) AS rn, COUNT(*) OVER (PARTITION BY vehicle_id) AS n
-        FROM w WHERE km < prev_km AND (note IS NULL OR trim(note) = ''))
+    env.DB.prepare(`WITH u AS (SELECT vehicle_id, km, km_drop_prev AS prev_km, measured_at, source, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at DESC) AS rn, COUNT(*) OVER (PARTITION BY vehicle_id) AS n
+        FROM odometer_readings WHERE km_drop_prev IS NOT NULL AND (note IS NULL OR trim(note) = ''))
       SELECT k.vehicle_id, k.last, u.km AS drop_km, u.prev_km AS drop_prev_km, u.measured_at AS drop_at, u.source AS drop_source, u.n AS drop_n
       FROM (SELECT vehicle_id, MAX(measured_at) AS last FROM odometer_readings GROUP BY vehicle_id) k LEFT JOIN u ON u.vehicle_id = k.vehicle_id AND u.rn = 1`).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, interval_km, last_done_km, due_km FROM maintenance_rules WHERE next_due_date IS NOT NULL OR kind IN ('HU','SP')

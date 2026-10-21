@@ -12,6 +12,7 @@ const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase();
 const sortPref = (key, allowed, def, set) => { const k = 'cfp_sort_' + key; if (set !== undefined) { try { sessionStorage.setItem(k, set); } catch {} return set; } let v = ''; try { v = sessionStorage.getItem(k) || ''; } catch {} return allowed.includes(v) ? v : def; };
 const CASE_SORTS = ['priority', 'oldest', 'updated'], VEH_SORTS = ['plate', 'next_due', 'km_due', 'check_oldest', 'km_desc', 'findings'];
 let lastActivity = Date.now(), lastApiAt = 0, idleBusy = false; // Leerlauf-Abmeldung (siehe noteActivity)
+window.__cfpBooted = true; // Module vollständig geladen – Start-Wächter (boot.js) bleibt still
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -53,7 +54,8 @@ const fmtMonth = (ym) => new Intl.DateTimeFormat(uiLoc(), { year: 'numeric', mon
 // Datum immer zweistellig (TT.MM.JJJJ bzw. TT/MM/JJJJ): „de-DE“ ohne Vorgabe schreibt „1.1.2027“ – fiel erst an Tagen/Monaten < 10 auf
 // (Zeitreise der Oberfläche 15.10.2026). Gleiche Optionen für den Fahrer-Aushang (`dateOpts`).
 const dateOpts = (timeZone) => ({ day: '2-digit', month: '2-digit', year: 'numeric', timeZone });
-const dtFmt = (kind) => { const loc = uiLoc(); const k = kind + loc; return DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(loc, kind === 'dt' ? { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' } : dateOpts(kind === 'd' ? 'Europe/Berlin' : 'UTC'))); };
+// Zeitstempel mit vierstelligem Jahr wie Kalenderdaten und Protokoll-Details (21.10.2026: DE/UK druckten „21.10.26, 14:27“)
+const dtFmt = (kind) => { const loc = uiLoc(); const k = kind + loc; return DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(loc, kind === 'dt' ? { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Berlin' } : dateOpts(kind === 'd' ? 'Europe/Berlin' : 'UTC'))); };
 // Ziel beim Tippen auf einen Hinweis – gleiche Regel wie im Service Worker (Push-Klick): Vorgang, Bezug (Fahrzeugakte/Bußgeld), Anmelde-Hinweis → Meine Anmeldungen
 // Link eines Agentenbefunds: Vorgang, sonst bei Bußgeldbefunden das Schreiben (subject_key = Bußgeld-ID; vorher kein Link bzw. nur zur Fahrzeugakte, 20.10.2026)
 // 20.10.2026: Fahrerbefunde (Nachweise, Führerscheinkontrolle, Fahrerkarte; Betreff „<Fahrer-ID>|…“) → Fahrerakte, Lagerbefunde → Artikel (vorher ohne Link)
@@ -2745,9 +2747,9 @@ async function viewDriver(id) {
     <dt>${esc(t('status'))}</dt><dd><span class="chip ${DST[st.overall]}">${esc(t('dov_' + st.overall))}</span></dd>
     <dt>${esc(t('license_check'))}</dt><dd>${st.check.last ? `${fmtD(st.check.last)} · ${esc(t('lcr_' + st.check.result))}` : '–'}${st.check.due ? ` · ${esc(t('next_due'))} ${fmtD(st.check.due)}` : ''} <span class="chip ${DST[st.check.status]}">${esc(t('dck_' + st.check.status))}</span></dd>
     ${x.vehicles.length ? `<dt>${esc(t('vehicles'))}</dt><dd>${x.vehicles.map((v) => plate(v.plate)).join(' ')}</dd>` : ''}</dl>
-    ${!d.active ? `<p class="chip">${esc(t('inactive_drivers'))}</p>` : ''}${!st.has_license ? `<div class="alert small" style="margin-top:8px">${esc(t('no_license_doc'))}</div>` : ''}${S.me.role === 'owner' ? `<div class="actions"><button type="button" class="btn secondary" id="ddex" title="${esc(t('data_export_hint'))}">${esc(t('data_export'))}</button></div>` : ''}<div class="actions noprint"><button type="button" class="btn secondary" id="ddprt">${esc(t('print'))}</button></div></section>
-    <h2>${esc(t('driver_docs'))}</h2>${cur.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('kind'))}</th><th></th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${cur.map(docRow).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}
-    ${old.length ? `<details id="ddhist"><summary>${esc(t('history'))} (${old.length})</summary><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('kind'))}</th><th></th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${old.map(docRow).join('')}</tbody></table></div></details>` : ''}`;
+    ${!d.active ? `<p class="chip">${esc(t('driver_inactive'))}</p>` : ''}${!st.has_license ? `<div class="alert small" style="margin-top:8px">${esc(t('no_license_doc'))}</div>` : ''}${S.me.role === 'owner' ? `<div class="actions"><button type="button" class="btn secondary" id="ddex" title="${esc(t('data_export_hint'))}">${esc(t('data_export'))}</button></div>` : ''}<div class="actions noprint"><button type="button" class="btn secondary" id="ddprt">${esc(t('print'))}</button></div></section>
+    <h2>${esc(t('driver_docs'))}</h2>${cur.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('ddoc_col_detail'))}</th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${cur.map(docRow).join('')}</tbody></table></div>` : '<p class="muted">–</p>'}
+    ${old.length ? `<details id="ddhist"><summary>${esc(t('history'))} (${old.length})</summary><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('ddoc_col_detail'))}</th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${old.map(docRow).join('')}</tbody></table></div></details>` : ''}`;
   // Leitung: erste Fahrerkarten-Auslesung auch ohne erfasste Fahrerkarte erfassbar (vorher nur per Import, 18.10.2026)
   if (!x.tacho && mgr) x.tacho = { last: null, due: null, days: null, status: 'keine' };
   if (x.tacho) html += `<h2>${esc(t('tacho_card'))}</h2><section class="panel"><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${x.tacho.last ? fmtD(x.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${x.tacho.due ? fmtD(x.tacho.due) + ' ' : ''}<span class="chip ${TST[x.tacho.status]}">${esc(t('tst_' + x.tacho.status))}</span></dd></dl>

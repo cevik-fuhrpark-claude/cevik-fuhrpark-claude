@@ -8856,7 +8856,7 @@ await test('Datumsanzeige immer zweistellig (01.01.2027 statt 1.1.2027) in DE/UK
     eq(new Intl.DateTimeFormat(f.locOf(lang), f.dateOpts('UTC')).format(new Date('2027-01-01T12:00:00Z')), want[lang][0], lang + ' Aushang');
   }
   // Wächter: jeder Datumsformatierer in app.js nutzt dateOpts, dateStyle oder ist der interne JJJJ-MM-TT-Formatierer (sv-SE)
-  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour|^uiLoc\(\), \{ year: 'numeric', month: 'long', timeZone: 'UTC' \}\)/.test(x));
+  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|day: '2-digit', month: '2-digit', year: 'numeric'|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour|^uiLoc\(\), \{ year: 'numeric', month: 'long', timeZone: 'UTC' \}\)/.test(x));
   eq(bad.join(' || '), '', 'Datumsformatierer ohne zweistellige Vorgabe');
   eq(app.split('\n').filter((l) => l.includes('toLocaleDateString(') && !l.includes("day: '2-digit'")).length, 0, 'toLocaleDateString nur mit 2-digit');
   // UI-Zeitreise: Server- und Browser-Uhr über CFP_FAKE_NOW
@@ -16359,6 +16359,99 @@ await test('Fehlersuche 21.10. (Datensicherung/Datenauskunft): Probe meldet fehl
   const xf = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data;
   eq(xf.login_attempts.length, 0, 'keine Fehlversuche');
   ok(xf.notifications.length && xf.notifications.every((n) => 'hidden_at' in n && 'device_received_at' in n && 'push_accepted_at' in n), 'Hinweis-Zustellung');
+});
+
+await test('Fehlersuche 21.10. (PWA/Druck/Leistung): Start-Wächter bei gemischten Modulen, version.json offline nicht aus dem Cache, Icons offline, Protokollwerte code95/maengel/Migrationstext übersetzt, Zeitstempel vierstellig, Indizes km/Vorgangsdatum', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  // 1. Protokoll-Details: Ziffern in Einzelwort-Codes, Ergebnis Führerscheinkontrolle, fester Migrationstext
+  const { auditDetailText, STRINGS } = await import('../public/i18n.js');
+  ok(auditDetailText('en', { kind: 'code95' }).endsWith(': ' + STRINGS.en.dk2_code95), auditDetailText('en', { kind: 'code95' }));
+  ok(!/code95/.test(auditDetailText('uk', { kind: 'code95' })), auditDetailText('uk', { kind: 'code95' }));
+  ok(auditDetailText('uk', { result: 'maengel' }).endsWith(STRINGS.uk.lcr_maengel), auditDetailText('uk', { result: 'maengel' }));
+  ok(auditDetailText('en', { result: 'maengel' }).endsWith(STRINGS.en.lcr_maengel), 'maengel EN');
+  const mig = JSON.parse(/'(\{"grund":[^']*\})'/.exec(fs.readFileSync(new URL('../migrations/0016_hu_sp_rules.sql', import.meta.url), 'utf8'))[1]);
+  ok(/GVW classes/.test(auditDetailText('en', mig)) && !/laut Angabe/.test(auditDetailText('uk', mig)), auditDetailText('en', mig));
+  ok(/laut Angabe Inhaber/.test(auditDetailText('de', mig)), 'DE unverändert');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].driver_inactive && STRINGS[l].ddoc_col_detail, `Schlüssel ${l}`);
+  const app = rd('app.js');
+  ok(app.includes("kind === 'dt' ? { day: '2-digit', month: '2-digit', year: 'numeric'"), 'Zeitstempel mit vierstelligem Jahr');
+  ok(!app.includes("<th>${esc(t('kind'))}</th><th></th>") && app.includes("t('driver_inactive')"), 'Fahrerakte: Spaltenkopf, Einzahl');
+  // 2. Start-Wächter
+  const html = rd('index.html'); ok(html.indexOf('/boot.js') > 0 && html.indexOf('/boot.js') < html.indexOf('/app.js'), 'boot.js vor app.js');
+  ok(/^window\.__cfpBooted = true;/m.test(app), 'app.js meldet Start');
+  const boot = rd('boot.js');
+  const mk = (booted, online) => {
+    const L = {}; const timers = []; let reloaded = 0; const deleted = [];
+    const el = { innerHTML: '', _q: {}, querySelector(sel) { return (this._q[sel] ||= { textContent: '', onclick: null }); } };
+    const doc = { getElementById: (id) => (id === 'app' ? el : id === 'bootfail' ? (el.innerHTML.includes('bootfail') ? {} : null) : null) };
+    const win = { __cfpBooted: booted, addEventListener: (n, f) => (L[n] = f) };
+    const cachesF = { keys: async () => ['cfp-shell-a', 'cfp-meta', 'other'], delete: async (k) => { deleted.push(k); return true; } };
+    win.caches = cachesF;
+    new Function('window', 'document', 'localStorage', 'navigator', 'location', 'setTimeout', 'caches', boot)(win, doc, { getItem: () => 'uk' }, { onLine: online, language: 'de' }, { reload: () => { reloaded++; } }, (f, ms) => timers.push([f, ms]), cachesF);
+    return { L, timers, el, win, get reloaded() { return reloaded; }, deleted };
+  };
+  const a = mk(false, true); a.L.error(); a.timers.find((x) => x[1] === 0)[0]();
+  ok(a.el.innerHTML.includes('bootfail'), 'Hinweis statt „Lädt…“'); eq(a.el._q['#bootfail button'].textContent, 'Перезавантажити');
+  a.el._q['#bootfail button'].onclick(); await new Promise((r) => setTimeout(r, 5));
+  eq(a.deleted.sort().join(','), 'cfp-meta,cfp-shell-a', 'online: App-Cache verworfen'); eq(a.reloaded, 1);
+  const b = mk(false, false); b.timers.find((x) => x[1] === 15000)[0](); b.el._q['#bootfail button'].onclick(); await new Promise((r) => setTimeout(r, 5));
+  eq(b.deleted.length, 0, 'offline: Cache bleibt'); eq(b.reloaded, 1);
+  const c = mk(true, true); c.L.error(); c.timers.forEach((x) => x[0]()); eq(c.el.innerHTML, '', 'gestartete App: still');
+  // 3. Service Worker: SHELL mit boot.js und Icons; version.json ohne Netz → Fehler statt (ggf. älterer) Cache-Fassung
+  const sw = rd('sw.js');
+  const shell = JSON.parse(sw.match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const f of ['/boot.js', '/icons/icon-192.png', '/icons/icon-512.png']) ok(shell.includes(f), 'SHELL ' + f);
+  const L = {}; const of = globalThis.fetch; let served = 0;
+  const cachesF = { open: async () => ({ match: async (r) => { served++; return new Response(r === '/__current' ? 'cfp-shell-x' : '{"version":"alt"}'); } }), keys: async () => [] };
+  globalThis.fetch = async () => { throw new TypeError('offline'); };
+  try {
+    new Function('self', 'location', 'caches', sw)({ addEventListener: (n, f) => (L[n] = f), registration: {}, clients: {}, skipWaiting: async () => {} }, { origin: 'http://x' }, cachesF);
+    let p; L.fetch({ request: { method: 'GET', url: 'http://x/version.json', mode: 'cors' }, respondWith: (x) => (p = x), waitUntil() {} });
+    const r = await p; eq(r.type, 'error', 'version.json offline'); eq(served, 0, 'nicht aus dem Cache');
+    let p2; L.fetch({ request: { method: 'GET', url: 'http://x/app.js', mode: 'cors' }, respondWith: (x) => (p2 = x), waitUntil() {} });
+    eq((await p2).status, 200, 'App-Dateien offline weiter aus dem Cache');
+  } finally { globalThis.fetch = of; }
+  // 4. Indizes (Migration 0070)
+  const { e } = await freshWorld(); const db = e.DB.db;
+  const plan = (q) => db.prepare('EXPLAIN QUERY PLAN ' + q).all().map((x) => x.detail).join(' | ');
+  ok(/idx_odometer_vehicle_km/.test(plan("SELECT 1 FROM odometer_readings o WHERE o.vehicle_id='v' AND o.km=5 AND o.source LIKE 'kontrolle:%'")), 'km-Index');
+  ok(/idx_cases_env_created/.test(plan("SELECT c.vehicle_id FROM cases c WHERE c.environment='test' AND c.created_at >= '2026' AND c.created_at < '2027'")), 'Vorgangsdatum-Index');
+});
+
+await test('Leistung 21.10.: km-Rücksprung gespeichert (Migration 0071, Trigger) – gleiches Ergebnis wie LAG() bei Einfügen in beliebiger Reihenfolge, gleiche Zeitpunkte, Löschen, Ändern und Nachtrag des Bestands', async () => {
+  const { MIGRATIONS } = await import('../src/schema.js');
+  const { DatabaseSync } = await import('node:sqlite');
+  const LAG = `SELECT rowid AS rid, CASE WHEN km < LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) THEN LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) END AS want FROM odometer_readings`;
+  const cmp = (db, what) => { const bad = db.prepare(`SELECT w.rid, w.want, o.km_drop_prev FROM (${LAG}) w JOIN odometer_readings o ON o.rowid = w.rid WHERE w.want IS NOT o.km_drop_prev`).all(); eq(bad.length, 0, `${what}: ${JSON.stringify(bad.slice(0, 3))}`); };
+  const mk = (upto) => { const db = new DatabaseSync(':memory:'); for (const m of MIGRATIONS) { if (upto && m.id >= upto) break; for (const st of m.statements) db.exec(st); } return db; };
+  // Pseudozufall (fest), damit der Test wiederholbar ist
+  let seed = 7; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const fill = (db, n) => {
+    db.exec(`INSERT INTO vehicles(id, plate, vin, active, created_at, updated_at) VALUES ('va','A-1','VINA00000000000A1',1,'2026-01-01','2026-01-01'),('vb','B-1','VINB00000000000B1',1,'2026-01-01','2026-01-01')`);
+    const ins = db.prepare(`INSERT INTO odometer_readings(id, vehicle_id, km, measured_at, source, created_at) VALUES (?,?,?,?,?,?)`);
+    for (let i = 0; i < n; i++) ins.run('o' + i, rnd(2) ? 'va' : 'vb', 1000 + rnd(500) * 10, `2026-0${1 + rnd(6)}-1${rnd(3)}T10:00:00Z`, 'q' + i, `2026-10-${String(1 + rnd(20)).padStart(2, '0')}T00:00:00Z`);
+  };
+  {
+    const db = mk(); fill(db, 300); cmp(db, 'Einfügen');
+    const sum = db.prepare(`SELECT COUNT(*) AS n FROM odometer_readings WHERE km_drop_prev IS NOT NULL`).get().n; ok(sum > 20, 'genug Rücksprünge: ' + sum);
+    for (let i = 0; i < 40; i++) db.prepare(`DELETE FROM odometer_readings WHERE id=?`).run('o' + rnd(300)); cmp(db, 'Löschen');
+    db.prepare(`UPDATE odometer_readings SET km = 1 WHERE id IN ('o5','o6','o7')`).run(); db.prepare(`UPDATE odometer_readings SET vehicle_id='va' WHERE id IN ('o8','o9')`).run(); cmp(db, 'Ändern');
+    // Abfragen nutzen den Teilindex
+    const plan = db.prepare(`EXPLAIN QUERY PLAN SELECT MAX(measured_at) FROM odometer_readings WHERE vehicle_id='va' AND km_drop_prev IS NOT NULL`).all().map((x) => x.detail).join(' ');
+    ok(/idx_odometer_drop/.test(plan), plan);
+    // Nachtrag des Bestands (Migration auf vorhandene Daten)
+    const db2 = mk('0071'); fill(db2, 200);
+    for (const st of MIGRATIONS.find((m) => m.id.startsWith('0071')).statements) db2.exec(st);
+    cmp(db2, 'Nachtrag'); ok(db2.prepare(`SELECT COUNT(*) AS n FROM odometer_readings WHERE km_drop_prev IS NOT NULL`).get().n > 10, 'Nachtrag setzt Rücksprünge');
+  }
+  // App: Rücksprung ohne Begründung erscheint weiter in Datenqualität und macht km-Fälligkeit „ungeklärt“ (bestehende Tests decken die Regeln ab)
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const v = db.prepare(`SELECT id FROM vehicles WHERE active=1 LIMIT 1`).get().id;
+  db.prepare(`INSERT INTO odometer_readings(id, vehicle_id, km, measured_at, source, created_at) VALUES ('t1',?,50000,'2026-09-01T08:00:00Z','x1','2026-09-01T08:00:00Z'),('t2',?,40000,'2026-09-02T08:00:00Z','x2','2026-09-02T08:00:00Z')`).run(v, v);
+  const dq = (await U.own.get('/api/admin/data-quality')).data;
+  ok(JSON.stringify(dq).includes('km_drop_unexplained'), 'Datenqualität meldet Rücksprung');
+  const lst = (await U.own.get('/api/vehicles')).data.vehicles.find((x) => x.id === v);
+  ok(lst, 'Fahrzeugliste');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

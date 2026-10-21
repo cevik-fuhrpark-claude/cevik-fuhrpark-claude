@@ -70,16 +70,18 @@ export async function latestKmByVehicle(env, { withBase = false } = {}) {
     (SELECT o3.measured_at FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_at` : '';
   // drop_at: letzte Ablesung, die kleiner ist als die unmittelbar vorherige (Tachotausch, Korrektur mit Begründung) – gleiche Abfrage
   // drop_rec: wann der (späteste) Rücksprung erfasst wurde – maßgeblich für „Regel danach geändert“ (auch bei nachträglich datierter Ablesung)
-  const rows = (await env.DB.prepare(`WITH d AS (SELECT vehicle_id, MAX(measured_at) AS drop_at, MAX(created_at) AS drop_rec FROM (SELECT vehicle_id, km, measured_at, created_at,
-      LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, rowid) AS prev_km FROM odometer_readings) WHERE km < prev_km GROUP BY vehicle_id)
-    SELECT o.vehicle_id, o.km, o.measured_at, d.drop_at, d.drop_rec${base} FROM odometer_readings o LEFT JOIN d ON d.vehicle_id = o.vehicle_id
-    WHERE o.measured_at = (SELECT MAX(o2.measured_at) FROM odometer_readings o2 WHERE o2.vehicle_id = o.vehicle_id)`).all()).results;
+  // Rücksprünge gespeichert (km_drop_prev, Migration 0071, Trigger) statt LAG() über die ganze Historie; letzte Ablesung je Fahrzeug per Index
+  const rows = (await env.DB.prepare(`WITH d AS (SELECT vehicle_id, MAX(measured_at) AS drop_at, MAX(created_at) AS drop_rec FROM odometer_readings
+      WHERE km_drop_prev IS NOT NULL GROUP BY vehicle_id)
+    SELECT o.vehicle_id, o.km, o.measured_at, d.drop_at, d.drop_rec${base} FROM vehicles v
+    JOIN odometer_readings o ON o.rowid = (SELECT o2.rowid FROM odometer_readings o2 WHERE o2.vehicle_id = v.id ORDER BY o2.measured_at DESC, o2.rowid DESC LIMIT 1)
+    LEFT JOIN d ON d.vehicle_id = o.vehicle_id`).all()).results;
   return new Map(rows.map((r) => [r.vehicle_id, r]));
 }
 // SQL-Ausdruck „letzter km-Rücksprung“ eines Fahrzeugs (Parameter = Fahrzeug-ID), gleiche Regel wie latestKmByVehicle:
 // Text „Ablesezeitpunkt|Erfassungszeitpunkt“ oder NULL → parseKmDrop
-export const KM_DROP_SQL = (param) => `(SELECT MAX(measured_at) || '|' || MAX(created_at) FROM (SELECT km, measured_at, created_at, LAG(km) OVER (ORDER BY measured_at, rowid) AS prev_km
-  FROM odometer_readings WHERE vehicle_id=${param}) WHERE km < prev_km)`;
+// Rücksprung = km_drop_prev gesetzt (Migration 0071, per Trigger gepflegt; Teilindex idx_odometer_drop)
+export const KM_DROP_SQL = (param) => `(SELECT MAX(measured_at) || '|' || MAX(created_at) FROM odometer_readings WHERE vehicle_id=${param} AND km_drop_prev IS NOT NULL)`;
 export const parseKmDrop = (x) => { if (!x) return { drop_at: null, drop_rec: null }; const [a, b] = String(x).split('|'); return { drop_at: a || null, drop_rec: b || a || null }; };
 // km-Zähler gesunken (z. B. Tachotausch) nach der letzten Änderung der Regel: km bei letzter Durchführung bzw. belegte km-Fälligkeit
 // beziehen sich vermutlich auf den alten Zähler → km-Fälligkeit „ungeklärt“ statt einer falschen Restlaufleistung (nie geschätzt).

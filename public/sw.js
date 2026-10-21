@@ -5,7 +5,7 @@
 // version.json, erst nach vollständigem Laden aktiv; ohne Verbindung wird nur aus dem jüngsten vollständigen Cache bedient.
 const PREFIX = 'cfp-shell-';
 const META = 'cfp-meta';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n.js', '/check-labels.js', '/finding-labels.js', '/finding-messages.js', '/ics-texts.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/icons/icon.svg', '/version.json'];
+const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n.js', '/check-labels.js', '/finding-labels.js', '/finding-messages.js', '/ics-texts.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/boot.js', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/version.json'];
 async function currentCache() {
   const r = await (await caches.open(META)).match('/__current');
   return r ? r.text() : null;
@@ -47,7 +47,8 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(e.request).then((r) => {
       if (r.ok) e.waitUntil(r.clone().json().then((j) => refreshShell(j && j.version)).catch(() => {}));
       return r;
-    }).catch(() => fromCache(e.request)));
+    }).catch(() => Response.error())); // ohne Netz keine (womöglich ältere) version.json aus dem Cache – sonst meldete die laufende
+    // neuere Fassung offline „Neue Version verfügbar“ und „Neu laden“ startete die ältere (21.10.2026); der Offline-Start braucht sie nicht
     return;
   }
   e.respondWith(fetch(e.request).then((r) => (r.ok || r.type !== 'basic' ? r : fromCache(e.request).then((x) => (x.type === 'error' ? r : x)))).catch(() => fromCache(e.request)));
