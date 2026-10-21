@@ -16454,6 +16454,45 @@ await test('Leistung 21.10.: km-Rücksprung gespeichert (Migration 0071, Trigger
   ok(lst, 'Fahrzeugliste');
 });
 
+await test('Leistung 21.10. Kostenbericht: km je Zeitraum/Monat per Index-Suchen – gleiche Rohwerte wie die frühere Fensterfunktion (zufällige Ablesungen, Rücksprünge, Datum ohne Uhrzeit, Fahrzeugfilter)', async () => {
+  const { periodMileageRows } = await import('../src/reports.js');
+  const { ensureSchema } = await import('../src/worker.js');
+  const { berlinDayStartIso, berlinDaySql, addMonths } = await import('../src/util.js');
+  // frühere Abfrage (bis 21.10.2026) als Referenz
+  const alt = async (env, from, to, vf) => {
+    const loX = berlinDayStartIso(`${from}-01`), hiX = berlinDayStartIso(addMonths(`${to}-01`, 1));
+    const f = vf ? ' AND vehicle_id=?3' : '';
+    return (await env.DB.prepare(`WITH x AS (SELECT vehicle_id, km, measured_at, substr(${berlinDaySql('measured_at')},1,7) AS m,
+        LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, rowid) AS pkm, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, rowid) AS rn
+        FROM odometer_readings WHERE measured_at >= ?1 AND measured_at < ?2${f}),
+      y AS (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY vehicle_id, m ORDER BY measured_at DESC, rn DESC) AS rd FROM x)
+      SELECT y.vehicle_id, y.m, COUNT(*) AS n, SUM(CASE WHEN y.pkm IS NOT NULL AND y.km < y.pkm THEN 1 ELSE 0 END) AS dec,
+        MAX(CASE WHEN y.rd=1 THEN y.km END) AS last_km, MAX(CASE WHEN y.rd=1 THEN y.measured_at END) AS last_at,
+        MAX(CASE WHEN y.rn=1 THEN y.km END) AS first_km, MAX(CASE WHEN y.rn=1 THEN y.measured_at END) AS first_at,
+        (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=y.vehicle_id AND o.measured_at < ?1 ORDER BY o.measured_at DESC, o.created_at DESC, o.rowid DESC LIMIT 1) AS base
+      FROM y GROUP BY y.vehicle_id, y.m ORDER BY y.vehicle_id, y.m`).bind(...(vf ? [loX, hiX, vf] : [loX, hiX])).all()).results;
+  };
+  const norm = (rows) => JSON.stringify(rows.map((r) => [r.vehicle_id, r.m, r.n, r.dec, r.last_km, r.last_at, r.first_km ?? null, r.first_at ?? null, r.base ?? null]));
+  let seed = 11; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  let cases = 0;
+  for (let round = 0; round < 25; round++) {
+    const env = makeEnv(); await ensureSchema(env); const db = env.DB.db;
+    for (let v = 0; v < 4; v++) db.prepare(`INSERT INTO vehicles(id, plate, vin, active, created_at, updated_at) VALUES (?,?,?,1,'2026-01-01','2026-01-01')`).run('v' + v, 'P' + v, 'VIN' + v + 'XXXXXXXXXXXXX');
+    const ins = db.prepare(`INSERT OR IGNORE INTO odometer_readings(id, vehicle_id, km, measured_at, source, created_at) VALUES (?,?,?,?,?,?)`);
+    const N = 5 + rnd(60);
+    for (let i = 0; i < N; i++) {
+      const mo = String(1 + rnd(12)).padStart(2, '0'), d = String(1 + rnd(28)).padStart(2, '0'), h = String(rnd(24)).padStart(2, '0');
+      // Monatswechsel in Berliner Zeit (z. B. 31.03. 22:30 UTC = 01.04.) und Datum ohne Uhrzeit; Erfassung in Einfügereihenfolge (wie in der App)
+      const at = rnd(5) === 0 ? `2026-${mo}-${d}` : rnd(6) === 0 ? `2026-${mo}-28T22:30:00.000Z` : `2026-${mo}-${d}T${h}:${rnd(2) ? '30' : '00'}:00.000Z`;
+      ins.run('o' + i, 'v' + rnd(4), rnd(8) === 0 ? 100 + rnd(50) : 1000 + i * 100 + rnd(300), at, 's' + rnd(3), new Date(Date.UTC(2026, 9, 1) + i * 1000).toISOString());
+    }
+    for (const [f, t] of [['2026-03', '2026-08'], ['2026-01', '2026-12'], ['2026-06', '2026-06'], ['2026-02', '2026-11']]) for (const vf of [null, 'v1']) {
+      cases++; eq(norm(await periodMileageRows(env, f, t, vf)), norm(await alt(env, f, t, vf)), `Runde ${round} ${f}–${t} ${vf || 'alle'}`);
+    }
+  }
+  eq(cases, 200);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

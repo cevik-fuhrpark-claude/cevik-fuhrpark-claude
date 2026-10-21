@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, berlinWindowStartIso, berlinDate, berlinDayStartIso, berlinDaySql, addMonths, icsCalendar, intParam, rateOf, roundCents } from './util.js';
+import { bad, forbidden, berlinWindowStartIso, berlinDate, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -175,29 +175,50 @@ export async function costReport(env, user, envName, query = {}) {
   return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
 }
 
+// Rohwerte je Fahrzeug und Monat (n, dec, last_km/at, first_km/at nur im ersten Monat mit Ablesung, base = letzte Ablesung vor „Von“) –
+// getrennt, damit der Test sie gegen die frühere Fensterfunktion vergleichen kann (Test „Leistung 21.10. Kostenbericht“)
+export async function periodMileageRows(env, from, to, vehicleFilter = null) {
+  const loX = berlinDayStartIso(`${from}-01`);
+  // Monate mit Berliner Grenzen als UTC-Zeitpunkte; je Fahrzeug × Monat Index-Suchen (idx_odometer_vehicle_time, Teilindex idx_odometer_drop)
+  // statt Fensterfunktion über alle Ablesungen des Zeitraums (Lastmessung 21.10.2026: 12 Monate, 150 Lkw, 220 000 km-Stände ≈ 400 ms).
+  // „Rückgang“ = gespeicherter Rücksprung (km_drop_prev, Migration 0071) – ohne den der ersten Ablesung des Zeitraums (Vergleich mit dem
+  // Ausgangswert prüft die Auswertung unten selbst, wie bisher).
+  const months = [];
+  for (let m = from; m <= to; m = addMonths(`${m}-01`, 1).slice(0, 7)) months.push([m, berlinDayStartIso(`${m}-01`), berlinDayStartIso(addMonths(`${m}-01`, 1))]);
+  const vf = vehicleFilter ? ' WHERE v.id=?3' : '';
+  const binds = vehicleFilter ? [JSON.stringify(months), loX, vehicleFilter] : [JSON.stringify(months), loX];
+  const R = (dir) => `ORDER BY o.measured_at ${dir}, o.created_at ${dir}, o.rowid ${dir} LIMIT 1`;
+  const IN = 'o.vehicle_id=g.vid AND o.measured_at >= g.lo AND o.measured_at < g.hi';
+  const IN0 = 'o.vehicle_id=v.id AND o.measured_at >= mo.lo AND o.measured_at < mo.hi';
+  const rows = (await env.DB.prepare(`WITH mo AS (SELECT json_extract(value,'$[0]') AS m, json_extract(value,'$[1]') AS lo, json_extract(value,'$[2]') AS hi FROM json_each(?1)),
+    g AS (SELECT v.id AS vid, mo.m, mo.lo, mo.hi, (SELECT COUNT(*) FROM odometer_readings o WHERE ${IN0}) AS n FROM vehicles v CROSS JOIN mo${vf})
+    SELECT g.vid AS vehicle_id, g.m, g.n,
+      (SELECT COUNT(*) FROM odometer_readings o WHERE ${IN} AND o.km_drop_prev IS NOT NULL) AS dec,
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE ${IN} ${R('DESC')}) AS last,
+      (SELECT o.km || '|' || o.measured_at || '|' || (o.km_drop_prev IS NOT NULL) FROM odometer_readings o WHERE ${IN} ${R('ASC')}) AS first,
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=g.vid AND o.measured_at < ?2 ORDER BY o.measured_at DESC, o.created_at DESC, o.rowid DESC LIMIT 1) AS base
+    FROM g WHERE g.n > 0 ORDER BY g.vid, g.m`).bind(...binds).all()).results;
+  const split = (x) => (x ? String(x).split('|') : []);
+  let curVid = null;
+  for (const r of rows) {
+    const [lk, la] = split(r.last); const [fk, fa, ff] = split(r.first);
+    r.last_km = Number(lk); r.last_at = la;
+    const isFirst = r.vehicle_id !== curVid; curVid = r.vehicle_id;
+    r.first_km = isFirst ? Number(fk) : null; r.first_at = isFirst ? fa : null;
+    if (isFirst && ff === '1') r.dec -= 1; // erste Ablesung des Zeitraums: Vorwert liegt davor
+  }
+  return rows;
+}
+
 // [CLAUDE] Gefahrene km je Fahrzeug im Zeitraum (Berliner Monatsgrenzen, exakt) – dieselbe Regel wie „Fahrleistung je Monat“ der Fahrzeugakte
 // (`mileageByMonth`), nur aus gespeicherten Ablesungen, keine Interpolation:
 // - Zeitraum: letzte Ablesung im Zeitraum − letzte Ablesung davor (`basis` 'previous'), sofern diese im Monat vor „Von“ liegt.
 //   Fehlt sie oder ist sie älter (würde Fahrten vor dem Zeitraum mitzählen), ab der ersten Ablesung im Zeitraum (`basis` 'first_in_period', mind. 2 Ablesungen).
 // - Monat (Zeilen/CSV): letzte Ablesung im Monat − letzte Ablesung im Vormonat; sonst kein Wert (wie Akte ohne „seit Ablesung vom …“-Zeiträume).
-// - Rückgang irgendwo im betrachteten Abschnitt (z. B. Tachotausch) → kein Wert (`decrease`). Eine Abfrage (Fensterfunktionen), unabhängig von der Fahrzeugzahl.
+// - Rückgang irgendwo im betrachteten Abschnitt (z. B. Tachotausch) → kein Wert (`decrease`). Eine Abfrage (Index-Suchen je Fahrzeug und Monat).
 export async function periodMileage(env, from, to, vehicleFilter = null) {
-  const loX = berlinDayStartIso(`${from}-01`);
-  const hiX = berlinDayStartIso(addMonths(`${to}-01`, 1));
   const prevOfFrom = addMonths(`${from}-01`, -1).slice(0, 7);
-  const vf = vehicleFilter ? ' AND vehicle_id=?3' : '';
-  const binds = vehicleFilter ? [loX, hiX, vehicleFilter] : [loX, hiX];
-  const rows = (await env.DB.prepare(`WITH x AS (
-      SELECT vehicle_id, km, measured_at, substr(${berlinDaySql('measured_at')},1,7) AS m,
-        LAG(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, rowid) AS pkm,
-        ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, rowid) AS rn
-      FROM odometer_readings WHERE measured_at >= ?1 AND measured_at < ?2${vf}),
-    y AS (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY vehicle_id, m ORDER BY measured_at DESC, rn DESC) AS rd FROM x)
-    SELECT y.vehicle_id, y.m, COUNT(*) AS n, SUM(CASE WHEN y.pkm IS NOT NULL AND y.km < y.pkm THEN 1 ELSE 0 END) AS dec,
-      MAX(CASE WHEN y.rd=1 THEN y.km END) AS last_km, MAX(CASE WHEN y.rd=1 THEN y.measured_at END) AS last_at,
-      MAX(CASE WHEN y.rn=1 THEN y.km END) AS first_km, MAX(CASE WHEN y.rn=1 THEN y.measured_at END) AS first_at,
-      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=y.vehicle_id AND o.measured_at < ?1 ORDER BY o.measured_at DESC, o.created_at DESC, o.rowid DESC LIMIT 1) AS base
-    FROM y GROUP BY y.vehicle_id, y.m ORDER BY y.vehicle_id, y.m`).bind(...binds).all()).results;
+  const rows = await periodMileageRows(env, from, to, vehicleFilter);
   const by = new Map();
   for (const r of rows) { const a = by.get(r.vehicle_id) || []; a.push(r); by.set(r.vehicle_id, a); }
   const out = new Map();
