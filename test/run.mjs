@@ -7667,7 +7667,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
     ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
-    ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && /\[\/\^#\\\/master\(\?:\\\?q=\(\[\^&\]\*\)\)\?\$\/, \(q\) => viewMaster\(q\)\]/.test(app) && /async function viewMaster\(q\) \{[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
+    ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && app.includes("[/^#\\/master(?:\\?(q|sev)=([^&]*))?$/, viewMaster]") && /async function viewMaster\(argKey, argVal\) \{\n  const q = argKey === 'q' \? \(argVal \?\? ''\) : undefined;[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
     ok(app.includes("href=\"${hj('#/vehicles?f=with_notes')}\" id=\"dnotes\"") && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
     const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
     eq(crit, env.DB.db.prepare("SELECT COUNT(DISTINCT f.vehicle_id) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen' AND f.severity='kritisch'").get().n, 'Anzahl Fahrzeuge mit kritischen Befunden = Datenbank'); }
@@ -15879,6 +15879,24 @@ await test('Fehlersuche 21.10. (Telematik/Startseite): Meldung ohne km verschieb
   ok(app.includes("(r === cur.r && since(r, c) < since(cur.r, cur.c))"), 'Disposition: älteste Sperre');
   // Startseite „Fahrzeuge mit kritischen Agentenbefunden“ → Filter nur kritische (Zähler = Liste)
   ok(app.includes("av === 'with_findings_crit' ? v.agent_findings_critical > 0") && app.includes("hj('#/vehicles?f=with_findings_crit')"), 'kritischer Befund-Filter');
+});
+
+await test('Startseite „Befunde (kritisch + handeln)“ → Management-Panel mit passender Auswahl (#/master?sev=act, Backlog 107 Teil 2)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes('href="#/master?sev=act" id="homefind"'), 'Startseite verlinkt die Auswahl kritisch + handeln');
+  ok(/const n = d\.findings\.filter\(\(f\) => \['kritisch', 'handeln'\]\.includes\(f\.severity\)\)/.test(app), 'Zähler zählt kritisch + handeln');
+  ok(/if \(sevArg !== undefined\) \{ S\.afSev = AF_SEVS\.includes\(sevArg\) \? sevArg : 'all'; S\.afQ = ''; try \{ history\.replaceState\(null, '', '#\/master'\)/.test(app), 'Direktsprung setzt Auswahl, leert Suche, bereinigt Adresse');
+  // Filterlogik ausführen (gleicher Quelltext wie in der App)
+  const src = app.match(/const AF_SEVS = \[[^\]]*\];\nconst afSevMatch = [^\n]*;/); ok(src, 'AF_SEVS/afSevMatch gefunden');
+  const { AF_SEVS, afSevMatch } = new Function(`${src[0]}; return { AF_SEVS, afSevMatch };`)();
+  eq(AF_SEVS.join(','), 'all,act,kritisch,handeln,hinweis,info');
+  const sevs = ['kritisch', 'handeln', 'hinweis', 'info'];
+  eq(sevs.filter((s) => afSevMatch('act', s)).join(','), 'kritisch,handeln', 'act = kritisch + handeln');
+  eq(sevs.filter((s) => afSevMatch('all', s)).length, 4); eq(sevs.filter((s) => afSevMatch('hinweis', s)).join(','), 'hinweis');
+  ok(app.includes("afSevMatch(afSev, r.dataset.sev) &&"), 'Zeilenfilter nutzt afSevMatch');
+  ok(app.includes("...(afSev === 'act' ? [['act', t('asev_act'), p.findings.filter((f) => afSevMatch('act', f.severity)).length]] : [])"), 'Knopf „Kritisch + Handeln“ nur bei gewählter Auswahl');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].asev_act && (l === 'de' || STRINGS[l].asev_act !== STRINGS.de.asev_act), `${l}: asev_act`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
