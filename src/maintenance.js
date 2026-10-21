@@ -770,7 +770,9 @@ export async function maintenanceHistory(env, user, query = {}, envName = 'produ
   const to = query.to || today; const from = query.from || (isCalendarDate(to) ? `${to.slice(0, 4)}-01-01` : `${today.slice(0, 4)}-01-01`);
   for (const d of [from, to]) if (!isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
-  const kind = query.kind ? String(query.kind).slice(0, 40) : null;
+  // Prüfart ohne Groß-/Kleinschreibung (z. B. „hu“ → „HU“, 22.10.2026: lieferte still 0 Ereignisse); unbekannte Art unverändert
+  const kindRaw = query.kind ? String(query.kind).slice(0, 40) : null;
+  const kind = kindRaw ? MAINT_KINDS.find((k) => k.toLowerCase() === kindRaw.toLowerCase()) || kindRaw : null;
   const rows = (await env.DB.prepare(`SELECT e.id AS event_id, e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at,
       ${DEFECT_CASE_SQL('id')} AS defect_case_id, ${DEFECT_CASE_SQL('case_no')} AS defect_case_no, ${DEFECT_CASE_SQL('status')} AS defect_case_status,
       ${NEXT_EVENT_SQL('done_date')} AS reinspection_date, ${NEXT_EVENT_SQL('result')} AS reinspection_result,

@@ -287,11 +287,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const own = ext.n ? 0 : (hasHours.n > 0 && rate === null ? 1 : 0) + unvParts.n;
         add({ code: 'COSTS_UNVALUED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'owner',
           ...fm(own ? 'COSTS_UNVALUED_ITEMS' : 'COSTS_UNVALUED_EXT', { label: `${c.case_no} (${c.plate})`, n: own + c.ext_unv_n }),
-          next_action: 'Rechnungsbeträge der Fremdleistungen nachtragen bzw. Stundensatz/Teilepreise ergänzen.' });
+          next_action: 'Stundensatz ggf. in den Einstellungen festlegen; fehlende Rechnungsbeträge bzw. Teilepreise lassen sich nach der Freigabe nicht nachtragen – Rechnung am Vorgang hochladen bzw. kommentieren (Hinweis endet 90 Tage nach Abschluss).' }); // 22.10.2026: Nachtragen nach Freigabe gibt es nicht (offene Frage „Kostenpositionen stornieren“)
       } else if (!ext.n && ((hasHours.n > 0 && rate === null) || unvParts.n > 0)) {
         add({ code: 'COSTS_UNVALUED', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'owner',
           ...fm(rate === null && hasHours.n ? (unvParts.n ? 'COSTS_UNVALUED_BOTH' : 'COSTS_UNVALUED_RATE') : 'COSTS_UNVALUED_PARTS', { label: `${c.case_no} (${c.plate})`, n: unvParts.n || null }),
-          next_action: 'Stundensatz festlegen bzw. Teilepreise nachtragen.' });
+          next_action: 'Stundensatz in den Einstellungen festlegen; fehlende Teilepreise lassen sich nach der Freigabe nicht nachtragen – Rechnung am Vorgang hochladen bzw. kommentieren (Hinweis endet 90 Tage nach Abschluss).' });
       }
     }
 

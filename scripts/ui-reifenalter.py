@@ -50,7 +50,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/users'); q.wait_for_selector('#ufilt'); q.select_option('#ufilt','invite'); q.wait_for_selector('#ufcount')
         check(q.inner_text('#ufcount').strip()==UF[lang],f'{lang} {w}px Benutzerfilter: „{q.inner_text("#ufcount").strip()}“')
         check(q.evaluate("()=>document.documentElement.scrollWidth<=window.innerWidth+1"),f'{lang} {w}px Benutzer: kein Querscrollen')
-        q.select_option('#ufilt','all')
+        q.select_option('#ufilt','all'); q.wait_for_function("()=>document.querySelector('#ufilt') && document.querySelector('#ufilt').value==='all' && !document.querySelector('[aria-busy=true]')"); q.wait_for_timeout(600)  # Neuaufbau der Benutzerliste abwarten (unter Last überschrieb er sonst die nächste Seite)
         q.goto(B+'/#/wsload'); q.wait_for_selector('[data-wl]'); q.wait_for_timeout(300)
         btn=[x.strip() for x in q.locator('[data-wl]').all_inner_texts()]
         check(all(x in btn for x in WK[lang]),f'{lang} {w}px Werkstattauslastung: {btn}')

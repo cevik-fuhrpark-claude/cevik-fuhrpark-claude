@@ -96,7 +96,7 @@ function requireRole(user, roles) {
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
 const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
   /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/recalls\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/husp\/(HU|SP)\/(complete|plan|order)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
-  /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/];
+  /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/, /^\/api\/odometer\/[\w-]+\/note$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
   if (await testMasterReadonly(env)) throw new HttpError(403, 'test_readonly', 'Testkonto: gemeinsame Stammdaten (Fahrzeuge, Prüftermine, km-Stände, Reifen, Verträge) sind nur lesbar – Einstellung des Inhabers.');
@@ -376,6 +376,7 @@ async function handleApi(request, env, ctx, url) {
     }
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/odometer$/)) && m === 'POST') return json(await veh.addOdometer(env, user, mm[1], await readJson(request)), 201);
+  if ((mm = path.match(/^\/api\/odometer\/([\w-]+)\/note$/)) && m === 'POST') return json(await veh.addOdometerNote(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/ai$/)) && m === 'POST') return json(await veh.aiAnalysis(env, user, envName, mm[1]));
 
   // Reifen

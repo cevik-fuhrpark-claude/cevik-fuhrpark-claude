@@ -173,8 +173,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Akte: dieselbe Abfrage liefert auch die Ablesungen für „Fahrleistung je Monat“ (Fenster + letzte davor) – kein Zusatzaufruf (Abfragebudget)
   const mileageLo = tl ? null : berlinDayStartIso(`${addMonths(`${berlinDate().slice(0, 7)}-01`, -(MILEAGE_MONTHS - 1)).slice(0, 7)}-01`);
   const odoRows = tl
-    ? (await env.DB.prepare('SELECT km, measured_at, source, note FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results
-    : (await env.DB.prepare(`SELECT km, measured_at, source, note, ${KM_DROP_SQL('?1')} AS drop_at FROM odometer_readings WHERE vehicle_id=?1 AND (measured_at >= ?2
+    ? (await env.DB.prepare('SELECT id, km, measured_at, source, note, km_drop_prev IS NOT NULL AS km_drop FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT ?').bind(vehicleId, cap || 20).all()).results
+    : (await env.DB.prepare(`SELECT id, km, measured_at, source, note, km_drop_prev IS NOT NULL AS km_drop, ${KM_DROP_SQL('?1')} AS drop_at FROM odometer_readings WHERE vehicle_id=?1 AND (measured_at >= ?2
         OR rowid IN (SELECT rowid FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC, created_at DESC LIMIT 20)
         OR rowid IN (SELECT rowid FROM odometer_readings WHERE vehicle_id=?1 AND measured_at < ?2 ORDER BY measured_at DESC, created_at DESC LIMIT 1))
       ORDER BY measured_at DESC, created_at DESC`).bind(vehicleId, mileageLo).all()).results;
@@ -363,7 +363,8 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     if (c.closed_at) add('case_closed', c.closed_at, { case_id: c.id, case_no: c.case_no, status: c.status });
   }
   for (const i of d.inspections) add('inspection', i.created_at, { inspection_kind: i.kind, result: i.result, km: i.odometer_km, case_id: i.case_id, by: i.performed_by_name, ...(i.performed_by_name_hidden ? { by_hidden: true } : {}) });
-  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note });
+  // Kennung und Rücksprung-Kennzeichen: „Begründung nachtragen“ an Rücksprüngen ohne Begründung (Inhaber/Leitung, 22.10.2026)
+  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note, ...(isManager(user) ? { odometer_id: o.id, km_drop: !!o.km_drop } : {}) });
   for (const r of d.drivers) { add('driver_from', r.valid_from, { by: r.display_name, evidence: r.evidence }); add('driver_to', r.valid_to, { by: r.display_name }); }
   for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
   for (const m of d.maintenance_history) add('maintenance', m.done_date, { maintenance_kind: m.kind, km: m.done_km, evidence: m.evidence, by: m.recorded_by_name, result: m.result || null });
@@ -1014,6 +1015,20 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (older) return { ok: true, notified, older_than_last: true, last_done_date: (await env.DB.prepare('SELECT last_done_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).last_done_date,
     next_due_date: (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date };
   return { ok: true, notified, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(ruleId).first()).next_due_date : next };
+}
+
+// Begründung zu einer km-Ablesung nachtragen (nur wenn noch keine vorhanden; km-Wert und Zeitpunkt bleiben unverändert): Datenqualität
+// „Rücksprung ohne Begründung“ ließ sich vorher nicht auflösen (22.10.2026). Inhaber/Leitung, protokolliert.
+export async function addOdometerNote(env, user, readingId, body) {
+  if (!isManager(user)) throw forbidden();
+  const note = str(body.note, { max: 300, field: 'Begründung', required: true });
+  const o = await env.DB.prepare('SELECT id, vehicle_id, km, measured_at, note FROM odometer_readings WHERE id=?').bind(readingId).first();
+  if (!o) throw notFound('km-Stand nicht gefunden.');
+  if (o.note && String(o.note).trim()) throw conflict('note_exists', 'Zu diesem km-Stand ist bereits eine Begründung erfasst.');
+  const r = await env.DB.prepare(`UPDATE odometer_readings SET note=? WHERE id=? AND (note IS NULL OR trim(note)='')`).bind(note, readingId).run();
+  if (!r.meta || r.meta.changes !== 1) throw conflict('note_exists', 'Zu diesem km-Stand ist bereits eine Begründung erfasst.');
+  await audit(env, user.id, 'vehicle.odometer_note', o.vehicle_id, { km: o.km, measured_at: o.measured_at, note });
+  return { ok: true };
 }
 
 export async function addOdometer(env, user, vehicleId, body) {

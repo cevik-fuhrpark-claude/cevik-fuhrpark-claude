@@ -123,9 +123,11 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT * FROM (SELECT i.vehicle_id, i.odometer_km, i.created_at,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at <= i.created_at ORDER BY o.measured_at DESC LIMIT 1) AS prev_km,
       (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at > i.created_at ORDER BY o.measured_at ASC LIMIT 1) AS next_km,
+      (SELECT MAX(o.km) FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.measured_at > i.created_at) AS later_max_km,
       EXISTS (SELECT 1 FROM odometer_readings o WHERE o.vehicle_id=i.vehicle_id AND o.km=i.odometer_km AND o.source LIKE 'kontrolle:%') AS taken
       FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.active=1 AND v.eval_excluded=0 WHERE i.environment=? AND i.odometer_km IS NOT NULL AND i.created_at >= ? ${VF})
-      WHERE (prev_km IS NOT NULL AND odometer_km < prev_km) OR (next_km IS NOT NULL AND odometer_km > next_km AND NOT taken) ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore, ...(vf ? [vf] : [])).all(),
+      -- kleiner als der vorige Stand: geklärt, sobald danach irgendein Stand ≥ dem vorigen erfasst ist (der Kontrollwert war der Tippfehler; 22.10.2026 – blieb sonst bis zum Ablauf des Zeitraums stehen)
+      WHERE (prev_km IS NOT NULL AND odometer_km < prev_km AND NOT (later_max_km IS NOT NULL AND later_max_km >= prev_km)) OR (next_km IS NOT NULL AND odometer_km > next_km AND NOT taken) ORDER BY created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, staleBefore, ...(vf ? [vf] : [])).all(),
     // alle aktiven Fahrzeuge inkl. ruhender: fast gleiche FIN deutet auf Tippfehler/Doppelanlage hin
     env.DB.prepare('SELECT id, vin, plate, eval_excluded FROM vehicles WHERE active=1 AND vin IS NOT NULL').all(),
     // laufende Verträge (auch an Fahrzeugen außer Betrieb) mit letztem km-Stand

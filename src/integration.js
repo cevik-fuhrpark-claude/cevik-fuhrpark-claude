@@ -16,9 +16,11 @@ import { renderFindingMessage } from '../public/finding-messages.js';
 // für den Rest des Fensters abgewiesen – auch mit gültigem Token, damit Durchprobieren nichts verrät. Einmal im Protokoll vermerkt.
 export const TOKEN_FAIL_LIMIT = { max: 30, windowSec: 900 };
 async function checkToken(request, env) {
-  const full = [env.INTEGRATION_TOKEN, env.INTEGRATION_TOKEN_NEXT].filter(Boolean);
-  const read = [env.INTEGRATION_TOKEN_READ].filter(Boolean);
-  if (!full.length && !read.length) throw new HttpError(503, 'integration_disabled', 'Integrations-API ist nicht aktiviert (Secret INTEGRATION_TOKEN fehlt).');
+  // Secrets unter 16 Zeichen passen nie (Mindestlänge) – wie nicht gesetzt behandeln: 503 statt 401 + Sperre der Adresse nach 30 Versuchen (22.10.2026)
+  const usable = (t) => typeof t === 'string' && t.length >= 16;
+  const full = [env.INTEGRATION_TOKEN, env.INTEGRATION_TOKEN_NEXT].filter(usable);
+  const read = [env.INTEGRATION_TOKEN_READ].filter(usable);
+  if (!full.length && !read.length) throw new HttpError(503, 'integration_disabled', 'Integrations-API ist nicht aktiviert (Secret INTEGRATION_TOKEN fehlt oder ist kürzer als 16 Zeichen).');
   const ip = request.headers.get('cf-connecting-ip') || 'unbekannt';
   const key = 'intfail:' + (await sha256Hex('cfp-ip:' + ip)).slice(0, 24);
   const win = Math.floor(Date.now() / 1000 / TOKEN_FAIL_LIMIT.windowSec) * TOKEN_FAIL_LIMIT.windowSec;
@@ -208,8 +210,9 @@ export async function integrationRouter(request, env, ctx, url) {
     const NAMED = new Set(['assignment_inactive_user']);
     const items = q.items.filter((i) => i.vehicle_id).map((i) => ({ check: i.check, severity: i.severity, vehicle_id: i.vehicle_id, plate: i.plate,
       event_id: i.event_id || null, case_id: i.case_id || null, detail: NAMED.has(i.check) ? null : i.detail }));
+    // site/site_options/other_hidden wie in der App (22.10.2026: fehlten – ein Tippfehler im Standort lieferte still eine leere Liste)
     return json({ schema_version: '1.0', generated_at: q.generated_at, environment: q.environment, stale_days: q.stale_days, vehicles_checked: q.vehicles_checked,
-      checks: CHECKS, counts: q.counts, by_severity, check_max: q.check_max, truncated_checks: q.truncated_checks, items });
+      site: q.site ?? null, site_options: q.site_options || [], other_hidden: q.other_hidden ?? 0, checks: CHECKS, counts: q.counts, by_severity, check_max: q.check_max, truncated_checks: q.truncated_checks, items });
   }
   if (p === '/v1/master' && m === 'GET') {
     const [mp, names] = await Promise.all([masterPanel(env, envParam(url)), personNames(env, envParam(url))]);

@@ -4665,7 +4665,7 @@ await test('Kontrolle mit km-Stand kleiner als zuletzt erfasst: Kontrolle gespei
   eq((await chk(true)).data.followups[0].id, fc3.id, 'an gesperrten kritischen Vorgang angehängt');
   for (const cc of [fa.case.id, fc3.id]) { const x = (await users.fleet.get(`/api/cases/${cc}`)).data.case; await users.fleet.post(`/api/cases/${cc}/commands`, { action: 'reject', command_id: rk(), expected_version: x.version, note: 'Testdaten' }); }
   const dq = (await users.fleet.get('/api/admin/data-quality')).data;
-  ok(dq.items.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === V1 && /^1000 km/.test(i.detail)), 'Datenqualität zeigt die Kontrolle mit zu kleinem km-Stand');
+  ok(!dq.items.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === V1 && /^1000 km/.test(i.detail)), 'zu kleiner Kontrollwert durch späteren plausiblen Stand geklärt (seit 22.10.2026; vorher bis Fristablauf gemeldet – Test 503)');
   ok(!dq.items.some((i) => i.check === 'km_inspection_rejected' && i.detail.startsWith(`${before[0].km + 50} km`)), 'plausibler Wert nicht gemeldet');
 });
 
@@ -16721,6 +16721,73 @@ await test('Fehlersuche 22.10. (Konsistenz/Rollen/Tastatur): HU/SP-Widerspruch m
   ok(app.includes('keep.focus = ') && app.includes('focusRestore(k.focus)'), 'Fokus bleibt nach Neuaufbau derselben Seite');
   ok(app.includes(`<h1 tabindex="-1" id="errh">`) && app.includes('role="alert"><p>${esc(e.message)}'), 'Fehlerseite mit Überschrift und Ansage');
   ok(app.includes('S.me.shared_readonly ?'), 'Hinweis Testkonto in der Akte');
+});
+await test('Fehlersuche 22.10. (Schnittstelle/Befunde): kurzes Token-Secret = nicht aktiviert (503), /v1/data-quality mit site/site_options/other_hidden, Prüfart in /v1/maintenance/history ohne Groß-/Kleinschreibung, km-Kontrollwert geklärt durch späteren Stand, Konto-Befunde der Datenqualität verlinkt, Kosten-Hinweis ohne unmögliche Aktion', async () => {
+  const { makeEnv } = await import('./harness.mjs');
+  // 1. Secret kürzer als 16 Zeichen → 503 integration_disabled, keine Sperre der Adresse
+  const e1 = makeEnv({ INTEGRATION_TOKEN: 'kurz' }); const a1 = new Client(worker, e1, 'anon');
+  for (let i = 0; i < 32; i++) { const r = await a1.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer kurz' }); if (i === 0 || i === 31) { eq(r.status, 503, 'Aufruf ' + i); eq(r.data.error, 'integration_disabled'); } }
+  const e2 = makeEnv({ INTEGRATION_TOKEN: 'kurz', INTEGRATION_TOKEN_READ: 'lese-token-mit-16-zeichen' }); const a2 = new Client(worker, e2, 'anon');
+  eq((await a2.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer lese-token-mit-16-zeichen' })).status, 200, 'gültiges Lese-Token neben zu kurzem');
+  eq((await a2.req('GET', '/api/integration/v1/vehicles', undefined, { authorization: 'Bearer kurz' })).status, 401);
+  const { U, e } = await freshWorld(); const F = U.fleet; const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  // 2. Datenqualität über die Schnittstelle mit Standort wie in der App
+  const dqA = (await F.get('/api/admin/data-quality?site=Dortmund')).data;
+  const dqI = (await an.req('GET', '/api/integration/v1/data-quality?environment=test&site=Dortmund', undefined, H)).data;
+  eq(dqI.site, dqA.site); eq(JSON.stringify(dqI.site_options), JSON.stringify(dqA.site_options)); eq(dqI.other_hidden, dqA.other_hidden);
+  const dqX = (await an.req('GET', '/api/integration/v1/data-quality?environment=test&site=xyz', undefined, H)).data; ok(Array.isArray(dqX.site_options) && dqX.site_options.length > 0, 'Optionen zum Abgleich');
+  // 3. Prüfart ohne Groß-/Kleinschreibung
+  const V = 'VIN:WMA15SZZ2HM722774';
+  const huDay = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 30 * 864e5).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'HU', last_done_date: huDay, evidence: 'TÜV (Test)' })).status, 201);
+  const hist = async (k) => (await an.req('GET', `/api/integration/v1/maintenance/history?environment=test&from=${huDay}&to=${BERLIN_TODAY}&kind=${k}`, undefined, H)).data.events.length;
+  eq(await hist('HU'), 1); eq(await hist('hu'), 1, 'hu = HU'); eq(await hist('xy'), 0);
+  // 4. km der Kontrolle kleiner als zuvor (Tippfehler): Datenqualität bis ein späterer Stand ≥ dem vorigen erfasst ist
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V}/odometer`, { km: 200000, measured_on: day(-10) })).status, 201);
+  const vid = (await F.get(`/api/vehicles/${V}`)).data.vehicle.id;
+  await e.DB.prepare(`INSERT INTO inspections(id, environment, vehicle_id, kind, template_version, performed_by, odometer_km, items, result, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .bind('insp-503', 'test', vid, 'abfahrt', 'v1', U.driver.id, 20000, '[]', 'ok', day(-5) + 'T08:00:00.000Z').run();
+  const kmItem = async () => (await F.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'km_inspection_rejected' && i.vehicle_id === vid);
+  ok(await kmItem(), 'Kontrollwert kleiner als zuvor gemeldet');
+  eq((await F.post(`/api/vehicles/${V}/odometer`, { km: 199000, measured_on: day(-2), note: 'Test kleiner' })).status, 201);
+  ok(await kmItem(), 'späterer kleinerer Stand klärt nicht');
+  eq((await F.post(`/api/vehicles/${V}/odometer`, { km: 201000 })).status, 201);
+  ok(!(await kmItem()), 'späterer Stand ≥ vorigem: geklärt');
+  // 5./6. Quelltext: Konto-Befunde verlinkt, Kosten-Hinweis nennt nur Mögliches (DE/UK/EN)
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("i.check === 'invite_pending' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers'"), 'Datenqualität: Konto-Zeilen mit Link');
+  const ag = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
+  ok(!ag.includes('Rechnungsbeträge der Fremdleistungen nachtragen') && ag.includes('lassen sich nach der Freigabe nicht nachtragen'), 'Kosten-Hinweis ohne unmögliche Aktion');
+});
+await test('Backlog 115 (22.10.): Begründung zu einem km-Rücksprung nachtragen – Datenqualität erledigt, km-Wert unverändert, nur Inhaber/Leitung, einmalig, protokolliert, Zeitleiste mit Kennung', async () => {
+  const { U, e } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await F.post(`/api/vehicles/${V}/odometer`, { km: 300000, measured_on: day(-9) })).status, 201);
+  eq((await F.post(`/api/vehicles/${V}/odometer`, { km: 5000, measured_on: day(-8), note: 'x' })).status, 201);
+  // Rücksprung ohne Begründung entsteht z. B. aus einer Durchführung/Import – hier direkt die Begründung leeren
+  await e.DB.prepare(`UPDATE odometer_readings SET note=NULL WHERE vehicle_id=? AND km=5000`).bind(V).run();
+  const dq = async () => (await F.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'km_drop_unexplained' && i.vehicle_id === V);
+  ok(await dq(), 'Rücksprung ohne Begründung gemeldet');
+  const tl = (c) => c.get(`/api/vehicles/${V}/timeline?types=odometer`);
+  const row = (await tl(F)).data.items.find((x) => x.km === 5000); ok(row && row.odometer_id && row.km_drop === true, JSON.stringify(row));
+  ok(!('odometer_id' in (await tl(U.viewer)).data.items.find((x) => x.km === 5000)), 'Lesezugriff ohne Kennung');
+  for (const c of [U.ws, U.viewer, U.driver]) ok([403, 404].includes((await c.post(`/api/odometer/${row.odometer_id}/note`, { note: 'Tachotausch' })).status), 'nur Inhaber/Leitung');
+  eq((await F.post(`/api/odometer/${row.odometer_id}/note`, { note: '  ' })).status, 400, 'leer');
+  eq((await F.post(`/api/odometer/unbekannt/note`, { note: 'x' })).status, 404);
+  eq((await F.post(`/api/odometer/${row.odometer_id}/note`, { note: 'Tachotausch laut Rechnung 4711' })).status, 200);
+  eq((await F.post(`/api/odometer/${row.odometer_id}/note`, { note: 'nochmal' })).status, 409, 'nur einmal');
+  ok(!(await dq()), 'Datenqualität erledigt');
+  const r2 = (await tl(F)).data.items.find((x) => x.km === 5000); eq(r2.note, 'Tachotausch laut Rechnung 4711'); eq(r2.km, 5000, 'km unverändert');
+  const au = (await U.own.get(`/api/admin/audit?action=vehicle.odometer_note`)).data.entries; ok(au.length === 1, 'Protokoll');
+  // Testkonto mit „nur lesen“ gesperrt
+  eq((await U.own.put('/api/settings', { test_master_readonly: true })).status, 200);
+  eq((await F.post(`/api/odometer/${row.odometer_id}/note`, { note: 'y' })).status, 403);
+  eq((await U.own.put('/api/settings', { test_master_readonly: false })).status, 200);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].odo_add_reason && STRINGS[l].odo_reason_prompt && STRINGS[l].odo_drop_unexplained, l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("i.check === 'km_drop_unexplained' ? tlHash(esc(i.vehicle_id), 'maintenance')") && app.includes('data-odonote'), 'Datenqualität führt zur Zeitleiste mit Knopf');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
