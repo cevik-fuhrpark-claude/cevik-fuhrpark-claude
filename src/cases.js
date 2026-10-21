@@ -1358,19 +1358,30 @@ export async function submitInspection(env, ctx, user, envName, body) {
   const RANK = { niedrig: 0, mittel: 1, kritisch: 2 };
   // Abfahrtskontrolle: derselbe Prüfpunkt hat bereits einen offenen Folgeauftrag → kein neuer Vorgang, sondern Vermerk dort.
   // Nur wenn der offene Vorgang mindestens so dringend ist; ein sicherheitsrelevanter Mangel braucht dort eine aktive Sperre.
-  const openByItem = new Map();
+  const openByItem = new Map(); // Prüfpunkt → offene Vorgänge (jüngste zuerst)
   if (kind === 'abfahrt' && defects.length) {
     for (const r of (await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version, check_item, reporter_id=? AS own FROM cases WHERE vehicle_id=? AND environment=? AND origin='kontrolle'
       AND check_item IN (SELECT value FROM json_each(?)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(user.id, vehicleId, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
-      if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, r); // jüngster offener je Prüfpunkt
+      if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, []); openByItem.get(r.check_item).push(r);
+    }
+  }
+  // Kontrolle nach Reparatur (z. B. neue Pflicht-Kontrolle nach Nacharbeit): offener Folgeauftrag desselben Ursprungsvorgangs und Prüfpunkts
+  // → Vermerk dort statt zweitem Folgeauftrag (21.10.2026: Nebenmangel ergab nach Nacharbeit T-0002 und T-0003)
+  if (kind === 'nach_reparatur' && c && defects.length) {
+    for (const r of (await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version, check_item, 0 AS own FROM cases WHERE parent_case_id=? AND environment=? AND origin='kontrolle'
+      AND check_item IN (SELECT value FROM json_each(?)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(c.id, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
+      if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, []); openByItem.get(r.check_item).push(r);
     }
   }
   const toCreate = [];
   const slots = [];
   for (const d of defects) {
     const prio = d.followup_priority || (d.safety_relevant ? 'kritisch' : 'mittel');
-    const open = openByItem.get(d.key);
-    if (open && RANK[open.priority] >= RANK[prio] && (!d.safety_relevant || open.safety_lock)) {
+    // Priorität nur vergleichen, wenn sie ausdrücklich gewählt oder sicherheitsrelevant ist – sonst gilt jeder offene Vorgang des Prüfpunkts
+    // (21.10.2026: von der Leitung auf „niedrig“ herabgestufter Vorgang führte bei jeder Kontrolle zu einem neuen „mittel“-Vorgang)
+    const cmpPrio = !!d.followup_priority || !!d.safety_relevant;
+    const open = (openByItem.get(d.key) || []).find((o) => (!cmpPrio || RANK[o.priority] >= RANK[prio]) && (!d.safety_relevant || o.safety_lock));
+    if (open) {
       repeats.push({ open, d });
       // eigener offener Vorgang: Fahrer darf dort Fotos anhängen (20.10.2026: Fotos zum erneut festgestellten eigenen Mangel wurden verworfen)
       d.followup_case_id = open.id; d.followup_case_no = open.case_no; d.repeat = true; if (open.own) d.repeat_own = true;
@@ -1441,8 +1452,9 @@ export async function submitInspection(env, ctx, user, envName, body) {
       stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(now, c.id));
     }
     if (repeats.length) { // zwei Anweisungen unabhängig von der Anzahl
-      const rep = repeats.map(({ open, d }) => ({ id: uuid(), case_id: open.id, status: open.status, version: open.version, note: `Erneut festgestellt (Abfahrtskontrolle): ${d.note}`,
-        payload: JSON.stringify({ inspection_id: id, code: 'repeat_departure_check', defect_note: d.note }) }));
+      const rk2 = kind === 'nach_reparatur' ? ['Kontrolle nach Reparatur', 'repeat_repair_check'] : ['Abfahrtskontrolle', 'repeat_departure_check'];
+      const rep = repeats.map(({ open, d }) => ({ id: uuid(), case_id: open.id, status: open.status, version: open.version, note: `Erneut festgestellt (${rk2[0]}): ${d.note}`,
+        payload: JSON.stringify({ inspection_id: id, code: rk2[1], defect_note: d.note }) }));
       const x = (k) => `json_extract(value,'$.${k}')`;
       stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
         SELECT ${x('id')}, ${x('case_id')}, ?1, ?2, ?3, 'repeat_finding', ${x('status')}, ${x('status')}, ${x('version')}, ${x('version')}, ${x('note')}, ${x('payload')}, ?4 FROM json_each(?5)`)

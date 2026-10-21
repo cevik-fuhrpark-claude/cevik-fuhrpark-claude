@@ -484,7 +484,9 @@ export async function listOwnSessions(env, user) {
 export async function revokeOwnSession(env, user, sid) {
   if (!/^[0-9a-f]{16}$/.test(String(sid))) throw bad('invalid_session', 'Ungültige Anmeldung.');
   if (user._session.startsWith(sid)) throw bad('current_session', 'Die aktuelle Anmeldung bitte über „Abmelden“ beenden.');
-  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND substr(token_hash,1,16)=?').bind(user.id, sid), pushOrphanStmt(env, user.id)]);
+  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND substr(token_hash,1,16)=?').bind(user.id, sid), pushOrphanStmt(env, user.id),
+    // offene 2FA-Anmeldungen lassen sich keinem Gerät zuordnen – alle beenden (Passwort wird erneut verlangt; 21.10.2026)
+    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id)]);
   if (r.meta.changes) await audit(env, user.id, 'session.revoke', user.id, { count: r.meta.changes });
   return { ok: true, revoked: r.meta.changes };
 }
@@ -513,7 +515,8 @@ export async function forgetKnownDevice(env, user, request, did) {
   return { ok: true, forgotten: r.meta.changes };
 }
 export async function revokeOtherSessions(env, user) {
-  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session), pushOrphanStmt(env, user.id)]);
+  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session), pushOrphanStmt(env, user.id),
+    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id)]); // begonnene 2FA-Anmeldungen anderer Geräte ebenso (21.10.2026)
   await audit(env, user.id, 'session.revoke_others', user.id, { count: r.meta.changes });
   return { ok: true, revoked: r.meta.changes };
 }
@@ -670,6 +673,8 @@ export async function revokeUserSessions(env, actor, userId) {
   const [s, p] = await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId),
     env.DB.prepare('UPDATE push_subscriptions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').bind(now, userId),
+    // begonnene Zwei-Faktor-Anmeldungen (Passwort schon eingegeben) ebenso beenden – sonst ergab der Code danach eine neue Sitzung (21.10.2026)
+    env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(userId),
   ]);
   await audit(env, actor.id, 'user.revoke_sessions', userId, { sessions: s.meta.changes, push_devices: p.meta.changes });
   return { ok: true, sessions: s.meta.changes, push_devices: p.meta.changes };

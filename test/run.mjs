@@ -15803,6 +15803,57 @@ await test('Fehlersuche 21.10. (Reifen/Fahrzeugakte): DOT nur passender Position
   ok(app.includes("${site && site !== 'ohne' && !sites.some((x) => sk(x) === sk(site)) ? `<option selected>${esc(site)}</option>` : ''}"), 'Standortauswahl');
 });
 
+await test('Fehlersuche 21.10. (Kontrolle/Anmeldung): herabgestufter Kontroll-Vorgang ohne Dublette, Kontrolle nach Reparatur nach Nacharbeit ohne zweiten Folgeauftrag, „Alle Anmeldungen beenden“ beendet offene 2FA-Anmeldung, schon benutzter Code kein Fehlversuch', async () => {
+  const { e, U, cmd, V1 } = await freshWorld(); const db = e.DB.db;
+  const items = (await U.fleet.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const check = (c, defects = {}) => c.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items.map((i) => defects[i.key] ? { key: i.key, result: 'mangel', ...defects[i.key] } : i) });
+  // 1. Leitung stuft Kontroll-Vorgang herab → nächste Kontrolle mit demselben Mangel: Vermerk, kein neuer Vorgang
+  const r1 = await check(U.driver, { spiegel_scheiben_wischer: { note: 'Wischer schmiert' } }); eq(r1.status, 201, JSON.stringify(r1.data));
+  const fid = r1.data.followups[0].id;
+  eq((await cmd(U.fleet, fid, 'change_priority', { priority: 'niedrig' }, 'nur Komfort')).status, 200);
+  const r2 = await check(U.driver, { spiegel_scheiben_wischer: { note: 'Wischer schmiert weiter' } });
+  ok(r2.data.followups.length === 1 && r2.data.followups[0].id === fid && r2.data.followups[0].repeat, JSON.stringify(r2.data.followups));
+  eq(db.prepare(`SELECT COUNT(*) n FROM cases WHERE check_item='spiegel_scheiben_wischer'`).get().n, 1, 'keine Dublette');
+  // sicherheitsrelevant ohne Sperre am offenen Vorgang: weiterhin neuer (gesperrter) Vorgang
+  const r3 = await check(U.driver, { spiegel_scheiben_wischer: { note: 'Spiegel abgebrochen', safety_relevant: true } });
+  ok(r3.data.followups[0].id !== fid && !r3.data.followups[0].repeat, 'sicherheitsrelevant braucht Sperre');
+  // 2. Kontrolle nach Reparatur, Nacharbeit, erneute Kontrolle mit demselben Nebenmangel → kein zweiter Folgeauftrag
+  const c = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Kupplung rutscht durch', priority: 'mittel', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk() });
+  const id = c.data.id;
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Kupplung tauschen')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 3, description: 'Kupplung' })).status, 200);
+  const def = items.map((i) => i.key === 'beleuchtung' ? { key: 'beleuchtung', result: 'mangel', note: 'Rücklicht rechts defekt' } : i);
+  const i1 = await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items: def }); eq(i1.status, 201, JSON.stringify(i1.data));
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig repariert')).status, 200);
+  eq((await cmd(U.fleet, id, 'return_for_rework', {}, 'Kupplung nachstellen bitte')).status, 200);
+  const i2 = await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items: def }); eq(i2.status, 201);
+  eq(i2.data.followups[0].id, i1.data.followups[0].id, 'Vermerk am bestehenden Folgeauftrag');
+  eq(db.prepare(`SELECT COUNT(*) n FROM cases WHERE parent_case_id=? AND check_item='beleuchtung'`).get(id).n, 1);
+  const ev = db.prepare(`SELECT note, payload FROM case_events WHERE case_id=? AND action='repeat_finding'`).get(i1.data.followups[0].id);
+  ok(ev && ev.note.startsWith('Erneut festgestellt (Kontrolle nach Reparatur)') && JSON.parse(ev.payload).code === 'repeat_repair_check', JSON.stringify(ev));
+  // 3. offene 2FA-Anmeldung endet mit „Alle Anmeldungen beenden“ (Leitung) bzw. „Alle anderen abmelden“
+  const { totpAt } = await import('../src/totp.js');
+  const s = await U.driver.post('/api/me/totp/setup', { password: 'Sicheres-Passwort-2026' }); eq(s.status, 200, JSON.stringify(s.data));
+  eq((await U.driver.post('/api/me/totp/enable', { code: await totpAt(s.data.secret, Date.now() - 30000) })).status, 200);
+  const chal = () => db.prepare('SELECT COUNT(*) n FROM login_challenges WHERE user_id=?').get(U.driver.id).n;
+  const att = new Client(worker, e, 'att-fleet');
+  const l = await att.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' }); ok(l.data.challenge, JSON.stringify(l.data)); eq(chal(), 1);
+  eq((await U.fleet.post(`/api/users/${U.driver.id}/revoke-sessions`)).status, 200); eq(chal(), 0, 'Leitung: offene Anmeldung beendet');
+  const c2 = await att.post('/api/login/totp', { challenge: l.data.challenge, code: await totpAt(s.data.secret) });
+  ok(c2.status >= 400, `Code nach Beenden abgewiesen (${c2.status})`); eq((await att.get('/api/me')).status, 401);
+  // 4. Code direkt nach der Anmeldung erneut unter „Mein Konto“: Hinweis, kein Fehlversuch
+  const dev = new Client(worker, e, 'dev2'); const code = await totpAt(s.data.secret);
+  const l2 = await dev.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' });
+  eq((await dev.post('/api/login/totp', { challenge: l2.data.challenge, code })).status, 200);
+  const nr = await dev.post('/api/me/totp/recovery-codes', { code }); eq(nr.status, 400); eq(nr.data.error, 'totp_used');
+  const dis = await dev.post('/api/me/totp/disable', { password: 'Sicheres-Passwort-2026', code }); eq(dis.data.error, 'totp_used');
+  eq(db.prepare(`SELECT COALESCE(MAX(failures),0) f FROM login_attempts WHERE key='w.fahrer'`).get().f, 0, 'kein Fehlversuch');
+  eq((await dev.post('/api/me/totp/recovery-codes', { code: '000000' === code ? '111111' : '000000' })).data.error, 'totp_invalid', 'falscher Code bleibt Fehler');
+  // „Alle anderen abmelden“ beendet ebenfalls offene Anmeldungen
+  const att2 = new Client(worker, e, 'att-self'); await att2.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' }); eq(chal(), 1);
+  eq((await dev.post('/api/me/sessions/revoke-others')).status, 200); eq(chal(), 0, 'selbst: offene Anmeldung beendet');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

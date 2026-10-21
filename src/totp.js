@@ -133,6 +133,15 @@ export async function totpEnable(env, user, body, auditFn) {
   return { ok: true, recovery_codes: codes };
 }
 
+// Richtiger, aber in diesem Zeitfenster schon benutzter Code (z. B. direkt nach der Anmeldung unter „Mein Konto“ erneut eingegeben):
+// kein Fehlversuch, eigener Hinweis (21.10.2026: zählte zur Sperre nach 8 Fehlversuchen)
+async function codeAlreadyUsed(row, code) {
+  if (!row.totp_secret || row.totp_last_step === null || row.totp_last_step === undefined) return false;
+  const st = await verifyTotp(row.totp_secret, code, null).catch(() => null);
+  return st !== null && st <= Number(row.totp_last_step);
+}
+const usedErr = () => bad('totp_used', 'Dieser Code wurde gerade schon verwendet – bitte den nächsten Code abwarten.');
+
 // Ausschalten: Passwort + aktueller Code (oder Ersatzcode)
 export async function totpDisable(env, user, body, auditFn) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
@@ -140,6 +149,7 @@ export async function totpDisable(env, user, body, auditFn) {
   await reauthLocked(env, user);
   if (!(await checkPassword(row, body.password))) { await reauthFailed(env, user); throw bad('wrong_password', 'Passwort falsch.'); }
   const r = await checkSecondFactor(env, row, body.code);
+  if (!r && (await codeAlreadyUsed(row, body.code))) { await reauthOk(env, user); throw usedErr(); }
   if (!r) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
   await reauthOk(env, user);
   // wie beim Einschalten: andere Anmeldungen und offene Anmeldevorgänge enden (18.10.2026)
@@ -159,6 +169,7 @@ export async function totpNewRecovery(env, user, body, auditFn) {
   if (!row.totp_enabled_at) throw bad('totp_off', 'Zwei-Faktor-Anmeldung ist nicht eingeschaltet.');
   await reauthLocked(env, user);
   const step = await verifyTotp(row.totp_secret, body.code, row.totp_last_step);
+  if (step === null && (await codeAlreadyUsed(row, body.code))) { await reauthOk(env, user); throw usedErr(); }
   if (step === null) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
   await reauthOk(env, user);
   const { codes, hashes } = await makeRecovery();

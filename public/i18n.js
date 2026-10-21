@@ -850,6 +850,7 @@ const V_MORE = [
   ['Artikel existiert in diesem Lager bereits.', 'Така позиція вже є на цьому складі.', 'This item already exists in this store.'],
   ['Für dieses Gerät gibt es bereits eine bestätigte Zuordnung – zuerst aufheben.', 'Для цього пристрою вже є підтверджена прив’язка – спочатку скасуйте її.', 'This device already has a confirmed assignment – remove it first.'],
   ['Achse passt nicht zum Anhänger.', 'Вісь не підходить для причепа.', 'Axle does not match the trailer.'],
+  ['Dieser Code wurde gerade schon verwendet – bitte den nächsten Code abwarten.', 'Цей код щойно вже використано – зачекайте наступний код.', 'This code was just used – please wait for the next code.'],
   ['Fahrzeug ist bereits außer Betrieb.', 'Транспортний засіб уже виведено з експлуатації.', 'Vehicle is already out of service.'],
   ['Fahrzeug ist bereits in Betrieb.', 'Транспортний засіб уже в експлуатації.', 'Vehicle is already in service.'],
   ['Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.', 'Для цього проведення вже внесено результат перевірки – його не буде перезаписано.', 'An inspection result has already been entered for this completion – it will not be overwritten.'],
