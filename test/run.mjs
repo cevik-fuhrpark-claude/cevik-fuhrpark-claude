@@ -286,6 +286,7 @@ await test('T14: Web-Push verschlüsselt (RFC 8291) und vom Dienst angenommen', 
   eq(pt[pt.length - 1], 2, 'Padding-Delimiter');
   const msg = JSON.parse(new TextDecoder().decode(pt.slice(0, -1)));
   eq(msg.title, 'Testbenachrichtigung');
+  ok(['test', 'production'].includes(msg.env), 'Umgebung in der Nutzlast (Inhaber wechselt beim Antippen die Ansicht)');
 });
 await test('T15: abgemeldetes Gerät wird entwertet, Fehler sichtbar statt „zugestellt“', async () => {
   const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
@@ -14631,7 +14632,7 @@ await test('Fehlersuche 20.10. (7): Fahrzeugdokument „gültig bis“ plausibel
   ok(row.downtime_h <= 12 * 24, 'Ausfall bis Monatsende: ' + row.downtime_h);
   const { readFileSync } = await import('node:fs');
   const ag = readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
-  ok(ag.includes('COUNT(DISTINCT n.user_id) AS n FROM notifications n'), 'URGENT_NOT_DELIVERED zählt Empfänger');
+  ok(ag.includes('COUNT(DISTINCT q.user_id) AS n FROM ('), 'URGENT_NOT_DELIVERED zählt Empfänger');
   ok(ag.includes("if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_id) {") && !ag.includes("m.finding_status === 'offen' && !m.finding_id"), 'Master: Zähler nach derselben Regel wie die Liste');
   const m = (await F.get('/api/master')).data;
   eq(m.decisions_open, m.inbox.filter((x) => ['offen', 'gesehen'].includes(x.decision_status) && !x.superseded).length, 'Zähler = Liste');
@@ -15709,6 +15710,52 @@ await test('Fahrzeugliste und /v1/availability: nächste Prüfung zählt eine nu
   const csvL = await F.get('/api/vehicles?format=csv'); ok(csvL.status === 200);
   // Fahrzeug ohne berechenbare Frist unverändert
   const v2 = (lv.vehicles || lv).find((x) => x.id !== V1); eq(v2.next_due ?? null, null, 'ohne Prüfdaten keine Frist');
+});
+
+await test('Hinweise/Wiedervorlage: „nicht zugestellt“ an zugeordneten Fahrer endet mit dem Vorgang, Gerätetest ohne Wiederholung/Ruhezeit, Push mit Umgebung, Wiedervorlage höchstens ein Jahr', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const { retryFailedPush } = await import('../src/notify.js'); const { oneYearAhead } = await import('../src/cases.js'); const fs = await import('node:fs');
+  // 1. dringender Hinweis an zugeordneten Fahrer ohne Push-Gerät (case_id bewusst leer) → Befund mit Vorgang; nach Abschluss erledigt
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test-Zuordnung' })).status, 201);
+  const id = await newCase({}, U.fleet);
+  eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Spiegelhalter gebrochen')).status, 200);
+  const n = db.prepare(`SELECT case_id, push_status FROM notifications WHERE user_id=? AND kind='safety_lock'`).get(U.driver.id);
+  ok(n && n.case_id === null && n.push_status === 'no_subscription', JSON.stringify(n));
+  const und = () => db.prepare(`SELECT subject_key, case_id, status FROM agent_findings WHERE finding_code='URGENT_NOT_DELIVERED' AND status NOT IN ('erledigt','geschlossen')`).all();
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const f1 = und(); ok(f1.length === 1 && f1[0].case_id === id && f1[0].subject_key === id, 'Befund mit Vorgangsbezug ' + JSON.stringify(f1));
+  eq((await cmd(U.fleet, id, 'lift_safety_lock', { confirm: true }, 'Halter getauscht')).status, 200);
+  eq((await cmd(U.fleet, id, 'reject', {}, 'erledigt')).status, 200);
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  eq(und().length, 0, 'abgeschlossener Vorgang: kein „nicht zugestellt“ mehr ' + JSON.stringify(und()));
+  // 2. „Test senden“ an ein bestimmtes Gerät: keine Wiederholung an alle Geräte, in der Ruhezeit sofort an dieses Gerät
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)));
+  const sub = (ep) => U.fleet.post('/api/push/subscribe', { endpoint: ep, keys: { p256dh: pub, auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } });
+  eq((await sub('https://push.example/ok/phone')).status, 200); eq((await sub('https://push.example/fail/tablet')).status, 200);
+  e.pushLog.length = 0;
+  eq((await U.fleet.post('/api/push/test', { endpoint: 'https://push.example/fail/tablet' })).data.push_status, 'failed');
+  e.pushLog.length = 0; e.__nowMs = Date.now() + 16 * 60000;
+  await retryFailedPush(e); delete e.__nowMs;
+  ok(!e.pushLog.some((x) => x.url.includes('push.example/ok/phone')), 'Wiederholung nicht an das Handy ' + JSON.stringify(e.pushLog.map((x) => x.url)));
+  eq((await U.fleet.put('/api/me/notify-prefs', { quiet: { from: '00:00', to: '23:59' } })).status, 200);
+  e.pushLog.length = 0;
+  const q = await U.fleet.post('/api/push/test', { endpoint: 'https://push.example/ok/phone' });
+  eq(q.data.push_status, 'accepted', JSON.stringify(q.data)); eq(q.data.hold_until, null);
+  ok(e.pushLog.length === 1 && e.pushLog[0].url === 'https://push.example/ok/phone', 'nur dieses Gerät');
+  eq((await U.fleet.post('/api/push/test')).data.push_status, 'pending', 'Test an alle Geräte bleibt in der Ruhezeit zurückgehalten');
+  // 3. Push-Nutzlast mit Umgebung; Service Worker/App übernehmen sie (Inhaber)
+  const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(sw.includes("c.postMessage({ type: 'navigate', hash, ...(ev ? { env: ev } : {}) })") && sw.includes("`?env=${ev}`"), 'SW reicht Umgebung weiter');
+  ok(app.includes('if (pushEnv(e.data.env))') && app.includes("new URLSearchParams(location.search).get('env')") && /function pushEnv\(ev\) \{\n  if \(!S\.me \|\| S\.me\.role !== 'owner'/.test(app), 'App wechselt nur beim Inhaber');
+  // 4. Wiedervorlage/Liefertermin: höchstens gleicher Tag im Folgejahr; Formular nach Änderung „ab heute“; Kalenderdatei mit Umgebung
+  eq(oneYearAhead('2026-10-21'), '2027-10-21'); eq(oneYearAhead('2028-02-29'), '2029-02-28');
+  const lim = oneYearAhead(BERLIN_TODAY); const over = new Date(Date.parse(lim) + 86400000).toISOString().slice(0, 10);
+  const id2 = await newCase({}, U.fleet);
+  const r1 = await cmd(U.fleet, id2, 'set_followup', { followup_on: over }); eq(r1.status, 400, 'ein Tag über einem Jahr abgewiesen');
+  eq((await cmd(U.fleet, id2, 'set_followup', { followup_on: lim })).status, 200, 'genau ein Jahr erlaubt');
+  ok(app.includes("if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }"), 'Formular: geändertes Datum ab heute');
+  ok(app.includes('`fuhrpark-wiedervorlagen_${envFn()}_${bDate()}.ics`'), 'Kalenderdatei nennt die Umgebung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -548,13 +548,19 @@ export function planDate(v) {
   return d;
 }
 
+// Gleicher Kalendertag im Folgejahr (29.02. → 28.02.) – „höchstens ein Jahr“ (vorher heute + 366 Tage: ein Tag zu viel, 21.10.2026)
+export function oneYearAhead(day) {
+  const y = Number(day.slice(0, 4)) + 1; const md = day.slice(5);
+  return md === '02-29' ? `${y}-02-28` : `${y}-${md}`;
+}
+
 // Wiedervorlage: Kalenderdatum ab heute (Berlin), höchstens 1 Jahr voraus
 export function followupDate(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Wiedervorlage im Format JJJJ-MM-TT.');
   const today = berlinDate();
   if (d < today) throw bad('followup_past', 'Wiedervorlage liegt in der Vergangenheit.');
-  if (d > new Date(Date.parse(today) + 366 * 86400000).toISOString().slice(0, 10)) throw bad('validation', 'Wiedervorlage liegt mehr als ein Jahr in der Zukunft.');
+  if (d > oneYearAhead(today)) throw bad('validation', 'Wiedervorlage liegt mehr als ein Jahr in der Zukunft.');
   return d;
 }
 
@@ -564,7 +570,7 @@ export function partsDate(v) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Liefertermin im Format JJJJ-MM-TT.');
   const today = berlinDate();
   if (d < today) throw bad('parts_eta_past', 'Liefertermin liegt in der Vergangenheit.');
-  if (d > new Date(Date.parse(today) + 366 * 86400000).toISOString().slice(0, 10)) throw bad('validation', 'Liefertermin liegt mehr als ein Jahr in der Zukunft.');
+  if (d > oneYearAhead(today)) throw bad('validation', 'Liefertermin liegt mehr als ein Jahr in der Zukunft.');
   return d;
 }
 

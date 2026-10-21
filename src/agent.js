@@ -108,15 +108,19 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
-  (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT n.case_id, COUNT(DISTINCT n.user_id) AS n FROM notifications n
+  (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT q.cid AS case_id, COUNT(DISTINCT q.user_id) AS n FROM (
+     -- Hinweise an zugeordnete Fahrer tragen bewusst keine case_id (Fahrer sieht den Vorgang nicht) – Vorgang aus dem event_key
+     -- „<case_id>:<art>:<version>“ (21.10.2026: Befund blieb nach Abschluss des Vorgangs 48 h als „system“ offen)
+     SELECT n.user_id, n.created_at, COALESCE(n.case_id, (SELECT x.id FROM cases x WHERE x.id=substr(n.event_key, 1, instr(n.event_key, ':') - 1) AND x.environment=?1)) AS cid
+     FROM notifications n
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
      AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 AND n.hidden_at IS NULL
-     AND n.user_id IN (SELECT id FROM users WHERE active=1)
+     AND n.user_id IN (SELECT id FROM users WHERE active=1)) q
      -- erledigt, wenn der Vorgang abgeschlossen ist oder die Person ihn seitdem selbst bearbeitet hat (vorher meldete der Agent bis 48 h
      -- „nicht zugestellt – telefonisch informieren“, obwohl die Werkstatt den Auftrag längst übernommen/erledigt hatte, 20.10.2026)
-     AND NOT EXISTS (SELECT 1 FROM cases x WHERE x.id=n.case_id AND x.status IN ('fahrzeug_freigegeben','abgelehnt'))
-     AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=n.case_id AND e.actor_id=n.user_id AND e.created_at >= n.created_at)
-     GROUP BY n.case_id)) AS undelivered,
+     WHERE NOT EXISTS (SELECT 1 FROM cases x WHERE x.id=q.cid AND x.status IN ('fahrzeug_freigegeben','abgelehnt'))
+     AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=q.cid AND e.actor_id=q.user_id AND e.created_at >= q.created_at)
+     GROUP BY q.cid)) AS undelivered,
   (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded`;
 
 export async function agentBasics(env, environment) {

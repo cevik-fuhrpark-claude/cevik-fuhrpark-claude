@@ -78,8 +78,10 @@ self.addEventListener('notificationclick', (e) => {
     const open = (async () => {
       // nur App-Fenster – nicht die Werkstatt-Demo unter /werkstatt/ (kennt „navigate“ nicht; 20.10.2026)
       const cs = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter((c) => { try { return !new URL(c.url).pathname.startsWith('/werkstatt/'); } catch { return true; } });
-      for (const c of cs) { if ('focus' in c) { c.postMessage({ type: 'navigate', hash }); return c.focus(); } }
-      return self.clients.openWindow('/' + hash);
+      // env: Umgebung des Hinweises – der Inhaber wechselt damit in die passende Ansicht (Test/Betrieb), sonst 404 beim Test-Vorgang (21.10.2026)
+      const ev = d.env === 'test' || d.env === 'production' ? d.env : null;
+      for (const c of cs) { if ('focus' in c) { c.postMessage({ type: 'navigate', hash, ...(ev ? { env: ev } : {}) }); return c.focus(); } }
+      return self.clients.openWindow('/' + (ev ? `?env=${ev}` : '') + hash);
     })();
     await Promise.all([ack, open]);
   })());

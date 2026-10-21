@@ -317,6 +317,8 @@ async function route() {
         S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
       }
       if (S.me.role === 'owner') S.viewEnv = localStorage.getItem('cfp_env') || null;
+      // Push angetippt bei geschlossener App: Umgebung aus „?env=“ übernehmen (Inhaber), danach aus der Adresse entfernen
+      { const pe = new URLSearchParams(location.search).get('env'); if (pe) { pushEnv(pe); history.replaceState(null, '', location.pathname + location.hash); } }
       if (!S.offlineStart) {
         S.meta = await api('GET', '/api/meta');
         saveOfflineSession();
@@ -970,7 +972,7 @@ async function viewCases() {
     <div id="cl">${cPrint(list, q)}${caseList(list)}${trunc(res)}</div>
     <div class="actions">${S.me.role !== 'driver' ? `<button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}` : ''}<button type="button" class="btn secondary" id="cprl">${esc(t('print'))}</button></div>`, 'cases');
   $('#cprl').onclick = () => window.print();
-  const ci = $('#cics'); if (ci) ci.onclick = async () => { try { download(await api('GET', `/api/cases?format=ics${vq()}`), `fuhrpark-wiedervorlagen_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
+  const ci = $('#cics'); if (ci) ci.onclick = async () => { try { download(await api('GET', `/api/cases?format=ics${vq()}`), `fuhrpark-wiedervorlagen_${envFn()}_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
   const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { const blob = await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${sq()}`); download(blob, `fuhrpark-vorgaenge_${envFn()}_${bDate()}.csv`); if (blob.cfpTruncated) toast(t('csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
   // Reiter: ein Filter aus dem Link (#/cases?f=…) hätte sonst Vorrang und der Klick bliebe ohne Wirkung (19.10.2026)
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); S.caseLimit = null; if (location.hash.includes('?')) history.replaceState(null, '', '#/cases'); viewCases(); }));
@@ -1529,6 +1531,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
   if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; };
+  // Wiedervorlage: ein inzwischen vergangenes Datum bleibt nur unverändert zulässig – nach einer Änderung gilt „ab heute“ wie am Server
+  // (vorher bot das Feld alle Tage ab dem alten Datum an, der Server wies sie mit „liegt in der Vergangenheit“ ab, 21.10.2026)
+  if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   const stockP = action === 'add_part' ? loadStockSelect(c) : null; // Promise erst am Ende zurückgeben – die Handler unten müssen gesetzt werden
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
@@ -2614,6 +2619,14 @@ async function viewFine(id) {
 // Standort als Teil eines Dateinamens (Umlaute bleiben, sonst Bindestrich)
 function fnPart(x) { return String(x).replace(/[^\wÄÖÜäöüß-]+/g, '-'); }
 // Umgebung im Dateinamen von Exporten (Test-Export hieß sonst wie ein Betriebsexport; 20.10.2026)
+// Inhaber: Ansicht auf die Umgebung eines angetippten Pushs umstellen (Test-Vorgang in der Betriebsansicht → 404, 21.10.2026); true = gewechselt
+function pushEnv(ev) {
+  if (!S.me || S.me.role !== 'owner' || !['test', 'production'].includes(ev)) return false;
+  const cur = S.viewEnv || S.me.environment; if (cur === ev) return false;
+  S.viewEnv = ev; try { localStorage.setItem('cfp_env', ev); } catch { /* ohne Speicher nur für diese Sitzung */ }
+  const es = document.getElementById('envsel'); if (es) es.value = ev;
+  S.unread = 0; refreshUnread(); return true;
+}
 function envFn() { return (S.me && S.me.role === 'owner' && S.viewEnv) || (S.me && S.me.environment) || ''; }
 function vsDef(k) { return S[k] !== undefined ? S[k] : (S.me && S.me.role !== 'driver' && S.me.home_site) || ''; }
 function siteSelect(id, name, options, cur, label = t('site'), allLabel = t('all')) {
@@ -4192,7 +4205,7 @@ setInterval(checkVersion, 30 * 60 * 1000);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
   // Push-Klick auf die schon offene Ansicht: neu aufbauen (gleicher Hash löst kein hashchange aus; 18.10.2026), Eingaben bleiben unangetastet
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') { if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') { if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
 }
 document.documentElement.lang = S.lang;
 route();

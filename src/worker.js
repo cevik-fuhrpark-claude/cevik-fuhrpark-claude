@@ -690,7 +690,8 @@ async function handleApi(request, env, ctx, url) {
     // optional: Endpunkt des eigenen Geräts – dann nur an dieses Gerät (fehlt es am Server, Status no_subscription)
     const tb = await readJson(request);
     const onlyEndpoint = str(tb && tb.endpoint, { max: 1000, field: 'endpoint' }) || null;
-    const ek = `test:${user.id}:${Date.now()}:${uuid().slice(0, 8)}`;
+    // Test an ein bestimmtes Gerät: eigener Schlüssel „testdev:“ – nie wiederholen/nach der Ruhezeit nachholen (ginge an alle Geräte, 21.10.2026)
+    const ek = `${onlyEndpoint ? 'testdev' : 'test'}:${user.id}:${Date.now()}:${uuid().slice(0, 8)}`;
     const n = await notifyUsers(env, null, envName, [user.id], { onlyEndpoint, kind: 'test', title: nt(user.language, 'test'), body: nt(user.language, 'test_body'), eventKey: ek, langOf: new Map([[user.id, user.language]]) });
     // genau dieser Testhinweis (vorher der neueste Hinweis der Person – ein gleichzeitig entstandener anderer lieferte dessen Status, 20.10.2026)
     const row = await env.DB.prepare('SELECT push_status, push_last_error, push_hold_until FROM notifications WHERE user_id=? AND event_key=?').bind(user.id, ek).first();

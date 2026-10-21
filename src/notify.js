@@ -256,7 +256,7 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -282,7 +282,7 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
       rows.push(row); meta.set(row.id, urgent);
     }
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: meta.get(r.id), case_id: r.case_id, kind: 'created', lang: r.lang, created_at: r.created_at }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: meta.get(r.id), case_id: r.case_id, kind: 'created', lang: r.lang, created_at: r.created_at, environment: r.environment }));
   const job = deliverPush(env, created, { collapse: true });
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -299,7 +299,7 @@ export async function notifyUsers(env, ctx, environment, userIds, { kind, title,
   };
   // Sprache des Textes (für die Vorlesefunktion des Geräts) nur, wenn sie feststeht: übersetzt (localize) oder vom Aufrufer genannt (langOf)
   const rows = userIds.map((uid) => ({ id: uuid(), environment, user_id: uid, case_id: caseId, event_key: eventKey, kind, urgent: urgent ? 1 : 0, ...text(uid), created_at: now, lang: localize || langOf ? langFor(uid) : null, ref: NOTIF_REF.test(ref || '') ? ref : null }));
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at, ref: r.ref, ...(onlyEndpoint ? { only_endpoint: onlyEndpoint } : {}) }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: caseId, kind, lang: r.lang, created_at: r.created_at, environment: r.environment, ref: r.ref, ...(onlyEndpoint ? { only_endpoint: onlyEndpoint } : {}) }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
@@ -361,7 +361,8 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   }
   for (const n of notifications) {
     if (isMuted(n)) { states.push({ id: n.id, s: 'disabled', a: 0 }); continue; }
-    if (!n.urgent && holdByUser.has(n.user_id)) { states.push({ id: n.id, s: 'pending', a: 0, h: holdByUser.get(n.user_id) }); continue; }
+    // „Test senden“ an genau dieses Gerät: sofort (die Person hat ihn selbst ausgelöst); ein Nachholen nach der Ruhezeit ginge an alle Geräte (21.10.2026)
+    if (!n.urgent && !n.only_endpoint && holdByUser.has(n.user_id)) { states.push({ id: n.id, s: 'pending', a: 0, h: holdByUser.get(n.user_id) }); continue; }
     // only_endpoint: „Test senden“ prüft genau dieses Gerät (20.10.2026: Test vom abgemeldeten Tablet meldete „angenommen“, weil das Handy annahm)
     const subs = (subsByUser.get(n.user_id) || []).filter((s) => !revoked.has(s.id) && (!n.only_endpoint || s.endpoint === n.only_endpoint));
     if (subs.length === 0) { states.push({ id: n.id, s: 'no_subscription', a: 0 }); continue; }
@@ -371,7 +372,7 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
       sends++; if (budget) budget.left--;
       // lang: Sprache des Textes, damit das Gerät die Mitteilung richtig vorliest/trennt (fehlt bei nicht übersetzten Freitexten)
       // ein einzelnes unbrauchbares Abo (Schlüssel) darf die Zustellung an die übrigen Empfänger nicht abbrechen (17.10.2026)
-      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(n.ref ? { ref: n.ref } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
+      const res = await sendPush(env, s, { id: n.id, title: n.title, body: n.body, case_id: n.case_id, urgent: n.urgent, ...(n.kind ? { kind: n.kind } : {}), ...(n.ref ? { ref: n.ref } : {}), ...(n.environment ? { env: n.environment } : {}), ...(LANGS.includes(n.lang) ? { lang: n.lang } : {}),
         // ts: Zeitpunkt des Ereignisses (ms) – nachgeholte Pushs (Wiederholung, Ende der Ruhezeit) zeigen am Gerät die echte Uhrzeit, nicht die Zustellzeit
         ...(Date.parse(n.created_at) ? { ts: Date.parse(n.created_at) } : {}) }, { urgent: n.urgent }).catch((e) => ({ status: 'failed', http: 0, error: String(e && e.name || 'Fehler') }));
       if (res.status === 'accepted') {
@@ -429,8 +430,8 @@ const COLLAPSE_RE = /\[Sammel-Push mit ([\w-]+)\]$/;
 export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.push_last_error, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ?1 AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND ((n.push_hold_until IS NULL AND n.created_at < ?2) OR n.push_hold_until < ?3)))
+  const rows = (await env.DB.prepare(`SELECT n.id, n.environment, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.push_last_error, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.event_key NOT LIKE 'testdev:%' AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ?1 AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND ((n.push_hold_until IS NULL AND n.created_at < ?2) OR n.push_hold_until < ?3)))
     ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
     // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt;
     // ebenso eine vor > 5 Min. beanspruchte Ruhezeit-Freigabe, deren Zustellung abbrach (18.10.2026: blieb sonst für immer „pending“)
@@ -454,8 +455,8 @@ export async function retryFailedPush(env) {
 // Beanspruchte Zeilen tragen „0000|<Zeitpunkt>“ (sortiert vor jeder echten Zeit); ältere Fassung schrieb „0000-01-01…“ (gilt als alt beansprucht)
 const QUIET_CLAIM_PREFIX = '0000|';
 export async function releaseQuietPush(env, now = env.__nowMs || Date.now(), userId = null) {
-  const rows = (await env.DB.prepare(`SELECT n.id, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.push_status='pending' AND n.push_hold_until >= '0001' AND n.push_hold_until <= ? AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ? AND (?3 IS NULL OR n.user_id=?3)
+  const rows = (await env.DB.prepare(`SELECT n.id, n.environment, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+    WHERE n.push_status='pending' AND n.push_hold_until >= '0001' AND n.push_hold_until <= ? AND n.event_key NOT LIKE 'testdev:%' AND n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.created_at > ? AND (?3 IS NULL OR n.user_id=?3)
     ORDER BY n.created_at LIMIT 200`).bind(new Date(now).toISOString(), new Date(now - 24 * 3600 * 1000).toISOString(), userId).all()).results;
   if (!rows.length) return 0;
   // Zeilen vor dem Senden atomar beanspruchen (18.10.2026: Ruhezeit ausgeschaltet + Cron gleichzeitig → zwei Pushs je Hinweis);
