@@ -16038,6 +16038,29 @@ await test('Fehlersuche 21.10. (Lager/Prüftermine): Artikeländerung mit gelese
   }
 });
 
+await test('Fehlersuche 21.10. (Verträge): Import nimmt „Kennzeichen Anhänger/Auflieger“ nicht als Fahrzeug-Kennzeichen, Dublettenregel auch gleichzeitig bei Umlauten in anderer Schreibweise', async () => {
+  const { e, U, V1 } = await freshWorld(); const own = U.own; const db = e.DB.db;
+  const imp = (csv) => own.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  const p1 = await imp('Kennzeichen Anhänger;Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Nachweis\nSZ-KC 5515;SZ-YC 5513;Leasing;LeaseCo;L-77;Vertrag.pdf');
+  eq(p1.status, 200, JSON.stringify(p1.data)); eq(JSON.stringify(p1.data.rows.map((r) => r.plate)), '["SZ-YC 5513"]', 'Lkw-Kennzeichen, nicht Anhänger');
+  const p2 = await imp('Amtl. Kennzeichen Auflieger;FIN;Vertragsart;Vertragspartner;Nachweis\nSZ-KC 5515;;Leasing;LeaseCo;Vertrag.pdf');
+  ok(p2.status === 400 || !p2.data.rows.some((r) => r.plate === 'SZ-KC 5515'), 'nur Auflieger-Kennzeichen: kein Vertrag am Auflieger ' + JSON.stringify(p2.data));
+  // gleichzeitig „ÜL-1“ und „ül-1“ (jeder DB-Aufruf zögert, damit sich beide Abläufe überlappen)
+  const C = await import('../src/contracts.js');
+  const user = db.prepare("SELECT * FROM users WHERE role='owner'").get();
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const DB = { prepare: (sql) => { const s0 = e.DB.prepare(sql); const wrap = (st) => ({ bind: (...a) => wrap(st.bind(...a)), first: async (c) => { await tick(); return st.first(c); }, all: async () => { await tick(); return st.all(); }, run: async () => { await tick(); return st.run(); } }); return wrap(s0); }, batch: (x) => e.DB.batch(x) };
+  const env2 = { ...e, DB };
+  const b = (no) => ({ kind: 'leasing', partner: 'LeaseCo', contract_no: no, start_date: '2025-01-01', monthly_rate_net: 500, evidence: 'V' });
+  const r = await Promise.allSettled([C.createContract(env2, user, V1, b('ÜL-1'), 'production'), C.createContract(env2, user, V1, b('ül-1'), 'production')]);
+  eq(r.map((x) => x.status).sort().join(','), 'fulfilled,rejected', JSON.stringify(r.map((x) => x.reason && x.reason.message)));
+  eq(db.prepare(`SELECT COUNT(*) n FROM vehicle_contracts WHERE vehicle_id=? AND kind='leasing'`).get(V1).n, 1);
+  // Partner ohne Nummer ebenso
+  const bp = (p) => ({ kind: 'miete', partner: p, start_date: '2025-02-01', monthly_rate_net: 100, evidence: 'M' });
+  const r2 = await Promise.allSettled([C.createContract(env2, user, V1, bp('Öko-Miet'), 'production'), C.createContract(env2, user, V1, bp('öko-miet'), 'production')]);
+  eq(r2.map((x) => x.status).sort().join(','), 'fulfilled,rejected');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
