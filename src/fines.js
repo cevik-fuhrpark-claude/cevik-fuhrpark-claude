@@ -1,7 +1,7 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -25,6 +25,13 @@ function shape(f, user) {
 
 // Obergrenze für Fristen: heute + 20 Jahre (wie Fahrerakte/Hinweise)
 const maxDueDay = () => String(Number(berlinDate().slice(0, 4)) + 20) + berlinDate().slice(4);
+
+// Lkw (aktiv, nicht ruhend), an dem das Kennzeichen als Anhänger-Kennzeichen laut Stammliste steht – genau einer, sonst null (21.10.2026)
+function trailerOf(vehicles, plate) {
+  const k = normPlate(plate); if (!k) return null;
+  const hits = vehicles.filter((v) => v.trailer_plate && normPlate(v.trailer_plate) === k && v.active && !v.eval_excluded);
+  return hits.length === 1 ? hits[0] : null;
+}
 
 export async function listFines(env, user, envName, query) {
   return (await listFinesSel(env, user, envName, query)).rows;
@@ -103,7 +110,14 @@ export async function fineDetail(env, user, envName, id) {
   const driver = f.driver_id ? await env.DB.prepare('SELECT display_name FROM users WHERE id=?').bind(f.driver_id).first() : null;
   const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
   // nicht zugeordnet, weil das Kennzeichen an mehreren aktiven Fahrzeugen steht → Fahrzeugstamm bereinigen statt „Fremdfahrzeug?“ (20.10.2026)
-  if (!f.vehicle_id && f.plate_in_letter) out.vehicle_ambiguous = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, f.plate_in_letter).ambiguous;
+  if (!f.vehicle_id && f.plate_in_letter) {
+    const vs = (await env.DB.prepare('SELECT id, plate, active, eval_excluded, trailer_plate FROM vehicles').all()).results;
+    const pk = pickVehicleByPlate(vs, f.plate_in_letter); out.vehicle_ambiguous = pk.ambiguous;
+    // 21.10.2026: Fahrzeugstamm inzwischen bereinigt/ergänzt → Kennzeichen jetzt eindeutig (Übernahme per „Ändern“, nicht automatisch);
+    // nur als „Anhänger-Kennzeichen“ an einem Lkw bekannt → Hinweis auf die Zugmaschine (Anhänger im Fahrzeugstamm anlegen)
+    if (pk.vehicle) out.vehicle_matchable = { id: pk.vehicle.id, plate: pk.vehicle.plate };
+    else if (!pk.ambiguous) { const tr = trailerOf(vs, f.plate_in_letter); if (tr) out.trailer_of = { id: tr.id, plate: tr.plate }; }
+  }
   if (isMgr(user)) {
     out.events = events;
     // bestätigte bzw. beim Zurücksetzen abgelöste Fahrer im Verlauf mit Namen (20.10.2026: „bisheriger Fahrer bleibt im Verlauf“ galt nur in der Datenbank)
@@ -297,7 +311,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         // nur vor der Fahrerermittlung: eine bestätigte Ermittlung bezog sich auf das bisherige Fahrzeug (19.10.2026, Backlog 91)
         if (p.plate_in_letter !== undefined) {
           const np = str(p.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
-          if (np !== f.plate_in_letter) {
+          // auch bei gleichem Kennzeichen, solange kein Fahrzeug zugeordnet ist (Fahrzeugstamm inzwischen eindeutig, 21.10.2026)
+          if (np !== f.plate_in_letter || !f.vehicle_id) {
             if (f.driver_confirmed_at) throw conflict('driver_confirmed', 'Fahrer bereits ermittelt – Kennzeichen nur vor der Fahrerermittlung änderbar.');
             const pk = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, np);
             set.plate_in_letter = np; set.vehicle_id = pk.vehicle ? pk.vehicle.id : null;
@@ -309,6 +324,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         // nur tatsächlich geänderte Angaben, mit bisherigem Wert (`prev`) – Verlauf zeigt alt → neu (19.10.2026)
         for (const k of Object.keys(set)) if ((set[k] ?? null) === (f[k] ?? null)) delete set[k];
         payload = { ...set, prev: Object.fromEntries(Object.keys(set).map((k) => [k, f[k] ?? null])), ...(plateAmbiguous ? { vehicle_ambiguous: true } : {}) };
+        // Fahrzeug bei unverändertem Kennzeichen übernommen: Kennzeichen im Verlauf nennen (21.10.2026)
+        if ('vehicle_id' in set && !('plate_in_letter' in set)) payload.plate_in_letter = f.plate_in_letter;
         break;
       default:
         throw bad('unknown_action', 'Unbekannte Aktion.');
@@ -354,7 +371,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     const du = await env.DB.prepare('SELECT language FROM users WHERE id=?').bind(f.driver_id).first();
     await notifyUsers(env, ctx, envName, [f.driver_id], { kind: 'fine', title: nt(du && du.language, 'fine'), body: `${f.fine_no}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `fine:${id}:inform:${f.version}`, urgent: false, langOf: new Map([[f.driver_id, du && du.language]]), ref: `fine:${id}` });
   }
-  return { ok: true, version: f.version + 1, ...(set.plate_in_letter !== undefined ? { vehicle_matched: !!set.vehicle_id, ...(plateAmbiguous ? { vehicle_ambiguous: true } : {}) } : {}) };
+  return { ok: true, version: f.version + 1, ...(set.plate_in_letter !== undefined || set.vehicle_id !== undefined ? { vehicle_matched: !!set.vehicle_id, ...(plateAmbiguous ? { vehicle_ambiguous: true } : {}) } : {}) };
 }
 
 export const MAX_FINE_FILES = 20;
@@ -427,7 +444,7 @@ export async function fineFindings(env, environment, settings = null) {
   const rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
   const today = berlinDate();
   const out = [];
-  const vehs = rows.some((f) => !f.vehicle_id) ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results : [];
+  const vehs = rows.some((f) => !f.vehicle_id) ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded, trailer_plate FROM vehicles').all()).results : [];
   for (const f of rows) {
     const label = `${f.fine_no} (${f.plate || f.plate_in_letter}, ${f.authority})`;
     if (f.response_due) {
@@ -436,6 +453,8 @@ export async function fineFindings(env, environment, settings = null) {
       else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm(days === 0 ? 'FINE_DUE_TODAY' : 'FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.' });
     }
     if (!f.vehicle_id && pickVehicleByPlate(vehs, f.plate_in_letter).ambiguous) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_AMBIGUOUS', { label, plate: f.plate_in_letter }), next_action: 'Fahrzeugstamm prüfen: Kennzeichen steht an mehreren aktiven Fahrzeugen (Datenqualität).' });
+    else if (!f.vehicle_id && pickVehicleByPlate(vehs, f.plate_in_letter).vehicle) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_MATCHABLE', { label, plate: f.plate_in_letter }), next_action: 'Bußgeld öffnen, unter „Angaben ändern“ speichern – das Fahrzeug wird übernommen.' });
+    else if (!f.vehicle_id && trailerOf(vehs, f.plate_in_letter)) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_TRAILER', { label, plate: f.plate_in_letter, truck: trailerOf(vehs, f.plate_in_letter).plate }), next_action: 'Anhänger im Fahrzeugstamm anlegen, danach im Bußgeld unter „Angaben ändern“ speichern.' });
     else if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
     else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
   }

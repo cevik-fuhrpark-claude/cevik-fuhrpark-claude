@@ -156,7 +156,10 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const wo = v.kind === 'anhaenger' ? null : await winterOrders(env, envName, vehicleId);
   const wOrder = wo ? wo.open.get(vehicleId) || null : null;
   const dots = currentDots(allEv); const today = berlinDate();
-  const positions = Object.entries(latest).map(([position, x]) => ({
+  // nur Positionen, die zur heutigen Fahrzeugart passen (21.10.2026: nach Artwechsel Lkw ↔ Anhänger blieb ein Altwert „unter Minimum“ stehen, der sich
+  // nicht mehr erfassen/klären ließ); die Ereignisse bleiben im Verlauf
+  const allowed = positionsForKind(v.kind);
+  const positions = Object.entries(latest).filter(([position]) => allowed.includes(position)).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: treadStatus(position, x.tread_mm, warn),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
@@ -204,12 +207,14 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)
   const rk = str(body.request_key, { max: 80, field: 'request_key' }) || null;
-  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position FROM tire_events WHERE vehicle_id=? AND request_key=? ORDER BY created_at, rowid').bind(vehicleId, rk).all()).results : []);
+  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
   { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
   const ids = positions.map(() => uuid());
   const res = await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark,request_key)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter, rk)));
-  if (rk && res.every((r) => !(r.meta && r.meta.changes))) { const k = await known(); return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
+  if (rk && res.every((r) => !(r.meta && r.meta.changes))) { const k = await known();
+    if (!k.length) throw conflict('request_key_reused', 'Dieser Buchungsschlüssel wurde bereits für eine andere Buchung verwendet.'); // fremde Kennung (andere Person/Umgebung)
+    return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
   const id = ids[0];
   const warnings = []; const warningItems = [];
   if (tread !== null && tread < LEGAL_MIN_TREAD_MM && positions.includes(SPARE_POSITION)) {
@@ -254,13 +259,17 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
   if (lines.length < 2) throw bad('validation', 'CSV leer.');
   const head = lines.shift().map((h) => h.trim().toLowerCase());
   const idx = (n) => head.findIndex((h) => h.startsWith(n));
-  const ci = { src: idx('quelle'), fin: idx('fin'), lenk: idx('reifen lenk'), lift: idx('reifen lift'), antr: idx('reifen antrieb'), anh: idx('reifen anh') };
+  // FIN: genauer Name zuerst, sonst Wortanfang ohne Anhänger-/Auflieger-/Finanz-Spalten (21.10.2026: „FIN Anhänger“ vor „FIN“ ordnete die
+  // Lkw-Größen dem Anhänger zu, „Finanzierung“ vor „FIN“ ließ alle Zeilen scheitern) – wie der Fahrzeugimport
+  const finIdx = (() => { const ex = head.findIndex((h) => ['fin', 'fin (vin)', 'vin', 'fahrgestellnummer'].includes(h)); return ex >= 0 ? ex : head.findIndex((h) => h.startsWith('fin') && !/anh|aufl|trailer|finanz/.test(h)); })();
+  const ci = { src: idx('quelle'), fin: finIdx, lenk: idx('reifen lenk'), lift: idx('reifen lift'), antr: idx('reifen antrieb'), anh: idx('reifen anh') };
   if (ci.fin < 0) throw bad('validation', 'Spalte FIN fehlt.');
   const ciPlate = idx('kennzeichen');
   // skipped: Zeilennummer, Kennzeichen/FIN und Grund (wie die anderen Import-Vorschauen); skipped_no_vehicle bleibt für bestehende Aufrufer
   const res = { imported: 0, skipped_no_vehicle: [], skipped: [], kept_verified: 0, dry_run: dryRun };
   // Abfragebudget: Fahrzeuge und geprüfte Werte vorab laden, Schreibvorgang als Sammelanweisung
-  const byVin = new Map((await env.DB.prepare('SELECT id, vin FROM vehicles').all()).results.map((v) => [v.vin, v.id]));
+  const vRows = (await env.DB.prepare('SELECT id, vin, kind FROM vehicles').all()).results;
+  const byVin = new Map(vRows.map((v) => [v.vin, v.id])); const kindOf = new Map(vRows.map((v) => [v.id, v.kind]));
   const verified = new Set((await env.DB.prepare('SELECT vehicle_id, axle FROM tire_specs WHERE verified=1').all()).results.map((r) => `${r.vehicle_id}|${r.axle}`));
   const rows = new Map(); const keptVerified = new Set(); // geprüft beibehalten je Fahrzeug/Achse, nicht je Dateizeile (18.10.2026)
   for (const c of lines) {
@@ -275,6 +284,8 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
     for (const [axle, k] of [['lenkachse', 'lenk'], ['liftachse', 'lift'], ['antriebsachse', 'antr'], ['anhaenger', 'anh']]) {
       const size = ci[k] >= 0 ? c[ci[k]] : '';
       if (!size || !/\d/.test(size)) continue;
+      // Lenk-/Lift-/Antriebsachse an einem Anhänger: passt nicht zur Fahrzeugart → melden statt speichern (21.10.2026)
+      if (kindOf.get(vid) === 'anhaenger' && axle !== 'anhaenger') { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: 'Achse passt nicht zum Anhänger' }); continue; }
       if (verified.has(`${vid}|${axle}`)) { keptVerified.add(`${vid}|${axle}`); res.kept_verified = keptVerified.size; continue; }
       // zu lange Größe: Zeile melden statt still kürzen (17.10.2026; Einzelerfassung weist sie ebenfalls ab)
       if (size.trim().length > 40) { res.skipped.push({ line: c.line, plate: (ciPlate >= 0 && String(c[ciPlate] || '').trim()) || vin || '', reason: `Reifengröße zu lang (max. 40 Zeichen): ${size.trim().slice(0, 60)}` }); continue; }
@@ -312,14 +323,14 @@ export async function tireFindings(env, environment, settings = null) {
   // Gleiche Regel wie Fahrzeugakte/Flottenübersicht: letzter MESSWERT je Position (Sichtprüfung/Luftdruck ohne Profil verdrängt ihn nicht;
   // ein Wechsel ohne Messung setzt ihn zurück). Vorher zählte nur das neueste Ereignis – eine Sichtprüfung nach 1,2 mm ließ den
   // kritischen Befund verschwinden, während Akte und Übersicht „unter Minimum“ zeigten (17.10.2026). Nur aktive Fahrzeuge wie die Übersicht.
-  const rows = (await env.DB.prepare(`SELECT x.vehicle_id, x.position, x.tread_mm, x.created_at, v.plate FROM (
+  const rows = (await env.DB.prepare(`SELECT x.vehicle_id, x.position, x.tread_mm, x.created_at, v.plate, v.kind FROM (
       SELECT t.vehicle_id, t.position, t.tread_mm, t.created_at, ROW_NUMBER() OVER (PARTITION BY t.vehicle_id, t.position ORDER BY t.created_at DESC, t.id DESC) AS rn
       FROM tire_events t WHERE t.environment=? AND (t.tread_mm IS NOT NULL OR t.event_type='wechsel')) x
     JOIN vehicles v ON v.id=x.vehicle_id WHERE x.rn=1 AND v.active=1 AND v.eval_excluded=0`) // ruhende Fahrzeuge aus allen Bewertungen ausgenommen (Entscheidung 10.10.2026), wie die Flottenübersicht
     .bind(environment).all()).results;
   const out = [];
-  for (const r of rows) {
-    if (r.tread_mm === null) continue;
+  for (const { kind, ...r } of rows) {
+    if (r.tread_mm === null || !positionsForKind(kind).includes(r.position)) continue; // Position passt nicht (mehr) zur Fahrzeugart (21.10.2026)
     if (r.tread_mm < LEGAL_MIN_TREAD_MM) out.push({ severity: r.position === SPARE_POSITION ? 'handeln' : 'kritisch', spare: r.position === SPARE_POSITION, ...r, limit: LEGAL_MIN_TREAD_MM });
     else if (warn !== null && r.tread_mm < warn) out.push({ severity: 'hinweis', ...r, limit: warn });
   }
@@ -354,7 +365,8 @@ export async function fleetTires(env, user, envName, query = {}) {
   const now = Date.now();
   const rank = { unter_minimum: 3, warnung: 2, reserve_unter_minimum: 2, ok: 1, unbekannt: 0 };
   const rows = vehicles.map((v) => {
-    const pos = [...latest.values()].filter((x) => x.vehicle_id === v.id && x.tread_mm !== null);
+    const allowed = positionsForKind(v.kind); // wie Fahrzeugakte/Agent: nur zur Fahrzeugart passende Positionen (21.10.2026)
+    const pos = [...latest.values()].filter((x) => x.vehicle_id === v.id && x.tread_mm !== null && allowed.includes(x.position));
     let status = 'unbekannt'; let minTread = null; let oldest = null; let below = 0; let warned = 0; let spareBelow = 0;
     for (const p of pos) {
       const st = treadStatus(p.position, p.tread_mm, warn);

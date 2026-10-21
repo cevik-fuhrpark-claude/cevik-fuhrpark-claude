@@ -444,7 +444,7 @@ export function normalizeVehicleKind(raw) {
 // keepExisting (Import): leere/fehlende Felder überschreiben vorhandene Werte nicht – ein Import löscht nie Stammdaten
 // Wechsel der Fahrzeugart (Lkw ↔ Anhänger): die Gewichtsklasse gehört zur alten Art (andere Klassen/SP-Pflicht) – sie wird aus der
 // belegten Gesamtmasse neu bestimmt bzw. ohne Masse „unbekannt“ (SP-Frist dann „ungeklärt“ statt still entfallen), HU/SP neu berechnet (17.10.2026)
-async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false, reactivate = false, actorId = null } = {}) {
+async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive = false, reactivate = false, actorId = null, guard = null } = {}) {
   const now = nowIso();
   const known = new Map((await env.DB.prepare('SELECT id, kind, zgm_class, zgm_kg FROM vehicles WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(rows.map((r) => r.id))).all()).results.map((v) => [v.id, v]));
   for (const r of rows) if (!r.kind) r.kind = known.get(r.id)?.kind || 'lkw';
@@ -454,6 +454,9 @@ async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive =
   });
   const J = (k) => `json_extract(value,'$.${k}')`;
   const stmts = [];
+  // gelesener Stand (Formular „Stammdaten bearbeiten“): nur speichern, wenn das Fahrzeug seitdem unverändert ist (Muster cmd_guard, 21.10.2026)
+  if (guard) stmts.push(env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM vehicles WHERE id=? AND updated_at=?) THEN 1 ELSE 0 END').bind(guard.id, guard.updated_at),
+    env.DB.prepare('DELETE FROM cmd_guard'));
   for (let i = 0; i < rows.length; i += 400) {
     stmts.push(env.DB.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,model,build_year,trailer_plate,trailer_vin,master_status,source,kind,active,created_at,updated_at)
       SELECT ${J('id')}, ${J('vin')}, ${J('plate')}, ${J('site')}, ${J('manufacturer')}, ${J('model')}, ${J('build_year')}, ${J('trailer_plate')}, ${J('trailer_vin')}, ${J('master_status')}, ${J('source')}, ${J('kind')}, 1, ?1, ?1
@@ -463,9 +466,18 @@ async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive =
       .bind(now, JSON.stringify(rows.slice(i, i + 400))));
   }
   if (kindChanged.length) stmts.push(env.DB.prepare(`UPDATE vehicles SET zgm_class=json_extract(value,'$.to') FROM json_each(?) WHERE vehicles.id=json_extract(value,'$.id')`).bind(JSON.stringify(kindChanged)));
-  if (stmts.length) await env.DB.batch(stmts);
+  // Protokoll der Klassenwechsel in EINER Anweisung im selben Stapel (21.10.2026: vorher eine Abfrage je Fahrzeug – 75 Artwechsel = 88 D1-Abfragen;
+  // brach nach dem Speichern ab, ohne Protokoll/HU-SP-Neuberechnung, und ein erneuter Import holte das nicht nach)
+  const specLog = kindChanged.filter((k) => k.from !== k.to).map((k) => ({ id: k.id, detail: JSON.stringify({ plate: k.plate, vehicle_kind: { from: k.from_kind, to: k.to_kind }, zgm_class: { from: k.from, to: k.to } }) }));
+  if (specLog.length) stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+    SELECT lower(hex(randomblob(16))), ?1, 'vehicle.spec', json_extract(value,'$.id'), json_extract(value,'$.detail'), ?2 FROM json_each(?3)`).bind(actorId, now, JSON.stringify(specLog)));
+  if (stmts.length) {
+    try { await env.DB.batch(stmts); } catch (e) {
+      if (guard && String(e && e.message).includes('CHECK')) throw conflict('version_conflict', 'Inzwischen von jemand anderem geändert – bitte neu laden.');
+      throw e;
+    }
+  }
   if (kindChanged.length) {
-    for (const k of kindChanged) if (k.from !== k.to) await audit(env, actorId, 'vehicle.spec', k.id, { plate: k.plate, vehicle_kind: { from: k.from_kind, to: k.to_kind }, zgm_class: { from: k.from, to: k.to } });
     await syncHuSpDues(env, { today: berlinDate(), actorId, vehicleIds: kindChanged.map((k) => k.id) });
   }
   return kindChanged;
@@ -476,7 +488,7 @@ export async function upsertVehicle(env, user, body) {
   const row = vehicleRow(user, body);
   // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
   // in Betrieb – dann mit Protokoll `vehicle.activate` (vorher still, 17.10.2026)
-  const before = await env.DB.prepare('SELECT active, plate FROM vehicles WHERE id=?').bind(row.id).first();
+  const before = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(row.id).first();
   const createOnly = flag(body.create_only, 'Nur anlegen');
   const keepActive = flag(body.keep_active, 'Aktiv lassen'); // einmal auswerten (18.10.2026: "0"/"false" nahm still ohne Protokoll in Betrieb)
   // „Fahrzeug anlegen“ mit der FIN eines Fahrzeugs in Betrieb: abweisen statt still alle leeren Felder (Standort, Hersteller, Anhänger …) zu
@@ -484,14 +496,23 @@ export async function upsertVehicle(env, user, body) {
   // nur für das Formular „Fahrzeug anlegen“ (`create_only`); andere Aufrufer nutzen den Endpunkt weiter als Upsert
   if (before && before.active && !keepActive && createOnly) throw conflict('vin_exists', `Fahrzeug mit dieser FIN besteht bereits (${before.plate}) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden.`, { id: row.id });
   const recreate = !!(before && !before.active && !keepActive && createOnly);
-  await upsertVehicleRows(env, [row], recreate ? { keepExisting: true, reactivate: true, actorId: user.id } : { keepActive, actorId: user.id });
+  // „Stammdaten bearbeiten“ sendet den gelesenen Stand (`expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026)
+  const expected = keepActive && before && body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
+  if (expected && expected !== before.updated_at) throw conflict('version_conflict', 'Inzwischen von jemand anderem geändert – bitte neu laden.');
+  await upsertVehicleRows(env, [row], recreate ? { keepExisting: true, reactivate: true, actorId: user.id } : { keepActive, actorId: user.id, guard: expected ? { id: row.id, updated_at: expected } : null });
+  // geänderte Felder alt → neu ins Protokoll (vorher nur das Kennzeichen – Änderungen waren nachträglich nicht erkennbar, 21.10.2026)
+  const FIELDS = ['plate', 'site', 'manufacturer', 'model', 'build_year', 'trailer_plate', 'trailer_vin', 'master_status', 'kind'];
+  // Schlüssel wie im übrigen Protokoll (alt → neu je Feld); Kennzeichen-Änderung als `plate_old` (`plate` bleibt das aktuelle), Fahrzeugart als `vehicle_kind`
+  const KEY = { plate: 'plate_old', kind: 'vehicle_kind' };
+  const changes = before ? Object.fromEntries(FIELDS.filter((f) => row[f] !== null && row[f] !== undefined ? row[f] !== before[f] : (!recreate && before[f] !== null && f !== 'kind'))
+    .map((f) => [KEY[f] || f, f === 'plate' ? before.plate : { from: before[f] ?? null, to: row[f] ?? (recreate ? before[f] : null) }])) : null;
   if (before && !before.active && !keepActive) await audit(env, user.id, 'vehicle.activate', row.id, { plate: row.plate, recreated: true });
   // Hinweis (keine Sperre): dasselbe Kennzeichen an einem anderen Fahrzeug (Schreibweise egal) – Tippfehler in der FIN oder Doppelanlage?
   // Gesperrt wird nicht, weil es berechtigte Fälle gibt (z. B. ruhendes Altfahrzeug mit gleichem Kennzeichen); entscheiden muss der Mensch.
   const k = normPlate(row.plate);
   const duplicates = (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>?').bind(row.id).all()).results
     .filter((v) => normPlate(v.plate) === k).map((v) => ({ id: v.id, plate: v.plate, active: !!v.active, eval_excluded: !!v.eval_excluded }));
-  await audit(env, user.id, 'vehicle.upsert', row.id, duplicates.length ? { plate: row.plate, duplicate_plate_of: duplicates.map((d) => d.id) } : { plate: row.plate });
+  await audit(env, user.id, 'vehicle.upsert', row.id, { plate: row.plate, ...(duplicates.length ? { duplicate_plate_of: duplicates.map((d) => d.id) } : {}), ...(changes || {}), ...(before ? {} : { created: true }) });
   return { id: row.id, duplicate_plates: duplicates };
 }
 

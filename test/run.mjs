@@ -15499,6 +15499,80 @@ await test('Fehlersuche 21.10. (3): Prüftermine – berechnete SP aus dem eigen
   void ICS_TEXTS;
 });
 
+await test('Fehlersuche 21.10. (4): Reifen – nach Artwechsel nur passende Positionen (Akte, Flotte, Agent), Größen-Import mit eindeutiger FIN-Spalte und ohne Lkw-Achsen am Anhänger, fremde Erfassungskennung 409, Messdatum und Kennung je Inhalt in der App', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const V2 = 'VIN:WDB9630051L917317'; const V1 = 'VIN:WMA15SZZ2HM722774';
+  const tev = (c, v, b) => c.post(`/api/vehicles/${v}/tires/events`, b);
+  eq((await tev(U.fleet, V2, { event_type: 'messung', position: 'VA-L', tread_mm: '1,0' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB9630051L917317', plate: 'SZ-KC 5515', kind: 'anhaenger', keep_active: true, site: 'Dortmund' })).status, 201);
+  const o = (await U.fleet.get(`/api/vehicles/${V2}/tires`)).data; eq(o.positions.length, 0, JSON.stringify(o.positions));
+  const fr = (await U.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V2); eq(`${fr.status}|${fr.below_min}`, 'unbekannt|0');
+  const { tireFindings } = await import('../src/tires.js'); ok(!(await tireFindings(e, 'test')).some((x) => x.vehicle_id === V2), 'kein Agentenbefund');
+  // Import: „FIN Anhänger“ vor „FIN“, „Finanzierung“ vor „FIN“; Lkw-Achsen an Anhänger gemeldet
+  eq((await U.own.post('/api/vehicles', { plate: 'FX-AH 2', vin: 'WDB96340310998202', kind: 'anhaenger' })).status, 201);
+  const imp = (csv) => U.own.req('POST', '/api/tires/import', csv, { 'content-type': 'text/csv' });
+  let r = await imp('Quelle;Kennzeichen;FIN Anhänger;FIN;Reifen Lenkachse;Reifen Antriebsachse\nQ;SZ-YC 5513;WDB96340310998202;WMA15SZZ2HM722774;315/80 R22.5;315/70 R22.5');
+  eq(r.status, 200, JSON.stringify(r.data));
+  eq(db.prepare(`SELECT group_concat(vehicle_id || ':' || axle) g FROM (SELECT * FROM tire_specs ORDER BY axle)`).get().g, `${V1}:antriebsachse,${V1}:lenkachse`);
+  r = await imp('Finanzierung;FIN;Reifen Lenkachse\nLeasing;WMA15SZZ2HM722774;315/80 R22.5'); eq(r.status, 200); eq(r.data.skipped.length, 0, JSON.stringify(r.data.skipped));
+  r = await imp('FIN;Reifen Lenkachse;Reifen Anhänger\nWDB96340310998202;315/80 R22.5;385/65 R22.5'); eq(r.status, 200);
+  eq(r.data.skipped.map((x) => x.reason).join(), 'Achse passt nicht zum Anhänger');
+  eq(db.prepare(`SELECT group_concat(axle) g FROM tire_specs WHERE vehicle_id='VIN:WDB96340310998202'`).get().g, 'anhaenger');
+  // fremde Kennung → 409 statt Serverfehler; eigene Wiederholung weiter „duplicate“
+  eq((await tev(U.fleet, V1, { event_type: 'messung', position: 'VA-L', tread_mm: 8, request_key: 'fx-tk-1' })).status, 201);
+  eq((await tev(U.fleet, V1, { event_type: 'messung', position: 'VA-L', tread_mm: 8, request_key: 'fx-tk-1' })).data.duplicate, true);
+  const x = await tev(U.ws, V1, { event_type: 'messung', position: 'VA-L', tread_mm: 9, request_key: 'fx-tk-1' }); eq(x.status, 409, JSON.stringify(x.data)); eq(x.data.error, 'request_key_reused');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const i18 = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(app.includes('if (tf.dataset.ck !== ck) { tf.dataset.ck = ck; tf.dataset.key = uid(); }'), 'Kennung je Inhalt');
+  ok(app.includes("fmtD(p.tread_at) !== fmtD(p.last_event_at) ? `<div class=\"small muted\" data-tat="), 'Messdatum neben Altwert (anderer Tag)');
+  eq((i18.match(/tread_measured_at:/g) || []).length, 3); ok(!i18.includes('wie im Export: Quelle;'), 'Import-Hinweis korrigiert');
+});
+
+await test('Fehlersuche 21.10. (5): Fahrzeugstamm – Import mit vielen Artwechseln im Abfragebudget samt Protokoll, „Stammdaten bearbeiten“ auf gelesenem Stand mit Änderungsprotokoll; Bußgeld – Fahrzeug nach Stammdatenbereinigung übernehmbar, Hinweis auf Anhänger laut Stammliste', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774';
+  // (1) 60 Lkw anlegen, dann 45 davon per Import zu Anhängern: Budget und Protokoll je Fahrzeug
+  const vins = Array.from({ length: 60 }, (_, i) => `WDB9634031${String(100000 + i).slice(-6)}9`.slice(0, 16) + String(i % 10));
+  const uniq = [...new Set(vins)]; ok(uniq.length === 60, 'FIN eindeutig');
+  const head = 'Kennzeichen;Standort;Status;Hersteller;Baujahr;FIN;Fahrzeugart';
+  const csv1 = [head, ...uniq.map((v, i) => `FX-IM ${i};Dortmund;in Betrieb;MAN;2016;${v};Lkw`)].join('\n');
+  eq((await U.own.req('POST', '/api/vehicles/import', csv1, { 'content-type': 'text/csv' })).status, 200);
+  db.prepare(`UPDATE vehicles SET zgm_class='ueber_12' WHERE plate LIKE 'FX-IM %'`).run();
+  const csv2 = [head, ...uniq.map((v, i) => `FX-IM ${i};Dortmund;in Betrieb;MAN;2016;${v};${i < 45 ? 'Anhänger' : 'Lkw'}`)].join('\n');
+  const q0 = QSTAT.n; const r2 = await U.own.req('POST', '/api/vehicles/import', csv2, { 'content-type': 'text/csv' }); const nq = QSTAT.n - q0;
+  eq(r2.status, 200, JSON.stringify(r2.data)); ok(nq <= 50, 'Import mit 45 Artwechseln: Abfragen ' + nq);
+  eq(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.spec' AND json_extract(detail,'$.vehicle_kind.to')='anhaenger'`).get().n, 45);
+  // (2) Stammdaten bearbeiten: gelesener Stand
+  const v0 = (await F.get(`/api/vehicles/${V1}`)).data.vehicle; ok(v0.updated_at, 'updated_at in der Akte');
+  const base = { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund', keep_active: true };
+  await new Promise((r) => setTimeout(r, 3));
+  eq((await U.own.post('/api/vehicles', { ...base, site: 'Hamburg', trailer_plate: 'SZ-YC 5599', expected_updated_at: v0.updated_at })).status, 201);
+  const late = await F.post('/api/vehicles', { ...base, manufacturer: 'MAN TGX', expected_updated_at: v0.updated_at });
+  eq(late.status, 409, JSON.stringify(late.data)); eq(late.data.error, 'version_conflict');
+  eq(db.prepare('SELECT site, trailer_plate FROM vehicles WHERE id=?').get(V1).site, 'Hamburg', 'Änderung von B bleibt');
+  const lg = JSON.parse(db.prepare(`SELECT detail FROM audit_log WHERE action='vehicle.upsert' AND target=? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(V1).detail);
+  eq(JSON.stringify(lg.site), JSON.stringify({ from: 'Dortmund', to: 'Hamburg' })); eq(lg.trailer_plate.to, 'SZ-YC 5599'); eq(lg.plate, 'SZ-YC 5513');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="evf"><input type="hidden" name="expected_updated_at"'), 'Formular sendet den gelesenen Stand');
+  // (3) Bußgeld: Kennzeichen zunächst mehrdeutig, nach Außerbetriebnahme des Doppels übernehmbar
+  eq((await U.own.post('/api/vehicles', { plate: 'SZ-YC 5513', vin: 'WDB96340310998301' })).status, 201);
+  const fid = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: '2026-09-15T10:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt X', reference: 'FX-RM-1' })).data.id;
+  eq((await F.get(`/api/fines/${fid}`)).data.vehicle_ambiguous, true);
+  eq((await U.own.post('/api/vehicles/VIN:WDB96340310998301/active', { active: false, reason: 'Doppelanlage' })).status, 200);
+  const d1 = (await F.get(`/api/fines/${fid}`)).data; eq(d1.vehicle_matchable && d1.vehicle_matchable.id, V1, JSON.stringify(d1.vehicle_matchable));
+  const { fineFindings } = await import('../src/fines.js').catch(() => ({}));
+  void fineFindings;
+  const f1 = d1.fine;
+  const up = await F.post(`/api/fines/${fid}/commands`, { action: 'update', payload: { plate_in_letter: 'SZ-YC 5513', authority: f1.authority }, expected_version: f1.version });
+  eq(up.status, 200, JSON.stringify(up.data)); eq(up.data.vehicle_matched, true);
+  eq(db.prepare('SELECT vehicle_id FROM fines WHERE id=?').get(fid).vehicle_id, V1);
+  ok(app.includes("(!f.vehicle_id || uf.plate_in_letter.value.trim().toUpperCase() !== String(f.plate_in_letter || ''))"), 'App sendet Kennzeichen ohne Fahrzeug');
+  // (4) Kennzeichen nur als Anhänger-Kennzeichen eines Lkw
+  eq((await U.own.post('/api/vehicles', { plate: 'FX-ZM 9', vin: 'WDB96340310998302', trailer_plate: 'FX-AH 9' })).status, 201);
+  const tid = (await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: '2026-09-16T10:00', plate_in_letter: 'FX-AH 9', authority: 'Stadt X', reference: 'FX-RM-2' })).data.id;
+  const d2 = (await F.get(`/api/fines/${tid}`)).data; eq(d2.trailer_of && d2.trailer_of.plate, 'FX-ZM 9', JSON.stringify(d2.trailer_of));
+  const fmsg = fs.readFileSync(new URL('../public/finding-messages.js', import.meta.url), 'utf8');
+  eq((fmsg.match(/FINE_VEHICLE_MATCHABLE:/g) || []).length, 3); eq((fmsg.match(/FINE_VEHICLE_TRAILER:/g) || []).length, 3);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
