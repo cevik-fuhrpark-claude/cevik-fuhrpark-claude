@@ -1589,9 +1589,9 @@ export function auditDetailText(lang, detail, refs) {
   return Object.entries(detail).map(([k, v]) => `${key(k)}: ${typeof rf[k] === 'string' && rf[k] ? rf[k] : val(k, v)}`).join(' · ');
 }
 
-Object.assign(STRINGS.de, { tk_massenspeicher: 'Massenspeicher', dex_truncated: 'Datenauskunft gekürzt: In {t} sind nur die neuesten Einträge enthalten (Zeilengrenze). Vor der Weitergabe ergänzen (z. B. aus der Datensicherung).' });
-Object.assign(STRINGS.uk, { tk_massenspeicher: 'Пам’ять тахографа', dex_truncated: 'Відповідь на запит даних скорочено: у {t} є лише найновіші записи (ліміт рядків). Доповніть перед передачею (наприклад, з резервної копії).' });
-Object.assign(STRINGS.en, { tk_massenspeicher: 'Vehicle unit', dex_truncated: 'Data access report shortened: {t} only contain the newest entries (row limit). Complete it before passing it on (e.g. from the backup).' });
+Object.assign(STRINGS.de, { ws_nicht_pflichtig: 'Winter: keine Pflicht', tk_massenspeicher: 'Massenspeicher', dex_truncated: 'Datenauskunft gekürzt: In {t} sind nur die neuesten Einträge enthalten (Zeilengrenze). Vor der Weitergabe ergänzen (z. B. aus der Datensicherung).' });
+Object.assign(STRINGS.uk, { ws_nicht_pflichtig: 'Зима: не обов’язково', tk_massenspeicher: 'Пам’ять тахографа', dex_truncated: 'Відповідь на запит даних скорочено: у {t} є лише найновіші записи (ліміт рядків). Доповніть перед передачею (наприклад, з резервної копії).' });
+Object.assign(STRINGS.en, { ws_nicht_pflichtig: 'Winter: not required', tk_massenspeicher: 'Vehicle unit', dex_truncated: 'Data access report shortened: {t} only contain the newest entries (row limit). Complete it before passing it on (e.g. from the backup).' });
 Object.assign(STRINGS.de, { sla_immediate: 'sofort' });
 Object.assign(STRINGS.uk, { sla_immediate: 'одразу' });
 Object.assign(STRINGS.en, { sla_immediate: 'immediately' });

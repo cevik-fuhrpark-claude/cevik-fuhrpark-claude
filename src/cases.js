@@ -658,7 +658,7 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
   const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '')})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
-  const requestKey = str(body.request_key, { max: 64 }) || uuid();
+  const requestKey = str(body.request_key, { max: 64, field: 'request_key' }) || uuid();
   // Verknüpfung mit dem Prüftermin im selben atomaren Batch wie die Meldung (vorher eigenes UPDATE danach)
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: rule.vehicle_id, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
     { origin: 'wartung', maintenance_rule_id: rule.id, site_checked: true });
@@ -694,7 +694,7 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   const date = ev.done_date.split('-').reverse().join('.');
   const description = `Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ${ev.evidence})${note ? ' – ' + note : ''}`;
-  const requestKey = str(body.request_key, { max: 64 }) || uuid();
+  const requestKey = str(body.request_key, { max: 64, field: 'request_key' }) || uuid();
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: ev.vehicle_id, description, priority, driveability, workshop_site: site, request_key: requestKey }],
     { origin: 'wartung', maintenance_event_id: ev.id, site_checked: true });
   const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: ('md-' + requestKey).slice(0, 64), expected_version: 1,
@@ -735,7 +735,7 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   if (w.missing.length) parts.push(`nicht erfasst: ${w.missing.join(', ')}`);
   const description = (w.status === 'nicht_erfuellt' ? 'Umrüstung auf Winterreifen (Alpine-Symbol)' : 'Winterreifen prüfen und Winterkennzeichnung erfassen')
     + ` – Positionen laut Reifenerfassung ${parts.join('; ')}. Wechsel mit Winterkennzeichnung in der Fahrzeugakte → Reifen erfassen.${note ? ' – ' + note : ''}`;
-  const requestKey = str(body.request_key, { max: 64 }) || uuid();
+  const requestKey = str(body.request_key, { max: 64, field: 'request_key' }) || uuid();
   const [created] = await createCases(env, ctx, user, envName, [{ vehicle_id: vehicleId, description, priority, driveability: 'fahrbereit', workshop_site: site, request_key: requestKey }],
     { origin: 'wartung', tire_order: 'winter', site_checked: true });
   if (created.duplicate) return { id: created.id, case_no: created.case_no, duplicate: true };
@@ -1200,8 +1200,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Winterreifen-Auftrag: Winterlage laut Reifenerfassung noch nicht erfüllt → nur mit ausdrücklicher Bestätigung (keine Sperre, Grund steht im Vermerk)
       if (c.tire_order === 'winter') {
         const w = await caseWinter(env, c);
-        if (w.status !== 'erfuellt' && !flag(p.confirm_winter_open, 'Bestätigung')) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
-        payload = { winter_status: w.status, ...(w.status !== 'erfuellt' ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
+        // keine Winterpflicht (z. B. Fahrzeugart inzwischen Anhänger): nichts zu bestätigen (21.10.2026: 400 winter_open trotz fehlender Pflicht)
+        if (!['erfuellt', 'nicht_pflichtig'].includes(w.status) && !flag(p.confirm_winter_open, 'Bestätigung')) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
+        payload = { winter_status: w.status, ...(!['erfuellt', 'nicht_pflichtig'].includes(w.status) ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
       }
       toStatus = 'abschlusskontrolle';
       notifyKind = 'quality_check';

@@ -5984,7 +5984,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   eq(kp.status, 200);
   const ca = kp.data.cost_approvals;
   ok(ca.exceeded >= 2 && ca.approved >= 1 && ca.pending >= 1 && ca.cases >= 1, 'Kostenfreigaben gezählt: ' + JSON.stringify(ca));
-  eq(ca.exceeded, ca.approved + ca.pending + ca.closed_without, 'jede Überschreitung genau einmal eingeordnet');
+  eq(ca.exceeded, ca.approved + ca.pending + ca.closed_without + ca.cleared, 'jede Überschreitung genau einmal eingeordnet (cleared: Markierung durch Grenzänderung aufgehoben, seit 21.10.2026)');
   ok(ca.to_approval.n === ca.approved && ca.to_approval.median_h >= 0, 'Dauer bis Freigabe');
   ok(!/net|eur|amount/i.test(Object.keys(ca).join(',')), 'keine Beträge');
   ok(kp.data.definitions.cost_approvals, 'Definition');
@@ -16221,6 +16221,52 @@ await test('Fehlersuche 21.10. (Vorgangsbefehle/Protokoll): Kontrolle nach „Du
     const txt = [I.auditDetailText(l, { kind: 'fuehrerschein', history_only: true }), I.auditDetailText(l, { kind: 'massenspeicher' }), I.auditDetailText(l, { axle: 'lenkachse', from: null, to: '315/80 R22.5', verified: true })].join(' | ');
     for (const x of xs) ok(txt.includes(x), `${l}: ${x} in ${txt}`);
   }
+});
+
+await test('Fehlersuche 21.10. (Reifen/Berichte): Achsgrößen passend zur Fahrzeugart, Winterauftrag ohne Pflicht ohne Bestätigung, Profil-Warnung auch bei Wiederholung, request_key mit Feldnamen, Übernahme durch Buchung zählt als erste Übernahme, aufgehobene Kostenmarkierung nicht „ausstehend“, Standort-Schreibweise im Kostenbericht', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const V2 = 'VIN:WDB9630051L917317';
+  // 1. Lenkachse geprüft, danach Artwechsel zum Anhänger → Größe gilt nicht mehr (Akte/CSV)
+  eq((await U.ws.post(`/api/vehicles/${V2}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: true })).status, 200);
+  const wo = await F.post(`/api/vehicles/${V2}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(wo.status, 201, JSON.stringify(wo.data));
+  const vv = (await F.get(`/api/vehicles/${V2}`)).data; const vh = vv.vehicle || vv;
+  eq((await F.post('/api/vehicles', { vin: 'WDB9630051L917317', plate: vh.plate, site: vh.site, kind: 'anhaenger', keep_active: true })).status, 201);
+  const ov = (await F.get(`/api/vehicles/${V2}/tires`)).data; eq(ov.specs.length, 0, 'keine Lkw-Achsgröße am Anhänger');
+  const csv = await F.get('/api/tires/fleet?format=csv'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data);
+  ok(!txt.includes('385/65 R22.5'), 'CSV ohne Lkw-Achsgröße');
+  // 2. Winterauftrag nach Artwechsel: keine Pflicht → Abschlusskontrolle ohne Bestätigung
+  const wid = wo.data.id;
+  eq((await cmd(U.ws, wid, 'start_repair')).status, 200); eq((await cmd(U.ws, wid, 'record_work', { hours: 1, description: 'geprüft' })).status, 200);
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: wid, request_key: rk(), items })).status, 201);
+  eq((await U.ws.get(`/api/cases/${wid}`)).data.tire_winter.status, 'nicht_pflichtig');
+  const qc = await cmd(U.ws, wid, 'request_quality_check', {}, 'fertig'); eq(qc.status, 200, JSON.stringify(qc.data));
+  const I = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].ws_nicht_pflichtig, `${l}: ws_nicht_pflichtig`);
+  // 3. Profil unter Minimum, Antwort verloren → Wiederholung meldet die Warnung erneut
+  const key = rk(); const m1 = await F.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 1.2, request_key: key });
+  eq(m1.status, 201, JSON.stringify(m1.data)); eq(m1.data.warning_items[0].code, 'tread_below_min');
+  const m2 = await F.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 1.2, request_key: key });
+  ok(m2.data.duplicate); eq(JSON.stringify(m2.data.warning_items), JSON.stringify(m1.data.warning_items), 'Warnung bei Wiederholung');
+  // 4. request_key bei Aufträgen mit Feldnamen
+  const bad = await F.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: 'x'.repeat(70) }); eq(bad.status, 400); ok(/request_key/.test(bad.data.message), bad.data.message);
+  // 5. Übernahme durch Buchung vor 48 h, „Reparatur beginnen“ jetzt → erste Übernahme = Buchung
+  const R = await import('../src/reports.js');
+  const id = await (async () => { const x = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); return x.data.id; })();
+  eq((await cmd(F, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'angefangen' })).status, 200);
+  const past = new Date(Date.now() - 48 * 3600e3).toISOString();
+  db.prepare("UPDATE case_events SET created_at=? WHERE case_id=? AND action='record_work'").run(past, id); db.prepare('UPDATE cases SET workshop_ack_at=? WHERE id=?').run(past, id);
+  eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq(db.prepare(`SELECT ${R.FIRST_ACK_SQL('c')} FROM cases c WHERE id=?`).get(id).first_ack_at, past, 'Buchung = erste Übernahme');
+  // 6. Kostenmarkierung aufgehoben → KPI nicht „ausstehend“
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '100' })).status, 200);
+  const cid = await toRepair(); eq((await cmd(U.ws, cid, 'add_part', { name: 'Turbolader', quantity: 1, unit_price_net: 150 })).status, 200);
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1000' })).data.costs_revalidated, 1);
+  const ym = BERLIN_TODAY.slice(0, 7); const k = (await F.get(`/api/reports/kpi?from=${ym}&to=${ym}`)).data.cost_approvals;
+  eq(`${k.exceeded}/${k.pending}/${k.closed_without}/${k.cleared}`, '1/0/0/1', JSON.stringify(k));
+  // 7. Kostenbericht: Standort in Anzeige-Schreibweise auch in Zeilen/CSV
+  db.prepare("UPDATE vehicles SET site='DORTMUND' WHERE id=?").run(V2); db.prepare("UPDATE vehicles SET site='Dortmund' WHERE id=?").run(V1);
+  const rep = (await F.get(`/api/reports/costs?from=${ym}&to=${ym}`)).data;
+  const labels = new Set(rep.sites.map((x) => x.site)); for (const r of rep.rows) ok(!r.site || labels.has(r.site), `Zeile ${r.site} wie Standortsumme ${[...labels]}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

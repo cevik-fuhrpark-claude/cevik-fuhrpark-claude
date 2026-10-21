@@ -4,6 +4,8 @@ import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
 export const AXLES = ['lenkachse', 'liftachse', 'antriebsachse', 'anhaenger'];
+// Achse passt zur Fahrzeugart (Anhänger nur „anhaenger“) – nach Artwechsel Lkw → Anhänger bleiben alte Lkw-Achsgrößen gespeichert, gelten aber nicht (21.10.2026)
+export const axleFits = (kind, axle) => kind !== 'anhaenger' || axle === 'anhaenger';
 export const POSITIONS = ['VA-L', 'VA-R', 'LA-L', 'LA-R', 'HA-L-aussen', 'HA-L-innen', 'HA-R-innen', 'HA-R-aussen',
   'AH1-L', 'AH1-R', 'AH2-L', 'AH2-R', 'AH3-L', 'AH3-R', 'Reserve'];
 // Positionen je Fahrzeugart: Lkw ohne Anhängerachsen, Anhänger nur AH-Achsen; Reserve bei beiden (Achszahl bleibt offen, Stammdaten geben sie nicht her)
@@ -118,7 +120,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
   }
   const v = await env.DB.prepare('SELECT id, plate, kind, site, active FROM vehicles WHERE id=?').bind(vehicleId).first(); // active: Formulare ausblenden (20.10.2026)
   if (!v) throw notFound();
-  const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
+  const specs = (await env.DB.prepare('SELECT * FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results.filter((x) => axleFits(v.kind, x.axle)).sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle));
   // Verlauf zur Anzeige: die neuesten TIRE_HIST_MAX Ereignisse (eine Zeile mehr gelesen → history_truncated).
   // Der aktuelle Stand je Position (Profil, DOT, Winterkennzeichnung) wird dagegen aus ALLEN Ereignissen bestimmt – vorher nur aus den
   // neuesten 200: Positionen mit älterem letzten Ereignis (z. B. Reserverad, Anhänger) fielen dann aus Akte und Winterstatus heraus,
@@ -207,25 +209,29 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)
   const rk = str(body.request_key, { max: 80, field: 'request_key' }) || null;
-  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
-  { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
+  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position, tread_mm FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
+  { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...warnOf(k[0].tread_mm, k.map((x) => x.position)) }; }
   const ids = positions.map(() => uuid());
   const res = await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark,request_key)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter, rk)));
   if (rk && res.every((r) => !(r.meta && r.meta.changes))) { const k = await known();
     if (!k.length) throw conflict('request_key_reused', 'Dieser Buchungsschlüssel wurde bereits für eine andere Buchung verwendet.'); // fremde Kennung (andere Person/Umgebung)
-    return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, warnings: [], warning_items: [] }; }
-  const id = ids[0];
+    return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...warnOf(k[0].tread_mm, k.map((x) => x.position)) }; }
+  return { id: ids[0], ids, positions, ...warnOf(tread, positions) };
+}
+// Warnungen zur Profiltiefe – auch bei der Wiederholung mit gleichem request_key aus den gespeicherten Einträgen (21.10.2026: Antwort ging verloren,
+// erneutes Senden zeigte nur „✓“ ohne „unter Minimum“)
+function warnOf(tread, positions) {
   const warnings = []; const warningItems = [];
-  if (tread !== null && tread < LEGAL_MIN_TREAD_MM && positions.includes(SPARE_POSITION)) {
+  if (tread !== null && tread !== undefined && tread < LEGAL_MIN_TREAD_MM && positions.includes(SPARE_POSITION)) {
     warnings.push(`Reserverad: Profiltiefe ${tread} mm unter ${LEGAL_MIN_TREAD_MM} mm – nicht montieren, Reserverad ersetzen.`);
     warningItems.push({ code: 'spare_below_min', tread_mm: tread, min_mm: LEGAL_MIN_TREAD_MM });
   }
-  if (tread !== null && tread < LEGAL_MIN_TREAD_MM && positions.some((p) => p !== SPARE_POSITION)) {
+  if (tread !== null && tread !== undefined && tread < LEGAL_MIN_TREAD_MM && positions.some((p) => p !== SPARE_POSITION)) {
     warnings.push(`Profiltiefe ${tread} mm liegt unter dem gesetzlichen Minimum von ${LEGAL_MIN_TREAD_MM} mm.`);
     warningItems.push({ code: 'tread_below_min', tread_mm: tread, min_mm: LEGAL_MIN_TREAD_MM }); // App zeigt den Text in der Oberflächensprache
   }
-  return { id, ids, positions, warnings, warning_items: warningItems };
+  return { warnings, warning_items: warningItems };
 }
 
 export async function setTireSpec(env, user, vehicleId, body) {
@@ -429,7 +435,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
     'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} ${ov.stale_days === 1 ? 'Tag' : 'Tage'}`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen', `Reserverad unter ${mm(ov.legal_min_tread_mm)} mm`];
   const lines = [head.join(';')];
   for (const r of ov.rows) {
-    const sp = byV.get(r.vehicle_id) || {};
+    const sp = Object.fromEntries(Object.entries(byV.get(r.vehicle_id) || {}).filter(([a]) => axleFits(r.kind, a)));
     const list = Object.values(sp);
     const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
     lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), r.status === 'warnung' && !r.below_warn && r.spare_below_min ? 'Reserverad abgefahren' : TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,

@@ -128,7 +128,8 @@ export async function costReport(env, user, envName, query = {}) {
     const actual = (rate === null ? 0 : r2(r.work_net)) + r2(r.parts_actual_net) + r2(r.external_actual_net);
     const estimate = r2(r.parts_estimate_net) + r2(r.external_estimate_net);
     return {
-      vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, month: r.month, cases_opened: r.cases_opened,
+      // Standort in Anzeige-Schreibweise wie die Standortsumme (21.10.2026: CSV hatte „DORTMUND“ und „Dortmund“ getrennt)
+      vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site ? (label.get(siteKey(v.site)) || v.site) : null, month: r.month, cases_opened: r.cases_opened,
       hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
       actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0,
@@ -158,7 +159,7 @@ export async function costReport(env, user, envName, query = {}) {
     v.actual_net += r.actual_net; v.valued_items += r.valued_items; v.estimate_net += r.estimate_net; v.unvalued_items += r.unvalued_items; perVehicle.set(r.vehicle_id, v);
   }
   for (const k of kmRows) if (!perVehicle.has(k.vehicle_id) && plates.has(k.vehicle_id) && !plates.get(k.vehicle_id).eval_excluded && (!vehicleFilter || k.vehicle_id === vehicleFilter)) {
-    const v = plates.get(k.vehicle_id); perVehicle.set(k.vehicle_id, { vehicle_id: k.vehicle_id, plate: v.plate, site: v.site, actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0 });
+    const v = plates.get(k.vehicle_id); perVehicle.set(k.vehicle_id, { vehicle_id: k.vehicle_id, plate: v.plate, site: v.site ? (label.get(siteKey(v.site)) || v.site) : null, actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0 });
   }
   const vehicles = [...perVehicle.values()].map((v) => {
     const k = kmOf.get(v.vehicle_id);
@@ -339,7 +340,11 @@ export function lockIntervalsOf(evs, now = Date.now()) {
 }
 // Ausfall eines Vorgangs in der Werkstatt: Übernahme → technische Freigabe/Ablehnung (offen bis jetzt); ohne Übernahme-Zeitstempel keiner
 // Beginn = erste Übernahme (auch vor einem Werkstattwechsel – der setzt workshop_ack_at zurück; 18.10.2026: Ausfall sank dadurch auf 0 h)
-export const FIRST_ACK_SQL = (a) => `COALESCE((SELECT MIN(e.created_at) FROM case_events e WHERE e.case_id=${a}.id AND e.action IN ('acknowledge','start_repair')), ${a}.workshop_ack_at) AS first_ack_at`;
+// 21.10.2026: auch Übernahme durch Buchung (Arbeitszeit/Teil/Restarbeit vor „Übernehmen“, payload.implicit_ack) und die beim Werkstattwechsel
+// festgehaltene Übernahme der bisherigen Werkstatt (prev_ack_at) – vorher galt erst das spätere „Reparatur beginnen“ (Ausfall 0 h statt 48 h)
+export const FIRST_ACK_SQL = (a) => `COALESCE((SELECT MIN(x) FROM (SELECT e.created_at AS x FROM case_events e WHERE e.case_id=${a}.id AND (e.action IN ('acknowledge','start_repair') OR json_extract(e.payload,'$.implicit_ack'))
+    UNION ALL SELECT json_extract(e.payload,'$.prev_ack_at') FROM case_events e WHERE e.case_id=${a}.id AND e.action='reassign_workshop' AND json_extract(e.payload,'$.prev_ack_at') IS NOT NULL
+    UNION ALL SELECT ${a}.workshop_ack_at WHERE ${a}.workshop_ack_at IS NOT NULL)), ${a}.workshop_ack_at) AS first_ack_at`;
 export function workshopIntervalOf(c, now = Date.now()) {
   const ack = c.first_ack_at || c.workshop_ack_at;
   if (!ack) return null;
@@ -434,7 +439,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const shop = new Map(); const down = new Map(); const pwait = new Map();
   const addIv = (m, vid, a, b) => { if (Number.isFinite(a) && Number.isFinite(b) && b > a) { if (!m.has(vid)) m.set(vid, []); m.get(vid).push([a, b]); } };
   // Kostenfreigaben: je Überschreitung (Ereignis „cost_limit_exceeded“) bis „Kosten freigeben“ – nur Anzahl und Dauer, keine Beträge
-  const ca = { exceeded: 0, approved: 0, pending: 0, closed_without: 0, cases: 0, wait: [] };
+  const ca = { exceeded: 0, approved: 0, pending: 0, closed_without: 0, cleared: 0, cases: 0, wait: [] };
   const g = (k) => groups[k] || (groups[k] = { created: 0, internal: 0, released: 0, rejected: 0, duplicates: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
   for (const c of cases) {
     const evs = evBy.get(c.id) || [];
@@ -474,6 +479,8 @@ export async function kpiReport(env, user, envName, query = {}) {
     for (const e of evs) {
       if (e.action === 'cost_limit_exceeded') { if (costFrom === null) { costFrom = Date.parse(e.created_at); ca.exceeded++; costHit = true; } }
       else if (e.action === 'approve_costs' && costFrom !== null) { ca.approved++; ca.wait.push((Date.parse(e.created_at) - costFrom) / H); costFrom = null; }
+      // Markierung aufgehoben (Grenze angehoben/gelöscht, revalidateCostMarks) – keine offene Freigabe mehr (21.10.2026: blieb „ausstehend“)
+      else if (e.action === 'cost_limit_cleared' && costFrom !== null) { ca.cleared++; costFrom = null; }
     }
     if (costFrom !== null) { if (c.status === 'fahrzeug_freigegeben' || c.status === 'abgelehnt') ca.closed_without++; else ca.pending++; }
     if (costHit) ca.cases++;
@@ -509,14 +516,14 @@ export async function kpiReport(env, user, envName, query = {}) {
   });
   // Zeile „alle“ = Summe der gerundeten Dringlichkeiten (sonst 0 + 0 = 0,1 durch Rundung, 18.10.2026)
   { const all = by_priority.find((x) => x.priority === 'alle'); if (all) all.parts_wait_h = r1(by_priority.filter((x) => x.priority !== 'alle').reduce((a, x) => a + x.parts_wait_h, 0)); }
-  const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, site: plates.get(v.vehicle_id)?.site || null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h), downtime_h: r1(v.downtime_h), availability_pct: avBy.has(v.vehicle_id) ? avBy.get(v.vehicle_id).pct : null,
+  const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, site: plates.get(v.vehicle_id)?.site ? (vSel.label.get(siteKey(plates.get(v.vehicle_id).site)) || plates.get(v.vehicle_id).site) : null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h), downtime_h: r1(v.downtime_h), availability_pct: avBy.has(v.vehicle_id) ? avBy.get(v.vehicle_id).pct : null,
     // Ausfallstunden der Verfügbarkeit (alle Vorgänge, die in den Zeitraum hineinreichen) – „Ausfallzeit h“ zählt nur Vorgänge aus dem Zeitraum (20.10.2026)
     availability_downtime_h: avBy.has(v.vehicle_id) ? avBy.get(v.vehicle_id).downtime_h : null }))
     .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
   const pOut = (x) => ({ kept: x.kept, late: x.late, without_eta: x.without_eta, open_overdue: x.open_overdue,
     on_time_pct: x.kept + x.late ? Math.round((100 * x.kept) / (x.kept + x.late)) : null, late_days_median: x.late_days.length ? r1(quantile(x.late_days, 0.5)) : null });
   const parts_eta = { ...pOut(parts), by_site: [...partsSites.entries()].map(([site, x]) => ({ site, ...pOut(x) })).sort((a, b) => a.site.localeCompare(b.site)) };
-  const cost_approvals = { exceeded: ca.exceeded, approved: ca.approved, pending: ca.pending, closed_without: ca.closed_without, cases: ca.cases, to_approval: stat(ca.wait) };
+  const cost_approvals = { exceeded: ca.exceeded, approved: ca.approved, pending: ca.pending, closed_without: ca.closed_without, cleared: ca.cleared, cases: ca.cases, to_approval: stat(ca.wait) };
   // Mängelbeseitigung aus Prüfungen: Prüfungen des Zeitraums (Prüfdatum, Berliner Monat) mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher;
   // je Prüfung jüngster nicht abgelehnter Mängelauftrag der Umgebung und nächste spätere Durchführung derselben Prüfart. Dauer in Tagen (Prüfdatum → Freigabe).
   const DEF = `('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')`;
