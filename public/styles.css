@@ -34,8 +34,11 @@
   }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--body); -webkit-text-size-adjust: 100%; }
-body { min-height: 100vh; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+/* Grundschrift aus den Browser-Einstellungen (100 % statt fest 16 px, 21.10.2026); feste Kopfzeile beim Springen freihalten (scroll-padding) */
+html, body { margin: 0; background: var(--paper); color: var(--ink); font: 100%/1.5 var(--body); -webkit-text-size-adjust: 100%; }
+html { scroll-padding-top: 4rem; scroll-padding-bottom: 110px; } /* unten: Tabbar */
+/* Platz unter dem Inhalt ≥ Höhe der Tabbar (zweizeilige Beschriftung, große Schrift; vorher 76 px – letzte Karte lag unter der Tabbar) */
+body { min-height: 100vh; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
 a { color: inherit; }
 h1, h2, h3 { font-family: var(--din); font-weight: 600; letter-spacing: 0.01em; line-height: 1.2; margin: 0 0 0.5rem; }
 h1 { font-size: 1.6rem; }
@@ -62,11 +65,11 @@ p { margin: 0 0 0.75rem; max-width: 70ch; }
 .testband { background: repeating-linear-gradient(135deg, var(--test) 0 14px, #7d52b3 14px 28px); color: #fff; text-align: center; font-weight: 600; font-family: var(--din); padding: 6px 12px; letter-spacing: 0.02em; }
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
-.tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(5, 1fr); padding-bottom: env(safe-area-inset-bottom); }
-.tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 10px; text-decoration: none; color: var(--steel); font-size: 0.75rem; min-height: 60px; justify-content: center; position: relative; }
+.tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding-bottom: env(safe-area-inset-bottom); } /* minmax(0,…): lange Beschriftung schiebt „Mehr“ nicht aus dem Bild (21.10.2026) */
+.tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 10px; text-decoration: none; color: var(--steel); font-size: min(0.75rem, 15px); min-height: 60px; justify-content: center; position: relative; }
 .tabbar a svg { width: 24px; height: 24px; }
 /* Beschriftung silbentrennen statt mitten im Wort umbrechen („Abfahrts-kontrolle“ statt „Abfahrtskont|rolle“, 19.10.2026); ohne Trennwörterbuch bleibt der Notumbruch */
-.tabbar a > span:last-child { text-align: center; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; max-width: 100%; }
+.tabbar a > span:last-child { text-align: center; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tabbar a.active { color: var(--ink); font-weight: 600; }
 .tabbar a.active::before { content: ''; position: absolute; top: 0; left: 25%; right: 25%; height: 3px; background: var(--signal); }
 .tabbar a.report { color: var(--ink); } .tabbar a.report span.dot { color: var(--signal-ink); }
@@ -117,7 +120,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .row .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .sub { grid-column: 2 / 4; color: var(--steel); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 600; background: var(--paper); border: 1px solid var(--rule); white-space: nowrap; }
+.chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 600; background: var(--paper); border: 1px solid var(--rule); white-space: normal; max-width: 100%; } /* lange Hinweis-Chips umbrechen statt die Seite zu verbreitern (320 px, 21.10.2026; vorher nowrap) */
 .chip.kritisch, .chip.gesperrt { background: var(--stop-bg); color: var(--stop); border-color: transparent; }
 .chip.mittel { background: var(--mid-bg); color: var(--mid); border-color: transparent; }
 .chip.ok, .chip.fahrzeug_freigegeben { background: var(--go-bg); color: var(--go); border-color: transparent; }
@@ -166,24 +169,27 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .choice b { display: block; }
 .choice:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .choice.c-kritisch:has(input:checked) { border-color: var(--stop); background: var(--stop-bg); box-shadow: none; }
-.vehpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.vehpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(150px, 8rem)), 1fr)); gap: 8px; }
 .vehpick label { margin: 0; padding: 10px; border: 2px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-weight: 400; cursor: pointer; }
 .vehpick label:has(input:checked) { border-color: var(--ink); }
 .vehpick input { position: absolute; opacity: 0; pointer-events: none; }
 .vehpick label:has(input:focus-visible), .choice:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); }
 
 /* Checkliste */
-.checkitem { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--rule); align-items: center; }
+/* Prüfpunkt: Text und Knöpfe nebeneinander, bei wenig Platz (320 px, große Schrift) Knöpfe darunter – vorher Raster 1fr/auto: Text 67 px bzw. 0 px breit (21.10.2026) */
+.checkitem { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--rule); align-items: center; }
+.checkitem > span:first-child { flex: 1 1 7em; }
+.checkitem .seg { margin-left: auto; flex-wrap: wrap; }
+.checkitem .detail, .checkitem .fielderr { flex-basis: 100%; }
 .seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: var(--radius-s); overflow: hidden; }
-.seg label { margin: 0; padding: 10px 12px; font-weight: 600; cursor: pointer; min-width: 52px; text-align: center; }
+.seg label { margin: 0; padding: 10px 12px; font-weight: 600; cursor: pointer; min-width: 52px; text-align: center; overflow-wrap: normal; }
+.checkitem .seg label { padding-inline: 8px; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg label:has(input:checked) { background: var(--ink); color: var(--surface); }
 .seg label.bad:has(input:checked) { background: var(--stop-solid); color: #fff; }
 /* Tastatur: das Radio ist unsichtbar – Fokusrahmen an der Beschriftung zeigen */
 .seg label:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: -3px; box-shadow: inset 0 0 0 5px var(--ink); position: relative; z-index: 1; }
-.checkitem .detail { grid-column: 1 / 3; }
 .checkitem > span:first-child { min-width: 0; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
-.checkitem .seg { justify-self: end; }
 .checkitem.missing { background: color-mix(in srgb, var(--stop) 10%, transparent); box-shadow: inset 4px 0 0 var(--stop); padding-left: 10px; }
 
 /* Verlauf */
@@ -229,7 +235,7 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 
 .specrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); align-items: center; }
 .btn.small { min-height: 36px; padding: 6px 12px; font-size: 0.875rem; }
-.topbar .brand { white-space: nowrap; }
+.topbar .brand { white-space: nowrap; min-width: 0; overflow: hidden; } /* große Schrift: Name gekürzt, Glocke/Suche bleiben sichtbar */
 @media (max-width: 420px) { .topbar .brand small { display: none; } }
 .small, .muted { overflow-wrap: anywhere; }
 

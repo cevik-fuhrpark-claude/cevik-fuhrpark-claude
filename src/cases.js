@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile } from './fines.js';
@@ -1369,7 +1369,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
     byKey.set(it.key, { key: it.key, result, note, safety_relevant: flag(it.safety_relevant, 'Sicherheitsrelevant'), followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null });
   }
   if (byKey.size !== keys.size) throw bad('incomplete', 'Bitte alle Prüfpunkte bewerten (OK / Mangel / entfällt).');
-  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
+  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
   // Vermerk vor dem Anlegen der Folgeaufträge prüfen (17.10.2026: zu langer Vermerk → 400 erst nach dem Anlegen; gesperrter Folgeauftrag ohne Kontrolle)
   const inspNote = str(body.note, { max: 2000, field: 'Bemerkung' });

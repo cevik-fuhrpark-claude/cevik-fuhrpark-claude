@@ -1,7 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { caseDescText } from '../public/check-labels.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX } from './cases.js';
@@ -755,13 +755,13 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
   if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
   const lastDate = str(body.last_done_date, { max: 10, field: 'Letzte Prüfung' });
-  const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? Math.round(num(body.last_done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
+  const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? kmNum(body.last_done_km, { field: 'km' }) : null;
   const husp = kind === 'HU' || kind === 'SP';
   if (ONE_TIME_KINDS.includes(kind) && (months || km)) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
   // bereits durchgeführter Rückruf: keine Frist (sonst überfällig/fällig, aber weder erledigbar noch planbar – Dauerbefund; 20.10.2026)
   if (ONE_TIME_KINDS.includes(kind) && body.last_done_date && String(body.last_done_date).trim() && ((body.next_due_date && String(body.next_due_date).trim()) || (body.due_km && String(body.due_km).trim()))) throw bad('validation', 'Rückruf ist bereits durchgeführt – keine Frist angeben.');
   // Belegte km-Fälligkeit (Serviceanzeige/Wartungsheft); HU/SP richten sich nur nach der Zeit
-  let dueKm = body.due_km ? Math.round(num(body.due_km, { min: 1, max: 5000000, field: 'km', grouped: true })) : null;
+  let dueKm = body.due_km ? kmNum(body.due_km, { min: 1, field: 'km' }) : null;
   if (husp && (dueKm !== null || km !== null)) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
   if (dueKm !== null && lastKm !== null && dueKm <= lastKm) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
   if (dueKm !== null && km && lastKm !== null && dueKm === lastKm + km) dueKm = null; // ergibt sich ohnehin aus Intervall
@@ -770,6 +770,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
   // erst prüfen, dann rechnen (ungültiges Datum wie „0000-00-00“ ließ addMonths mit „Invalid time value“ abbrechen – Fuzz 15.10.2026)
   for (const d of [lastDate, nextDue]) if (d && !isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG); // 2062 statt 2026 → Frist „in Ordnung“ für Jahrzehnte
   if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
   // wie beim Import (17.10.2026): nächster Termin nicht vor der letzten Durchführung
   if (nextDue && lastDate && nextDue < lastDate) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
@@ -851,7 +852,7 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const source = str(body.spec_source, { required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
-  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { min: 500, max: 60000, field: 'zulässige Gesamtmasse (kg)' }));
+  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { min: 500, max: 60000, field: 'zulässige Gesamtmasse (kg)', grouped: true }));
   const allowed = v.kind === 'anhaenger' ? ZGM_CLASSES_TRAILER : ZGM_CLASSES_LKW;
   let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse') : null;
   if (kg !== null) {
@@ -912,7 +913,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (!isCalendarDate(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
-  const km = body.done_km != null && String(body.done_km).trim() !== '' ? Math.round(num(body.done_km, { min: 0, max: 5000000, field: 'km', grouped: true })) : null;
+  const km = body.done_km != null && String(body.done_km).trim() !== '' ? kmNum(body.done_km, { field: 'km' }) : null;
   if (r.interval_km && km === null && r.kind !== 'HU' && r.kind !== 'SP') throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   // Plausibilität wie „Kilometerstand erfassen“: nicht kleiner als der zuletzt davor erfasste km-Stand (Tippfehler würde km-Fälligkeiten
   // und €/km verfälschen). Tachotausch: zuerst den km-Stand des neuen Zählers mit Begründung in der Fahrzeugakte erfassen.
@@ -934,13 +935,14 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const docNext = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
   // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
   if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (docNext && docNext > maxFutureDate()) throw bad('validation', DUE_FAR_MSG);
   if (docNext && docNext < date) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
   // einmalige Aktion (Rückruf): nur einmal durchführbar, keine Folgefrist (sonst stünde sie nie auf „erledigt“)
   const oneTime = ONE_TIME_KINDS.includes(r.kind);
   if (oneTime && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   if (oneTime && (docNext || (body.next_due_km && String(body.next_due_km).trim()))) throw bad('validation', 'Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.');
   // neue km-Fälligkeit laut Beleg (z. B. Serviceanzeige nach dem Ölwechsel); ohne Angabe gilt „km + Intervall km“
-  let docKm = body.next_due_km ? Math.round(num(body.next_due_km, { min: 1, max: 5000000, field: 'km', grouped: true })) : null;
+  let docKm = body.next_due_km ? kmNum(body.next_due_km, { min: 1, field: 'km' }) : null;
   if (husp && docKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
   if (docKm !== null && km !== null && docKm <= km) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
   if (docKm !== null && km !== null && r.interval_km && docKm === km + r.interval_km) docKm = null;
@@ -1004,12 +1006,13 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
 
 export async function addOdometer(env, user, vehicleId, body) {
   if (!['owner', 'fleet', 'workshop', 'driver', 'dispatch'].includes(user.role)) throw forbidden();
-  const km = Math.round(num(body.km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
+  const km = kmNum(body.km);
   // Ablesedatum optional (nachträgliche Erfassung), nie in der Zukunft; ohne Datum = jetzt
   const now = nowIso();
   let measuredAt = now;
-  if (body.measured_on) {
-    const d = String(body.measured_on);
+  const mOn = typeof body.measured_on === 'string' ? body.measured_on.trim() : body.measured_on; // Leerzeichen wie bei den anderen Datumsfeldern
+  if (mOn) {
+    const d = String(mOn);
     if (!isCalendarDate(d) || d < '2000-01-01') throw bad('validation', 'Ablesedatum ungültig (JJJJ-MM-TT).');
     const today = berlinDate();
     if (d > today) throw bad('validation', 'Ablesedatum darf nicht in der Zukunft liegen.');

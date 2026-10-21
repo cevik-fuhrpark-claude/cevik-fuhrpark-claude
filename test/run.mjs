@@ -5736,11 +5736,11 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   eq(normalizeKind('Rückrufaktion'), 'Rückruf'); eq(normalizeKind('recall'), 'Rückruf'); eq(normalizeKind('rückruf'), 'Rückruf');
   ok((await users.fleet.get('/api/meta')).data.maintenance_kinds.includes('Rückruf'), 'Meta');
   const VR = 'VIN:WDB96340310555651';
-  const iv = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', interval_months: 12, next_due_date: '2099-01-31', evidence: 'Herstellerschreiben Test' });
+  const iv = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', interval_months: 12, next_due_date: '2039-01-31', evidence: 'Herstellerschreiben Test' });
   eq(iv.status, 400, 'kein Intervall'); ok(/einmalige Aktion/.test(iv.data.error?.message || JSON.stringify(iv.data)), 'verständliche Meldung');
   eq((await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', interval_km: 50000, evidence: 'Herstellerschreiben Test' })).status, 400, 'auch kein km-Intervall');
-  const a = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', next_due_date: '2099-01-31', evidence: 'Herstellerschreiben Test A (Frist laut Schreiben)' });
-  eq(a.status, 201); eq(a.data.next_due_date, '2099-01-31');
+  const a = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', next_due_date: '2039-01-31', evidence: 'Herstellerschreiben Test A (Frist laut Schreiben)' });
+  eq(a.status, 201); eq(a.data.next_due_date, '2039-01-31');
   const b = await users.fleet.post(`/api/vehicles/${VR}/maintenance`, { kind: 'Rückruf', evidence: 'Herstellerschreiben Test B (ohne Frist)' });
   eq(b.status, 201); eq(b.data.next_due_date, null, 'keine erfundene Frist');
   let ov = (await users.fleet.get('/api/maintenance')).data;
@@ -5754,11 +5754,11 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   ok(done.evidence.includes('Herstellerschreiben Test A') && done.evidence.includes('Werkstattrechnung Rückruf A'), 'Referenz laut Schreiben bleibt, Durchführung ergänzt');
   const again = await users.ws.post(`/api/maintenance/${a.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'nochmal' });
   eq(again.status, 409, 'Rückruf nur einmal durchführbar'); eq(again.data.error, 'already_done');
-  eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'x', next_due_date: '2099-01-01' })).status, 400, 'keine Folgefrist');
+  eq((await users.ws.post(`/api/maintenance/${b.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'x', next_due_date: '2039-01-01' })).status, 400, 'keine Folgefrist');
   eq((await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === b.data.id).status, 'ohne_termin', 'abgewiesene Durchführung ändert nichts');
   const csvT = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=csv')).data);
   ok(csvT.includes('Rückruf') && csvT.includes(';erledigt;'), 'CSV mit Status erledigt');
-  const imp = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\n;WDB96340310555651;Rückrufaktion;2099-05-31;;;Schreiben', { 'content-type': 'text/csv' });
+  const imp = await users.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\n;WDB96340310555651;Rückrufaktion;2039-05-31;;;Schreiben', { 'content-type': 'text/csv' });
   eq(imp.status, 200); eq(imp.data.created, 0); ok(/einzeln in der Fahrzeugakte/.test(imp.data.skipped[0].reason) && /„Rückrufe importieren“/.test(imp.data.skipped[0].reason), 'Import verweist auf Rückruf-Import bzw. Fahrzeugakte');
   // Vorgang am Fahrzeug: offener Rückruf ohne Frist erscheint in der Kurzinfo (mit Referenz), erledigter nicht
   const cs = await users.fleet.post('/api/cases', { vehicle_id: VR, description: 'Rückruf-Kurzinfo: Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
@@ -5801,12 +5801,12 @@ await test('Rückruf-Import (Hersteller-/KBA-Liste): Vorschau, je Fahrzeug+Refer
   const H = { 'content-type': 'text/csv' };
   const VIN = 'WDB96340310555651';
   eq((await users.ws.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Referenz\n' + VIN + ';X', H)).status, 403, 'Werkstatt darf nicht importieren');
-  eq((await users.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Frist\n' + VIN + ';2099-01-01', H)).status, 400, 'Referenz-Spalte Pflicht');
-  const csv = ['Kennzeichen;FIN;Referenz;Frist;Bemerkung', `;${VIN};RA-2026-01;;Lenkgetriebe prüfen`, 'VT-FL 1;;RA-2026-02;30.06.2099;', `;${VIN};ra-2026-01;;`, ';WDB00000000000000;RA-2026-01;;',
-    'UNBEKANNT 1;;RA-2026-01;;', `;${VIN};;2099-01-01;`, `;${VIN};RA-2026-03;31.02.2099;`, `;${VIN};Herstellerschreiben Test A (Frist laut Schreiben);;`].join('\n');
+  eq((await users.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Frist\n' + VIN + ';2039-01-01', H)).status, 400, 'Referenz-Spalte Pflicht');
+  const csv = ['Kennzeichen;FIN;Referenz;Frist;Bemerkung', `;${VIN};RA-2026-01;;Lenkgetriebe prüfen`, 'VT-FL 1;;RA-2026-02;30.06.2039;', `;${VIN};ra-2026-01;;`, ';WDB00000000000000;RA-2026-01;;',
+    'UNBEKANNT 1;;RA-2026-01;;', `;${VIN};;2039-01-01;`, `;${VIN};RA-2026-03;31.02.2039;`, `;${VIN};Herstellerschreiben Test A (Frist laut Schreiben);;`].join('\n');
   const pre = await users.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', csv, H);
   eq(pre.status, 200); eq(pre.data.created, 2, 'zwei neue Rückrufe'); eq(pre.data.unchanged, 1, 'erledigter Rückruf erkannt');
-  eq(pre.data.rows.find((x) => x.reference === 'RA-2026-02').next_due_date, '2099-06-30', 'Frist laut Liste (TT.MM.JJJJ)');
+  eq(pre.data.rows.find((x) => x.reference === 'RA-2026-02').next_due_date, '2039-06-30', 'Frist laut Liste (TT.MM.JJJJ)');
   eq(pre.data.rows.find((x) => x.reference === 'RA-2026-01').next_due_date, null, 'ohne Frist keine erfundene');
   eq(pre.data.rows.find((x) => x.reference.startsWith('Herstellerschreiben Test A')).action, 'erledigt', 'bereits durchgeführt bleibt');
   const reasons = pre.data.skipped.map((x) => x.reason);
@@ -5819,13 +5819,13 @@ await test('Rückruf-Import (Hersteller-/KBA-Liste): Vorschau, je Fahrzeug+Refer
   let rows = (await users.fleet.get('/api/maintenance')).data.rows.filter((x) => x.kind === 'Rückruf' && /^RA-2026/.test(x.evidence));
   eq(rows.length, 2); eq(rows.find((x) => x.evidence === 'RA-2026-01 – Lenkgetriebe prüfen').status, 'ohne_termin');
   // zweiter Lauf: idempotent; fehlende Frist wird ergänzt, abweichende nie überschrieben
-  const again = await users.fleet.req('POST', '/api/maintenance/recalls/import', `FIN;Referenz;Frist\n${VIN};RA-2026-01;2099-03-31\n${VIN};RA-2026-02;2099-12-31`, H);
+  const again = await users.fleet.req('POST', '/api/maintenance/recalls/import', `FIN;Referenz;Frist\n${VIN};RA-2026-01;2039-03-31\n${VIN};RA-2026-02;2039-12-31`, H);
   eq(again.data.created, 0, 'nicht doppelt'); eq(again.data.updated, 1, 'fehlende Frist ergänzt');
   const r2 = again.data.rows.find((x) => x.reference === 'RA-2026-02');
-  eq(r2.action, 'unverändert'); eq(r2.previous_due_date, '2099-06-30'); ok(/weicht ab/.test(r2.note), 'Hinweis auf abweichende Frist');
+  eq(r2.action, 'unverändert'); eq(r2.previous_due_date, '2039-06-30'); ok(/weicht ab/.test(r2.note), 'Hinweis auf abweichende Frist');
   ok(IMPORT_REASONS_TPL.some((re) => re.test(r2.note)), 'Hinweis übersetzbar');
   rows = (await users.fleet.get('/api/maintenance')).data.rows.filter((x) => x.kind === 'Rückruf' && /^RA-2026/.test(x.evidence));
-  eq(rows.find((x) => x.evidence.startsWith('RA-2026-01')).next_due_date, '2099-03-31'); eq(rows.find((x) => x.evidence === 'RA-2026-02').next_due_date, '2099-06-30', 'vorhandene Frist bleibt');
+  eq(rows.find((x) => x.evidence.startsWith('RA-2026-01')).next_due_date, '2039-03-31'); eq(rows.find((x) => x.evidence === 'RA-2026-02').next_due_date, '2039-06-30', 'vorhandene Frist bleibt');
   ok((await owner.get('/api/admin/audit?action=maintenance')).data.entries.some((e) => e.action === 'maintenance.recall_import'), 'Protokoll');
   // aufräumen: als durchgeführt eintragen (nachfolgende Tests zählen offene Rückrufe nicht)
   for (const r of rows) eq((await users.fleet.post(`/api/maintenance/${r.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Test erledigt' })).status, 200);
@@ -16519,12 +16519,12 @@ await test('Fehlersuche 21.10. (CSV-Importe): offenes Anführungszeichen abgewie
   ok(app.includes("e.code === 'csv_mixed_encoding') e.message = t('csv_mixed_encoding')"), 'App-Meldung in der Sprache');
   // 5. Spaltenvorrang: Nachweis vor „Belegdatum“, Referenz vor „Rückrufdatum“
   const { e, U } = await freshWorld(); const db = e.DB.db; const H = { 'content-type': 'text/csv' };
-  const r1 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Belegdatum;Nächster Termin;Nachweis\nSZ-YC 5513;UVV;15.03.2026;31.03.2099;Prüfbericht Dekra 4711', H);
+  const r1 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Belegdatum;Nächster Termin;Nachweis\nSZ-YC 5513;UVV;15.03.2026;31.03.2039;Prüfbericht Dekra 4711', H);
   eq(r1.status, 200, JSON.stringify(r1.data));
   eq(db.prepare(`SELECT evidence FROM maintenance_rules WHERE vehicle_id='VIN:WMA15SZZ2HM722774' AND kind='UVV'`).get().evidence, 'Prüfbericht Dekra 4711', 'Nachweis-Spalte');
-  const r2 = await U.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Rückrufdatum;Referenznummer;Frist;Beschreibung\nWMA15SZZ2HM722774;01.09.2026;RA-77;31.12.2099;Bremsleitung prüfen', H);
+  const r2 = await U.fleet.req('POST', '/api/maintenance/recalls/import?dry_run=1', 'FIN;Rückrufdatum;Referenznummer;Frist;Beschreibung\nWMA15SZZ2HM722774;01.09.2026;RA-77;31.12.2039;Bremsleitung prüfen', H);
   eq(r2.status, 200, JSON.stringify(r2.data)); eq(r2.data.rows[0].reference, 'RA-77', 'Referenz-Spalte');
-  const r3 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Nächster Termin;Nachweis\nSZ-YC 5513;HU;31.03.2099;"Plakette\nSZ-KC 5515;HU;30.04.2099;x', H);
+  const r3 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Nächster Termin;Nachweis\nSZ-YC 5513;HU;31.03.2039;"Plakette\nSZ-KC 5515;HU;30.04.2039;x', H);
   eq(r3.status, 400, 'offenes Anführungszeichen im Import'); eq(r3.data.error, 'csv_quote');
 });
 
@@ -16568,6 +16568,41 @@ await test('Fehlersuche 21.10. (Umgebung gewechselt): veralteter Tab/Postausgang
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("if (S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;"), 'App sendet Umgebung');
   ok(app.includes("if (err.code === 'user_mismatch' || err.code === 'env_mismatch') { kept++; break; }"), 'Postausgang behält Eintrag');
+});
+
+await test('Fehlersuche 21.10. (Zahleneingaben): km-Stände/-Fälligkeiten mit Nachkommastellen → 400 „ganze Zahl“ statt still gerundet; Tausenderpunkt bleibt; zGM mit Tausenderpunkt', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const maxKm = () => e.DB.db.prepare('SELECT MAX(km) m FROM odometer_readings WHERE vehicle_id=?').get(V1).m;
+  for (const bad of ['158,5', '1.5', '0,4']) {
+    const r = await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: bad }); eq(r.status, 400, 'Akte ' + bad); ok(/ganze Zahl/.test(r.data.message || ''), JSON.stringify(r.data));
+  }
+  eq(maxKm() ?? null, null, 'nichts gespeichert');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: '120.000' })).status, 201, 'Tausenderpunkt'); eq(maxKm(), 120000);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '315/70 R22.5', dot: '2326', odometer_km: '120100,5' })).status, 400, 'Reifen');
+  { const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Ölwechsel', interval_km: 60000, last_done_km: '100,5', evidence: 'Test' }); eq(r.status, 400, 'Wartung letzte km'); ok(/ganze Zahl/.test(r.data.message), r.data.message); }
+  eq((await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Ölwechsel', interval_km: 60000, last_done_km: '100.500', evidence: 'Test' })).status, 201, 'Wartung mit Tausenderpunkt');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: '18.000', spec_source: 'Fahrzeugschein F.2' })).status, 200, 'zGM „18.000“');
+  eq(e.DB.db.prepare('SELECT zgm_kg FROM vehicles WHERE id=?').get(V1).zgm_kg, 18000);
+  const { translateValidation } = await import('../public/i18n.js'); for (const l of ['uk', 'en']) for (const m of ['Kilometerstand: ganze Zahl.', 'km: ganze Zahl.']) ok(!/ganze|Kilometerstand/.test(translateValidation(l, m)), l + ' ' + translateValidation(l, m));
+  const util = await import('../src/util.js'); eq(util.kmNum('120.500'), 120500); let thrown = null; try { util.kmNum('99,9'); } catch (x) { thrown = x; } ok(thrown && thrown.status === 400, 'kmNum wirft 400');
+});
+
+await test('Fehlersuche 21.10. (Datumseingaben): Fälligkeit von Prüfterminen und Vertragsdaten höchstens heute + 20 Jahre (Jahres-Tippfehler 2062), Import mit Zeilenhinweis; Ablesedatum mit Leerzeichen', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const util = await import('../src/util.js'); const far = util.maxFutureDate(); const y = (n) => String(Number(far.slice(0, 4)) + n) + '-01-15';
+  const today = util.berlinDate();
+  { const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', next_due_date: y(1), evidence: 'Test' }); eq(r.status, 400, 'anlegen'); eq(r.data.message, util.DUE_FAR_MSG); }
+  const ok1 = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', next_due_date: y(-1), evidence: 'Test' }); eq(ok1.status, 201, 'innerhalb der Grenze');
+  const rid = ok1.data.id || e.DB.db.prepare(`SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind='UVV'`).get(V1).id;
+  { const r = await U.fleet.post(`/api/maintenance/${rid}/complete`, { done_date: today, next_due_date: y(1), evidence: 'Bericht' }); eq(r.status, 400, 'erledigt'); eq(r.data.message, util.DUE_FAR_MSG); }
+  const plate = e.DB.db.prepare('SELECT plate FROM vehicles WHERE id=?').get(V1).plate;
+  const csv = `Kennzeichen;Prüfart;Nächster Termin;Nachweis\n${plate};Tachograph;15.01.${Number(far.slice(0, 4)) + 1};Test`;
+  const imp = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(imp.status, 200, JSON.stringify(imp.data));
+  ok(JSON.stringify(imp.data).includes('mehr als 20 Jahre'), 'Import-Zeilenhinweis ' + JSON.stringify(imp.data).slice(0, 300));
+  { const r = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Test', start_date: '2026-01-01', end_date: y(1), evidence: 'Vertrag' }); eq(r.status, 400, 'Vertragsende'); }
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Test', start_date: '2026-01-01', end_date: y(-1), evidence: 'Vertrag' })).status, 201, 'Vertrag innerhalb');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 1000, measured_on: ` ${today} ` })).status, 201, 'Ablesedatum mit Leerzeichen');
+  const { translateValidation } = await import('../public/i18n.js'); for (const l of ['uk', 'en']) ok(!/Fälligkeit/.test(translateValidation(l, util.DUE_FAR_MSG) || 'Fälligkeit'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

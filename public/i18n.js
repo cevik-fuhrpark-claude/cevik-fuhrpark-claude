@@ -863,6 +863,7 @@ const V_MORE = [
   ['Tatzeit liegt in der Zukunft.', 'Час порушення в майбутньому.', 'Time of offence is in the future.'],
   ['Tatzeit vor 2000 – bitte Jahr prüfen.', 'Час порушення до 2000 року – перевірте рік.', 'Time of offence before 2000 – please check the year.'],
   ['„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.', '«Дійсний до» більш ніж на 20 років у майбутньому – перевірте рік.', '“Valid until” is more than 20 years in the future – please check the year.'],
+  ['Fälligkeit liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.', 'Термін більш ніж на 20 років у майбутньому – перевірте рік.', 'Due date is more than 20 years in the future – please check the year.'],
   ['„Gültig bis“ liegt vor 1990 – bitte Jahr prüfen.', '«Дійсний до» раніше 1990 року – перевірте рік.', '“Valid until” is before 1990 – please check the year.'],
   ['Datei zu groß (max. 500 KB).', 'Файл завеликий (макс. 500 КБ).', 'File too large (max. 500 KB).'],
   ['Datei zu groß (max. 300 KB).', 'Файл завеликий (макс. 300 КБ).', 'File too large (max. 300 KB).'],

@@ -146,6 +146,16 @@ export const commaDec = (user) => !(user && user.language === 'en');
 // Punkt als Dezimalzeichen (englische Oberfläche): „150.555“ ist 150,555 → „höchstens 2 Nachkommastellen“ statt „mehrdeutig“ (19.10.2026)
 export const pointDec = (user) => !!(user && user.language === 'en');
 // decimalComma: Mengenfeld (Lager, Teile) – „4,750“ ist 4,75 (3 Nachkommastellen), nicht das englische Tausenderkomma
+// km-Stände/-Fälligkeiten: nur ganze Zahlen (21.10.2026: „158,5“ wurde still zu 159 km, „0,4“ zu 0 km gerundet – wer 158.500 meinte, bekam 159);
+// Tausenderpunkt „120.000“ bleibt erlaubt. Telematik (Kommawerte vom Gerät) rundet weiter selbst.
+// Obergrenze „heute + n Jahre“ (Berliner Tag) für Fälligkeiten/Vertragsdaten – Jahres-Tippfehler 2062 statt 2026 (21.10.2026)
+export const maxFutureDate = (years = 20) => { const t = berlinDate(); return String(Number(t.slice(0, 4)) + years) + t.slice(4); };
+export const DUE_FAR_MSG = 'Fälligkeit liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.';
+export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = {}) {
+  const n = num(v, { min, max, field, grouped: true });
+  if (!Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`);
+  return n;
+}
 export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;

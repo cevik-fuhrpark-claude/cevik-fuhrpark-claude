@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -21,7 +21,8 @@ function date(v, field, { notFuture = false } = {}) {
   const d = str(v, { max: 10, field });
   if (!d) return null;
   if (!ISO.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', `${field}: gültiges Datum im Format JJJJ-MM-TT.`);
-  if (d < '1990-01-01' || d > '2100-12-31') throw bad('validation', `${field}: Datum außerhalb des zulässigen Bereichs.`);
+  // höchstens heute + 20 Jahre (21.10.2026: Ende 2062 statt 2026 hieß „läuft nie aus“, Beginn 2062 „noch nicht begonnen“ – vorher bis 2100)
+  if (d < '1990-01-01' || d > maxFutureDate()) throw bad('validation', `${field}: Datum außerhalb des zulässigen Bereichs.`);
   if (notFuture && d > berlinDate()) throw bad('validation', `${field}: darf nicht in der Zukunft liegen.`);
   return d;
 }

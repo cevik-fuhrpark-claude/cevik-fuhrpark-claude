@@ -1,5 +1,5 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam, berlinWindowStartIso , commaDec, pointDec } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam, berlinWindowStartIso , commaDec, pointDec, kmNum } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -204,7 +204,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
   }
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung');
-  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : Math.round(num(body.odometer_km, { min: 0, max: 5000000, field: 'Kilometerstand', grouped: true }));
+  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
   const now = nowIso();
   const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)

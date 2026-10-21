@@ -1,7 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell } from './util.js';
+import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell, maxFutureDate, DUE_FAR_MSG } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt, HUSP_RULE_EVIDENCE } from './vehicles.js';
@@ -419,6 +419,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (evidence.length > 300) return skip('Nachweis zu lang (max. 300 Zeichen)');
     const due = parseDueDate(get(cells, ci.due));
     if (due.error) return skip(due.error);
+    if (due.date && due.date > maxFutureDate()) return skip(DUE_FAR_MSG);
     const last = parseDueDate(get(cells, ci.last));
     if (last.error) return skip(last.error);
     if (last.month_only) return skip('Letzte Prüfung bitte taggenau (JJJJ-MM-TT oder TT.MM.JJJJ)');
@@ -694,6 +695,7 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
     if (evidence.length > 250) return skip('Referenz/Bemerkung zu lang (max. 250 Zeichen)');
     const due = parseDueDate(get(cells, ci.due));
     if (due.error) return skip(due.error);
+    if (due.date && due.date > maxFutureDate()) return skip(DUE_FAR_MSG);
     const key = `${v.id}|${refOf(ref)}`;
     if (seen.has(key)) return skip('doppelt in der Datei');
     seen.add(key);

@@ -117,6 +117,7 @@ UI-Dokumentsprache (html lang)|ui-html-lang.py|/tmp/cfp-htmllang.log
 UI-Start-Wächter (gemischte Module nach Deployment)|ui-startwaechter.py|/tmp/cfp-startwaechter.log
 UI-Langsames Netz (Seitenwechsel beim Hochladen, Fotos am Vorgang, Lagerbuchung)|ui-netz-seitenwechsel.py|/tmp/cfp-netz-seitenwechsel.log
 UI-Zwei Tabs (Abmelden/Personenwechsel, Meldung bei abgelaufener Anmeldung)|ui-tabs-anmeldung.py|/tmp/cfp-tabs-anmeldung.log
+UI-Kleines Handy 320 px und große Schrift (Kontrolle, Tabbar, Kopfzeile)|ui-kleines-handy.py|/tmp/cfp-kleines-handy.log
 UI-Hinweis öffnet Gegenstand (Fahrzeugakte)|ui-hinweis-ziel.py|/tmp/cfp-hinweisziel.log
 UI-Ausfallzeit + Dauer je Status (> 48 h)|ui-kpi-ausfall.py|/tmp/cfp-kpiausfall.log
 UI-Pluralformen (Zähltexte je Sprache)|ui-pluralformen.py|/tmp/cfp-pluralformen.log
