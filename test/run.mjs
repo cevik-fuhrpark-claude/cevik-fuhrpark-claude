@@ -15609,6 +15609,41 @@ await test('Backlog 104: Datenauskunft Bußgeld nach Fahrerwechsel – abgelöst
   ok(xl.fine_events.length >= 5 && xl.fine_events.every((x) => !('note' in x)), 'Leitung ohne Vermerktexte'); ok(xl.fine_events.some((x) => x.with_note === 1));
 });
 
+await test('Fehlersuche 21.10.: Vertragsimport ohne „FIN Anhänger“, Vertrags-km-Grundlage/Datenqualität nach Berliner Tag, Auslesungen-Import Datumsspalte, Unterweisungstitel NFC', async () => {
+  const { e, U } = await freshWorld(); const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774';
+  // 1) Vertragsimport: „FIN Anhänger“ ist nicht die FIN des Fahrzeugs → Kennzeichen zählt
+  await e.DB.prepare(`INSERT INTO vehicles(id, vin, plate, site, active, created_at, updated_at, kind) SELECT 'VIN:WSM00000000123456', 'WSM00000000123456', 'SZ-YC 5514', 'Dortmund', 1, created_at, updated_at, 'anhaenger' FROM vehicles LIMIT 1`).run();
+  const csv = 'Kennzeichen;FIN Anhänger;Vertragsart;Vertragspartner;Vertragsnummer;Nachweis\nSZ-YC 5513;WSM00000000123456;Leasing;Lkw-Leasing AG;LK-1;Vertrag\nSZ-KC 5515;WSM99999999999999;Leasing;Lkw-Leasing AG;LK-2;Vertrag\n';
+  const im = await F.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(im.status, 200); eq(JSON.stringify(im.data.rows.map((x) => [x.line, x.plate])), '[[2,"SZ-YC 5513"],[3,"SZ-KC 5515"]]', JSON.stringify(im.data));
+  // 2) Tachotausch am Vertragsbeginn 00:30 Berliner Zeit (= Vortag 22:30 UTC): Grundlage = Berliner Tagesbeginn, Status „zaehler“
+  const ins = (km, at, note, created = at) => e.DB.prepare('INSERT INTO odometer_readings(id, vehicle_id, km, measured_at, source, recorded_by, created_at, note) VALUES (?,?,?,?,?,NULL,?,?)').bind(crypto.randomUUID(), V1, km, at, 'manuell', created, note).run();
+  await ins(400000, '2026-03-20T10:00:00.000Z', null); await ins(50, '2026-03-31T22:30:00.000Z', 'Tachotausch'); await ins(5050, '2026-05-01T10:00:00.000Z', null);
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'L', contract_no: 'X1', start_date: '2026-04-01', end_date: '2028-03-31', km_allowance: 300000, start_km: 400000, evidence: 'V' })).status, 201);
+  const c1 = (await F.get(`/api/vehicles/${V1}`)).data.contracts[0];
+  eq(c1.status.km.status, 'zaehler', JSON.stringify(c1.status.km)); eq(c1.km_basis_at, '2026-03-31T22:00:00.000Z');
+  // 3) Datenqualität: begründete Ablesung 00:30 Berliner Zeit am Beginntag ist Zählerwechsel, kein Fehler
+  const V2 = 'VIN:WDB9630051L917317';
+  await e.DB.prepare('INSERT INTO odometer_readings(id, vehicle_id, km, measured_at, source, recorded_by, created_at, note) VALUES (?,?,?,?,?,NULL,?,?)').bind(crypto.randomUUID(), V2, 99000, '2026-03-20T10:00:00.000Z', 'manuell', '2026-03-20T10:00:00.000Z', null).run();
+  eq((await F.post(`/api/vehicles/${V2}/contracts`, { kind: 'leasing', partner: 'L', contract_no: 'X2', start_date: '2026-04-01', end_date: '2028-03-31', km_allowance: 300000, start_km: 100000, evidence: 'V' })).status, 201);
+  await e.DB.prepare('INSERT INTO odometer_readings(id, vehicle_id, km, measured_at, source, recorded_by, created_at, note) VALUES (?,?,?,?,?,NULL,?,?)').bind(crypto.randomUUID(), V2, 50, '2026-03-31T22:30:00.000Z', 'manuell', new Date(Date.now() + 1000).toISOString(), 'Tachotausch laut Rechnung').run();
+  const q = await U.own.get('/api/admin/data-quality'); eq(q.status, 200);
+  ok(!(q.data.items || []).some((x) => x.check === 'contract_km_below_start' && x.vehicle_id === V2), JSON.stringify((q.data.items || []).filter((x) => x.vehicle_id === V2)));
+  // 4) Auslesungen-Import: „Art der Auslesung“/„Download-Datei“ sind keine Datumsspalte
+  eq((await F.post('/api/drivers', { display_name: 'Anna Alt', personnel_no: '123' })).status, 201);
+  for (const head of ['Art der Auslesung;Personalnummer;Datum/Uhrzeit;Datei', 'Art;Personalnummer;Datum Uhrzeit;Nachweis;Download-Datei']) {
+    const r = await F.req('POST', '/api/tacho/import?dry_run=1', `${head}\nFahrerkarte;123;01.10.2026 08:00;a.ddd${head.endsWith("Download-Datei") ? ";2026-10-05_x.ddd" : ""}\n`, { 'content-type': 'text/csv' });
+    eq(r.status, 200, head + ' ' + JSON.stringify(r.data)); eq(r.data.rows[0]?.downloaded_on, '2026-10-01', head);
+  }
+  const { dayCol } = await import('../src/tacho.js'); eq(dayCol(['art', 'datum/uhrzeit', 'download-datei']), 1); eq(dayCol(['art der auslesung', 'datum/uhrzeit'], [0]), 1);
+  // 5) Unterweisung: gleich aussehender Titel mit zerlegtem Umlaut (NFD) löst die abgelaufene ab
+  const d = (await F.post('/api/drivers', { display_name: 'Bert B', personnel_no: '9' })).data.id; const nfc = 'Unterweisung Gefahrgut Prüfung';
+  eq((await F.post(`/api/drivers/${d}/documents`, { kind: 'unterweisung', title: nfc, issued_on: '2024-01-10', valid_until: '2025-01-10', evidence: 'alt' })).status, 201);
+  eq((await F.post(`/api/drivers/${d}/documents`, { kind: 'unterweisung', title: nfc.normalize('NFD'), issued_on: '2026-01-10', valid_until: new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10), evidence: 'neu' })).status, 201);
+  const st = (await F.get(`/api/drivers/${d}`)).data.status; eq(st.replaced.length, 1); ok(st.overall !== 'kritisch', st.overall);
+  eq(e.DB.db.prepare("SELECT COUNT(*) n FROM driver_documents WHERE driver_id=? AND title=?").get(d, nfc).n, 2, 'Titel NFC gespeichert');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

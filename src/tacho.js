@@ -181,14 +181,16 @@ function parseDay(raw) {
 // – der Anfangstreffer „datum“ nahm still die erste Datumsspalte; „Ausgelesen von“ (Person) galt als Datum). Reihenfolge: exakte Namen,
 // dann Spalten mit „auslese“/„auslesung“/„download“ (ohne Personenangabe; „Auslesung vom“ wurde bis 18.10.2026 übersehen und still „Datum letzte Aktivität“ genommen), dann genau eine Spalte „Datum…“; mehrere → -2 (nicht eindeutig)
 const DAY_EXACT = ['auslesedatum', 'datum der auslesung', 'datum auslesung', 'auslesung', 'ausgelesen am', 'downloaddatum', 'download-datum', 'download datum', 'download', 'datum'];
-export function dayCol(head) {
-  const hd = head.map((h) => String(h || '').trim().toLowerCase());
+// `exclude`: schon als Art/Nachweis erkannte Spalten (21.10.2026: „Art der Auslesung“/„Download-Datei“ wurden als Datumsspalte genommen)
+export function dayCol(head, exclude = []) {
+  const hd = head.map((h, i) => (exclude.includes(i) ? '' : String(h || '').trim().toLowerCase()));
   for (const n of DAY_EXACT) { const i = hd.indexOf(n); if (i >= 0) return i; }
+  const isFile = /datei|\bfile/;
   const person = /\b(von|durch|person|benutzer|user|mitarbeiter|name)\b/;
   // Fälligkeits-/Planspalten („Nächster Download“, „Download fällig am“, „Auslesefrist“) sind kein Auslesedatum (18.10.2026: Fälligkeitstag
   // wurde als Auslesung gespeichert → Frist 28 Tage später „ok“ statt überfällig)
   const planned = /n(ä|ae)chst|f(ä|ae)llig|frist|\bsoll|geplant|\bplan/;
-  const hits = hd.map((h, i) => (/auslese|auslesung|ausgelesen|download/.test(h) && !person.test(h) && !planned.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
+  const hits = hd.map((h, i) => (/auslese|auslesung|ausgelesen|download/.test(h) && !person.test(h) && !planned.test(h) && !isFile.test(h) && !h.startsWith('letzte auslesung') ? i : -1)).filter((i) => i >= 0);
   if (hits.length === 1) return hits[0];
   if (hits.length > 1) return -2;
   const dates = hd.map((h, i) => (h.startsWith('datum') && !planned.test(h) ? i : -1)).filter((i) => i >= 0);
@@ -216,8 +218,9 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   // Namensspalte: „Name“/„Fahrername“ vor „Fahrer…“; „Fahrerkartennummer“, „Fahrer-Nr.“ o. Ä. sind keine Namen
   const nameCol = (hd) => { const notName = (h) => /karte|nr|nummer|kennung|id\b/.test(h);
     return pick(hd, ['name', 'fahrername', 'name fahrer', 'fahrer name', 'fahrer'], (h) => !notName(h)); };
-  const ci = { kind: col(['art', 'typ', 'quelle der daten']), pno: col(['personalnummer', 'personal-nr', 'pers']), name: nameCol(head),
-    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: dayCol(head), ev: col(['nachweis', 'datei', 'beleg']) };
+  const kindCi = col(['art', 'typ', 'quelle der daten']); const evCi = col(['nachweis', 'datei', 'beleg']);
+  const ci = { kind: kindCi, pno: col(['personalnummer', 'personal-nr', 'pers']), name: nameCol(head),
+    plate: col(['kennzeichen']), vin: col(['fin', 'fahrgestell']), day: dayCol(head, [kindCi, evCi].filter((i) => i >= 0)), ev: evCi };
   if (ci.day === -2) throw bad('tacho_day_ambiguous', 'Datumsspalte nicht eindeutig – bitte die Spalte mit dem Auslesedatum „Auslesedatum“ nennen.');
   const fallbackEv = str(source, { max: 300, field: 'Quelle' }) || ''; // keine Quelle angegeben: leer statt null (leere Nachweis-Zelle ergab sonst 500)
   if (ci.kind < 0) throw bad('validation', 'Spalte „Art“ (Fahrerkarte/Massenspeicher) erforderlich.');

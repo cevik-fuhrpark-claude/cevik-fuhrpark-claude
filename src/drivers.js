@@ -53,7 +53,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
   // (Groß-/Kleinschreibung, Leerzeichen egal) nur der Nachweis mit dem spätesten „gültig bis“; ältere derselben Gruppe gelten als
   // durch den neueren abgelöst (`replaced`). Vorher blieb eine abgelaufene Unterweisung trotz neuer gültiger dauerhaft „kritisch“ (17.10.2026).
   // ohne Bezeichnung keine Gruppe (18.10.2026): zwei unbenannte Nachweise (ADR-Schein, Staplerschein) lösten sich gegenseitig ab, der abgelaufene verschwand
-  const groupKey = (x) => { const t = String(x.title || '').trim().replace(/\s+/g, ' ').toLowerCase(); return t ? `${x.kind}|${t}` : `${x.kind}|#${x.id}`; };
+  const groupKey = (x) => { const t = String(x.title || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase(); return t ? `${x.kind}|${t}` : `${x.kind}|#${x.id}`; };
   // Neuester je Gruppe: beide mit „gültig bis“ → spätestes; sonst nach Ausstellungsdatum (ohne: Erfassungstag) – eine erneute Unterweisung
   // ohne „gültig bis“ löst die abgelaufene ab (17.10.2026), ein nachgetragener älterer Nachweis nicht
   const newer = (a, b) => {
@@ -235,7 +235,7 @@ export async function addDriverDocument(env, user, envName, id, body) {
       OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, ${berlinDaySql('x.created_at')}) > ?7)))`;
   stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11)`)
-    .bind(docId, id, kind, str(body.title, { max: 120, field: 'Bezeichnung' }), str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now));
+    .bind(docId, id, kind, (str(body.title, { max: 120, field: 'Bezeichnung' }) || null)?.normalize('NFC') ?? null, str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now));
   if (single) stmts.push(env.DB.prepare(`UPDATE driver_documents SET superseded=1 WHERE driver_id=?1 AND kind=?2 AND superseded=0 AND id<>?3
       AND (SELECT superseded FROM driver_documents WHERE id=?3)=0`).bind(id, kind, docId));
   await env.DB.batch(stmts);

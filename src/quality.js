@@ -136,7 +136,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       -- begründeter km-Rücksprung (Tachotausch) seit Vertragsbeginn und nach der letzten Prüfung „km bei Übernahme“: Zählerwechsel, kein Tippfehler
       -- (wie die Vertragsseite, Status „zaehler“; 20.10.2026)
       EXISTS (SELECT 1 FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id AND c.start_km IS NOT NULL AND o.km < c.start_km AND o.note IS NOT NULL AND trim(o.note)<>''
-        AND (c.start_date IS NULL OR o.measured_at >= c.start_date) AND (c.km_basis_at IS NULL OR o.created_at > c.km_basis_at)) AS reasoned_drop
+        AND (c.start_date IS NULL OR ${berlinDaySql('o.measured_at')} >= c.start_date) AND (c.km_basis_at IS NULL OR o.created_at > c.km_basis_at)) AS reasoned_drop
       FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND v.eval_excluded=0`).all(),
     // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
     env.DB.prepare(`SELECT DISTINCT f.vehicle_id FROM files f WHERE f.environment=? AND f.case_id IS NULL AND f.doc_kind='leasing'

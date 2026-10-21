@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -121,7 +121,7 @@ export function sameContract(c, f) {
 // gleiche Regel wie `kmBasisForDone` bei Prüfterminen, Grenztag wie `contractStatus`)
 function contractKmBasis(drop, startDate, now) {
   if (!drop || !drop.drop_at || !startDate) return now;
-  return startDate <= berlinDate(drop.drop_at) ? `${startDate}T00:00:00.000Z` : now;
+  return startDate <= berlinDate(drop.drop_at) ? berlinDayStartIso(startDate) : now; // Berliner Tagesbeginn (21.10.2026: UTC-Mitternacht übersah Tausch 00:00–02:00 Uhr)
 }
 const dropOf = async (env, vehicleId) => parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(vehicleId).first() || {}).d);
 
@@ -389,8 +389,9 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const isGrossOrCount = (h) => h.includes('anzahl') || h.includes('brutto') || (/inkl|gross|mwst|\bust\b/.test(h) && !/zzgl|netto|exkl|ohne/.test(h));
   // Kündigungsfrist in Tagen/Wochen ist keine Monatsangabe (18.10.2026: 30 Tage galten still als 30 Monate)
   if (head.some((h) => /^(kündigung|kuendigung)/.test(h) && /tag|woche/.test(h))) throw bad('validation', 'Kündigungsfrist in Tagen oder Wochen erkannt – bitte in Monaten angeben (Spalte „Kündigungsfrist (Monate)“; Tage/Wochen werden nicht umgerechnet).');
+  // FIN/Fahrgestell ohne Anhänger-/Aufliegerspalten („FIN Anhänger“ ist nicht die Fahrzeug-FIN; 21.10.2026: Lkw-Vertrag landete am Anhänger)
   // Beginn auch „Laufzeitbeginn“/„Leasingbeginn“ (wurde still ignoriert, 17.10.2026)
-  const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin', 'fin ']), kind: col(['vertragsart', 'art', 'typ']),
+  const ci = { plate: col(['kennzeichen', 'amtl']), vin: col(['fin', 'fahrgestell', 'vin'], (h) => /anh(ä|ae)nger|auflieger|trailer/.test(h)), kind: col(['vertragsart', 'art', 'typ']),
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'vertrag nr', 'vertrag-nr', 'police', 'versicherungsschein', 'versicherungsnummer', 'vsnr', 'nummer', 'nr'], (h) => /schild|kennz|kfz-nr|amtl/.test(h)), // auch Versicherungsköpfe (19.10.2026)
     start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'beginn', 'start']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'ende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
     allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], isAnnual), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
