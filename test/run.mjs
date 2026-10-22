@@ -17323,6 +17323,27 @@ await test('Falsch gehende Geräteuhr: Offline-Kontrolle mit Gerätezeit beim Se
   ok(ups.includes('LOCKS.request') && !ups.includes('outboxAdd'), 'Sperre umfasst den ganzen Ablauf');
 });
 
+await test('Backlog 129: nachgereichte Offline-Kontrolle trägt Empfangszeit (received_at) – Fahrzeugakte, Zeitleiste und Datenauskunft zeigen „nachgereicht am“, sofort gesendete ohne', async () => {
+  const { U, V1 } = await freshWorld();
+  const items = (await U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const at = new Date(Date.now() - 5 * 3600000).toISOString();
+  const late = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: at, client_now: new Date().toISOString() });
+  eq(late.status, 201, JSON.stringify(late.data));
+  const now = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items });
+  eq(now.status, 201);
+  const d = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
+  const li = d.inspections.find((i) => i.id === late.data.id); const ni = d.inspections.find((i) => i.id === now.data.id);
+  eq(li.created_at, at, 'Durchführung'); ok(li.received_at && Date.parse(li.received_at) > Date.parse(at) + 4 * 3600000, `Empfang (${li.received_at})`);
+  eq(ni.received_at, null, 'sofort gesendet: keine Empfangszeit');
+  const tl = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=inspection`)).data.items;
+  eq(tl.filter((x) => x.type === 'inspection' && x.received_at).length, 1, 'Zeitleiste');
+  const x = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
+  ok(JSON.stringify(x).includes('"received_at"'), 'Datenauskunft');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/t\('insp_received_late'\)/g) || []).length, 2, 'Akte + Zeitleiste');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].insp_received_late || ''), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

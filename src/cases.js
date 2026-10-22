@@ -1515,9 +1515,9 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   const buildStmts = () => {
     const itemsJson = JSON.stringify(CHECKLIST.map((i) => byKey.get(i.key)));
     // ohne OR IGNORE (17.10.2026): gleichzeitig zweimal gesendet → zweiter Stapel rollt vollständig zurück (vorher doppelte km-Stände/Verlaufseinträge)
-    const stmts = [env.DB.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
-      defects.length ? 'maengel' : 'ok', inspNote, performedAt)];
+    const stmts = [env.DB.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at,received_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
+      defects.length ? 'maengel' : 'ok', inspNote, performedAt, performedAt !== now ? now : null)];
     if (odo !== null && !kmRejected && !kmTestOnly) {
       // Plausibilität auch im Einfügen selbst (wie „Kilometerstand erfassen“): eine zwischen Prüfung und Stapel erfasste Ablesung machte den
       // km-Stand der Kontrolle sonst zum unbegründeten Rücksprung (19.10.2026)

@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (22.10.2026): Falsch gehende Geräteuhr – die App misst die Abweichung am Date-Kopf der API-Antworten,
 # zeigt ab 5 Min. einen Hinweis (DE/UK/EN) und rechnet „heute“ (z. B. höchstes km-Datum in der Fahrzeugakte) mit der Serverzeit.
-# Richtige Uhr: kein Hinweis. 390/820/1366 px. Läuft gegen einen Dev-Server (CFP_URL, Standard Port 8787).
+# Richtige Uhr: kein Hinweis. Nachgereichte Offline-Kontrolle mit „nachgereicht am …“ in der Akte (Backlog 129). 390/820/1366 px. Läuft gegen einen Dev-Server (CFP_URL, Standard Port 8787).
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -19,6 +19,12 @@ with sync_playwright() as p:
     check(api('POST','/api/login',{'username':'en.inhaber','password':PW})['s']==200,'Anmeldung Inhaber')
     api('POST','/api/vehicles',{'plate':'UHR-UI 1','vin':VIN,'site':'Dortmund'})
     real=datetime.datetime.now(datetime.timezone.utc)
+    # Backlog 129: nachgereichte Offline-Kontrolle zeigt „nachgereicht am …“ in der Akte
+    items=[{'key':i['key'],'result':'ok'} for i in api('GET','/api/meta')['d']['checklist']]
+    pa=(real-datetime.timedelta(hours=3)).isoformat().replace('+00:00','Z')
+    r=api('POST','/api/inspections',{'kind':'abfahrt','vehicle_id':VID,'request_key':'uhr-'+str(real.timestamp()),'items':items,'performed_at':pa,'client_now':real.isoformat().replace('+00:00','Z')})
+    check(r['s']==201,f'Kontrolle nachgereicht ({r["s"]})')
+    LATE={'de':'nachgereicht am','uk':'надіслано пізніше','en':'sent later on'}
     import zoneinfo
     today=real.astimezone(zoneinfo.ZoneInfo('Europe/Berlin')).date().isoformat()
     cases=[('de',390,-25*3600,'geht','nach'),('uk',820,-3*3600,'відстає',None),('en',1366,2*86400*3,'ahead',None),('de',1366,0,None,None)]
@@ -40,7 +46,8 @@ with sync_playwright() as p:
         try: mx=q.get_attribute('input[name=measured_on]','max',timeout=8000)
         except Exception: mx=None; print('   URL', q.url)
         check(mx==today,f'{lang} {w}: „heute“ nach Serverzeit (max={mx}, erwartet {today})')
-        if SHOTS: q.screenshot(path=f'{SHOTS}/geraeteuhr_{lang}_{w}.png')
+        check(LATE[lang] in q.inner_text('main'),f'{lang} {w}: Akte zeigt „{LATE[lang]}“')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/geraeteuhr_{lang}_{w}.png',full_page=True)
         check(not errs,f'{lang} {w}: keine Skriptfehler {errs[:1]}')
         c.close()
     br.close()

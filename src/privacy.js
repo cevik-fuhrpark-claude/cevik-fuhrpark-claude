@@ -48,7 +48,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     reported_cases: q(`SELECT c.case_no, c.environment, c.status, c.priority, c.description, c.created_at, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.reporter_id=? ORDER BY c.created_at`, userId),
     case_events: q(`SELECT c.case_no, e.environment, e.action, e.note, e.created_at FROM case_events e JOIN cases c ON c.id=e.case_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
     work_entries: q(`SELECT c.case_no, w.* FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE w.user_id=? ORDER BY w.created_at`, userId),
-    inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.items, i.created_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),
+    inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.items, i.created_at, i.received_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),
     files_uploaded: q('SELECT filename, content_type, size, created_at, case_id, vehicle_id, doc_kind, doc_note, doc_valid_until FROM files WHERE uploaded_by=? ORDER BY created_at', userId),
     notifications: q('SELECT environment, kind, title, body, created_at, push_status, push_accepted_at, device_received_at, opened_at, acknowledged_at, hidden_at FROM notifications WHERE user_id=? ORDER BY created_at', userId),
     odometer_recorded: q(`SELECT o.km, o.measured_at, o.source, o.note, v.plate FROM odometer_readings o JOIN vehicles v ON v.id=o.vehicle_id WHERE o.recorded_by=? ORDER BY o.measured_at`, userId),
