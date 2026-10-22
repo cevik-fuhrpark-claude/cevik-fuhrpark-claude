@@ -27,7 +27,8 @@ with sync_playwright() as p:
         api('PUT','/api/settings',{'driver_doc_warn_days':None,'contract_warn_days':None,'maintenance_warn_days':None})
         c=br.new_context(viewport={'width':w,'height':h}); q=c.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ep.inhaber','password':PW}])
-        q.goto(B+'/#/settings'); q.wait_for_selector('#fine_warn_days')
+        # nach der Anmeldung per fetch neu laden: die Startseite hat ggf. schon „nicht angemeldet“ gesehen (sporadisch 30 s Zeitüberschreitung, 22.10.2026)
+        q.goto(B+'/#/settings'); q.reload(); q.wait_for_selector('#fine_warn_days')
         for k,v in EXP[lang].items():
           lab=q.inner_text(f'label[for="{k}"]').strip()
           check(v in lab,f'{lang} {w}px: {k} → {lab!r}')
