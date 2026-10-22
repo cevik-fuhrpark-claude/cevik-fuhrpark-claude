@@ -106,60 +106,63 @@ function build(version, codewords, forceMask = null) {
       idx++;
     }
   }
-  // Beste Maske nach Strafpunkten
-  let best = null; let bestScore = Infinity;
+  // Beste Maske nach Strafpunkten – intern als flaches Byte-Feld (22.10.2026: vorher je Maske Zeilenkopien und Rückruf-Funktionen,
+  // ≈ 3,7 ms je Code; QR-Bogen mit 150 Fahrzeugen am Handy ≈ 2 s). Ergebnis bitgleich (Test vergleicht 400 Zufallstexte).
+  const N = size * size; const base = new Uint8Array(N); const fnf = new Uint8Array(N);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) { base[y * size + x] = m[y][x] ? 1 : 0; fnf[y * size + x] = fn[y][x] ? 1 : 0; }
+  let best = null; let bestScore = Infinity; const c = new Uint8Array(N);
   for (let mask = 0; mask < 8; mask++) {
     if (forceMask !== null && mask !== forceMask) continue;
-    const c = m.map((row) => row.slice());
-    applyMask(c, fn, mask); drawFormat(c, size, mask);
-    const s = penalty(c);
-    if (s < bestScore) { bestScore = s; best = c; }
+    c.set(base); applyMask(c, fnf, size, mask); drawFormat(c, size, mask);
+    const s = penalty(c, size);
+    if (s < bestScore) { bestScore = s; best = c.slice(); }
   }
-  return best;
+  return Array.from({ length: size }, (_, y) => Array.from(best.subarray(y * size, (y + 1) * size), (v) => v === 1));
 }
 
 const MASKS = [(x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, (x) => x % 3 === 0, (x, y) => (x + y) % 3 === 0,
   (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0, (x, y) => ((x * y) % 2) + ((x * y) % 3) === 0,
   (x, y) => (((x * y) % 2) + ((x * y) % 3)) % 2 === 0, (x, y) => (((x + y) % 2) + ((x * y) % 3)) % 2 === 0];
-function applyMask(m, fn, mask) {
-  for (let y = 0; y < m.length; y++) for (let x = 0; x < m.length; x++) if (!fn[y][x] && MASKS[mask](x, y)) m[y][x] = !m[y][x];
+function applyMask(c, fnf, size, mask) {
+  const f = MASKS[mask];
+  for (let y = 0, i = 0; y < size; y++) for (let x = 0; x < size; x++, i++) if (!fnf[i] && f(x, y)) c[i] ^= 1;
 }
-function drawFormat(m, size, mask) {
+function drawFormat(c, size, mask) {
   const data = (0b00 << 3) | mask; // Stufe M = 00
   let rem = data; for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
   const bits = ((data << 10) | rem) ^ 0x5412;
-  const b = (i) => ((bits >>> i) & 1) === 1;
-  for (let i = 0; i <= 5; i++) m[i][8] = b(i);
-  m[7][8] = b(6); m[8][8] = b(7); m[8][7] = b(8);
-  for (let i = 9; i < 15; i++) m[8][14 - i] = b(i);
-  for (let i = 0; i < 8; i++) m[8][size - 1 - i] = b(i);
-  for (let i = 8; i < 15; i++) m[size - 15 + i][8] = b(i);
-  m[size - 8][8] = true;
+  const b = (i) => (bits >>> i) & 1;
+  const put = (y, x, v) => { c[y * size + x] = v; };
+  for (let i = 0; i <= 5; i++) put(i, 8, b(i));
+  put(7, 8, b(6)); put(8, 8, b(7)); put(8, 7, b(8));
+  for (let i = 9; i < 15; i++) put(8, 14 - i, b(i));
+  for (let i = 0; i < 8; i++) put(8, size - 1 - i, b(i));
+  for (let i = 8; i < 15; i++) put(size - 15 + i, 8, b(i));
+  put(size - 8, 8, 1);
 }
-function penalty(m) {
-  const n = m.length; let s = 0;
-  const runs = (get) => {
+// Strafpunkte nach ISO/IEC 18004 (Regeln 1–4) wie bisher: c[y*n+x]; Zeilen (step 1) und Spalten (step n) mit derselben Schleife
+function penalty(c, n) {
+  let s = 0; const L = new Uint8Array(n);
+  for (let dir = 0; dir < 2; dir++) {
+    const outer = dir ? 1 : n; const inner = dir ? n : 1; // dir 0: Zeilen, dir 1: Spalten
     for (let i = 0; i < n; i++) {
+      for (let j = 0, o = i * outer; j < n; j++, o += inner) L[j] = c[o];
       let len = 1;
       for (let j = 1; j <= n; j++) {
-        if (j < n && get(i, j) === get(i, j - 1)) len++;
+        if (j < n && L[j] === L[j - 1]) len++;
         else { if (len >= 5) s += len - 2; len = 1; }
       }
+      // Muster 1:1:3:1:1 mit 4 hellen Modulen davor oder danach
+      for (let j = 0; j + 7 <= n; j++) {
+        if (!(L[j] && !L[j + 1] && L[j + 2] && L[j + 3] && L[j + 4] && !L[j + 5] && L[j + 6])) continue;
+        const before = j >= 4 && !L[j - 1] && !L[j - 2] && !L[j - 3] && !L[j - 4];
+        const after = j + 11 <= n && !L[j + 7] && !L[j + 8] && !L[j + 9] && !L[j + 10];
+        if (before || after) s += 40;
+      }
     }
-  };
-  runs((i, j) => m[i][j]); runs((i, j) => m[j][i]);
-  for (let y = 0; y < n - 1; y++) for (let x = 0; x < n - 1; x++) { const c = m[y][x]; if (c === m[y][x + 1] && c === m[y + 1][x] && c === m[y + 1][x + 1]) s += 3; }
-  const pat = [true, false, true, true, true, false, true];
-  const finder = (get) => {
-    for (let i = 0; i < n; i++) for (let j = 0; j + 7 <= n; j++) {
-      if (!pat.every((p, k) => get(i, j + k) === p)) continue;
-      const before = j >= 4 && [1, 2, 3, 4].every((k) => !get(i, j - k));
-      const after = j + 11 <= n && [7, 8, 9, 10].every((k) => !get(i, j + k));
-      if (before || after) s += 40;
-    }
-  };
-  finder((i, j) => m[i][j]); finder((i, j) => m[j][i]);
-  const dark = m.reduce((a, r) => a + r.filter(Boolean).length, 0);
+  }
+  for (let y = 0; y < n - 1; y++) for (let x = 0; x < n - 1; x++) { const i = y * n + x; const v = c[i]; if (v === c[i + 1] && v === c[i + n] && v === c[i + n + 1]) s += 3; }
+  let dark = 0; for (let i = 0; i < n * n; i++) dark += c[i];
   s += Math.floor(Math.abs(dark * 20 - n * n * 10) / (n * n)) * 10;
   return s;
 }
@@ -168,7 +171,8 @@ function penalty(m) {
 export function svg(text, { label = 'QR-Code' } = {}) {
   const m = encode(text); const n = m.length; const q = 4;
   let d = '';
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (m[y][x]) d += `M${x + q},${y + q}h1v1h-1z`;
+  // zusammenhängende dunkle Module einer Zeile als ein Rechteck (≈ 3× kürzerer Pfad, schnellere Darstellung vieler Codes)
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { if (!m[y][x]) continue; let w = 1; while (x + w < n && m[y][x + w]) w++; d += `M${x + q},${y + q}h${w}v1h-${w}z`; x += w - 1; }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 2 * q} ${n + 2 * q}" shape-rendering="crispEdges" role="img" aria-label="${esc(label)}"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }

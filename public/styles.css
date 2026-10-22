@@ -225,6 +225,9 @@ th { color: var(--steel); font-weight: 600; }
   table.stack td[data-label]::before { content: attr(data-label); flex: 0 0 38%; color: var(--steel); font-size: 0.85em; }
   table.stack td:empty { display: none; }
 }
+@media screen and (max-width: 600px) {
+  table.stack.bigstack tbody tr { content-visibility: auto; contain-intrinsic-size: auto 320px; }
+}
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom)); background: var(--ink); color: var(--surface); padding: 12px 18px; border-radius: var(--radius-s); z-index: 50; max-width: calc(100% - 32px); }
 .toast.err { background: var(--stop-solid); color: #fff; cursor: pointer; top: calc(68px + env(safe-area-inset-top)); bottom: auto; } /* oben unter der Kopfzeile: unten verdeckte sie bis 20 s „Senden“ über der Tabbar (Backlog 111, 21.10.2026) */

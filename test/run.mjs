@@ -17393,6 +17393,32 @@ await test('Management-Seite bei großem Bestand: offene Entscheidungen zuerst 1
   const { U } = await freshWorld(); const r = await U.fleet.get('/api/master'); eq(r.status, 200); ok(Array.isArray(r.data.inbox));
 });
 
+await test('Backlog 132: großer Bestand am Handy – QR-Encoder bitgleich und schneller (400 Zufallstexte), SVG-Pfad mit Zeilenrechtecken deckt genau die dunklen Module, lange Kartenlisten (Lagerjournal) nur sichtbare Karten layouten, Lagersuche vorab gelesen + ab 300 Artikeln entprellt', async () => {
+  const { encode, svg } = await import('../public/qr.js');
+  const { createHash } = await import('node:crypto');
+  // Referenz mit dem Encoder vor der Umstellung erzeugt (22.10.2026): gleiche Matrizen inkl. Maskenwahl
+  const h = createHash('sha256'); let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const t0 = performance.now(); const texts = [];
+  for (let i = 0; i < 400; i++) { const len = 1 + Math.floor(rnd() * 213); let s = ''; for (let k = 0; k < len; k++) s += String.fromCharCode(32 + Math.floor(rnd() * 95)); texts.push(s); const m = encode(s); h.update(m.map((r) => r.map((b) => (b ? 1 : 0)).join('')).join('\n') + '|'); }
+  eq(h.digest('hex').slice(0, 16), '95f6bd0405a54dce', 'Matrizen unverändert');
+  ok(performance.now() - t0 < 4000, 'Laufzeit 400 Codes: ' + Math.round(performance.now() - t0) + ' ms');
+  // SVG-Pfad zurücklesen: jedes Rechteck M x,y h w v1 h-w z ergibt genau die dunklen Module (Ruhezone 4)
+  for (const s of [texts[0], texts[5], 'https://cevik-fuhrpark-claude.y-cevik.workers.dev/#/v/VIN:WDB96340310775001']) {
+    const m = encode(s); const n = m.length; const out = Array.from({ length: n }, () => new Array(n).fill(false));
+    const d = svg(s).match(/ d="([^"]*)"/)[1]; let cnt = 0;
+    for (const [, x, y, w, w2] of d.matchAll(/M(\d+),(\d+)h(\d+)v1h-(\d+)z/g)) { eq(w, w2); for (let k = 0; k < Number(w); k++) { ok(!out[y - 4][x - 4 + k], 'nicht doppelt'); out[y - 4][x - 4 + k] = true; } cnt++; }
+    eq(d.replace(/M\d+,\d+h\d+v1h-\d+z/g, ''), '', 'nur Rechtecke'); ok(cnt > 0);
+    eq(JSON.stringify(out), JSON.stringify(m), 'Pfad = Matrix');
+  }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/const STACK_CV_MIN = 100;/.test(app) && app.includes("tb.classList.toggle('bigstack', tb.tBodies.length > 0 && tb.tBodies[0].rows.length > STACK_CV_MIN)"), 'bigstack ab 100 Zeilen');
+  ok(/@media screen and \(max-width: 600px\) \{\s*table\.stack\.bigstack tbody tr \{ content-visibility: auto;/.test(css), 'nur Bildschirm/Handy');
+  const vs = app.slice(app.indexOf('async function viewStock() {'), app.indexOf('async function viewStockCount() {'));
+  ok(vs.includes("const slRows = $$('#sl a').map(") && !vs.includes("$$('#sl a').forEach((a) => { const i = byId.get"), 'Zeilen vorab gelesen');
+  ok(vs.includes('setTimeout(applyStock, items.length > 300 ? 150 : 0)') && vs.includes("$('#sprt').onclick = () => { sqFlush(); window.print(); };") && vs.includes('$(\'#scsv\').onclick = async () => { sqFlush();'), 'entprellt, Druck/CSV wenden Suche vorher an');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

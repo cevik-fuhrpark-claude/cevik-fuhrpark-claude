@@ -316,10 +316,13 @@ function markToggles(root) {
 }
 
 // Tabellen mit Klasse „stack“ werden auf dem Handy als Karten dargestellt: Spaltenüberschrift je Zelle als data-label
+const STACK_CV_MIN = 100;
 function stackTables(root) {
   for (const tb of root.querySelectorAll('table.stack')) {
     const heads = [...tb.querySelectorAll('thead th')].map((th) => th.textContent.trim());
     for (const tr of tb.querySelectorAll('tbody tr')) [...tr.children].forEach((td, i) => { if (heads[i] && !td.dataset.label && !(td.colSpan > 1)) td.dataset.label = heads[i]; }); // Zeilen über die ganze Breite (colspan) ohne Spaltenüberschrift (19.10.2026)
+    // Lange Kartenlisten am Handy (z. B. Lagerjournal mit 1 000 Buchungen): Karten außerhalb des Bildschirms erst beim Scrollen layouten (22.10.2026)
+    tb.classList.toggle('bigstack', tb.tBodies.length > 0 && tb.tBodies[0].rows.length > STACK_CV_MIN);
   }
 }
 
@@ -2462,12 +2465,15 @@ async function viewStock() {
     <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || `<p class="muted">–</p>`}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
   const byId = new Map(items.map((i) => [i.id, i]));
+  // Zeilen einmal vorab lesen (Suchtext, Artikel) und „hidden“ nur bei Änderung setzen; Suche ab 300 Artikeln entprellt (22.10.2026:
+  // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)
+  const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, i: byId.get(a.dataset.id) }));
   const applyStock = () => {
     const q = helpNorm($('#q').value); const f = $('#sf').value; // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
     const cut = /^\d+$/.test(f) ? bDate(-Number(f)) : null;
     const hit = (i) => (!f || (f === 'min' ? i.below_min : f === 'c365' ? !i.last_counted_date || i.last_counted_date <= bDate(-365) : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
     const shown = [];
-    $$('#sl a').forEach((a) => { const i = byId.get(a.dataset.id); a.hidden = !!((q && !a.dataset.s.includes(q)) || !hit(i)); if (!a.hidden) shown.push(i); });
+    for (const r of slRows) { const h = !!((q && !r.s.includes(q)) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
     // Summe der angezeigten Artikel: Bestand × hinterlegter Artikelpreis (netto); Artikel mit Bestand ohne Preis = unbewertet (nie 0 €), ohne bewertbaren Artikel „–“
     const sum = $('#sfsum'); sum.hidden = !shown.length;
     const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
@@ -2477,10 +2483,12 @@ async function viewStock() {
     $('#sprsel').textContent = [`${t('print_filter')}: ${f && sfo ? sfo.textContent : t('all')}`, qv ? `${t('print_search')}: „${qv}“` : ''].filter(Boolean).join(' · ');
     sum.textContent = cut ? tn('stock_idle_sum', shown.length).replace('{v}', v) + unv : tn('stock_value_sum', shown.length).replace('{v}', v) + unv;
   };
-  $('#q').oninput = applyStock; $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
-  $('#sprt').onclick = () => window.print();
+  let sqT = null; $('#q').oninput = () => { clearTimeout(sqT); sqT = setTimeout(applyStock, items.length > 300 ? 150 : 0); };
+  $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
+  const sqFlush = () => { if (sqT) { clearTimeout(sqT); sqT = null; applyStock(); } }; // Druck/CSV direkt nach dem Tippen: entprellte Suche zuerst anwenden
+  $('#sprt').onclick = () => { sqFlush(); window.print(); };
   // CSV = angezeigte Auswahl (Filter/Suche) wie der Druck; ungefiltert alle Artikel (20.10.2026)
-  $('#scsv').onclick = async () => { try { const vis = $$('#sl a').filter((a) => !a.hidden).map((a) => a.dataset.id); download(vis.length < items.length ? await api('POST', '/api/stock/export', { ids: vis }) : await api('GET', '/api/stock?format=csv'), `fuhrpark-lager_${envFn()}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#scsv').onclick = async () => { sqFlush(); try { const vis = $$('#sl a').filter((a) => !a.hidden).map((a) => a.dataset.id); download(vis.length < items.length ? await api('POST', '/api/stock/export', { ids: vis }) : await api('GET', '/api/stock?format=csv'), `fuhrpark-lager_${envFn()}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
   if ($('#inv')) {
     // „Inventurdifferenzen“: Lagerjournal mit Auswahl Inventur, letzte 12 Monate, aktuelles Inventurlager
     $('#invdiffs').onclick = () => { try { sessionStorage.setItem('cfp_sj_type', 'inventur'); sessionStorage.setItem('cfp_sj_from', bDate(-364)); sessionStorage.setItem('cfp_sj_to', bDate()); sessionStorage.setItem('cfp_sj_site', $('#invsite') ? $('#invsite').value : ''); } catch { /* ohne Speicher: Standardzeitraum */ } };
