@@ -392,7 +392,9 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
     }
     states.push({ id: n.id, s: accepted ? 'accepted' : 'failed', a: 1, e: accepted ? null : lastErr, t: accepted ? nowIso() : null });
   }
-  // gesammelte Folgehinweise eines verschobenen Trägers bleiben ebenfalls pending (werden einzeln nachgeholt)
+  // gesammelte Folgehinweise eines verschobenen Trägers bleiben ebenfalls pending – mit Sammel-Vermerk, damit die Wiederholung sie wieder mit
+  // dem Träger bündelt (22.10.2026: kamen vorher nach 5 Min. als Einzel-Pushs)
+  for (const id of deferred) for (const f of followers.get(id) || []) states.push(isMuted(f) ? { id: f.id, s: 'disabled', a: 0 } : { id: f.id, s: 'pending', a: 0, e: `${COLLAPSE_MARK}${id}]` });
   for (const st of [...states]) for (const f of followers.get(st.id) || []) {
     // Stumm geschaltete Art gilt je Hinweis; sonst teilt der Hinweis das Ergebnis des gesammelten Pushs
     // Ruhezeit: ein dringender Träger nimmt nicht dringende Folgehinweise mit (ein Push je Person) – sie gelten damit als zugestellt
@@ -403,7 +405,7 @@ export async function deliverPush(env, notifications, { collapse = false, maxSen
   const writes = [];
   if (states.length) {
     writes.push(env.DB.prepare(`UPDATE notifications SET push_status=j.s, push_attempts=push_attempts + j.a,
-      push_last_error=CASE WHEN j.a=1 THEN j.e ELSE notifications.push_last_error END,
+      push_last_error=CASE WHEN j.a=1 OR j.e IS NOT NULL THEN j.e ELSE notifications.push_last_error END,
       push_accepted_at=CASE WHEN j.a=1 THEN j.t ELSE notifications.push_accepted_at END,
       push_hold_until=COALESCE(j.h, notifications.push_hold_until)
       FROM (SELECT json_extract(value,'$.id') AS id, json_extract(value,'$.s') AS s, json_extract(value,'$.a') AS a,
@@ -435,23 +437,33 @@ const COLLAPSE_RE = /\[Sammel-Push mit ([\w-]+)\]$/;
 export async function retryFailedPush(env) {
   const now = env.__nowMs || Date.now();
   await releaseQuietPush(env, now);
-  const rows = (await env.DB.prepare(`SELECT n.id, n.environment, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.push_last_error, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
-    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.event_key NOT LIKE 'testdev:%' AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ?1 AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND ((n.push_hold_until IS NULL AND n.created_at < ?2) OR n.push_hold_until < ?3)))
-    ORDER BY n.urgent DESC, n.created_at LIMIT 20`)
-    // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt;
-    // ebenso eine vor > 5 Min. beanspruchte Ruhezeit-Freigabe, deren Zustellung abbrach (18.10.2026: blieb sonst für immer „pending“)
-    .bind(new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString(), QUIET_CLAIM_PREFIX + new Date(now - 5 * 60000).toISOString()).all()).results;
-  // Folge-Hinweise eines fehlgeschlagenen Sammel-Pushs (Vermerk im Fehlertext) wieder mit ihrem Träger bündeln, sofern er mit wiederholt wird;
-  // alle übrigen Hinweise einzeln (je Hinweis in der aktuellen Sprache)
-  const byId = new Map(rows.map((r) => [r.id, r])); const groups = new Map(); const single = [];
-  for (const r of rows) {
-    const m = r.push_last_error && String(r.push_last_error).match(COLLAPSE_RE); const carrier = m && byId.get(m[1]);
-    if (carrier && carrier.user_id === r.user_id) { if (!groups.has(carrier.id)) groups.set(carrier.id, [carrier]); groups.get(carrier.id).push(r); }
+  const cols = `SELECT n.id, n.environment, n.user_id, n.title, n.body, n.urgent, n.case_id, n.kind, n.ref, n.created_at, n.push_last_error, n.lang AS text_lang, u.language AS lang FROM notifications n LEFT JOIN users u ON u.id=n.user_id
+    WHERE n.acknowledged_at IS NULL AND n.opened_at IS NULL AND n.hidden_at IS NULL AND n.event_key NOT LIKE 'testdev:%' AND (u.environment IS NULL OR u.role = 'owner' OR n.environment = u.environment) AND n.created_at > ?1 AND ((n.push_status='failed' AND n.push_attempts < 3) OR (n.push_status='pending' AND ((n.push_hold_until IS NULL AND n.created_at < ?2) OR n.push_hold_until < ?3)))`;
+  // „pending“ älter als 5 Min.: verschoben (Grenze je Aufruf) oder Zustellung abgebrochen (z. B. Zeitlimit) – wird jetzt nachgeholt;
+  // ebenso eine vor > 5 Min. beanspruchte Ruhezeit-Freigabe, deren Zustellung abbrach (18.10.2026: blieb sonst für immer „pending“)
+  const binds = [new Date(now - 24 * 3600 * 1000).toISOString(), new Date(now - 5 * 60000).toISOString(), QUIET_CLAIM_PREFIX + new Date(now - 5 * 60000).toISOString()];
+  const rows = (await env.DB.prepare(`${cols} ORDER BY n.urgent DESC, n.created_at LIMIT 20`).bind(...binds).all()).results;
+  // Grenze erreicht: Folge-Hinweise der gelesenen Träger nachladen, damit sie mit ihrem Träger in EINEM Sammel-Push gehen (22.10.2026: nach einem
+  // Ausfall des Push-Dienstes lagen sie hinter der Grenze von 20 – der Träger ging allein, alle Folge-Hinweise danach einzeln: 12 statt 1 Push)
+  if (rows.length >= 20) {
+    const marks = rows.map((r) => COLLAPSE_MARK + r.id + ']');
+    const seen = new Set(rows.map((r) => r.id));
+    for (const r of (await env.DB.prepare(`${cols} AND EXISTS (SELECT 1 FROM json_each(?4) j WHERE instr(n.push_last_error, j.value) > 0) ORDER BY n.created_at LIMIT 200`)
+      .bind(...binds, JSON.stringify(marks)).all()).results) if (!seen.has(r.id)) { seen.add(r.id); rows.push(r); }
   }
-  const grouped = new Set([...groups.values()].flat().map((r) => r.id));
-  for (const r of rows) if (!grouped.has(r.id)) single.push(r);
+  // Folge-Hinweise eines Sammel-Pushs (Vermerk im Fehlertext) bündeln – mit ihrem Träger, und auch ohne ihn (Träger schon zugestellt oder
+  // nicht unter den Zeilen): je Person und Sammel-Push höchstens ein Push je Lauf; alle übrigen Hinweise einzeln (je Hinweis in der aktuellen Sprache)
+  const groups = new Map();
+  for (const r of rows) {
+    const m = r.push_last_error && String(r.push_last_error).match(COLLAPSE_RE);
+    const k = `${r.user_id}|${m ? m[1] : r.id}`;
+    if (!groups.has(k)) groups.set(k, []);
+    if (!m) groups.get(k).unshift(r); else groups.get(k).push(r); // Träger zuerst
+  }
+  const single = []; const multi = [];
+  for (const g of groups.values()) (g.length > 1 ? multi : single).push(...(g.length > 1 ? [g] : g));
   await deliverPush(env, single.map(forDelivery));
-  for (const g of groups.values()) await deliverPush(env, g.map(forDelivery), { collapse: true });
+  for (const g of multi) await deliverPush(env, g.map(forDelivery), { collapse: true });
   return rows.length;
 }
 

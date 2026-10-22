@@ -11817,7 +11817,7 @@ await test('Fehlersuche 18.10. (8): Links nach Deaktivierung/Rollenwechsel ungü
   ok(/headers\['x-cfp-user'\] = extra\.asUser \|\| S\.me\.id/.test(app) && /user_id: who\.id, user_name: who\.name, env: who\.env/.test(app) && /const outboxWho = \(\) => \(S\.me \? \{ id: S\.me\.id, name: S\.me\.display_name, env:/.test(app), 'App bindet Postausgang an Person/Umgebung');
   ok(!/replace\(',', '\.'\); (?:\}|for|if)/.test(app), 'App sendet Zahlen unverändert (Server liest „4,750“)');
   eq((app.match(/if \(photoRetry\(err\)\) \{ later = await photosLater\(/g) || []).length, 1, 'Fotos am Vorgang bei Netzabbruch nachreichen');
-  ok(app.includes("if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i)); break; }") && (app.match(/await uploadPhotosSafe\('\/api\/(cases|inspections)'/g) || []).length === 2, 'Meldung + Abfahrtskontrolle: Fotos vorab gesichert (Backlog 113)');
+  ok(app.includes("if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i), who); break; }") && (app.match(/await uploadPhotosSafe\('\/api\/(cases|inspections)'/g) || []).length === 2, 'Meldung + Abfahrtskontrolle: Fotos vorab gesichert (Backlog 113)');
   const { num } = await import('../src/util.js'); eq(num('4,750', { decimalComma: true }), 4.75); eq(num('1.234,50'), 1234.5);
   // 9. Agent: ausgeblendete Hinweise zählen nicht als „nicht zugestellt“
   const { agentBasics } = await import('../src/agent.js');
@@ -17610,6 +17610,41 @@ await test('Bußgeld „Fahrer informiert“ (Teilagent Rollenwechsel 22.10.): e
   eq((await det(B)).driver_unreachable, true, 'deaktiviert, Quittung offen: Hinweis');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_driver_unreachable, l);
+});
+
+await test('Push-Wiederholung nach Ausfall des Push-Dienstes (Teilagent Benachrichtigungsflut 22.10.): Folge-Hinweise eines Sammel-Pushs werden wieder gebündelt – auch hinter der Grenze von 20 Zeilen und bei verschobenem Träger (Sendegrenze)', async () => {
+  const { notifyUsers, deliverPush, retryFailedPush } = await import('../src/notify.js');
+  const { e, U } = await freshWorld();
+  const inv = async (b) => { const x = await U.own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const disp = await inv({ username: 'pf.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const sub = async (c, ep) => {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    eq((await c.post('/api/push/subscribe', { endpoint: 'https://push.example/' + ep, keys: { p256dh: b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  };
+  for (const [c, n] of [[U.fleet, 'x/f'], [disp, 'x/d'], [U.ws, 'x/w']]) await sub(c, n);
+  // (1) Kontrolle mit allen Prüfpunkten mangelhaft, Push-Dienst antwortet 503
+  let fail = true; const sent = []; const origFetch = e.__pushFetch;
+  e.__pushFetch = async (u) => { sent.push(u.split('/').pop()); return fail ? new Response('x', { status: 503 }) : new Response('', { status: 201 }); };
+  const keys = (await U.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: 'VIN:WMA15SZZ2HM722774', request_key: rk(), items: keys.map((k, i) => ({ key: k, result: 'mangel', note: 'Mangel ' + i, safety_relevant: i % 2 === 0 })) })).status, 201);
+  const f0 = sent.filter((x) => x === 'f').length; eq(f0, 1, 'Erstversand: ein Sammel-Push an die Leitung');
+  const nF = e.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND push_status='failed'`).get(U.fleet.id).n; ok(nF > 10, `viele fehlgeschlagene Hinweise der Leitung (${nF})`);
+  fail = false; const per = { f: 0, d: 0 };
+  for (let run = 0; run < 4; run++) { sent.length = 0; await retryFailedPush(e); for (const x of sent) if (x in per) per[x]++; }
+  eq(`${per.f}/${per.d}`, '1/1', 'Wiederholung: je Person ein Push (vorher Leitung 12, Disposition 4)');
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id IN (?, ?) AND push_status<>'accepted'`).get(U.fleet.id, disp.id).n, 0, 'alle Hinweise zugestellt');
+  // (2) Sendegrenze während einer Sammel-Zustellung: Träger der Werkstatt verschoben → Folge-Hinweise bleiben mit Vermerk und kommen gebündelt
+  e.DB.db.prepare('DELETE FROM notifications').run(); e.__pushFetch = origFetch;
+  const rows = [];
+  for (const u of [U.fleet, U.ws]) for (let i = 0; i < 8; i++) rows.push(...await notifyUsers(e, null, 'test', [u.id], { defer: true, kind: 'created', title: 'Neu', body: 'S-' + i, eventKey: 'pf' + u.id + i, urgent: i === 0 }));
+  e.__pushMaxSends = 1; e.pushLog.length = 0;
+  await deliverPush(e, rows, { collapse: true });
+  eq(e.pushLog.length, 1, 'Sendegrenze 1: nur ein Push');
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND push_status='pending' AND push_last_error LIKE '[Sammel-Push mit %'`).get(U.ws.id).n, 7, 'Folge-Hinweise des verschobenen Trägers mit Sammel-Vermerk');
+  delete e.__pushMaxSends; e.__nowMs = Date.now() + 6 * 60000; e.pushLog.length = 0;
+  await retryFailedPush(e); delete e.__nowMs;
+  eq(e.pushLog.filter((p) => p.url.endsWith('/x/w')).length, 1, 'Werkstatt: ein Sammel-Push statt 8 Einzel-Pushs');
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND push_status='accepted'`).get(U.ws.id).n, 8, 'alle 8 zugestellt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

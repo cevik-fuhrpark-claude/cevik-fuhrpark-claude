@@ -1304,12 +1304,13 @@ async function vehiclesCached() {
 }
 // Netz bricht beim Foto-Upload des direkten Sendens ab: restliche Fotos auf dem Gerät speichern und über den Postausgang nachreichen
 // (Meldung ist schon angelegt – Eintrag nur mit Fotoziel; 18.10.2026: Fotos gingen sonst verloren). Rückgabe: Anzahl gespeicherter Fotos.
-async function photosLater(path, body, r, target, files) {
+async function photosLater(path, body, r, target, files, who = outboxWho()) {
   try {
+    if (!who) return 0;
     const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name });
     await photosPut(body.request_key, list);
-    outboxAdd(path, body, list.length);
-    outboxSet(outboxGet().map((x) => (x.body.request_key === body.request_key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)));
+    outboxAdd(path, body, list.length, who);
+    outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === body.request_key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)), who.key);
     return list.length;
   } catch { return 0; }
 }
@@ -1318,18 +1319,23 @@ async function photosLater(path, body, r, target, files) {
 // reicht der Postausgang die Fotos beim nächsten Start nach – der Server erkennt schon hochgeladene am Inhalt (Backlog 113, 21.10.2026).
 // Solange hier hochgeladen wird, überspringt flushOutbox diesen Eintrag (keine parallelen Uploads derselben Fotos).
 const PHOTO_UPLOADING = new Set();
-async function uploadPhotosSafe(path, body, r, target, files, sb) {
+// who: beim Absenden festgehaltene Person/Umgebung (outboxWho) – Inhaber schaltet während des Hochladens auf die andere Umgebung um
+// (oder tippt einen Push der anderen Umgebung an): Fotos gingen sonst mit der neuen Umgebung an den Vorgang (404), die Sicherung wurde
+// gelöscht und die Fotos waren verloren (22.10.2026, Teilagent „Umschalten Test/Betrieb“)
+async function uploadPhotosSafe(path, body, r, target, files, sb, who = outboxWho()) {
   // Sperre je Meldung über alle Tabs (flushOutbox eines anderen Tabs überspringt den Eintrag, solange hier hochgeladen wird)
-  if (LOCKS) return LOCKS.request('cfp_photo_' + body.request_key, () => uploadPhotosSafeRun(path, body, r, target, files, sb));
-  return uploadPhotosSafeRun(path, body, r, target, files, sb);
+  if (LOCKS) return LOCKS.request('cfp_photo_' + body.request_key, () => uploadPhotosSafeRun(path, body, r, target, files, sb, who));
+  return uploadPhotosSafeRun(path, body, r, target, files, sb, who);
 }
-async function uploadPhotosSafeRun(path, body, r, target, files, sb) {
+async function uploadPhotosSafeRun(path, body, r, target, files, sb, who) {
   const key = body.request_key; let failed = 0; let later = 0; let list = null; let backed = false;
+  const ox = who ? { env: who.env } : {};
   try { list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); } catch { list = null; }
   if (list) {
     try {
-      await photosPut(key, list); outboxAdd(path, body, list.length);
-      outboxSet(outboxGet().map((x) => (x.body.request_key === key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)));
+      if (!who) throw new Error('no user');
+      await photosPut(key, list); outboxAdd(path, body, list.length, who);
+      outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)), who.key);
       backed = true;
     } catch { backed = false; }
   }
@@ -1337,13 +1343,13 @@ async function uploadPhotosSafeRun(path, body, r, target, files, sb) {
   try {
     for (const [i, file] of files.entries()) {
       if (sb) sb.textContent = `${t('uploading')} ${i + 1}/${files.length}`;
-      try { failed += await uploadCasePhotos(target, [list ? list[i] : { blob: await prepareUpload(file), name: file.name }]); } catch (err) {
-        if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i)); break; }
+      try { failed += await uploadCasePhotos(target, [list ? list[i] : { blob: await prepareUpload(file), name: file.name }], ox); } catch (err) {
+        if (photoRetry(err)) { later = backed ? files.length - i : await photosLater(path, body, r, target, files.slice(i), who); break; }
         failed++;
       }
     }
   } finally { PHOTO_UPLOADING.delete(key); }
-  if (backed && !later) { outboxSet(outboxGet().filter((x) => x.body.request_key !== key)); await photosDel(key).catch(() => {}); }
+  if (backed && !later) { outboxSet(outboxGet(who.key).filter((x) => x.body.request_key !== key), who.key); await photosDel(key).catch(() => {}); }
   return { failed, later };
 }
 // Abmelden mit unversendeten Meldungen: vorher senden versuchen, sonst ausdrücklich bestätigen (sie bleiben auf dem Gerät für diese Person – 18.10.2026)
@@ -1415,7 +1421,7 @@ async function viewNew(preId) {
     try {
       const r = await api('POST', '/api/cases', body);
       const files = photoFiles;
-      const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, sb) : { failed: 0, later: 0 };
+      const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, sb, who) : { failed: 0, later: 0 };
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
       if (sb.isConnected) location.hash = '#/cases/' + r.id;
     } catch (err) {
@@ -1566,18 +1572,21 @@ async function viewCase(id) {
     // Fortschritt sichtbar; bei Netzabbruch die restlichen Fotos in den Postausgang (21.10.2026: 16 s ohne Anzeige, danach „Keine Verbindung“
     // für Fotos, die schon am Server lagen, und der Rest war verloren)
     const prog = document.createElement('span'); prog.className = 'small muted'; prog.setAttribute('role', 'status'); fi.after(prog); fi.disabled = true;
+    // Umgebung beim Start festhalten (Inhaber schaltet währenddessen um: Rest ging sonst an die andere Umgebung – 22.10.2026)
+    const who = outboxWho(); const ox = who ? { env: who.env } : {}; const hash0 = location.hash;
     let later = 0;
     for (const [i, file] of take.entries()) {
       prog.textContent = ` ${t('uploading')} ${i + 1}/${take.length}`;
-      try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
+      try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
       catch (err) {
-        if (photoRetry(err)) { later = await photosLater('/api/cases', { request_key: uid() }, c, c.id, take.slice(i)); if (!later) errs.push(`${file.name}: ${err.message}`); break; }
+        if (photoRetry(err)) { later = await photosLater('/api/cases', { request_key: uid() }, c, c.id, take.slice(i), who); if (!later) errs.push(`${file.name}: ${err.message}`); break; }
         errs.push(`${file.name}: ${err.message}`);
       }
     }
     prog.remove(); fi.disabled = false;
     if (later) toast(tn('photos_stored', later));
-    await viewCase(c.id).catch(() => {});
+    // nur neu aufbauen, wenn Seite und Umgebung noch dieselben sind (sonst überschrieb der Vorgang die inzwischen gewählte Ansicht)
+    if (location.hash === hash0 && (!who || (outboxWho() || {}).env === who.env)) await viewCase(c.id).catch(() => {});
     if (skipped.length) errs.unshift(tn('files_skipped', skipped.length).replace('{max}', PHOTO_MAX).replace('{names}', skipped.map((f) => f.name).join(', ')));
     if (errs.length) toast(errs.join(' · '), true); else if (take.length && !later) toast('✓');
   };
@@ -1852,7 +1861,7 @@ async function viewDepartureCheck(preId) {
       // Ziel: erster eigener Folgeauftrag; ein Wiederholungsvermerk an einem fremden Vorgang ist für Fahrer nicht sichtbar (17.10.2026)
       const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
-      if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb));
+      if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb, who));
       toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
