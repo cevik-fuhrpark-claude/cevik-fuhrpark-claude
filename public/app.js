@@ -1916,6 +1916,13 @@ async function saveVehicleForm(form, edit = false) {
   // Anhänger umgekennzeichnet: Zugmaschinen tragen noch das alte Anhänger-Kennzeichen → Gespann gelöst, bis dort nachgetragen
   const tr = r && r.trailer_of_trucks;
   if (tr && tr.length) setTimeout(() => toast(t('trailer_renamed_warn').replace('{old}', r.trailer_plate_old).replace('{list}', tr.map((x) => x.plate).join(', ')), true), d && d.length ? 6000 : 400);
+  // Standort geändert: was beim bisherigen Standort bleibt (offene Aufträge, geplante Prüftermine, gekoppeltes Fahrzeug) – reine Information (22.10.2026)
+  if (r && r.site_changed) {
+    const sh = [r.open_workshop_cases ? tn('veh_site_ws_open', r.open_workshop_cases).replace('{list}', (r.open_workshop_sites || []).join(', ')) : '',
+      r.planned_appointments ? tn('veh_site_planned', r.planned_appointments) : '',
+      ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite')))].filter(Boolean);
+    if (sh.length) setTimeout(() => toast(sh.join(' · '), true), (d && d.length ? 6000 : 400) + (tr && tr.length ? 6000 : 0));
+  }
   return r;
 }
 // Direktsprung mit Filter (z. B. „Heute zu tun“ → #/vehicles?f=with_findings): Filter übernehmen, Adresse ohne Parameter
@@ -2842,7 +2849,10 @@ function pushEnv(ev) {
   S.unread = 0; refreshUnread(); return true;
 }
 function envFn() { return (S.me && S.me.role === 'owner' && S.viewEnv) || (S.me && S.me.environment) || ''; }
-function vsDef(k) { return S[k] !== undefined ? S[k] : (S.me && S.me.role !== 'driver' && S.me.home_site) || ''; }
+// Werkstatt: Vorgänge/Werkstattplan nie nach Fahrzeugstandort vorfiltern – die Aufträge sind schon die der eigenen Werkstatt; ein versetzter Lkw
+// (Stammdaten-Standort geändert) verschwand sonst mit laufendem Auftrag aus Liste und Plan, während die Startseite ihn zählte (22.10.2026)
+const WS_NO_VSDEF = new Set(['caseVsite', 'planVsite']);
+function vsDef(k) { return S[k] !== undefined ? S[k] : (S.me && S.me.role !== 'driver' && !(S.me.role === 'workshop' && WS_NO_VSDEF.has(k)) && S.me.home_site) || ''; }
 function siteSelect(id, name, options, cur, label = t('site'), allLabel = t('all')) {
   return `<label for="${id}">${esc(label)}</label><select id="${id}"${name ? ` name="${name}"` : ''}><option value="">${esc(allLabel)}</option>${[...new Set([...(options || []), ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('')}</select>`;
 }

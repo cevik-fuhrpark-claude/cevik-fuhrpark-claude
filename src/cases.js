@@ -840,11 +840,13 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   if (!fresh.length) return results;
 
   // Sicherheitsrelevant: kritisch oder nicht fahrbereit -> Sperre bis menschliche Fachbewertung
-  const year = Number(berlinDate().slice(0, 4)); // Berliner Kalenderjahr (Silvester 23:30 UTC = Neujahr in Berlin)
+  // Berliner Kalenderjahr aus demselben Zeitpunkt wie created_at (22.10.2026: vorher Jahr vor, Zeitpunkt nach dem Zählerzugriff bestimmt –
+  // an Silvester 23:59:59 Berlin entstand S-2026-… mit Anlage am 01.01.2027)
+  const now = nowIso();
+  const year = Number(berlinDate(now).slice(0, 4));
   const k = fresh.length;
   const counter = await env.DB.prepare(`INSERT INTO case_counters(environment, year, last_no) VALUES (?, ?, ?)
     ON CONFLICT(environment, year) DO UPDATE SET last_no = last_no + ? RETURNING last_no`).bind(envName, year, k, k).first();
-  const now = nowIso();
   const rows = []; const events = [];
   fresh.forEach(([i, x], n) => {
     // Winterreifen-Auftrag: Information, nie Sperre (auch nicht mit Priorität „kritisch“ über die API – 18.10.2026)
@@ -904,7 +906,16 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   } catch (e) {
     // nichts angelegt (409-Wege wie order_exists/inspection_race, Doppelklick, Fehler): gezogene Nummern zurückgeben, solange niemand danach
     // eine gezogen hat – sonst Nummernlücken (22.10.2026, Backlog 127b)
-    await env.DB.prepare('UPDATE case_counters SET last_no=last_no-? WHERE environment=? AND year=? AND last_no=?').bind(k, envName, year, counter.last_no).run().catch(() => null);
+    // Nur zurückgeben, wenn wirklich keine der Nummern gespeichert ist: meldet D1 einen Fehler, obwohl der Stapel geschrieben wurde (z. B.
+    // „Network connection lost“), lieferte die nächste Anlage sonst dieselbe Nummer → UNIQUE-Fehler → erneute Rückgabe → jede Meldung bis
+    // Silvester 500 (Fund Teilagent „Jahreswechsel“, 22.10.2026)
+    await env.DB.prepare(`UPDATE case_counters SET last_no=last_no-? WHERE environment=? AND year=? AND last_no=?
+      AND NOT EXISTS (SELECT 1 FROM cases WHERE case_no IN (SELECT value FROM json_each(?)))`).bind(k, envName, year, counter.last_no, J(rows.map((r) => r.case_no))).run().catch(() => null);
+    if (/case_no/.test(String(e && e.message))) {
+      const prefix = `${envName === 'test' ? 'T' : 'S'}-${year}-`;
+      await env.DB.prepare(`UPDATE case_counters SET last_no=MAX(last_no, COALESCE((SELECT MAX(CAST(substr(case_no, length(?3) + 1) AS INTEGER))
+        FROM cases WHERE environment=?1 AND substr(case_no, 1, length(?3))=?3), 0)) WHERE environment=?1 AND year=?2`).bind(envName, year, prefix).run().catch(() => null);
+    }
     if (String(e && e.message).includes('CHECK')) {
       const act = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first()).n;
       if (act < new Set(specs.map((x) => x.vehicleId)).size) {

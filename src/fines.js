@@ -193,13 +193,20 @@ export async function createFine(env, user, envName, body) {
     if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
   };
   await dupCheck();
-  const year = Number(berlinDate().slice(0, 4)); // Berliner Kalenderjahr wie alle Tagesangaben
+  // Berliner Kalenderjahr aus demselben Zeitpunkt wie created_at (22.10.2026: vorher vor dem Zählerzugriff bestimmt – Silvester-Grenze)
+  const now = nowIso();
+  const year = Number(berlinDate(now).slice(0, 4));
   const c = await env.DB.prepare(`INSERT INTO fine_counters(environment, year, last_no) VALUES (?, ?, 1) ON CONFLICT(environment, year) DO UPDATE SET last_no = last_no + 1 RETURNING last_no`).bind(envName, year).first();
   const fineNo = `${envName === 'test' ? 'TB' : 'B'}-${year}-${String(c.last_no).padStart(4, '0')}`;
   // nicht angelegt (Dublette, Wiederholung, Fehler): Nummer zurückgeben, solange niemand danach eine gezogen hat – keine Nummernlücke (22.10.2026, Backlog 127b)
-  const giveBackNo = () => env.DB.prepare('UPDATE fine_counters SET last_no=last_no-1 WHERE environment=? AND year=? AND last_no=?').bind(envName, year, c.last_no).run().catch(() => null);
+  // Nur wenn die Nummer wirklich nicht gespeichert ist (Fehlermeldung nach geschriebenem Stapel → sonst Dauer-500 bis Silvester, 22.10.2026);
+  // UNIQUE-Fehler auf die Nummer (Altzustand) hebt den Zähler auf die höchste vergebene Nummer des Jahres an (Selbstheilung)
+  const prefix = `${envName === 'test' ? 'TB' : 'B'}-${year}-`;
+  const giveBackNo = () => env.DB.prepare('UPDATE fine_counters SET last_no=last_no-1 WHERE environment=? AND year=? AND last_no=? AND NOT EXISTS (SELECT 1 FROM fines WHERE fine_no=?)')
+    .bind(envName, year, c.last_no, fineNo).run().catch(() => null);
+  const healCounter = () => env.DB.prepare(`UPDATE fine_counters SET last_no=MAX(last_no, COALESCE((SELECT MAX(CAST(substr(fine_no, length(?3) + 1) AS INTEGER))
+      FROM fines WHERE environment=?1 AND substr(fine_no, 1, length(?3))=?3), 0)) WHERE environment=?1 AND year=?2`).bind(envName, year, prefix).run().catch(() => null);
   const id = uuid();
-  const now = nowIso();
   // Aktenzeichen-Dublette auch bei gleichzeitiger Erfassung ausschließen: Einfügen nur, wenn (Umgebung, Behörde, Aktenzeichen) noch fehlt –
   // in derselben Anweisung (vorher: erst prüfen, dann schreiben → zwei parallele Erfassungen ergaben zwei Vorgänge, 17.10.2026).
   // Kein UNIQUE-Index, weil vorhandene Dubletten im Bestand die Migration scheitern ließen.
@@ -213,6 +220,7 @@ export async function createFine(env, user, envName, body) {
     env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
   ]); } catch (e) {
     await giveBackNo();
+    if (/fine_no/.test(String(e && e.message))) await healCounter();
     // gleichzeitige Wiederholung mit demselben Schlüssel: der eindeutige Index weist die zweite ab → den ersten Vorgang melden
     if (rkey && /request_key|UNIQUE/i.test(String(e && e.message))) { const w = await byKey(); if (w) return w; }
     throw e;

@@ -542,7 +542,26 @@ export async function upsertVehicle(env, user, body) {
   const trailerOf = before && before.kind === 'anhaenger' && normPlate(before.plate) && normPlate(before.plate) !== k
     ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
       .filter((v) => normPlate(v.trailer_plate) === normPlate(before.plate)).map((v) => ({ id: v.id, plate: v.plate })) : [];
-  return { id: row.id, duplicate_plates: duplicates, ...(trailerOf.length ? { trailer_of_trucks: trailerOf, trailer_plate_old: before.plate } : {}) };
+  // Standort geändert (22.10.2026, Fund Teilagent „Standortwechsel“): offene Werkstattaufträge bleiben bei der bisherigen Werkstatt, geplante
+  // Prüftermine bleiben eingeplant, das gekoppelte Fahrzeug steht ggf. noch am alten Standort – vorher still (erst die Datenqualität meldete das Gespann).
+  // Reine Information, nichts wird geändert; Zähler über alle Umgebungen wie bei „außer Betrieb nehmen“, eine Abfrage (Abfragebudget).
+  let siteHints = {};
+  const sk = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : '');
+  if (changes && changes.site && before.active && sk(before.site) !== sk(row.site)) {
+    const h = await env.DB.prepare(`SELECT
+        (SELECT json_group_array(json_object('site', s, 'n', n)) FROM (SELECT COALESCE(workshop_site, suggested_workshop_site) AS s, COUNT(*) AS n FROM cases
+          WHERE vehicle_id=?1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') AND COALESCE(workshop_site, suggested_workshop_site) IS NOT NULL GROUP BY s ORDER BY s)) AS ws,
+        (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p,
+        (SELECT json_group_array(json_object('plate', plate, 'site', site, 'tp', trailer_plate)) FROM vehicles WHERE active=1 AND id<>?1
+          AND ((?3 IS NOT NULL AND kind='anhaenger') OR (?4='anhaenger' AND kind='lkw' AND trailer_plate IS NOT NULL))) AS cpl`)
+      .bind(row.id, berlinDate(), row.kind !== 'anhaenger' ? (row.trailer_plate ?? before.trailer_plate ?? null) : null, row.kind || before.kind).first();
+    const ws = JSON.parse(h.ws || '[]');
+    const own = normPlate(row.kind !== 'anhaenger' ? (row.trailer_plate ?? before.trailer_plate) : null);
+    const coupled = JSON.parse(h.cpl || '[]').filter((v) => (own ? normPlate(v.plate) === own : normPlate(v.tp) === k) && sk(v.site) !== sk(row.site))
+      .map((v) => ({ plate: v.plate, site: v.site || null }));
+    siteHints = { site_changed: true, open_workshop_cases: ws.reduce((a, x) => a + x.n, 0), open_workshop_sites: ws.map((x) => x.site), planned_appointments: h.p || 0, coupled_other_site: coupled };
+  }
+  return { id: row.id, duplicate_plates: duplicates, ...(trailerOf.length ? { trailer_of_trucks: trailerOf, trailer_plate_old: before.plate } : {}), ...siteHints };
 }
 
 // Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent

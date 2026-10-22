@@ -17467,6 +17467,70 @@ await test('Backlog 134 (Hilfetexte gegen Verhalten): Push-Test an dieses Gerät
   ok(cases.includes("if (user.role === 'driver' || user.role === 'workshop') { o.add('followup_on'); o.add('followup_note'); }"), 'Ausblendung nur Fahrer/Werkstatt im Code');
 });
 
+await test('Jahreswechsel (Teilagent 22.10.): Nummernjahr = Berliner Jahr der Anlage auch bei Silvester 23:59:59,99; Fehler nach gespeichertem Stapel gibt die Nummer nicht zurück (sonst Dauer-500), UNIQUE-Altzustand heilt den Zähler', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const cases = await import('../src/cases.js'); const fines = await import('../src/fines.js'); const { berlinDate } = await import('../src/util.js');
+  const user = e.DB.db.prepare('SELECT * FROM users WHERE id=?').get(U.fleet.id); const ctx = { waitUntil() {} };
+  const mkCase = (n) => cases.createCase(e, ctx, user, 'test', { vehicle_id: V1, description: 'Spiegel locker ' + n, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  const mkFine = (n) => fines.createFine(e, user, 'test', { kind: 'anhoerung', authority: 'Stadt X', reference: 'AZ-J' + n, offense_type: 'geschwindigkeit', offense_at: '2026-12-30T10:00:00Z', plate_in_letter: 'SZ-YC 5513' });
+  const RD = Date; let fixed = RD.now(); const tick = 7;
+  class FakeDate extends RD { constructor(...a) { if (a.length) super(...a); else { super(fixed); fixed += tick; } } static now() { const t = fixed; fixed += tick; return t; } }
+  const P0 = e.DB.prepare.bind(e.DB); const B0 = e.DB.batch.bind(e.DB);
+  try {
+    globalThis.Date = FakeDate;
+    // Uhr läuft je Zeitabfrage weiter (wie im Worker über I/O): Anlagen knapp vor Mitternacht Berlin
+    for (let back = 120; back >= 0; back -= 7) { fixed = RD.UTC(2026, 11, 31, 23, 0, 0) - back; await mkCase('b' + back); fixed = RD.UTC(2026, 11, 31, 23, 0, 0) - back; await mkFine('b' + back); }
+    const bad = e.DB.db.prepare('SELECT case_no AS no, created_at FROM cases UNION ALL SELECT fine_no, created_at FROM fines').all().filter((r) => r.no.split('-')[1] !== berlinDate(r.created_at).slice(0, 4));
+    eq(bad.map((r) => r.no + '@' + r.created_at).join(','), '', 'Nummernjahr = Berliner Jahr von created_at');
+    fixed = RD.UTC(2027, 0, 2, 8, 0, 0); await mkCase('neujahr'); await mkFine('neujahr');
+    // D1 schreibt den Stapel, meldet aber einen Fehler (z. B. Verbindung nach Commit verloren)
+    let lost = false; e.DB.batch = async (st) => { const r = await B0(st); if (lost && st.length >= 2) { lost = false; throw new Error('D1_ERROR: Network connection lost'); } return r; };
+    const cnt = (t) => e.DB.db.prepare(`SELECT last_no FROM ${t} WHERE environment='test' AND year=2027`).get().last_no;
+    const c0 = cnt('case_counters'); lost = true; await mkCase('lost').catch(() => null);
+    eq(cnt('case_counters'), c0 + 1, 'gespeicherte Vorgangsnummer nicht zurückgegeben');
+    for (let i = 0; i < 2; i++) { const r = await mkCase('n' + i); eq(r.case_no, `T-2027-${String(c0 + 2 + i).padStart(4, '0')}`, 'nächste Meldung'); }
+    const f0 = cnt('fine_counters'); lost = true; await mkFine('lost').catch(() => null);
+    eq(cnt('fine_counters'), f0 + 1, 'gespeicherte Bußgeldnummer nicht zurückgegeben');
+    eq((await mkFine('n1')).fine_no, `TB-2027-${String(f0 + 2).padStart(4, '0')}`, 'nächstes Bußgeld');
+    e.DB.batch = B0;
+    // Altzustand (Zähler hinter vergebenen Nummern): erster Versuch scheitert, Zähler wird angehoben, der nächste klappt
+    e.DB.db.prepare(`UPDATE case_counters SET last_no=last_no-2 WHERE environment='test' AND year=2027`).run();
+    e.DB.db.prepare(`UPDATE fine_counters SET last_no=last_no-1 WHERE environment='test' AND year=2027`).run();
+    let err = null; try { await mkCase('alt'); } catch (x) { err = x; } ok(err, 'Altzustand: UNIQUE');
+    ok(/T-2027-\d{4}/.test((await mkCase('heil')).case_no), 'Vorgang nach Selbstheilung');
+    err = null; try { await mkFine('alt'); } catch (x) { err = x; } ok(err, 'Altzustand Bußgeld: UNIQUE');
+    ok(/TB-2027-\d{4}/.test((await mkFine('heil')).fine_no), 'Bußgeld nach Selbstheilung');
+    const nums = e.DB.db.prepare(`SELECT case_no FROM cases WHERE case_no LIKE 'T-2027-%' ORDER BY case_no`).all().map((r) => Number(r.case_no.slice(7)));
+    eq(nums.join(','), nums.map((_, i) => nums[0] + i).join(','), 'Vorgangsnummern 2027 ohne Lücke');
+  } finally { globalThis.Date = RD; e.DB.batch = B0; e.DB.prepare = P0; }
+});
+
+await test('Standortwechsel (Teilagent 22.10.): Werkstatt sieht laufende Aufträge eines versetzten Lkw ohne Standort-Vorfilter; Stammdaten-Änderung des Standorts nennt offene Aufträge, geplante Prüftermine und das gekoppelte Fahrzeug am alten Standort', async () => {
+  const { e, U, toRepair, V1 } = await freshWorld(); const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const WS_NO_VSDEF = new Set(['caseVsite', 'planVsite']);") && app.includes("!(S.me.role === 'workshop' && WS_NO_VSDEF.has(k))"), 'Werkstatt: kein Standort-Vorfilter für Vorgänge/Plan');
+  await toRepair();
+  // gekoppelter Anhänger am alten Standort, geplanter Prüftermin
+  eq((await U.own.post('/api/vehicles', { vin: 'WSM00000000000777', plate: 'SZ-AH 77', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  const save = (b) => U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', manufacturer: 'MAN', build_year: 2016, keep_active: true, ...b });
+  eq((await save({ site: 'Dortmund', trailer_plate: 'SZ-AH 77' })).data.site_changed, undefined, 'ohne Standortwechsel kein Hinweis');
+  e.DB.db.prepare(`INSERT INTO maintenance_rules(id, vehicle_id, kind, planned_date, evidence, created_by, created_at, updated_at) VALUES ('mr-sw', ?, 'UVV', ?, 'Test', ?, ?, ?)`).run(V1, '2099-01-15', U.own.id || e.DB.db.prepare("SELECT id FROM users WHERE role='owner'").get().id, new Date().toISOString(), new Date().toISOString());
+  eq((await save({ site: 'DORTMUND', trailer_plate: 'SZ-AH 77' })).data.site_changed, undefined, 'nur Schreibweise: kein Hinweis');
+  const r = await save({ site: 'Hamburg', trailer_plate: 'SZ-AH 77' });
+  eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.site_changed, true);
+  eq(r.data.open_workshop_cases, 1, 'offener Auftrag'); eq(r.data.open_workshop_sites.join(), 'DORTMUND');
+  eq(r.data.planned_appointments, 1, 'geplanter Prüftermin');
+  eq(JSON.stringify(r.data.coupled_other_site), JSON.stringify([{ plate: 'SZ-AH 77', site: 'Dortmund' }]), 'Anhänger noch in Dortmund');
+  // Anhänger nachziehen: Zugmaschine steht schon in Hamburg → kein Gespann-Hinweis
+  const t = await U.own.post('/api/vehicles', { vin: 'WSM00000000000777', plate: 'SZ-AH 77', site: 'Hamburg', kind: 'anhaenger', keep_active: true });
+  eq(t.data.site_changed, true); eq(t.data.coupled_other_site.length, 0, 'Gespann jetzt am selben Standort'); eq(t.data.open_workshop_cases, 0);
+  // Werkstatt sieht den Auftrag weiter (Server filtert nach Werkstatt, nicht nach Fahrzeugstandort)
+  eq((await U.ws.get('/api/cases')).data.cases.length >= 1, true, 'Werkstatt-Liste ohne vsite');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['veh_site_ws_open', 'veh_site_planned', 'veh_site_coupled']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) for (const k of ['veh_site_ws_open', 'veh_site_planned']) ok(PLURALS[l][k] && PLURALS[l][k].one.includes('{list}') === (k === 'veh_site_ws_open'), `${l} Plural ${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
