@@ -5,6 +5,7 @@ import { findingMessage, posWord } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile as readCsvRaw } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
+import { BUILD_VERSION } from './build-version.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase(); return l.startsWith('uk') ? 'uk' : l.startsWith('en') ? 'en' : 'de'; };
@@ -4293,6 +4294,8 @@ async function fetchVersion() {
   try { const r = await fetch('/version.json', { cache: 'no-store' }); if (!r.ok) return null; return (await r.json()).version || null; } catch { return null; }
 }
 async function checkVersion() {
+  // eigene Fassung aus dem geladenen Code, nicht aus der ersten erreichbaren version.json (Offline-Start + Deployment, 22.10.2026)
+  if (!S.appVersion && BUILD_VERSION) S.appVersion = BUILD_VERSION;
   const v = await fetchVersion();
   if (!v) return;
   if (!S.appVersion) { S.appVersion = v; return; }

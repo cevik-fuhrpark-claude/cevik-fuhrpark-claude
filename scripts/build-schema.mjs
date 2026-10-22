@@ -34,7 +34,7 @@ export function appVersion() {
   const walk = (rel) => readdirSync(new URL(rel, pub), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).forEach((e) => {
     const p = rel + e.name;
     if (e.isDirectory()) return walk(p + '/');
-    if (p === 'version.json') return;
+    if (p === 'version.json' || p === 'build-version.js') return; // beide tragen den Hash selbst
     h.update(p + '\0'); h.update(readFileSync(new URL(p, pub))); h.update('\0');
   });
   walk('');
@@ -42,4 +42,7 @@ export function appVersion() {
 }
 const version = appVersion();
 writeFileSync(new URL('../public/version.json', import.meta.url), JSON.stringify({ version }) + '\n');
+// Fassung des laufenden Codes (22.10.2026): vorher merkte sich die App die erste erreichbare version.json – nach einem Start ohne Netz
+// und einem Deployment dazwischen also schon die neue Fassung, und der Hinweis „Aktualisierung verfügbar“ kam nie
+writeFileSync(new URL('../public/build-version.js', import.meta.url), `// [CLAUDE] automatisch erzeugt (npm run build) – nicht von Hand ändern\nexport const BUILD_VERSION = '${version}';\n`);
 console.log(`version.json: ${version}`);

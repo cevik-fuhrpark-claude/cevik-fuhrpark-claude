@@ -207,7 +207,10 @@ export async function updateContract(env, user, id, body, envName) {
       const refs = (await env.DB.prepare(`SELECT c.case_no, ic.environment FROM insurance_claims ic LEFT JOIN cases c ON c.id=ic.case_id WHERE ic.contract_id=? ORDER BY ic.created_at LIMIT 5`).bind(id).all()).results;
       const own = refs.some((x) => x.environment === envName);
       const other = refs.find((x) => x.environment !== envName);
-      const extra = { claim_cases: refs.map((x) => ({ case_no: x.case_no || null, environment: x.environment })) };
+      // Vorgangsnummern nur der eigenen Umgebung (22.10.2026: Testkonto bekam Nummern echter Schadensfälle); andere Umgebung nur gezählt –
+      // der Inhaber sieht beide Umgebungen ohnehin
+      const extra = { claim_cases: refs.filter((x) => x.environment === envName || user.role === 'owner').map((x) => ({ case_no: x.case_no || null, environment: x.environment })),
+        other_environment_claims: refs.filter((x) => x.environment !== envName).length };
       if (!own && other) throw conflict('contract_in_claim', other.environment === 'test' ? 'Ein Versicherungsfall der Testumgebung verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.' : 'Ein Versicherungsfall des Betriebs verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.', extra);
       throw conflict('contract_in_claim', 'Ein Versicherungsfall verweist auf diesen Vertrag – Vertragsart bleibt „Versicherung“.', extra);
     }

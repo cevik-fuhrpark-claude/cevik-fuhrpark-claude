@@ -16106,6 +16106,13 @@ await test('Fehlersuche 21.10. (Rechte/Umgebungen): Vorgang zeigt Folgeauftrag/U
   eq(up.data.claim_cases[0].environment, 'test');
   const upT = await U.fleet.patch(`/api/contracts/${kv}`, { kind: 'leasing', expected_updated_at: ct.updated_at });
   eq(upT.status, 409); ok(!/Testumgebung/.test(upT.data.message), 'eigene Umgebung: bisherige Meldung');
+  // Fehlersuche 22.10.: Testkonto bekommt keine Vorgangsnummern des Betriebs (nur Anzahl)
+  e.DB.db.prepare(`UPDATE insurance_claims SET environment='production' WHERE contract_id=?`).run(kv);
+  const upT2 = await U.fleet.patch(`/api/contracts/${kv}`, { kind: 'leasing', expected_updated_at: ct.updated_at });
+  eq(upT2.status, 409); eq(upT2.data.claim_cases.length, 0, 'keine Betriebsnummern'); eq(upT2.data.other_environment_claims, 1);
+  ok(/Betriebs/.test(upT2.data.message), upT2.data.message);
+  const upO = await own.patch(`/api/contracts/${kv}`, { kind: 'leasing', expected_updated_at: ct.updated_at }); eq(upO.data.claim_cases.length, 1, 'Inhaber sieht die Nummer');
+  e.DB.db.prepare(`UPDATE insurance_claims SET environment='test' WHERE contract_id=?`).run(kv);
   // 6. Oberfläche: Offline-Fahrzeugliste und Kennzeichen im Postausgang je Ansicht (envFn), Links nur mit Kennung
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!app.includes('cfp_veh_${S.me.id}_${S.me.environment}') && (app.match(/cfp_veh_\$\{S\.me\.id\}_\$\{envFn\(\)\}/g) || []).length === 3, 'cfp_veh_ mit envFn()');
@@ -16831,6 +16838,17 @@ await test('Backlog 114 (22.10.): „Dringende Benachrichtigung nicht zugestellt
   ok(fi && !JSON.stringify(fi).includes('Zora') && fi.message.includes('Empfänger: Disposition.'), JSON.stringify(fi));
   const ms = JSON.stringify((await anon.req('GET', '/api/integration/v1/master?environment=test', undefined, H)).data);
   ok(!ms.includes('Zora'), 'Master ohne Namen'); ok(ms.includes('Empfänger: Disposition.'), 'Master mit Rolle');
+});
+await test('Fehlersuche 22.10.: App kennt ihre eigene Fassung (build-version.js) – „Aktualisierung verfügbar“ auch nach Start ohne Netz und Deployment dazwischen', async () => {
+  const { readFileSync } = await import('node:fs'); const rd = (f) => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const bv = /BUILD_VERSION = '([0-9a-f]{12})'/.exec(rd('public/build-version.js')); ok(bv, 'build-version.js');
+  eq(bv[1], JSON.parse(rd('public/version.json')).version, 'gleiche Fassung wie version.json (npm run build)');
+  const app = rd('public/app.js');
+  ok(app.includes("import { BUILD_VERSION } from './build-version.js';"), 'app.js importiert');
+  const cv = app.slice(app.indexOf('async function checkVersion()'), app.indexOf('async function checkVersion()') + 600);
+  ok(cv.indexOf('S.appVersion = BUILD_VERSION') > -1 && cv.indexOf('S.appVersion = BUILD_VERSION') < cv.indexOf('await fetchVersion()'), 'eigene Fassung vor dem ersten Abruf');
+  ok(rd('public/sw.js').includes("'/build-version.js'"), 'Offline-Hülle enthält build-version.js');
+  ok(rd('scripts/build-schema.mjs').includes("p === 'build-version.js'"), 'vom Hash ausgenommen');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
