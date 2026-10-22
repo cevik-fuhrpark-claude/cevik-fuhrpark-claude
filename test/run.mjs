@@ -2005,7 +2005,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -7440,9 +7440,9 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   ok(ph, 'printHead() fehlt');
   // Zeitpunkt/Person/Testvermerk stehen seit 22.10.2026 in printStamp() (Testumgebung: „TESTMODUS“ im Ausdruck)
   const ps = app.match(/function printStamp\(\) \{([\s\S]*?)\n\}/); ok(ps, 'printStamp() fehlt');
-  for (const x of ["t('printed_at')", 'fmtDT(new Date().toISOString())', 'S.me.display_name', "t('env_test')", "=== 'test'"]) ok(ps[1].includes(x), `printStamp ohne ${x}`);
+  for (const x of ["t('printed_at')", 'fmtDT(new Date(nowMs()).toISOString())', 'S.me.display_name', "t('env_test')", "=== 'test'"]) ok(ps[1].includes(x), `printStamp ohne ${x}`);
   for (const x of ["class=\"print-only", 'printStamp()', 'CEVIK']) ok(ph[1].includes(x), `printHead ohne ${x}`);
-  eq(app.split("${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())}").length - 1, 1, 'Ausdruckvermerk nur in printStamp() (sonst ohne Testvermerk):');
+  eq(app.split("${esc(t('printed_at'))}: ${fmtDT(new Date(nowMs()).toISOString())}").length - 1, 1, 'Ausdruckvermerk nur in printStamp() (sonst ohne Testvermerk):');
   // Ansichten ohne Personen-Vermerk (bewusst): leeres Papier-Formular und QR-Aufkleberbogen
   const EXEMPT = { viewCheckPaper: 'leeres Formular zum Ausfüllen', viewQrSheet: 'Aufkleber', viewDriverGuide: 'Aushang ohne Personennamen (Stand-Datum im Aushang)' };
   // Funktionen der App zerlegen
@@ -16560,7 +16560,7 @@ await test('Fehlersuche 21.10. (langsames Netz): Lagerbuchung mit gleichem Schl�
 await test('Fehlersuche 21.10. (zwei Tabs): Abmelden/andere Person in einem Tab lädt die anderen neu; Meldung/Kontrolle bei 401 oder user_mismatch im Postausgang der erfassenden Person', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("S.me = r.user; markSession(r.user.id);") && (app.match(/resetUserState\(\); markSession\(''\);/g) || []).length === 2, 'Anmeldung/Abmelden (Knopf, Leerlauf) markiert');
-  ok(/window\.addEventListener\('storage', \(e\) => \{\n  if \(e\.key !== SESSION_MARK \|\| !S\.me \|\| S\.offlineStart\) return;\n  if \(\(e\.newValue \|\| ''\) !== S\.me\.id\) \{ resetUserState\(\); location\.reload\(\); \}/.test(app), 'andere Tabs reagieren');
+  ok(/window\.addEventListener\('storage', \(e\) => \{\n(?:.*\n){0,3}  if \(e\.key !== SESSION_MARK \|\| !S\.me \|\| S\.offlineStart\) return;\n  if \(\(e\.newValue \|\| ''\) !== S\.me\.id\) \{ resetUserState\(\); location\.reload\(\); \}/.test(app), 'andere Tabs reagieren');
   eq((app.match(/if \(err\.offline \|\| err\.status === 401 \|\| err\.code === 'user_mismatch' \|\| err\.code === 'env_mismatch'\)/g) || []).length, 2, 'Meldung + Kontrolle sichern bei 401/user_mismatch/env_mismatch');
   eq((app.match(/outboxAdd\('\/api\/(cases|inspections)', body, stored, who\);/g) || []).length, 2, 'mit festgehaltener Person');
   ok(app.includes('function outboxAdd(path, body, photos = 0, who = outboxWho()) { if (!who) return; const list = outboxGet(who.key);') && app.includes('outboxSet(list, who.key); }'), 'Schlüssel der Person');
@@ -16577,7 +16577,7 @@ await test('Fehlersuche 21.10. (Umgebung gewechselt): veralteter Tab/Postausgang
   eq((await U.own.req('POST', '/api/cases', body('ev-4'), { 'content-type': 'application/json', 'x-cfp-env-of': 'production', 'x-cfp-env': 'test' })).status, 201, 'Inhaber wählt je Anfrage');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].err_env_mismatch, l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;"), 'App sendet Umgebung');
+  ok(app.includes("if (S.me && S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;"), 'App sendet Umgebung');
   ok(app.includes("if (err.code === 'user_mismatch' || err.code === 'env_mismatch') { kept++; break; }"), 'Postausgang behält Eintrag');
 });
 
@@ -17280,6 +17280,49 @@ await test('Atomar 22.10. (2): Nummern ohne Lücke nach gescheitertem Anlegen (V
   eq(db.prepare('SELECT updated_at FROM cases WHERE id=?').get(c2).updated_at, t0); eq(e.FILES.m.size, kv0, 'keine verwaiste Datei');
   e.DB.batch = orig;
 });
+await test('Falsch gehende Geräteuhr: Offline-Kontrolle mit Gerätezeit beim Senden korrigiert (nachgehend: richtiger Zeitpunkt, km übernommen; 1 Jahr nach: nicht mehr abgewiesen), App rechnet „heute“ mit Serverzeit, mehrere Tabs senden den Postausgang nicht doppelt', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const items = (await U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const iso = (ms) => new Date(ms).toISOString(); const H = 3600000;
+  // 1. Werkstatt erfasste vor 13 h 100 000 km; Fahrer kontrolliert JETZT offline mit 100 050 km, Uhr geht 24 h nach, sendet 1 Min. später
+  eq((await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 100000 })).status, 201);
+  db.prepare(`UPDATE odometer_readings SET measured_at=? WHERE vehicle_id=?`).run(iso(Date.now() - 13 * H), vid);
+  const savedReal = Date.now() - 60000; const skew = -24 * H;
+  const r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: 100050, performed_at: iso(savedReal + skew), client_now: iso(Date.now() + skew) });
+  eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.km_rejected, null, 'km-Stand übernommen (vorher next_km 100000)');
+  ok(Math.abs(Date.parse(r.data.performed_at) - savedReal) < 5000, `Zeitpunkt korrigiert (${r.data.performed_at})`);
+  eq(db.prepare(`SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=? AND km=100050`).get(vid).n, 1);
+  // ohne client_now (älterer App-Stand im Postausgang) wie bisher
+  const r0 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: iso(Date.now() - 2 * H) });
+  ok(Math.abs(Date.parse(r0.data.performed_at) - (Date.now() - 2 * H)) < 5000, 'ohne Gerätezeit unverändert');
+  // kleine Abweichung (< 2 Min.) wird nicht verrechnet
+  const at1 = iso(Date.now() - 3 * H);
+  const r1 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: at1, client_now: iso(Date.now() - 60000) });
+  eq(r1.data.performed_at, at1, 'Übertragungszeit nicht verrechnet');
+  // 2. Uhr ein Jahr nach: vorher dauerhaft 400 („mehr als 7 Tage“), jetzt übernommen
+  const y = -365 * 24 * H;
+  const r2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: iso(Date.now() - H + y), client_now: iso(Date.now() + y) });
+  eq(r2.status, 201, JSON.stringify(r2.data)); ok(Math.abs(Date.parse(r2.data.performed_at) - (Date.now() - H)) < 5000);
+  // tatsächlich älter als 7 Tage bleibt abgewiesen, auch korrigiert; Uhr geht vor → nie in der Zukunft
+  const r3 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: iso(Date.now() - 8 * 24 * H + 3 * H), client_now: iso(Date.now() + 3 * H) });
+  eq(r3.status, 400); ok(/7 Tage/.test(r3.data.message), r3.data.message);
+  const r4 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: iso(Date.now() + 10 * H), client_now: iso(Date.now() + 2 * H) });
+  eq(r4.status, 201); ok(Date.parse(r4.data.performed_at) <= Date.now(), 'nicht in der Zukunft');
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: iso(Date.now()), client_now: 'gestern' })).status, 400);
+  // 3. App: Postausgang sendet die Gerätezeit; „heute“ und Altersangaben mit Serverzeit (Date-Kopf); Hinweis DE/UK/EN; Web Locks über Tabs
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(/performed_at: item\.saved_at, client_now: new Date\(\)\.toISOString\(\)/.test(app), 'Gerätezeit wird mitgesendet');
+  ok(/clockSample\(res\.headers\.get\('date'\)/.test(app) && /BERLIN_FMT\.format\(new Date\(nowMs\(\)\)\)/.test(app), '„heute“ nach Serverzeit');
+  ok(!/Date\.now\(\) - Date\.parse\(r\.finished_at/.test(app), '„Agent veraltet“ nach Serverzeit');
+  for (const k of ['clock_behind', 'clock_ahead', 'clock_minutes', 'clock_hours', 'clock_days']) eq((i18n.match(new RegExp(`\\b${k}: '`, 'g')) || []).length, 3, k);
+  ok(/LOCKS\.request\('cfp_outbox', \{ ifAvailable: true \}/.test(app) && /busy\.has\('cfp_photo_' \+ item\.body\.request_key\)/.test(app) && /LOCKS\.request\('cfp_photo_' \+ body\.request_key/.test(app), 'Postausgang/Fotos über Tabs gesperrt');
+  // Sperre wird vor dem Anlegen des Postausgang-Eintrags gehalten (sonst Lücke zwischen outboxAdd und Sperre)
+  const ups = app.slice(app.indexOf('async function uploadPhotosSafe('), app.indexOf('async function uploadPhotosSafeRun('));
+  ok(ups.includes('LOCKS.request') && !ups.includes('outboxAdd'), 'Sperre umfasst den ganzen Ablauf');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

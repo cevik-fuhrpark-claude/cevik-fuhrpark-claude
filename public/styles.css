@@ -63,6 +63,7 @@ p { margin: 0 0 0.75rem; max-width: 70ch; }
 .topbar a svg { width: 24px; height: 24px; flex: none; }
 .topbar a.tbicon { min-width: 44px; min-height: 44px; display: grid; place-items: center; margin: -10px 0; } /* Tippfläche 44 px (vorher 24 px), Kopfzeile bleibt gleich hoch */
 .testband { background: repeating-linear-gradient(135deg, var(--test) 0 14px, #7d52b3 14px 28px); color: #fff; text-align: center; font-weight: 600; font-family: var(--din); padding: 6px 12px; letter-spacing: 0.02em; }
+.clockband { background: var(--mid-bg); color: var(--mid); border-bottom: 2px solid var(--signal); text-align: center; font-weight: 600; padding: 6px 12px; overflow-wrap: anywhere; }
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding-bottom: env(safe-area-inset-bottom); } /* minmax(0,…): lange Beschriftung schiebt „Mehr“ nicht aus dem Bild (21.10.2026) */

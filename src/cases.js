@@ -1412,9 +1412,21 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   let performedAt = now;
   if (kind === 'abfahrt' && body.performed_at !== undefined && body.performed_at !== null && body.performed_at !== '') {
     const raw = String(body.performed_at);
-    const ms = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) ? Date.parse(raw) : NaN;
+    let ms = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) ? Date.parse(raw) : NaN;
     if (!Number.isFinite(ms)) throw bad('validation', 'Durchführungszeitpunkt ungültig.');
     const nowMs = Date.parse(now);
+    // Uhr des Geräts geht falsch (22.10.2026): Postausgang sendet zusätzlich die Gerätezeit beim Senden (`client_now`). Die
+    // Abweichung zur Serverzeit wird herausgerechnet – sonst wurde eine Kontrolle bei nachgehender Uhr zurückdatiert (richtiger
+    // km-Stand als „größer als später erfasst“ abgewiesen, „letzte Kontrolle“ gestern) bzw. bei > 7 Tagen dauerhaft abgewiesen.
+    // Abweichungen unter 2 Min. (Übertragungszeit) bleiben unberücksichtigt; danach gelten dieselben Grenzen.
+    let skewMs = 0;
+    if (body.client_now !== undefined && body.client_now !== null && body.client_now !== '') {
+      const cr = String(body.client_now);
+      const cms = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(cr) ? Date.parse(cr) : NaN;
+      if (!Number.isFinite(cms)) throw bad('validation', 'Gerätezeit ungültig.');
+      if (Math.abs(nowMs - cms) > 120000) skewMs = nowMs - cms;
+    }
+    if (skewMs) ms += skewMs;
     if (ms < nowMs - 7 * 86400000) throw bad('validation', 'Die Kontrolle liegt mehr als 7 Tage zurück und wird nicht mehr übernommen. Bitte neu durchführen.');
     if (ms < nowMs) performedAt = new Date(ms).toISOString();
   }

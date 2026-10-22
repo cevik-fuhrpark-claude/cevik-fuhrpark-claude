@@ -35,6 +35,8 @@ CSV-Dateien dürfen UTF-8 (mit oder ohne BOM) oder Windows-1252 sein – also di
 ## Ohne Netz (Funkloch)
 - Ist die App einmal mit Netz geöffnet worden, startet sie auch ohne Netz: Startseite mit „Mein Fahrzeug“ (Stand der letzten Verbindung), Schadensmeldung und Abfahrtskontrolle werden auf dem Gerät gespeichert und automatisch gesendet.
 - Auf dem Gerät gespeichert werden nur Anzeigedaten (Name, Rolle, Fahrzeugliste) – keine Passwörter. „Abmelden“ löscht diese Daten.
+- **Falsch gehende Geräteuhr (seit 22.10.2026):** Die App vergleicht die Uhr des Geräts mit der Serverzeit (Kopfzeile `Date` jeder Antwort). Ab 5 Min. Abweichung erscheint oben ein Hinweis „Uhr dieses Geräts geht … nach/vor – Datum/Uhrzeit auf automatisch stellen“. „Heute“ (Datumsvorbelegungen, Fälligkeiten, „Heute zu tun“) rechnet die App dann mit der Serverzeit; eine offline gespeicherte Abfahrtskontrolle wird mit der Gerätezeit beim Senden korrigiert (vorher: nachgehende Uhr → Kontrolle zurückdatiert, richtiger km-Stand abgewiesen; mehr als 7 Tage nach → Kontrolle dauerhaft abgewiesen). Ändert jemand die Uhr zwischen Speichern und Senden, bleibt eine Restabweichung.
+- **Mehrere Tabs/Fenster (seit 22.10.2026):** Nur ein Tab sendet den Postausgang (Web Locks); Fotos, die ein anderer Tab gerade hochlädt, werden nicht doppelt übertragen. Steht ein Tab auf der Anmeldeseite und meldet sich in einem anderen Tab jemand an, übernimmt er diese Anmeldung (keine zweite Sitzung).
 
 ## Panne & Notfall (Rufnummern für unterwegs)
 - Seite „Panne & Notfall“ für alle Rollen: Startseite der Fahrer, Mehr, Scan-Seite des Fahrzeug-QR-Aufklebers (dort zusätzlich die Nummern für dieses Fahrzeug). Oben fest nur der Notruf 112 – alle anderen Nummern trägt der Betrieb selbst ein (die App gibt keine vor).

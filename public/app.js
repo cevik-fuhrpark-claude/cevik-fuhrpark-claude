@@ -28,7 +28,30 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // [CLAUDE] Kalenderdatum in Berlin wie der Server („heute“, Fristen, Monate) – nicht UTC (nachts bis 2 Uhr Vortag) und nicht Gerätezeitzone
 const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
 // Kalendertage addieren (18.10.2026: vorher 24-h-Blöcke – nachts nach der Herbst-Umstellung war bDate(7) ein Tag zu früh)
-const bDate = (days = 0) => { const t = BERLIN_FMT.format(new Date()); if (!days) return t; const [y, m, d] = t.split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, d + days)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
+// [CLAUDE] Uhr des Geräts weicht ab (22.10.2026, Fund „falsch gehende Geräteuhr“): Abweichung zur Serverzeit aus dem Date-Kopf
+// jeder API-Antwort (Service Worker speichert /api/ nie zwischen). Unter 2 Min. gilt sie als 0 (Übertragungszeit, Sekundenauflösung).
+// „Heute“ (Datumsvorbelegungen, Fälligkeiten, „Heute zu tun“), „Agent veraltet“ und Altersangaben rechnen mit der Serverzeit.
+let clockSkew = 0;
+const nowMs = () => Date.now() + clockSkew;
+function clockSample(hdr, t0, t1) {
+  const s = Date.parse(hdr || ''); if (!Number.isFinite(s) || t1 - t0 > 10000) return; // langsame Antwort: ungenau
+  const d = s + 500 - (t0 + t1) / 2; const nv = Math.abs(d) > 120000 ? Math.round(d) : 0;
+  const was = Math.abs(clockSkew) > 300000; clockSkew = nv; if (was !== (Math.abs(nv) > 300000) || was) clockWarn();
+}
+// Hinweis ab 5 Min. Abweichung (Fehlbedienung sichtbar machen; Daten bleiben richtig, weil Server bzw. Korrektur rechnen)
+function clockText() {
+  const m = Math.round(Math.abs(clockSkew) / 60000); if (m < 5) return '';
+  const span = m >= 90 ? (m >= 2880 ? t('clock_days').replace('{n}', Math.round(m / 1440)) : t('clock_hours').replace('{n}', Math.round(m / 60))) : t('clock_minutes').replace('{n}', m);
+  return t(clockSkew > 0 ? 'clock_behind' : 'clock_ahead').replace('{d}', span);
+}
+function clockWarn() {
+  if (typeof document === 'undefined') return;
+  const txt = clockText(); let el = document.querySelector('.clockband');
+  if (!txt || !S.me) { if (el) el.remove(); return; }
+  if (!el) { const at = document.querySelector('.testband') || document.querySelector('.topbar'); if (!at) return; el = document.createElement('div'); el.className = 'clockband'; el.setAttribute('role', 'status'); at.after(el); }
+  if (el.textContent !== txt) el.textContent = txt;
+}
+const bDate = (days = 0) => { const t = BERLIN_FMT.format(new Date(nowMs())); if (!days) return t; const [y, m, d] = t.split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, d + days)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
 // frühestes Arbeitsdatum wie im Server: 12 Monate vor dem Meldetag (29.02. → 28.02.)
 const workDateMin = (iso) => { const d = BERLIN_FMT.format(new Date(iso)); const y = `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`; return y.endsWith('-02-29') ? y.slice(0, 8) + '28' : y; };
 const bYm = (back = 0) => { const [y, m] = bDate().slice(0, 7).split('-').map(Number); return new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 7); };
@@ -103,10 +126,11 @@ async function api(method, path, body, extra = {}) {
   // Postausgang: Umgebung, in der die Meldung erfasst wurde (Inhaber kann die Ansicht inzwischen gewechselt haben – 18.10.2026)
   if (extra.env && S.me && S.me.role === 'owner') headers['x-cfp-env'] = extra.env;
   // Änderungen nur für die Person, die das Formular/den Postausgang erstellt hat (anderer Tab, andere Anmeldung → 409 user_mismatch)
-  if (method !== 'GET' && S.me && S.me.id && !path.startsWith('/api/logout')) {
+  // Postausgang einer bestimmten Person: Kennung auch dann mitsenden, wenn S.me inzwischen zurückgesetzt ist (Härtung 22.10.2026)
+  if (method !== 'GET' && ((S.me && S.me.id) || extra.asUser) && !path.startsWith('/api/logout')) {
     headers['x-cfp-user'] = extra.asUser || S.me.id;
     // Umgebung, für die Formular/Postausgang gilt – Server weist bei inzwischen geänderter Kontoumgebung ab (env_mismatch, 21.10.2026)
-    if (S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;
+    if (S.me && S.me.role !== 'owner' && (extra.env || S.me.environment)) headers['x-cfp-env-of'] = extra.env || S.me.environment;
   }
   let b = body;
   if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer) && typeof body !== 'string') { b = JSON.stringify(body); headers['content-type'] = 'application/json'; }
@@ -115,8 +139,10 @@ async function api(method, path, body, extra = {}) {
   // timeoutMs: Zeitlimit (Foto-Uploads) – ohne Antwort gilt die Anfrage als Netzabbruch (21.10.2026: „Lade Foto 2/5“ hing ohne Ende,
   // nach Neuladen fehlten die restlichen Fotos still); dann greift der Postausgang für die restlichen Fotos
   const sig = extra.timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(extra.timeoutMs) : undefined;
+  const t0 = Date.now();
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
+  try { clockSample(res.headers.get('date'), t0, Date.now()); } catch {}
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
@@ -238,6 +264,7 @@ function frame(content, active) {
     <a href="#/inbox" class="tbicon" aria-label="${esc(bellLabel())}" style="position:relative;color:#fff">${ICON.bell}${S.unread ? `<span class="badge" aria-hidden="true" style="position:absolute;top:2px;right:0">${S.unread}</span>` : ''}</a>
   </header>
   ${env === 'test' ? `<div class="testband">${esc(t('env_test'))}</div>` : ''}
+  ${clockText() ? `<div class="clockband" role="status">${esc(clockText())}</div>` : ''}
   <nav class="tabbar" aria-label="${esc(t('navigation'))}">${tabs.map(([href, icon, label, key]) => `<a href="${href}" class="${key === active ? 'active' : ''}${key === 'new' ? ' report' : ''}"${key === active ? ' aria-current="page"' : ''}>${key === 'new' ? `<span class="dot">${ICON[icon]}</span>` : ICON[icon]}<span>${esc(label)}</span></a>`).join('')}</nav>
   <main id="main" tabindex="-1">${content}</main>`;
 }
@@ -474,6 +501,8 @@ function resetUserState() {
 const SESSION_MARK = 'cfp_session_user';
 function markSession(id) { try { if (localStorage.getItem(SESSION_MARK) !== id) localStorage.setItem(SESSION_MARK, id); } catch {} }
 window.addEventListener('storage', (e) => {
+  // Tab steht auf der Anmeldeseite, in einem anderen Tab hat sich jemand angemeldet: Sitzung übernehmen statt zweiter Anmeldung (22.10.2026)
+  if (e.key === SESSION_MARK && !S.me && e.newValue && /^#\/login/.test(location.hash || '')) { location.reload(); return; }
   if (e.key !== SESSION_MARK || !S.me || S.offlineStart) return;
   if ((e.newValue || '') !== S.me.id) { resetUserState(); location.reload(); }
 });
@@ -1078,7 +1107,7 @@ async function viewCases() {
 // das violette Band druckt ohne Hintergrundgrafiken nur hellgrau)
 function printStamp() {
   const env = S.me ? (S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment) : null;
-  return `${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())} · ${esc(S.me.display_name)}${env === 'test' ? ` · <b class="print-test">${esc(t('env_test'))}</b>` : ''}`;
+  return `${esc(t('printed_at'))}: ${fmtDT(new Date(nowMs()).toISOString())} · ${esc(S.me.display_name)}${env === 'test' ? ` · <b class="print-test">${esc(t('env_test'))}</b>` : ''}`;
 }
 // Kopfzeile für Ausdrucke von Listen: Zeitpunkt, Person, gewählte Auswahl (leere Teile entfallen)
 function printHead(parts) {
@@ -1115,21 +1144,35 @@ let flushing = false;
 const photoTarget = (item, r) => (item.path === '/api/inspections' ? ((r.followups || []).find((f) => f && f.id && (!f.repeat || f.own)) || (S.me && S.me.role !== 'driver' ? (r.followups || []).find((f) => f && f.id) : null) || {}).id : r.id);
 // Kontrolle ohne Ziel für Fotos: kein Mangel oder Mangel schon gemeldet (Wiederholung) – zutreffender Text
 const photosSkippedText = (r) => ((r && r.followups || []).some((f) => f && f.repeat) ? t('check_photos_repeat') : t('check_photos_skipped'));
+// Mehrere Tabs/Fenster (22.10.2026, Fund „mehrere Tabs“): Postausgang und Foto-Sicherung liegen gemeinsam im Gerät – ohne Absprache
+// sendeten zwei Tabs dieselben Einträge und Fotos parallel (Server verhindert Dubletten, aber doppelte Datenmenge am Handy).
+// Web Locks: nur ein Tab sendet den Postausgang; Einträge, deren Fotos ein anderer Tab gerade hochlädt, werden übersprungen.
+// Ohne Web Locks (alte Browser) bleibt es wie bisher.
+const LOCKS = typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function' ? navigator.locks : null;
 async function flushOutbox() {
   if (!S.me || flushing) return;
+  if (!outboxGet().some((x) => !x.failed)) return;
+  if (!LOCKS) return flushOutboxRun();
+  return LOCKS.request('cfp_outbox', { ifAvailable: true }, async (lock) => { if (lock && S.me && !flushing) await flushOutboxRun(); });
+}
+async function flushOutboxRun() {
   const list = outboxGet().filter((x) => !x.failed); if (!list.length) return;
+  // erst nach dem Lesen der Liste abfragen: uploadPhotosSafe hält die Sperre schon, bevor es den Eintrag anlegt
+  let busy = new Set();
+  if (LOCKS && LOCKS.query) { try { busy = new Set(((await LOCKS.query()).held || []).map((l) => l.name)); } catch {} }
   flushing = true;
   const done = new Set(); const failedNow = new Map(); const photoPending = new Map(); let kept = 0;
   const key = outboxKey(); // Schlüssel festhalten: endet die Anmeldung mitten im Senden, wird der Stand trotzdem gespeichert (19.10.2026)
   try {
     for (const item of list) {
       if (!S.me) { kept++; break; } // Anmeldung beendet: nichts mehr ohne Konto senden
-      if (PHOTO_UPLOADING.has(item.body.request_key)) { kept++; continue; } // lädt gerade im Vordergrund hoch (uploadPhotosSafe)
+      if (PHOTO_UPLOADING.has(item.body.request_key) || busy.has('cfp_photo_' + item.body.request_key)) { kept++; continue; } // lädt gerade im Vordergrund hoch (uploadPhotosSafe, auch in anderem Tab)
       try {
         // Meldung/Kontrolle schon angekommen, nur die Fotos fehlen noch (Netz brach beim Hochladen ab): nur Fotos nachreichen
         let r = item.photo_target ? { id: item.photo_target, followups: [{ id: item.photo_target }], case_no: item.case_no } : null;
         // Abfahrtskontrolle mit dem Zeitpunkt der Durchführung (nicht des Sendens) – km-Stand wird zeitlich richtig eingeordnet
-        const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at } : item.body;
+        // mit der Gerätezeit beim Senden: der Server rechnet eine falsch gehende Geräteuhr heraus (22.10.2026)
+        const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at, client_now: new Date().toISOString() } : item.body;
         const ox = { asUser: item.user_id || S.me.id, env: item.env };
         if (!r) r = await api('POST', item.path || '/api/cases', sendBody, ox);
         let failed = 0; let skippedTxt = '';
@@ -1270,6 +1313,11 @@ async function photosLater(path, body, r, target, files) {
 // Solange hier hochgeladen wird, überspringt flushOutbox diesen Eintrag (keine parallelen Uploads derselben Fotos).
 const PHOTO_UPLOADING = new Set();
 async function uploadPhotosSafe(path, body, r, target, files, sb) {
+  // Sperre je Meldung über alle Tabs (flushOutbox eines anderen Tabs überspringt den Eintrag, solange hier hochgeladen wird)
+  if (LOCKS) return LOCKS.request('cfp_photo_' + body.request_key, () => uploadPhotosSafeRun(path, body, r, target, files, sb));
+  return uploadPhotosSafeRun(path, body, r, target, files, sb);
+}
+async function uploadPhotosSafeRun(path, body, r, target, files, sb) {
   const key = body.request_key; let failed = 0; let later = 0; let list = null; let backed = false;
   try { list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); } catch { list = null; }
   if (list) {
@@ -1474,7 +1522,7 @@ async function viewCase(id) {
     const spans = []; let cur = 'gemeldet'; let since = c.created_at;
     for (const e of d.events) if (e.to_status && e.to_status !== cur) { spans.push([cur, Date.parse(e.created_at) - Date.parse(since)]); cur = e.to_status; since = e.created_at; }
     const closed = ['fahrzeug_freigegeben', 'abgelehnt'].includes(cur);
-    if (!closed) spans.push([cur, Date.now() - Date.parse(since)]);
+    if (!closed) spans.push([cur, nowMs() - Date.parse(since)]);
     const sum = {}; for (const [st, ms] of spans) sum[st] = (sum[st] || 0) + Math.max(0, ms);
     const dur = (ms) => { const h = ms / 3600000; return h < 1 ? `${Math.round(ms / 60000)} ${t('min_short')}` : h < 48 ? `${fmtNum(Math.round(h * 10) / 10)} ${t('h_short')}` : `${nDays(Math.round((h / 24) * 10) / 10)}`; };
     if (Object.keys(sum).length > 1 || closed) html += `<h2>${esc(t('time_per_status'))}</h2><dl class="kv">${Object.entries(sum).map(([st, ms]) => `<dt>${esc(t('st_' + st))}${!closed && st === cur ? ` (${esc(t('current'))})` : ''}</dt><dd>${dur(ms)}</dd>`).join('')}</dl>`;
@@ -3266,7 +3314,7 @@ const deviceLabel = () => (/Android/.test(navigator.userAgent) ? 'Android' : /iP
 
 // ---------- Management ----------
 // Fuhrparkagent läuft planmäßig alle 15 (Betrieb) bzw. 30 Min. (Test): > 75 Min. ohne Lauf, offener Lauf oder Fehler → Hinweis
-const agentStale = (r) => !r || !!r.error || Date.now() - Date.parse(r.finished_at || r.started_at) > 75 * 60000 || (!r.finished_at && Date.now() - Date.parse(r.started_at) > 10 * 60000);
+const agentStale = (r) => !r || !!r.error || nowMs() - Date.parse(r.finished_at || r.started_at) > 75 * 60000 || (!r.finished_at && nowMs() - Date.parse(r.started_at) > 10 * 60000);
 // Kurzbezeichnung des Befundcodes in der Oberflächensprache (Meldungstext selbst kommt deutsch vom Server)
 // Meldungstext eines Agentenbefunds in der App-Sprache (Vorlagen public/finding-messages.js); HU/SP-Hinweis „Frist ungeklärt“
 // nutzt dieselben Übersetzungen wie die Fahrzeugakte (hn_<code>), sonst bleibt der deutsche Hinweistext.
@@ -3737,7 +3785,7 @@ async function viewWsLoad() {
 // ---------- Telematik-Prüffälle und Zuordnungen ----------
 // Letzter Stand je Fahrzeug: ohne Daten zuerst, dann ältester; nur Alter anzeigen, keine Bewertung (kein Grenzwert vorgegeben)
 function tmAge(iso) {
-  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+  const h = Math.floor((nowMs() - new Date(iso).getTime()) / 3600000);
   if (!(h >= 0)) return '';
   return h >= 48 ? t('tm_age_d').replace('{n}', Math.floor(h / 24)) : t('tm_age_h').replace('{n}', h);
 }
