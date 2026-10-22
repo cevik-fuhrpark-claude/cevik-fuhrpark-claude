@@ -154,6 +154,8 @@ div.alert:not(.panel) { color: var(--stop); background: var(--stop-bg); border: 
 .kv dt { color: var(--steel); }
 .kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 480px) { .kv { grid-template-columns: minmax(0, 1fr); gap: 0 } .kv dt { margin-top: 8px; font-size: .85em } }
+/* Druck: Wertspalte mind. 7,5em – lange ukrainische Beschriftungen ließen 44 px übrig (Datum „10.01./2026“ zerbrochen, 22.10.2026) */
+@media print { .kv { grid-template-columns: minmax(0, max-content) minmax(7.5em, 1fr); } }
 
 /* Formulare */
 label { display: block; font-weight: 600; margin: 14px 0 6px; }
@@ -327,7 +329,7 @@ table.paper td:last-child { min-width: 30%; }
 .vnotes { margin: 0; padding-left: 18px; } .vnotes li { margin: 6px 0; } .vnotes-drv { margin-top: 8px; padding: 8px 10px; border-left: 4px solid var(--mid); background: var(--mid-bg); border-radius: 6px; } .vnotes-drv p { margin: 4px 0; }
 .tfpos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 2px 12px; margin: 4px 0 8px; }
 /* [CLAUDE] Management-Panel im Ausdruck: Vorgangstabelle auf A4-Breite (kleinere Schrift, Umbruch in Zellen) */
-@media print { table.mtab { font-size: 8.5pt; width: 100%; } table.mtab th, table.mtab td { padding: 3px 4px; overflow-wrap: normal; hyphens: auto; } table.mtab td:nth-child(2) { overflow-wrap: anywhere; } table.mtab a { white-space: normal !important; } table.mtab .plate { font-size: 8.5pt; } }
+@media print { table.mtab { font-size: 8.5pt; width: 100%; } table.mtab th, table.mtab td { padding: 3px 4px; overflow-wrap: normal; hyphens: auto; } table.mtab td:nth-child(2) { overflow-wrap: anywhere; min-width: 10em; } table.mtab a { white-space: normal !important; } table.mtab .plate { font-size: 8.5pt; } }
 /* [CLAUDE] Kurzanleitung für Fahrer (Aushang): am Bildschirm als Karte, im Druck eine A4-Seite, große Schrift */
 .guide { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-m); padding: 16px; margin-top: 12px; }
 .guide h1 { margin-top: 0; }

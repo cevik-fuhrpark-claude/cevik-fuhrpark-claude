@@ -1203,6 +1203,9 @@ Object.assign(STRINGS.en, { tires_winter_closed: 'Winter order closed, status op
 // [CLAUDE] Hinweis beim Speichern: Kennzeichen schon an einem anderen Fahrzeug (13.10.2026)
 Object.assign(STRINGS.de, { dup_plate_warn: 'Hinweis: Kennzeichen {p} ist auch an einem anderen Fahrzeug vergeben (FIN {list}). Gespeichert – bitte FIN prüfen: Tippfehler oder Doppelanlage? Siehe Datenqualität.' });
 Object.assign(STRINGS.uk, { dup_plate_warn: 'Увага: номер {p} уже призначено іншому транспортному засобу (VIN {list}). Збережено – перевірте VIN: помилка введення чи дубль? Див. «Якість даних».' });
+Object.assign(STRINGS.de, { ws_extern: 'Externe Werkstatt' });
+Object.assign(STRINGS.uk, { ws_extern: 'Зовнішня майстерня' });
+Object.assign(STRINGS.en, { ws_extern: 'External workshop' });
 Object.assign(STRINGS.de, { search_hits_n: '{n} Treffer', search_no_hits: 'Keine Treffer' });
 Object.assign(STRINGS.uk, { search_hits_n: '{n} результатів', search_no_hits: 'Нічого не знайдено' });
 Object.assign(STRINGS.en, { search_hits_n: '{n} results', search_no_hits: 'No results' });
