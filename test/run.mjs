@@ -16898,6 +16898,26 @@ await test('Fehlersuche 22.10. (Erstnutzung): Hinweise statt leerer Seiten – S
   const { U } = await freshWorld();
   eq((await U.fleet.get('/api/tires/fleet')).status, 200);
 });
+await test('Leistung 22.10.: Unterabfrage „Mängelauftrag zur Prüfung“ über Index maintenance_event_id (Migration 0072) – keine korrelierte Unterabfrage der Testsuite sucht nur über „environment“', async () => {
+  const { CORR } = await import('./harness.mjs');
+  const db = env.DB.db; const plan = (q, ...a) => db.prepare('EXPLAIN QUERY PLAN ' + q).all(...a).map((x) => x.detail).join(' | ');
+  const p = plan(`SELECT e.id, (SELECT c.case_no FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?1 AND c.status<>'abgelehnt' ORDER BY c.created_at DESC LIMIT 1) FROM maintenance_events e`, 'test');
+  ok(/idx_cases_mevent_created \(maintenance_event_id=\? AND environment=\?\)/.test(p) && !/idx_cases_env_created/.test(p), p);
+  ok(!/TEMP B-TREE/.test(p), 'ohne Sortierung je Prüfung: ' + p);
+  ok(!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_cases_mevent'`).get(), 'alter Index ersetzt');
+  // Master-Eingang „neuere Übergabe“ (20 000 Einträge: 860 → 70 ms) und Filter „Gewährleistung prüfen“
+  const pm = plan(`SELECT m.event_id, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) FROM master_inbox m`);
+  ok(/SEARCH n USING (COVERING )?INDEX idx_master_inbox_finding \(finding_id=\? AND environment=\?/.test(pm), pm);
+  const pw = plan(`SELECT c.id FROM cases c WHERE EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at)`);
+  ok(/SEARCH x USING (COVERING )?INDEX idx_cases_vehicle_env_created \(vehicle_id=\? AND environment=\? AND created_at<\?\)/.test(pw), pw);
+  ok((await owner.get('/api/cases?warranty=1')).status === 200 && (await owner.get('/api/master')).status === 200, 'Gewährleistungsfilter und Master-Eingang');
+  // Endpunkte mit dieser Unterabfrage einmal aufrufen (Nachweisliste, Kennzahlen, Schnittstelle), dann Wächter über die ganze Testsuite
+  for (const u of ['/api/maintenance/history?from=2020-01-01', '/api/maintenance/history?format=csv&from=2020-01-01', '/api/reports/kpi', '/api/maintenance']) ok((await owner.get(u)).status < 300, u);
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  for (const u of ['/v1/kpi?environment=test', '/v1/maintenance/history?environment=test&from=2020-01-01']) eq((await owner.req('GET', '/api/integration' + u, undefined, H)).status, 200, u);
+  ok(CORR.checked > 100, 'Wächter hat Anweisungen geprüft: ' + CORR.checked);
+  eq(JSON.stringify([...CORR.bad]), '[]', 'korrelierte Unterabfragen nur über environment');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

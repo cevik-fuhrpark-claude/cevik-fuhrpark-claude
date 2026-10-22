@@ -22,6 +22,19 @@ if (QPLAN) process.on('exit', () => {
   console.log('\n[QPLAN] Volltabellen-Suchen je Tabelle:');
   for (const [t, l] of Object.entries(by).sort((a, b) => b[1].length - a[1].length)) { console.log(`  ${t}: ${l.length}`); for (const q of l.slice(0, 6)) console.log('     ' + q); }
 });
+// Wächter (22.10.2026): korrelierte Unterabfragen, die nur über „environment“ suchen, lesen je Zeile alle Datensätze der Umgebung
+// (Index 0070 verdrängte so den Index auf maintenance_event_id: Nachweisliste 19 → 620 ms). Jede neue SELECT-Anweisung der Testsuite
+// mit Unterabfrage wird einmal mit ihren echten Parametern geplant; Treffer sammelt CORR.bad (geprüft im Test „Leistung 22.10.“).
+export const CORR = { seen: new Set(), bad: new Map(), checked: 0 };
+function corrCheck(db, sql, args) {
+  if (CORR.seen.has(sql)) return; CORR.seen.add(sql);
+  if (!/^\s*(SELECT|WITH)/i.test(sql) || !/\(\s*SELECT\b/i.test(sql)) return;
+  let rows; try { rows = db.prepare('EXPLAIN QUERY PLAN ' + sql).all(...args); } catch { return; }
+  CORR.checked++;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const corr = (r) => { for (let x = r; x; x = byId.get(x.parent)) if (/^CORRELATED/.test(x.detail)) return true; return false; };
+  for (const r of rows) if (/^SEARCH \w+ USING (COVERING )?INDEX \w+ \(environment=\?(?: AND \w+[<>]=?\?)*\)$/.test(r.detail) && corr(r)) CORR.bad.set(sql.replace(/\s+/g, ' ').slice(0, 300), r.detail);
+}
 class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
   bind(...args) {
@@ -29,7 +42,7 @@ class Stmt {
     if (/\b(LIKE|GLOB)\b/i.test(this.sql)) for (const a of args) if (typeof a === 'string' && /[%*]/.test(a) && Buffer.byteLength(a) > 50) throw new Error('LIKE or GLOB pattern too complex: SQLITE_ERROR');
     return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a)));
   }
-  _prep() { QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
+  _prep() { QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); corrCheck(this.db, this.sql, this.args); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
   async first(col) {
     const r = this._prep().get(...this.args);
     if (!r) return null;
