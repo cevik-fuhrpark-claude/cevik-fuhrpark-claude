@@ -17154,6 +17154,33 @@ await test('Rechenzeit Kaltstart 22.10.: synchrones SHA-256 = WebCrypto, gespeic
   ok(!JSON.stringify((await U.fleet.get('/api/master')).data).includes('fp_src'), 'Management-Panel ohne fp_src');
   const fr = await new Client(worker, e, 'anon').req('GET', '/api/integration/v1/findings?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' }); eq(fr.status, 200); ok(fr.data.findings.length > 0 && !JSON.stringify(fr.data).includes('fp_src'), '/v1/findings ohne fp_src');
 });
+await test('Rechenzeit Vorgangsliste/CSV 22.10.: Vorgangszeilen in einem Durchlauf statt Spread + delete – Ergebnis und Feldreihenfolge je Rolle gleich wie vorher', async () => {
+  const { shapeCase, shapeCaseRow, caseAccess } = await import('../src/cases.js'); const OPEN_STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
+  const { hideDriverName } = await import('../src/util.js');
+  // frühere Umsetzung (bis 22.10.2026) als Vergleich
+  const old = (c, user) => { const out = { ...c }; delete out.request_key; delete out.content_hash; if (!['owner', 'fleet'].includes(user.role)) delete out.cost_approved_net;
+    if ('cost_over_limit_at' in out && !OPEN_STATUSES.includes(out.status)) out.cost_over_limit_at = null; if (user.role === 'driver') delete out.cost_over_limit_at;
+    if (user.role === 'viewer') delete out.reporter_name_note; if (user.role === 'driver' || user.role === 'workshop') { delete out.followup_on; delete out.followup_note; }
+    if (user.role === 'driver') { delete out.fleet_received_by; delete out.workshop_ack_by; } return out; };
+  const { e, U, newCase } = await freshWorld(); const db = e.DB.db;
+  for (const priority of ['kritisch', 'mittel', 'niedrig']) await newCase({ priority });
+  db.prepare(`UPDATE cases SET cost_over_limit_at=?, followup_on='2026-11-02', followup_note='Rückruf', cost_approved_net=12.5, reporter_name_note='Herr X' WHERE rowid % 2 = 0`).run(new Date().toISOString());
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben' WHERE rowid % 3 = 0`).run();
+  const rows = db.prepare(`SELECT c.*, 'PL-1' AS plate, u.display_name AS reporter_name, CASE WHEN u.role='driver' THEN 'driver' ELSE u.role END AS reporter_role FROM cases c JOIN users u ON u.id=c.reporter_id`).all();
+  ok(rows.length >= 3);
+  for (const role of ['owner', 'fleet', 'workshop', 'dispatch', 'viewer', 'driver']) {
+    const user = { id: rows[0].reporter_id, role, workshop_site: 'DORTMUND' };
+    for (const r of rows) {
+      const want = { ...hideDriverName(user, old({ ...r }, user), 'reporter_name', 'reporter_role'), access: caseAccess(user, r) };
+      const got = shapeCaseRow({ ...r }, user);
+      eq(JSON.stringify(Object.keys(got)), JSON.stringify(Object.keys(want)), `${role}: Feldreihenfolge`); eq(JSON.stringify(got), JSON.stringify(want), `${role}: Inhalt`);
+      const w2 = old({ ...r }, user);
+      eq(JSON.stringify(shapeCase({ ...r }, user)), JSON.stringify(w2), `${role}: Detail`);
+    }
+  }
+  // über die API: Liste je Rolle ohne ausgeblendete Felder
+  const list = (await U.fleet.get('/api/cases')).data.cases; ok(list.length >= 3 && list.every((c) => !('request_key' in c) && !('content_hash' in c) && !('reporter_role' in c) && c.access === 'full'));
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

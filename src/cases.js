@@ -172,7 +172,7 @@ export async function listCases(env, user, envName, query, meta = null) {
     LIMIT ?`).bind(...args, limit + 1).all()).results;
   // eine Zeile mehr gelesen: zeigt an, dass die Liste begrenzt ist (Oberfläche: „weitere laden“ bzw. Suche/CSV)
   if (rows.length > limit) { rows.length = limit; if (meta) meta.truncated = true; }
-  return rows.map((r) => ({ ...hideDriverName(user, shapeCase(r, user), 'reporter_name', 'reporter_role'), access: caseAccess(user, r) }));
+  return rows.map((r) => shapeCaseRow(r, user));
 }
 
 // Vorschläge für Tätigkeiten: häufigste bisherige Beschreibungen der eigenen Werkstatt (nur Text, keine Personen)
@@ -219,21 +219,38 @@ export function casesCsv(rows, csvCell, fmt, claims = null, workshopNames = null
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
-function shapeCase(c, user) {
-  const out = { ...c };
-  delete out.request_key;
-  delete out.content_hash;
-  if (!canSeeCosts(user)) delete out.cost_approved_net;
-  // Kostenfreigabe „ausstehend“ nur an offenen Vorgängen (abgelehnt/abgeschlossen: Verlauf behält cost_limit_exceeded)
-  if ('cost_over_limit_at' in out && !OPEN_STATUSES.includes(out.status)) out.cost_over_limit_at = null;
-  if (user.role === 'driver') delete out.cost_over_limit_at;
-  if (user.role === 'viewer') delete out.reporter_name_note; // freier Namensvermerk – Datensparsamkeit Lesezugriff
-  if (user.role === 'driver' || user.role === 'workshop') { delete out.followup_on; delete out.followup_note; } // Wiedervorlage = Arbeitsmittel der Leitung
-  if (user.role === 'driver') {
-    // Fahrer sehen ihren Status, aber keine internen Zuständigkeiten
-    delete out.fleet_received_by;
-    delete out.workshop_ack_by;
+// Ausgeblendete Felder je Rolle einmal bestimmen; Kopie in einem Durchlauf statt Spread + delete (delete schaltet V8-Objekte in den
+// langsamen Wörterbuchmodus – Vorgangsliste/CSV ≈ 30 µs je Zeile, Rechenzeit-Grenze 10 ms je Aufruf; 22.10.2026). Ergebnis und Feldreihenfolge wie vorher.
+const SHAPE_OMIT = new Map();
+function shapeOmit(user) {
+  const key = `${user.role}|${canSeeCosts(user) ? 1 : 0}`;
+  let o = SHAPE_OMIT.get(key);
+  if (!o) {
+    o = new Set(['request_key', 'content_hash']);
+    if (!canSeeCosts(user)) o.add('cost_approved_net');
+    if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); } // Fahrer: keine internen Zuständigkeiten
+    if (user.role === 'viewer') o.add('reporter_name_note'); // freier Namensvermerk – Datensparsamkeit Lesezugriff
+    if (user.role === 'driver' || user.role === 'workshop') { o.add('followup_on'); o.add('followup_note'); } // Wiedervorlage = Arbeitsmittel der Leitung
+    SHAPE_OMIT.set(key, o);
   }
+  return o;
+}
+// extraOmit: zusätzlich weggelassene Schlüssel (Liste: reporter_role nach hideDriverName-Regel)
+export function shapeCase(c, user, extraOmit = null) {
+  const omit = shapeOmit(user); const out = {};
+  // Kostenfreigabe „ausstehend“ nur an offenen Vorgängen (abgelehnt/abgeschlossen: Verlauf behält cost_limit_exceeded)
+  const open = OPEN_STATUSES.includes(c.status);
+  for (const k in c) {
+    if (omit.has(k) || k === extraOmit) continue;
+    out[k] = k === 'cost_over_limit_at' && !open ? null : c[k];
+  }
+  return out;
+}
+// Listenzeile: wie hideDriverName(user, shapeCase(r, user), 'reporter_name', 'reporter_role') + access, in einem Durchlauf
+export function shapeCaseRow(r, user) {
+  const out = shapeCase(r, user, 'reporter_role');
+  if (user.role === 'viewer' && r.reporter_role === 'driver') { out.reporter_name = null; out.reporter_name_hidden = true; }
+  out.access = caseAccess(user, r);
   return out;
 }
 
