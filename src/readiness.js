@@ -34,10 +34,10 @@ export async function readiness(env, user) {
   const backupDays = r.backup_at ? Math.floor((nowMs - Date.parse(r.backup_at)) / 86400000) : null;
   const items = [
     { key: 'agent', state: agentOk ? 'ok' : 'open', last: agent ? agent.finished_at || agent.started_at : null, link: '#/master' },
-    { key: 'vehicles', state: r.vehicles ? 'ok' : 'open', n: r.vehicles, link: '#/vehicles' },
+    { key: 'vehicles', state: r.vehicles ? 'ok' : 'open', n: r.vehicles, link: r.vehicles ? '#/vehicles' : '#/settings' },
     { key: 'emergency', state: r.em_prod ? 'ok' : 'open', n: r.em_prod, link: '#/emergency/edit' },
     { key: 'two_factor', state: no2fa.length ? 'open' : 'ok', n: no2fa.length, names: no2fa.slice(0, 8), link: '#/users' },
-    { key: 'own_push', state: r.own_push ? 'ok' : 'open', n: r.own_push, link: '#/more' },
+    { key: 'own_push', state: r.own_push ? 'ok' : 'open', n: r.own_push, link: '#/inbox' },
     { key: 'idle_workshop', state: set(r.idle_ws) ? 'ok' : 'open', value: set(r.idle_ws) ? Number(r.idle_ws) : null, link: '#/settings' },
     { key: 'test_readonly', state: r.test_ro === '1' ? 'ok' : 'open', link: '#/settings' },
     { key: 'hourly_rate', state: set(r.rate) ? 'ok' : 'open', link: '#/settings' },

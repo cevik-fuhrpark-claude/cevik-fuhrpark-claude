@@ -21,8 +21,8 @@ with sync_playwright() as p:
     u=api('POST','/api/users',{'username':'bi.fahrer','display_name':'BI Fahrer','role':'driver','environment':envn})
     check(u['s'] in (200,201),'Fahrerkonto angelegt '+str(u['s'])); DID=u['d']['id']
     api('POST','/api/vehicles',{'vin':'WDB96340310777411','plate':'BI-LK 1','site':'Dortmund'})
-    f=api('POST','/api/fines',{'kind':'anhoerung','authority':'Stadt Dortmund','reference':'AZ-BI-1','offense_type':'parken','offense_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'plate_in_letter':'BI-LK 1','amount_eur':30})
-    check(f['s']==201,'Bußgeld '+str(f['s'])); FID=f['d']['id']
+    f=api('POST','/api/fines',{'kind':'anhoerung','authority':'Stadt Dortmund','reference':'AZ-BI-1','offense_type':'parken','offense_at':datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),'plate_in_letter':'BI-LK 1','amount_eur':30})
+    check(f['s']==201,'Bußgeld '+str(f['s'])+' '+str(f['d'])[:200]); FID=f['d']['id']
     check(api('POST',f'/api/fines/{FID}/commands',{'action':'confirm_driver','payload':{'driver_id':DID,'basis':'manuell','evidence':'Tourenplan'}})['s']==200,'Fahrer ermittelt')
     check(api('POST',f'/api/fines/{FID}/commands',{'action':'inform_driver'})['s']==200,'Fahrer informiert')
     check(api('PATCH',f'/api/users/{DID}',{'active':False})['s']==200,'Fahrer deaktiviert')
