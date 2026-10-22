@@ -6,7 +6,7 @@ import { makeEnv, Client, QSTAT } from '../test/harness.mjs';
 
 const ARGS = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const CHECK = process.argv.includes('--check'); // Abbruch mit Fehlercode, wenn ein Aufruf > 50 D1-Abfragen braucht
-// --wachstum: zusätzlich Datenbestand nach Jahren Betrieb (≈ 220 000 km-Stände, 15 000 Abfahrtskontrollen, 50 000 Protokollzeilen,
+// --wachstum: zusätzlich Datenbestand nach Jahren Betrieb (≈ 15 000 Vorgänge, 220 000 km-Stände, 15 000 Abfahrtskontrollen, 50 000 Protokollzeilen,
 // 20 000 Master-Eingänge, 10 000 Hinweise) und erneute Messung aller Lese-Endpunkte (Bezeichnung „W: …“), 22.10.2026
 const GROWTH = process.argv.includes('--wachstum');
 const N_VEH = Number(ARGS[0] || 150);
@@ -243,6 +243,12 @@ for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner
 
 if (GROWTH) {
   const db = env.DB.db; const me = (await owner.get('/api/me')).data.user.id; const t1 = performance.now();
+  // weitere 12 000 Vorgänge über die API (zusammen ≈ 15 000), älteste zuerst über das Meldedatum verteilt (2 Jahre)
+  for (let i = 0; i < 12000; i++) { const v = vehicles[i % vehicles.length];
+    must(await owner.post('/api/cases', { vehicle_id: v.id, description: `Wachstum ${i}`, priority: prios[i % 3], driveability: 'fahrbereit', workshop_site: i % 2 ? 'DORTMUND' : 'MUENCHEN', request_key: `w-${i}` }), 'W: Vorgang'); }
+  db.exec(`UPDATE cases SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-' || (abs(random()) % 730) || ' days') WHERE description LIKE 'Wachstum %'`);
+  db.exec(`UPDATE cases SET updated_at = created_at WHERE description LIKE 'Wachstum %'`);
+  db.exec(`UPDATE cases SET status = 'fahrzeug_freigegeben', closed_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+3 days'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+3 days') WHERE description LIKE 'Wachstum %' AND abs(random()) % 10 < 9 AND created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-4 days')`);
   const ins = (sql, rows) => { const st = db.prepare(sql); db.exec('BEGIN'); for (const r of rows()) st.run(...r); db.exec('COMMIT'); };
   // km-Stände: je Fahrzeug täglich über 4 Jahre (monoton, Telematik), Abfahrtskontrollen: je Fahrzeug 100, Protokoll, Master-Eingang, Hinweise
   ins('INSERT INTO odometer_readings (id, vehicle_id, km, measured_at, source, recorded_by, created_at) VALUES (?,?,?,?,?,?,?)', function* () {

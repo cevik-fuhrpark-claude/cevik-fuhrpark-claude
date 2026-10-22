@@ -16918,6 +16918,42 @@ await test('Leistung 22.10.: Unterabfrage „Mängelauftrag zur Prüfung“ übe
   ok(CORR.checked > 100, 'Wächter hat Anweisungen geprüft: ' + CORR.checked);
   eq(JSON.stringify([...CORR.bad]), '[]', 'korrelierte Unterabfragen nur über environment');
 });
+await test('Leistung 22.10.: Filter „Gewährleistung prüfen“ über gesammelte Gewährleistungs-Positionen – gleiche Treffer wie die frühere Abfrage (400 Zufallsvorgänge, Werkstatt- und Leitungssicht, Berliner Tagesgrenze); D1-Grenzen in der Testumgebung', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { berlinDaySql } = await import('../src/util.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys = OFF');
+  let seed = 7; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const ts = () => new Date(Date.UTC(2025, rnd(12), 1 + rnd(28), [0, 1, 22, 23, 12][rnd(5)], rnd(60))).toISOString();
+  const day = () => `2025-${String(1 + rnd(12)).padStart(2, '0')}-${String(1 + rnd(28)).padStart(2, '0')}`;
+  const ins = db.prepare(`INSERT INTO cases (id, case_no, environment, vehicle_id, reporter_id, description, reported_priority, priority, reported_driveability, status, request_key, content_hash, created_at, updated_at, workshop_site) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const ip = db.prepare(`INSERT INTO parts (id, case_id, user_id, name, quantity, valuation, created_at, warranty_until) VALUES (?,?,?,?,?,?,?,?)`);
+  const ie = db.prepare(`INSERT INTO external_costs (id, case_id, user_id, supplier, valuation, created_at, warranty_until) VALUES (?,?,?,?,?,?,?)`);
+  for (let i = 0; i < 400; i++) {
+    const at = ts(); ins.run(`c${i}`, `N${i}`, rnd(5) ? 'test' : 'production', `v${rnd(6)}`, 'u', 'x', 'mittel', 'mittel', 'fahrbereit', rnd(2) ? 'gemeldet' : 'fahrzeug_freigegeben', `k${i}`, `h${i}`, at, at, rnd(2) ? 'DORTMUND' : 'MUENCHEN');
+    for (let k = rnd(3); k > 0; k--) ip.run(`p${i}-${k}`, `c${i}`, 'u', 'Teil', 1, 'actual', at, rnd(3) ? day() : null);
+    if (!rnd(4)) ie.run(`e${i}`, `c${i}`, 'u', 'Fremd', 'actual', at, rnd(2) ? day() : null);
+  }
+  const OLD = (own) => `EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
+      AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})
+        OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})))`;
+  const src = (await import('node:fs')).readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  const withSql = src.match(/withSql = `(WITH wp AS MATERIALIZED[\s\S]*?) `;/)[1];
+  const NEW = (own) => `EXISTS (SELECT 1 FROM wp x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
+      AND x.wu >= ${berlinDaySql('c.created_at')})`;
+  ok(src.includes(NEW('${own}').replace(/\s+/g, ' ').slice(0, 60)) || src.includes('FROM wp x WHERE x.vehicle_id=c.vehicle_id'), 'Fragment wie im Code');
+  let hits = 0;
+  for (const [own, args] of [['', []], [' AND x.workshop_site = ?', ['DORTMUND']]]) for (const envName of ['test', 'production']) {
+    const a = db.prepare(`SELECT c.id FROM cases c WHERE c.environment=? AND ${OLD(own)} ORDER BY c.id`).all(envName, ...args).map((r) => r.id).join();
+    const b = db.prepare(`${withSql} SELECT c.id FROM cases c WHERE c.environment=? AND ${NEW(own)} ORDER BY c.id`).all(envName, ...args).map((r) => r.id).join();
+    eq(b, a, `gleiche Treffer (${envName}${own ? ', Werkstatt' : ''})`); hits += a.split(',').filter(Boolean).length;
+  }
+  ok(hits > 50, 'Zufallsdaten liefern Treffer: ' + hits);
+  // D1-Grenzen der Testumgebung (≤ 100 gebundene Parameter, ≤ 100 KB SQL je Anweisung)
+  let err = null; try { await e.DB.prepare(`SELECT ${Array(101).fill('?').join(',')}`).bind(...Array(101).fill(1)).all(); } catch (x) { err = x; }
+  ok(err && /too many SQL variables/.test(err.message), 'über 100 Parameter abgewiesen');
+  eq((await e.DB.prepare(`SELECT ${Array(100).fill('?').join(',')}`).bind(...Array(100).fill(1)).all()).results.length, 1, '100 Parameter erlaubt');
+  err = null; try { await e.DB.prepare(`SELECT 1 /* ${'x'.repeat(100001)} */`).all(); } catch (x) { err = x; }
+  ok(err && /100 KB/.test(err.message), 'über 100 KB SQL abgewiesen');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

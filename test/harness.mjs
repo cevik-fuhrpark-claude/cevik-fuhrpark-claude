@@ -7,6 +7,7 @@ export const QSTAT = { n: 0, written: 0, perRequest: [], trace: process.env.CFP_
 export const HSTAT = { responses: [] };
 // CFP_QPLAN=1: Abfrageplan jeder neuen SQL-Anweisung prüfen und Volltabellen-Suchen am Ende ausgeben (Index-Suche)
 export const QPLAN = process.env.CFP_QPLAN ? new Map() : null;
+const SLOW = Number(process.env.CFP_SLOWSQL) || 0;
 function planCheck(db, sql) {
   if (!QPLAN || QPLAN.has(sql) || !/^\s*(SELECT|WITH|UPDATE|DELETE)/i.test(sql)) return;
   let scans = [];
@@ -41,18 +42,20 @@ class Stmt {
     // D1 lehnt LIKE-/GLOB-Muster über 50 Byte ab („LIKE or GLOB pattern too complex“) – node:sqlite nicht; hier nachgebildet (19.10.2026)
     // D1-Grenzen (developers.cloudflare.com/d1/platform/limits): höchstens 100 gebundene Parameter und 100 KB SQL je Anweisung (22.10.2026)
     if (args.length > 100) throw new Error(`too many SQL variables (${args.length} > 100, D1-Grenze): SQLITE_ERROR`);
-    if (Buffer.byteLength(this.sql) > 100000) throw new Error('SQL statement too long (> 100 KB, D1-Grenze): SQLITE_TOOBIG');
     if (/\b(LIKE|GLOB)\b/i.test(this.sql)) for (const a of args) if (typeof a === 'string' && /[%*]/.test(a) && Buffer.byteLength(a) > 50) throw new Error('LIKE or GLOB pattern too complex: SQLITE_ERROR');
     return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a)));
   }
-  _prep() { QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); corrCheck(this.db, this.sql, this.args); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
+  _prep() { if (this.sql.length > 33000 && Buffer.byteLength(this.sql) > 100000) throw new Error('SQL statement too long (> 100 KB, D1-Grenze): SQLITE_TOOBIG');
+    QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); corrCheck(this.db, this.sql, this.args); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
+  // CFP_SLOWSQL=<ms>: Anweisungen, die länger brauchen, mit Abfrageplan ausgeben (Fehlersuche Leistung, z. B. mit dem Lasttest)
+  _slow(t0) { const d = performance.now() - t0; if (SLOW && d > SLOW) { let pl = ''; try { pl = this.db.prepare('EXPLAIN QUERY PLAN ' + this.sql).all(...this.args).map((r) => `   ${r.id}/${r.parent} ${r.detail}`).join('\n'); } catch { /* */ } console.log(`[SLOWSQL] ${d.toFixed(0)} ms: ${this.sql.replace(/\s+/g, ' ').slice(0, 600)}\n${pl}`); } }
   async first(col) {
-    const r = this._prep().get(...this.args);
+    const t0 = performance.now(); const r = this._prep().get(...this.args); this._slow(t0);
     if (!r) return null;
     const o = { ...r };
     return col ? o[col] : o;
   }
-  async all() { return { results: this._prep().all(...this.args).map((r) => ({ ...r })), success: true }; }
+  async all() { const t0 = performance.now(); const rows = this._prep().all(...this.args); this._slow(t0); return { results: rows.map((r) => ({ ...r })), success: true }; }
   async run() {
     const r = this._prep().run(...this.args);
     QSTAT.written += Number(r.changes);

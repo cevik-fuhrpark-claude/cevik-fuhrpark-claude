@@ -113,11 +113,16 @@ export async function listCases(env, user, envName, query, meta = null) {
   const qWarranty = on(query.warranty); const qFollowup = on(query.followup); const qStale = on(query.stale);
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
   // noch lief (Meldetag = Berliner Kalendertag wie im Vorgang angezeigt); Werkstatt nur eigener Standort
+  let withSql = '';
   if (qWarranty && user.role !== 'driver') {
     const own = user.role === 'workshop' ? ' AND x.workshop_site = ?' : '';
-    where.push(`EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
-      AND (EXISTS (SELECT 1 FROM parts g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})
-        OR EXISTS (SELECT 1 FROM external_costs g WHERE g.case_id=x.id AND g.warranty_until >= ${berlinDaySql('c.created_at')})))`);
+    // Leistung (22.10.2026, 15 000 Vorgänge: 587 → ms siehe Test): Positionen mit Gewährleistung einmal sammeln (wenige), statt je Vorgang
+    // alle früheren Vorgänge des Fahrzeugs samt Teilen/Fremdleistungen zu durchsuchen
+    withSql = `WITH wp AS MATERIALIZED (SELECT x.id, x.vehicle_id, x.environment, x.created_at, x.workshop_site, g.warranty_until AS wu
+      FROM (SELECT case_id, warranty_until FROM parts WHERE warranty_until IS NOT NULL UNION ALL SELECT case_id, warranty_until FROM external_costs WHERE warranty_until IS NOT NULL) g
+      JOIN cases x ON x.id=g.case_id) `;
+    where.push(`EXISTS (SELECT 1 FROM wp x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at${own}
+      AND x.wu >= ${berlinDaySql('c.created_at')})`);
     if (own) args.push(user.workshop_site);
   }
   // Filter „Wiedervorlage“ (nur Inhaber/Fuhrparkleitung/Lesende): offene Vorgänge mit Wiedervorlage, fällige zuerst (Sortierung in der Oberfläche)
@@ -152,7 +157,7 @@ export async function listCases(env, user, envName, query, meta = null) {
     args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000');
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
-  const rows = (await env.DB.prepare(`
+  const rows = (await env.DB.prepare(`${withSql}
     SELECT c.*, v.plate, v.site AS vehicle_site, u.display_name AS reporter_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS reporter_role,
       (SELECT COUNT(*) FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen') AS open_items,
       (SELECT COUNT(*) FROM files f WHERE f.case_id=c.id) AS file_count,
