@@ -184,6 +184,11 @@ Mit `CFP_XSS=1` läuft die **HTML-Einschleusungs-Probe**: Nach der Vorbereitung 
 
 Mit `CFP_LONGWORD=1` läuft die **Langwort-Probe** (18.10.2026): Der Dev-Server hängt an alle Freitexte außer Kennzeichen und Rufnummern (`/__dev/taint?skip=plate|phone`) ein Wort aus 60 Zeichen ohne Leerzeichen an (wie eingefügte Links oder lange Teilenummern); geprüft wird nur Handy-Breite (390 px): keine waagrechte Scrollleiste der Seite, keine JS-Fehler; bei Überlauf nennt der Test die breitesten Elemente. Abhilfe in `public/styles.css`: `#app { overflow-wrap: anywhere }` (Tabellen, Kennzeichen, Eingabefelder ausgenommen – Tabellen scrollen in `.scroll`). Stand 18.10.2026: 194 Ansichten, 0 Auffälligkeiten (vorher 59). Teil der vollen Prüfung `scripts/pruefen.sh`.
 
+## Geteilte Werkstatt-Tablets (Schichtwechsel)
+- Jede Person meldet sich mit dem eigenen Konto an; meldet sich am selben Browser eine andere Person an (auch per Einladungslink), endet die Anmeldung der vorherigen am Server samt ihren Push-Geräten (Protokoll „Sitzung beendet (andere Person am selben Gerät angemeldet)“).
+- **Passwortspeicher des Browsers auf geteilten Tablets abschalten** (Chrome/Edge: Einstellungen → Passwortmanager → „Speichern von Passwörtern anbieten“ aus; Safari: Einstellungen → Passwörter → Automatisch ausfüllen aus). Sonst bietet der Browser das gespeicherte Passwort der vorherigen Person an und jede/r kann sich mit einem Tippen als sie anmelden. Ergänzend: Leerlauf-Abmeldung für Werkstatt (Einstellungen) und freiwillige Zwei-Faktor-Anmeldung.
+- Speichert jemand eine Eingabe, während ein Kollege/die Leitung den Vorgang geändert hat, lädt die App den Vorgang selbst neu und lässt die Eingaben im Formular stehen; ist die Aktion inzwischen nicht mehr möglich (z. B. Fahrzeug freigegeben), bleiben die Eingaben als Hinweis „Nicht gespeichert“ zum Abschreiben sichtbar. Prüfung: `python3 scripts/ui-schichtwechsel.py`.
+
 ## UI-Test geteiltes Tablet (Leerlauf-Abmeldung)
 `sh scripts/restart-dev.sh && python3 scripts/ui-leerlauf.py` – mit simulierter Uhr in 390/820/1366 px: Bedienung hält die Sitzung wach,
 Vorwarnleiste 60 s vor Ablauf mit „Angemeldet bleiben“, ohne Bedienung Anmeldeseite und beendete Server-Sitzung; nach Abmelden sieht die

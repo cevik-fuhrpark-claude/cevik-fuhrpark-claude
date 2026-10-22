@@ -149,7 +149,9 @@ async function api(method, path, body, extra = {}) {
     if (!S.authLostShown) { S.authLostShown = true; toast(t('session_lost_dirty'), true); }
     const e = new Error(t('err_unauthenticated')); e.status = 401; throw e;
   }
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
+  // Sitzung am Server beendet (z. B. „alle anderen Anmeldungen beenden“, Ablauf): Offline-Daten der Person wie beim Abmelden entfernen
+  // (22.10.2026: Fahrzeug-/Notfall-Zwischenspeicher blieben auf dem geteilten Tablet stehen)
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); clearOfflineData(); markSession(''); location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   // Exporte mit Zeilengrenze melden die Begrenzung per Header (z. B. Vorgangs-CSV)
@@ -1576,13 +1578,25 @@ async function viewCase(id) {
     try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); S.pendCmd = null; toast('✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
-    catch (err) { toast(err.message, true); if (err.code === 'version_conflict') { S.actSince = []; viewCase(c.id); } else if (err.code === 'cost_approval_open') viewCase(c.id); }
+    // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
+    // und behält das Formular; ist die Aktion danach nicht mehr erlaubt (z. B. inzwischen freigegeben), bleiben die Eingaben als Hinweis stehen
+    catch (err) {
+      const generic = err.code === 'version_conflict' && action !== 'approve_costs';
+      if (!generic) toast(err.message, true);
+      if (err.code === 'version_conflict') {
+        S.actSince = []; S.lostAct = { caseId: c.id, action, note, payload }; try { await viewCase(c.id); } catch {}
+        const lost = $('#lostact'); if (lost) lost.scrollIntoView({ block: 'center' }); else if (generic) toast(t('case_conflict_kept'), true);
+      } else if (err.code === 'cost_approval_open') viewCase(c.id);
+    }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
   // Neuaufbau derselben Seite (z. B. nach einem Kommentar): ein offenes, nicht abgeschicktes Aktionsformular bleibt offen samt Eingaben
   // (17.10.2026: „Teil erfassen“ halb ausgefüllt war danach weg); nur solange die Aktion noch erlaubt ist
   if (S.openAct && (S.openAct.caseId !== c.id || !S.renderSame || !A.includes(S.openAct.action))) S.openAct = null;
+  // Abgewiesene Eingaben, deren Aktion nicht mehr erlaubt ist: nicht still verwerfen (Arbeitszeit nach Freigabe ging verloren, 22.10.2026)
+  if (S.lostAct && (S.lostAct.caseId !== c.id || A.includes(S.lostAct.action))) S.lostAct = null;
+  if (S.lostAct && $('#actform')) showLostInputs(c);
   // Lagerauswahl („Teil erfassen“) wird nachgeladen – erst danach Eingaben wiederherstellen, sonst passt die Formular-Signatur nicht (19.10.2026)
   if (S.openAct) { try { await actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true }); } catch { /* Lagerliste nicht ladbar: Formular ohne Lager */ } }
   finishRender();
@@ -1711,6 +1725,15 @@ async function loadDupOptions(c) {
     if (list.some((o) => o.id === keep)) sel.value = keep;
     hint().textContent = r.truncated ? t('dup_more_fail') : tn('dup_all', list.length);
   } catch { if (hint()) hint().textContent = t('dup_more_fail'); }
+}
+
+const LOST_LABELS = { hours: 'hours', description: 'activity', work_date: 'date', name: 'part_name', part_number: 'part_number', quantity: 'qty', unit_price_net: 'price_net', supplier: 'supplier', invoice_no: 'invoice_no', amount_net: 'amount_net', parts_expected_date: 'parts_eta', planned_date: 'planned', followup_on: 'followup', priority: 'new_priority', workshop_site: 'workshop' };
+function showLostInputs(c) {
+  const la = S.lostAct; const box = $('#actform'); if (!la || !box) return;
+  const rows = Object.entries(la.payload || {}).filter(([k, v]) => v !== null && v !== '' && typeof v !== 'object' && typeof v !== 'boolean' && !/^(confirm|command|stock_item_id)/.test(k)).map(([k, v]) => [t(LOST_LABELS[k] || k), /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? fmtD(String(v)) : String(v)]);
+  if (la.note) rows.push([t('note'), la.note]);
+  box.innerHTML = `<div class="panel warn" id="lostact" role="alert"><h3>${esc(t('act_' + la.action))}</h3><p>${esc(t('case_conflict_lost').replace('{st}', t('st_' + c.status)))}</p>${rows.length ? `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd style="white-space:pre-wrap;user-select:text">${esc(v)}</dd>`).join('')}</dl>` : ''}<div class="actions"><button type="button" class="btn secondary" id="lostok">${esc(t('case_conflict_dismiss'))}</button></div></div>`;
+  $('#lostok').onclick = () => { S.lostAct = null; S.openAct = null; box.innerHTML = ''; };
 }
 
 function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } = {}) {

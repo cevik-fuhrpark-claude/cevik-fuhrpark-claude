@@ -17792,6 +17792,41 @@ await test('Abfahrtskontrolle aus älterer Prüfliste (Teilagent offline 22.10.)
   eq((app.match(/checklist_version: S\.meta\.checklist_version/g) || []).length, 2, 'App sendet die Fassung (Abfahrt, nach Reparatur)');
 });
 
+await test('Werkstatt-Tablet im Schichtwechsel (Teilagent 22.10.): Anmeldung/Einladung einer anderen Person am selben Browser beendet die Sitzung der vorherigen samt Push-Gerät, eigene Neuanmeldung unberührt; App behält abgewiesene Eingaben, leert Offline-Daten bei 401', async () => {
+  const { e, U } = await freshWorld();
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const pub = b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))); const au = b64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  eq((await U.ws.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/tablet-a', keys: { p256dh: pub, auth: au } })).status, 200);
+  const annaCookie = U.ws.cookie; const tablet = new Client(worker, e, 'tablet'); tablet.cookie = annaCookie;
+  // Fremde Person meldet sich am Tablet an, ohne dass Anna sich abgemeldet hat
+  const lg = await tablet.post('/api/login', { username: 'w.werkstatt.muc', password: 'Sicheres-Passwort-2026' });
+  eq(lg.status, 200, 'Anmeldung B'); ok(tablet.cookie && tablet.cookie !== annaCookie, 'neue Sitzung');
+  const old = new Client(worker, e, 'alt'); old.cookie = annaCookie;
+  eq((await old.get('/api/me')).status, 401, 'Sitzung A beendet');
+  eq((await e.DB.prepare("SELECT revoked_at FROM push_subscriptions WHERE endpoint='https://push.example/ok/tablet-a'").first()).revoked_at !== null, true, 'Push-Gerät A abgemeldet');
+  eq((await e.DB.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='session.replaced' AND target=?").bind(U.ws.id).first()).n, 1, 'Protokoll');
+  // Falsches Passwort beendet nichts
+  const keep = tablet.cookie; const fail = new Client(worker, e, 'f'); fail.cookie = keep;
+  eq((await fail.post('/api/login', { username: 'w.werkstatt', password: 'falsch-falsch-1' })).status, 401);
+  eq((await tablet.get('/api/me')).status, 200, 'Fehlanmeldung lässt Sitzung B bestehen');
+  // Dieselbe Person meldet sich erneut an: alte eigene Sitzung bleibt (keine Abmeldung eigener Geräte)
+  const again = new Client(worker, e, 'again'); again.cookie = keep;
+  eq((await again.post('/api/login', { username: 'w.werkstatt.muc', password: 'Sicheres-Passwort-2026' })).status, 200);
+  eq((await tablet.get('/api/me')).status, 200, 'eigene frühere Sitzung unberührt');
+  // Einladungslink einer neuen Person am angemeldeten Tablet
+  const x = await U.own.post('/api/users', { username: 'w.cem', display_name: 'Cem', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' });
+  const cem = new Client(worker, e, 'cem'); cem.cookie = tablet.cookie;
+  eq((await cem.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  eq((await tablet.get('/api/me')).status, 401, 'Einladung beendet die Sitzung der vorherigen Person');
+  eq((await cem.get('/api/me')).data.user.username, 'w.cem');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['case_conflict_kept', 'case_conflict_lost', 'case_conflict_dismiss']) ok(STRINGS[l][k], `${l} ${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_conflict_lost.includes('{st}'), l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/S\.lostAct = \{ caseId: c\.id, action, note, payload \}/.test(app) && /function showLostInputs/.test(app), 'abgewiesene Eingaben bleiben stehen');
+  ok(/resetUserState\(\); clearOfflineData\(\); markSession\(''\);/.test(app), '401 leert Offline-Daten');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

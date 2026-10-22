@@ -81,6 +81,19 @@ async function createSession(env, userId, request, pwHash, passwordOnly = false,
   return cookieHeader(token, SESSION_DAYS * 86400);
 }
 
+// Geteiltes Gerät (Schichtwechsel 22.10.2026): Meldet sich am selben Browser eine andere Person an (Anmeldung, zweiter Faktor,
+// Einladung), ohne dass die vorherige sich abgemeldet hat, bleibt deren Sitzung sonst am Server gültig (steht in „Meine Anmeldungen“,
+// ihre Push-Geräte werden nicht abgemeldet). Erst NACH erfolgreicher neuer Anmeldung aufrufen; eigene frühere Sitzung bleibt unberührt.
+async function endReplacedSession(env, request, newUserId) {
+  const token = parseCookies(request.headers.get('cookie'))[COOKIE];
+  if (!token) return;
+  const h = await sha256Hex(token);
+  const old = await env.DB.prepare('SELECT user_id FROM sessions WHERE token_hash=?').bind(h).first();
+  if (!old || old.user_id === newUserId) return;
+  await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(h), pushOrphanStmt(env, old.user_id),
+    auditStmt(env, old.user_id, 'session.replaced', old.user_id, null)]);
+}
+
 const LOCK_AFTER = 8;
 const LOCK_MINUTES = 15;
 
@@ -125,6 +138,7 @@ export async function login(env, request, body, ctx = null) {
   }
   await clearAttempts(env, username);
   const cookie = await createSession(env, user.id, request, user.password_hash, true, ['login', null]);
+  await endReplacedSession(env, request, user.id);
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }
@@ -269,6 +283,7 @@ export async function loginSecondFactor(env, request, body, ctx = null) {
   await releaseIp(env, ik, win);
   await clearAttempts(env, row.username);
   const cookie = await createSession(env, row.id, request, row.password_hash, false, ['login', { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) }]);
+  await endReplacedSession(env, request, row.id);
   await noteLoginDevice(env, ctx, row, request, body.device_id);
   return { user: publicUser(row), cookie, recovery_left: factor.kind === 'recovery' ? factor.left : undefined };
 }
@@ -391,6 +406,7 @@ export async function acceptInvite(env, request, body, ctx = null) {
     return { second_factor: 'totp', challenge: await createChallenge(env, user.id, ph) };
   }
   const cookie = await createSession(env, row.user_id, request, ph, true, ['invite.accept', null]); // zählt als Anmeldung (Benutzerliste „Letzte Anmeldung“)
+  await endReplacedSession(env, request, row.user_id);
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }
