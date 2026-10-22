@@ -16789,6 +16789,21 @@ await test('Backlog 115 (22.10.): Begründung zu einem km-Rücksprung nachtragen
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("i.check === 'km_drop_unexplained' ? tlHash(esc(i.vehicle_id), 'maintenance')") && app.includes('data-odonote'), 'Datenqualität führt zur Zeitleiste mit Knopf');
 });
+await test('Backlog 114 (22.10.): „Dringende Benachrichtigung nicht zugestellt“ ohne Vorgang trägt das Fahrzeug aus dem Bezug (Link zur Fahrzeugakte statt „system“)', async () => {
+  const { U, e } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  // Disposition ohne Push-Gerät bekommt den dringenden Hinweis zur Prüfung „verkehrsunsicher“
+  const x = await U.own.post('/api/users', { username: 'w.dispo114', display_name: 'Dispo 114', role: 'dispatch', environment: 'test' });
+  await new Client(worker, e, 'w.dispo114').post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const rule = await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'UVV-Plakette' }); eq(rule.status, 201);
+  eq((await F.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'UVV-Protokoll 4711', result: 'verkehrsunsicher' })).status, 200);
+  eq((await F.post('/api/agent/run')).status, 200);
+  const m = (await F.get('/api/master')).data;
+  const f = m.findings.find((x) => x.finding_code === 'URGENT_NOT_DELIVERED'); ok(f, 'Befund');
+  const vid = (await F.get(`/api/vehicles/${V}`)).data.vehicle.id;
+  eq(f.vehicle_id, vid, 'Fahrzeug aus dem Bezug'); eq(f.case_id, null); eq(f.subject_key, `vehicle:${vid}`);
+  ok(!m.findings.some((x) => x.finding_code === 'URGENT_NOT_DELIVERED' && x.subject_key === 'system'), 'kein „system“-Befund');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
