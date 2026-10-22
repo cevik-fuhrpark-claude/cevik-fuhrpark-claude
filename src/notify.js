@@ -2,6 +2,7 @@
 // Zustände getrennt: gespeichert -> Push vom Dienst angenommen -> am Gerät empfangen -> geöffnet -> übernommen
 import { nowIso, uuid, quietHoldUntil, dateLang, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
 import { sendPush } from './push.js';
+import { ICS_MK_KEYS, ICS_LABELS } from '../public/ics-texts.js';
 import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 
 // Priorität im Hinweistext in der Sprache der Person (Sperrbildschirm)
@@ -88,6 +89,8 @@ function localizedLoginBody(b, L) {
   }
   return b;
 }
+// Prüfart in der Sprache der Person (feste Liste; HU/SP/UVV und eigene Arten bleiben) – 22.10.2026: Push „Bremsen“ auf UK/EN
+export const maintKindLang = (k, lang) => (ICS_MK_KEYS[k] && ICS_LABELS[lang] && ICS_LABELS[lang]['mk_' + ICS_MK_KEYS[k]]) || k;
 export function localizedBody(n, lang) {
   const L = T[lang] ? lang : 'de';
   const b = n.body;
@@ -96,7 +99,7 @@ export function localizedBody(n, lang) {
     const m = /^(.+) · (.+) (\d{4}-\d{2}-\d{2}|\d{2}[./]\d{2}[./]\d{4}): (.+?)(?: – (.+?))?( · TEST)?$/.exec(b);
     if (!m || !RES_KEY.has(m[4]) || (m[5] !== undefined && !DNP.has(m[5]))) return b;
     const d = /^\d{4}/.test(m[3]) ? m[3] : `${m[3].slice(6)}-${m[3].slice(3, 5)}-${m[3].slice(0, 2)}`;
-    return `${m[1]} · ${m[2]} ${dateLang(d, L)}: ${T[L]['res_' + RES_KEY.get(m[4])]}${m[5] !== undefined ? ' – ' + T[L].do_not_plan : ''}${m[6] || ''}`;
+    return `${m[1]} · ${maintKindLang(m[2], L)} ${dateLang(d, L)}: ${T[L]['res_' + RES_KEY.get(m[4])]}${m[5] !== undefined ? ' – ' + T[L].do_not_plan : ''}${m[6] || ''}`;
   }
   if (n.kind === 'new_login') return localizedLoginBody(b, L);
   if (n.kind === 'test') return LANGS.some((l) => T[l].test_body === b) ? T[L].test_body : b;

@@ -396,7 +396,8 @@ export function parseCsv(text) {
   // Excel-Hinweiszeile „sep=;“ am Dateianfang: Trenner übernehmen, Zeile entfernen (21.10.2026: sonst galt sie als Kopfzeile → „Spalte fehlt“)
   const sepLine = /^sep=(.)\r?(?:\n|$)/i.exec(src);
   if (sepLine) src = src.slice(sepLine[0].length);
-  const firstLine = src.split(/\r?\n/, 1)[0] || '';
+  // Trenner aus der ersten nicht-leeren Zeile (22.10.2026: Leerzeile vor der Kopfzeile ergab Komma statt Semikolon → „Spalten erforderlich“)
+  const firstLine = src.split(/\r\n|\r|\n/).find((l) => l.trim() !== '') || '';
   // Trenner aus der Kopfzeile: Semikolon (Excel DE), Tabulator (Excel „Unicode-Text“), sonst Komma
   const sep = sepLine ? sepLine[1] : firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
   const rows = []; let row = []; let cell = ''; let q = false; let lineNo = 1; let start = 1;
@@ -418,6 +419,11 @@ export function parseCsv(text) {
   if (q) throw bad('csv_quote', `Zeile ${start}: Anführungszeichen nicht geschlossen – bitte die Datei prüfen.`);
   row.push(cell.trim());
   pushRow();
+  // mehr Werte als Spalten in der Kopfzeile: Trennzeichen im Wert (z. B. Dezimalkomma „12,50“ in einer Komma-Datei) – Spalten wären still
+  // verschoben bzw. der Rest abgeschnitten (22.10.2026: Preis 12 statt 12,50 €, Nachweis gekürzt). Ganze Datei abweisen, Zeilen nennen.
+  const width = rows.length ? rows[0].length : 0;
+  const over = rows.slice(1).filter((r) => r.slice(width).some((x) => x !== '')).map((r) => r.line);
+  if (over.length) throw bad('csv_columns', `Zeile ${over.slice(0, 5).join(', ')}${over.length > 5 ? ' …' : ''}: mehr Werte als Spalten in der Kopfzeile – Trennzeichen im Wert? Werte mit Komma in Anführungszeichen setzen oder als CSV mit Semikolon speichern.`);
   return rows;
 }
 

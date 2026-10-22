@@ -16523,7 +16523,7 @@ await test('Fehlersuche 21.10. (CSV-Importe): offenes Anführungszeichen abgewie
   let me = null; try { decodeCsvBytes(mixed); } catch (e3) { me = e3; } ok(me && me.code === 'csv_mixed_encoding' && me.status === 400, 'gemischt abgewiesen');
   eq(decodeCsvBytes(new TextEncoder().encode('﻿Köln')), 'Köln', 'UTF-8 mit BOM');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("e.code === 'csv_mixed_encoding') e.message = t('csv_mixed_encoding')"), 'App-Meldung in der Sprache');
+  ok(app.includes("(e.code === 'csv_mixed_encoding' || e.code === 'csv_unknown_encoding')) e.message = t(e.code)"), 'App-Meldung in der Sprache');
   // 5. Spaltenvorrang: Nachweis vor „Belegdatum“, Referenz vor „Rückrufdatum“
   const { e, U } = await freshWorld(); const db = e.DB.db; const H = { 'content-type': 'text/csv' };
   const r1 = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Prüfart;Belegdatum;Nächster Termin;Nachweis\nSZ-YC 5513;UVV;15.03.2026;31.03.2039;Prüfbericht Dekra 4711', H);
@@ -16849,6 +16849,40 @@ await test('Fehlersuche 22.10.: App kennt ihre eigene Fassung (build-version.js)
   ok(cv.indexOf('S.appVersion = BUILD_VERSION') > -1 && cv.indexOf('S.appVersion = BUILD_VERSION') < cv.indexOf('await fetchVersion()'), 'eigene Fassung vor dem ersten Abruf');
   ok(rd('public/sw.js').includes("'/build-version.js'"), 'Offline-Hülle enthält build-version.js');
   ok(rd('scripts/build-schema.mjs').includes("p === 'build-version.js'"), 'vom Hash ausgenommen');
+});
+await test('Fehlersuche 22.10. (Import/Push): Zeile mit mehr Werten als Kopfspalten abgewiesen, Leerzeile vor Kopfzeile, Mac-Roman/gemischte UTF-8-Dateien erkannt, Prüfart im Push übersetzt', async () => {
+  const { parseCsv } = await import('../src/util.js');
+  // 1. Komma-Datei mit Dezimalkomma: vorher Preis 12 statt 12,50 € still übernommen
+  let err = null; try { parseCsv('Bezeichnung,Bestand,Einzelpreis\nKeilriemen,7,12,50\nÖlfilter,3,8\nLuftfilter,1,4,10\n'); } catch (x) { err = x; }
+  ok(err && err.status === 400 && err.code === 'csv_columns' && /^Zeile 2, 4: mehr Werte/.test(err.message), String(err && err.message));
+  eq(parseCsv('a;b\n1;2;\n3;4;;\n').length, 3, 'leere Zellen hinter der letzten Spalte (Excel) stören nicht');
+  eq(parseCsv('a;b\n"x;y";2\n')[1][0], 'x;y', 'Trenner in Anführungszeichen');
+  const { translateValidation } = await import('../public/i18n.js');
+  for (const l of ['uk', 'en']) ok(translateValidation(l, err.message) !== err.message && translateValidation(l, err.message).includes('2, 4'), l);
+  const { U } = await freshWorld();
+  const r = await U.fleet.req('POST', '/api/stock/import?dry_run=1&site=DORTMUND', 'Bezeichnung,Bestand,Einzelpreis\nKeilriemen,7,12,50\n', { 'content-type': 'text/csv' });
+  ok([400].includes(r.status) && r.data.error === 'csv_columns', JSON.stringify(r.data));
+  // 2. Leerzeile vor der Kopfzeile: Trenner aus der ersten nicht-leeren Zeile
+  eq(JSON.stringify(parseCsv('\r\nKennzeichen;Art\r\nSZ-YC 1;HU\r\n')), JSON.stringify([['Kennzeichen', 'Art'], ['SZ-YC 1', 'HU']]));
+  // 3. Kodierung: Mac Roman („München“, „Ölfilter“) und UTF-8 mit angehängten Windows-Zeilen abweisen
+  const { decodeCsvBytes } = await import('../public/csv.js');
+  const code = (bytes) => { try { decodeCsvBytes(Uint8Array.from(bytes)); return 'ok'; } catch (x) { return x.code; } };
+  const asc = (t) => [...t].map((c) => c.charCodeAt(0));
+  eq(code([...asc('Ort;Teil\nM'), 0x9F, ...asc('nchen;'), 0x85, ...asc('lfilter\n')]), 'csv_unknown_encoding', 'Mac Roman');
+  eq(code([...asc('Ort\nM'), 0xFC, ...asc('nchen\n')]), 'ok', 'Windows-1252');
+  eq(code([...asc('Preis\n80'), 0x80, ...asc(';Satz '), 0x85, ...asc('\n')]), 'ok', 'Windows-1252 € und … ohne Buchstabe danach');
+  eq(code([...new TextEncoder().encode('Teil\nKeilriemen – Satz\n'), ...asc('x'), 0xD6, ...asc('lfilter\n')]), 'csv_mixed_encoding', 'UTF-8 „–“ + Windows-Zeile');
+  eq(code([0xEF, 0xBB, 0xBF, ...asc('Kennzeichen\n'), 0xD6, ...asc('l\n')]), 'csv_mixed_encoding', 'BOM + Windows-Bytes');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].csv_unknown_encoding, l);
+  // 4. Push „Prüfung mit gefährlichen Mängeln“: Prüfart in der Sprache der Person
+  const { localizedBody, nt } = await import('../src/notify.js');
+  const body = `SZ-YC 5513 · Bremsen 21.10.2026: ${nt('de', 'res_verkehrsunsicher')} – ${nt('de', 'do_not_plan')} · TEST`;
+  ok(localizedBody({ kind: 'inspection_defect', body }, 'uk').includes('· Гальма 21.10.2026:'), localizedBody({ kind: 'inspection_defect', body }, 'uk'));
+  ok(localizedBody({ kind: 'inspection_defect', body }, 'en').includes('· Brakes 21/10/2026:') || localizedBody({ kind: 'inspection_defect', body }, 'en').includes('· Brakes '), localizedBody({ kind: 'inspection_defect', body }, 'en'));
+  ok(localizedBody({ kind: 'inspection_defect', body: body.replace('Bremsen', 'HU') }, 'en').includes('· HU '), 'HU bleibt');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
+  ok(src.includes('${maintKindLang(kind, l)}'), 'Erstversand übersetzt');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

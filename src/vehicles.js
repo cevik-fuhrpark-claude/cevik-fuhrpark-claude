@@ -7,7 +7,7 @@ import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRA
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
 import { sha256Hex, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
 import { vehicleContracts } from './contracts.js';
-import { notifyUsers, nt } from './notify.js';
+import { notifyUsers, nt, maintKindLang } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
@@ -896,7 +896,7 @@ async function notifyInspectionDefect(env, ctx, envName, user, { vehicleId, kind
   const us = (await env.DB.prepare(`SELECT id, language FROM users WHERE active=1 AND password_hash IS NOT NULL AND environment=? AND role IN ('owner','fleet','dispatch') AND id<>?`)
     .bind(envName, user.id).all()).results;
   if (!us.length) return 0;
-  const text = (l) => ({ title: nt(l, 'inspection_defect'), body: `${v.plate} · ${kind} ${dateLang(date, l)}: ${nt(l, 'res_' + result)}${result === 'verkehrsunsicher' ? ' – ' + nt(l, 'do_not_plan') : ''}${envName === 'test' ? ' · TEST' : ''}` });
+  const text = (l) => ({ title: nt(l, 'inspection_defect'), body: `${v.plate} · ${maintKindLang(kind, l)} ${dateLang(date, l)}: ${nt(l, 'res_' + result)}${result === 'verkehrsunsicher' ? ' – ' + nt(l, 'do_not_plan') : ''}${envName === 'test' ? ' · TEST' : ''}` });
   return notifyUsers(env, ctx, envName, us.map((x) => x.id), { kind: 'inspection_defect', ...text('de'), urgent: true, localize: text, langOf: new Map(us.map((x) => [x.id, x.language])),
     eventKey: `inspdef:${key}:${date}:${result}`, ref: `vehicle:${vehicleId}` });
 }

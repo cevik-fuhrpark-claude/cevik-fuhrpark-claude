@@ -944,6 +944,8 @@ export function deLimitText(msg) {
 }
 Object.assign(VALIDATION_TEXTS.uk, { csv_quote: 'Рядок {n}: лапки не закрито – перевірте файл.' });
 Object.assign(VALIDATION_TEXTS.en, { csv_quote: 'Line {n}: quotation mark not closed – please check the file.' });
+Object.assign(VALIDATION_TEXTS.uk, { csv_columns: 'Рядок {n}: значень більше, ніж стовпців у заголовку – роздільник у значенні? Візьміть значення з комою в лапки або збережіть як CSV з крапкою з комою.' });
+Object.assign(VALIDATION_TEXTS.en, { csv_columns: 'Line {n}: more values than header columns – separator inside a value? Put values containing commas in quotation marks or save as CSV with semicolons.' });
 Object.assign(VALIDATION_TEXTS.uk, { int_sep: '{f}: «{v}» – вводьте без розділювача тисяч (напр. {x}).' });
 Object.assign(VALIDATION_TEXTS.en, { int_sep: '{f}: “{v}” – please enter without thousands separator (e.g. {x}).' });
 export function translateValidation(lang, msg) {
@@ -969,6 +971,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): höchstens 2 Nachkommastellen\.$/))) return T.cents.replace('{f}', f(m[1]));
   if ((m = msg.match(/^Maximal (\d{1,6}) Zeilen je Import\.$/))) return T.max_rows.replace('{n}', m[1]);
   if ((m = msg.match(/^Zeile (\d{1,7}): Anführungszeichen nicht geschlossen – bitte die Datei prüfen\.$/)) && T.csv_quote) return T.csv_quote.replace('{n}', m[1]);
+  if ((m = msg.match(/^Zeile ([\d, …]{1,60}): mehr Werte als Spalten in der Kopfzeile – Trennzeichen im Wert\? Werte mit Komma in Anführungszeichen setzen oder als CSV mit Semikolon speichern\.$/)) && T.csv_columns) return T.csv_columns.replace('{n}', m[1]);
   if ((m = msg.match(/^Höchstens (\d{1,4}) aktive Hinweise je Fahrzeug – bitte erledigte archivieren\.$/))) return T.notes_max.replace('{n}', m[1]);
   if ((m = msg.match(/^Fahrzeugart unbekannt: (.{0,60}) \(Lkw oder Anhänger\)$/))) return T.kind_unknown.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Artikel doppelt gezählt: (.{1,200})$/))) return T.counted_twice.replace('{v}', () => m[1]);
@@ -1870,3 +1873,7 @@ Object.assign(STRINGS.en, { odo_add_reason: 'Add reason', odo_reason_prompt: 'Re
 Object.assign(STRINGS.de, { err_note_exists: 'Zu diesem km-Stand ist bereits eine Begründung erfasst.' });
 Object.assign(STRINGS.uk, { err_note_exists: 'До цього показу пробігу вже внесено обґрунтування.' });
 Object.assign(STRINGS.en, { err_note_exists: 'A reason has already been recorded for this odometer reading.' });
+
+Object.assign(STRINGS.de, { csv_unknown_encoding: 'Die Zeichenkodierung der Datei ist nicht eindeutig (z. B. „CSV“ aus Excel für Mac) – Umlaute würden verfälscht. Bitte als „CSV UTF-8“ neu speichern und erneut wählen.' });
+Object.assign(STRINGS.uk, { csv_unknown_encoding: 'Кодування символів файлу неоднозначне (наприклад, «CSV» з Excel для Mac) – умлаути буде спотворено. Збережіть як «CSV UTF-8» і виберіть знову.' });
+Object.assign(STRINGS.en, { csv_unknown_encoding: 'The file’s character encoding is ambiguous (e.g. “CSV” from Excel for Mac) – umlauts would be garbled. Please save it as “CSV UTF-8” and choose it again.' });

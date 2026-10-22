@@ -113,7 +113,20 @@ export function decodeCsvBytes(input) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(bom ? b.subarray(3) : b); } catch { /* kein reines UTF-8 */ }
   // Gemischte Kodierung (UTF-8-Datei mit angehängten Windows-1252-Zeilen): als Windows-1252 gelesen würden alle UTF-8-Umlaute zu „Ã¶“ –
   // still gespeichert (21.10.2026). Typische UTF-8-Folge C2/C3 + 80–BF gefunden → abweisen (App: „als CSV UTF-8 neu speichern“).
-  for (let i = 0; i + 1 < b.length; i++) if ((b[i] === 0xC2 || b[i] === 0xC3) && b[i + 1] >= 0x80 && b[i + 1] <= 0xBF) throw Object.assign(new Error('csv_mixed_encoding'), { code: 'csv_mixed_encoding', status: 400 });
+  const err = (code) => Object.assign(new Error(code), { code, status: 400 });
+  // 22.10.2026: mit BOM ist die Datei als UTF-8 gekennzeichnet – ungültige Bytes sind dann immer angehängte Fremdzeilen; außerdem
+  // dreibytige UTF-8-Folgen E2 80–9F xx („–“, „€“, „„“) als UTF-8-Hinweis (vorher „Keilriemen â€“ Satz“ still übernommen)
+  if (bom) throw err('csv_mixed_encoding');
+  for (let i = 0; i + 1 < b.length; i++) {
+    if ((b[i] === 0xC2 || b[i] === 0xC3) && b[i + 1] >= 0x80 && b[i + 1] <= 0xBF) throw err('csv_mixed_encoding');
+    if (b[i] === 0xE2 && b[i + 1] >= 0x80 && b[i + 1] <= 0x9F && i + 2 < b.length && b[i + 2] >= 0x80 && b[i + 2] <= 0xBF) throw err('csv_mixed_encoding');
+  }
+  // Excel für Mac „CSV“ speichert Mac Roman: Umlaute 80/85/86/8A/9A/9F, ß A7 – als Windows-1252 gelesen „MŸnchen“, „…lfilter“ (22.10.2026,
+  // still gespeichert). Solche Bytes zwischen Buchstaben ohne ein einziges Windows-Umlaut-Byte → abweisen statt raten.
+  const W = new Set([0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0xDF]); const M = new Set([0x80, 0x85, 0x86, 0x8A, 0x9A, 0x9F, 0xA7]);
+  const letter = (x) => x !== undefined && ((x >= 0x41 && x <= 0x5A) || (x >= 0x61 && x <= 0x7A));
+  const edge = (x) => x === undefined || [0x3B, 0x2C, 0x09, 0x20, 0x22, 0x0A, 0x0D].includes(x);
+  if (!b.some((x) => W.has(x))) for (let i = 0; i < b.length; i++) if (M.has(b[i]) && letter(b[i + 1]) && (letter(b[i - 1]) || edge(b[i - 1]))) throw err('csv_unknown_encoding');
   return new TextDecoder('windows-1252').decode(b);
 }
 export async function readCsvFile(file) { return decodeCsvBytes(await file.arrayBuffer()); }

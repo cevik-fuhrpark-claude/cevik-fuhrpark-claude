@@ -14,7 +14,7 @@ const sortPref = (key, allowed, def, set) => { const k = 'cfp_sort_' + key; if (
 const CASE_SORTS = ['priority', 'oldest', 'updated'], VEH_SORTS = ['plate', 'next_due', 'km_due', 'check_oldest', 'km_desc', 'findings'];
 let lastActivity = Date.now(), lastApiAt = 0, idleBusy = false; // Leerlauf-Abmeldung (siehe noteActivity)
 // CSV-Datei lesen; gemischte Zeichenkodierung → Meldung in der App-Sprache (unbehandelte Ablehnung mit status → Toast)
-const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e) { if (e && e.code === 'csv_mixed_encoding') e.message = t('csv_mixed_encoding'); throw e; } };
+const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e) { if (e && (e.code === 'csv_mixed_encoding' || e.code === 'csv_unknown_encoding')) e.message = t(e.code); throw e; } };
 // Anfrageschlüssel je Formularinhalt: gleicher Inhalt (Wiederholung nach verlorener Antwort) = gleicher Schlüssel, geänderter Inhalt = neue Buchung
 // (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = crypto.randomUUID(); form.dataset.rkSig = sig; } return form.dataset.rk; };
