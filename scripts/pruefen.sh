@@ -64,6 +64,7 @@ UI-Einrichtungsstand (Inhaber)|ui-einrichtungsstand.py|/tmp/cfp-einrichtungsstan
 UI-Tippflächen Links in Tabellen, Hilfe Einrichtungsstand/Standort|ui-tippflaechen-links.py|/tmp/cfp-tippflaechen-links.log
 UI-Screenreader-Ansagen (Suche, Filter, Akte, Fokus Datumsfeld)|ui-screenreader-ansagen.py|/tmp/cfp-screenreader.log
 UI-Druck UK/EN (Spaltenbreiten, Werkstatt EXTERN übersetzt)|ui-druck-ukrainisch.py|/tmp/cfp-druck-uk.log
+UI-Sitzungsende während der Eingabe, Speicher voll|ui-sitzungsende-eingaben.py|/tmp/cfp-sitzungsende.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

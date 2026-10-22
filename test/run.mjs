@@ -8679,7 +8679,7 @@ await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nic
 await test('Netz wieder da nach Offline-Start: Seite nur ohne Eingaben neu aufbauen (Eingaben im Funkloch bleiben erhalten)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const h = app.slice(app.indexOf("window.addEventListener('online'"), app.indexOf('function viewDirty()'));
-  ok(h.includes('if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }') && h.includes("api('GET', '/api/me')") && h.includes('saveOfflineSession()'), 'online: mit Eingaben kein route(), Sitzung im Hintergrund');
+  ok(h.includes('if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }') && h.includes("api('GET', '/api/me', undefined, { keepDirty: true })") && h.includes('saveOfflineSession()'), 'online: mit Eingaben kein route(), Sitzung im Hintergrund (401 ohne Sprung zur Anmeldung, 22.10.2026)');
   // viewDirty mit nachgebauten Feldern prüfen (ohne Browser)
   const src = app.slice(app.indexOf('function viewDirty()'), app.indexOf('\n}\n', app.indexOf('function viewDirty()')) + 2);
   const mk = (els) => ({ getElementById: () => ({ querySelectorAll: () => els }), querySelector: () => null });
@@ -14884,7 +14884,7 @@ await test('Fehlersuche 20.10. (12): Leerlauf mehrere Tabs/Minutentakt, Einladun
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
   const app = rd('public/app.js'), i18n = rd('public/i18n.js');
   // 1. Leerlauf: Ping höchstens minütlich (Server-Spielraum 60 s), Bedienung tab-übergreifend geteilt
-  ok(app.includes("now - lastApiAt > Math.min(60000, ms / 3)) api('GET', '/api/me')") && !app.includes('Math.min(10 * 60000, ms / 3)'), 'Minutentakt');
+  ok(app.includes("now - lastApiAt > Math.min(60000, ms / 3)) api('GET', '/api/me', undefined, { keepDirty: true })") && !app.includes('Math.min(10 * 60000, ms / 3)'), 'Minutentakt');
   ok(app.includes("localStorage.setItem('cfp_last_activity'") && (app.match(/if \(ms\) syncActivity\(\);/g) || []).length === 2, 'gemeinsamer Zeitpunkt');
   // 2. Datenqualität: entwerteter Link (Deaktivieren/Aktivieren) gilt als abgelaufen wie in der Benutzerliste
   const nu = await F.post('/api/users', { username: 'dq.einl', display_name: 'DQ Einladung', role: 'driver', environment: 'test' }); eq(nu.status, 201, JSON.stringify(nu.data));

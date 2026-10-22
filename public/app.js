@@ -143,6 +143,12 @@ async function api(method, path, body, extra = {}) {
   try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   try { clockSample(res.headers.get('date'), t0, Date.now()); } catch {}
+  // Hintergrund-Aufruf (Glocke, Postausgang, Netz wieder da) mit 401, während die Person etwas eingibt: nicht zur Anmeldung springen –
+  // die Eingaben blieben sonst verloren; Hinweis einmal, beim Absenden sichert der 401-Weg sie im Postausgang (22.10.2026)
+  if (res.status === 401 && (extra.bg || extra.keepDirty) && viewDirty()) {
+    if (!S.authLostShown) { S.authLostShown = true; toast(t('session_lost_dirty'), true); }
+    const e = new Error(t('err_unauthenticated')); e.status = 401; throw e;
+  }
   if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { resetUserState(); try { localStorage.removeItem('cfp_offline_session'); } catch {} location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
@@ -546,7 +552,7 @@ function noteActivity(ev) {
   if (ms) syncActivity();
   if (ms && now - lastActivity > ms) { checkIdle(); return; } // abgelaufen: nicht mehr verlängern
   lastActivity = now; if (ms) shareActivity(now); if (ms && !(ev && ev.target && ev.target.closest && ev.target.closest('#idlebar'))) idleWarn(null); // Leiste selbst: Knopf soll klickbar bleiben
-  if (ms && !S.offlineStart && navigator.onLine !== false && now - lastApiAt > Math.min(60000, ms / 3)) api('GET', '/api/me').catch(() => {});
+  if (ms && !S.offlineStart && navigator.onLine !== false && now - lastApiAt > Math.min(60000, ms / 3)) api('GET', '/api/me', undefined, { keepDirty: true }).catch(() => {});
 }
 // Vorwarnung 60 s vor der Abmeldung mit „Angemeldet bleiben“ (WCAG 2.2.1: Zeitbegrenzung ankündigen und verlängern lassen)
 function idleWarn(left) {
@@ -581,7 +587,7 @@ window.addEventListener('online', async () => {
   if (!S.offlineStart) return;
   if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }
   try {
-    const r = await api('GET', '/api/me');
+    const r = await api('GET', '/api/me', undefined, { keepDirty: true });
     // inzwischen andere Person angemeldet (anderer Tab): nichts unter fremdem Konto senden – neu laden, Postausgang bleibt beim Ersteller (19.10.2026)
     if (S.me && r.user && r.user.id !== S.me.id) { toast(t('err_user_mismatch'), true); setTimeout(() => location.reload(), 2500); return; }
     S.me = r.user; S.offlineStart = false;
@@ -1145,7 +1151,7 @@ function outboxGet(key) { try { return JSON.parse(localStorage.getItem(key || ou
 function outboxSet(list, key) { try { localStorage.setItem(key || outboxKey(), JSON.stringify(list)); } catch {} }
 // Fotos für den Offline-Ausgang in IndexedDB (Blobs; localStorage wäre zu klein)
 function idb() { return new Promise((res, rej) => { const r = indexedDB.open('cfp_outbox', 1); r.onupgradeneeded = () => r.result.createObjectStore('photos'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-async function idbDo(mode, fn) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('photos', mode); const st = tx.objectStore('photos'); const out = fn(st); tx.oncomplete = () => res(out && 'result' in out ? out.result : undefined); tx.onerror = () => rej(tx.error); }); }
+async function idbDo(mode, fn) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('photos', mode); const st = tx.objectStore('photos'); const out = fn(st); tx.oncomplete = () => res(out && 'result' in out ? out.result : undefined); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('abort')); }); } // abort: z. B. Speicher voll (QuotaExceededError) – sonst hing das Absenden ohne Ende, Meldung verloren (22.10.2026)
 const photosPut = (key, list) => idbDo('readwrite', (st) => st.put(list, key));
 const photosGet = (key) => idbDo('readonly', (st) => st.get(key));
 const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
@@ -1196,7 +1202,7 @@ async function flushOutboxRun() {
         // Abfahrtskontrolle mit dem Zeitpunkt der Durchführung (nicht des Sendens) – km-Stand wird zeitlich richtig eingeordnet
         // mit der Gerätezeit beim Senden: der Server rechnet eine falsch gehende Geräteuhr heraus (22.10.2026)
         const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at, client_now: new Date().toISOString() } : item.body;
-        const ox = { asUser: item.user_id || S.me.id, env: item.env };
+        const ox = { asUser: item.user_id || S.me.id, env: item.env, keepDirty: true };
         if (!r) r = await api('POST', item.path || '/api/cases', sendBody, ox);
         let failed = 0; let skippedTxt = '';
         if (item.photos) {
