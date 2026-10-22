@@ -7438,7 +7438,11 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   // Gemeinsamer Kopf: Druckzeit (fmtDT), angemeldete Person, App-Kennung; nur im Ausdruck sichtbar
   const ph = app.match(/function printHead\(parts\) \{([\s\S]*?)\n\}/);
   ok(ph, 'printHead() fehlt');
-  for (const x of ["class=\"print-only", "t('printed_at')", 'fmtDT(new Date().toISOString())', 'S.me.display_name', 'CEVIK']) ok(ph[1].includes(x), `printHead ohne ${x}`);
+  // Zeitpunkt/Person/Testvermerk stehen seit 22.10.2026 in printStamp() (Testumgebung: „TESTMODUS“ im Ausdruck)
+  const ps = app.match(/function printStamp\(\) \{([\s\S]*?)\n\}/); ok(ps, 'printStamp() fehlt');
+  for (const x of ["t('printed_at')", 'fmtDT(new Date().toISOString())', 'S.me.display_name', "t('env_test')", "=== 'test'"]) ok(ps[1].includes(x), `printStamp ohne ${x}`);
+  for (const x of ["class=\"print-only", 'printStamp()', 'CEVIK']) ok(ph[1].includes(x), `printHead ohne ${x}`);
+  eq(app.split("${esc(t('printed_at'))}: ${fmtDT(new Date().toISOString())}").length - 1, 1, 'Ausdruckvermerk nur in printStamp() (sonst ohne Testvermerk):');
   // Ansichten ohne Personen-Vermerk (bewusst): leeres Papier-Formular und QR-Aufkleberbogen
   const EXEMPT = { viewCheckPaper: 'leeres Formular zum Ausfüllen', viewQrSheet: 'Aufkleber', viewDriverGuide: 'Aushang ohne Personennamen (Stand-Datum im Aushang)' };
   // Funktionen der App zerlegen
@@ -7460,7 +7464,7 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
   for (const n of printing) {
     const body = fns[n];
     if (!EXEMPT[n]) {
-      const head = body.includes('printHead(') || (/class="print-only/.test(body) && body.includes("t('printed_at')") && body.includes('fmtDT(new Date().toISOString())') && body.includes('S.me.display_name'));
+      const head = body.includes('printHead(') || (/class="print-only/.test(body) && body.includes('printStamp()'));
       if (!head) miss.push(`${n}: kein Ausdruckvermerk (printHead)`);
     }
     const rs = routeOf[n] || [];
