@@ -17704,6 +17704,28 @@ await test('Standortschlüssel (Teilagent 22.10.): Fahrer ohne Standort unter de
   ok(app.includes("S.vehAvail = hf; S.vehKind = 'all'; S.vehInactive = false;") && app.includes("if (hf) S.caseQ = '';"), 'Sprung aus Zähler setzt Art/außer Betrieb/Suchbegriff zurück');
 });
 
+await test('Einrichtungsstand (nur Inhaber, nur lesend): offene Punkte aus Daten/Einstellungen, ohne vorgegebene Werte; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld();
+  eq((await U.fleet.get('/api/admin/readiness')).status, 403, 'Leitung nicht');
+  const get = async () => { const r = await U.own.get('/api/admin/readiness'); eq(r.status, 200); return Object.fromEntries(r.data.items.map((x) => [x.key, x])); };
+  let r = await get();
+  eq(r.vehicles.state, 'ok'); eq(r.vehicles.n, 2);
+  for (const k of ['emergency', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'backup', 'agent']) eq(r[k].state, 'open', k);
+  eq(r.cost_limit.state, 'info', 'Freigabegrenze freiwillig'); eq(r.prod_accounts.state, 'info');
+  eq(r.two_factor.state, 'open'); ok(r.two_factor.names.some((n) => n.role === 'owner'), 'Inhaber ohne 2FA genannt');
+  ok(!r.two_factor.names.some((n) => n.name === 'Leitung'), 'Testkonten nicht (nur Betrieb)');
+  eq(r.prod_accounts.test_accounts, 5, 'Testkonten gezählt');
+  const before = e.DB.db.prepare('SELECT COUNT(*) AS n FROM settings').get().n;
+  eq(e.DB.db.prepare('SELECT COUNT(*) AS n FROM settings').get().n, before, 'nichts geschrieben');
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 95, idle_logout_workshop_min: 30, test_master_readonly: true, license_check_months: 6 })).status, 200);
+  eq((await U.own.get('/api/admin/backup')).status, 200);
+  r = await get();
+  for (const k of ['hourly_rate', 'idle_workshop', 'test_readonly', 'license_interval', 'backup']) eq(r[k].state, 'ok', k + ' nach Einstellung');
+  eq(r.idle_workshop.value, 30);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of Object.values(r)) for (const k of [`rd_${x.key}_t`, `rd_${x.key}_todo`, `rd_state_${x.state}`]) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

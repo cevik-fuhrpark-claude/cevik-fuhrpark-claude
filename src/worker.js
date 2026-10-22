@@ -28,6 +28,7 @@ import * as maint from './maintenance.js';
 const stockCsvResponse = (items, envName) => new Response(stock.stockCsv(items, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lager_${envName}_${berlinDate()}.csv"` } });
 const stockSel = (items, ids) => { const pos = new Map(ids.slice(0, 5000).map((x, i) => [x, i])); return items.filter((i) => pos.has(i.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); };
 import { recordUsage, usageReport } from './usage.js';
+import { readiness } from './readiness.js';
 import { dataQuality, myInspectionsWithoutResult } from './quality.js';
 import * as telem from './telematics.js';
 import * as contracts from './contracts.js';
@@ -412,6 +413,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/telematics/mappings' && m === 'POST') return json(await telem.confirmMapping(env, user, await readJson(request)), 201);
   if (path === '/api/telematics/mappings' && m === 'DELETE') return json(await telem.removeMapping(env, user, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/data-quality' && m === 'GET') return json(await dataQuality(env, user, envName, Object.fromEntries(url.searchParams)));
+  if (path === '/api/admin/readiness' && m === 'GET') return json(await readiness(env, user));
   if (path === '/api/admin/usage' && m === 'GET') return json(await usageReport(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/admin/audit' && m === 'GET') {
     if (url.searchParams.get('format') === 'csv') {
