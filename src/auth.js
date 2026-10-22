@@ -109,11 +109,7 @@ export async function login(env, request, body, ctx = null) {
     await hashPassword(password); // gleiche Laufzeit, keine Benutzer-Enumeration
   }
   if (!ok) {
-    const locked = await finishFailure(env, username);
-    if (locked) {
-      if (user) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id).run();
-      await audit(env, null, 'login.locked', user ? user.id : null, { username, minutes: LOCK_MINUTES });
-    }
+    await finishFailure(env, username, { userId: user ? user.id : null });
     throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   }
   // Zwei-Faktor-Anmeldung eingeschaltet: noch keine Sitzung, nur ein kurzlebiger Anmeldevorgang für den Code.
@@ -136,13 +132,24 @@ export async function login(env, request, body, ctx = null) {
 // auch bei gleichzeitigen Anfragen. Danach: falsch → finishFailure() (Sperre ab LOCK_AFTER), richtig → clearAttempts() (Zähler weg,
 // eine inzwischen gesetzte Sperre bleibt und gilt) bzw. undoAttempt() (nur diese Reservierung zurück, z. B. Passwort richtig, Code folgt).
 const lockedErr = () => new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
-async function lockAccount(env, username, minFailures) {
+// Sperre und ihre Folgen (Anmeldevorgänge, ggf. Sitzungen/Push-Geräte, Protokoll) in EINEM Stapel (22.10.2026): vorher getrennt – brach der
+// Aufruf nach dem Sperren ab, blieb z. B. die übernommene Sitzung trotz Sperre bestehen und jeder weitere Versuch lieferte nur 429 ohne Folgen.
+// Die Folgen greifen nur, wenn DIESER Aufruf die Sperre gesetzt hat (Bedingung: locked_until/updated_at genau dieses Aufrufs).
+// opt: { userId, sessions: true (alle Anmeldungen beenden), detail: Protokoll-Zusatz }
+async function lockAccount(env, username, minFailures, opt = {}) {
   const now = nowIso(); const locked = new Date(Date.now() + LOCK_MINUTES * 60000).toISOString();
-  const u = await env.DB.prepare('UPDATE login_attempts SET locked_until=?1, failures=0, updated_at=?2 WHERE key=?3 AND failures>=?4 AND (locked_until IS NULL OR locked_until<=?2)')
-    .bind(locked, now, username, minFailures).run();
-  return u.meta && u.meta.changes ? locked : null;
+  const mine = 'EXISTS (SELECT 1 FROM login_attempts WHERE key=?1 AND locked_until=?2 AND updated_at=?3)';
+  const uid = opt.userId || null;
+  const stmts = [env.DB.prepare('UPDATE login_attempts SET locked_until=?1, failures=0, updated_at=?2 WHERE key=?3 AND failures>=?4 AND (locked_until IS NULL OR locked_until<=?2)')
+    .bind(locked, now, username, minFailures)];
+  if (uid) stmts.push(env.DB.prepare(`DELETE FROM login_challenges WHERE user_id=?4 AND ${mine}`).bind(username, locked, now, uid));
+  if (uid && opt.sessions) stmts.push(env.DB.prepare(`DELETE FROM sessions WHERE user_id=?4 AND ${mine}`).bind(username, locked, now, uid), pushOrphanStmt(env, uid));
+  stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT ?4, NULL, 'login.locked', ?5, ?6, ?3 WHERE ${mine}`)
+    .bind(username, locked, now, uuid(), uid, JSON.stringify({ username, minutes: LOCK_MINUTES, ...(opt.detail || {}) })));
+  const r = await env.DB.batch(stmts);
+  return r[0] && r[0].meta && r[0].meta.changes ? locked : null;
 }
-async function reserveAttempt(env, username) {
+async function reserveAttempt(env, username, opt = {}) {
   const now = nowIso();
   const r = await env.DB.prepare(`INSERT INTO login_attempts(key,failures,locked_until,updated_at) VALUES (?1,1,NULL,?2)
     ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN login_attempts.locked_until > ?2 THEN login_attempts.failures ELSE login_attempts.failures+1 END, updated_at=?2
@@ -150,16 +157,14 @@ async function reserveAttempt(env, username) {
   if (r && r.locked_until && r.locked_until > now) throw lockedErr();
   if (r && r.failures > LOCK_AFTER) {
     // mehr gleichzeitige Versuche als erlaubt: sofort sperren (sonst bliebe der Zähler ohne Sperre stehen)
-    if (await lockAccount(env, username, LOCK_AFTER + 1)) {
-      const u = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
-      if (u) await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(u.id).run();
-      await audit(env, null, 'login.locked', u ? u.id : null, { username, minutes: LOCK_MINUTES });
+    const u = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
+    if (await lockAccount(env, username, LOCK_AFTER + 1, { userId: u ? u.id : null, sessions: !!opt.sessions })) {
       const e = lockedErr(); e.newLock = true; throw e; // Sperre entsteht durch diesen Aufruf
     }
     throw lockedErr();
   }
 }
-async function finishFailure(env, username) { return lockAccount(env, username, LOCK_AFTER); }
+async function finishFailure(env, username, opt = {}) { return lockAccount(env, username, LOCK_AFTER, opt); }
 async function undoAttempt(env, username) {
   const now = nowIso();
   await env.DB.prepare('UPDATE login_attempts SET failures=MAX(failures-1,0), updated_at=?2 WHERE key=?1 AND (locked_until IS NULL OR locked_until<=?2)').bind(username, now).run();
@@ -192,11 +197,11 @@ export async function reauthLocked(env, user) {
   return username;
 }
 async function reauthReserve(env, user, username) {
-  try { await reserveAttempt(env, username); } catch (e) {
+  try { await reserveAttempt(env, username, { sessions: true }); } catch (e) {
     // Sperre durch zu viele gleichzeitige Versuche: wie bei reauthFailed alle Anmeldungen beenden – nur wenn DIESER Aufruf die Sperre auslöst.
     // Eine schon bestehende Sperre (z. B. von Fremden per Fehlanmeldungen ausgelöst) beendet keine Sitzungen (21.10.2026: sonst warf jeder
     // Passwortwechsel-/Zwei-Faktor-Versuch während einer fremden Sperre die Person von allen Geräten)
-    if (e instanceof HttpError && e.status === 429 && e.newLock) await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id), pushOrphanStmt(env, user.id)]);
+    // (Sitzungen enden im Stapel der Sperre, lockAccount mit sessions: true)
     throw e;
   }
 }
@@ -207,14 +212,8 @@ export async function reauthOk(env, user) {
 export async function reauthFailed(env, user) {
   const username = await usernameOf(env, user);
   if (!username) return;
-  const locked = await finishFailure(env, username);
+  const locked = await finishFailure(env, username, { userId: user.id, sessions: true });
   if (!locked) return;
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id),
-      env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
-    pushOrphanStmt(env, user.id),
-  ]);
-  await audit(env, null, 'login.locked', user.id, { username, minutes: LOCK_MINUTES });
   throw new HttpError(429, 'locked', LOCKED_MSG);
 }
 // IP-Fehlversuchsfenster (gilt für Passwort und Zwei-Faktor-Code)
@@ -252,10 +251,8 @@ export async function loginSecondFactor(env, request, body, ctx = null) {
   catch (e) {
     // falscher Code: zählt zur Fehlversuch-Sperre des Kontos (Anmeldevorgang verrät den Benutzer nur serverseitig) und zum IP-Fenster
     if (e instanceof HttpError && e.userRow) {
-      const locked = await finishFailure(env, e.userRow.username);
+      const locked = await finishFailure(env, e.userRow.username, { userId: e.userRow.id, detail: { by: 'totp' } });
       if (locked) {
-        await env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(e.userRow.id).run();
-        await audit(env, null, 'login.locked', e.userRow.id, { username: e.userRow.username, minutes: LOCK_MINUTES, by: 'totp' });
         throw new HttpError(429, 'locked', 'Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.');
       }
     } else if (owner) {
@@ -715,8 +712,13 @@ export async function setupFirstOwner(env, body) {
 }
 
 export async function audit(env, actorId, action, target, detail) {
-  await env.DB.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)')
-    .bind(uuid(), actorId, action, target, detail ? JSON.stringify(detail) : null, nowIso()).run();
+  await auditStmt(env, actorId, action, target, detail).run();
+}
+// Protokolleintrag als Anweisung für einen Stapel (22.10.2026): funktional gelesene Einträge (z. B. Grund der Außer-Betrieb-Nahme,
+// „Letzte Inventur“) im selben atomaren Stapel wie die Änderung – sonst fehlt der Eintrag nach einem Abbruch dazwischen dauerhaft
+export function auditStmt(env, actorId, action, target, detail) {
+  return env.DB.prepare('INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)')
+    .bind(uuid(), actorId, action, target, detail ? JSON.stringify(detail) : null, nowIso());
 }
 
 // Umgebung, in der der Benutzer arbeitet. Nur owner darf per Header/Parameter in 'test' schauen.

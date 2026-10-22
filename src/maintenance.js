@@ -591,6 +591,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
           // neue Durchführung erledigt den geplanten Werkstatttermin (wie „erledigt“ in der Akte; 18.10.2026 stand er weiter im Werkstattplan)
           p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, cur.id,
           cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));
+      // Protokoll alt → neu direkt hinter der Änderung, nur wenn sie gegriffen hat (changes() der vorigen Anweisung) – im selben Stapel (22.10.2026)
+      { const lg = impLog.get(stmts.length - 1); stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT ?1, ?2, 'maintenance.import_update', ?3, ?4, ?5 WHERE changes() > 0`)
+        .bind(uuid(), user.id, lg.vehicle_id, JSON.stringify(lg.detail), now)); }
       if (p.last) stmts.push(maintEventStmt(env, { rule_id: cur.id, vehicle_id: p.vehicle_id, kind: p.kind, done_date: p.last, done_km: p.lastKm, evidence: p.evidence, source: 'import', user_id: user.id }));
     } else result.unchanged++;
   }
@@ -615,15 +618,11 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     }
   }
   if (!dryRun) {
-    const { missed, missedUpd, missedIdx } = await runBatchesCounting(env, stmts, creates, updates);
+    const { missed, missedUpd, missedIdx } = await runBatchesCounting(env, stmts, creates, updates, [...creates, ...updates]);
     for (const i of missedIdx) if (rowOf.has(i)) result.rows[rowOf.get(i)].action = 'unverändert'; // Zeilenliste wie die Zähler
     if (missed) { result.created -= missed; result.unchanged += missed; result.concurrent = missed; }
     if (missedUpd) { result.updated -= missedUpd; result.unchanged += missedUpd; result.concurrent = (result.concurrent || 0) + missedUpd; }
     await audit(env, user.id, 'maintenance.import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
-    const missedSet = new Set(missedIdx); const upd = [...impLog].filter(([i]) => !missedSet.has(i)).map(([, x]) => x);
-    if (upd.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
-      SELECT lower(hex(randomblob(16))), ?1, 'maintenance.import_update', json_extract(value,'$.vehicle_id'), json(json_extract(value,'$.detail')), ?2 FROM json_each(?3)`)
-      .bind(user.id, nowIso(), JSON.stringify(upd)).run();
     const hv = [...new Set(result.rows.filter((r) => r.kind === 'HU' || r.kind === 'SP').map((r) => r.vehicle_id))];
     if (hv.length) result.husp_recalc = (await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: hv })).changed;
   }
@@ -649,11 +648,18 @@ function plateIndex(vehicles) {
 
 // Anweisungen in Stapeln zu 200 ausführen; zählt, wie viele der Anlage-Anweisungen (Indizes `creates`) nichts eingefügt haben
 // (inzwischen von einem gleichzeitigen Import angelegt)
-async function runBatchesCounting(env, stmts, creates, updates = []) {
+// rowStarts (22.10.2026): Stapelgrenzen nur zwischen Importzeilen – Regel und zugehörige Durchführung/Protokoll einer Zeile immer im selben
+// atomaren Stapel (vorher blind je 200: Abbruch zwischen zwei Stapeln ließ eine aktualisierte Regel ohne ihre Durchführung zurück, und eine
+// Wiederholung meldete „unverändert“ – die Durchführung fehlte dauerhaft)
+async function runBatchesCounting(env, stmts, creates, updates = [], rowStarts = null) {
   const idx = new Set(creates); const uidx = new Set(updates); let missed = 0; let missedUpd = 0; const missedIdx = [];
-  for (let i = 0; i < stmts.length; i += 200) {
-    const res = await env.DB.batch(stmts.slice(i, i + 200));
+  const starts = rowStarts ? new Set(rowStarts) : null;
+  for (let i = 0; i < stmts.length;) {
+    let end = Math.min(i + 200, stmts.length);
+    if (starts && end < stmts.length && !starts.has(end)) { let b = end; while (b > i && !starts.has(b)) b--; if (b > i) end = b; }
+    const res = await env.DB.batch(stmts.slice(i, end));
     res.forEach((r, n) => { const hit = r && r.meta && r.meta.changes > 0; if (idx.has(i + n) && !hit) { missed++; missedIdx.push(i + n); } if (uidx.has(i + n) && !hit) { missedUpd++; missedIdx.push(i + n); } });
+    i = end;
   }
   return { missed, missedUpd, missedIdx };
 }

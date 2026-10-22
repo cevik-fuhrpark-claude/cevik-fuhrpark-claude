@@ -1,6 +1,6 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
 import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents, quoteCell , commaDec, pointDec, parseCsv } from './util.js';
-import { audit } from './auth.js';
+import { audit, auditStmt } from './auth.js';
 import { stockNoteText } from '../public/check-labels.js';
 
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
@@ -387,7 +387,9 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
       WHERE ABS((SELECT COALESCE(SUM(m.qty),0) FROM stock_movements m WHERE m.item_id=json_extract(j.value,'$.id')) - json_extract(j.value,'$.q')) >= 0.0005) THEN 0 ELSE 1 END`).bind(cj),
     env.DB.prepare('DELETE FROM cmd_guard')];
   const changed = () => new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
-  if (!diffs.length) { try { await env.DB.batch([markCounted, ...allGuard]); } catch (e) { if (isCheck(e)) throw changed(); throw e; } await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: 0 }); return result; }
+  // Protokoll im selben Stapel: „Letzte Inventur“ liest diesen Eintrag (22.10.2026; vorher getrennt – nach Abbruch gebucht, aber altes Datum)
+  const invAudit = (n) => auditStmt(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: n });
+  if (!diffs.length) { try { await env.DB.batch([markCounted, ...allGuard, invAudit(0)]); } catch (e) { if (isCheck(e)) throw changed(); throw e; } return result; }
   // je Korrektur: danach muss der Bestand genau der Zählmenge entsprechen – sonst (parallele Inventur/Entnahme) nichts buchen
   try {
     // alle Korrekturen in EINER Anweisung (21.10.2026: vorher eine je Abweichung – 60 Abweichungen = 67 D1-Abfragen, Budget 50)
@@ -395,12 +397,11 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
       n: `Inventur ${date}: gezählt ${d.counted} ${d.unit}, Buchbestand ${d.book} ${d.unit}${note ? ' – ' + note : ''}` })));
     await env.DB.batch([markCounted, env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at)
       SELECT json_extract(j.value,'$.id'),?,json_extract(j.value,'$.item'),'korrektur',json_extract(j.value,'$.q'),NULL,NULL,NULL,?,json_extract(j.value,'$.n'),?,?
-      FROM json_each(?) j`).bind(envName, `Inventur ${date}`, user.id, now, dj), ...allGuard]);
+      FROM json_each(?) j`).bind(envName, `Inventur ${date}`, user.id, now, dj), ...allGuard, invAudit(diffs.length)]);
   } catch (e) {
     if (isCheck(e)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
     throw e;
   }
-  await audit(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: diffs.length });
   result.booked = diffs.length;
   return result;
 }

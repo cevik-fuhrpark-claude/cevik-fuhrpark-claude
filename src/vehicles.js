@@ -2,7 +2,7 @@
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { caseDescText } from '../public/check-labels.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp } from './util.js';
-import { audit } from './auth.js';
+import { audit, auditStmt } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
 import { sha256Hex, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
@@ -583,13 +583,14 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
       env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*)=1 THEN 1 ELSE 0 END FROM vehicles WHERE id=? AND active<>?').bind(vehicleId, active ? 1 : 0), env.DB.prepare('DELETE FROM cmd_guard'),
       ...(active ? [] : [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END ${openGuard}`).bind(vehicleId), env.DB.prepare('DELETE FROM cmd_guard')]),
       env.DB.prepare('UPDATE vehicles SET active=?, updated_at=? WHERE id=?').bind(active ? 1 : 0, now, vehicleId),
-      ...(active ? [] : [env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, vehicleId, now)])]);
+      ...(active ? [] : [env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, vehicleId, now)]),
+      // Protokoll im selben Stapel: Grund/Datum/Person der Außer-Betrieb-Nahme liest die Akte daraus (22.10.2026; vorher getrennt – nach Abbruch fehlte der Grund dauerhaft)
+      auditStmt(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason })]);
   } catch (e) {
     if (String(e && e.message).includes('CHECK') && Number((await env.DB.prepare('SELECT active FROM vehicles WHERE id=?').bind(vehicleId).first() || {}).active) === (active ? 1 : 0)) throw already();
     if (!active && String(e && e.message).includes('CHECK')) { const open = await env.DB.prepare(`SELECT COUNT(*) AS n ${openGuard}`).bind(vehicleId).first(); throw conflict('open_cases', `Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`); }
     throw e;
   }
-  await audit(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason });
   // Hinweis: laufende Verträge (Leasing/Miete/Versicherung …) bleiben bestehen – Rückgabe/Kündigung separat klären
   // Hinweis: Telematik-Geräte bleiben zugeordnet und liefern ggf. weiter Daten (FIN/Zuordnung) – Gerät ausbauen bzw. Zuordnung lösen separat
   // Hinweis: geplante Prüftermine (ab heute) verschwinden aus Werkstattplan/Kalender – Termin bei der Werkstatt absagen (22.10.2026; vorher still)

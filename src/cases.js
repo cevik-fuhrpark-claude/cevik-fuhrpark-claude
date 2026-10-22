@@ -880,8 +880,13 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
       AND o.id NOT IN (SELECT value FROM json_each(?3))
       AND (json_extract(j.value,'$.cmp')=0 OR (CASE o.priority WHEN 'kritisch' THEN 2 WHEN 'mittel' THEN 1 ELSE 0 END) >= json_extract(j.value,'$.rank'))
       AND (json_extract(j.value,'$.safety')=0 OR o.safety_lock=1)) THEN 0 ELSE 1 END`).bind(envName, JSON.stringify(kgRows), JSON.stringify(rows.map((r) => r.id))), env.DB.prepare('DELETE FROM cmd_guard'));
+  // Zusätzliche Anweisungen des Aufrufers im selben atomaren Stapel (22.10.2026, Abfahrtskontrolle: Kontrolle + km + Verlauf zusammen mit den
+  // Mangel-Vorgängen – vorher getrennt; brach der Aufruf dazwischen ab, gab es den gesperrten Vorgang ohne Kontrolle, und erneutes Senden
+  // vermerkte am eigenen Vorgang „erneut festgestellt“). Ergebnisse dieser Anweisungen in internal.extraResults.
+  const extra = internal.extra ? internal.extra(results) : [];
+  let batchRes;
   try {
-    await env.DB.batch([
+    batchRes = await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
         reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,tire_order,version,created_at,updated_at)
         SELECT ${v('id')}, ${v('case_no')}, ?1, ${v('vehicle_id')}, ?2, ${v('reporter_name_note')}, ${v('description')}, ${v('location_note')}, ${v('priority')}, ${v('priority')},
@@ -893,7 +898,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
         SELECT ${v('id')}, ${v('case_id')}, ?1, ?2, ?3, 'create', NULL, 'gemeldet', NULL, 1, NULL, ${v('payload')}, ?4 FROM json_each(?5)`)
         .bind(envName, user.id, user.role, now, JSON.stringify(events)),
       ...guard,
+      ...extra,
     ]);
+    if (extra.length) { internal.extraDone = true; internal.extraResults = batchRes.slice(batchRes.length - extra.length); }
   } catch (e) {
     if (String(e && e.message).includes('CHECK')) {
       const act = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first()).n;
@@ -1468,19 +1475,6 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
       parent_case_id: c?.id || null,
     });
   }
-  let created;
-  try { created = await createCases(env, ctx, user, envName, toCreate, kGuard.size ? { kontrolle_guard: kGuard } : {}); } catch (e) {
-    // gleichzeitig eingegangene Kontrolle hat denselben Mangel angelegt: einmal neu bewerten (findet jetzt den offenen Vorgang)
-    if (e && e.code === 'inspection_race' && !retried) return submitInspection(env, ctx, user, envName, body, true);
-    throw e;
-  }
-  slots.forEach(({ d, at }, n) => {
-    const res = created[n];
-    d.followup_case_id = res.id;
-    d.followup_case_no = res.case_no;
-    followups[at] = res;
-  });
-  const itemsJson = JSON.stringify(CHECKLIST.map((i) => byKey.get(i.key)));
   // km-Stand aus der Kontrolle nur in die Fahrzeugakte, wenn er nicht kleiner als der letzte erfasste ist (Tippfehler würden
   // km-Fälligkeiten und €/km verfälschen). Er bleibt an der Kontrolle gespeichert; Korrektur mit Begründung über die Fahrzeugakte.
   let kmRejected = null;
@@ -1495,12 +1489,20 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   }
   // Testumgebung mit „Stammdaten nur lesen“: km bleibt an der Kontrolle, nicht in der gemeinsamen Fahrzeugakte
   const kmTestOnly = odo !== null && !kmRejected && envName === 'test' && user.role !== 'owner' && await testMasterReadonly(env);
-  {
+  // Anweisungen der Kontrolle (Kontrolle, km, Verlauf) – im Stapel der Mangel-Vorgänge (createCases, internal.extra) oder allein
+  let kmIdx = -1;
+  const assignSlots = (created) => slots.forEach(({ d, at }, n) => {
+    const res = created[n];
+    d.followup_case_id = res.id;
+    d.followup_case_no = res.case_no;
+    followups[at] = res;
+  });
+  const buildStmts = () => {
+    const itemsJson = JSON.stringify(CHECKLIST.map((i) => byKey.get(i.key)));
     // ohne OR IGNORE (17.10.2026): gleichzeitig zweimal gesendet → zweiter Stapel rollt vollständig zurück (vorher doppelte km-Stände/Verlaufseinträge)
     const stmts = [env.DB.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,note,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, vehicleId, c?.id || null, kind, CHECKLIST_VERSION, user.id, odo, itemsJson,
       defects.length ? 'maengel' : 'ok', inspNote, performedAt)];
-    let kmIdx = -1;
     if (odo !== null && !kmRejected && !kmTestOnly) {
       // Plausibilität auch im Einfügen selbst (wie „Kilometerstand erfassen“): eine zwischen Prüfung und Stapel erfasste Ablesung machte den
       // km-Stand der Kontrolle sonst zum unbegründeten Rücksprung (19.10.2026)
@@ -1530,8 +1532,21 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
         .bind(envName, user.id, user.role, now, JSON.stringify(rep)));
       stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(now, JSON.stringify(rep.map((r) => r.case_id))));
     }
+    return stmts;
+  };
+  const cInt = { ...(kGuard.size ? { kontrolle_guard: kGuard } : {}), extra: (results) => { assignSlots(results); return buildStmts(); } };
+  let created;
+  try { created = await createCases(env, ctx, user, envName, toCreate, cInt); } catch (e) {
+    // gleichzeitig eingegangene Kontrolle hat denselben Mangel angelegt: einmal neu bewerten (findet jetzt den offenen Vorgang)
+    if (e && e.code === 'inspection_race' && !retried) return submitInspection(env, ctx, user, envName, body, true);
+    throw e;
+  }
+  assignSlots(created);
+  {
     let batchRes;
-    try { batchRes = await env.DB.batch(stmts); } catch (e) {
+    // im Stapel der Mangel-Vorgänge schon geschrieben; sonst (keine neuen Vorgänge, Wiederholung/Doppelklick) allein
+    if (cInt.extraDone) batchRes = cInt.extraResults;
+    else try { batchRes = await env.DB.batch(buildStmts()); } catch (e) {
       if (String(e && e.message).includes('UNIQUE')) { const a2 = await env.DB.prepare('SELECT id, result, items FROM inspections WHERE id=?').bind(id).first(); if (a2) return asDuplicate(a2); }
       throw e;
     }

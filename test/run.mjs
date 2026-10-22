@@ -17181,6 +17181,62 @@ await test('Rechenzeit Vorgangsliste/CSV 22.10.: Vorgangszeilen in einem Durchla
   // über die API: Liste je Rolle ohne ausgeblendete Felder
   const list = (await U.fleet.get('/api/cases')).data.cases; ok(list.length >= 3 && list.every((c) => !('request_key' in c) && !('content_hash' in c) && !('reporter_role' in c) && c.access === 'full'));
 });
+await test('Atomar 22.10.: Abbruch mitten in einer Aktion hinterlässt keinen halben Stand – Kontrolle + Mangel-Vorgänge, Außer-Betrieb-Nahme + Grund, Sperre + Abmeldung, Prüftermin-Import Regel + Durchführung', async () => {
+  const env = makeEnv(); const owner = new Client(worker, env, 'owner');
+  const s0 = await owner.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'atom.inhaber', display_name: 'Atom' });
+  await owner.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const vins = Array.from({ length: 101 }, (_, i) => 'WMA15SZZ2HM' + String(100000 + i));
+  eq((await owner.req('POST', '/api/vehicles/import', 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN\n' + vins.map((v, i) => `AT-OM ${i + 1};Dortmund;in Betrieb;MAN;2016;${v}`).join('\n'), { 'content-type': 'text/csv' })).status, 200);
+  const q = (sql, ...a) => env.DB.db.prepare(sql).all(...a); const n1 = (sql, ...a) => q(sql, ...a)[0].n;
+  const orig = env.DB.batch.bind(env.DB); let failIf = null;
+  env.DB.batch = async (stmts) => { if (failIf && failIf(stmts)) { failIf = null; throw new Error('D1_ERROR: simulierter Abbruch'); } return orig(stmts); };
+  const has = (re) => (stmts) => stmts.some((x) => re.test(x.sql));
+  // (1) Abfahrtskontrolle mit sicherheitsrelevantem Mangel: Kontrolle und Vorgang im selben Stapel
+  const { CHECKLIST } = await import('../src/cases.js'); const V1 = 'VIN:' + vins[0];
+  const items = CHECKLIST.map((i) => ({ key: i.key, result: 'ok' })); items[0] = { key: items[0].key, result: 'mangel', note: 'Abblendlicht links defekt', safety_relevant: true };
+  const key = 'atom-k1'; failIf = has(/INSERT INTO inspections/);
+  const r1 = await owner.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items, odometer_km: 120000 });
+  ok(r1.status >= 500, `Abbruch: ${r1.status}`);
+  eq(n1('SELECT COUNT(*) n FROM cases WHERE vehicle_id=?', V1), 0, 'kein Vorgang ohne Kontrolle'); eq(n1('SELECT COUNT(*) n FROM inspections'), 0); eq(n1('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=?', V1), 0, 'kein km-Stand');
+  const r2 = await owner.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items, odometer_km: 120000 });
+  eq(r2.status, 201, JSON.stringify(r2.data)); eq(r2.data.followups.length, 1); ok(!r2.data.followups[0].repeat, 'kein „erneut festgestellt“ am eigenen Vorgang');
+  eq(n1('SELECT COUNT(*) n FROM cases WHERE vehicle_id=?', V1), 1); eq(n1('SELECT COUNT(*) n FROM inspections'), 1); eq(n1(`SELECT COUNT(*) n FROM case_events WHERE action='repeat_finding'`), 0);
+  eq(n1('SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=?', V1), 1, 'km-Stand einmal');
+  const insp = q('SELECT items FROM inspections')[0]; ok(JSON.parse(insp.items).some((x) => x && x.followup_case_no === r2.data.followups[0].case_no), 'Kontrolle verweist auf den Vorgang');
+  // Doppelt gesendet (Postausgang): Duplikat, nichts doppelt
+  const r3 = await owner.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: key, items, odometer_km: 120000 });
+  ok(r3.status < 300, JSON.stringify(r3.data)); eq(n1('SELECT COUNT(*) n FROM inspections'), 1); eq(n1('SELECT COUNT(*) n FROM cases WHERE vehicle_id=?', V1), 1);
+  // Kontrolle ohne Mangel (kein Vorgang): wie bisher allein
+  eq((await owner.post('/api/inspections', { kind: 'abfahrt', vehicle_id: 'VIN:' + vins[1], request_key: 'atom-k2', items: CHECKLIST.map((i) => ({ key: i.key, result: 'ok' })) })).status, 201);
+  // (3) Prüftermin-Import: Stapelgrenzen nur zwischen Zeilen (Zeile 1 ohne Durchführung verschiebt die Grenze mitten in Zeile 101)
+  const mcsv = ['Kennzeichen;FIN;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis', `;${vins[0]};UVV;2027-01-31;;;Prüfbuch`, ...vins.slice(1).map((v) => `;${v};UVV;;15.01.2026;12;UVV-Prüfbuch`)].join('\n');
+  let nb = 0; failIf = (st) => has(/INTO maintenance_(rules|events)/)(st) && ++nb === 2;
+  const sizes = []; const o2 = env.DB.batch; env.DB.batch = async (st) => { if (has(/INTO maintenance_(rules|events)/)(st)) sizes.push(st.length); return o2(st); };
+  const i1 = await owner.req('POST', '/api/maintenance/import', mcsv, { 'content-type': 'text/csv' }); ok(i1.status >= 500, String(i1.status));
+  env.DB.batch = o2; ok(sizes[0] <= 200 && sizes[0] % 2 === 1, `erster Stapel endet an einer Zeilengrenze (${sizes[0]})`);
+  const halb = q(`SELECT v.id FROM vehicles v JOIN maintenance_rules r ON r.vehicle_id=v.id AND r.kind='UVV' WHERE r.last_done_date IS NOT NULL AND NOT EXISTS (SELECT 1 FROM maintenance_events e WHERE e.vehicle_id=v.id AND e.kind='UVV')`);
+  eq(halb.length, 0, 'keine Regel ohne ihre Durchführung');
+  const i2 = await owner.req('POST', '/api/maintenance/import', mcsv, { 'content-type': 'text/csv' }); eq(i2.status, 200);
+  eq(n1(`SELECT COUNT(DISTINCT vehicle_id) n FROM maintenance_events WHERE kind='UVV'`), 100, 'Wiederholung ergänzt alle Durchführungen');
+  // Protokoll alt → neu weiter je geänderter Regel (jetzt im Stapel): neue Durchführung
+  const i3 = await owner.req('POST', '/api/maintenance/import', mcsv.replace(/15\.01\.2026/g, '15.02.2026'), { 'content-type': 'text/csv' }); eq(i3.data.updated, 100, JSON.stringify(i3.data).slice(0, 300));
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='maintenance.import_update' AND detail LIKE '%2026-02-15%'`), 100, 'Protokoll je Regel');
+  // (2) Außer Betrieb nehmen: Grund im Protokoll gehört zum selben Stapel
+  const V3 = 'VIN:' + vins[2];
+  failIf = (st) => st.some((x) => /INSERT INTO audit_log/.test(x.sql)) && st.some((x) => /UPDATE vehicles SET active/.test(x.sql));
+  const d1 = await owner.post(`/api/vehicles/${encodeURIComponent(V3)}/active`, { active: false, reason: 'verkauft' }); ok(d1.status >= 500, String(d1.status));
+  eq(q('SELECT active FROM vehicles WHERE id=?', V3)[0].active, 1, 'Fahrzeug bleibt in Betrieb');
+  eq((await owner.post(`/api/vehicles/${encodeURIComponent(V3)}/active`, { active: false, reason: 'verkauft' })).status, 200, 'Wiederholung möglich');
+  const det = (await owner.get(`/api/vehicles/${encodeURIComponent(V3)}`)).data; ok(det.inactive_info && JSON.stringify(det.inactive_info).includes('verkauft'), JSON.stringify(det.inactive_info));
+  // (4) Sperre nach 8 falschen Bestätigungen: Sperre und Abmeldung zusammen – nie gesperrt mit weiterlebender Sitzung
+  failIf = has(/DELETE FROM sessions/);
+  const st = [];
+  for (let i = 1; i <= 9; i++) st.push((await owner.post('/api/me/password', { old_password: 'falsch-' + i, new_password: 'Neues-Passwort-2026x' })).status);
+  const locked = n1(`SELECT COUNT(*) n FROM login_attempts WHERE locked_until > ?`, new Date().toISOString());
+  eq(locked, 1, `gesperrt (${st.join(',')})`); eq(n1('SELECT COUNT(*) n FROM sessions'), 0, 'gesperrt → alle Anmeldungen beendet'); eq((await owner.get('/api/me')).status, 401);
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='login.locked'`), 1, 'Sperre einmal protokolliert');
+  env.DB.batch = orig;
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
