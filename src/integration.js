@@ -1,5 +1,5 @@
 // [CLAUDE] Integrations-API für das Unternehmensbetriebssystem und n8n (Bearer-Token aus Cloudflare-Secret)
-import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, berlinDayStartIso, sha256Hex, pickVehicleByPlate, isCalendarDate } from './util.js';
+import { json, readJson, HttpError, nowIso, normalizeVin, timingSafeEqual, bad, berlinDate, berlinDayStartIso, sha256Hex, pickVehicleByPlate, isCalendarDate, cutText, cleanText } from './util.js';
 import { audit } from './auth.js';
 import { masterPanel } from './agent.js';
 import { costReport, kpiReport, siteSelection } from './reports.js';
@@ -273,7 +273,7 @@ export async function integrationRouter(request, env, ctx, url) {
       // FIN länger als 40 Zeichen (bereinigt): abgewiesen statt in beliebiger Länge gespeichert (Prüffall-Liste wuchs unbegrenzt, 20.10.2026)
       const vn = v0 ? normalizeVin(v0) : null;
       if (vn && vn.length > 40) return { it, ext: '', vin: null, plate: null };
-      return { it, ext: e0, vin: vn, plate: p0 ? p0.toUpperCase().slice(0, 20) : null };
+      return { it, ext: e0, vin: vn, plate: p0 ? cutText(cleanText(p0).toUpperCase(), 20) : null };
     });
     const J = (a) => JSON.stringify([...new Set(a.filter(Boolean))]);
     const [maps, byVin, plates, latest] = await Promise.all([

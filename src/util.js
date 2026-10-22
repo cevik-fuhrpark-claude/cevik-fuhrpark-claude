@@ -148,6 +148,14 @@ export function isValidVin(v) {
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(v);
 }
 
+// [CLAUDE] Freitext bereinigen (22.10.2026, Fund „ungewöhnliche Texteingaben“): einheitlich NFC (ein am Mac kopiertes „Ü“ als U + ¨
+// traf weder Kennzeichen-Zuordnung noch Suche), Bidi-Steuerzeichen (Überschreiben/Einbetten/Isolieren; „‮AZ-123“ wurde verdreht
+// angezeigt, auch die folgenden Angaben der Zeile) und Steuerzeichen außer Tab/Zeilenumbruch entfernen (Null-Byte kürzte still).
+const TEXT_CTRL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g;
+export const cleanText = (s) => String(s).normalize('NFC').replace(TEXT_CTRL, '');
+// Text auf n UTF-16-Einheiten kürzen, ohne ein Emoji zu zerteilen (halbes Surrogatpaar → „�“ in Anzeige/CSV)
+export const cutText = (s, n) => { const x = String(s ?? ''); if (x.length <= n) return x; const r = x.slice(0, n); return /[\uD800-\uDBFF]$/.test(r) ? r.slice(0, -1) : r; };
+
 export function str(v, { max = 2000, required = false, field = 'Feld' } = {}) {
   if (v === undefined || v === null) {
     if (required) throw bad('validation', `${field} ist erforderlich.`);
@@ -155,7 +163,7 @@ export function str(v, { max = 2000, required = false, field = 'Feld' } = {}) {
   }
   // Objekt/Liste statt Text (z. B. {"name": []}) nie als „[object Object]“ speichern
   if (typeof v === 'object') throw bad('validation', `${field}: ungültiger Wert.`);
-  const s = String(v).trim();
+  const s = cleanText(v).trim();
   if (!s) {
     if (required) throw bad('validation', `${field} ist erforderlich.`);
     return null;
@@ -564,7 +572,7 @@ export const COUPLING_PREFERRED_SQL = (a) => `(COALESCE(${a}.eval_excluded,0)=0 
 // „SZ-Y 5501“ statt „SZ-YC 5501“ (21.10.2026)
 const PLATE_CYR = { 'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X', 'І': 'I' };
 export const normPlate = (p) => {
-  const t = String(p || '').toUpperCase().replace(/[АВЕКМНОРСТУХІ]/g, (c) => PLATE_CYR[c]);
+  const t = String(p || '').normalize('NFC').toUpperCase().replace(/[АВЕКМНОРСТУХІ]/g, (c) => PLATE_CYR[c]);
   return /[^\P{L}A-ZÄÖÜ]/u.test(t) ? '' : t.replace(/[^A-Z0-9ÄÖÜ]/g, '');
 };
 // Fahrzeug zu einem Kennzeichen aus einem Schreiben/Gerät: zuerst aktive bewertete, dann ruhende (eval_excluded), dann außer Betrieb.

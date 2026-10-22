@@ -2002,10 +2002,10 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   eq(run('en', 'en-GB', 'tires_age_tab', 1), 'Older than 1 year'); eq(run('en', 'en-GB', 'tire_age_warn', 8), 'older than 8 years');
   eq(run('uk', 'uk-UA', 'tire_age_warn', 1), 'старше 1 року'); eq(run('uk', 'uk-UA', 'tire_age_warn', 21), 'старше 21 року'); eq(run('uk', 'uk-UA', 'tires_age_tab', 6), 'Старше 6 років');
   // Zwei Zahlen, die zweite veränderlich („0 von 1 Konten“, „Showing 1 of 1 accounts“) → neutral „Konten angezeigt: {n} von {m}“
-  for (const k of ['ufilter_shown', 'af_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
+  for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -7673,7 +7673,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
     ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
-    ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && app.includes("[/^#\\/master(?:\\?(q|sev)=([^&]*))?$/, viewMaster]") && /async function viewMaster\(argKey, argVal\) \{\n  const q = argKey === 'q' \? \(argVal \?\? ''\) : undefined;[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
+    ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && app.includes("[/^#\\/master(?:\\?(q|sev)=([^&]*))?$/, viewMaster]") && /async function viewMaster\(argKey, argVal, cached\) \{\n  const q = argKey === 'q' \? \(argVal \?\? ''\) : undefined;[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
     ok(app.includes("href=\"${hj('#/vehicles?f=with_notes')}\" id=\"dnotes\"") && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
     const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
     eq(crit, env.DB.db.prepare("SELECT COUNT(DISTINCT f.vehicle_id) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen' AND f.severity='kritisch'").get().n, 'Anzahl Fahrzeuge mit kritischen Befunden = Datenbank'); }
@@ -14915,7 +14915,7 @@ await test('Fehlersuche 20.10. (12): Leerlauf mehrere Tabs/Minutentakt, Einladun
   const fd = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + 30 * 864e5).toISOString().slice(0, 10);
   eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Zukunft-Leasing', evidence: 'v', start_date: fd })).status, 201);
   ok(!(await F.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`)).data.items.some((i) => i.type === 'contract' && i.partner === 'Zukunft-Leasing'), 'kein künftiger Beginn');
-  ok(rd('src/vehicles.js').includes('text: c.description.slice(0, 300), origin') && app.includes('esc(clipTxt(cDesc(x.text), 140))'), 'Zeitleiste übersetzt');
+  ok(rd('src/vehicles.js').includes('text: cutText(c.description, 300), origin') && app.includes('esc(clipTxt(cDesc(x.text), 140))'), 'Zeitleiste übersetzt');
   // 9. Oberfläche/Hilfe
   ok(app.includes("'dqSite', 'claimSite', 'ctSite', 'drvSite', 'tachoSite']) delete S[k];"), 'Standard-Standort für alle Filter');
   ok(app.includes('const rep = open.filter((c) => recentRepeat(c));'), 'Werkstatt-Zähler wie Liste');
@@ -17342,6 +17342,55 @@ await test('Backlog 129: nachgereichte Offline-Kontrolle trägt Empfangszeit (re
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   eq((app.match(/t\('insp_received_late'\)/g) || []).length, 2, 'Akte + Zeitleiste');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].insp_received_late || ''), l);
+});
+
+await test('Ungewöhnliche Texteingaben: Bidi-/Steuerzeichen entfernt, zerlegte Umlaute (NFD) als NFC – Kennzeichen-Zuordnung und Suche treffen, Kürzung ohne halbes Emoji, CSV ohne Bidi-Zeichen, App-Suche mit kyrillischen Kennzeichen-Buchstaben', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const { cleanText, cutText, normPlate, str } = await import('../src/util.js');
+  const { csvCell } = await import('../src/maintenance.js');
+  eq(cleanText('Stadt ‮Dortmund⁦x⁩\u0000'), 'Stadt Dortmundx'); eq(cleanText('a\tb\nc\r\nd'), 'a\tb\nc\r\nd', 'Tab/Zeilenumbruch bleiben');
+  eq(str('Müller'), 'Müller'); eq(normPlate('TÜ-AB 100'), normPlate('TÜ-AB 100')); eq(normPlate('TÜ-AB 100'), 'TÜAB100');
+  const em = 'x'.repeat(299) + '😀'; eq(cutText(em, 300), 'x'.repeat(299), 'kein halbes Surrogat'); eq(cutText('abc', 300), 'abc'); ok(cutText(em, 300).isWellFormed());
+  eq(csvCell('‮AZ-123'), 'AZ-123');
+  // 1. Bußgeld mit RLO in Behörde/Aktenzeichen → gespeichert ohne Steuerzeichen
+  const f1 = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-01T10:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt ‮Dortmund', reference: '‮AZ-123/45' });
+  eq(f1.status, 201, JSON.stringify(f1.data));
+  const row = db.prepare('SELECT authority, reference FROM fines WHERE id=?').get(f1.data.id); eq(row.authority, 'Stadt Dortmund'); eq(row.reference, 'AZ-123/45');
+  // 2. Fahrzeug mit Umlaut; Bußgeld mit zerlegtem „Ü“ (aus PDF kopiert) wird zugeordnet (vorher vehicle_matched:false); Fahrzeug mit NFD-Kennzeichen anlegbar
+  eq((await F.post('/api/vehicles', { plate: 'TÜ-AB 100', vin: 'WDB96340310771234', site: 'Dortmund' })).status < 300, true);
+  const f2 = await F.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-01T11:00', plate_in_letter: 'TÜ-AB 100', authority: 'Stadt', reference: 'AZ-NFD-1' });
+  eq(f2.status, 201, JSON.stringify(f2.data)); eq(f2.data.vehicle_matched, true, 'NFD-Kennzeichen zugeordnet');
+  const v2 = await F.post('/api/vehicles', { plate: 'TÜ-XY 7', vin: 'WDB96340310771235', site: 'Dortmund' }); ok(v2.status < 300, JSON.stringify(v2.data));
+  // 3. Vorgang mit NFD-Beschreibung (Fahrer) → Suche mit NFC findet ihn; Beschreibung ohne RLO
+  const c = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Spiegel Müller ‮defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(c.status, 201, JSON.stringify(c.data));
+  eq(db.prepare('SELECT description FROM cases WHERE id=?').get(c.data.id).description, 'Spiegel Müller defekt');
+  const sr = await F.get('/api/cases?q=' + encodeURIComponent('Müller')); ok(sr.data.cases.some((x) => x.id === c.data.id), 'NFC-Suche findet');
+  const sr2 = await F.get('/api/cases?q=' + encodeURIComponent('Müller')); ok(sr2.data.cases.some((x) => x.id === c.data.id), 'NFD-Suche findet');
+  ok((await F.get('/api/cases?q=' + encodeURIComponent('x'.repeat(59) + '😀'))).status === 200);
+  // 4. Zeitleiste: lange Beschreibung mit Emoji an der Schnittstelle ohne halbes Zeichen
+  const c2 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'x'.repeat(299) + '😀 Rest', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  const tl = (await F.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=case`)).data.items.find((x) => x.case_id === c2.data.id);
+  ok(tl && tl.text.isWellFormed(), 'Zeitleiste ohne halbes Emoji');
+  // 5. App: Suchschlüssel mit NFC und kyrillischen Kennzeichen-Buchstaben; Anzeige isoliert Bidi
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const sk = app.match(/const SK_CYR = [^\n]+\nconst searchKey = [^\n]+/); ok(sk, 'searchKey');
+  const searchKey = new Function(sk[0] + '; return searchKey;')();
+  eq(searchKey('SZ-YС 5513'), searchKey('SZ-YC 5513'), 'kyrillisches С'); eq(searchKey('Müller'), searchKey('Müller'));
+  ok(/unicode-bidi: isolate/.test(fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')));
+});
+
+await test('Management-Seite bei großem Bestand: offene Entscheidungen zuerst 100 mit „alle anzeigen“, Schweregrad ohne Neuladen, Suche entprellt mit vorab berechnetem Text, Befundliste nur sichtbare Zeilen layouten (nicht im Druck)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const vm = app.slice(app.indexOf('async function viewMaster('), app.indexOf('// ---------- Prüftermine (Fuhrpark gesamt)'));
+  ok(/const DEC_SHOW = 100;/.test(app) && vm.includes('decOpen.slice(0, DEC_SHOW)') && vm.includes("$('#decall')"), 'Entscheidungen begrenzt');
+  ok(vm.includes("const p = cached || await api('GET', '/api/master');") && vm.includes('S.afSev = b.dataset.afsev; viewMaster(undefined, undefined, p);'), 'Schweregrad aus geladenen Daten');
+  ok(!/afRows\) r\.style\.display = [^;]*r\.textContent/.test(vm) && vm.includes('afText.set(r, r.textContent.toLocaleLowerCase())') && vm.includes('setTimeout(applyAf'), 'Suche vorab berechnet + entprellt');
+  ok(/@media screen \{ #afl > \.row \{ content-visibility: auto;/.test(css), 'nur Bildschirm');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l].dec_shown), `${l}.dec_shown neutral`);
+  // Server: Master-Eingang liefert weiterhin alle offenen (Zähler/Druckkopf unverändert)
+  const { U } = await freshWorld(); const r = await U.fleet.get('/api/master'); eq(r.status, 200); ok(Array.isArray(r.data.inbox));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

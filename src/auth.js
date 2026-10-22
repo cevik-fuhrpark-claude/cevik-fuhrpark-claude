@@ -1,5 +1,5 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
-import {
+import { cutText, cleanText,
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
   bad, forbidden, conflict, laterIso, HttpError, str, oneOf, flag, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
@@ -800,7 +800,7 @@ export async function listAudit(env, user, query = {}) {
     if (end < before) { before = end; beforeId = null; }
   }
   // Suche in Kennung (target), Details und handelnder Person (Name/Benutzername), z. B. Kennzeichen, FIN; Platzhalter wirkungslos
-  const qs = String(query.q || '').trim().slice(0, 60);
+  const qs = cutText(cleanText(query.q || '').trim(), 60);
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
   const where = [beforeId ? '(a.created_at < ? OR (a.created_at = ? AND a.id < ?))' : 'a.created_at < ?']; const args = beforeId ? [before, before, beforeId] : [before];
   if (prefix) auditPrefixWhere(prefix, where, args, esc);
@@ -857,7 +857,7 @@ export async function auditCsv(env, user, query, csvCell) {
   if ((Date.parse(next) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Höchstens ein Jahr je Export.');
   const lo = berlinDayStartIso(from); const hi = berlinDayStartIso(next);
   const prefix = auditPrefix(query);
-  const qs = String(query.q || '').trim().slice(0, 60);
+  const qs = cutText(cleanText(query.q || '').trim(), 60);
   const esc = (x) => x.replace(/[%_\\]/g, (c) => '\\' + c);
   const where = ['a.created_at >= ?', 'a.created_at < ?']; const args = [lo, hi];
   if (prefix) auditPrefixWhere(prefix, where, args, esc);

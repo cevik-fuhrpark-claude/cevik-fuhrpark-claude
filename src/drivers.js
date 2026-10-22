@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate } from './util.js';
+import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -220,7 +220,7 @@ export async function updateDriver(env, user, envName, id, body) {
     let a0 = d[k] ?? null; let b0 = f[k] ?? null;
     if (k === 'active') { a0 = !!a0; b0 = !!b0; }
     if (a0 === b0) continue;
-    if (k === 'note') { a0 = a0 && String(a0).slice(0, 200); b0 = b0 && String(b0).slice(0, 200); }
+    if (k === 'note') { a0 = a0 && cutText(a0, 200); b0 = b0 && cutText(b0, 200); }
     changed[k === 'user_id' ? 'account' : k] = { from: a0, to: b0 };
   }
   if (changed.account) {
@@ -339,7 +339,7 @@ export function topicKey(topic) {
 // Anzeige: höchstens 80 Zeichen, gekürzt mit „…“ (vorher ohne Kennzeichnung abgeschnitten)
 export function shortTitle(title) {
   const t = String(title || '').trim().replace(/\s+/g, ' ');
-  return t.length > 80 ? t.slice(0, 79).trimEnd() + '…' : t;
+  return t.length > 80 ? cutText(t, 79).trimEnd() + '…' : t;
 }
 
 // Für den Fuhrparkagenten: abgelaufene/ablaufende Nachweise, fällige/fehlerhafte Führerscheinkontrollen (nur aktive Fahrer)

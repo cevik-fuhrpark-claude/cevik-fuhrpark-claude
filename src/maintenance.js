@@ -1,7 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell, maxFutureDate, DUE_FAR_MSG } from './util.js';
+import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt, HUSP_RULE_EVIDENCE } from './vehicles.js';
@@ -329,7 +329,8 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
 }
 
 export const csvCell = (x) => {
-  let s = x === null || x === undefined ? '' : String(x);
+  // Bidi-Steuerzeichen/Null-Byte aus älteren Einträgen nicht weitergeben (Excel zeigte „‮AZ-123“ verdreht; 22.10.2026)
+  let s = x === null || x === undefined ? '' : String(x).replace(/[\u0000\u202A-\u202E\u2066-\u2069]/g, '');
   // Formelschutz (CSV-Injection); reine Zahlen (auch negativ, Dezimalkomma) bleiben Zahlen – z. B. Saldo „-150,5“ statt Text „'-150,5“
   if (/^[=+\-@\t\r]/.test(s) && !/^-\d+(?:[.,]\d+)?$/.test(s)) s = "'" + s;
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -470,7 +471,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       // Durchführung nach dem Termin laut Plakette: alte Plakette – keine Zusammenführung, die normale Regel (neuerer Beleg gilt) entscheidet
       // (vorher fiel die neuere Durchführung weg, wenn die alte Plakette in der Datei zuerst stand, 18.10.2026)
       if (pair && !(pair.last > pair.next)) {
-        Object.assign(prev, { next: pair.next, last: pair.last, interval: pair.interval, evidence: prev.evidence === ev ? ev : `${prev.evidence}; ${ev}`.slice(0, 500), sortKey: pair.next, dueSource: 'nachweis' });
+        Object.assign(prev, { next: pair.next, last: pair.last, interval: pair.interval, evidence: prev.evidence === ev ? ev : cutText(`${prev.evidence}; ${ev}`, 500), sortKey: pair.next, dueSource: 'nachweis' });
         return;
       }
     }
@@ -573,7 +574,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       updates.push(stmts.length); rowOf.set(stmts.length, result.rows.length - 1);
       // Protokoll je geänderter Regel mit alt → neu (22.10.2026: vorher nur Zähler – überschriebene Fälligkeit/Nachweis nicht mehr nachvollziehbar)
       {
-        const newEv = keepDoc && cur.evidence && cur.evidence !== p.evidence ? `${cur.evidence}; ${p.evidence}`.slice(0, 500) : p.evidence;
+        const newEv = keepDoc && cur.evidence && cur.evidence !== p.evidence ? cutText(`${cur.evidence}; ${p.evidence}`, 500) : p.evidence;
         const ch = {};
         for (const [k, a0, b0] of [['next_due_date', cur.next_due_date, next], ['last_done_date', cur.last_done_date, last || cur.last_done_date],
           ['interval_months', cur.interval_months, p.husp ? null : (p.interval ?? cur.interval_months)], ['interval_km', cur.interval_km, km.interval], ['last_done_km', cur.last_done_km, km.last],
@@ -585,7 +586,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=?, planned_date=CASE WHEN ? THEN NULL ELSE planned_date END WHERE id=?
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
-        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, keepDoc && cur.evidence && cur.evidence !== p.evidence ? `${cur.evidence}; ${p.evidence}`.slice(0, 500) : p.evidence, now,
+        .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, keepDoc && cur.evidence && cur.evidence !== p.evidence ? cutText(`${cur.evidence}; ${p.evidence}`, 500) : p.evidence, now,
           (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0,
           kmBasisForDone(parseKmDrop((byId.get(p.vehicle_id) || {}).km_drop), p.last, cur.km_basis_at, now), (p.next && p.dueSource === 'nachweis') || keepDoc ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
           // neue Durchführung erledigt den geplanten Werkstatttermin (wie „erledigt“ in der Akte; 18.10.2026 stand er weiter im Werkstattplan)

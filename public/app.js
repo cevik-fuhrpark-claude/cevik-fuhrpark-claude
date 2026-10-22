@@ -221,7 +221,10 @@ function toast(msg, err = false) {
 // Kennzeichen: deutsche Reihenfolge mit Ziffern als Zahl („SZ-YC 9“ < „SZ-YC 10“), wie der Server (plateCmp, 21.10.2026)
 const plateCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'de', { numeric: true });
 // Suchschlüssel: Trennzeichen wie bei Kennzeichen-Zuordnungen weglassen (Leerzeichen, Bindestrich, Punkt, Schrägstrich, Unterstrich, Gedankenstriche)
-const searchKey = (x) => String(x || '').toLowerCase().replace(/[\s\-./_\u2010-\u2014]/g, '');
+// NFC (zerlegte Umlaute) und kyrillische Buchstaben, die wie lateinische aussehen (ukrainische Tastatur: „SZ-YС 5513“ mit С kyrillisch),
+// wie der Server (normPlate) – vorher fanden Fahrzeugliste, Fahrzeugauswahl und globale Suche nichts (22.10.2026). Beide Seiten gleich umgesetzt.
+const SK_CYR = { 'а': 'a', 'в': 'b', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o', 'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'х': 'x', 'і': 'i' };
+const searchKey = (x) => String(x || '').normalize('NFC').toLowerCase().replace(/[\s\-./_\u2010-\u2014\u202a-\u202e\u2066-\u2069]/g, '').replace(/[авекмнорстухі]/g, (c) => SK_CYR[c]);
 function markInvalid(el, msg, after = el) {
   if (!el) return;
   const id = 'err_' + String(el.id || el.getAttribute('aria-labelledby') || el.getAttribute('name') || 'feld').replace(/[^\w-]/g, '_');
@@ -3342,13 +3345,20 @@ function fMsg(stored, fallback) {
 const AF_SEVS = ['all', 'act', 'kritisch', 'handeln', 'hinweis', 'info'];
 const afSevMatch = (sel, sv) => sel === 'all' || sv === sel || (sel === 'act' && (sv === 'kritisch' || sv === 'handeln'));
 const fcLabel = (code) => (code && STRINGS.de['fc_' + code] ? `<b style="display:block">${esc(t('fc_' + code))}</b>` : '');
-async function viewMaster(argKey, argVal) {
+// Leistung bei großem Bestand (22.10.2026, Fund Teilagent „Oberfläche bei großem Bestand“): offene Entscheidungen zuerst 100
+// („weitere anzeigen“), Schweregrad-Knopf baut aus den geladenen Daten neu auf (vorher /api/master je Klick neu, bis 4,6 MB),
+// Suche entprellt mit vorab berechnetem Zeilentext (vorher je Taste alle Zeilen neu gelesen, Hänger bis 1,7 s bei 3000 Befunden).
+const DEC_SHOW = 100;
+async function viewMaster(argKey, argVal, cached) {
   const q = argKey === 'q' ? (argVal ?? '') : undefined; const sevArg = argKey === 'sev' ? (argVal ?? '') : undefined;
   // Direktsprung #/master?q=<Kennzeichen> (z. B. aus der Fahrzeugakte): Suche vorbelegen, alle Schweregrade, Adresse ohne Parameter
   if (q !== undefined) { S.afQ = String(q).slice(0, 80); S.afSev = 'all'; try { history.replaceState(null, '', '#/master'); } catch {} }
   // Direktsprung #/master?sev=act (Startseite „Befunde: n“ zählt kritisch + handeln): passende Auswahl vorbelegen, Suche leeren
   if (sevArg !== undefined) { S.afSev = AF_SEVS.includes(sevArg) ? sevArg : 'all'; S.afQ = ''; try { history.replaceState(null, '', '#/master'); } catch {} }
-  const p = await api('GET', '/api/master');
+  const p = cached || await api('GET', '/api/master');
+  if (!cached) S.mDecAll = false;
+  const decOpen = p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && !m.superseded);
+  const decShown = S.mDecAll ? decOpen : decOpen.slice(0, DEC_SHOW);
   // Befunde filtern (nur Anzeige im Browser): Schweregrad + Freitext über den angezeigten Zeilentext; CSV exportiert die angezeigte Auswahl
   if (p.findings.length <= 1) { S.afSev = 'all'; S.afQ = ''; } // Filterknöpfe/Suchfeld gibt es erst ab zwei Befunden
   const afSev = AF_SEVS.includes(S.afSev) ? S.afSev : 'all';
@@ -3358,22 +3368,25 @@ async function viewMaster(argKey, argVal) {
     <div class="stats"><div><b>${p.vehicles_total}</b>${esc(t('total'))}</div><div><b style="color:var(--stop)">${p.vehicles_locked}</b>${esc(t('locked_vehicles'))}</div><div><b>${p.vehicles_in_workshop}</b>${esc(t('in_workshop'))}</div></div>
     <div class="actions"><button class="btn secondary" id="ra">${esc(t('run_agent'))}</button><a class="btn secondary" href="#/vehicles">${esc(t('vehicles'))}</a>${p.findings.length ? `<button class="btn secondary noprint" id="afcsv">${esc(t('export_csv'))}</button>` : ''}<button type="button" class="btn secondary noprint" id="mprt">${esc(t('print'))}</button></div>
     ${printHead([t(p.environment === 'test' ? 'env_testname' : 'env_prod'), `${t('findings')}: ${p.findings.length}`, ...(afSev !== 'all' || (S.afQ || '').trim() ? [`${t('af_filter')}: ${afSev !== 'all' ? t('asev_' + afSev) : ''}${(S.afQ || '').trim() ? ` „${S.afQ.trim()}“` : ''}`] : []), `${t('decisions')}: ${p.decisions_open}`])}
-    <h2>${esc(t('decisions'))}</h2><div class="list">${p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && !m.superseded).map((m) => `<div class="row ${m.severity === 'kritisch' ? 'p-kritisch' : 'p-mittel'}"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span>${afLink(m.case_id, m.payload.finding_code, m.finding_subject)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, m.payload.next_action))}${!m.case_id && m.vehicle_id ? ` · <a href="#/vehicles/${esc(m.vehicle_id)}">${esc(t('vehicle_file'))}</a>` : ''} · ${fmtDT(m.received_at)}${m.finding_status === 'erledigt' ? ' · ✓ ' + esc(t('resolved')) : ''} · ${m.decision_status === 'gesehen' ? `<span data-seen>${esc(t('seen_by').replace('{n}', m.decided_by_name || '–').replace('{t}', m.decided_at ? fmtDT(m.decided_at) : ''))}</span>` : `<a href="#" data-dec="${esc(m.event_id)}" data-st="gesehen" data-was="${esc(m.decision_status)}">${esc(t('seen'))}</a>`} · <a href="#" data-dec="${esc(m.event_id)}" data-st="erledigt" data-was="${esc(m.decision_status)}">${esc(t('resolved'))}</a></span></div>`).join('') || `<p class="muted">–</p>`}</div>
+    <h2>${esc(t('decisions'))}</h2><div class="list">${decShown.map((m) => `<div class="row ${m.severity === 'kritisch' ? 'p-kritisch' : 'p-mittel'}"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span>${afLink(m.case_id, m.payload.finding_code, m.finding_subject)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, m.payload.next_action))}${!m.case_id && m.vehicle_id ? ` · <a href="#/vehicles/${esc(m.vehicle_id)}">${esc(t('vehicle_file'))}</a>` : ''} · ${fmtDT(m.received_at)}${m.finding_status === 'erledigt' ? ' · ✓ ' + esc(t('resolved')) : ''} · ${m.decision_status === 'gesehen' ? `<span data-seen>${esc(t('seen_by').replace('{n}', m.decided_by_name || '–').replace('{t}', m.decided_at ? fmtDT(m.decided_at) : ''))}</span>` : `<a href="#" data-dec="${esc(m.event_id)}" data-st="gesehen" data-was="${esc(m.decision_status)}">${esc(t('seen'))}</a>`} · <a href="#" data-dec="${esc(m.event_id)}" data-st="erledigt" data-was="${esc(m.decision_status)}">${esc(t('resolved'))}</a></span></div>`).join('') || `<p class="muted">–</p>`}</div>${decOpen.length > decShown.length ? `<p class="small muted" id="decmore">${esc(t('dec_shown').replace('{n}', fmtNum(decShown.length)).replace('{m}', fmtNum(decOpen.length)))} <button type="button" class="btn secondary noprint" id="decall">${esc(t('kpi_veh_all').replace('{m}', fmtNum(decOpen.length)))}</button></p>` : ''}
     <h2>${esc(t('findings'))}</h2>${p.findings.length > 1 ? `<div class="actions noprint" style="flex-wrap:wrap;margin-top:0">${[['all', t('filter_all'), p.findings.length], ...(afSev === 'act' ? [['act', t('asev_act'), p.findings.filter((f) => afSevMatch('act', f.severity)).length]] : []), ...['kritisch', 'handeln', 'hinweis', 'info'].map((k) => [k, t('asev_' + k), p.findings.filter((f) => f.severity === k).length]).filter(([k, , n]) => n || afSev === k)].map(([k, l, n]) => `<button type="button" class="btn ${afSev === k ? '' : 'secondary'}" data-afsev="${k}">${esc(l)} (${n})</button>`).join('')}</div><input id="afq" class="noprint" placeholder="${esc(t('search_label'))}" aria-label="${esc(t('search_label'))}" style="margin-bottom:8px" value="${esc(S.afQ || '')}"><p class="small muted noprint" id="afcnt" aria-live="polite"></p>` : ''}<div class="list" id="afl">${p.findings.map((f, i) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}" data-afi="${i}" data-sev="${esc(f.severity)}"><span class="chip ${sev[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${afLink(f.case_id, f.finding_code, f.subject_key)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))}${!f.case_id && f.vehicle_id ? ` · <a href="#/vehicles/${esc(f.vehicle_id)}" data-afv>${esc(t('vehicle_file'))}</a>` : ''} · ${esc(t('role_' + f.owner_role))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('') || `<p class="muted">–</p>`}</div>
     <h2>${esc(t('nav_cases'))}</h2><div class="scroll"><table class="stack mtab"><thead><tr><th></th><th>${esc(t('case_no'))}</th><th>${esc(t('urgency'))}</th><th>${esc(t('status_label'))}</th><th>${esc(t('workshop'))}</th><th>${esc(t('received'))}</th><th>${esc(t('workshop_ack'))}</th><th>${esc(t('open_items'))}</th></tr></thead><tbody>
     ${p.cases.map((c) => `<tr><td>${plate(c.plate, { locked: c.safety_lock })}</td><td><a href="#/cases/${esc(c.id)}" style="white-space:nowrap">${esc(c.case_no)}</a><div class="small muted">${esc(cDesc(c.description).slice(0, 60))}</div></td><td><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span></td><td>${esc(t('st_' + c.status))}</td><td>${esc(wsName(c.workshop_site))}</td><td>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : '–'}</td><td>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : '–'}</td><td>${c.open_items || ''}</td></tr>`).join('')}</tbody></table></div>${p.cases_truncated ? `<p class="small muted" id="mctrunc">${esc(t('master_cases_truncated').replace('{n}', p.cases.length))} <a href="#/cases">${esc(t('nav_cases'))} ›</a></p>` : ''}`;
   render(html, 'master');
   $('#mprt').onclick = () => window.print();
   const afRows = $$('#afl [data-afi]');
+  const afText = new Map(); // Zeilentext einmal vorab (Suche je Taste ohne erneutes Auslesen)
   const afShown = () => afRows.filter((r) => r.style.display !== 'none').map((r) => p.findings[Number(r.dataset.afi)]);
   const applyAf = () => {
     const q = $('#afq') ? (S.afQ || '').trim().toLocaleLowerCase() : ''; // ohne Suchfeld (≤ 1 Befund) nie unsichtbar filtern
-    for (const r of afRows) r.style.display = afSevMatch(afSev, r.dataset.sev) && (!q || r.textContent.toLocaleLowerCase().includes(q)) ? '' : 'none';
+    if (q && !afText.size) for (const r of afRows) afText.set(r, r.textContent.toLocaleLowerCase());
+    for (const r of afRows) { const v = afSevMatch(afSev, r.dataset.sev) && (!q || afText.get(r).includes(q)) ? '' : 'none'; if (r.style.display !== v) r.style.display = v; }
     const c = $('#afcnt'); if (c) { const n = afShown().length; c.textContent = n === p.findings.length ? '' : t('af_shown').replace('{n}', n).replace('{m}', p.findings.length); }
   };
   applyAf();
-  $$('[data-afsev]').forEach((b) => (b.onclick = () => { S.afSev = b.dataset.afsev; viewMaster(); }));
-  const afq = $('#afq'); if (afq) afq.oninput = () => { S.afQ = afq.value; applyAf(); };
+  $$('[data-afsev]').forEach((b) => (b.onclick = () => { S.afSev = b.dataset.afsev; viewMaster(undefined, undefined, p); }));
+  const dall = $('#decall'); if (dall) dall.onclick = () => { S.mDecAll = true; viewMaster(undefined, undefined, p); };
+  let afT = null; const afq = $('#afq'); if (afq) afq.oninput = () => { S.afQ = afq.value; clearTimeout(afT); afT = setTimeout(applyAf, afRows.length > 300 ? 150 : 0); };
   const afc = $('#afcsv'); if (afc) afc.onclick = () => download(new Blob([agentFindingsCsv(afShown(), t, (f) => fMsg(f.message_args, f.message), (x) => translateNextAction(S.lang, x), fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-agentenbefunde_${p.environment}_${bDate()}.csv`);
   $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${t('findings')}: ${fmtNum(r.findings_open)}`); viewMaster(); } catch (err) { toast(err.message, true); } };
   // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal

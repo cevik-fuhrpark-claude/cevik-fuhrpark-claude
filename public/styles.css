@@ -120,6 +120,10 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .row.p-niedrig { border-left-color: var(--steel); }
 .row .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .sub { grid-column: 2 / 4; color: var(--steel); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* lange Befundliste (Management): nur sichtbare Zeilen layouten (3000 Befunde ≈ 1,4 s Layout am günstigen Handy, 22.10.2026) */
+@media screen { #afl > .row { content-visibility: auto; contain-intrinsic-size: auto 88px; } }
+/* Bidi-Steuerzeichen in Altdaten wirken nur im eigenen Feld (22.10.2026) */
+.row .title, .row .sub, dd, td { unicode-bidi: isolate; }
 .row .sub.wrap { white-space: normal; overflow-wrap: anywhere; }
 
 .chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 600; background: var(--paper); border: 1px solid var(--rule); white-space: normal; max-width: 100%; } /* lange Hinweis-Chips umbrechen statt die Seite zu verbreitern (320 px, 21.10.2026; vorher nowrap) */
