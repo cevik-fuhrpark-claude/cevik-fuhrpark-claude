@@ -10,7 +10,8 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const r2 = roundCents; // kaufmännisch, gegen Gleitkommafehler abgesichert (18.10.2026)
 
 // Standort-Schlüssel: ohne Leerzeichen am Rand, Groß-/Kleinschreibung egal; leer = 'ohne'
-export const siteKey = (s) => (s && String(s).trim() ? String(s).trim().toLocaleLowerCase('de') : 'ohne');
+// NFC (22.10.2026): zerlegte Umlaute aus API-Aufrufen (z. B. n8n vom Mac, „Mu\u0308nchen“) ergaben einen eigenen Standort
+export const siteKey = (s) => (s && String(s).trim() ? String(s).normalize('NFC').trim().toLocaleLowerCase('de') : 'ohne');
 // je Schlüssel die häufigste Schreibweise (bei Gleichstand alphabetisch zuerst)
 export function siteLabels(vehicles) {
   const cnt = new Map();

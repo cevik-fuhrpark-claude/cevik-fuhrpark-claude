@@ -17664,6 +17664,28 @@ await test('Lagerteil mit Artikelpreis nie als „Schätzung“ (Teilagent Lager
   ok(/querySelector\('\[name=estimate\]'\);\s*if \(es\) \{ es\.disabled = fixed;/.test(app), 'Oberfläche sperrt „Schätzung“ bei Artikelpreis');
 });
 
+await test('Standortschlüssel (Teilagent 22.10.): Fahrer ohne Standort unter dem Standard-Standort gezählt (Fahrerakten, Auslese-Fristen), zerlegte Umlaute (NFD) im Standard-Standort und in der Schnittstelle, Werkstatt-Vorauswahl nach Code', async () => {
+  const { e, U } = await freshWorld(); const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  for (const n of ['Ohne Standort A', 'Ohne Standort B']) eq((await U.fleet.post('/api/drivers', { display_name: n })).status, 201);
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Dortmunder', site: 'Dortmund' })).status, 201);
+  const all = (await U.fleet.get('/api/drivers')).data; eq(all.drivers.length, 3); eq(all.no_site_hidden, 0);
+  const d = (await U.fleet.get('/api/drivers?site=Dortmund')).data; eq(d.drivers.length, 1); eq(d.no_site_hidden, 2, 'Fahrerakten: 2 ohne Standort ausgeblendet');
+  eq((await U.fleet.get('/api/drivers?site=ohne')).data.no_site_hidden, 0, 'Auswahl „ohne Standort“: nichts ausgeblendet');
+  const tc = (await U.fleet.get('/api/tacho?site=Dortmund')).data; eq(tc.no_site_hidden, 2, 'Auslese-Fristen: 2 Fahrer ohne Standort ausgeblendet');
+  eq((await U.fleet.get('/api/tacho')).data.no_site_hidden, 0);
+  // NFD: Standard-Standort wird als NFC gespeichert; Schnittstelle findet Fahrzeuge mit zerlegtem Umlaut
+  ok([200, 201].includes((await U.own.post('/api/vehicles', { vin: 'WDB96340310779001', plate: 'M-UE 1', site: 'München' })).status), 'Fahrzeug München');
+  eq((await U.fleet.patch('/api/me', { home_site: 'München' })).status, 200);
+  eq(e.DB.db.prepare('SELECT home_site FROM users WHERE id=?').get(U.fleet.id).home_site, 'München', 'Standard-Standort NFC');
+  const iv = await an.req('GET', '/api/integration/v1/vehicles?site=' + encodeURIComponent('München'), undefined, H);
+  eq(iv.status, 200); ok(iv.data.vehicles.some((v) => v.plate === 'M-UE 1'), 'Schnittstelle: NFD-Standort findet das Fahrzeug');
+  const { siteKey } = await import('../src/reports.js'); eq(siteKey('München '), siteKey('MÜNCHEN'));
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_nosite_hidden && PLURALS[l].drv_nosite_hidden && PLURALS[l].drv_nosite_hidden.one.includes('{n}'), l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/w\.name\.toLowerCase\(\)\.includes\(String\(v\.site\)/.test(app) && (app.match(/wsForSite\(/g) || []).length >= 4, 'Werkstatt-Vorauswahl über wsForSite (Code/Umschrift, sonst leer)');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

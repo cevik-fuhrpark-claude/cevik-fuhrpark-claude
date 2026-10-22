@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, pointDec } from './util.js';
+import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, pointDec, cleanText } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -181,7 +181,7 @@ async function handleApi(request, env, ctx, url) {
     if (b.home_site !== undefined) {
       if (user.role === 'driver') throw forbidden();
       if (b.home_site !== null && typeof b.home_site !== 'string') throw bad('validation', 'Standort: ungültiger Wert.'); // Objekt → „[object Object]“ (17.10.2026)
-      const hs = b.home_site === null ? '' : b.home_site.trim();
+      const hs = b.home_site === null ? '' : cleanText(b.home_site).trim(); // NFC wie alle Freitexte (22.10.2026: „Mu\u0308nchen“ passte zu keinem Standort)
       if (hs.length > 60) throw bad('validation', 'Standort: höchstens 60 Zeichen.');
       await env.DB.prepare('UPDATE users SET home_site=?, updated_at=? WHERE id=?').bind(hs || null, nowIso(), user.id).run();
     }
@@ -527,6 +527,8 @@ async function handleApi(request, env, ctx, url) {
     let list = await drivers.listDrivers(env, user, envName, q);
     // Filter „Standort“ (Standort der Fahrerakte, Schreibweisen zusammengefasst) – nur Leitung; Fahrer sehen ohnehin nur die eigene Akte
     const dsel = ['owner', 'fleet'].includes(user.role) ? reports.siteSelection(list, q.site) : null;
+    // Fahrer ohne Standort, die der Filter ausblendet, zählen (22.10.2026: Standard-Standort der Leitung zeigte still eine leere Liste)
+    const noSiteHidden = dsel && dsel.site && dsel.site !== 'ohne' ? list.filter((d) => reports.siteKey(d.site) === 'ohne').length : 0;
     if (dsel && dsel.site) list = list.filter((d) => dsel.match(d.site));
     // Leitung: Gesamtstatus mit Auslese-Frist wie CSV und Akte (Fahrer: listDrivers liefert die eigene Akte schon so)
     const tr = ['owner', 'fleet'].includes(user.role) ? await tacho.tachoRows(env, envName, await tacho.warnDays(env)) : null;
@@ -536,7 +538,7 @@ async function handleApi(request, env, ctx, url) {
       await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null });
       return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}.csv"` } });
     }
-    return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
+    return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options, no_site_hidden: noSiteHidden, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
   }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') {

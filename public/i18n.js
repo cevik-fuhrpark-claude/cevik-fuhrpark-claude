@@ -608,9 +608,9 @@ Object.assign(STRINGS.en, { home_site: 'My default site', home_site_hint: 'Prese
 Object.assign(STRINGS.de, { dispo_all_sites: 'alle Standorte anzeigen', dispo_my_site: 'nur meinen Standort anzeigen' });
 Object.assign(STRINGS.uk, { dispo_all_sites: 'показати всі локації', dispo_my_site: 'показати лише мою локацію' });
 Object.assign(STRINGS.en, { dispo_all_sites: 'show all sites', dispo_my_site: 'show my site only' });
-Object.assign(STRINGS.de, { dq_other_hidden: '{n} Befunde zu Personen, Konten oder Einladungen haben keinen Standort und sind ausgeblendet – mit „Alle“ sichtbar.' });
-Object.assign(STRINGS.uk, { dq_other_hidden: '{n} висновків щодо людей, облікових записів або запрошень не мають локації й приховані – видно з «Усі».' });
-Object.assign(STRINGS.en, { dq_other_hidden: '{n} findings about people, accounts or invitations have no site and are hidden – visible with “All”.' });
+Object.assign(STRINGS.de, { drv_nosite_hidden: '{n} Fahrer ohne Standort sind ausgeblendet – mit „Alle“ sichtbar.', dq_other_hidden: '{n} Befunde zu Personen, Konten oder Einladungen haben keinen Standort und sind ausgeblendet – mit „Alle“ sichtbar.' });
+Object.assign(STRINGS.uk, { drv_nosite_hidden: '{n} водіїв без локації приховані – видно з «Усі».', dq_other_hidden: '{n} висновків щодо людей, облікових записів або запрошень не мають локації й приховані – видно з «Усі».' });
+Object.assign(STRINGS.en, { drv_nosite_hidden: '{n} drivers without a site are hidden – visible with “All”.', dq_other_hidden: '{n} findings about people, accounts or invitations have no site and are hidden – visible with “All”.' });
 Object.assign(STRINGS.de, { dq_truncated: 'Mehr als {n} Befunde – bei diesen Prüfungen werden nur die neuesten {n} gezeigt (auch in CSV und Ausdruck). Die gezeigten zuerst klären, dann neu laden:' });
 Object.assign(STRINGS.uk, { dq_truncated: 'Понад {n} висновків – для цих перевірок показано лише {n} найновіших (також у CSV і друку). Спершу опрацюйте показані, потім оновіть:' });
 Object.assign(STRINGS.en, { dq_truncated: 'More than {n} findings – for these checks only the latest {n} are shown (also in CSV and print). Resolve the ones shown first, then reload:' });
@@ -1775,6 +1775,7 @@ export const PLURALS = {
     inventory_draft: { one: '{n} Zählmenge vom {d} wiederhergestellt (nur auf diesem Gerät, noch nicht gebucht).', other: '{n} Zählmengen vom {d} wiederhergestellt (nur auf diesem Gerät, noch nicht gebucht).' },
     imp_plate_conflict: { one: '{n} Zeile: Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich', other: '{n} Zeilen: Kennzeichen danach auch an einem anderen Fahrzeug – FIN prüfen (Tippfehler oder Doppelanlage?). Übernehmen bleibt möglich' },
     dq_other_hidden: { one: '{n} Befund zu Personen, Konten oder Einladungen hat keinen Standort und ist ausgeblendet – mit „Alle“ sichtbar.', other: '{n} Befunde zu Personen, Konten oder Einladungen haben keinen Standort und sind ausgeblendet – mit „Alle“ sichtbar.' },
+    drv_nosite_hidden: { one: '{n} Fahrer ohne Standort ist ausgeblendet – mit „Alle“ sichtbar.', other: '{n} Fahrer ohne Standort sind ausgeblendet – mit „Alle“ sichtbar.' },
   },
   en: {
     todo_gaps_hint: { one: '{n} vehicle without a date for a mandatory inspection (HU/SP/UVV/tachograph) – please check.', other: '{n} vehicles without a date for a mandatory inspection (HU/SP/UVV/tachograph) – please check.' },
@@ -1823,6 +1824,7 @@ export const PLURALS = {
     imp_plate_conflict: { one: '{n} row: plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible', other: '{n} rows: plate will also be on another vehicle – check the VIN (typo or duplicate?). Import is still possible' },
     asof_negative: { one: '{n} item with negative stock on the key date – check bookings (e.g. missing receipt).', other: '{n} items with negative stock on the key date – check bookings (e.g. missing receipt).' },
     dq_other_hidden: { one: '{n} finding about people, accounts or invitations has no site and is hidden – visible with “All”.', other: '{n} findings about people, accounts or invitations have no site and are hidden – visible with “All”.' },
+    drv_nosite_hidden: { one: '{n} driver without a site is hidden – visible with “All”.', other: '{n} drivers without a site are hidden – visible with “All”.' },
   },
   uk: {
     veh_site_ws_open: { one: '{n} відкрите замовлення залишається в попередній майстерні ({list}) – змінити майстерню можна лише у статусі «Передано в майстерню».', few: '{n} відкриті замовлення залишаються в попередній майстерні ({list}) – змінити майстерню можна лише у статусі «Передано в майстерню».', many: '{n} відкритих замовлень залишаються в попередній майстерні ({list}) – змінити майстерню можна лише у статусі «Передано в майстерню».', other: '{n} відкритого замовлення залишаються в попередній майстерні ({list}) – змінити майстерню можна лише у статусі «Передано в майстерню».' },
@@ -1858,6 +1860,7 @@ export const PLURALS = {
     inventory_book_confirm: { one: 'Провести {n} відхилення зараз? Залишок буде скориговано до підрахованої кількості (коригування з приміткою «Inventur <дата>», у журналі). Скасувати можна лише новим коригуванням.', few: 'Провести {n} відхилення зараз? Залишки буде скориговано до підрахованих кількостей (коригування з приміткою «Inventur <дата>», у журналі). Скасувати можна лише новим коригуванням.', many: 'Провести {n} відхилень зараз? Залишки буде скориговано до підрахованих кількостей (коригування з приміткою «Inventur <дата>», у журналі). Скасувати можна лише новим коригуванням.' },
     inventory_draft: { one: 'Відновлено {n} підраховану кількість від {d} (лише на цьому пристрої, ще не проведено).', few: 'Відновлено {n} підраховані кількості від {d} (лише на цьому пристрої, ще не проведено).', many: 'Відновлено {n} підрахованих кількостей від {d} (лише на цьому пристрої, ще не проведено).' },
     dq_other_hidden: { one: '{n} висновок щодо людей, облікових записів або запрошень не має локації й прихований – видно з «Усі».', few: '{n} висновки щодо людей, облікових записів або запрошень не мають локації й приховані – видно з «Усі».', many: '{n} висновків щодо людей, облікових записів або запрошень не мають локації й приховані – видно з «Усі».' },
+    drv_nosite_hidden: { one: '{n} водій без локації прихований – видно з «Усі».', few: '{n} водії без локації приховані – видно з «Усі».', many: '{n} водіїв без локації приховані – видно з «Усі».' },
   },
 };
 // km-Zähler gesunken (Tachotausch o. Ä.): km-Fälligkeit und km-Kontingent ungeklärt statt falscher Werte (16.10.2026)

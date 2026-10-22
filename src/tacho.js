@@ -7,7 +7,7 @@
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
-import { siteSelection } from './reports.js';
+import { siteSelection, siteKey } from './reports.js';
 import { audit } from './auth.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
@@ -64,8 +64,10 @@ export async function tachoOverview(env, user, envName, query = {}) {
   const r = await tachoRows(env, envName, warn, today);
   // Filter „Standort“: Fahrer nach Standort der Fahrerakte, Fahrzeuge nach Fahrzeugstamm (Schreibweisen zusammengefasst)
   const sel = siteSelection([...r.drivers, ...r.without_card, ...r.vehicles].map((x) => ({ site: x.site })), query.site);
+  // Fahrer ohne Standort, die der Filter ausblendet (Standard-Standort), zählen – Hinweis „mit Alle sichtbar“ (22.10.2026)
+  const noSiteHidden = sel.site && sel.site !== 'ohne' ? [...r.drivers, ...r.without_card].filter((x) => siteKey(x.site) === 'ohne').length : 0;
   if (sel.site) for (const k of ['drivers', 'without_card', 'vehicles']) r[k] = r[k].filter((x) => sel.match(x.site));
-  r.site = sel.site; r.site_options = sel.options;
+  r.site = sel.site; r.site_options = sel.options; r.no_site_hidden = noSiteHidden;
   r.drivers.sort(byUrgency); r.vehicles.sort(byUrgency);
   const count = (list) => ({ ueberfaellig: list.filter((x) => x.status === 'ueberfaellig').length, bald: list.filter((x) => x.status === 'bald').length,
     keine: list.filter((x) => x.status === 'keine').length, ok: list.filter((x) => x.status === 'ok').length });
