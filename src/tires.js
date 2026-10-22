@@ -332,6 +332,12 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
   if (stmts.length) await env.DB.batch(stmts);
   res.imported = res.counts.neu + res.counts.geaendert; // wie die Vorschau (20.10.2026: „✓ 4“ bei „neu 0 · geändert 1 · unverändert 3“)
   await audit(env, user.id, 'tires.import', null, { imported: res.imported });
+  // geänderte (ungeprüfte) Achsgrößen einzeln wie „Reifengröße ändern“ (22.10.2026: vorher nur die Anzahl – alte Größe nicht mehr erkennbar)
+  const chg = list.filter((r) => { const cur = current.get(`${r.v}|${r.a}`); return cur !== undefined && cur !== r.s; })
+    .map((r) => ({ v: r.v, d: { axle: r.a, from: current.get(`${r.v}|${r.a}`), to: r.s, verified: false, source: 'CSV-Import' } }));
+  if (chg.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+    SELECT lower(hex(randomblob(16))), ?1, 'tires.spec', json_extract(value,'$.v'), json(json_extract(value,'$.d')), ?2 FROM json_each(?3)`)
+    .bind(user.id, nowIso(), JSON.stringify(chg)).run();
   return res;
 }
 

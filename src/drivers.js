@@ -212,7 +212,23 @@ export async function updateDriver(env, user, envName, id, body) {
       if (pnoCheck && (!r.meta || r.meta.changes !== 1)) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
     }
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
-  await audit(env, user.id, 'driver.update', id, { changed: Object.keys(body) });
+  // alt → neu nur der tatsächlich geänderten Felder (22.10.2026: vorher nur Feldnamen inkl. expected_updated_at – alte Werte verloren);
+  // verknüpftes App-Konto als Name (eine Abfrage nur bei Kontowechsel), Bemerkung gekürzt
+  const changed = {};
+  for (const k of Object.keys(f)) {
+    if (body[k] === undefined) continue;
+    let a0 = d[k] ?? null; let b0 = f[k] ?? null;
+    if (k === 'active') { a0 = !!a0; b0 = !!b0; }
+    if (a0 === b0) continue;
+    if (k === 'note') { a0 = a0 && String(a0).slice(0, 200); b0 = b0 && String(b0).slice(0, 200); }
+    changed[k === 'user_id' ? 'account' : k] = { from: a0, to: b0 };
+  }
+  if (changed.account) {
+    const ids = [changed.account.from, changed.account.to].filter(Boolean);
+    const names = new Map((await env.DB.prepare('SELECT id, display_name FROM users WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)).all()).results.map((r) => [r.id, r.display_name]));
+    changed.account = { from: changed.account.from ? names.get(changed.account.from) || changed.account.from : null, to: changed.account.to ? names.get(changed.account.to) || changed.account.to : null };
+  }
+  if (Object.keys(changed).length) await audit(env, user.id, 'driver.update', id, { changed });
   return { ok: true };
 }
 

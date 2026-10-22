@@ -1185,8 +1185,13 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   await audit(env, user.id, 'vehicles.import', null, { imported: result.imported, skipped: result.skipped.length, ...result.counts });
   // Kennzeichenwechsel je Fahrzeug ins Protokoll wie bei „Stammdaten bearbeiten“ (`plate_old`) – sonst war das alte Kennzeichen nach dem Import
   // nirgends mehr erkennbar (spätes Bußgeld zum alten Kennzeichen nicht zurückführbar; 21.10.2026); eine Anweisung für alle
-  const plateLog = result.preview.filter((pv) => (pv.changes || []).some((c) => c.field === 'plate'))
-    .map((pv) => ({ id: 'VIN:' + pv.vin, detail: JSON.stringify({ plate: pv.plate, plate_old: pv.changes.find((c) => c.field === 'plate').from }) }));
+  // 22.10.2026: alle geänderten Stammfelder je Fahrzeug als alt → neu (Standort, Anhänger-Kennzeichen = Gespann-Kopplung, Stammstatus …) –
+  // vorher nur der Kennzeichenwechsel, der Rest nur als Zähler
+  const plateLog = result.preview.filter((pv) => pv.action === 'geändert' && (pv.changes || []).length).map((pv) => {
+    const pc = pv.changes.find((c) => c.field === 'plate');
+    const changed = Object.fromEntries(pv.changes.filter((c) => c.field !== 'plate').map((c) => [c.field, { from: c.from ?? null, to: c.to ?? null }]));
+    return { id: 'VIN:' + pv.vin, detail: JSON.stringify({ plate: pv.plate, ...(pc ? { plate_old: pc.from } : {}), ...(Object.keys(changed).length ? { changed, source: 'CSV-Import' } : {}) }) };
+  });
   if (plateLog.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
     SELECT lower(hex(randomblob(16))), ?1, 'vehicle.upsert', json_extract(value,'$.id'), json_extract(value,'$.detail'), ?2 FROM json_each(?3)`).bind(user.id, nowIso(), JSON.stringify(plateLog)).run();
   return result;

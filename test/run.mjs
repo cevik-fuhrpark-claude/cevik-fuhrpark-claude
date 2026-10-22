@@ -17043,6 +17043,52 @@ await test('Lebenszyklus 22.10.: Außer-Betrieb-Nehmen nennt geplante Prüftermi
   for (const key of ['mt_planned_deact', 'ue_ws_orphaned']) eq((src.match(new RegExp(`\\n    ${key}: \\{`, 'g')) || []).length, 3, `${key}: Pluralformen DE/UK/EN`);
   eq((src.match(/ue_driver_file_active: '/g) || []).length, 3, 'Fahrerakte-Hinweis DE/UK/EN');
 });
+await test('Nachvollziehbarkeit 22.10.: Prüftermin-, Fahrzeug- und Reifen-Import, Fahrerakte und Lagerzugang protokollieren alt → neu je Datensatz (Protokoll-Anzeige DE/UK/EN ohne Rohschlüssel)', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'nv.inhaber', display_name: 'Inhaber' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' }); own.envHeader = 'test';
+  const H = { 'content-type': 'text/csv' };
+  const aud = async (action) => (await e.DB.prepare('SELECT target, detail FROM audit_log WHERE action=? ORDER BY rowid').bind(action).all()).results.map((r) => ({ target: r.target, d: JSON.parse(r.detail) }));
+  const { auditDetailText } = await import('../public/i18n.js');
+  const shown = (d) => { for (const l of ['de', 'uk', 'en']) { const x = auditDetailText(l, d); ok(!/next_due_date|last_done|due_km|interval_|personnel_no|unit_price_net|trailer_plate|"account"|\bsite:|\bsource\b/.test(x), `${l}: Rohschlüssel in „${x}“`); } return auditDetailText('de', d); };
+  // 1) Fahrerakte
+  const d = await own.post('/api/drivers', { display_name: 'Max Alt', personnel_no: 'P-100', site: 'Dortmund', note: 'Kl. CE' }); eq(d.status, 201);
+  const du = (await e.DB.prepare('SELECT updated_at FROM drivers WHERE id=?').bind(d.data.id).first()).updated_at;
+  eq((await own.req('PATCH', `/api/drivers/${d.data.id}`, { display_name: 'Max Alt', personnel_no: 'P-999', site: 'München', expected_updated_at: du })).status, 200);
+  let a = await aud('driver.update'); eq(a.length, 1);
+  eq(JSON.stringify(a[0].d), JSON.stringify({ changed: { personnel_no: { from: 'P-100', to: 'P-999' }, site: { from: 'Dortmund', to: 'München' } } }), 'nur geänderte Felder mit alt → neu');
+  ok(shown(a[0].d).includes('Personalnummer P-100 → P-999'), shown(a[0].d));
+  eq((await own.req('PATCH', `/api/drivers/${d.data.id}`, { site: 'München' })).status, 200); eq((await aud('driver.update')).length, 1, 'ohne Änderung kein Eintrag');
+  // 2) Fahrzeug-Import
+  const head = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\n';
+  eq((await own.req('POST', '/api/vehicles/import', head + 'NV-A 1;Dortmund;in Betrieb;MAN;2019;NVTEST00000000001;NV-T 7', H)).status, 200);
+  eq((await own.req('POST', '/api/vehicles/import', head + 'NV-A 2;München;in Betrieb;MAN;2019;NVTEST00000000001;NV-T 9', H)).status, 200);
+  a = (await aud('vehicle.upsert')).filter((x) => x.target === 'VIN:NVTEST00000000001'); eq(a.length, 1);
+  eq(a[0].d.plate_old, 'NV-A 1'); eq(JSON.stringify(a[0].d.changed), JSON.stringify({ site: { from: 'Dortmund', to: 'München' }, trailer_plate: { from: 'NV-T 7', to: 'NV-T 9' } }));
+  ok(/Anhänger-Kennzeichen NV-T 7 → NV-T 9/.test(shown(a[0].d)), shown(a[0].d));
+  // 3) Prüftermin-Import
+  const vid = 'VIN:NVTEST00000000001';
+  const rule = await own.post(`/api/vehicles/${vid}/maintenance`, { kind: 'UVV', interval_months: 12, next_due_date: '2026-11-15', evidence: 'UVV-Plakette' }); eq(rule.status, 201, JSON.stringify(rule.data));
+  const imp = await own.req('POST', '/api/maintenance/import', 'FIN;Art;Fällig am;Nachweis\nNVTEST00000000001;UVV;15.11.2027;Liste Disposition', H); eq(imp.data.updated, 1, JSON.stringify(imp.data));
+  a = await aud('maintenance.import_update'); eq(a.length, 1); eq(a[0].target, vid);
+  eq(a[0].d.kind, 'UVV'); eq(JSON.stringify(a[0].d.changed.next_due_date), JSON.stringify({ from: '2026-11-15', to: '2027-11-15' })); eq(a[0].d.changed.evidence.from, 'UVV-Plakette');
+  ok(/fällig am 15\.11\.2026 → 15\.11\.2027/.test(shown(a[0].d)), shown(a[0].d));
+  eq((await own.req('POST', '/api/maintenance/import', 'FIN;Art;Fällig am;Nachweis\nNVTEST00000000001;UVV;15.11.2027;Liste Disposition', H)).data.updated, 0); eq((await aud('maintenance.import_update')).length, 1, 'unverändert: kein Eintrag');
+  // 4) Reifengrößen-Import
+  eq((await own.post(`/api/vehicles/${vid}/tires/specs`, { axle: 'lenkachse', size: '315/80 R22.5' })).status, 200);
+  const n0 = (await aud('tires.spec')).length;
+  eq((await own.req('POST', '/api/tires/import', 'Quelle;Kennzeichen;FIN;Reifen Lenkachse\nListe;NV-A 2;NVTEST00000000001;385/65 R22.5', H)).status, 200);
+  a = (await aud('tires.spec')).slice(n0); eq(a.length, 1); eq(a[0].target, vid);
+  eq(JSON.stringify(a[0].d), JSON.stringify({ axle: 'lenkachse', from: '315/80 R22.5', to: '385/65 R22.5', verified: false, source: 'CSV-Import' })); shown(a[0].d);
+  // 5) Lagerzugang mit neuem Preis
+  const ws = (await e.DB.prepare('SELECT code FROM workshops WHERE active=1 LIMIT 1').first()).code;
+  const it = await own.post('/api/stock', { site: ws, name: 'Bremsscheibe', unit: 'Stk', unit_price_net: '100' }); eq(it.status, 201, JSON.stringify(it.data));
+  eq((await own.post(`/api/stock/${it.data.id}/movements`, { type: 'zugang', qty: '1', unit_price_net: '100', request_key: rk() })).status < 300, true); eq((await aud('stock.price')).length, 0, 'gleicher Preis: kein Eintrag');
+  eq((await own.post(`/api/stock/${it.data.id}/movements`, { type: 'zugang', qty: '1', unit_price_net: '250', request_key: rk() })).status < 300, true);
+  a = await aud('stock.price'); eq(a.length, 1); eq(JSON.stringify(a[0].d.changed), JSON.stringify({ unit_price_net: { from: 100, to: 250 } })); shown(a[0].d);
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const k of ['stock.price', 'maintenance.import_update']) ok(src.includes(`'${k}': [`), `Bezeichnung ${k}`);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

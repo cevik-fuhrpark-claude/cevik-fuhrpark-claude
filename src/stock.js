@@ -197,6 +197,9 @@ export async function addMovement(env, user, envName, id, body) {
     VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120, field: 'Lieferant' }), str(body.document_ref, { max: 200, field: 'Beleg' }),
     str(body.note, { max: 500, field: 'Bemerkung' }), user.id, nowIso(), rkey)];
   if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
+  // Artikelpreis durch Zugang geändert: alter Preis ins Protokoll (22.10.2026: vorher still ersetzt) – im selben Stapel wie die Buchung
+  if (type === 'zugang' && price !== null && Number(price) !== Number(it.unit_price_net ?? NaN)) stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)`)
+    .bind(uuid(), user.id, 'stock.price', null, JSON.stringify({ item: id, name: it.name, site: it.site, changed: { unit_price_net: { from: it.unit_price_net ?? null, to: price } } }), nowIso()));
   // Lieferung eingegangen: Bestellvermerk endet (Teillieferung → neu vermerken, falls noch offen)
   // unabhängig vom vorher gelesenen Stand (20.10.2026: Vermerk zwischen Lesen und Buchen gesetzt → blieb nach der Lieferung stehen)
   if (type === 'zugang') stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=? AND ordered_on IS NOT NULL').bind(nowIso(), id));

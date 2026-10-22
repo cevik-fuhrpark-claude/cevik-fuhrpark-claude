@@ -1455,6 +1455,8 @@ const AUDIT_ACTIONS = {
   'stock.transfer': ['Lager-Umbuchung', 'Переміщення на складі', 'Stock transfer'],
   'stock.order_mark': ['Als bestellt markiert', 'Позначено як замовлене', 'Marked as ordered'],
   'stock.order_clear': ['Bestellvermerk entfernt', 'Позначку замовлення знято', 'Order mark removed'],
+  'stock.price': ['Artikelpreis durch Zugang geändert', 'Ціну артикула змінено надходженням', 'Item price changed by receipt'],
+  'maintenance.import_update': ['Prüftermin per Import geändert', 'Огляд змінено імпортом', 'Inspection changed by import'],
   'stock.update': ['Artikel-Stammdaten geändert', 'Дані артикула змінено', 'Item details changed'],
   'stock.journal.export': ['Lagerjournal exportiert', 'Журнал складу експортовано', 'Stock journal exported'],
   'emergency.add': ['Notfallnummer hinzugefügt', 'Екстрений номер додано', 'Emergency number added'],
@@ -1481,6 +1483,10 @@ const AUDIT_DETAIL_KEYS = {
   recreated: ['durch erneutes Anlegen', 'через повторне створення', 'by creating again'],
   plate_old: ['bisheriges Kennzeichen', 'попередній номерний знак', 'previous plate'], manufacturer: ['Hersteller', 'Виробник', 'Manufacturer'], model: ['Modell', 'Модель', 'Model'],
   build_year: ['Baujahr', 'Рік випуску', 'Year of manufacture'], trailer_plate: ['Anhänger-Kennzeichen', 'Номер причепа', 'Trailer plate'], trailer_vin: ['Anhänger-FIN', 'ідентифікаційний номер причепа', 'Trailer VIN'],
+  // 22.10.2026: alt → neu bei Prüftermin-Import und Fahrerakte
+  next_due_date: ['fällig am', 'строк до', 'due on'], last_done_date: ['zuletzt durchgeführt', 'востаннє проведено', 'last done'], interval_months: ['Intervall (Monate)', 'Інтервал (місяці)', 'Interval (months)'],
+  interval_km: ['Intervall km', 'Інтервал км', 'Interval km'], last_done_km: ['km bei letzter Durchführung', 'км під час останнього проведення', 'km at last service'], due_km: ['fällig bei km', 'строк за км', 'due at km'],
+  personnel_no: ['Personalnummer', 'Табельний номер', 'Personnel no.'], account: ['App-Konto', 'Обліковий запис у застосунку', 'App account'],
   master_status: ['Stammstatus', 'Статус у реєстрі', 'Master status'],
   // 21.10.2026: Reifengröße (tires.spec) und Nachweis als Verlauf (driver.document) zeigten Feldnamen roh
   axle: ['Achse', 'Вісь', 'Axle'], verified: ['am Fahrzeug geprüft', 'перевірено на транспортному засобі', 'checked on the vehicle'],
@@ -1573,6 +1579,7 @@ const AUDIT_DETAIL_VALUES = { true: ['ja', 'так', 'yes'], false: ['nein', 'н
 // CSV und Suche nutzen weiter den Rohwert (Server). Gefunden 16.10.2026 vom Rauchtest („ausgelesen am: 2026-08-01“).
 // Feste deutsche Systemtexte älterer Protokolleinträge (Migration 0016, nicht mehr änderbar) in der Oberflächensprache (21.10.2026)
 const AUDIT_FIXED_TEXTS = {
+  'CSV-Import': ['CSV-Import', 'Імпорт CSV', 'CSV import'],
   'SP-Frist nach StVZO Anlage VIII (6 Monate nach HU) statt pauschal 6 Monate nach letzter SP; zGM-Klassen laut Angabe Inhaber': [
     'SP-Frist nach StVZO Anlage VIII (6 Monate nach HU) statt pauschal 6 Monate nach letzter SP; zGM-Klassen laut Angabe Inhaber',
     'Строк SP за StVZO, додаток VIII (6 місяців після HU) замість загальних 6 місяців після останньої SP; класи повної маси за даними власника',

@@ -379,7 +379,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   const offOf = await inactiveIndex(env); // außer Betrieb genommene Fahrzeuge: eigener Grund statt „nicht im Fahrzeugstamm“ (20.10.2026)
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = plateIndex(vehicles);
-  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source, km_basis_at FROM maintenance_rules ORDER BY created_at').all()).results;
+  const existing = (await env.DB.prepare('SELECT id, vehicle_id, kind, next_due_date, last_done_date, interval_months, interval_km, last_done_km, due_km, evidence, due_source, km_basis_at, planned_date FROM maintenance_rules ORDER BY created_at').all()).results;
   const ruleOf = new Map(); const ruleCount = new Map();
   for (const r of existing) { const k = `${r.vehicle_id}|${r.kind}`; if (!ruleOf.has(k)) ruleOf.set(k, r); ruleCount.set(k, (ruleCount.get(k) || 0) + 1); }
   // „Sonstiges“ darf es je Fahrzeug mehrfach geben (Kran-, Tankprüfung …): der Import kennt nur eine Zeile je Fahrzeug+Art und schrieb
@@ -480,7 +480,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   });
 
   const now = nowIso();
-  const stmts = []; const creates = []; const updates = []; const rowOf = new Map(); // Anweisung → Zeile der Vorschau (gleichzeitig geändert)
+  const stmts = []; const creates = []; const updates = []; const rowOf = new Map(); const impLog = new Map(); // Anweisung → Zeile der Vorschau (gleichzeitig geändert)
   const huspSim = []; // HU/SP-Zeilen: Termin der Vorschau nach StVZO Anl. VIII aus den neuen Angaben (21.10.2026)
   // HU/SP ohne eigenen Eintrag: der eigene Export schreibt die nur berechnete Frist (Zeile „virtual“) in „Nächster Termin“. Entspricht der Wert
   // genau dieser Berechnung, ist er kein Nachweis (21.10.2026: wurde als Nachweis gespeichert und später nie neu berechnet → „Frist ungeklärt“
@@ -571,6 +571,17 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       result.updated++;
       // nur auf dem gelesenen Stand (17.10.2026): eine gleichzeitig erfasste Durchführung („erledigt“) wurde sonst mit den alten Werten überschrieben
       updates.push(stmts.length); rowOf.set(stmts.length, result.rows.length - 1);
+      // Protokoll je geänderter Regel mit alt → neu (22.10.2026: vorher nur Zähler – überschriebene Fälligkeit/Nachweis nicht mehr nachvollziehbar)
+      {
+        const newEv = keepDoc && cur.evidence && cur.evidence !== p.evidence ? `${cur.evidence}; ${p.evidence}`.slice(0, 500) : p.evidence;
+        const ch = {};
+        for (const [k, a0, b0] of [['next_due_date', cur.next_due_date, next], ['last_done_date', cur.last_done_date, last || cur.last_done_date],
+          ['interval_months', cur.interval_months, p.husp ? null : (p.interval ?? cur.interval_months)], ['interval_km', cur.interval_km, km.interval], ['last_done_km', cur.last_done_km, km.last],
+          ['due_km', cur.due_km, km.due], ['evidence', cur.evidence, newEv], ['planned_date', cur.planned_date, p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? null : cur.planned_date]]) {
+          if ((a0 ?? null) !== (b0 ?? null)) ch[k] = { from: a0 ?? null, to: b0 ?? null };
+        }
+        impLog.set(stmts.length, { vehicle_id: p.vehicle_id, detail: { plate: p.plate, kind: p.kind, changed: ch } });
+      }
       stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=?, planned_date=CASE WHEN ? THEN NULL ELSE planned_date END WHERE id=?
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
@@ -609,6 +620,10 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (missed) { result.created -= missed; result.unchanged += missed; result.concurrent = missed; }
     if (missedUpd) { result.updated -= missedUpd; result.unchanged += missedUpd; result.concurrent = (result.concurrent || 0) + missedUpd; }
     await audit(env, user.id, 'maintenance.import', null, { created: result.created, updated: result.updated, unchanged: result.unchanged, skipped: result.skipped.length });
+    const missedSet = new Set(missedIdx); const upd = [...impLog].filter(([i]) => !missedSet.has(i)).map(([, x]) => x);
+    if (upd.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+      SELECT lower(hex(randomblob(16))), ?1, 'maintenance.import_update', json_extract(value,'$.vehicle_id'), json(json_extract(value,'$.detail')), ?2 FROM json_each(?3)`)
+      .bind(user.id, nowIso(), JSON.stringify(upd)).run();
     const hv = [...new Set(result.rows.filter((r) => r.kind === 'HU' || r.kind === 'SP').map((r) => r.vehicle_id))];
     if (hv.length) result.husp_recalc = (await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: hv })).changed;
   }
