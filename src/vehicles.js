@@ -1285,6 +1285,21 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
   const r = await env.DB.prepare(`UPDATE files SET doc_kind=?, doc_note=?, doc_valid_until=? WHERE id=? AND COALESCE(doc_kind,'sonstiges')=? AND doc_note IS ? AND doc_valid_until IS ?`)
     .bind(kind, after.note, after.valid_until, f.id, String(exp.kind || 'sonstiges'), exp.note ?? null, exp.valid_until ?? null).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('doc_changed', 'Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.');
+  // Bemerkung eines „sonstigen“ Dokuments korrigiert (Thema = Befundschlüssel): offenen/erledigten Befund mit umschlüsseln, statt ihn zu schließen
+  // und als neuen Fall erneut zu übergeben und zu pushen (22.10.2026, Fund „Flattern“) – nur wenn kein anderes Dokument im alten Thema bleibt
+  // und unter dem neuen Schlüssel noch kein Befund besteht; Schlüssel exakt wie documentFindings (lower(trim()))
+  if (before.kind === 'sonstiges' && after.kind === 'sonstiges' && before.note !== after.note) {
+    const key = (n) => `?1 || '|sonstiges' || CASE WHEN lower(trim(COALESCE(${n},''))) <> '' THEN '|' || lower(trim(COALESCE(${n},''))) ELSE '' END`;
+    const hit = (await env.DB.prepare(`SELECT id, finding_code, subject_key, severity, requires_decision, ${key('?4')} AS nk FROM agent_findings WHERE environment=?2 AND finding_code IN ('DOCUMENT_EXPIRED','DOCUMENT_EXPIRES_SOON')
+        AND subject_key = ${key('?3')} AND lower(trim(COALESCE(?3,''))) <> lower(trim(COALESCE(?4,'')))
+        AND NOT EXISTS (SELECT 1 FROM agent_findings x WHERE x.environment=?2 AND x.finding_code=agent_findings.finding_code AND x.subject_key = ${key('?4')})
+        AND NOT EXISTS (SELECT 1 FROM files o WHERE o.vehicle_id=?1 AND o.environment=?2 AND o.case_id IS NULL AND o.id<>?5 AND COALESCE(o.doc_kind,'sonstiges')='sonstiges'
+          AND o.doc_valid_until IS NOT NULL AND lower(trim(COALESCE(o.doc_note,''))) = lower(trim(COALESCE(?3,''))))`)
+      .bind(vehicleId, envName, before.note, after.note, f.id).all()).results;
+    // Fingerabdruck wie der Agent (`code|subject|severity|requires_decision`) – sonst gälte der umgeschlüsselte Befund als geändert (neue Übergabe)
+    if (hit.length) await env.DB.batch(await Promise.all(hit.map(async (h) => env.DB.prepare('UPDATE agent_findings SET subject_key=?, fingerprint=? WHERE id=? AND subject_key=?')
+      .bind(h.nk, await sha256Hex(`${h.finding_code}|${h.nk}|${h.severity}|${h.requires_decision}`), h.id, h.subject_key))));
+  }
   const diff = {}; for (const [k, dk] of [['kind', 'doc_kind'], ['valid_until', 'valid_until'], ['note', 'note']]) if (before[k] !== after[k]) diff[dk] = { from: before[k], to: after[k] };
   await audit(env, user.id, 'vehicle.document_update', vehicleId, { filename: f.filename, ...diff });
   return { ok: true };

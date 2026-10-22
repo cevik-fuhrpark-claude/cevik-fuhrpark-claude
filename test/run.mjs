@@ -17089,6 +17089,27 @@ await test('Nachvollziehbarkeit 22.10.: Prüftermin-, Fahrzeug- und Reifen-Impor
   const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
   for (const k of ['stock.price', 'maintenance.import_update']) ok(src.includes(`'${k}': [`), `Bezeichnung ${k}`);
 });
+await test('Flattern 22.10.: Bemerkung eines abgelaufenen „sonstigen“ Dokuments korrigiert – derselbe Befund (umgeschlüsselt), keine neue Übergabe, kein neuer Push; zweites Dokument im alten Thema bleibt getrennt', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const V = 'VIN:WMA15SZZ2HM722774';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const upl = async (note, n) => { const pdf = new TextEncoder().encode(`%PDF-1.4\n% ${note} ${n}\n%%EOF`); const r = await U.fleet.req('POST', `/api/vehicles/${V}/documents?kind=sonstiges&valid_until=${day(n)}&note=${encodeURIComponent(note)}`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'adr.pdf' }); ok(r.status < 300, JSON.stringify(r.data)); return r.data.id; };
+  const up = await upl('ADR-Bescheinigung', -3);
+  const st = () => ({ inbox: db.prepare(`SELECT COUNT(*) n FROM master_inbox WHERE environment='test'`).get().n, rem: db.prepare(`SELECT COUNT(*) n FROM notifications WHERE kind='agent_reminder'`).get().n,
+    open: db.prepare(`SELECT id, subject_key FROM agent_findings WHERE environment='test' AND status='offen' AND finding_code='DOCUMENT_EXPIRED'`).all() });
+  eq((await U.fleet.post('/api/agent/run')).data.handoffs, 1); const s1 = st(); eq(s1.open.length, 1); eq(s1.open[0].subject_key, `${V}|sonstiges|adr-bescheinigung`);
+  const patch = (id, note) => U.fleet.req('PATCH', `/api/vehicles/${V}/documents/${id}`, { note });
+  eq((await patch(up, 'ADR-Bescheinigung Fahrer')).status, 200);
+  const r2 = await U.fleet.post('/api/agent/run'); eq(r2.data.handoffs, 0, 'keine neue Übergabe'); const s2 = st();
+  eq(s2.inbox, s1.inbox, 'Master-Eingang unverändert'); eq(s2.rem, s1.rem, 'kein neuer Push'); eq(s2.open.length, 1); eq(s2.open[0].id, s1.open[0].id, 'derselbe Befund');
+  eq(s2.open[0].subject_key, `${V}|sonstiges|adr-bescheinigung fahrer`);
+  // nur Groß-/Kleinschreibung/Leerzeichen am Rand: Schlüssel gleich, nichts zu tun
+  eq((await patch(up, '  adr-bescheinigung FAHRER ')).status, 200); eq((await U.fleet.post('/api/agent/run')).data.handoffs, 0); eq(st().open[0].id, s1.open[0].id);
+  // zweites Dokument im selben Thema: Umbenennen des ersten löst es aus dem Thema → eigener (neuer) Befund ist richtig, der alte bleibt beim zweiten
+  const up2 = await upl('ADR-Bescheinigung Fahrer', -2);
+  eq((await patch(up, 'Gemeinschaftslizenz')).status, 200);
+  await U.fleet.post('/api/agent/run'); const s3 = st();
+  eq(s3.open.length, 2, JSON.stringify(s3.open)); eq(s3.open.find((x) => x.subject_key.endsWith('|adr-bescheinigung fahrer')).id, s1.open[0].id, 'alter Befund bleibt beim verbleibenden Dokument'); ok(up2);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
