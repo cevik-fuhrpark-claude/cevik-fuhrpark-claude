@@ -611,3 +611,5 @@ export const siteSuffix = (site) => { const s = site ? fileSlug(site) : ''; retu
 export const rateOf = (v) => { if (v === undefined || v === null || String(v).trim() === '') return null; const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
 // Kaufmännisch auf Cent runden, gegen Gleitkommafehler abgesichert (1,005 → 1,01; vorher 1,00) und symmetrisch für negative Beträge
 export const roundCents = (n) => { const x = Number(n); if (!Number.isFinite(x)) return x; return Math.sign(x) * Math.round(Number((Math.abs(x) * 100).toFixed(6))) / 100 + 0; };
+// drei Nachkommastellen (z. B. Kosten je km) mit derselben Absicherung: 0,5005 → 0,501 (vorher Math.round(x*1000)/1000 → 0,5; 22.10.2026)
+export const roundMilli = (n) => { const x = Number(n); if (!Number.isFinite(x)) return x; return Math.sign(x) * Math.round(Number((Math.abs(x) * 1000).toFixed(6))) / 1000 + 0; };

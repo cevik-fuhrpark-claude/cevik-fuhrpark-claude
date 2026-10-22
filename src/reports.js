@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, berlinWindowStartIso, berlinDate, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents } from './util.js';
+import { bad, forbidden, berlinWindowStartIso, berlinDate, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents, roundMilli } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -166,7 +166,7 @@ export async function costReport(env, user, envName, query = {}) {
     const km = k ? k.km : null;
     const kmInfo = k ? { km_status: k.status, km_basis: k.basis, km_from_at: k.from_at, km_to_at: k.to_at } : { km_status: 'no_reading', km_basis: null, km_from_at: null, km_to_at: null };
     return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, ...kmInfo, // nur geschätzte/unbewertete Positionen → kein €/km (vorher „0,000 €/km“ ohne Hinweis); Schätzung im Zeitraum → €/km unvollständig (19.10.2026)
-    cost_per_km: km && !(v.valued_items === 0 && (v.unvalued_items > 0 || v.estimate_net > 0)) ? Math.round((v.actual_net / km) * 1000) / 1000 : null, complete: v.unvalued_items === 0 && !(v.estimate_net > 0) };
+    cost_per_km: km && !(v.valued_items === 0 && (v.unvalued_items > 0 || v.estimate_net > 0)) ? roundMilli(v.actual_net / km) : null, complete: v.unvalued_items === 0 && !(v.estimate_net > 0) };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
@@ -530,6 +530,9 @@ export async function kpiReport(env, user, envName, query = {}) {
   for (const [vid, list] of pwait) byVehicle.get(vid).parts_wait_h = unionMs(list) / H;
   const availability = site ? null : await fleetAvailability(env, envName, from, to, [...plates.values()].filter((v) => v.active && !v.eval_excluded && vOk(v.id)), now);
   const avBy = new Map(availability ? availability.by_vehicle.map((x) => [x.vehicle_id, x]) : []);
+  // Fahrzeuge, die nur mit Ausfall aus früheren Vorgängen in den Zeitraum reichen (z. B. seit dem Vormonat in der Werkstatt), als eigene Zeile –
+  // sonst fehlten sie in Liste/CSV und die Ausfallstunden der Zeilen ergaben nicht die Flottenquote (22.10.2026, Fund Teilagent „Nachrechnung“)
+  for (const x of avBy.values()) if ((x.downtime_h > 0 || x.pct < 100) && !byVehicle.has(x.vehicle_id)) byVehicle.set(x.vehicle_id, { vehicle_id: x.vehicle_id, cases: 0, released: 0, duplicates: 0, workshop_h: 0, parts_wait_h: 0, locked_h: 0, downtime_h: 0 });
   const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
   const by_priority = order.filter((k) => groups[k]).map((k) => {
     const x = groups[k];
@@ -540,7 +543,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const vehicles = [...byVehicle.values()].map((v) => ({ ...v, plate: plates.get(v.vehicle_id)?.plate || null, kind: plates.get(v.vehicle_id)?.kind || null, site: plates.get(v.vehicle_id)?.site ? (vSel.label.get(siteKey(plates.get(v.vehicle_id).site)) || plates.get(v.vehicle_id).site) : null, workshop_h: r1(v.workshop_h), parts_wait_h: r1(v.parts_wait_h), locked_h: r1(v.locked_h), downtime_h: r1(v.downtime_h), availability_pct: avBy.has(v.vehicle_id) ? avBy.get(v.vehicle_id).pct : null,
     // Ausfallstunden der Verfügbarkeit (alle Vorgänge, die in den Zeitraum hineinreichen) – „Ausfallzeit h“ zählt nur Vorgänge aus dem Zeitraum (20.10.2026)
     availability_downtime_h: avBy.has(v.vehicle_id) ? avBy.get(v.vehicle_id).downtime_h : null }))
-    .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases);
+    .sort((a, b) => b.workshop_h - a.workshop_h || b.cases - a.cases || (b.availability_downtime_h || 0) - (a.availability_downtime_h || 0));
   const pOut = (x) => ({ kept: x.kept, late: x.late, without_eta: x.without_eta, open_overdue: x.open_overdue,
     on_time_pct: x.kept + x.late ? Math.round((100 * x.kept) / (x.kept + x.late)) : null, late_days_median: x.late_days.length ? r1(quantile(x.late_days, 0.5)) : null });
   const parts_eta = { ...pOut(parts), by_site: [...partsSites.entries()].map(([site, x]) => ({ site, ...pOut(x) })).sort((a, b) => a.site.localeCompare(b.site)) };

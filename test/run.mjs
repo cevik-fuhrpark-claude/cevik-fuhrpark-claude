@@ -17419,6 +17419,41 @@ await test('Backlog 132: großer Bestand am Handy – QR-Encoder bitgleich und s
   ok(vs.includes('setTimeout(applyStock, items.length > 300 ? 150 : 0)') && vs.includes("$('#sprt').onclick = () => { sqFlush(); window.print(); };") && vs.includes('$(\'#scsv\').onclick = async () => { sqFlush();'), 'entprellt, Druck/CSV wenden Suche vorher an');
 });
 
+await test('Backlog 133 (Nachrechnung der Berichte): Fahrzeug, das nur aus einem früheren Vorgang in den Zeitraum ausfällt, steht in Kennzahlen-Liste/CSV (Zeilen ergeben den Flottenausfall); Kosten je km kaufmännisch auf 3 Stellen (0,5005 → 0,501)', async () => {
+  const { ensureSchema } = await import('../src/worker.js');
+  const rep = await import('../src/reports.js'); const { berlinDate, roundMilli } = await import('../src/util.js');
+  eq(roundMilli(1001 / 2000), 0.501); eq(roundMilli(4007 / 2000), 2.004); eq(roundMilli(16002 / 4000), 4.001); eq(roundMilli(-0.0005), -0.001); eq(roundMilli(2 / 3), 0.667);
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const run = (q, ...a) => db.prepare(q).run(...a); const T0 = '2025-01-01T00:00:00Z'; let n = 0;
+  run(`INSERT INTO users(id,username,display_name,role,environment,password_hash,active,created_at,updated_at) VALUES('u1','own','Own','owner','production','x',1,?,?)`, T0, T0);
+  const veh = (vid, plate) => run(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES(?,?,?,'Dortmund','lkw',1,0,?,?)`, vid, vid, plate, T0, T0);
+  const ev = (cid, action, to, at) => run(`INSERT INTO case_events(id,case_id,environment,action,to_status,payload,created_at) VALUES(?,?,'production',?,?,NULL,?)`, 'e' + ++n, cid, action, to, at);
+  const kase = (vid, created, ack, status = 'in_reparatur', closed = null) => { const cid = 'c' + ++n; run(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,safety_lock,status,workshop_site,workshop_ack_at,origin,request_key,content_hash,created_at,updated_at,closed_at)
+    VALUES(?,?,'production',?,'u1','d','mittel','mittel','fahrbereit',0,?,'DORTMUND',?,'meldung',?,?,?,?,?)`, cid, cid, vid, status, ack, cid, cid, created, created, closed); ev(cid, 'create', null, created); return cid; };
+  // Monate relativ zu heute (Berliner Zeit), damit der Test auch in der Zeitreise gilt: Zeitraum = Vormonat
+  const ym = (k) => { let [y, m] = berlinDate().split('-').map(Number); m -= k; while (m < 1) { m += 12; y--; } return `${y}-${String(m).padStart(2, '0')}`; };
+  const P = ym(1); const P2 = ym(2); const P3 = ym(3);
+  veh('V1', 'NR-A 1'); veh('V5', 'NR-A 5');
+  const c1 = kase('V1', `${P}-09T08:00:00Z`, `${P}-09T22:00:00Z`, 'fahrzeug_freigegeben', `${P}-11T22:00:00Z`); ev(c1, 'release', 'fahrzeug_freigegeben', `${P}-11T22:00:00Z`);
+  kase('V5', `${P2}-18T08:00:00Z`, `${P2}-19T22:00:00Z`); // seit dem Vormonat des Zeitraums in der Werkstatt, kein Vorgang im Zeitraum
+  const k = await rep.kpiReport(e, { id: 'u1', role: 'owner' }, 'production', { from: P, to: P });
+  const v5 = k.vehicles.find((v) => v.vehicle_id === 'V5');
+  ok(v5 && v5.cases === 0 && v5.availability_pct === 0 && v5.availability_downtime_h > 600, 'V5 als Zeile: ' + JSON.stringify(v5));
+  ok(rep.kpiReportCsv(k, 'vehicles').includes('NR-A 5'), 'V5 in der CSV');
+  const sum = k.vehicles.reduce((a, v) => a + (v.availability_downtime_h || 0), 0);
+  ok(Math.abs(sum - k.availability.downtime_h) < 0.2, `Zeilen ${sum} h = Flotte ${k.availability.downtime_h} h`);
+  eq(k.vehicles.find((v) => v.vehicle_id === 'V1').cases, 1, 'V1 unverändert');
+  // Kosten je km: 1 001,00 € bei 2 000 km → 0,501 (vorher 0,5)
+  veh('A', 'NR-K 1');
+  run(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at) VALUES('o1','A',10000,?,'manual',?)`, `${P3}-27T10:00:00Z`, `${P3}-27T10:00:00Z`);
+  run(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at) VALUES('o2','A',12000,?,'manual',?)`, `${P}-20T10:00:00Z`, `${P}-20T10:00:00Z`);
+  const ca = kase('A', `${P2}-05T10:00:00Z`, null);
+  run(`INSERT INTO parts(id,case_id,user_id,name,quantity,unit_price_net,valuation,created_at) VALUES('p1',?,'u1','p',1,1001,'actual',?)`, ca, `${P2}-05T10:00:00Z`);
+  const cr = await rep.costReport(e, { id: 'u1', role: 'owner' }, 'production', { from: P2, to: P });
+  const va = cr.vehicles.find((v) => v.vehicle_id === 'A');
+  eq(va.km, 2000, 'km'); eq(va.actual_net, 1001, 'Kosten'); eq(va.cost_per_km, 0.501, '€/km');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
