@@ -9725,14 +9725,20 @@ await test('Folgeauftrag: parent_case_id nur zu einem Vorgang derselben Umgebung
   eq((await users.fleet.get(`/api/cases/${ok1.data.id}`)).data.parent.id, p.data.id, 'Ursprung angezeigt:');
 });
 
-await test('Management-Panel: gesperrt/in Werkstatt ohne ruhende Fahrzeuge (gleiche Grundmenge wie Fahrzeuge gesamt)', async () => {
+await test('Management-Panel: gesperrt/in Werkstatt ohne ruhende Fahrzeuge (gleiche Grundmenge wie Fahrzeuge gesamt), in Werkstatt ohne gesperrte (wie Startseite)', async () => {
   const { masterPanel } = await import('../src/agent.js'); const { ensureSchema } = await import('../src/worker.js');
   const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
   for (const [id, ex] of [['VIN:A', 0], ['VIN:B', 1]]) db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES (?,?,?,'Dortmund','lkw',1,?,?,?)`).run(id, id.slice(4), 'T-' + id.slice(4), ex, now, now);
   let n = 0; for (const vid of ['VIN:A', 'VIN:B']) db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,safety_lock,status,origin,request_key,content_hash,version,created_at,updated_at)
     VALUES (?,?,'test',?,'u','Bremse defekt','kritisch','kritisch','nicht_fahrbereit',1,'in_reparatur','meldung',?,'h',1,?,?)`).run('c' + (++n), 'T-' + n, vid, 'rk' + n, now, now);
-  const m = await masterPanel(e, 'test');
-  eq(m.vehicles_total, 1); eq(m.vehicles_locked, 1, 'gesperrt:'); eq(m.vehicles_in_workshop, 1, 'in Werkstatt:');
+  let m = await masterPanel(e, 'test');
+  // gesperrt zählt nur unter „Gesperrt“ (wie die Startseite, 22.10.2026)
+  eq(m.vehicles_total, 1); eq(m.vehicles_locked, 1, 'gesperrt:'); eq(m.vehicles_in_workshop, 0, 'in Werkstatt ohne gesperrte:');
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,site,kind,active,eval_excluded,created_at,updated_at) VALUES ('VIN:C','C','T-C','Dortmund','lkw',1,0,?,?)`).run(now, now);
+  db.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,safety_lock,status,origin,request_key,content_hash,version,created_at,updated_at)
+    VALUES ('c9','T-9','test','VIN:C','u','Spiegel','niedrig','niedrig','fahrbereit',0,'in_reparatur','meldung','rk9','h',1,?,?)`).run(now, now);
+  m = await masterPanel(e, 'test');
+  eq(`${m.vehicles_total}/${m.vehicles_locked}/${m.vehicles_in_workshop}`, '2/1/1', 'ungesperrt in Werkstatt');
 });
 
 await test('Lager: gleichzeitige Entnahmen/Umlagerungen/Vorgangsentnahmen nie ins Minus, gleichzeitige Inventur bucht nur einmal', async () => {
@@ -17693,6 +17699,9 @@ await test('Standortschlüssel (Teilagent 22.10.): Fahrer ohne Standort unter de
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_nosite_hidden && PLURALS[l].drv_nosite_hidden && PLURALS[l].drv_nosite_hidden.one.includes('{n}'), l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!/w\.name\.toLowerCase\(\)\.includes\(String\(v\.site\)/.test(app) && (app.match(/wsForSite\(/g) || []).length >= 4, 'Werkstatt-Vorauswahl über wsForSite (Code/Umschrift, sonst leer)');
+  // Zähler gegen Ziellisten (Teilagent 22.10.): Winter-Links mit dem Standort der Zahl, Sprünge setzen übrige Filter zurück
+  ok(app.includes("const wl = (h) => `${h}&vs=${encodeURIComponent(vsite || '*')}`;") && !/async function wsWinter[\s\S]*?hj\('#\/tires/.test(app.slice(app.indexOf('async function wsWinter'), app.indexOf('async function dispoWinter'))), 'Werkstatt-Winterlinks mit Standort der Zahl');
+  ok(app.includes("S.vehAvail = hf; S.vehKind = 'all'; S.vehInactive = false;") && app.includes("if (hf) S.caseQ = '';"), 'Sprung aus Zähler setzt Art/außer Betrieb/Suchbegriff zurück');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

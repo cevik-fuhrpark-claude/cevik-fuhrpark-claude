@@ -979,8 +979,10 @@ function dispoCases(cs, hasOther = false, coupled = new Map()) {
 async function wsWinter(vsite = '') {
   const r = await api('GET', '/api/tires/winter' + (vsite ? '?site=' + encodeURIComponent(vsite) : '')).catch(() => null);
   if (!r || (!r.totals.nicht_erfuellt && !r.totals.unbekannt)) return '';
+  // Liste mit demselben Standort wie die Zahlen (22.10.2026: Zahl für den Standard-Standort, Link auf alle Standorte – Liste zeigte mehr)
+  const wl = (h) => `${h}&vs=${encodeURIComponent(vsite || '*')}`;
   const rows = r.noncompliant.map((x) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', ')))}</span><span class="chip mittel">${esc(t('ws_nicht_erfuellt'))}</span>${x.missing.length || x.open_order || x.closed_order ? `<span class="sub">${[x.missing.length && esc(t('winter_missing').replace('{p}', x.missing.map(posL).join(', '))), x.open_order && `🔧 ${esc(t('mo_open'))} ${esc(x.open_order.case_no)}`, x.closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.closed_order.case_no))}`].filter(Boolean).join(' · ')}</span>` : ''}</a>`).join('');
-  return `<section id="wswinter"><h2>${esc(t('ws_winter'))}${r.totals.nicht_erfuellt ? ` <span class="chip">${r.totals.nicht_erfuellt}</span>` : ''}</h2><p class="small muted">${esc(t('ws_winter_hint'))}</p>${rows ? `<div class="list">${rows}</div><p class="small noprint"><a href="${hj('#/tires?f=winter_bad')}" id="wswbad">${esc(t('ws_winter_show'))} ›</a></p>` : ''}${r.noncompliant.some((x) => x.closed_order) ? `<p class="small noprint"><a href="${hj('#/tires?f=winter_closed')}" id="wswclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}${r.totals.unbekannt ? `<p class="small noprint"><a href="${hj('#/tires?f=winter_unknown')}" id="wswunk">${esc(t('ws_winter_unknown').replace('{n}', r.totals.unbekannt))} ›</a></p>` : ''}</section>`;
+  return `<section id="wswinter"><h2>${esc(t('ws_winter'))}${r.totals.nicht_erfuellt ? ` <span class="chip">${r.totals.nicht_erfuellt}</span>` : ''}</h2><p class="small muted">${esc(t('ws_winter_hint'))}</p>${rows ? `<div class="list">${rows}</div><p class="small noprint"><a href="${wl('#/tires?f=winter_bad')}" id="wswbad">${esc(t('ws_winter_show'))} ›</a></p>` : ''}${r.noncompliant.some((x) => x.closed_order) ? `<p class="small noprint"><a href="${wl('#/tires?f=winter_closed')}" id="wswclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}${r.totals.unbekannt ? `<p class="small noprint"><a href="${wl('#/tires?f=winter_unknown')}" id="wswunk">${esc(t('ws_winter_unknown').replace('{n}', r.totals.unbekannt))} ›</a></p>` : ''}</section>`;
 }
 
 // Disposition: Lkw ohne ausreichende Winterkennzeichnung (laut Erfasstem) – nur Information, keine Sperre (situative Pflicht bei Glätte)
@@ -1075,6 +1077,8 @@ const caseFilterQ = (f) => (f === 'repeat' ? 'status=open&repeat_days=3' : f ===
 async function viewCases() {
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf) try { sessionStorage.setItem('cfp_cf', hf); } catch {}
+  // Sprung aus einem Zähler (#/cases?f=…): früherer Suchbegriff gilt nicht (Zahl und Liste passten sonst nicht, 22.10.2026)
+  if (hf) S.caseQ = '';
   let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
   if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup'].includes(f) || (['repeat', 'warranty', 'stale'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
   const q = S.caseQ || '';
@@ -1945,7 +1949,8 @@ const VEH_AV_LINK = ['gesperrt', 'werkstatt', 'meldung_offen', 'einsatzbereit_lt
 async function viewVehicles() {
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf !== null) {
-    if (VEH_AV_LINK.includes(hf) && (!hf.startsWith('with_findings') || isMgr())) { S.vehAvail = hf; if (hf.startsWith('with_findings')) S.vehSort = 'findings'; }
+    // Sprung aus einem Zähler: übrige Filter zurücksetzen (Art, außer Betrieb) – sonst zeigte die Liste weniger/andere Fahrzeuge als die Zahl (22.10.2026)
+    if (VEH_AV_LINK.includes(hf) && (!hf.startsWith('with_findings') || isMgr())) { S.vehAvail = hf; S.vehKind = 'all'; S.vehInactive = false; if (hf.startsWith('with_findings')) S.vehSort = 'findings'; }
     try { history.replaceState(null, '', '#/vehicles'); } catch {}
   }
   const inact = !!S.vehInactive && isMgr();
