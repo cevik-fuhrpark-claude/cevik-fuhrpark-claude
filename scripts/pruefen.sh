@@ -55,6 +55,7 @@ UI-Erstnutzung mit leerem Bestand (Hinweise statt leerer Seiten)|ui-erstnutzung.
 UI-Geräteuhr falsch (Hinweis, „heute“ nach Serverzeit)|ui-geraeteuhr.py|/tmp/cfp-geraeteuhr.log
 UI-Lebenszyklus Konto deaktivieren/Fahrzeug außer Betrieb (Hinweise)|ui-lebenszyklus.py|/tmp/cfp-lebenszyklus.log
 UI-Standortwechsel Fahrzeug (Hinweise, Werkstatt ohne Standort-Vorfilter)|ui-standortwechsel.py|/tmp/cfp-standortwechsel.log
+UI-Bußgeld Fahrer nicht mehr aktiv (Hinweis Quittung)|ui-bussgeld-fahrer-inaktiv.py|/tmp/cfp-bussgeld-fahrer-inaktiv.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

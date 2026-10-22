@@ -17587,6 +17587,31 @@ await test('Rollen-/Umgebungswechsel (Teilagent 22.10.): Fahrzeugzuordnung behä
   eq(db.prepare('SELECT COUNT(*) AS n FROM driver_vehicles WHERE environment IS NULL').get().n, 0, 'keine Zuordnung ohne Umgebung');
 });
 
+await test('Bußgeld „Fahrer informiert“ (Teilagent Rollenwechsel 22.10.): ermittelter Fahrer deaktiviert bzw. Rolle gewechselt → Hinweis an die Leitung, dass die Quittung nicht mehr kommen kann (DE/UK/EN)', async () => {
+  const { U } = await freshWorld();
+  const mk = async (ref) => { const r = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: ref, offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 30 }); eq(r.status, 201); return r.data.id; };
+  const det = async (id) => (await U.fleet.get(`/api/fines/${id}`)).data;
+  const inform = async (id) => {
+    eq((await U.fleet.post(`/api/fines/${id}/commands`, { action: 'confirm_driver', payload: { driver_id: U.driver.id, basis: 'manuell', evidence: 'Tourenplan' } })).status, 200);
+    eq((await U.fleet.post(`/api/fines/${id}/commands`, { action: 'inform_driver' })).status, 200);
+  };
+  const A = await mk('AZ-UN-1'); await inform(A);
+  ok(!(await det(A)).driver_unreachable, 'aktiver Fahrer: kein Hinweis');
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { role: 'dispatch' })).status, 200, 'Rolle gewechselt');
+  eq((await det(A)).driver_unreachable, true, 'Rollenwechsel: Hinweis');
+  ok(!('driver_unreachable' in (await U.viewer.get(`/api/fines/${A}`)).data), 'Lesezugriff: kein Hinweis');
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { role: 'driver' })).status, 200);
+  ok(!(await det(A)).driver_unreachable, 'wieder Fahrer: kein Hinweis');
+  const B = await mk('AZ-UN-2'); await inform(B);
+  eq((await U.driver.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200, 'neu angemeldet');
+  eq((await U.driver.post(`/api/fines/${A}/commands`, { action: 'driver_ack' })).status, 200, 'A quittiert');
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).status, 200, 'deaktiviert');
+  ok(!(await det(A)).driver_unreachable, 'schon quittiert: kein Hinweis');
+  eq((await det(B)).driver_unreachable, true, 'deaktiviert, Quittung offen: Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_driver_unreachable, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -107,8 +107,12 @@ export async function fineDetail(env, user, envName, id) {
   const f = await loadFine(env, user, envName, id);
   const events = (await env.DB.prepare(`SELECT e.*, u.display_name AS actor_name FROM fine_events e LEFT JOIN users u ON u.id=e.actor_id WHERE fine_id=? ORDER BY created_at`).bind(id).all()).results;
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at FROM files WHERE fine_id=? ORDER BY created_at').bind(id).all()).results;
-  const driver = f.driver_id ? await env.DB.prepare('SELECT display_name FROM users WHERE id=?').bind(f.driver_id).first() : null;
+  const driver = f.driver_id ? await env.DB.prepare('SELECT display_name, active, role, environment FROM users WHERE id=?').bind(f.driver_id).first() : null;
   const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
+  // „Fahrer informiert“, Quittung offen, Konto inzwischen deaktiviert bzw. Rolle/Umgebung gewechselt: die Quittung kann nicht mehr kommen
+  // (Fahrer sieht das Schreiben nicht mehr) – Hinweis für die Leitung statt stillem Warten (22.10.2026, Teilagent Rollenwechsel)
+  if (isMgr(user) && f.status === 'fahrer_informiert' && f.driver_id && !f.driver_ack_at && driver
+    && !(driver.active && driver.role === 'driver' && driver.environment === envName)) out.driver_unreachable = true;
   // nicht zugeordnet, weil das Kennzeichen an mehreren aktiven Fahrzeugen steht → Fahrzeugstamm bereinigen statt „Fremdfahrzeug?“ (20.10.2026)
   if (!f.vehicle_id && f.plate_in_letter) {
     const vs = (await env.DB.prepare('SELECT id, plate, active, eval_excluded, trailer_plate FROM vehicles').all()).results;
