@@ -3757,7 +3757,7 @@ await test('Systemzustand /api/health ohne Anmeldung mit Schema-Nummer (Deployme
   const r = await anon.get('/api/health'); eq(r.status, 200); eq(r.data.ok, true);
   const files = (await import('node:fs')).readdirSync(new URL('../migrations/', import.meta.url)).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
   eq(r.data.schema, files[files.length - 1].slice(0, 4), 'letzte Migration');
-  eq(Object.keys(r.data).sort().join(','), 'ok,schema,time', 'nichts weiter');
+  eq(Object.keys(r.data).sort().join(','), 'agent_last_run,agent_ok,ok,schema,time', 'nichts weiter (seit 22.10.2026 Agent-Zustand)');
 });
 
 await test('Integrations-API /v1/cases: Blättern ohne Lücken bei gleichem updated_at (after_id, has_more, next), ohne Parameter wie bisher', async () => {
@@ -16953,6 +16953,21 @@ await test('Leistung 22.10.: Filter „Gewährleistung prüfen“ über gesammel
   eq((await e.DB.prepare(`SELECT ${Array(100).fill('?').join(',')}`).bind(...Array(100).fill(1)).all()).results.length, 1, '100 Parameter erlaubt');
   err = null; try { await e.DB.prepare(`SELECT 1 /* ${'x'.repeat(100001)} */`).all(); } catch (x) { err = x; }
   ok(err && /100 KB/.test(err.message), 'über 100 KB SQL abgewiesen');
+});
+await test('Betriebsüberwachung: /api/health meldet ohne Anmeldung, ob der Fuhrparkagent im Betrieb läuft (agent_ok, agent_last_run; Regel wie Management-Panel, Testumgebung zählt nicht)', async () => {
+  const e = makeEnv(); const an = new Client(worker, e, 'anon');
+  let r = await an.get('/api/health'); eq(r.status, 200); eq(r.data.agent_ok, false, 'noch kein Lauf'); eq(r.data.agent_last_run, null);
+  const db = e.DB.db; const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const run = (id, envName, started, finished, error = null) => { db.prepare('DELETE FROM agent_runs').run(); db.prepare('INSERT INTO agent_runs (id, environment, trigger, started_at, finished_at, error) VALUES (?,?,?,?,?,?)').run(id, envName, 'cron', started, finished, error); };
+  for (const [label, envName, st, fin, err, want] of [['beendet vor 10 Min.', 'production', 11, 10, null, true], ['beendet vor 80 Min.', 'production', 81, 80, null, false],
+    ['mit Fehler', 'production', 3, 2, 'D1', false], ['läuft seit 5 Min.', 'production', 5, null, null, true], ['hängt seit 15 Min.', 'production', 15, null, null, false],
+    ['nur Testumgebung', 'test', 3, 2, null, false]]) {
+    const sIso = ago(st); const fIso = fin == null ? null : ago(fin); run('r-' + label, envName, sIso, fIso, err);
+    r = await an.get('/api/health'); eq(r.data.agent_ok, want, label); eq(r.data.ok, true, label + ': App erreichbar');
+    eq(r.data.agent_last_run, envName === 'production' ? (fIso || sIso) : null, label);
+  }
+  ok(!JSON.stringify(r.data).includes('D1'), 'kein Fehlertext nach außen');
+  const doc = (await import('node:fs')).readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(doc.includes('agent_ok'), 'API.md');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

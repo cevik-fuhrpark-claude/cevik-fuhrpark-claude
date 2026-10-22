@@ -198,6 +198,8 @@ Nach einem Push auf `main` baut Cloudflare automatisch. Kontrolle ohne Anmeldung
 liefert `{"ok":true,"time":…,"schema":"00NN"}` – `schema` muss der höchsten Nummer im Ordner `migrations/` entsprechen
 (die Migrationen laufen beim ersten Aufruf automatisch). Die App-Version steht in `/version.json` und unter Hilfe.
 
+**Überwachung (optional, seit 22.10.2026):** `/api/health` meldet zusätzlich `agent_ok` (Fuhrparkagent im Betrieb läuft – gleiche Regel wie das Management-Panel: letzter Lauf ohne Fehler und vor höchstens 75 Min. beendet) und `agent_last_run`. Ein Verfügbarkeitsmonitor kann die Adresse z. B. alle 15 Min. abrufen und bei fehlendem Stichwort `"agent_ok":true` alarmieren – damit fallen ein ausgefallener Cron (keine Agent-Läufe, keine Push-Wiederholung, keine Sitzungsbereinigung) oder Datenbankfehler auf, ohne dass jemand das Management-Panel öffnet. Ob und mit welchem Dienst überwacht wird, entscheidet der Inhaber (keinen kostenpflichtigen Dienst ohne Zustimmung einrichten).
+
 ## Sicherheitsheader
 Die Oberfläche (HTML/JS/CSS) liefert Cloudflare direkt aus den statischen Dateien aus – **ohne** den Worker. Deshalb stehen
 Content-Security-Policy, X-Frame-Options, HSTS usw. in `public/_headers` (Cloudflare wendet die Datei automatisch an; sie selbst ist

@@ -110,7 +110,14 @@ async function handleApi(request, env, ctx, url) {
   if (!path.startsWith('/api/integration/')) checkCsrf(request);
 
   // schema = Nummer der letzten angewandten Migration (ensureSchema lief vorher) – zum Prüfen eines Deployments ohne Anmeldung
-  if (path === '/api/health') return json({ ok: true, time: nowIso(), schema: MIGRATIONS[MIGRATIONS.length - 1].id.slice(0, 4) });
+  if (path === '/api/health') {
+    // Betriebsüberwachung ohne Anmeldung (22.10.2026): läuft der Fuhrparkagent im Betrieb (Cron alle 15 Min.)? Gleiche Regel wie die Anzeige
+    // im Management-Panel: letzter Lauf ohne Fehler, beendet vor höchstens 75 Min., kein Lauf seit über 10 Min. unbeendet. Nur Zeitpunkte, keine Inhalte.
+    const r = await env.DB.prepare("SELECT started_at, finished_at, error FROM agent_runs WHERE environment='production' ORDER BY started_at DESC LIMIT 1").first();
+    const now = Date.now();
+    const agentOk = !!r && !r.error && (r.finished_at ? now - Date.parse(r.finished_at) <= 75 * 60000 : now - Date.parse(r.started_at) <= 10 * 60000);
+    return json({ ok: true, time: nowIso(), schema: MIGRATIONS[MIGRATIONS.length - 1].id.slice(0, 4), agent_ok: agentOk, agent_last_run: r ? (r.finished_at || r.started_at) : null });
+  }
 
   // ---- Integration (Unternehmensbetriebssystem, n8n) per Bearer-Token ----
   if (path.startsWith('/api/integration/')) return integrationRouter(request, env, ctx, url);
