@@ -32,7 +32,8 @@ export function json(data, status = 200, headers = {}) {
 
 export function errorResponse(err) {
   if (err instanceof HttpError) {
-    return json({ error: err.code, message: err.message, ...(err.extra || {}) }, err.status);
+    // err.headers: zusätzliche Antwort-Header (z. B. Retry-After bei 429, WWW-Authenticate bei 401 – 22.10.2026)
+    return json({ error: err.code, message: err.message, ...(err.extra || {}) }, err.status, err.headers || {});
   }
   console.error('Unerwarteter Fehler', err && err.stack ? err.stack : err);
   return json({ error: 'internal', message: 'Interner Fehler. Bitte erneut versuchen.' }, 500);

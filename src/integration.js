@@ -26,7 +26,12 @@ async function checkToken(request, env) {
   const key = 'intfail:' + (await sha256Hex('cfp-ip:' + ip)).slice(0, 24);
   const win = Math.floor(Date.now() / 1000 / TOKEN_FAIL_LIMIT.windowSec) * TOKEN_FAIL_LIMIT.windowSec;
   const row = await env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(key, win).first();
-  if (row && row.count >= TOKEN_FAIL_LIMIT.max) throw new HttpError(429, 'rate_limited', 'Zu viele ungültige Token-Versuche von dieser Adresse. Bitte in 15 Minuten erneut versuchen.');
+  if (row && row.count >= TOKEN_FAIL_LIMIT.max) {
+    // Restzeit des festen Fensters als Retry-After (Sekunden) – n8n/Clients müssen sie nicht aus dem Text raten (22.10.2026)
+    const e = new HttpError(429, 'rate_limited', 'Zu viele ungültige Token-Versuche von dieser Adresse. Bitte in 15 Minuten erneut versuchen.');
+    e.headers = { 'retry-after': String(Math.max(1, win + TOKEN_FAIL_LIMIT.windowSec - Math.floor(Date.now() / 1000))) };
+    throw e;
+  }
   const h = request.headers.get('authorization') || '';
   const token = (/^Bearer\s+(.+)$/i.exec(h) || [])[1] || ''; // Schema ohne Groß-/Kleinschreibung (RFC 7235, 20.10.2026)
   // alle Vergleiche ausführen (gleiche Laufzeit unabhängig vom Treffer)
@@ -38,7 +43,9 @@ async function checkToken(request, env) {
       ON CONFLICT(key) DO UPDATE SET count = CASE WHEN rate_limits.window_start = excluded.window_start THEN rate_limits.count + 1 ELSE 1 END, window_start = excluded.window_start
       RETURNING count`).bind(key, win).first();
     if (c && c.count === TOKEN_FAIL_LIMIT.max) await audit(env, null, 'integration.token_limited', null, { failures: c.count, minutes: TOKEN_FAIL_LIMIT.windowSec / 60 });
-    throw new HttpError(401, 'invalid_token', 'Ungültiges Integrations-Token.');
+    const e = new HttpError(401, 'invalid_token', 'Ungültiges Integrations-Token.');
+    e.headers = { 'www-authenticate': 'Bearer realm="integration", error="invalid_token"' }; // RFC 7235/6750 (22.10.2026)
+    throw e;
   }
   return scope;
 }
@@ -128,7 +135,8 @@ export async function integrationRouter(request, env, ctx, url) {
     const rows = (await env.DB.prepare(`SELECT v.id, v.vin, v.plate, v.kind, v.site, v.manufacturer, v.model, v.build_year, v.trailer_plate, v.trailer_vin, v.master_status, v.updated_at, CASE WHEN v.eval_excluded THEN 1 ELSE 0 END AS eval_excluded
       FROM vehicles v WHERE v.active=1 ORDER BY v.plate`).all()).results.map((v) => ({ ...v, eval_excluded: !!v.eval_excluded }));
     const sel = siteSelection(rows, url.searchParams.get('site'));
-    return json({ schema_version: '1.0', ...(sel.site ? { site: sel.site } : {}), vehicles: sel.site ? rows.filter((v) => sel.match(v.site)) : rows });
+    // site_options additiv (wie /v1/maintenance): Tippfehler im Standort sonst still leere Liste (22.10.2026)
+    return json({ schema_version: '1.0', ...(sel.site ? { site: sel.site } : {}), site_options: sel.options, vehicles: sel.site ? rows.filter((v) => sel.match(v.site)) : rows });
   }
   if (p === '/v1/cases' && m === 'GET') {
     const pageSize = Math.min(Math.max(Math.round(Number(url.searchParams.get('limit')) || 1000), 1), 1000);
@@ -190,7 +198,7 @@ export async function integrationRouter(request, env, ctx, url) {
       const byV = new Map(); for (const e of te) { if (!byV.has(e.vehicle_id)) byV.set(e.vehicle_id, []); byV.get(e.vehicle_id).push(e); }
       for (const v of list) { const w = winterStatus(v.kind, winterMarks(byV.get(v.id) || [])); winterBy.set(v.id, { status: w.status, missing: w.missing, noncompliant: w.noncompliant }); }
     }
-    return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), generated_at: nowIso(),
+    return json({ schema_version: '1.0', environment: envParam(url), ...(sel.site ? { site: sel.site } : {}), site_options: sel.options, generated_at: nowIso(),
       note: 'einsatzbereit_lt_system = keine offene Meldung im System; ersetzt keine Abfahrtskontrolle.',
       vehicles: list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, availability: v.availability, eval_excluded: !!v.eval_excluded, locked: !!v.locked, open_cases: v.open_cases, in_workshop: v.in_workshop > 0, last_km: v.last_km, next_inspection_due: v.next_due, next_due_km: v.next_due_km ?? null, next_due_km_kind: v.next_due_km_kind ?? null, km_remaining: v.km_remaining ?? null, km_unclear: v.km_unclear || null, open_recalls: v.open_recalls ?? 0, last_departure_check_at: v.last_check_at, last_departure_check_result: v.last_check_result, planned_workshop_date: v.planned_workshop_date, planned_inspection_date: v.planned_inspection_date, planned_inspection_kind: v.planned_inspection_kind || null, parts_expected_date: v.parts_expected_date || null, failed_inspection: v.failed_inspection, coupled: v.coupled, ...(notesBy ? { notes: notesBy.get(v.id) || [] } : {}), ...(warrBy ? { warranties: warrBy.get(v.id) || [] } : {}), ...(winterBy ? { winter: winterBy.get(v.id) } : {}) })) /* additiv: Prüfung nicht bestanden, ohne Vorgang seitdem; gekoppeltes Fahrzeug {id, plate, kind, availability} – Information */ });
   }

@@ -17756,6 +17756,25 @@ await test('Datenauskunft (Teilagent 22.10.): Umgebung der Fahrzeugzuordnung, ei
   ok(B.card_downloads.some((x) => x.cancel_reason === 'Berta war krankgeschrieben'), 'eigene Auskunft mit Vermerk');
 });
 
+await test('Integrations-API für Clients (Teilagent 22.10.): 401 mit WWW-Authenticate, 429 mit Retry-After (Restzeit des Fensters), site_options bei /v1/vehicles und /v1/availability', async () => {
+  const { e } = await freshWorld(); const an = new Client(worker, e, 'anon');
+  const badH = { authorization: 'Bearer falsch-falsch-falsch-123', 'cf-connecting-ip': '203.0.113.88' };
+  const r1 = await an.req('GET', '/api/integration/v1/vehicles', undefined, badH);
+  eq(r1.status, 401); eq(r1.data.error, 'invalid_token'); eq(r1.headers.get('www-authenticate'), 'Bearer realm="integration", error="invalid_token"');
+  for (let i = 0; i < 30; i++) await an.req('GET', '/api/integration/v1/vehicles', undefined, badH);
+  const r2 = await an.req('GET', '/api/integration/v1/vehicles', undefined, badH);
+  eq(r2.status, 429); const ra = Number(r2.headers.get('retry-after'));
+  const left = 900 - (Math.floor(Date.now() / 1000) % 900);
+  ok(Number.isInteger(ra) && ra >= 1 && ra <= 900 && Math.abs(ra - left) <= 2, `Retry-After ${ra} ≈ Restzeit ${left}`);
+  eq(r2.data.error, 'rate_limited', 'Körper unverändert');
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  for (const pth of ['/api/integration/v1/vehicles', '/api/integration/v1/availability']) {
+    const x = await an.req('GET', pth + '?site=Dortmnd', undefined, H); eq(x.status, 200, pth);
+    eq(x.data.vehicles.length, 0, pth + ': Tippfehler leer'); ok(x.data.site_options.includes('Dortmund'), pth + ': site_options nennt den richtigen Standort');
+    const y = await an.req('GET', pth, undefined, H); ok(Array.isArray(y.data.site_options) && y.data.vehicles.length === 2, pth + ': ohne Filter additiv');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
