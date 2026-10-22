@@ -83,7 +83,7 @@ export async function driverCandidates(env, envName, f) {
   if (!f.vehicle_id) return [];
   const out = [];
   const assigned = (await env.DB.prepare(`SELECT d.user_id, u.display_name, d.valid_from, d.valid_to, d.evidence, d.vehicle_id, vv.plate FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles vv ON vv.id=d.vehicle_id
-    WHERE d.vehicle_id IN (${fineVehiclesSql('?1')}) AND u.environment=?2 AND d.valid_from <= ?3 AND (d.valid_to IS NULL OR d.valid_to > ?3)`).bind(f.vehicle_id, envName, f.offense_at).all()).results;
+    WHERE d.vehicle_id IN (${fineVehiclesSql('?1')}) AND d.environment=?2 AND d.valid_from <= ?3 AND (d.valid_to IS NULL OR d.valid_to > ?3)`).bind(f.vehicle_id, envName, f.offense_at).all()).results;
   for (const a of assigned) {
     const via = a.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${a.plate}` : '';
     if (out.some((o) => o.user_id === a.user_id && o.basis === 'zuordnung')) continue;
@@ -261,8 +261,9 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         if (did) {
           // ausgeschiedener (deaktivierter) Fahrer nur, wenn er zur Tatzeit zugeordnet war – genau so wird er als Kandidat angeboten (17.10.2026: Angebot ließ sich nicht bestätigen)
           // Rolle inzwischen gewechselt: wer zur Tatzeit zugeordnet war, bleibt bestätigbar (18.10.2026: Kandidat angeboten, Bestätigen → 400)
-          const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=? AND environment=? AND ((active=1 AND role='driver')
-            OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.vehicle_id IN (${fineVehiclesSql('?3')}) AND dv.valid_from <= ?4 AND (dv.valid_to IS NULL OR dv.valid_to > ?4)))`)
+          // Umgebung der Zuordnung zählt, nicht die heutige des Kontos (22.10.2026: Testfahrer in den Betrieb übernommen → Test-Zuordnung als Betriebsbeleg)
+          const d = await env.DB.prepare(`SELECT id FROM users u WHERE id=?1 AND ((active=1 AND role='driver' AND environment=?2)
+            OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.user_id=u.id AND dv.environment=?2 AND dv.vehicle_id IN (${fineVehiclesSql('?3')}) AND dv.valid_from <= ?4 AND (dv.valid_to IS NULL OR dv.valid_to > ?4)))`)
             .bind(did, envName, f.vehicle_id, f.offense_at).first();
           // … ebenso jeder angebotene Kandidat (18.10.2026: Fahrer mit Abfahrtskontrolle am Tattag, inzwischen deaktiviert → 400)
           if (!d && !(await driverCandidates(env, envName, f)).some((c) => c.user_id === did)) throw bad('validation', 'Fahrer nicht gefunden.');

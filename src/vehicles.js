@@ -184,7 +184,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const odometer = odoRows.slice(0, cap || 20);
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
-        WHERE d.vehicle_id=? AND u.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
+        WHERE d.vehicle_id=? AND d.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
     : [];
   // Kopplung Lkw ↔ Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“ des Lkw)
   // locked: Sicherheitssperre eines offenen Vorgangs des gekoppelten Fahrzeugs in dieser Umgebung (nur Information)
@@ -637,10 +637,11 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   // atomar (17.10.2026): bisherige immer im selben Stapel beenden (nicht nur, wenn beim Lesen welche offen waren) und nur einfügen, wenn
   // keine offene Zuordnung Fahrer↔Fahrzeug besteht – zwei gleichzeitige Zuordnungen ergaben sonst doppelte bzw. zwei „aktuelle“ Fahrzeuge
   if (endPrev) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, now));
-  stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7
+  // Umgebung der Zuordnung festhalten (Migration 0075): ein späterer Umgebungswechsel des Kontos macht sie nicht zu Daten der anderen Umgebung
+  stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at,environment) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7,?8
     WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))
       AND EXISTS (SELECT 1 FROM vehicles WHERE id=?3 AND active=1)`)
-    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300, field: 'Nachweis' }) || 'Zuordnung durch Fuhrparkleitung', user.id, now),
+    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300, field: 'Nachweis' }) || 'Zuordnung durch Fuhrparkleitung', user.id, now, envName),
     env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
   try { await env.DB.batch(stmts); } catch (e) {
     if (String(e && e.message).includes('CHECK')) {
@@ -659,7 +660,7 @@ export async function endAssignment(env, user, envName, assignmentId) {
   if (!isManager(user)) throw forbidden();
   // nur Zuordnungen von Fahrern der eigenen Umgebung (Test/Betrieb getrennt)
   const row = await env.DB.prepare(`SELECT vehicle_id, user_id FROM driver_vehicles WHERE id=?`).bind(assignmentId).first();
-  const r = await env.DB.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE id=? AND valid_to IS NULL AND user_id IN (SELECT id FROM users WHERE environment=?)`).bind(nowIso(), assignmentId, envName).run();
+  const r = await env.DB.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE id=? AND valid_to IS NULL AND environment=?`).bind(nowIso(), assignmentId, envName).run();
   if (!r.meta.changes) throw notFound('Zuordnung nicht gefunden oder bereits beendet.');
   // Ziel = Fahrzeug (wie vehicle.assign_driver) → erscheint im Protokoll je Fahrzeug; Person und Zuordnung im Detail
   await audit(env, user.id, 'vehicle.end_assignment', row.vehicle_id, { driver: row.user_id, assignment: assignmentId });

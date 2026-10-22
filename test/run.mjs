@@ -17551,6 +17551,42 @@ await test('Integrations-API /v1/cases (Teilagent n8n-Client 22.10.): letzte Sei
   const empty = await get('&since=' + iso(now + 3600000)); eq(empty.cases.length, 0); ok(Date.parse(empty.next_poll_since) <= Date.now() - 119000, 'ohne Zeilen: höchstens Serverzeit − 2 Min.');
 });
 
+await test('Rollen-/Umgebungswechsel (Teilagent 22.10.): Fahrzeugzuordnung behält die Umgebung zur Zeit der Zuordnung – Testfahrer in den Betrieb übernommen, Test-Zuordnung kein Beleg für Betriebs-Bußgeld; Migration 0075 füllt aus dem Protokoll', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const inv = async (b) => { const x = await U.own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const P = await inv({ username: 'p.leitung', display_name: 'Prod Leitung', role: 'fleet', environment: 'production' });
+  const anna = await inv({ username: 'anna.test', display_name: 'Anna Rundgang', role: 'driver', environment: 'test' });
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: anna.id, evidence: 'Rundgang Test' })).status, 201, 'Test-Zuordnung');
+  eq(db.prepare('SELECT environment FROM driver_vehicles WHERE user_id=?').get(anna.id).environment, 'test', 'Umgebung gespeichert');
+  await sleep(20); const offense = new Date().toISOString(); await sleep(20);
+  eq((await U.own.patch(`/api/users/${anna.id}`, { environment: 'production' })).status, 200, 'in den Betrieb übernommen');
+  const body = { kind: 'anhoerung', authority: 'Stadt Dortmund', offense_type: 'geschwindigkeit', offense_at: offense, location: 'B1', plate_in_letter: 'SZ YC 5513', amount_eur: 70 };
+  const pf = await P.post('/api/fines', { ...body, reference: 'AZ-UMG-1' }); eq(pf.status, 201, JSON.stringify(pf.data));
+  const pd = (await P.get(`/api/fines/${pf.data.id}`)).data;
+  ok(!pd.candidates.some((c) => c.user_id === anna.id), 'Betrieb: Test-Zuordnung kein Kandidat');
+  const tf = await U.fleet.post('/api/fines', { ...body, reference: 'AZ-UMG-2' }); eq(tf.status, 201);
+  const td = (await U.fleet.get(`/api/fines/${tf.data.id}`)).data;
+  ok(td.candidates.some((c) => c.user_id === anna.id && c.basis === 'zuordnung'), 'Test: Kandidat aus der Test-Zuordnung bleibt');
+  eq((await U.fleet.post(`/api/fines/${tf.data.id}/commands`, { action: 'confirm_driver', expected_version: td.fine.version, payload: { driver_id: anna.id, basis: 'zuordnung', evidence: 'laut Zuordnung' } })).status, 200, 'Test: bestätigbar, obwohl das Konto heute im Betrieb ist (zur Tatzeit in Test zugeordnet)');
+  ok(!(await P.get(`/api/vehicles/${V1}`)).data.drivers.some((d) => d.user_id === anna.id), 'Betriebs-Akte ohne Test-Zuordnung');
+  ok((await U.fleet.get(`/api/vehicles/${V1}`)).data.drivers.some((d) => d.user_id === anna.id && d.valid_to), 'Test-Akte zeigt beendete Zuordnung');
+  // neue Zuordnung im Betrieb; Beenden nur in ihrer Umgebung
+  eq((await P.post(`/api/vehicles/${V1}/drivers`, { user_id: anna.id })).status, 201);
+  const prodRow = db.prepare(`SELECT id, environment FROM driver_vehicles WHERE user_id=? AND valid_to IS NULL`).get(anna.id); eq(prodRow.environment, 'production');
+  eq((await U.fleet.req('DELETE', `/api/assignments/${prodRow.id}`)).status, 404, 'Test-Leitung beendet keine Betriebs-Zuordnung');
+  eq((await P.req('DELETE', `/api/assignments/${prodRow.id}`)).status, 200, 'Betriebs-Leitung beendet sie');
+  // Migration 0075: Rückfüllung aus dem Protokoll (Umgebung nach dem letzten user.create/user.update bis Beginn), sonst heutige Umgebung
+  const { readFileSync } = await import('node:fs');
+  const mig = readFileSync(new URL('../migrations/0075_driver_vehicles_environment.sql', import.meta.url), 'utf8');
+  const upd = mig.slice(mig.indexOf('UPDATE driver_vehicles'), mig.indexOf('WHERE environment IS NULL;') + 'WHERE environment IS NULL'.length);
+  db.prepare('UPDATE driver_vehicles SET environment=NULL').run();
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at) VALUES('alt-ohne-protokoll',?,?,?,?,?)`).run(U.driver.id, V1, '2020-01-01T00:00:00.000Z', U.driver.id, '2020-01-01T00:00:00.000Z');
+  db.prepare(upd).run();
+  const envs = Object.fromEntries(db.prepare('SELECT id, user_id, environment, valid_to FROM driver_vehicles').all().map((r) => [r.id === prodRow.id ? 'prod' : r.id === 'alt-ohne-protokoll' ? 'alt' : r.user_id === anna.id ? 'annaTest' : r.id, r.environment]));
+  eq(`${envs.annaTest}/${envs.prod}/${envs.alt}`, 'test/production/test', 'Rückfüllung: Test-Zuordnung vor dem Wechsel = test, danach production, ohne Protokoll = heutige Umgebung');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM driver_vehicles WHERE environment IS NULL').get().n, 0, 'keine Zuordnung ohne Umgebung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
