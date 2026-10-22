@@ -66,6 +66,11 @@ http.createServer(async (req, res) => {
     const b = env.DB.db.prepare(`UPDATE case_events SET ${sh('created_at')} WHERE case_id=?`).run(id).changes;
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ cases: Number(a), events: Number(b) })); return;
   }
+  // Nur lokal: Begründungen der km-Stände eines Fahrzeugs leeren – erzeugt „Rücksprung ohne Begründung“ wie aus Alt-Import (scripts/ui-km-begruendung.py)
+  if (url.pathname === '/__dev/odo-clear-note' && req.method === 'POST') {
+    const n = env.DB.db.prepare('UPDATE odometer_readings SET note=NULL WHERE vehicle_id=?').run(String(url.searchParams.get('vehicle') || '')).changes;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ changed: Number(n) })); return;
+  }
   // Nur lokal (nicht im Worker): Einstellung roh speichern (ohne Werteprüfung) – simuliert Altwerte von vor dem 16.10.2026 (scripts/ui-einstellungen-altwerte.py)
   if (url.pathname === '/__dev/setting-raw' && req.method === 'POST') {
     const k = String(url.searchParams.get('key') || ''); const v = url.searchParams.get('value');

@@ -47,6 +47,7 @@ UI-Aktionsformular bleibt offen, Vertrag km-Grundlage|ui-aktionsformular.py|/tmp
 UI-Sperrhinweis vor Ablehnen/Sperre aufheben|ui-sperrhinweis.py|/tmp/cfp-sperrhinweis.log
 UI-Barrierefreiheit (Tippflächen, Glocke, Fokus, Live-Region)|ui-barrierefreiheit.py|/tmp/cfp-barrierefreiheit.log
 UI-Tastatur (Fokus nach Aktion, Escape, aria-current, Fehlerseite, Lesezugriff Notfall)|ui-tastatur.py|/tmp/cfp-tastatur.log
+UI-km-Begründung nachtragen (Datenqualität → Zeitleiste)|ui-km-begruendung.py|/tmp/cfp-km-begruendung.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log
 UI-Import-Hinweise in der App-Sprache|ui-importhinweise.py|/tmp/cfp-import.log
