@@ -13459,7 +13459,7 @@ await test('Fehlersuche 19.10. (45): Datenauskunft enthält Erfassungen als Leit
   eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: d.data.id, downloaded_on: day(-1), evidence: 'Export X' })).status, 201);
   const ex = await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`); eq(ex.status, 200);
   eq(ex.data.license_checks_performed[0].result, 'maengel'); eq(ex.data.license_checks_performed[0].note, undefined); eq(ex.data.license_checks_performed[0].driver, undefined); // ohne Daten Dritter (20.10.2026)
-  eq(ex.data.tacho_downloads_recorded[0].evidence, 'Export X'); eq(ex.data.drivers_created.length, 1); eq(ex.data.drivers_created[0].display_name, undefined);
+  eq(ex.data.tacho_downloads_recorded[0].evidence, null); eq(ex.data.tacho_downloads_recorded[0].with_note, 1); // Fahrerkarte: Vermerk gehört zur Auskunft der Fahrerin (22.10.2026) eq(ex.data.drivers_created.length, 1); eq(ex.data.drivers_created[0].display_name, undefined);
   // Werkstattplan
   const rule = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', evidence: 'Plakette', interval_months: 12, last_done_date: day(-300) }); eq(rule.status, 201);
   eq((await U.fleet.post(`/api/maintenance/${rule.data.id}/plan`, { planned_date: day(3) })).status, 200);
@@ -17728,6 +17728,32 @@ await test('Einrichtungsstand (nur Inhaber, nur lesend): offene Punkte aus Daten
   eq(r.idle_workshop.value, 30);
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const x of Object.values(r)) for (const k of [`rd_${x.key}_t`, `rd_${x.key}_todo`, `rd_state_${x.state}`]) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Datenauskunft (Teilagent 22.10.): Umgebung der Fahrzeugzuordnung, eigene Ortsangabe/Einschätzung der Meldung; Leitung ohne Vermerke über Dritte (Fahrerkarten-Auslesungen, Zuordnungsnachweis)', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id, evidence: 'Tourenplan KW43 Fahrer W' })).status, 201, 'Zuordnung');
+  await newCase({ location_note: 'Rastplatz Kamen, Parkplatz 4' });
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Berta Dritte' }); eq(dr.status, 201);
+  const day = BERLIN_TODAY;
+  const tk = await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: dr.data.id, downloaded_on: day, evidence: 'Berta: Karte im Büro abgegeben' }); eq(tk.status, 201, 'Auslesung ' + JSON.stringify(tk.data));
+  eq((await U.fleet.post(`/api/tacho/downloads/${tk.data.id}/cancel`, { reason: 'Berta war krankgeschrieben' })).status, 200, 'Storno');
+  const vu = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V2, downloaded_on: day, evidence: 'Massenspeicher-Datei 4711' }); eq(vu.status, 201);
+  const A = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
+  ok(A.vehicle_assignments.length === 1 && A.vehicle_assignments[0].environment === 'test' && A.vehicle_assignments[0].evidence === 'Tourenplan KW43 Fahrer W', 'eigene Zuordnung mit Umgebung und Nachweis');
+  const rc = A.reported_cases.find((c) => c.location_note);
+  ok(rc && rc.location_note === 'Rastplatz Kamen, Parkplatz 4' && rc.reported_priority === 'niedrig' && rc.reported_driveability === 'fahrbereit', 'Ortsangabe/eigene Einschätzung');
+  const L = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data; const txt = JSON.stringify(L);
+  ok(!txt.includes('Berta') && !txt.includes('Tourenplan'), 'Leitung: keine Vermerke über Dritte');
+  const rec = L.tacho_downloads_recorded;
+  ok(rec.some((x) => x.kind === 'fahrerkarte' && x.evidence === null && x.cancel_reason === null && x.with_note === 1 && x.cancelled === 1), 'Fahrerkarte: Handlung ohne Vermerk');
+  ok(rec.some((x) => x.kind === 'massenspeicher' && x.evidence === 'Massenspeicher-Datei 4711'), 'Massenspeicher mit Nachweis');
+  const made = L.vehicle_assignments_made;
+  ok(made.length === 1 && made[0].with_evidence === 1 && made[0].environment === 'test' && !('evidence' in made[0]), 'vorgenommene Zuordnung: Umgebung, nur „mit Nachweis“');
+  // Fahrerin selbst sieht ihre Vermerke weiter (Auskunft der Fahrerakte)
+  const B = (await U.own.get(`/api/drivers/${dr.data.id}/data-export`)).data;
+  ok(B.card_downloads.some((x) => x.cancel_reason === 'Berta war krankgeschrieben'), 'eigene Auskunft mit Vermerk');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
