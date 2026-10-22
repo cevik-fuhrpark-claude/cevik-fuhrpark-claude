@@ -6,6 +6,9 @@ import { makeEnv, Client, QSTAT } from '../test/harness.mjs';
 
 const ARGS = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const CHECK = process.argv.includes('--check'); // Abbruch mit Fehlercode, wenn ein Aufruf > 50 D1-Abfragen braucht
+// --wachstum: zusätzlich Datenbestand nach Jahren Betrieb (≈ 220 000 km-Stände, 15 000 Abfahrtskontrollen, 50 000 Protokollzeilen,
+// 20 000 Master-Eingänge, 10 000 Hinweise) und erneute Messung aller Lese-Endpunkte (Bezeichnung „W: …“), 22.10.2026
+const GROWTH = process.argv.includes('--wachstum');
 const N_VEH = Number(ARGS[0] || 150);
 const N_CASES = Number(ARGS[1] || 3000);
 const env = makeEnv();
@@ -238,6 +241,35 @@ await timed('Eigene Prüfungen ohne Ergebnis', () => owner.get('/api/me/inspecti
 await owner.put('/api/settings', { claim_followup_days: '30' }); // Worst Case: Nachfass-Befunde für Versicherungsfälle aktiv
 for (let k = 0; k < 3; k++) await timed('Fuhrparkagent (Cron-Lauf)', () => owner.post('/api/agent/run'));
 
+if (GROWTH) {
+  const db = env.DB.db; const me = (await owner.get('/api/me')).data.user.id; const t1 = performance.now();
+  const ins = (sql, rows) => { const st = db.prepare(sql); db.exec('BEGIN'); for (const r of rows()) st.run(...r); db.exec('COMMIT'); };
+  // km-Stände: je Fahrzeug täglich über 4 Jahre (monoton, Telematik), Abfahrtskontrollen: je Fahrzeug 100, Protokoll, Master-Eingang, Hinweise
+  ins('INSERT INTO odometer_readings (id, vehicle_id, km, measured_at, source, recorded_by, created_at) VALUES (?,?,?,?,?,?,?)', function* () {
+    for (const [i, v] of vehicles.entries()) for (let d = 1460; d >= 1; d--) { const at = new Date(Date.now() - d * 86400000 - i * 1000).toISOString(); yield [`w-km-${i}-${d}`, v.id, 1000 + (1460 - d) * 300 + i, at, 'telematik', null, at]; } });
+  ins(`INSERT INTO inspections (id, environment, vehicle_id, kind, template_version, performed_by, odometer_km, items, result, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`, function* () {
+    for (const [i, v] of vehicles.entries()) for (let k = 0; k < 100; k++) yield [`w-in-${i}-${k}`, 'test', v.id, 'abfahrt', 'v1', me, null, '[]', 'ok', new Date(Date.now() - k * 7 * 86400000 - i * 1000).toISOString()]; });
+  ins('INSERT INTO audit_log (id, actor_id, action, target, detail, created_at) VALUES (?,?,?,?,?,?)', function* () {
+    for (let k = 0; k < 50000; k++) yield [`w-au-${k}`, me, k % 3 ? 'case.command' : 'vehicle.update', vehicles[k % vehicles.length].id, '{}', new Date(Date.now() - k * 60000).toISOString()]; });
+  ins(`INSERT INTO master_inbox (event_id, schema_version, environment, source_agent, event_type, finding_id, severity, payload, received_at, decision_status) VALUES (?,?,?,?,?,?,?,?,?,?)`, function* () {
+    for (let k = 0; k < 20000; k++) yield [`w-mi-${k}`, '1.0', 'test', 'fuhrparkagent', 'finding', `w-f-${k % 700}`, 'hinweis', '{}', new Date(Date.now() - k * 60000).toISOString(), k % 3 ? 'erledigt' : 'offen']; });
+  ins(`INSERT INTO notifications (id, environment, user_id, event_key, kind, title, body, created_at, push_status, acknowledged_at) VALUES (?,?,?,?,?,?,?,?,'no_subscription',?)`, function* () {
+    for (let k = 0; k < 10000; k++) { const at = new Date(Date.now() - k * 600000).toISOString(); yield [`w-no-${k}`, 'test', me, `w-ev-${k}`, 'comment', 'Lasttest', 'Lasttest', at, k > 50 ? at : null]; } });
+  console.log(`Wachstum (synthetisch): ${db.prepare('SELECT COUNT(*) AS n FROM odometer_readings').get().n} km-Stände, ${db.prepare('SELECT COUNT(*) AS n FROM inspections').get().n} Kontrollen, ${db.prepare('SELECT COUNT(*) AS n FROM audit_log').get().n} Protokollzeilen in ${((performance.now() - t1) / 1000).toFixed(1)} s`);
+  const v0 = vehicles[0].id;
+  const GETS = [['Startseite', '/api/dashboard'], ['Vorgangsliste', '/api/cases'], ['Vorgänge Gewährleistung', '/api/cases?warranty=1'], ['Fahrzeugliste', '/api/vehicles'],
+    ['Fahrzeugdetail', '/api/vehicles/' + v0], ['Zeitleiste', '/api/vehicles/' + v0 + '/timeline'], ['Prüftermine', '/api/maintenance'], ['Nachweisliste', '/api/maintenance/history?from=' + day(365)],
+    ['Werkstattplan', '/api/workshop/plan'], ['Reifen Flotte', '/api/tires/fleet'], ['Kostenbericht', '/api/reports/costs?from=' + kpiFrom], ['Kennzahlen', '/api/reports/kpi?from=' + kpiFrom],
+    ['Mängelstatistik', '/api/reports/defects'], ['Werkstattauslastung', '/api/reports/workshop-load'], ['Datenqualität', '/api/admin/data-quality'], ['Protokoll', '/api/admin/audit'],
+    ['Protokoll je Fahrzeug', '/api/admin/audit?target=' + v0], ['Nutzung', '/api/admin/usage'], ['Master', '/api/master'], ['Hinweise', '/api/notifications'],
+    ['Telematik', '/api/telematics'], ['Fahrerliste', '/api/drivers'], ['Verträge', '/api/contracts'], ['Bußgelder', '/api/fines'], ['Versicherungsfälle', '/api/claims'], ['Lager', '/api/stock'],
+    ['Auslesungen', '/api/tacho'], ['Benutzer', '/api/users'], ['Prüftermin-Kalender', '/api/maintenance?format=ics'], ['Vorgänge CSV', '/api/cases?format=csv'],
+    ['Fahrzeuge CSV', '/api/vehicles?format=csv'], ['Protokoll CSV', '/api/admin/audit?format=csv'], ['Kostenbericht CSV', '/api/reports/costs?format=csv&from=' + kpiFrom]];
+  for (let k = 0; k < 3; k++) for (const [label, u] of GETS) await timed('W: ' + label, () => owner.get(u).then((r) => must(r, 'W: ' + label)));
+  for (const u of ['/v1/kpi?environment=test&from=' + kpiFrom, '/v1/availability?environment=test', '/v1/maintenance?environment=test', '/v1/vehicles', '/v1/data-quality?environment=test', '/v1/findings?environment=test', '/v1/costs?environment=test'])
+    for (let k = 0; k < 3; k++) await timed('W: API ' + u.split('?')[0], () => integ(u));
+  for (let k = 0; k < 2; k++) await timed('W: Fuhrparkagent', () => owner.post('/api/agent/run').then((r) => must(r, 'W: Agent')));
+}
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
 { const pe = (await owner.get('/api/reports/kpi?from=' + new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7))).data.parts_eta || {};
   const tot = pe.total || pe; console.log(`Termintreue Teile (synthetisch): ${JSON.stringify({ kept: tot.kept, late: tot.late, without_eta: tot.without_eta, open_overdue: tot.open_overdue })}`);
