@@ -535,6 +535,11 @@ export function icsCalendar(name, events, stamp = new Date().toISOString()) {
     if (e.alarmDays !== null && e.alarmDays !== undefined) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(e.alarm || e.summary)}`, `TRIGGER:-P${e.alarmDays}D`, 'END:VALARM');
     lines.push('END:VEVENT');
   }
+  // Ohne Termine (z. B. Standortfilter ohne Treffer) braucht der Kalender laut RFC 5545 §3.6 trotzdem eine Komponente – feste Zeitzone
+  // Europe/Berlin (EU-Sommerzeitregel, keine Fachdaten); strenge Importe meldeten sonst „ungültige Datei“ (22.10.2026)
+  if (!events.length) lines.push('BEGIN:VTIMEZONE', 'TZID:Europe/Berlin', 'BEGIN:DAYLIGHT', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200', 'TZNAME:CEST',
+    'DTSTART:19810329T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'TZOFFSETFROM:+0200', 'TZOFFSETTO:+0100', 'TZNAME:CET',
+    'DTSTART:19961027T030000', 'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD', 'END:VTIMEZONE');
   lines.push('END:VCALENDAR');
   return lines.map(fold).join('\r\n') + '\r\n';
 }

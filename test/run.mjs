@@ -5847,6 +5847,10 @@ await test('Kalenderdatei: Zeilen ≤ 75 Oktette (auch Umlaute/Kyrillisch/Emoji)
   const ev = Array.from({ length: 900 }, (_, i) => ({ uid: 'x' + i, date: '2026-10-01', summary: long, description: 'Status: freigegeben · Werkstatt Dortmund', alarmDays: 3 }));
   const t0 = performance.now(); icsCalendar('Last', ev); const ms = performance.now() - t0;
   ok(ms < 250, `900 Termine in ${ms.toFixed(0)} ms (vorher ≈ 600 ms)`);
+  // leerer Kalender: mindestens eine Komponente (RFC 5545 §3.6) – VTIMEZONE, kein VEVENT; mit Terminen keine VTIMEZONE (ganztägig, ohne TZID)
+  const empty = icsCalendar('Leer', [], '2026-10-11T06:00:00Z').split('\r\n');
+  ok(empty.includes('BEGIN:VTIMEZONE') && empty.includes('TZID:Europe/Berlin') && !empty.includes('BEGIN:VEVENT') && empty.at(-2) === 'END:VCALENDAR', 'leerer Kalender mit Komponente');
+  ok(!out.includes('VTIMEZONE'), 'mit Terminen ohne VTIMEZONE');
 });
 await test('Teile-Liefertermin: optional bei „wartet auf Teile“, nicht in der Vergangenheit, änderbar, sichtbar für Disposition/Liste/API, beim Fortsetzen geleert', async () => {
   const VM = 'VIN:WDB96340310888888';
@@ -13758,7 +13762,7 @@ await test('Oberfläche 19.10.: Druck ohne Bedienelemente (Foto-/Datei-Knopf, Zu
   ok(app.includes('<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t(\'add_photos\'))}'), 'Fotos hinzufügen nicht im Druck');
   ok(app.includes('<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t(\'upload\'))}'), 'Bußgeld-Upload nicht im Druck');
   ok(app.includes('<p class="noprint"><a class="backlink" href="#/fines">') && app.includes('<p class="noprint"><a class="backlink" href="#/drivers">'), 'Zurück-Links nicht im Druck');
-  ok(/data-title="\$\{esc\(v\.plate\)\} · \$\{esc\(t\('vehicle_file'\)\)\}">\$\{esc\(t\('vehicle_file'\)\)\}<\/h1><p class="print-only small">/.test(app), 'Akte: Druckkopf unter dem Titel');
+  ok(/data-title="\$\{esc\(v\.plate\)\} · \$\{esc\(t\('vehicle_file'\)\)\}"(?: aria-label="[^"]*")?>\$\{esc\(t\('vehicle_file'\)\)\}<\/h1><p class="print-only small">/.test(app), 'Akte: Druckkopf unter dem Titel');
   ok(/h1, h2, h3 \{ break-after: avoid; \}/.test(css) && css.includes('@page guide') && css.includes('page: guide;'), 'Druck-CSS');
   ok(!/(noncompliant|missing)\.join\(', '\)/.test(app), 'Winterpositionen immer über posL');
   // posL wie in der App (ohne Browser): Funktion aus dem Quelltext auswerten

@@ -58,6 +58,7 @@ with sync_playwright() as p:
         pg.wait_for_timeout(300)
         bar = pg.query_selector('#idlebar')
         check(bar is not None and 'Abmeldung in' in bar.inner_text(), 'Vorwarnleiste 60 s vor Ablauf')
+        check(bar is not None and bar.query_selector('span[aria-hidden="true"]') is not None and 'Abmeldung in' in (bar.query_selector('.sr-only').text_content() or ''), 'Sekundenzähler aria-hidden, Ansage einmal (sr-only), 22.10.2026')
         check(pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth') <= 2, 'kein waagrechtes Scrollen mit Leiste')
         pg.click('#idlebar button')
         pg.wait_for_timeout(200)

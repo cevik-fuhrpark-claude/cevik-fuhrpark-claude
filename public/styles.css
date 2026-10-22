@@ -52,6 +52,8 @@ p { margin: 0 0 0.75rem; max-width: 70ch; }
 .muted { color: var(--steel); }
 .small { font-size: 0.875rem; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); } /* dunkler Ring: Gelb allein 1,9:1 auf Weiß (WCAG 1.4.11 verlangt 3:1), 21.10.2026 */
+/* Datumsfelder: der Tab-Stopp auf dem Kalendersymbol setzt kein :focus-visible – Ring über :focus-within (22.10.2026) */
+input:is([type=date],[type=month],[type=time],[type=datetime-local]):focus-within { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); }
 [tabindex="-1"]:focus-visible { box-shadow: none; } /* Überschriften mit programmatischem Fokus (Seitenwechsel): wie bisher nur gelb */
 
 /* Rahmen */
@@ -242,6 +244,8 @@ th { color: var(--steel); font-weight: 600; }
 /* Tippziele ≥ 44 px (21.10.2026: Zurück-Link 20 px, Filterknöpfe 40 px, „Alle“/„Werkstattplan“ 20 px hoch) */
 .backlink, .navlinks a { display: inline-flex; align-items: center; min-height: 44px; padding-right: 12px; }
 .navlinks { display: flex; flex-wrap: wrap; gap: 0 12px; }
+/* Kennzeichen-/Vorgangsnummer-Links in Tabellenzellen: Tippfläche mind. 24 px hoch (WCAG 2.5.8; vorher 20–23 px, 22.10.2026) – nur Bildschirm */
+@media screen { td > a[href] { display: inline-block; min-height: 24px; padding: 2px 0; box-sizing: border-box; } }
 .seg-tabs a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--rule); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
 .seg-tabs a.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
