@@ -2,7 +2,7 @@
 import { DatabaseSync } from 'node:sqlite';
 
 // Zähler ausgeführter SQL-Anweisungen (für Abfragebudget je Aufruf im Lasttest)
-export const QSTAT = { n: 0, written: 0, perRequest: [], trace: process.env.CFP_QTRACE ? [] : null };
+export const QSTAT = { n: 0, written: 0, ms: 0, perRequest: [], trace: process.env.CFP_QTRACE ? [] : null }; // ms: Zeit in SQL-Leseanweisungen (Lasttest: Anteil ohne Datenbank)
 // Antwort-Header jeder API-Antwort der Testsuite (Wächter: Sicherheitsheader, kein öffentliches Caching, Cookie-Attribute)
 export const HSTAT = { responses: [] };
 // CFP_QPLAN=1: Abfrageplan jeder neuen SQL-Anweisung prüfen und Volltabellen-Suchen am Ende ausgeben (Index-Suche)
@@ -48,16 +48,16 @@ class Stmt {
   _prep() { if (this.sql.length > 33000 && Buffer.byteLength(this.sql) > 100000) throw new Error('SQL statement too long (> 100 KB, D1-Grenze): SQLITE_TOOBIG');
     QSTAT.n++; if (QPLAN) planCheck(this.db, this.sql); corrCheck(this.db, this.sql, this.args); if (QSTAT.trace) QSTAT.trace.push(this.sql.replace(/\s+/g, ' ').slice(0, 90)); return this.db.prepare(this.sql); }
   // CFP_SLOWSQL=<ms>: Anweisungen, die länger brauchen, mit Abfrageplan ausgeben (Fehlersuche Leistung, z. B. mit dem Lasttest)
-  _slow(t0) { const d = performance.now() - t0; if (SLOW && d > SLOW) { let pl = ''; try { pl = this.db.prepare('EXPLAIN QUERY PLAN ' + this.sql).all(...this.args).map((r) => `   ${r.id}/${r.parent} ${r.detail}`).join('\n'); } catch { /* */ } console.log(`[SLOWSQL] ${d.toFixed(0)} ms: ${this.sql.replace(/\s+/g, ' ').slice(0, 600)}\n${pl}`); } }
+  _slow(t0) { const d = performance.now() - t0; QSTAT.ms += d; if (SLOW && d > SLOW) { let pl = ''; try { pl = this.db.prepare('EXPLAIN QUERY PLAN ' + this.sql).all(...this.args).map((r) => `   ${r.id}/${r.parent} ${r.detail}`).join('\n'); } catch { /* */ } console.log(`[SLOWSQL] ${d.toFixed(0)} ms: ${this.sql.replace(/\s+/g, ' ').slice(0, 600)}\n${pl}`); } }
   async first(col) {
     const t0 = performance.now(); const r = this._prep().get(...this.args); this._slow(t0);
     if (!r) return null;
     const o = { ...r };
     return col ? o[col] : o;
   }
-  async all() { const t0 = performance.now(); const rows = this._prep().all(...this.args); this._slow(t0); return { results: rows.map((r) => ({ ...r })), success: true }; }
+  async all() { const t0 = performance.now(); const rows = this._prep().all(...this.args).map((r) => ({ ...r })); this._slow(t0); return { results: rows, success: true }; }
   async run() {
-    const r = this._prep().run(...this.args);
+    const t0 = performance.now(); const r = this._prep().run(...this.args); QSTAT.ms += performance.now() - t0;
     QSTAT.written += Number(r.changes);
     return { success: true, meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
   }
@@ -74,6 +74,9 @@ export class D1Shim {
   constructor() { this.db = new DatabaseSync(':memory:'); this.db.exec('PRAGMA foreign_keys = ON'); }
   prepare(sql) { return new Stmt(this.db, sql); }
   async batch(stmts) {
+    const t0 = performance.now(); try { return this._batch(stmts); } finally { QSTAT.ms += performance.now() - t0; }
+  }
+  _batch(stmts) {
     this.db.exec('BEGIN');
     try {
       const out = stmts.map((s) => s._runSync());

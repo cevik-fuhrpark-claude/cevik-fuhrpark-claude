@@ -18,6 +18,16 @@ import { findingLabel } from '../public/finding-labels.js';
 import { findingText as fm, FINDING_ENUMS } from '../public/finding-messages.js';
 import { maintenanceWarnDays } from './settings.js';
 
+// Fingerabdrücke wiederkehrender Befunde je Worker-Instanz zwischengespeichert (22.10.2026): dieselben Befunde werden alle 15 Min. neu bewertet,
+// SHA-256 je Befund war der größte Rechenanteil des Agenten (CPU-Grenze je Aufruf). Gleiches Ergebnis wie sha256Hex; höchstens 20 000 Einträge.
+const FP_MEMO = new Map();
+export async function sha256Memo(input) {
+  const hit = FP_MEMO.get(input); if (hit) return hit;
+  const h = await sha256Hex(input);
+  if (FP_MEMO.size >= 20000) FP_MEMO.clear();
+  FP_MEMO.set(input, h); return h;
+}
+
 const SEV_RANK = { info: 0, hinweis: 1, handeln: 2, kritisch: 3 };
 
 async function setting(env, key) {
@@ -460,7 +470,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       unique.push(f);
     }
     // Fingerabdrücke gemeinsam berechnen (nicht 3000× nacheinander warten)
-    const fingerprints = await Promise.all(unique.map((f) => sha256Hex(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`)));
+    const fingerprints = await Promise.all(unique.map((f) => sha256Memo(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`)));
     const rows = [];
     const renames = [];
     const candidates = [];

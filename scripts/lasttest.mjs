@@ -29,7 +29,8 @@ console.log(`Fahrzeuge importiert: ${vehicles.length} (übersprungen: ${(imp.dat
 
 const timings = {};
 const queries = {};
-async function timed(label, fn) { const q0 = QSTAT.n; const t0 = performance.now(); const r = await fn(); (timings[label] ||= []).push(performance.now() - t0); (queries[label] ||= []).push(QSTAT.n - q0); return r; }
+const appMs = {}; // Zeit ohne SQL-Leseanweisungen ≈ CPU-Zeit des Workers (D1-Wartezeit zählt im Betrieb nicht zur CPU-Grenze)
+async function timed(label, fn) { const q0 = QSTAT.n; const m0 = QSTAT.ms; const t0 = performance.now(); const r = await fn(); const dt = performance.now() - t0; (timings[label] ||= []).push(dt); (appMs[label] ||= []).push(dt - (QSTAT.ms - m0)); (queries[label] ||= []).push(QSTAT.n - q0); return r; }
 const prios = ['niedrig', 'mittel', 'niedrig'];
 const t0 = performance.now();
 const ids = [];
@@ -280,8 +281,8 @@ const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Mat
 { const pe = (await owner.get('/api/reports/kpi?from=' + new Date(Date.now() - 330 * 86400000).toISOString().slice(0, 7))).data.parts_eta || {};
   const tot = pe.total || pe; console.log(`Termintreue Teile (synthetisch): ${JSON.stringify({ kept: tot.kept, late: tot.late, without_eta: tot.without_eta, open_overdue: tot.open_overdue })}`);
   if (CHECK && !((tot.kept || 0) + (tot.late || 0))) { console.error('Kennzahl Termintreue ohne Abschnitte – Lasttest-Daten prüfen'); process.exitCode = 1; } }
-console.log('\nAntwortzeiten (ms)          n     p50     p95     max   SQL max');
-for (const [k, a] of Object.entries(timings)) console.log(`${k.padEnd(26)} ${String(a.length).padStart(5)} ${pct(a, 0.5).toFixed(1).padStart(7)} ${pct(a, 0.95).toFixed(1).padStart(7)} ${Math.max(...a).toFixed(1).padStart(7)} ${String(Math.max(...queries[k])).padStart(9)}`);
+console.log('\nAntwortzeiten (ms)          n     p50     p95     max   SQL max  o.SQL p50');
+for (const [k, a] of Object.entries(timings)) console.log(`${k.padEnd(26)} ${String(a.length).padStart(5)} ${pct(a, 0.5).toFixed(1).padStart(7)} ${pct(a, 0.95).toFixed(1).padStart(7)} ${Math.max(...a).toFixed(1).padStart(7)} ${String(Math.max(...queries[k])).padStart(9)} ${pct(appMs[k], 0.5).toFixed(1).padStart(10)}`);
 const list = (await owner.get('/api/cases')).data.cases;
 console.log(`\nVorgangsliste liefert ${list.length} Einträge (Begrenzung beachten).`);
 if (CHECK) {

@@ -237,7 +237,12 @@ export function addMonths(dateStr, months) {
 
 // Formatter einmal erzeugen (Intl-Konstruktion ist teuer; Berichte rufen dies tausendfach auf – CPU-Budget je Worker-Aufruf)
 let BERLIN_FMT = null;
+// 22.10.2026: zwischen 1900 und 2199 über den je UTC-Stunde zwischengespeicherten Versatz (gleiches Ergebnis, ohne Intl je Aufruf –
+// im Fuhrparkagenten ≈ 2 % der Rechenzeit); sonst wie bisher über Intl
+const BD_LO = Date.UTC(1900, 0, 1); const BD_HI = Date.UTC(2200, 0, 1);
 export function berlinDate(iso = nowIso()) {
+  const ms = new Date(iso).getTime();
+  if (ms >= BD_LO && ms < BD_HI) return new Date(ms + berlinOffsetMs(ms)).toISOString().slice(0, 10);
   if (!BERLIN_FMT) BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
   return BERLIN_FMT.format(new Date(iso));
 }

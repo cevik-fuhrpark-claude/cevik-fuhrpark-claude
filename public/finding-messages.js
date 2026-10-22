@@ -255,9 +255,13 @@ const empty = (v) => v === null || v === undefined || v === '';
 // {name#Form1/Form2[/Form3]}: Wort in der Pluralform der Zahl `name` (de/en: eins/sonst; uk: one/few/many) – statt „Tag(en)“
 const PH = /\{([a-z_]+)(?::(km)|\|([A-Z]+)|#([^{}]+))?\}/g;
 const PL_ORDER = { uk: ['one', 'few', 'many'] };
+// Intl-Objekte je Sprache zwischengespeichert (22.10.2026: neue PluralRules je Platzhalter kosteten im Fuhrparkagenten ≈ 5 % der Rechenzeit)
+const PLURAL_RULES = new Map(); const NUM_FMT = new Map();
+const pluralRules = (lang) => { const l = LOCALE[lang] || 'de-DE'; if (!PLURAL_RULES.has(l)) { let r = null; try { r = new Intl.PluralRules(l); } catch { /* alte Umgebung */ } PLURAL_RULES.set(l, r); } return PLURAL_RULES.get(l); };
+const numFmt = (lang, digits) => { const k = `${LOCALE[lang] || 'de-DE'}|${digits}`; if (!NUM_FMT.has(k)) NUM_FMT.set(k, new Intl.NumberFormat(LOCALE[lang] || 'de-DE', digits == null ? undefined : { maximumFractionDigits: digits })); return NUM_FMT.get(k); };
 const pluralWord = (v, forms, lang) => {
   const f = forms.split('/'); const order = PL_ORDER[lang] || ['one', 'other'];
-  let c = 'other'; try { c = new Intl.PluralRules(LOCALE[lang] || 'de-DE').select(Number(v)); } catch { /* alte Umgebung */ }
+  let c = 'other'; try { const r = pluralRules(lang); if (r) c = r.select(Number(v)); } catch { /* alte Umgebung */ }
   const i = order.indexOf(c); return f[i >= 0 ? i : f.length - 1] ?? f[f.length - 1];
 };
 
@@ -270,7 +274,7 @@ export const DATE_ARGS = new Set(['date', 'due', 'end', 'eta', 'last', 'planned'
 export const NUM_ARGS = new Set(['mm', 'limit', 'stock', 'min', 'oq', 'open']);
 export function localNumArg(v, lang) {
   const n = typeof v === 'number' ? v : (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN);
-  return Number.isFinite(n) ? n.toLocaleString(LOCALE[lang] || 'de-DE', { maximumFractionDigits: 3 }) : v;
+  return Number.isFinite(n) ? numFmt(lang, 3).format(n) : v;
 }
 export function localDateArg(v, lang) {
   if (typeof v !== 'string') return v;
@@ -296,7 +300,7 @@ function fill(text, args, lang, dates = false) {
     const v = args[name];
     if (empty(v)) return '';
     if (forms) return pluralWord(v, forms, lang);
-    if (fmt === 'km') return Number(v).toLocaleString(LOCALE[lang] || 'de-DE');
+    if (fmt === 'km') return numFmt(lang, null).format(Number(v));
     // Liste von Personen [{name, role}] bzw. Texten („+3“): „Name (Rolle)“, ohne Name nur die Rolle (Schnittstelle), kommagetrennt
     if (list && Array.isArray(v)) {
       const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {};

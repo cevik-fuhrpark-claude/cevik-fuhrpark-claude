@@ -16969,6 +16969,22 @@ await test('Betriebsüberwachung: /api/health meldet ohne Anmeldung, ob der Fuhr
   ok(!JSON.stringify(r.data).includes('D1'), 'kein Fehlertext nach außen');
   const doc = (await import('node:fs')).readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(doc.includes('agent_ok'), 'API.md');
 });
+await test('Rechenzeit Fuhrparkagent (CPU-Grenze je Aufruf): Fingerabdrücke zwischengespeichert, Intl-Pluralregeln/Zahlformate je Sprache wiederverwendet, berlinDate ohne Intl je Aufruf – gleiche Ergebnisse', async () => {
+  const { berlinDate, sha256Hex } = await import('../src/util.js');
+  const f = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  let bad = 0; let n = 0;
+  for (let ms = Date.UTC(2000, 0, 1); ms < Date.UTC(2035, 0, 1); ms += 3600000 * 7 + 1234) { n++; if (berlinDate(new Date(ms).toISOString()) !== f.format(new Date(ms))) bad++; }
+  for (const y of [2025, 2026, 2027]) for (const [mo, d] of [[2, 29], [2, 30], [2, 31], [9, 24], [9, 25], [9, 26]]) for (let h = -2; h < 3; h++) for (const mi of [0, 59]) {
+    const ms = Date.UTC(y, mo, d, h, mi, 59, 999); n++; if (berlinDate(new Date(ms).toISOString()) !== f.format(new Date(ms))) bad++; }
+  eq(bad, 0, `berlinDate = Intl (${n} Zeitpunkte inkl. Zeitumstellung)`);
+  eq(berlinDate('2026-10-24T22:30:00Z'), '2026-10-25'); eq(berlinDate('2026-03-28T23:30:00Z'), '2026-03-29'); eq(berlinDate('1850-06-01T12:00:00Z'), f.format(new Date('1850-06-01T12:00:00Z')), 'außerhalb 1900–2199 über Intl');
+  const { sha256Memo } = await import('../src/agent.js');
+  for (const x of ['A|veh:1|kritisch|1', 'A|veh:1|kritisch|1', 'Ü|x|hinweis|0']) eq(await sha256Memo(x), await sha256Hex(x), 'gleicher Fingerabdruck');
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/finding-messages.js', import.meta.url), 'utf8');
+  ok(src.includes('PLURAL_RULES') && !/new Intl\.PluralRules\([^)]*\)\.select/.test(src), 'Pluralregeln zwischengespeichert');
+  ok(typeof renderFindingMessage === 'function');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
