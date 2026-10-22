@@ -160,9 +160,9 @@ den Zeitpunkt („seit 10.10.2026 14:05“) statt einer laufenden Minutenzahl, u
 wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 96 Läufen/Tag). In der Oberfläche steht je Befund „offen seit“.
 
 ## Gesamtprüfung `scripts/pruefen.sh`
-`sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Namensteil>]` – `npm test`, alle UI-Skripte (Liste `UI_SKRIPTE` im Skript, je frischer Dev-Server) und die Rauchtests; bricht beim ersten Fehler mit Fehlercode ab.
+`sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Namensteil>] [--ab <Namensteil>]` – `npm test`, alle UI-Skripte (Liste `UI_SKRIPTE` im Skript, je frischer Dev-Server) und die Rauchtests; bricht beim ersten Fehler mit Fehlercode ab.
 `--schnell` nur Rauchtest hell (ohne dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise/UI-Zeitreise), `--ohne-tests` überspringt `npm test`, `--ohne-rauch` lässt Rauchtests und Zeitreise weg,
-`--nur hoechstzahl` führt nur passende UI-Skripte aus (z. B. nach einer gezielten Änderung). Der Gesamtlauf dauert über 15 Minuten – im Hintergrund starten und die Logdatei prüfen.
+`--nur hoechstzahl` führt nur passende UI-Skripte aus (z. B. nach einer gezielten Änderung). `--ab einstellungen-vorwarnung` setzt nach einem Abbruch beim ersten passenden UI-Skript fort (danach Rauchtests wie sonst; seit 22.10.2026). Der Gesamtlauf dauert über 15 Minuten – im Hintergrund starten und die Logdatei prüfen.
 Neues UI-Skript: eine Zeile „Bezeichnung|Skript|Logdatei“ in `UI_SKRIPTE` ergänzen; ein Wächter-Test meldet Skripte, die dort fehlen (Ausnahme: Lasttest `ui-lastpanel.py`).
 
 ## UI-Zeitreise `scripts/ui-zeitreise.sh`

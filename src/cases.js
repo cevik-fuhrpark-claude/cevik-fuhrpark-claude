@@ -116,7 +116,7 @@ export async function listCases(env, user, envName, query, meta = null) {
   let withSql = '';
   if (qWarranty && user.role !== 'driver') {
     const own = user.role === 'workshop' ? ' AND x.workshop_site = ?' : '';
-    // Leistung (22.10.2026, 15 000 Vorgänge: 587 → ms siehe Test): Positionen mit Gewährleistung einmal sammeln (wenige), statt je Vorgang
+    // Leistung (22.10.2026, 15 000 Vorgänge: 587 → 10 ms): Positionen mit Gewährleistung einmal sammeln (wenige), statt je Vorgang
     // alle früheren Vorgänge des Fahrzeugs samt Teilen/Fremdleistungen zu durchsuchen
     withSql = `WITH wp AS MATERIALIZED (SELECT x.id, x.vehicle_id, x.environment, x.created_at, x.workshop_site, g.warranty_until AS wu
       FROM (SELECT case_id, warranty_until FROM parts WHERE warranty_until IS NOT NULL UNION ALL SELECT case_id, warranty_until FROM external_costs WHERE warranty_until IS NOT NULL) g

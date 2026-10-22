@@ -1,23 +1,25 @@
 #!/bin/sh
 # [CLAUDE] Gesamtprüfung vor jedem Push: Tests, UI-Skripte, UI-Rauchtest (hell/dunkel/Ukrainisch/Englisch) je mit frischem Dev-Server.
 # Bricht beim ersten Fehler mit Fehlercode ab (keine durch Pipes verdeckten Fehler).
-# Aufruf: sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Teil des Skriptnamens>]
+# Aufruf: sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Teil des Skriptnamens>] [--ab <Teil des Skriptnamens>]
 #   --schnell     nur Tests + UI-Skripte + Rauchtest hell; ohne: zusätzlich Rauchtest dunkel, Ukrainisch, Englisch, HTML-Einschleusung, Zeitreise und UI-Zeitreise.
 #   --ohne-tests  `npm test` überspringen (wenn gerade schon gelaufen)
 #   --ohne-rauch  Rauchtests und Zeitreise überspringen (nur Tests + UI-Skripte)
 #   --nur X       nur die UI-Skripte, deren Dateiname X enthält (z. B. --nur hoechstzahl); keine Rauchtests
+#   --ab X        UI-Skripte erst ab dem ersten, dessen Dateiname X enthält (Fortsetzen nach Abbruch, z. B. --ab einstellungen-vorwarnung); Rauchtests wie sonst
 # Gesamtlauf > 15 Min. → im Hintergrund starten: (sh scripts/pruefen.sh --schnell > /tmp/cfp-pruefen.log 2>&1; echo EXIT $? >> /tmp/cfp-pruefen.log) &
 # Neues UI-Skript: eine Zeile „Bezeichnung|Skript|Logdatei“ in UI_SKRIPTE ergänzen.
 cd "$(dirname "$0")/.." || exit 1
 step() { echo "== $1"; }
 fail() { echo "FEHLER: $1"; exit 1; }
-SCHNELL=; OHNE_TESTS=; OHNE_RAUCH=; NUR=
+SCHNELL=; OHNE_TESTS=; OHNE_RAUCH=; NUR=; AB=
 while [ $# -gt 0 ]; do
   case "$1" in
     --schnell) SCHNELL=1 ;;
     --ohne-tests) OHNE_TESTS=1 ;;
     --ohne-rauch) OHNE_RAUCH=1 ;;
     --nur) shift; NUR="${1:-}"; OHNE_RAUCH=1; [ -n "$NUR" ] || fail "--nur braucht einen Namensteil" ;;
+    --ab) shift; AB="${1:-}"; [ -n "$AB" ] || fail "--ab braucht einen Namensteil" ;;
     *) fail "unbekannte Option: $1" ;;
   esac
   shift
@@ -143,11 +145,13 @@ OLDIFS=$IFS; IFS=$NL; set -f
 for zeile in $UI_SKRIPTE; do
   name=${zeile%%|*}; rest=${zeile#*|}; skript=${rest%%|*}; log=${rest#*|}
   if [ -n "$NUR" ]; then case "$skript" in *"$NUR"*) ;; *) continue ;; esac; fi
+  if [ -n "$AB" ]; then case "$skript" in *"$AB"*) AB= ;; *) continue ;; esac; fi
   step "$name"; sh scripts/restart-dev.sh > /dev/null
   python3 "scripts/$skript" > "$log" 2>&1 || { tail -20 "$log"; fail "$name"; }; tail -1 "$log"; N=$((N + 1))
 done
 IFS=$OLDIFS; set +f
 [ -z "$NUR" ] || [ "$N" -gt 0 ] || fail "kein UI-Skript passt zu „$NUR“"
+[ -z "$AB" ] || fail "kein UI-Skript passt zu „$AB“ (--ab)"
 run_smoke() {
   sh scripts/restart-dev.sh > /dev/null
   env "$@" python3 scripts/ui-rauchtest.py > /tmp/cfp-rauch.log 2>&1 || { tail -30 /tmp/cfp-rauch.log; fail "Rauchtest $*"; }
