@@ -16884,6 +16884,20 @@ await test('Fehlersuche 22.10. (Import/Push): Zeile mit mehr Werten als Kopfspal
   const src = (await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
   ok(src.includes('${maintKindLang(kind, l)}'), 'Erstversand übersetzt');
 });
+await test('Fehlersuche 22.10. (Erstnutzung): Hinweise statt leerer Seiten – Startseite ohne Fahrzeuge/mit Pflichtprüfungs-Lücken nicht grün, Melden/Kontrolle ohne Fahrzeug, leere Fahrzeugliste, Fahrer ohne Zuordnung, Reifen ohne Warnschwelle (DE/UK/EN)', async () => {
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['drv_no_vehicle', 'todo_no_vehicles', 'no_vehicles_mgr', 'no_vehicles_ask', 'no_vehicles_list', 'no_vehicles_filter', 'tires_rule_nowarn']) ok(STRINGS[l][k], `${l} ${k}`);
+    ok(STRINGS[l].tires_rule_nowarn.includes('{min}') && !STRINGS[l].tires_rule_nowarn.includes('{warn}'), l + ' Reifen ohne Platzhalter für die Schwelle');
+    ok(PLURALS[l].todo_gaps_hint && Object.values(PLURALS[l].todo_gaps_hint).every((x) => x.includes('{n}')), l + ' Lücken-Hinweis mit Zahl');
+  }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('ov.totals.vehicles === 0') && app.includes('data-todogaps'), 'Startseite: ohne Fahrzeuge bzw. mit Lücken kein grünes Feld');
+  eq((app.match(/if \(!vs\.length\) \{ render\(/g) || []).length, 2, 'Melden und Abfahrtskontrolle mit Hinweis');
+  ok(app.includes('data-vlempty') && app.includes('data-novehicle>'), 'leere Fahrzeugliste, Fahrer ohne Zuordnung');
+  const { U } = await freshWorld();
+  eq((await U.fleet.get('/api/tires/fleet')).status, 200);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
