@@ -174,14 +174,14 @@ console.log('Werkstatt: Übernahme, Arbeiten, Teile, Restarbeiten, Kontrolle (T0
 await test('T06: Werkstatt-Eingang und bestätigte Übernahme', async () => {
   const dash = await users.ws.get('/api/dashboard');
   eq(dash.data.inbox, 1);
-  const a = await users.ws.post(`/api/cases/${C1}/commands`, { action: 'acknowledge', command_id: rk(), expected_version: ver, payload: { planned_date: '2026-10-12' } });
+  const a = await users.ws.post(`/api/cases/${C1}/commands`, { action: 'acknowledge', command_id: rk(), expected_version: ver, payload: { planned_date: BERLIN_TODAY } });
   eq(a.status, 200); ver = a.data.version;
   ok((await users.fleet.get('/api/notifications')).data.notifications.some((x) => x.kind === 'acknowledged'), 'Fuhrpark sieht Übernahme');
   const s = await users.ws.post(`/api/cases/${C1}/commands`, { action: 'start_repair', command_id: rk(), expected_version: ver });
   eq(s.data.status, 'in_reparatur'); ver = s.data.version;
 });
 await test('T07: Stunden und Teile gespeichert; fehlender Preis = unbewertet', async () => {
-  let r = await users.ws.post(`/api/cases/${C1}/commands`, { action: 'record_work', command_id: rk(), expected_version: ver, payload: { hours: 0.75, description: 'Rückleuchte getauscht', work_date: '2026-10-10' } });
+  let r = await users.ws.post(`/api/cases/${C1}/commands`, { action: 'record_work', command_id: rk(), expected_version: ver, payload: { hours: 0.75, description: 'Rückleuchte getauscht', work_date: BERLIN_TODAY } });
   eq(r.status, 200); ver = r.data.version;
   r = await users.ws.post(`/api/cases/${C1}/commands`, { action: 'add_part', command_id: rk(), expected_version: ver, payload: { name: 'Rückleuchte LED rechts', quantity: 1 } });
   eq(r.status, 200); ver = r.data.version;
@@ -567,10 +567,12 @@ await test('Prüftermin-Import: nur mit Nachweis, FIN/eindeutiges Kennzeichen, V
   eq(ov.rows.find((x) => x.vehicle_id === V1 && x.kind === 'SP').evidence, 'Prüfbericht; Nr. "17"', 'CSV mit Anführungszeichen');
   const again = await users.fleet.req('POST', '/api/maintenance/import', csv, { 'content-type': 'text/csv' });
   eq(again.data.created, 0); eq(again.data.unchanged, 3, 'Wiederholung idempotent');
-  const upd = await users.fleet.req('POST', '/api/maintenance/import', 'FIN;Art;Fällig am;Nachweis\nWMA15SZZ2HM722774;HU;20.10.2027;Prüfbericht TÜV 09.10.2026', { 'content-type': 'text/csv' });
+  // Jahr relativ zu heute (22.10.2026: fest 2027 war ab Herbst 2027 älter als der vorhandene Termin – Test rot)
+  const YH = Number(BERLIN_TODAY.slice(0, 4)) + 3;
+  const upd = await users.fleet.req('POST', '/api/maintenance/import', `FIN;Art;Fällig am;Nachweis\nWMA15SZZ2HM722774;HU;20.10.${YH};Prüfbericht TÜV 09.10.2026`, { 'content-type': 'text/csv' });
   eq(upd.data.updated, 1);
   const hu = (await users.fleet.get('/api/maintenance')).data.rows.find((x) => x.vehicle_id === V1 && x.kind === 'HU');
-  eq(hu.next_due_date, '2027-10-20'); eq(hu.evidence, 'Prüfbericht TÜV 09.10.2026');
+  eq(hu.next_due_date, `${YH}-10-20`); eq(hu.evidence, 'Prüfbericht TÜV 09.10.2026');
   // Nur letzte Prüfung belegt (Rechnung ohne Fälligkeit): kein erfundener Termin, Lücke bleibt sichtbar
   const H2 = { 'content-type': 'text/csv' };
   const lo = await users.fleet.req('POST', '/api/maintenance/import', 'FIN;Art;Letzte Prüfung;Nachweis\nWDB9630051L917317;Tachograph;28.08.2026;Rechnung Prüfstelle 4711\nWDB9630051L917317;Tachograph;01.03.2026;ältere Rechnung', H2);
@@ -3970,7 +3972,8 @@ await test('Kommentar gezielt benachrichtigen (nur Werkstatt / nur Meldende), St
 });
 
 await test('Kosten je km: gefahrene km aus erster/letzter Ablesung im Zeitraum, ohne Rückgang; sonst kein Wert', async () => {
-  const r = await users.fleet.get('/api/reports/costs');
+  // Zeitraum ab 2026-01 (alle Testablesungen): ohne „Von“ fielen sie ab Ende 2027 aus dem 13-Monats-Fenster (22.10.2026)
+  const r = await users.fleet.get(`/api/reports/costs?from=2026-01&to=${COST_TO}`);
   eq(r.status, 200); ok(Array.isArray(r.data.vehicles));
   const v1 = r.data.vehicles.find((v) => v.vehicle_id === V1);
   const rows = (await env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at').bind(V1).all()).results;
@@ -4227,7 +4230,7 @@ console.log('HU/SP nach StVZO Anlage VIII');
     await users.fleet.post('/api/agent/run');
     ok((await users.fleet.get('/api/master')).data.findings.some((f) => f.finding_code === 'MAINTENANCE_OVERDUE' && f.vehicle_id === V3 && /SP überfällig/.test(f.message)), 'Befund SP überfällig');
     const rid = d.hu_sp.rules.SP;
-    eq((await users.fleet.post(`/api/maintenance/${rid}/plan`, { planned_date: '2026-10-28' })).status, 200);
+    eq((await users.fleet.post(`/api/maintenance/${rid}/plan`, { planned_date: BERLIN_TODAY })).status, 200); // relativ: Termine > 1 Jahr zurück lehnt der Server ab
     eq((await users.fleet.get(`/api/vehicles/${V3}`)).data.hu_sp.sp.status, 'ueberfaellig', 'Planung erledigt nichts');
     const done = await users.fleet.post(`/api/maintenance/${rid}/complete`, { done_date: '2026-10-10', evidence: 'SP-Prüfbericht 10.10.2026', result: 'ohne_maengel' });
     eq(done.status, 200);
@@ -4285,6 +4288,9 @@ await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrer
   eq(SETTING_RULES.maintenance_warn_days.min, 0);
   eq(maintenanceWarnDays('0'), 0); eq(maintenanceWarnDays(''), 30); eq(maintenanceWarnDays(null), 30); eq(maintenanceWarnDays(undefined), 30); eq(maintenanceWarnDays('abc'), 30); eq(maintenanceWarnDays('14'), 14);
   ok(!/warnDays = 30/.test(fs.readFileSync(new URL('../src/inspection_rules.js', import.meta.url), 'utf8')), 'HU/SP-Neuberechnung ohne festen Vorlauf 30');
+  // künftige Fälligkeit relativ zu heute (22.10.2026: feste Testdaten aus 2026 lagen ab Ende 2027 alle in der Vergangenheit)
+  const { addMonths: addM } = await import('../src/util.js');
+  const fut = await users.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Feuerlöscher', next_due_date: addM(BERLIN_TODAY, 6), evidence: 'Testnachweis künftige Fälligkeit' }); eq(fut.status, 201);
   try {
     eq((await owner.put('/api/settings', { maintenance_warn_days: '0' })).status, 200);
     const ov = (await owner.get('/api/maintenance')).data;
@@ -4296,7 +4302,7 @@ await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrer
     for (const r of ov.rows.filter((x) => x.days === 0)) eq(st(r), 'faellig', 'am Fälligkeitstag „fällig“');
     const cal = new TextDecoder().decode((await owner.get('/api/maintenance?format=ics')).data);
     ok(cal.includes('TRIGGER:-P0D') && !cal.includes('TRIGGER:-P30D'), 'Kalender-Erinnerung am Fälligkeitstag statt 30 Tage vorher');
-  } finally { eq((await owner.put('/api/settings', { maintenance_warn_days: '' })).status, 200); }
+  } finally { eq((await owner.put('/api/settings', { maintenance_warn_days: '' })).status, 200); await env.DB.prepare('DELETE FROM maintenance_rules WHERE id=?').bind(fut.data.id).run(); }
   eq((await owner.get('/api/maintenance')).data.warn_days, 30, 'leer = Standard 30');
   eq(warnDaysOf(new Map([['contract_warn_days', '0']])), 0, 'Verträge: 0 bleibt 0 (vorher still 60)');
   eq(warnDaysOf(new Map([['contract_warn_days', '']])), 60); eq(warnDaysOf(new Map()), 60); eq(warnDaysOf(new Map([['contract_warn_days', '14']])), 14);
@@ -10680,7 +10686,10 @@ await test('Wettläufe Konten & Lager: Benutzer-Bearbeiten auf gelesenem Stand, 
     const [a, b] = await Promise.all([U.own.patch(`/api/users/${U.driver.id}`, { active: false }), U.fleet.patch(`/api/users/${U.driver.id}`, { display_name: 'Fahrer Neu' })]);
     // reihenfolgeunabhängig (19.10.2026: kam die Namensänderung zuerst an, war sie der Gewinner – Test war gelegentlich rot): genau einer gewinnt,
     // der andere bekommt 409; nie still überschrieben
-    eq([a.status, b.status].sort().join(), '200,409'); eq((a.status === 409 ? a : b).data.error, 'version_conflict');
+    // nacheinander verarbeitet (beide 200, 22.10.2026 unter Zeitreise 02/2028 beobachtet) ist ebenfalls korrekt, solange beide Änderungen stehen
+    const seq = a.status === 200 && b.status === 200;
+    if (seq) { const u = e.DB.db.prepare('SELECT active, display_name FROM users WHERE id=?').get(U.driver.id); eq(`${u.active}/${u.display_name}`, '0/Fahrer Neu', 'nacheinander: beide Änderungen erhalten'); }
+    else { eq([a.status, b.status].sort().join(), '200,409'); eq((a.status === 409 ? a : b).data.error, 'version_conflict'); }
     if (a.status === 409) eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).status, 200, 'Deaktivierung nach Neuladen');
     eq(e.DB.db.prepare('SELECT active FROM users WHERE id=?').get(U.driver.id).active, 0, 'bleibt deaktiviert');
     eq((await new Client(worker, e, 'x').post('/api/login', { username: 'w.fahrer', password: PW })).status, 401);
@@ -12492,7 +12501,7 @@ await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenz
   let sel = await listFinesSel(e, me, 'test', { site }, 2);
   eq(sel.rows.map((r) => r.reference).join(','), 'AZ-1', 'Standortfilter vor der Grenze'); ok(sel.site_options.length >= 2, 'Standortauswahl aus allen Schreiben');
   sel = await listFinesSel(e, me, 'test', { status: 'open' }, 2); ok(sel.rows.some((r) => r.reference === 'AZ-1'), 'offen: nächste Frist bleibt trotz Grenze'); eq(sel.truncated, true);
-  const far = String(Number(today.slice(0, 4)) + 21) + today.slice(4);
+  const far = (await import('../src/util.js')).addMonths(today, 12 * 21); // 29.02. + 21 Jahre → 28.02. (vorher ungültiges Datum)
   let r = await fine({ reference: 'AZ-4', response_due: far }); eq(r.status, 400, 'Frist + 21 Jahre'); ok(/außerhalb des zulässigen Bereichs/.test(r.data.message || r.data.error_message || JSON.stringify(r.data)));
   const ver = (await U.fleet.get(`/api/fines/${f1.data.id}`)).data.fine.version;
   eq((await U.fleet.post(`/api/fines/${f1.data.id}/commands`, { action: 'update', payload: { response_due: far }, expected_version: ver })).status, 400, 'Ändern: Frist + 21 Jahre');
@@ -13552,7 +13561,7 @@ await test('Fehlersuche 19.10. (48): Lager – gleichzeitig wiederverwendeter re
   const rb = await F.post(`/api/stock/${B}/movements`, { type: 'zugang', qty: '4', request_key: 'k-race-1' }); e.DB.batch = orig;
   ok(fired); eq(rb.status, 409); eq(rb.data.error, 'request_key_reused');
   eq((await F.post(`/api/stock/${A}/movements`, { type: 'zugang', qty: '3', request_key: 'k-race-1' })).data.duplicate, true, 'echte Wiederholung weiter „duplicate“');
-  const day = (y) => String(Number(BERLIN_TODAY.slice(0, 4)) + y) + BERLIN_TODAY.slice(4);
+  const { addMonths: addMy } = await import('../src/util.js'); const day = (y) => addMy(BERLIN_TODAY, 12 * y); // 29.02. → 28.02. des Folgejahres
   eq((await F.put(`/api/stock/${A}/order`, { qty: '90', ordered_on: '1926-10-01' })).status, 400, 'Bestelldatum 1926');
   eq((await F.put(`/api/stock/${A}/order`, { qty: '90', eta: day(36) })).status, 400, 'Liefertermin Jahrzehnte später');
   eq((await F.put(`/api/stock/${A}/order`, { qty: '90', eta: day(1) })).status, 200, 'Liefertermin in einem Jahr möglich');
