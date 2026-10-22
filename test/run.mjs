@@ -17658,6 +17658,7 @@ await test('Lagerteil mit Artikelpreis nie als „Schätzung“ (Teilagent Lager
   const by = Object.fromEntries(parts.map((x) => [x.stock_item_id, x]));
   eq(by[it1.data.id].valuation, 'actual', 'Artikelpreis: tatsächlicher Wert'); eq(by[it1.data.id].unit_price_net, 5);
   eq(by[it2.data.id].valuation, 'estimate', 'ohne Artikelpreis: Schätzung bleibt');
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM stock_movements m JOIN parts p ON p.id=m.part_id WHERE p.case_id=? AND m.created_at=p.created_at`).get(id).n, 2, 'Entnahme und Teil mit demselben Zeitpunkt (Monatsgrenze)');
   eq((await cmd(U.ws, id, 'add_part', { stock_item_id: it1.data.id, quantity: 1, valuation: 'egal' })).status, 400, 'ungültige Wertart weiter abgewiesen');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/querySelector\('\[name=estimate\]'\);\s*if \(es\) \{ es\.disabled = fixed;/.test(app), 'Oberfläche sperrt „Schätzung“ bei Artikelpreis');

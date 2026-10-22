@@ -306,7 +306,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
 }
 
 // Für den Werkstattbefehl add_part: liefert Artikel + Statement für die Entnahme (in derselben Transaktion)
-export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, partId, price = null) {
+export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, partId, price = null, at = null) {
   const it = await env.DB.prepare('SELECT * FROM stock_items WHERE id=? AND environment=? AND active=1').bind(itemId, envName).first();
   if (!it) throw bad('validation', 'Lagerartikel nicht gefunden.');
   if (it.site !== c.workshop_site) throw bad('validation', 'Lagerartikel gehört nicht zur zuständigen Werkstatt.');
@@ -314,7 +314,7 @@ export async function prepareCaseWithdrawal(env, user, envName, c, itemId, qty, 
   const avail = await onHand(env, itemId);
   if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}). Zugang buchen oder Teil ohne Lager erfassen.`, { available: av, unit: it.unit, no_stock_hint: true }); }
   const stmt = env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,part_id,unit_price_net,note,user_id,created_at)
-    VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net ?? price, `Vorgang ${c.case_no}`, user.id, nowIso());
+    VALUES (?,?,?,'entnahme',?,?,?,?,?,?,?)`).bind(uuid(), envName, itemId, -qty, c.id, partId, it.unit_price_net ?? price, `Vorgang ${c.case_no}`, user.id, at || nowIso()); // Zeitpunkt des Befehls (gleicher Monat wie das Teil im Kostenbericht, 22.10.2026)
   // Prüfung im Stapel des Vorgangsbefehls (zwei Vorgänge am selben Artikel); cases.js erkennt den Fall über guardItemId
   return { item: it, stmt, guard: stockGuardNonNegative(env, itemId) };
 }

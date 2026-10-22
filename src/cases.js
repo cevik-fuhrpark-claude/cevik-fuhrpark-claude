@@ -1174,7 +1174,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // (18.10.2026: Eingabe landete nur im Teil, Journal blieb „unbewertet“ bzw. beim Artikelpreis; Regel wie die Entnahme im Lager)
       const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
       if (p.stock_item_id) {
-        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice);
+        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice, now);
         stockItem = w.item;
         extra.push(w.stmt, ...w.guard); stockGuardItem = { id: w.item.id, qty, unit: w.item.unit };
       }
