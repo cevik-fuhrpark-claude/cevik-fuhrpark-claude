@@ -59,6 +59,7 @@ UI-Bußgeld Fahrer nicht mehr aktiv (Hinweis Quittung)|ui-bussgeld-fahrer-inakti
 UI-Inhaber schaltet Umgebung während Foto-Upload um|ui-umschalten-fotos.py|/tmp/cfp-umschalten-fotos.log
 UI-Lagerteil mit Artikelpreis ohne Schätzung|ui-lager-schaetzung.py|/tmp/cfp-lager-schaetzung.log
 UI-Standortschlüssel (Fahrer ohne Standort, Werkstatt-Vorauswahl)|ui-standort-schluessel.py|/tmp/cfp-standort-schluessel.log
+UI-Kleine Handys 320 px / große Schrift (Tabs, Lagerzeile, Tippflächen)|ui-kleine-handys.py|/tmp/cfp-kleine-handys.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log
