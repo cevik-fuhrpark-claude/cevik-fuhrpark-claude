@@ -17454,6 +17454,19 @@ await test('Backlog 133 (Nachrechnung der Berichte): Fahrzeug, das nur aus einem
   eq(va.km, 2000, 'km'); eq(va.actual_net, 1001, 'Kosten'); eq(va.cost_per_km, 0.501, '€/km');
 });
 
+await test('Backlog 134 (Hilfetexte gegen Verhalten): Push-Test an dieses Gerät kommt auch in der Ruhezeit sofort (Hilfe DE/UK/EN), Wiedervorlage-Hinweis nennt die Disposition, die sie sieht', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = await import('node:fs'); const notify = fs.readFileSync(new URL('../src/notify.js', import.meta.url), 'utf8'); const cases = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(notify.includes('!n.only_endpoint'), 'Ruhezeit gilt nicht für den Gerätetest');
+  const NOW = { de: 'sofort', uk: 'одразу', en: 'immediately' };
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].help_push_s.includes(NOW[l]), `${l}.help_push_s: Test sofort`);
+    ok(STRINGS[l].followup_hint.toLowerCase().includes(STRINGS[l].role_dispatch.toLowerCase().slice(0, 7)), `${l}.followup_hint nennt ${STRINGS[l].role_dispatch}`);
+  }
+  // Server blendet die Wiedervorlage nur für Fahrer und Werkstatt aus (Disposition sieht sie)
+  ok(cases.includes("if (user.role === 'driver' || user.role === 'workshop') { o.add('followup_on'); o.add('followup_note'); }"), 'Ausblendung nur Fahrer/Werkstatt im Code');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
