@@ -36,7 +36,7 @@ async def main():
         await api('POST', f'/api/vehicles/VIN:{VIN}/tires/events', {'event_type': 'messung', 'position': 'VA-L', 'tread_mm': 9})
         for lang, w in [('de', 390), ('uk', 820), ('en', 1440)]:
             await api('PATCH', '/api/me', {'language': lang}); await q.set_viewport_size({'width': w, 'height': 900})
-            await q.goto(B + '/#/'); await q.reload(); await q.goto(B + f'/#/vehicles/VIN:{VIN}'); await q.wait_for_timeout(1500)
+            await q.goto(B + '/#/'); await q.reload(); await q.goto(B + f'/#/vehicles/VIN:{VIN}'); await q.wait_for_selector('#tires .chip', state='attached', timeout=15000); await q.wait_for_timeout(300)
             await q.evaluate("document.querySelectorAll('details').forEach(d => d.open = true)")
             chip = q.locator('#tires .chip', has_text=TXT[lang][0])
             cls = await chip.first.get_attribute('class') if await chip.count() else ''
