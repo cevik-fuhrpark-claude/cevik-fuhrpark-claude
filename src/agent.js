@@ -248,6 +248,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
             ...fm(sla === null ? 'WORKSHOP_ACK_PENDING_NOSLA' : 'WORKSHOP_ACK_PENDING', { label, site: c.workshop_site, at: berlinDateTime(c.status_since) }), next_action: 'Auftrag übernehmen.' });
         }
       }
+      // Übernommener Auftrag, dessen Werkstatt-Standort kein aktives Konto mehr hat (Konto deaktiviert/versetzt, 22.10.2026):
+      // vorher nur bei nicht übernommenen Aufträgen gemeldet – Werkstatthinweise (Kommentar, Nacharbeit) liefen still ins Leere.
+      // „Abschlusskontrolle“ ausgenommen (handelt die Leitung; Nacharbeit führt zurück nach „in Reparatur“ und wird dann gemeldet).
+      if (((c.status === 'werkstatt_freigegeben' && c.workshop_ack_at) || c.status === 'in_reparatur' || c.status === 'wartet_teile')
+          && c.workshop_site && !sitesWithUsers.has(c.workshop_site)) {
+        const crit = c.priority === 'kritisch' || !!c.safety_lock;
+        add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: crit ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: 1,
+          ...fm('NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site }),
+          next_action: 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
+      }
       if (c.status === 'wartet_teile') {
         add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',
           ...fm('WAITING_PARTS', { label, at: berlinDateTime(c.status_since) }), next_action: 'Teilelieferung klären, Dispo informieren.' });

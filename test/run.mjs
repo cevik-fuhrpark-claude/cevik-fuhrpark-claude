@@ -16985,6 +16985,32 @@ await test('Rechenzeit Fuhrparkagent (CPU-Grenze je Aufruf): Fingerabdrücke zwi
   ok(src.includes('PLURAL_RULES') && !/new Intl\.PluralRules\([^)]*\)\.select/.test(src), 'Pluralregeln zwischengespeichert');
   ok(typeof renderFindingMessage === 'function');
 });
+await test('Lebenszyklus 22.10.: übernommener Auftrag ohne aktives Werkstattkonto am Standort wird gemeldet (in Reparatur, übernommen, wartet auf Teile; kritisch bei Sperre/kritisch; Abschlusskontrolle nicht)', async () => {
+  const { U, cmd, newCase, toRepair } = await freshWorld();
+  const A = await toRepair();
+  const B = await newCase({ vehicle_id: 'VIN:WDB9630051L917317' }); eq((await cmd(U.fleet, B, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200); eq((await cmd(U.ws, B, 'acknowledge')).status, 200);
+  const C = await toRepair({ priority: 'kritisch' }); eq((await cmd(U.ws, C, 'wait_parts', { }, 'Teile')).status, 200, 'wartet auf Teile');
+  const D = await newCase(); eq((await cmd(U.fleet, D, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  const nws = async () => { await U.fleet.post('/api/agent/run'); return Object.fromEntries((await U.fleet.get('/api/master')).data.findings
+    .filter((x) => x.finding_code === 'NO_WORKSHOP_RECIPIENT' && x.status !== 'erledigt').map((x) => [x.case_id, x])); };
+  eq(Object.keys(await nws()).length, 0, 'Werkstatt aktiv: kein Befund');
+  eq((await U.own.req('PATCH', `/api/users/${U.ws.id}`, { active: false })).status, 200, 'einziges Werkstattkonto Dortmund deaktiviert');
+  let f = await nws();
+  eq(Object.keys(f).sort().join(), [A, B, C, D].sort().join(), 'alle Werkstattaufträge Dortmund gemeldet');
+  eq(f[A].severity, 'handeln'); eq(f[B].severity, 'handeln'); eq(f[C].severity, 'kritisch', 'kritischer Auftrag'); eq(f[D].severity, 'kritisch', 'nicht übernommen (wie bisher)');
+  ok(/keinen aktiven Benutzer mehr/.test(f[A].message), f[A].message); eq(f[A].next_action, 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.');
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  for (const l of ['uk', 'en']) ok(!/Werkstatt/.test(renderFindingMessage(f[A], l)), `${l}: übersetzt`);
+  // Leitung führt A weiter bis zur Abschlusskontrolle: dann kein Befund mehr (handelt die Leitung)
+  const items = (await U.fleet.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await U.fleet.post('/api/inspections', { kind: 'nach_reparatur', case_id: A, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.fleet, A, 'record_work', { hours: 1, description: 'Leitung führt weiter' })).status, 200);
+  { const x = await cmd(U.fleet, A, 'request_quality_check', {}, 'fertig'); eq(x.status, 200, JSON.stringify(x.data)); }
+  f = await nws(); ok(!f[A], 'Abschlusskontrolle: kein Befund'); ok(f[B] && f[C], 'übrige weiter gemeldet');
+  // anderes Werkstattkonto in Dortmund → Befunde erledigt
+  eq((await U.own.req('PATCH', `/api/users/${U.wsMuc.id}`, { role: 'workshop', workshop_site: 'DORTMUND' })).status, 200);
+  eq(Object.keys(await nws()).length, 0, 'Werkstatt wieder besetzt');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

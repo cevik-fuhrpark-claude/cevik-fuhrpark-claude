@@ -1263,6 +1263,7 @@ const NEXT_ACTIONS = [
   ['Meldung bewerten und Priorität bestätigen.', 'Оцініть повідомлення і підтвердьте пріоритет.', 'Assess the report and confirm the priority.'],
   ['Meldung bewerten.', 'Оцініть повідомлення.', 'Assess the report.'],
   ['Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.', 'Створіть користувача майстерні або призначте іншу майстерню.', 'Create a workshop user or assign another workshop.'],
+  ['Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.', 'Створіть користувача майстерні або продовжуйте замовлення як керівник автопарку.', 'Create a workshop user or continue the order as fleet management.'],
   ['Werkstatt direkt kontaktieren oder Auftrag umleiten.', 'Зв’яжіться з майстернею напряму або перенаправте замовлення.', 'Contact the workshop directly or redirect the order.'],
   ['Auftrag übernehmen.', 'Прийміть замовлення.', 'Accept the order.'],
   ['Teilelieferung klären, Dispo informieren.', 'З’ясуйте постачання запчастин, повідомте диспетчерську.', 'Clarify the parts delivery, inform dispatch.'],
