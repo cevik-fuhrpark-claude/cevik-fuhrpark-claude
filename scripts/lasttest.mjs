@@ -30,7 +30,18 @@ console.log(`Fahrzeuge importiert: ${vehicles.length} (übersprungen: ${(imp.dat
 const timings = {};
 const queries = {};
 const appMs = {}; // Zeit ohne SQL-Leseanweisungen ≈ CPU-Zeit des Workers (D1-Wartezeit zählt im Betrieb nicht zur CPU-Grenze)
-async function timed(label, fn) { const q0 = QSTAT.n; const m0 = QSTAT.ms; const t0 = performance.now(); const r = await fn(); const dt = performance.now() - t0; (timings[label] ||= []).push(dt); (appMs[label] ||= []).push(dt - (QSTAT.ms - m0)); (queries[label] ||= []).push(QSTAT.n - q0); return r; }
+// CFP_PROFIL=<Teil der Bezeichnung>: Rechenzeit-Profil (Selbstzeit je Funktion) der passenden Messpunkte am Ende ausgeben (22.10.2026)
+const PROFIL = process.env.CFP_PROFIL || null; let profSession = null; const profSelf = new Map(); let profN = 0;
+async function profiled(label, fn) {
+  if (!PROFIL || !label.includes(PROFIL)) return fn();
+  if (!profSession) { const { Session } = await import('node:inspector/promises'); profSession = new Session(); profSession.connect(); await profSession.post('Profiler.enable'); await profSession.post('Profiler.setSamplingInterval', { interval: 100 }); }
+  await profSession.post('Profiler.start'); const r = await fn(); const { profile } = await profSession.post('Profiler.stop'); profN++;
+  const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+  for (let i = 0; i < profile.samples.length; i++) { const n = byId.get(profile.samples[i]); const k = `${n.callFrame.functionName || '(anonym)'} ${n.callFrame.url.split('/').slice(-2).join('/')}:${n.callFrame.lineNumber + 1}`; profSelf.set(k, (profSelf.get(k) || 0) + (profile.timeDeltas[i] || 0)); }
+  return r;
+}
+process.on('beforeExit', () => { if (!profN) return; profN = -Math.abs(profN); console.log(`\nProfil „${PROFIL}“ (${-profN} Aufrufe, Selbstzeit je Aufruf):`); for (const [k, v] of [...profSelf].sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(`  ${(v / 1000 / -profN).toFixed(2).padStart(8)} ms  ${k}`); profN = 0; });
+async function timed(label, fn) { const q0 = QSTAT.n; const m0 = QSTAT.ms; const t0 = performance.now(); const r = await profiled(label, fn); const dt = performance.now() - t0; (timings[label] ||= []).push(dt); (appMs[label] ||= []).push(dt - (QSTAT.ms - m0)); (queries[label] ||= []).push(QSTAT.n - q0); return r; }
 const prios = ['niedrig', 'mittel', 'niedrig'];
 const t0 = performance.now();
 const ids = [];
