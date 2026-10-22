@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (22.10.2026): Erstnutzung mit leerem Bestand – Hinweise statt leerer Seiten/irreführendem „alles grün“:
 # Startseite ohne Fahrzeuge bzw. mit Pflichtprüfungen ohne Termin, Melden/Abfahrtskontrolle ohne Fahrzeug, leere Fahrzeugliste,
-# Reifen ohne eigene Warnschwelle, Fahrer ohne Zuordnung. DE/UK, 390/1366 px. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
+# Reifen ohne eigene Warnschwelle, Fahrer ohne Zuordnung; Lücken-Wegweiser öffnet „ohne Termin“, Fuhrparkleitung am ersten Tag:
+# leere Listen mit Text (Management, Lager), Reifen-Hinweis „nur Inhaber“ (22.10.2026 abends). DE/UK/EN, 390/1366 px. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -55,7 +56,29 @@ with sync_playwright() as p:
         has=q.locator('[data-todogaps]').count()>0 or q.locator('details.panel').count()>0
         check(has and q.locator('section.panel.good').count()==0,f'{lang}: Lücke statt „Nichts Dringendes“ in grün')
         if SHOTS: q.screenshot(path=f'{SHOTS}/leer_luecke_{lang}.png')
+        if q.locator('[data-todogaps] a').count():
+            q.click('[data-todogaps] a'); q.wait_for_selector('[data-mf]',timeout=15000)
+            check(q.locator('button[data-mf=gaps]:not(.secondary)').count()==1,f'{lang}: Wegweiser öffnet Reiter „Pflichtprüfungen ohne Termin“')
+            check('EN-LEER 1' in q.inner_text('main') if q.locator('main').count() else 'EN-LEER 1' in q.inner_text('body'),f'{lang}: Fahrzeug in der Lückenliste')
         check(not errs,f'{lang}: keine Skriptfehler {errs}'); c.close()
+    # Fuhrparkleitung am ersten Tag (keine Vorgänge, kein Lager, keine Warnschwelle)
+    f=api('POST','/api/users',{'username':'en.leitung','display_name':'EN Leitung','role':'fleet','environment':envn})
+    if f['s'] in (200,201):
+        c0=br.new_context(); q0=c0.new_page(); q0.goto(B); q0.evaluate(JS,['POST','/api/invite/accept',{'token':f['d']['invite_token'],'password':PW}]); c0.close()
+    NONE={'de':'Keine Einträge','uk':'записів немає','en':'No entries'}; OWN={'de':'nur Inhaber','uk':'лише власник','en':'owner only'}
+    for lang in ['de','uk','en']:
+      for w in [390,1366]:
+        c,q,errs=page(br,'en.leitung',lang,w)
+        q.goto(B+'/#/master'); q.reload(); q.wait_for_selector('#ra',timeout=15000); q.wait_for_timeout(500)
+        check(q.locator('[data-none]').count()>=1,f'{lang} {w}: Management – leere Listen mit Text')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/ersttag_master_{lang}_{w}.png',full_page=True)
+        go(q,'/#/stock','h1'); q.wait_for_timeout(1000)
+        check(NONE[lang] in q.inner_text('body'),f'{lang} {w}: Lager leer mit Text')
+        go(q,'/#/tires','h1'); q.wait_for_timeout(800)
+        check(OWN[lang] in q.inner_text('body'),f'{lang} {w}: Reifen-Hinweis „Einstellungen, nur Inhaber“')
+        check('<p class="muted">–</p>' not in q.content(),f'{lang} {w}: kein nacktes „–“')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}: kein Querscrollen')
+        check(not errs,f'{lang} {w}: keine Skriptfehler {errs}'); c.close()
     br.close()
 print(f"\n{'OK' if not fails else 'FEHLER: '+str(len(fails))}")
 raise SystemExit(1 if fails else 0)

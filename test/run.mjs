@@ -17827,6 +17827,26 @@ await test('Werkstatt-Tablet im Schichtwechsel (Teilagent 22.10.): Anmeldung/Ein
   ok(/resetUserState\(\); clearOfflineData\(\); markSession\(''\);/.test(app), '401 leert Offline-Daten');
 });
 
+await test('Erster Tag der Fuhrparkleitung / Unfall mit Drittschaden (Teilagenten 22.10.): Datenauskunft nennt Umgebung des Versicherungsfalls, Befundtext „gemeldet am“ statt „seit … in Prüfung“, leere Listen mit Text, Lücken-Wegweiser öffnet den Reiter „ohne Termin“, Reifen-Hinweis „nur Inhaber“', async () => {
+  const { U, newCase } = await freshWorld();
+  const cid = await newCase();
+  eq((await U.fleet.put(`/api/cases/${cid}/claim`, { insurer: 'Muster-Vers AG', reported_on: BERLIN_TODAY, evidence: 'Meldung per Portal' })).status, 200, 'Versicherungsfall');
+  const x = (await U.own.get(`/api/admin/users/${U.fleet.id}/data-export`)).data;
+  const find = (o) => { if (!o || typeof o !== 'object') return null; if (Array.isArray(o.claims_recorded)) return o.claims_recorded; for (const v of Object.values(o)) { const r = find(v); if (r) return r; } return null; };
+  const cr = find(x); ok(cr && cr.length === 1, 'claims_recorded'); eq(cr[0].environment, 'test', 'Umgebung in der Auskunft');
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const a = { label: 'V-1', insurer: 'Muster-Vers AG', date: '01.09.2026', st: 'in_pruefung', days: 30 };
+  eq(renderFindingMessage('CLAIM_OPEN_LONG', a, 'de'), 'V-1: Versicherungsfall bei Muster-Vers AG gemeldet am 01.09.2026, Status „in Prüfung“ (Nachfassen nach 30 Tagen eingestellt).');
+  ok(renderFindingMessage('CLAIM_OPEN_LONG', a, 'en').includes('reported on 01.09.2026, status “under review”'), 'EN');
+  ok(renderFindingMessage('CLAIM_OPEN_LONG', a, 'uk').includes('повідомлено 01.09.2026'), 'UK');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].no_entries, l); ok(STRINGS[l].tires_rule_nowarn_mgr && STRINGS[l].tires_rule_nowarn_mgr.includes('{min}'), l); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!app.includes('<p class="muted">–</p>'), 'keine nackten „–“-Listen mehr');
+  ok(app.includes('href="#/maintenance?f=gaps"') && app.includes('#\\/maintenance(?:\\?f=(gaps|due|noplan|all))?$'), 'Wegweiser auf Reiter „ohne Termin“');
+  ok(/p\.cases\.length \? '' : `<p class="muted" data-none>\$\{esc\(t\('no_cases'\)\)\}<\/p>`/.test(app), 'Management: leere Vorgangsliste mit Text');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

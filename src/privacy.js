@@ -105,7 +105,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     driver_documents_recorded: q(`SELECT kind, valid_until, created_at, cancelled_at, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN cancelled_by=?1 THEN 1 ELSE 0 END AS cancelled
       FROM driver_documents WHERE created_by=?1 OR cancelled_by=?1 ORDER BY created_at`, userId), // auch Stornos (Migration 0063, wie Auslesungen; 20.10.2026)
     contracts_recorded: q(`SELECT k.kind, k.partner, k.contract_no, k.created_at, v.plate FROM vehicle_contracts k JOIN vehicles v ON v.id=k.vehicle_id WHERE k.created_by=? ORDER BY k.created_at`, userId),
-    claims_recorded: q(`SELECT c.case_no, i.insurer, i.status, i.created_at FROM insurance_claims i JOIN cases c ON c.id=i.case_id WHERE i.created_by=? ORDER BY i.created_at`, userId),
+    claims_recorded: q(`SELECT c.case_no, c.environment, i.insurer, i.status, i.created_at FROM insurance_claims i JOIN cases c ON c.id=i.case_id WHERE i.created_by=? ORDER BY i.created_at`, userId),
     fines_recorded: q(`SELECT fine_no, environment, kind, created_at, driver_confirmed_at, CASE WHEN created_by=?1 THEN 1 ELSE 0 END AS created, CASE WHEN driver_confirmed_by=?1 THEN 1 ELSE 0 END AS driver_confirmed
       FROM fines WHERE created_by=?1 OR driver_confirmed_by=?1 ORDER BY created_at`, userId),
     cases_received: q(`SELECT case_no, environment, created_at, CASE WHEN fleet_received_by=?1 THEN 1 ELSE 0 END AS fleet_received, CASE WHEN workshop_ack_by=?1 THEN workshop_ack_at END AS workshop_ack_at
