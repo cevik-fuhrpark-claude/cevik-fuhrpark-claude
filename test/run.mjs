@@ -17114,6 +17114,46 @@ await test('Flattern 22.10.: Bemerkung eines abgelaufenen „sonstigen“ Dokume
   await U.fleet.post('/api/agent/run'); const s3 = st();
   eq(s3.open.length, 2, JSON.stringify(s3.open)); eq(s3.open.find((x) => x.subject_key.endsWith('|adr-bescheinigung fahrer')).id, s1.open[0].id, 'alter Befund bleibt beim verbleibenden Dokument'); ok(up2);
 });
+await test('Rechenzeit Kaltstart 22.10.: synchrones SHA-256 = WebCrypto, gespeicherte Fingerabdruck-Eingabe (fp_src) erspart das Hashen unveränderter Befunde in neuer Worker-Instanz, Berliner Versatz je Jahr = Intl', async () => {
+  const { sha256Hex, sha256HexSync, berlinDate, berlinDateTime } = await import('../src/util.js');
+  // (1) SHA-256 synchron: Blockgrenzen 55/56/63/64/119/120 Byte, Umlaute/Kyrillisch, leer, lang
+  const inputs = ['', 'abc', 'Ü|x|hinweis|0', 'Огляд|veh:Ж|kritisch|true', 'x'.repeat(55), 'x'.repeat(56), 'y'.repeat(63), 'y'.repeat(64), 'z'.repeat(119), 'z'.repeat(120), '€'.repeat(400)];
+  for (const x of inputs) eq(sha256HexSync(x), await sha256Hex(x), `SHA-256 (${x.length} Zeichen)`);
+  eq(sha256HexSync('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'Prüfwert FIPS 180-4');
+  for (let i = 0; i < 200; i++) { const b = new Uint8Array(i * 3); for (let k = 0; k < b.length; k++) b[k] = (k * 31 + i) & 255; eq(sha256HexSync(b), await sha256Hex(b), `Bytes ${b.length}`); }
+  // (2) Berliner Versatz je Jahr (EU-Regel, mit Intl bestätigt) – gleiches Ergebnis wie Intl, auch vor 1996 (andere Regel → je Stunde über Intl)
+  const f = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  const g = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  let bad = 0; let n = 0;
+  for (let ms = Date.UTC(1975, 0, 1); ms < Date.UTC(2110, 0, 1); ms += 3600000 * 13 + 61000) { n++; if (berlinDate(new Date(ms).toISOString()) !== f.format(new Date(ms))) bad++; }
+  for (const y of [1980, 1990, 1995, 1996, 2026, 2027, 2099]) for (const mo of [2, 8, 9]) for (let d = 23; d <= 31; d++) for (let h = 0; h < 3; h++) { const ms = Date.UTC(y, mo, d, h, 59, 59, 999); n++; if (berlinDate(new Date(ms).toISOString()) !== f.format(new Date(ms))) bad++; }
+  eq(bad, 0, `berlinDate = Intl (${n} Zeitpunkte, 1975–2110, Umstellungen)`);
+  for (const iso of ['2026-03-29T00:59:00Z', '2026-03-29T01:00:00Z', '2026-10-25T00:59:00Z', '2026-10-25T01:00:00Z', '1990-09-30T00:30:00Z']) ok(berlinDateTime(iso).length > 0 && g.format(new Date(iso)).replace(' ', 'T').slice(0, 16).length === 16, iso);
+  // (3) Agent: Eingabe gespeichert, neue Instanz hasht unveränderte Befunde nicht, Ergebnis unverändert
+  const { e, U, newCase } = await freshWorld(); const db = e.DB.db;
+  for (const priority of ['kritisch', 'kritisch', 'mittel']) await newCase({ priority });
+  db.prepare(`UPDATE cases SET created_at=?, updated_at=? WHERE environment='test'`).run(new Date(Date.now() - 40 * 86400000).toISOString(), new Date(Date.now() - 40 * 86400000).toISOString());
+  const agent = await import('../src/agent.js');
+  await U.fleet.post('/api/agent/run');
+  const rows = () => db.prepare(`SELECT finding_code, subject_key, severity, requires_decision, fingerprint, fp_src FROM agent_findings WHERE environment='test' AND status='offen'`).all();
+  const r1 = rows(); ok(r1.length >= 3, `Befunde vorhanden (${r1.length})`);
+  for (const r of r1) { ok(r.fp_src && r.fp_src.startsWith(`${r.finding_code}|${r.subject_key}|${r.severity}|`), 'fp_src gespeichert'); eq(r.fingerprint, await sha256Hex(r.fp_src), 'Fingerabdruck = SHA-256(fp_src)'); }
+  const inbox = () => db.prepare(`SELECT COUNT(*) n FROM master_inbox WHERE environment='test'`).get().n; const in1 = inbox();
+  agent.fpMemoClear(); let h0 = agent.FP_STATS.hashed;
+  eq((await U.fleet.post('/api/agent/run')).data.handoffs, 0, 'neue Instanz: keine Übergabe'); eq(agent.FP_STATS.hashed - h0, 0, 'neue Instanz: nichts gehasht'); eq(inbox(), in1);
+  eq(JSON.stringify(rows()), JSON.stringify(r1), 'Befunde unverändert');
+  // Bestand vor Migration 0073 (fp_src NULL): einmal hashen, gleicher Fingerabdruck → keine Übergabe, fp_src nachgetragen
+  db.prepare(`UPDATE agent_findings SET fp_src=NULL WHERE environment='test'`).run(); agent.fpMemoClear(); h0 = agent.FP_STATS.hashed;
+  eq((await U.fleet.post('/api/agent/run')).data.handoffs, 0, 'Bestand ohne fp_src: keine Übergabe'); eq(agent.FP_STATS.hashed - h0, r1.length, 'Bestand: je Befund einmal gehasht');
+  eq(JSON.stringify(rows()), JSON.stringify(r1), 'fp_src nachgetragen, Fingerabdrücke gleich');
+  // falsche gespeicherte Eingabe (anderer Schweregrad) → neu gehasht, gespeicherter Fingerabdruck nicht blind übernommen
+  const x = r1[0]; db.prepare(`UPDATE agent_findings SET fp_src=?, fingerprint='veraltet' WHERE environment='test' AND finding_code=? AND subject_key=?`).run(x.fp_src.replace(`|${x.severity}|`, '|info|'), x.finding_code, x.subject_key);
+  agent.fpMemoClear(); await U.fleet.post('/api/agent/run');
+  eq(db.prepare(`SELECT fingerprint FROM agent_findings WHERE environment='test' AND finding_code=? AND subject_key=?`).get(x.finding_code, x.subject_key).fingerprint, x.fingerprint, 'Fingerabdruck neu berechnet');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8'); ok(src.includes('fp_src=NULL'), 'Umschlüsseln setzt fp_src zurück');
+  ok(!JSON.stringify((await U.fleet.get('/api/master')).data).includes('fp_src'), 'Management-Panel ohne fp_src');
+  const fr = await new Client(worker, e, 'anon').req('GET', '/api/integration/v1/findings?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' }); eq(fr.status, 200); ok(fr.data.findings.length > 0 && !JSON.stringify(fr.data).includes('fp_src'), '/v1/findings ohne fp_src');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

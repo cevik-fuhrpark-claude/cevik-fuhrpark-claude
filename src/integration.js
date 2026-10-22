@@ -90,7 +90,7 @@ function withoutFollowupNote(code, message, args) {
   return a && a.a && a.a.note ? renderFindingMessage(a.k || code, { ...a.a, note: null }, 'de') : message;
 }
 function redactFinding(row, names) {
-  const { message_args, ...f } = row;
+  const { message_args, fp_src, ...f } = row; // fp_src: interne Fingerabdruck-Eingabe (Migration 0073), nicht nach außen
   f.message = withoutFollowupNote(f.finding_code, f.message, message_args);
   if (!PERSON_FINDINGS.includes(f.finding_code)) return f;
   const n = [names.get(f.id), argName(message_args)];

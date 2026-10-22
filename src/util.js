@@ -53,6 +53,46 @@ export async function sha256Hex(input) {
   return bytesToHex(await crypto.subtle.digest('SHA-256', data));
 }
 
+// Synchrones SHA-256 (FIPS 180-4) für kurze Texte – gleiches Ergebnis wie sha256Hex (22.10.2026). Grund: Rechenzeit-Grenze 10 ms je Aufruf;
+// crypto.subtle kostet je Aufruf einen eigenen asynchronen Auftrag (lokal ≈ 45 µs), der Fuhrparkagent braucht im ersten Lauf einer
+// Worker-Instanz Hunderte Fingerabdrücke. Nur für Fingerabdrücke/Ereigniskennungen, nicht für Geheimnisse (Passwörter: PBKDF2 über crypto.subtle).
+const SHA_K = new Uint32Array([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d,
+  0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+const SHA_W = new Uint32Array(64);
+export function sha256HexSync(input) {
+  const data = typeof input === 'string' ? enc.encode(input) : new Uint8Array(input);
+  const len = data.length; const nBlocks = ((len + 9 + 63) >> 6);
+  const buf = new Uint8Array(nBlocks << 6); buf.set(data); buf[len] = 0x80;
+  const bits = len * 8; const dv = new DataView(buf.buffer);
+  dv.setUint32(buf.length - 8, Math.floor(bits / 0x100000000)); dv.setUint32(buf.length - 4, bits >>> 0);
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a, h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  const w = SHA_W;
+  for (let off = 0; off < buf.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15], b = w[i - 2];
+      const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+      const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + SHA_K[i] + w[i]) | 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+  }
+  let out = '';
+  for (const x of [h0, h1, h2, h3, h4, h5, h6, h7]) out += HEX[(x >>> 24) & 255] + HEX[(x >>> 16) & 255] + HEX[(x >>> 8) & 255] + HEX[x & 255];
+  return out;
+}
+
 export function randomToken(bytes = 32) {
   const b = new Uint8Array(bytes);
   crypto.getRandomValues(b);
@@ -252,13 +292,35 @@ export function berlinDate(iso = nowIso()) {
 // danach reine Rechnung statt Intl je Wert (CSV-Export mit Tausenden Zeitstempeln im CPU-Budget eines Worker-Aufrufs).
 let BERLIN_HOUR_FMT = null;
 const BERLIN_OFFSET = new Map();
+function berlinOffsetHourIntl(key) {
+  if (!BERLIN_HOUR_FMT) BERLIN_HOUR_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hourCycle: 'h23' });
+  const h = Number(BERLIN_HOUR_FMT.format(new Date(key * 3600000)));
+  return (((h - new Date(key * 3600000).getUTCHours()) % 24) + 24) % 24 * 3600000;
+}
+// 22.10.2026 (Rechenzeit): je Kalenderjahr die Umstellungszeitpunkte nach EU-Regel (letzter Sonntag im März/Oktober, 01:00 UTC) vorhersagen und
+// mit 4 Intl-Abfragen an den Grenzen bestätigen; bestätigt → Versatz für das ganze Jahr ohne Intl (vorher je UTC-Stunde eine Intl-Abfrage:
+// Fuhrparkagent im ersten Lauf einer Instanz ≈ 25 ms nur dafür). Nicht bestätigt (andere Jahre/Regeln, z. B. vor 1996 oder nach einer
+// künftigen Abschaffung der Zeitumstellung in der Zeitzonendatenbank) → wie bisher je Stunde über Intl. Ergebnis immer gleich Intl.
+const BERLIN_YEAR = new Map();
+function lastSundayUtc1(year, month) { const d = new Date(Date.UTC(year, month + 1, 0, 1)); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return d.getTime(); }
+function berlinYearRule(year) {
+  let r = BERLIN_YEAR.get(year);
+  if (r === undefined) {
+    const start = lastSundayUtc1(year, 2); const end = lastSundayUtc1(year, 9); const H = 3600000;
+    const ok = berlinOffsetHourIntl(start / H - 1) === H && berlinOffsetHourIntl(start / H) === 2 * H && berlinOffsetHourIntl(end / H - 1) === 2 * H && berlinOffsetHourIntl(end / H) === H
+      && berlinOffsetHourIntl(Date.UTC(year, 0, 1) / H) === H && berlinOffsetHourIntl(Date.UTC(year, 11, 31, 23) / H) === H;
+    r = ok ? { start, end } : null;
+    BERLIN_YEAR.set(year, r);
+  }
+  return r;
+}
 function berlinOffsetMs(ms) {
+  const rule = berlinYearRule(new Date(ms).getUTCFullYear());
+  if (rule) return ms >= rule.start && ms < rule.end ? 7200000 : 3600000;
   const key = Math.floor(ms / 3600000);
   let off = BERLIN_OFFSET.get(key);
   if (off === undefined) {
-    if (!BERLIN_HOUR_FMT) BERLIN_HOUR_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hourCycle: 'h23' });
-    const h = Number(BERLIN_HOUR_FMT.format(new Date(key * 3600000)));
-    off = (((h - new Date(key * 3600000).getUTCHours()) % 24) + 24) % 24 * 3600000;
+    off = berlinOffsetHourIntl(key);
     if (BERLIN_OFFSET.size > 50000) BERLIN_OFFSET.clear();
     BERLIN_OFFSET.set(key, off);
   }

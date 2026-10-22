@@ -1,6 +1,6 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
-import { nowIso, uuid, sha256Hex, berlinDateTime, berlinDate, oneOf, str, notFound, conflict, rateOf } from './util.js';
+import { nowIso, uuid, sha256HexSync, berlinDateTime, berlinDate, oneOf, str, notFound, conflict, rateOf } from './util.js';
 import { notifyUsers, deliverPush } from './notify.js';
 import { audit } from './auth.js';
 import { tireFindings } from './tires.js';
@@ -20,10 +20,13 @@ import { maintenanceWarnDays } from './settings.js';
 
 // Fingerabdrücke wiederkehrender Befunde je Worker-Instanz zwischengespeichert (22.10.2026): dieselben Befunde werden alle 15 Min. neu bewertet,
 // SHA-256 je Befund war der größte Rechenanteil des Agenten (CPU-Grenze je Aufruf). Gleiches Ergebnis wie sha256Hex; höchstens 20 000 Einträge.
+// Seit 22.10.2026 (09:15) synchron (`sha256HexSync`): im ersten Lauf einer Instanz kostete crypto.subtle je Befund einen eigenen asynchronen Auftrag.
 const FP_MEMO = new Map();
-export async function sha256Memo(input) {
+export const FP_STATS = { hashed: 0 }; // Test/Messung: Anzahl tatsächlich gehashter Fingerabdrücke
+export function fpMemoClear() { FP_MEMO.clear(); } // Test: neue Worker-Instanz nachstellen
+export function sha256Memo(input) {
   const hit = FP_MEMO.get(input); if (hit) return hit;
-  const h = await sha256Hex(input);
+  const h = sha256HexSync(input); FP_STATS.hashed++;
   if (FP_MEMO.size >= 20000) FP_MEMO.clear();
   FP_MEMO.set(input, h); return h;
 }
@@ -103,7 +106,7 @@ const ageMin = (iso) => Math.round((Date.now() - Date.parse(iso)) / 60000);
 // und der Agent schreibt nur geänderte Befunde (D1-Schreibkontingent: sonst jede Viertelstunde alle Befunde neu).
 // (Vorlagen: „seit {at}“ mit at = berlinDateTime(…))
 // Felder, deren Änderung einen Befund „geändert“ macht (sonst kein Schreibzugriff)
-const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'message_args', 'next_action', 'owner_role', 'requires_decision', 'fingerprint'];
+const ROW_FIELDS = ['case_id', 'vehicle_id', 'severity', 'message', 'message_args', 'next_action', 'owner_role', 'requires_decision', 'fingerprint', 'fp_src'];
 
 // Ausgangslisten des Agenten (Einstellungen, Empfänger, Sperren, Restarbeiten, nicht zugestellte Push, ruhende Fahrzeuge)
 // als JSON-Arrays in einer Abfrage – gleiche Bedingungen wie zuvor die sieben Einzelabfragen.
@@ -480,7 +483,12 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       unique.push(f);
     }
     // Fingerabdrücke gemeinsam berechnen (nicht 3000× nacheinander warten)
-    const fingerprints = await Promise.all(unique.map((f) => sha256Memo(`${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`)));
+    // Gespeicherte Eingabe gleich → gespeicherten Fingerabdruck übernehmen (Migration 0073; erster Lauf einer Instanz ohne Hashen, 22.10.2026)
+    const fpSrcs = unique.map((f) => `${f.code}|${f.subject}|${f.severity}|${f.requires_decision}`);
+    const fingerprints = unique.map((f, i) => {
+      const ex = existingMap.get(`${f.code}|${f.subject}`);
+      return ex && ex.fp_src === fpSrcs[i] && ex.fingerprint ? ex.fingerprint : sha256Memo(fpSrcs[i]);
+    });
     const rows = [];
     const renames = [];
     const candidates = [];
@@ -491,12 +499,12 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (!existing && f.legacy_subject && existingMap.has(`${f.code}|${f.legacy_subject}`)) {
         existing = existingMap.get(`${f.code}|${f.legacy_subject}`);
         renames.push(env.DB.prepare('UPDATE agent_findings SET subject_key=? WHERE id=?').bind(f.subject, existing.id));
-        legacyFp = await sha256Hex(`${f.code}|${f.legacy_subject}|${f.severity}|${f.requires_decision}`);
+        legacyFp = sha256HexSync(`${f.code}|${f.legacy_subject}|${f.severity}|${f.requires_decision}`);
       }
       const findingId = existing ? existing.id : uuid();
       const changed = !existing || existing.status !== 'offen' || (existing.fingerprint !== fingerprint && existing.fingerprint !== legacyFp);
       const row = { id: findingId, code: f.code, subject: f.subject, case_id: f.case_id ?? null, vehicle_id: f.vehicle_id ?? null, severity: f.severity, message: f.message, message_args: f.message_args ?? null,
-        next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint };
+        next_action: f.next_action, owner_role: f.owner_role, requires_decision: f.requires_decision ? 1 : 0, fingerprint, fp_src: fpSrcs[i] };
       // Unveränderte offene Befunde nicht erneut schreiben
       if (changed || ROW_FIELDS.some((k) => (existing[k] ?? null) !== row[k])) rows.push(row);
       if (changed && f.severity !== 'kritisch' && REMINDER_CODES.has(f.code)) newReminders.push(f);
@@ -507,14 +515,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         candidates.push({ eventInput: `${findingId}|${fingerprint}|${existing && existing.status !== 'erledigt' && existing.fingerprint === fingerprint ? existing.first_seen : now}`, findingId, fingerprint, f });
       }
     }
-    const eventIds = await Promise.all(candidates.map((c) => sha256Hex(c.eventInput)));
+    const eventIds = candidates.map((c) => sha256HexSync(c.eventInput));
     candidates.forEach((c, i) => { c.eventId = eventIds[i]; delete c.eventInput; });
     const J = (k) => `json_extract(value,'$.${k}')`;
-    const upserts = [...renames, ...chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,message_args,next_action,owner_role,requires_decision,status,fingerprint,first_seen,last_seen)
-      SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('message_args')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ?2, ?2
+    const upserts = [...renames, ...chunks(rows).map((part) => env.DB.prepare(`INSERT INTO agent_findings(id,environment,finding_code,subject_key,case_id,vehicle_id,severity,message,message_args,next_action,owner_role,requires_decision,status,fingerprint,fp_src,first_seen,last_seen)
+      SELECT ${J('id')}, ?1, ${J('code')}, ${J('subject')}, ${J('case_id')}, ${J('vehicle_id')}, ${J('severity')}, ${J('message')}, ${J('message_args')}, ${J('next_action')}, ${J('owner_role')}, ${J('requires_decision')}, 'offen', ${J('fingerprint')}, ${J('fp_src')}, ?2, ?2
       FROM json_each(?3) WHERE 1
       ON CONFLICT(environment, finding_code, subject_key) DO UPDATE SET case_id=excluded.case_id, vehicle_id=excluded.vehicle_id, severity=excluded.severity, message=excluded.message, message_args=excluded.message_args,
-        next_action=excluded.next_action, owner_role=excluded.owner_role, requires_decision=excluded.requires_decision, fingerprint=excluded.fingerprint, last_seen=excluded.last_seen,
+        next_action=excluded.next_action, owner_role=excluded.owner_role, requires_decision=excluded.requires_decision, fingerprint=excluded.fingerprint, fp_src=excluded.fp_src, last_seen=excluded.last_seen,
         first_seen=CASE WHEN agent_findings.status='erledigt' THEN excluded.first_seen ELSE agent_findings.first_seen END, status='offen', resolved_at=NULL`)
       .bind(environment, now, JSON.stringify(part)))];
     // Gekappte Prüfungslisten (> 200 Einträge, nur die jüngsten gelesen): offene Befunde dieser Codes nicht als „erledigt“ schließen –
@@ -618,7 +626,7 @@ export async function masterPanel(env, environment) {
   ]);
   const casesTruncated = caseRows.results.length > MASTER_CASES_MAX;
   const cases = caseRows.results.slice(0, MASTER_CASES_MAX);
-  const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results;
+  const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results.map(({ fp_src, ...f }) => f); // fp_src nur intern (Migration 0073)
   // has_newer: es gibt eine neuere Übergabe desselben Befunds – unabhängig von deren Entscheidung (18.10.2026: nach Entscheidung der neuesten
   // zählte die ältere, nie entschiedene wieder als offene Entscheidung)
   const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, f.subject_key AS finding_subject, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id

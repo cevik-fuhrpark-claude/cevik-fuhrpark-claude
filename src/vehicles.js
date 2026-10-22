@@ -1297,7 +1297,7 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
           AND o.doc_valid_until IS NOT NULL AND lower(trim(COALESCE(o.doc_note,''))) = lower(trim(COALESCE(?3,''))))`)
       .bind(vehicleId, envName, before.note, after.note, f.id).all()).results;
     // Fingerabdruck wie der Agent (`code|subject|severity|requires_decision`) – sonst gälte der umgeschlüsselte Befund als geändert (neue Übergabe)
-    if (hit.length) await env.DB.batch(await Promise.all(hit.map(async (h) => env.DB.prepare('UPDATE agent_findings SET subject_key=?, fingerprint=? WHERE id=? AND subject_key=?')
+    if (hit.length) await env.DB.batch(await Promise.all(hit.map(async (h) => env.DB.prepare('UPDATE agent_findings SET subject_key=?, fingerprint=?, fp_src=NULL WHERE id=? AND subject_key=?')
       .bind(h.nk, await sha256Hex(`${h.finding_code}|${h.nk}|${h.severity}|${h.requires_decision}`), h.id, h.subject_key))));
   }
   const diff = {}; for (const [k, dk] of [['kind', 'doc_kind'], ['valid_until', 'valid_until'], ['note', 'note']]) if (before[k] !== after[k]) diff[dk] = { from: before[k], to: after[k] };
