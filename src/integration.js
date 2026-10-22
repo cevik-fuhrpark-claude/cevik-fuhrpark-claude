@@ -78,9 +78,14 @@ function argName(args) {
 // den deutschen Text `message` wie bisher (Datensparsamkeit: keine zusätzlichen Einzelwerte, Schwärzung greift nur auf `message`).
 // Wiedervorlage-Vermerk (Freitext der Leitung) bleibt in der App – wie /v1/cases (Backlog 76, 17.10.2026: ging über Befunde/Master-Eingang hinaus)
 // ebenso der Sperrgrund (Vermerk der Leitung bei „Fahrzeug sperren“, z. B. Namen/Gesundheitsangaben) – Befund ohne Grund (18.10.2026)
+// Empfänger einer nicht zugestellten dringenden Nachricht: in der App mit Namen, hier nur die Rolle (Backlog 114, 22.10.2026)
 function withoutFollowupNote(code, message, args) {
-  if (code !== 'CASE_FOLLOWUP_DUE' && code !== 'VEHICLE_LOCKED') return message;
+  if (code !== 'CASE_FOLLOWUP_DUE' && code !== 'VEHICLE_LOCKED' && code !== 'URGENT_NOT_DELIVERED') return message;
   let a = args; if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
+  if (code === 'URGENT_NOT_DELIVERED') {
+    if (!a || !a.a || !Array.isArray(a.a.who)) return message;
+    return renderFindingMessage('URGENT_NOT_DELIVERED', { ...a.a, who: a.a.who.map((x) => (x && typeof x === 'object' ? { role: x.role ?? null } : x)) }, 'de');
+  }
   if (code === 'VEHICLE_LOCKED') return a && a.a && a.a.reason ? renderFindingMessage('VEHICLE_LOCKED_DEFAULT', { ...a.a, reason: null }, 'de') : message;
   return a && a.a && a.a.note ? renderFindingMessage(a.k || code, { ...a.a, note: null }, 'de') : message;
 }

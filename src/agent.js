@@ -108,24 +108,35 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
-  (SELECT json_group_array(json_object('case_id', case_id, 'vehicle_id', vehicle_id, 'n', n)) FROM (SELECT q.cid AS case_id, MAX(q.vref) AS vehicle_id, COUNT(DISTINCT q.user_id) AS n FROM (
+  (SELECT json_group_array(json_object('case_id', case_id, 'vehicle_id', vehicle_id, 'n', n, 'who', json(who))) FROM (SELECT q.cid AS case_id, MAX(q.vref) AS vehicle_id, COUNT(DISTINCT q.user_id) AS n,
+     -- Empfänger mit Name und Rolle (Backlog 114, 22.10.2026: „telefonisch informieren“ ohne zu sagen, wen) – Schnittstelle schwärzt die Namen
+     json_group_array(DISTINCT json_object('id', q.user_id, 'name', q.uname, 'role', q.urole)) AS who FROM (
      -- Hinweise an zugeordnete Fahrer tragen bewusst keine case_id (Fahrer sieht den Vorgang nicht) – Vorgang aus dem event_key
      -- „<case_id>:<art>:<version>“ (21.10.2026: Befund blieb nach Abschluss des Vorgangs 48 h als „system“ offen)
      -- ohne Vorgang: Fahrzeug aus dem Bezug (z. B. Prüfung „verkehrsunsicher“) – Befund mit Link zur Fahrzeugakte statt „system“ (22.10.2026)
-     SELECT n.user_id, n.created_at, CASE WHEN n.ref LIKE 'vehicle:%' THEN substr(n.ref, 9) END AS vref, COALESCE(n.case_id, (SELECT x.id FROM cases x WHERE x.id=substr(n.event_key, 1, instr(n.event_key, ':') - 1) AND x.environment=?1)) AS cid
-     FROM notifications n
+     SELECT n.user_id, u.display_name AS uname, u.role AS urole, n.created_at, CASE WHEN n.ref LIKE 'vehicle:%' THEN substr(n.ref, 9) END AS vref, COALESCE(n.case_id, (SELECT x.id FROM cases x WHERE x.id=substr(n.event_key, 1, instr(n.event_key, ':') - 1) AND x.environment=?1)) AS cid
+     FROM notifications n JOIN users u ON u.id=n.user_id AND u.active=1
      WHERE n.environment=?1 AND n.urgent=1 AND n.acknowledged_at IS NULL AND n.opened_at IS NULL
      AND n.push_status IN ('failed','no_subscription') AND n.created_at > ?2 AND n.hidden_at IS NULL
      -- eigene Agent-Pushs an Leitung/Inhaber nicht (Inhalt steht ohnehin im Master-Eingang; 21.10.2026: Leitung ohne Push-Gerät bekam
      -- „telefonisch informieren“ über sich selbst, 48 h offen)
-     AND n.kind NOT IN ('agent','agent_reminder')
-     AND n.user_id IN (SELECT id FROM users WHERE active=1)) q
+     AND n.kind NOT IN ('agent','agent_reminder')) q
      -- erledigt, wenn der Vorgang abgeschlossen ist oder die Person ihn seitdem selbst bearbeitet hat (vorher meldete der Agent bis 48 h
      -- „nicht zugestellt – telefonisch informieren“, obwohl die Werkstatt den Auftrag längst übernommen/erledigt hatte, 20.10.2026)
      WHERE NOT EXISTS (SELECT 1 FROM cases x WHERE x.id=q.cid AND x.status IN ('fahrzeug_freigegeben','abgelehnt'))
      AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=q.cid AND e.actor_id=q.user_id AND e.created_at >= q.created_at)
      GROUP BY q.cid, CASE WHEN q.cid IS NULL THEN q.vref END)) AS undelivered,
   (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded`;
+
+// Empfänger einer nicht zugestellten dringenden Nachricht: [{name, role}] nach Name sortiert (gleiche Reihenfolge je Lauf – sonst würde der
+// Befund bei jedem Lauf neu geschrieben), höchstens 8 genannt, Rest als „+n“
+export const WHO_MAX = 8;
+export function undeliveredWho(list) {
+  const seen = new Set(); const out = [];
+  for (const x of Array.isArray(list) ? list : []) { if (!x || seen.has(x.id)) continue; seen.add(x.id); out.push({ name: String(x.name || ''), role: x.role || null }); }
+  out.sort((a, b) => a.name.localeCompare(b.name, 'de') || String(a.role).localeCompare(String(b.role)));
+  return out.length > WHO_MAX ? [...out.slice(0, WHO_MAX), `+${out.length - WHO_MAX}`] : (out.length ? out : null);
+}
 
 export async function agentBasics(env, environment) {
   const row = await env.DB.prepare(BASICS_SQL).bind(environment, new Date(Date.now() - 48 * 3600000).toISOString()).first();
@@ -267,7 +278,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const undelivered = base.undelivered;
     for (const u of undelivered) {
       add({ code: 'URGENT_NOT_DELIVERED', subject: u.case_id || (u.vehicle_id ? `vehicle:${u.vehicle_id}` : 'system'), case_id: u.case_id, ...(u.case_id || !u.vehicle_id ? {} : { vehicle_id: u.vehicle_id }), severity: 'handeln', owner_role: 'fleet',
-        ...fm('URGENT_NOT_DELIVERED', { n: u.n }),
+        ...fm('URGENT_NOT_DELIVERED', { n: u.n, who: undeliveredWho(u.who) }),
         next_action: 'Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.' });
     }
 

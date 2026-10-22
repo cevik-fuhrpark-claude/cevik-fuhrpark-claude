@@ -59,7 +59,7 @@ Weitere Befundcodes (Ergänzung 14.10.2026, vorher nur in der App sichtbar):
 `INSPECTION_UNCLEAR` (hinweis: HU/SP-Frist ungeklärt, Grundlage fehlt – siehe Fahrzeugakte), `STOCK_ORDER_OVERDUE` (hinweis, Werkstatt: Liefertermin einer Lagerbestellung laut Lieferant überschritten),
 `TACHO_VU_OVERDUE` (handeln: Massenspeicher-Auslesung überfällig, 90 Tage, FPersV § 2 Abs. 5) / `TACHO_VU_DUE` (hinweis: bald fällig) – nur für Fahrzeuge mit mindestens einer erfassten Auslesung,
 `TACHO_CARD_OVERDUE` (handeln: Fahrerkarten-Auslesung überfällig, 28 Tage) / `TACHO_CARD_DUE` (hinweis), `DRIVER_DOC_EXPIRED` (kritisch bei Führerschein/Fahrerkarte, sonst handeln) / `DRIVER_DOC_EXPIRES_SOON` (hinweis),
-`LICENSE_CHECK_DUE` (handeln: Führerscheinkontrolle fällig) / `LICENSE_CHECK_DUE_SOON` (hinweis: innerhalb der Vorwarnung wie in der Fahrerakte) / `LICENSE_CHECK_FAILED` (kritisch: letzte Kontrolle nicht in Ordnung). Die personenbezogenen Codes (`DRIVER_DOC_*`, `LICENSE_CHECK_*`, `TACHO_CARD_*`) liefert `/v1/findings` ohne Namen (`person_redacted: true`).
+`LICENSE_CHECK_DUE` (handeln: Führerscheinkontrolle fällig) / `LICENSE_CHECK_DUE_SOON` (hinweis: innerhalb der Vorwarnung wie in der Fahrerakte) / `LICENSE_CHECK_FAILED` (kritisch: letzte Kontrolle nicht in Ordnung). Die personenbezogenen Codes (`DRIVER_DOC_*`, `LICENSE_CHECK_*`, `TACHO_CARD_*`) liefert `/v1/findings` ohne Namen (`person_redacted: true`). `URGENT_NOT_DELIVERED` nennt in der App die Empfänger mit Name und Rolle; `/v1/findings` und `/v1/master` liefern dort nur die Rollen (z. B. „… Empfänger: Disposition, Fahrer.“; mehr als 8 Empfänger als „+n“).
 Ein Test prüft, dass jeder im Code erzeugte Befundcode hier steht.
 
 ### Prüfcodes der Datenqualität (`/v1/data-quality`, `GET /api/admin/data-quality`)

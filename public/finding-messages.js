@@ -26,7 +26,7 @@ export const FINDING_MESSAGES = {
     VEHICLE_LOCKED: '{plate}: gesperrt ({reason}) – nicht disponieren.',
     VEHICLE_LOCKED_DEFAULT: '{plate}: gesperrt (Sicherheitsprüfung) – nicht disponieren.',
     RELEASED_WITH_OPEN_ITEMS: '{label}: freigegeben mit {n} {n#offener nicht sicherheitsrelevanter Restarbeit/offenen nicht sicherheitsrelevanten Restarbeiten}.',
-    URGENT_NOT_DELIVERED: 'Dringende Benachrichtigung an {n} Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler).',
+    URGENT_NOT_DELIVERED: 'Dringende Benachrichtigung an {n} Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler).[[ Empfänger: {who|ROLE}.]]',
     COSTS_UNVALUED_RATE: '{label}: Kosten unvollständig bewertet (kein Stundensatz).',
     COSTS_UNVALUED_PARTS: '{label}: Kosten unvollständig bewertet ({n} {n#Teil/Teile} ohne Preis).',
     COSTS_UNVALUED_BOTH: '{label}: Kosten unvollständig bewertet (kein Stundensatz, {n} {n#Teil/Teile} ohne Preis).',
@@ -96,7 +96,7 @@ export const FINDING_MESSAGES = {
     VEHICLE_LOCKED: '{plate}: заблоковано ({reason}) – не планувати.',
     VEHICLE_LOCKED_DEFAULT: '{plate}: заблоковано (перевірка безпеки) – не планувати.',
     RELEASED_WITH_OPEN_ITEMS: '{label}: допущено з відкритими залишковими роботами, не важливими для безпеки: {n}.',
-    URGENT_NOT_DELIVERED: 'Термінове сповіщення для {n} {n#отримувача/отримувачів/отримувачів} не доставлено push-повідомленням (немає активованого пристрою або помилка).',
+    URGENT_NOT_DELIVERED: 'Термінове сповіщення для {n} {n#отримувача/отримувачів/отримувачів} не доставлено push-повідомленням (немає активованого пристрою або помилка).[[ {n#Отримувач/Отримувачі/Отримувачі}: {who|ROLE}.]]',
     COSTS_UNVALUED_RATE: '{label}: витрати оцінено не повністю (немає погодинної ставки).',
     COSTS_UNVALUED_PARTS: '{label}: витрати оцінено не повністю (запчастин без ціни: {n}).',
     COSTS_UNVALUED_BOTH: '{label}: витрати оцінено не повністю (немає погодинної ставки, запчастин без ціни: {n}).',
@@ -166,7 +166,7 @@ export const FINDING_MESSAGES = {
     VEHICLE_LOCKED: '{plate}: locked ({reason}) – do not dispatch.',
     VEHICLE_LOCKED_DEFAULT: '{plate}: locked (safety check) – do not dispatch.',
     RELEASED_WITH_OPEN_ITEMS: '{label}: released with {n} open non-safety-relevant remaining {n#job/jobs}.',
-    URGENT_NOT_DELIVERED: 'Urgent notification to {n} {n#recipient/recipients} not delivered by push (no enabled device or error).',
+    URGENT_NOT_DELIVERED: 'Urgent notification to {n} {n#recipient/recipients} not delivered by push (no enabled device or error).[[ {n#Recipient/Recipients}: {who|ROLE}.]]',
     COSTS_UNVALUED_RATE: '{label}: costs not fully valued (no hourly rate).',
     COSTS_UNVALUED_PARTS: '{label}: costs not fully valued ({n} {n#part/parts} without price).',
     COSTS_UNVALUED_BOTH: '{label}: costs not fully valued (no hourly rate, {n} {n#part/parts} without price).',
@@ -228,6 +228,7 @@ export const FINDING_ENUMS = {
     CKIND: { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' },
     CLAIM: { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 'reguliert', abgelehnt: 'abgelehnt', zurueckgezogen: 'zurückgezogen' },
     DDOC: { fuehrerschein: 'Führerschein', fahrerkarte: 'Fahrerkarte', code95: 'Code 95 / Weiterbildung', unterweisung: 'Unterweisung', sonstiges: 'Nachweis' },
+    ROLE: { owner: 'Inhaber', fleet: 'Fuhrparkleitung', workshop: 'Werkstatt', dispatch: 'Disposition', driver: 'Fahrer', viewer: 'Leser' },
   },
   uk: {
     STALE: { gemeldet: 'оцінено, не передано далі', werkstatt_freigegeben: 'прийнято майстернею, ремонт не розпочато', in_reparatur: 'у ремонті' },
@@ -236,6 +237,7 @@ export const FINDING_ENUMS = {
     CKIND: { leasing: 'Лізинг', miete: 'Оренда', finanzierung: 'Фінансування', versicherung: 'Страхування', wartung: 'Договір обслуговування', sonstiges: 'Договір' },
     CLAIM: { gemeldet: 'повідомлено', in_pruefung: 'на розгляді', reguliert: 'врегульовано', abgelehnt: 'відхилено', zurueckgezogen: 'відкликано' },
     DDOC: { fuehrerschein: 'Посвідчення водія', fahrerkarte: 'Картка водія', code95: 'Код 95 / підвищення кваліфікації', unterweisung: 'Інструктаж', sonstiges: 'Підтвердження' },
+    ROLE: { owner: 'Власник', fleet: 'Керівник автопарку', workshop: 'Майстерня', dispatch: 'Диспетчер', driver: 'Водій', viewer: 'Перегляд' },
   },
   en: {
     STALE: { gemeldet: 'assessed, not forwarded', werkstatt_freigegeben: 'accepted by the workshop, repair not started', in_reparatur: 'in repair' },
@@ -244,6 +246,7 @@ export const FINDING_ENUMS = {
     CKIND: { leasing: 'Leasing', miete: 'Rental', finanzierung: 'Financing', versicherung: 'Insurance', wartung: 'Maintenance contract', sonstiges: 'Contract' },
     CLAIM: { gemeldet: 'reported', in_pruefung: 'under review', reguliert: 'settled', abgelehnt: 'rejected', zurueckgezogen: 'withdrawn' },
     DDOC: { fuehrerschein: 'Driving licence', fahrerkarte: 'Driver card', code95: 'Code 95 / training', unterweisung: 'Briefing', sonstiges: 'Proof' },
+    ROLE: { owner: 'Owner', fleet: 'Fleet manager', workshop: 'Workshop', dispatch: 'Dispatch', driver: 'Driver', viewer: 'Viewer' },
   },
 };
 
@@ -294,6 +297,12 @@ function fill(text, args, lang, dates = false) {
     if (empty(v)) return '';
     if (forms) return pluralWord(v, forms, lang);
     if (fmt === 'km') return Number(v).toLocaleString(LOCALE[lang] || 'de-DE');
+    // Liste von Personen [{name, role}] bzw. Texten („+3“): „Name (Rolle)“, ohne Name nur die Rolle (Schnittstelle), kommagetrennt
+    if (list && Array.isArray(v)) {
+      const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {};
+      const one = (x) => { if (x && typeof x === 'object') { const r = x.role == null ? '' : (e[x.role] ?? FINDING_ENUMS.de[list]?.[x.role] ?? String(x.role)); return x.name ? (r ? `${x.name} (${r})` : String(x.name)) : r; } return String(x ?? ''); };
+      return v.map(one).filter(Boolean).join(', ');
+    }
     if (list) { const e = (FINDING_ENUMS[lang] || FINDING_ENUMS.de)[list] || {}; return e[v] ?? FINDING_ENUMS.de[list]?.[v] ?? String(v); }
     if (name === 'pos') return String(posWord(String(v), lang));
     if (dates && NUM_ARGS.has(name)) return String(localNumArg(v, lang));

@@ -14637,7 +14637,7 @@ await test('Fehlersuche 20.10. (7): Fahrzeugdokument „gültig bis“ plausibel
   ok(row.downtime_h <= 12 * 24, 'Ausfall bis Monatsende: ' + row.downtime_h);
   const { readFileSync } = await import('node:fs');
   const ag = readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
-  ok(ag.includes('COUNT(DISTINCT q.user_id) AS n FROM ('), 'URGENT_NOT_DELIVERED zählt Empfänger');
+  ok(ag.includes('COUNT(DISTINCT q.user_id) AS n,'), 'URGENT_NOT_DELIVERED zählt Empfänger');
   ok(ag.includes("if (['offen', 'gesehen'].includes(m.decision_status) && m.finding_id) {") && !ag.includes("m.finding_status === 'offen' && !m.finding_id"), 'Master: Zähler nach derselben Regel wie die Liste');
   const m = (await F.get('/api/master')).data;
   eq(m.decisions_open, m.inbox.filter((x) => ['offen', 'gesehen'].includes(x.decision_status) && !x.superseded).length, 'Zähler = Liste');
@@ -16803,6 +16803,34 @@ await test('Backlog 114 (22.10.): „Dringende Benachrichtigung nicht zugestellt
   const vid = (await F.get(`/api/vehicles/${V}`)).data.vehicle.id;
   eq(f.vehicle_id, vid, 'Fahrzeug aus dem Bezug'); eq(f.case_id, null); eq(f.subject_key, `vehicle:${vid}`);
   ok(!m.findings.some((x) => x.finding_code === 'URGENT_NOT_DELIVERED' && x.subject_key === 'system'), 'kein „system“-Befund');
+});
+await test('Backlog 114 (22.10.): „Dringende Benachrichtigung nicht zugestellt“ nennt die Empfänger – App mit Name und Rolle (DE/UK/EN), Schnittstelle nur Rolle', async () => {
+  const { U, e } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const x = await U.own.post('/api/users', { username: 'w.dispo114b', display_name: 'Zora Dispo-Empfang', role: 'dispatch', environment: 'test' });
+  await new Client(worker, e, 'w.dispo114b').post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const rule = await F.post(`/api/vehicles/${V}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'UVV-Plakette' }); eq(rule.status, 201);
+  eq((await F.post(`/api/maintenance/${rule.data.id}/complete`, { done_date: day(-1), evidence: 'UVV-Protokoll 4712', result: 'verkehrsunsicher' })).status, 200);
+  eq((await F.post('/api/agent/run')).status, 200);
+  const f = (await F.get('/api/master')).data.findings.find((y) => y.finding_code === 'URGENT_NOT_DELIVERED'); ok(f, 'Befund');
+  ok(f.message.includes('Empfänger: ') && f.message.includes('Zora Dispo-Empfang (Disposition)'), f.message);
+  const { findingMessage, renderFindingMessage } = await import('../public/finding-messages.js');
+  ok(findingMessage(f.message_args, f.message, 'en').includes('Zora Dispo-Empfang (Dispatch)'), 'en');
+  ok(findingMessage(f.message_args, f.message, 'uk').includes('Zora Dispo-Empfang (Диспетчер)'), 'uk');
+  // Reihenfolge fest (nach Name), Überzählige als „+n“, ohne Liste wie bisher
+  const { undeliveredWho, WHO_MAX } = await import('../src/agent.js');
+  const many = Array.from({ length: WHO_MAX + 3 }, (_, i) => ({ id: 'u' + i, name: 'P' + String(20 - i).padStart(2, '0'), role: 'driver' }));
+  const w = undeliveredWho([...many, many[0]]); eq(w.length, WHO_MAX + 1); eq(w[WHO_MAX], '+3'); eq(w[0].name, 'P10');
+  eq(JSON.stringify(undeliveredWho(many.slice().reverse())), JSON.stringify(w), 'gleiche Reihenfolge');
+  eq(undeliveredWho([]), null);
+  eq(renderFindingMessage('URGENT_NOT_DELIVERED', { n: 2, who: null }, 'de'), 'Dringende Benachrichtigung an 2 Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler).');
+  ok(renderFindingMessage('URGENT_NOT_DELIVERED', { n: 2, who: w.slice(0, 2) }, 'en').endsWith('Recipients: P10 (Driver), P11 (Driver).'), 'en Mehrzahl');
+  // Schnittstelle: Befund und Master-Eingang ohne Namen, Rolle bleibt
+  const H = { authorization: 'Bearer integration-token-xyz' }; const anon = new Client(worker, e, 'anon114');
+  const fi = (await anon.req('GET', '/api/integration/v1/findings?environment=test', undefined, H)).data.findings.find((y) => y.finding_code === 'URGENT_NOT_DELIVERED');
+  ok(fi && !JSON.stringify(fi).includes('Zora') && fi.message.includes('Empfänger: Disposition.'), JSON.stringify(fi));
+  const ms = JSON.stringify((await anon.req('GET', '/api/integration/v1/master?environment=test', undefined, H)).data);
+  ok(!ms.includes('Zora'), 'Master ohne Namen'); ok(ms.includes('Empfänger: Disposition.'), 'Master mit Rolle');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
