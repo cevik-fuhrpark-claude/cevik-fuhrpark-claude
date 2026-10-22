@@ -1405,6 +1405,12 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   }
   const keys = new Set(CHECKLIST.map((i) => i.key));
   const items = Array.isArray(body.items) ? body.items : [];
+  // Offline erfasste Kontrolle mit älterer Prüfliste (App-Fassung gewechselt, bevor sie gesendet wurde): eigener Grund statt
+  // „Bitte alle Prüfpunkte bewerten“ – der Fahrer hatte alle Punkte bewertet (22.10.2026). Nur wenn die Punkte wirklich nicht passen.
+  if (typeof body.checklist_version === 'string' && body.checklist_version !== CHECKLIST_VERSION) {
+    const sent = new Set(items.map((it) => it && it.key));
+    if (sent.size !== keys.size || [...sent].some((k) => !keys.has(k))) throw bad('checklist_changed', 'Die Prüfliste wurde inzwischen geändert – bitte die Kontrolle neu durchführen.');
+  }
   const byKey = new Map();
   for (const it of items) {
     if (!it || typeof it !== 'object') throw bad('validation', 'Ungültiger Prüfpunkt.'); // null/Zahl → 400 statt 500 (17.10.2026)

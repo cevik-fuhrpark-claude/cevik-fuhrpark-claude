@@ -698,6 +698,7 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  ['Die Prüfliste wurde inzwischen geändert – bitte die Kontrolle neu durchführen.', 'Перелік пунктів перевірки тим часом змінено – будь ласка, проведіть перевірку заново.', 'The checklist has changed in the meantime – please carry out the check again.'],
   ['Unbekannte Aktion.', 'Невідома дія.', 'Unknown action.'],
   ['repeat_days: 1–30 Tage', 'repeat_days: 1–30 днів', 'repeat_days: 1–30 days'],
   ['Konto ist deaktiviert – erst aktivieren, dann neuen Einladungslink erzeugen.', 'Обліковий запис деактивовано – спершу активуйте, потім створіть нове посилання-запрошення.', 'Account is deactivated – activate it first, then create a new invitation link.'],
@@ -1203,6 +1204,9 @@ Object.assign(STRINGS.en, { tires_winter_closed: 'Winter order closed, status op
 // [CLAUDE] Hinweis beim Speichern: Kennzeichen schon an einem anderen Fahrzeug (13.10.2026)
 Object.assign(STRINGS.de, { dup_plate_warn: 'Hinweis: Kennzeichen {p} ist auch an einem anderen Fahrzeug vergeben (FIN {list}). Gespeichert – bitte FIN prüfen: Tippfehler oder Doppelanlage? Siehe Datenqualität.' });
 Object.assign(STRINGS.uk, { dup_plate_warn: 'Увага: номер {p} уже призначено іншому транспортному засобу (VIN {list}). Збережено – перевірте VIN: помилка введення чи дубль? Див. «Якість даних».' });
+Object.assign(STRINGS.de, { err_checklist_changed: 'Die Prüfliste wurde inzwischen geändert – bitte die Kontrolle neu durchführen.' });
+Object.assign(STRINGS.uk, { err_checklist_changed: 'Перелік пунктів перевірки тим часом змінено – будь ласка, проведіть перевірку заново.' });
+Object.assign(STRINGS.en, { err_checklist_changed: 'The checklist has changed in the meantime – please carry out the check again.' });
 Object.assign(STRINGS.de, { session_lost_dirty: 'Anmeldung abgelaufen. Ihre Eingaben bleiben stehen – beim Absenden werden sie auf diesem Gerät gespeichert und nach der Anmeldung gesendet.' });
 Object.assign(STRINGS.uk, { session_lost_dirty: 'Сеанс завершився. Введені дані залишаються – під час надсилання їх буде збережено на цьому пристрої й надіслано після входу.' });
 Object.assign(STRINGS.en, { session_lost_dirty: 'Your sign-in has expired. Your entries stay – when you send, they are saved on this device and sent after you sign in.' });

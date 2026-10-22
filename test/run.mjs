@@ -17775,6 +17775,23 @@ await test('Integrations-API für Clients (Teilagent 22.10.): 401 mit WWW-Authen
   }
 });
 
+await test('Abfahrtskontrolle aus älterer Prüfliste (Teilagent offline 22.10.): eigener Grund „Prüfliste geändert“ statt „alle Punkte bewerten“, passende Punkte trotz alter Fassung angenommen, Text DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld(); const C = await import('../src/cases.js');
+  const keys = C.CHECKLIST.map((i) => i.key); const all = keys.map((k) => ({ key: k, result: 'ok' }));
+  let r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), checklist_version: 'alt-2025', items: all.slice(1) });
+  eq(r.status, 400); eq(r.data.error, 'checklist_changed', 'Punkt fehlt in alter Fassung');
+  r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), checklist_version: 'alt-2025', items: [...all, { key: 'gibt_es_nicht', result: 'ok' }] });
+  eq(r.data.error, 'checklist_changed', 'zusätzlicher Punkt');
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: all.slice(1) })).data.error, 'incomplete', 'ohne Fassung wie bisher');
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), checklist_version: C.CHECKLIST_VERSION, items: all.slice(1) })).data.error, 'incomplete', 'aktuelle Fassung: unvollständig');
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), checklist_version: 'alt-2025', items: all })).status, 201, 'alte Fassung, gleiche Punkte');
+  eq((await U.driver.get('/api/meta')).data.checklist_version, C.CHECKLIST_VERSION);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].err_checklist_changed, l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/checklist_version: S\.meta\.checklist_version/g) || []).length, 2, 'App sendet die Fassung (Abfahrt, nach Reparatur)');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

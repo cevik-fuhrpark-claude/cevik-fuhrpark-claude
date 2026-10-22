@@ -1845,7 +1845,7 @@ async function viewInspection(caseId) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     try {
-      const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null });
+      const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, checklist_version: S.meta.checklist_version || undefined, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null });
       toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected);
       location.hash = '#/cases/' + caseId;
     } catch (err) { toast(err.message, true); }
@@ -1875,7 +1875,7 @@ async function viewDepartureCheck(preId) {
     const who = outboxWho();
     // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)
     if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
-    const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null };
+    const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null, checklist_version: S.meta.checklist_version || undefined }; // Fassung der Prüfliste (Postausgang über einen App-Wechsel)
     const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const hasDefect = body.items.some((i) => i.result === 'mangel');
     try {
