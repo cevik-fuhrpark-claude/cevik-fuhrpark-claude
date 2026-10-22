@@ -618,7 +618,20 @@ export async function updateUser(env, actor, userId, body) {
   const changed = {};
   for (const [k, a, b] of [['role', target.role, role], ['environment', target.environment, environment], ['active', !!target.active, !!active], ['display_name', target.display_name, display], ['workshop_site', target.workshop_site || null, site || null]]) if (a !== b) changed[k] = { from: a, to: b };
   await audit(env, actor.id, 'user.update', userId, { role, environment, active: !!active, ...(Object.keys(changed).length ? { changed } : {}) });
-  return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged };
+  // Hinweise beim Ausscheiden/Versetzen (22.10.2026, nur Anzeige): verknüpfte Fahrerakte bleibt aktiv (Agent meldet weiter ablaufende Nachweise);
+  // letzter Werkstatt-Zugang eines Standorts mit offenen Aufträgen – eine Abfrage
+  const deact = !!target.active && !active;
+  const oldSite = target.role === 'workshop' && target.workshop_site && (!active || role !== 'workshop' || siteChanged || environment !== target.environment) ? target.workshop_site : null;
+  let driverFile = null; let orphaned = 0;
+  if (deact || oldSite) {
+    const h = await env.DB.prepare(`SELECT CASE WHEN ?4 = 1 THEN (SELECT json_object('id', id, 'name', display_name) FROM drivers WHERE user_id=?1 AND active=1) END AS df,
+        CASE WHEN ?2 IS NULL THEN 0 ELSE (SELECT COUNT(*) FROM cases c WHERE c.environment=?3 AND c.workshop_site=?2 AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile')
+          AND NOT EXISTS (SELECT 1 FROM users u WHERE u.role='workshop' AND u.active=1 AND u.environment=?3 AND u.workshop_site=?2)) END AS orphan`)
+      .bind(userId, oldSite, target.environment, deact ? 1 : 0).first();
+    driverFile = h && h.df ? JSON.parse(h.df) : null; orphaned = (h && h.orphan) || 0;
+  }
+  return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
+    ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {

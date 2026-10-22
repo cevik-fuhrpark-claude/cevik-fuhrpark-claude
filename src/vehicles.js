@@ -591,10 +591,12 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   }
   await audit(env, user.id, active ? 'vehicle.activate' : 'vehicle.deactivate', vehicleId, { plate: v.plate, reason });
   // Hinweis: laufende Verträge (Leasing/Miete/Versicherung …) bleiben bestehen – Rückgabe/Kündigung separat klären
-  const running = active ? 0 : (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicle_contracts WHERE vehicle_id=? AND ended_on IS NULL').bind(vehicleId).first()).n;
   // Hinweis: Telematik-Geräte bleiben zugeordnet und liefern ggf. weiter Daten (FIN/Zuordnung) – Gerät ausbauen bzw. Zuordnung lösen separat
-  const devices = active ? 0 : (await env.DB.prepare('SELECT COUNT(*) AS n FROM telematics_latest WHERE vehicle_id=?').bind(vehicleId).first()).n;
-  return { ok: true, active, running_contracts: running, telematics_devices: devices };
+  // Hinweis: geplante Prüftermine (ab heute) verschwinden aus Werkstattplan/Kalender – Termin bei der Werkstatt absagen (22.10.2026; vorher still)
+  // alle drei Zähler in einer Abfrage (Abfragebudget)
+  const hint = active ? { r: 0, d: 0, p: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
+      (SELECT COUNT(*) FROM telematics_latest WHERE vehicle_id=?1) AS d, (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p`).bind(vehicleId, berlinDate()).first();
+  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p };
 }
 
 export async function assignDriver(env, user, envName, vehicleId, body) {

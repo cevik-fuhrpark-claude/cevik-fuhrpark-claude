@@ -2181,7 +2181,7 @@ async function viewVehicle(id, focusEv = null) {
   $$('[data-rmgo]').forEach((b) => (b.onclick = () => openResAdd(b.dataset.rmgo, true)));
   const vfiGo = $('#vfi-go'); if (vfiGo) vfiGo.onclick = () => { const mh = $('#mhist'); if (mh) { mh.open = true; mh.style.scrollMarginTop = '90px'; mh.scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
   const evx = $('#evx'); if (evx) evx.onclick = async () => { let reason = null; if (!v.eval_excluded) { reason = prompt(t('evx_reason')); if (!reason) return; } try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/evaluation`, { excluded: !v.eval_excluded, reason }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
-  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const react = $('#react'); if (react) react.onclick = async () => { try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const mf = $('#mf'); if (mf) mf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(mf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/maintenance`, b); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   // Erledigt (UVV, Tachograph, Ausrüstung …): Formular statt Browser-Abfragen – Datum, ggf. km, Nachweis, optional Ergebnis und belegte nächste Fälligkeit
@@ -4148,6 +4148,13 @@ async function loadTotp() {
 const USER_SORTS = ['role', 'name', 'login_oldest'];
 const USER_ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
 const USER_FILTERS = ['all', 'active', 'inactive', 'invite', 'locked', 'unused', ...USER_ROLES.map((r) => 'r_' + r)];
+// Hinweise nach Deaktivieren/Versetzen eines Kontos (22.10.2026): Fahrerakte weiter aktiv, Werkstatt-Standort ohne Zugang mit offenen Aufträgen
+function userUpdateHints(r) {
+  const h = [];
+  if (r && r.driver_file_active) h.push(t('ue_driver_file_active').replace('{name}', r.driver_file_active.name));
+  if (r && r.workshop_orphaned_cases) h.push(tn('ue_ws_orphaned', r.workshop_orphaned_cases).replace('{site}', wsName(r.workshop_site)));
+  return h;
+}
 async function viewUsers() {
   const ures = await api('GET', '/api/users');
   const all = ures.users;
@@ -4216,12 +4223,12 @@ async function viewUsers() {
       const ends = roleEnvChange || (u.role === 'workshop' && body.role === 'workshop' && (body.workshop_site || null) !== (u.workshop_site || null));
       if (!roleEnvChange && body.display_name === u.display_name && (body.role !== 'workshop' || body.workshop_site === u.workshop_site)) { toast(t('ue_none')); return; }
       if (ends && !confirm(t('ue_confirm').replace('{name}', u.display_name))) return;
-      try { const r = await api('PATCH', `/api/users/${u.id}`, body); toast(r.sessions_ended && ends ? t('ue_saved_ended') : '✓'); viewUsers(); } catch (err) { toast(err.message, true); }
+      try { const r = await api('PATCH', `/api/users/${u.id}`, body); const h = userUpdateHints(r); toast([r.sessions_ended && ends ? t('ue_saved_ended') : '✓', ...h].join(' · '), h.length > 0); viewUsers(); } catch (err) { toast(err.message, true); }
     };
     $('#uen').focus({ preventScroll: true }); $('#uef').scrollIntoView({ block: 'start' });
   }));
   // Deaktivieren beendet sofort alle Anmeldungen (z. B. am geteilten Tablet) – deshalb nachfragen; Aktivieren ohne Rückfrage
-  $$('[data-act]').forEach((b) => (b.onclick = async () => { if (b.dataset.on !== '1' && !confirm(t('deactivate_confirm').replace('{name}', b.dataset.name))) return; try { await api('PATCH', `/api/users/${b.dataset.act}`, { active: b.dataset.on === '1' }); viewUsers(); } catch (err) { toast(err.message, true); } }));
+  $$('[data-act]').forEach((b) => (b.onclick = async () => { if (b.dataset.on !== '1' && !confirm(t('deactivate_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('PATCH', `/api/users/${b.dataset.act}`, { active: b.dataset.on === '1' }); const h = userUpdateHints(r); if (h.length) toast(h.join(' · '), true); viewUsers(); } catch (err) { toast(err.message, true); } }));
 }
 
 async function viewSettings() {

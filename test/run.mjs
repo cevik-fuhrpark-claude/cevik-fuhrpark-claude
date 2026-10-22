@@ -17011,6 +17011,38 @@ await test('Lebenszyklus 22.10.: übernommener Auftrag ohne aktives Werkstattkon
   eq((await U.own.req('PATCH', `/api/users/${U.wsMuc.id}`, { role: 'workshop', workshop_site: 'DORTMUND' })).status, 200);
   eq(Object.keys(await nws()).length, 0, 'Werkstatt wieder besetzt');
 });
+await test('Lebenszyklus 22.10.: Außer-Betrieb-Nehmen nennt geplante Prüftermine, keine km-Prognose für stillgelegte Fahrzeuge, Deaktivieren nennt aktive Fahrerakte und verwaiste Werkstattaufträge (DE/UK/EN)', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317'; const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  // (b) Vertrag mit Kontingent: 1 Jahr gefahren 40 000 km von 100 000 bei 3 Jahren Laufzeit → Prognose 120 000
+  eq((await U.fleet.post(`/api/vehicles/${V2}/odometer`, { km: 41000 })).status, 201);
+  const c = await U.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'leasing', partner: 'Muster-Leasing', evidence: 'Vertrag (Test)', start_date: day(-365), end_date: day(730), km_allowance: 100000, start_km: 1000 }); eq(c.status, 201, JSON.stringify(c.data));
+  const kmSt = async () => ({ ov: (await U.fleet.get('/api/contracts?filter=alle')).data.contracts.find((x) => x.id === c.data.id).status.km, akte: (await U.fleet.get(`/api/vehicles/${V2}`)).data.contracts.find((x) => x.id === c.data.id).status.km });
+  let k = await kmSt(); eq(k.ov.status, 'prognose_ueber'); eq(k.akte.status, 'prognose_ueber'); ok(k.ov.forecast_driven > 100000);
+  await U.fleet.post('/api/agent/run');
+  const fc = async () => (await U.fleet.get('/api/master')).data.findings.filter((x) => x.finding_code === 'CONTRACT_KM_FORECAST' && x.status !== 'erledigt').length;
+  eq(await fc(), 1, 'Prognose-Befund im Betrieb');
+  // (a) geplanter Prüftermin
+  const r = await U.fleet.post(`/api/vehicles/${V2}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Prüfbuch (Test)' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(5) })).status, 200);
+  const d = await U.fleet.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'verkauft' }); eq(d.status, 200, JSON.stringify(d.data));
+  eq(d.data.planned_appointments, 1, 'geplanter Termin genannt'); eq(d.data.running_contracts, 1); eq(d.data.telematics_devices, 0);
+  k = await kmSt(); eq(k.ov.status, 'ok', 'keine Prognose mehr'); eq(k.ov.forecast_driven, null); eq(k.akte.status, 'ok'); eq(k.ov.driven, 40000, 'gefahrene km bleiben');
+  await U.fleet.post('/api/agent/run'); eq(await fc(), 0, 'Prognose-Befund erledigt');
+  const re = await U.fleet.post(`/api/vehicles/${V2}/active`, { active: true, reason: 'zurück' }); eq(re.data.planned_appointments, 0, 'Wieder-in-Betrieb-Nahme ohne Hinweis');
+  await toRepair(); // für (d), solange das Fahrerkonto aktiv ist
+  // (c) Fahrer mit Fahrerakte deaktivieren
+  const df = await U.fleet.post('/api/drivers', { display_name: 'Akte Fahrer W', user_id: U.driver.id }); eq(df.status, 201, JSON.stringify(df.data));
+  const x = await U.own.req('PATCH', `/api/users/${U.driver.id}`, { active: false }); eq(x.status, 200);
+  eq(JSON.stringify(x.data.driver_file_active), JSON.stringify({ id: df.data.id, name: 'Akte Fahrer W' }), 'aktive Fahrerakte genannt'); ok(!('workshop_orphaned_cases' in x.data));
+  // (d) letztes Werkstattkonto Dortmund versetzt, ein Auftrag in Reparatur
+  const y = await U.own.req('PATCH', `/api/users/${U.ws.id}`, { role: 'workshop', workshop_site: 'MUENCHEN' }); eq(y.status, 200, JSON.stringify(y.data));
+  eq(y.data.workshop_orphaned_cases, 1, 'verwaister Auftrag genannt'); eq(y.data.workshop_site, 'DORTMUND'); ok(!('driver_file_active' in y.data));
+  const z = await U.own.req('PATCH', `/api/users/${U.wsMuc.id}`, { active: false }); ok(!('workshop_orphaned_cases' in z.data), 'München: noch ein Konto (versetztes) → kein Hinweis');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const key of ['mt_planned_deact', 'ue_ws_orphaned']) eq((src.match(new RegExp(`\\n    ${key}: \\{`, 'g')) || []).length, 3, `${key}: Pluralformen DE/UK/EN`);
+  eq((src.match(/ue_driver_file_active: '/g) || []).length, 3, 'Fahrerakte-Hinweis DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

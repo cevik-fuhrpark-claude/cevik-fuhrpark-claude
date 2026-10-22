@@ -62,7 +62,8 @@ export function contractStatus(c, latest, today, warnDays) {
       const driven = latest.km - c.start_km;
       km = { status: driven > c.km_allowance ? 'ueber' : 'ok', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, driven, remaining: c.km_allowance - driven, forecast_driven: null };
       const measuredDay = berlinDate(latest.measured_at);
-      if (c.start_date && c.end_date && km.status === 'ok' && measuredDay < c.end_date) {
+      // Fahrzeug außer Betrieb (vehicle_active = 0): keine Hochrechnung – es fährt nicht mehr; echte Überschreitung und Fristen bleiben (22.10.2026)
+      if (c.start_date && c.end_date && km.status === 'ok' && measuredDay < c.end_date && c.vehicle_active !== 0 && c.vehicle_active !== false) {
         const elapsed = days(c.start_date, measuredDay); const total = days(c.start_date, c.end_date);
         if (elapsed >= FORECAST_MIN_DAYS && total > 0) {
           km.forecast_driven = Math.round(driven * total / elapsed);
@@ -239,7 +240,7 @@ export async function endContract(env, user, id, body) {
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
 export async function vehicleContracts(env, vehicleId, latest, settings, envName) {
-  const rows = (await env.DB.prepare(`SELECT c.*, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
+  const rows = (await env.DB.prepare(`SELECT c.*, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings);
@@ -313,7 +314,7 @@ export function contractsIcs(ov, lang = 'de') {
 
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag
 export async function contractFindings(env, settings) {
-  const rows = (await env.DB.prepare(`SELECT c.*, v.plate,
+  const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active,
       (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC LIMIT 1) AS latest_km,
       ${KM_DROP_SQL('c.vehicle_id')} AS drop_at
     FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND (c.end_date IS NOT NULL OR c.km_allowance IS NOT NULL)`).all()).results;
