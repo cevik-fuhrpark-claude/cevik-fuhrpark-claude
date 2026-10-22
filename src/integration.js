@@ -9,6 +9,7 @@ import { winterMarks, winterStatus } from './tires.js';
 import { dataQuality, CHECKS } from './quality.js';
 import { telematicsOverview } from './telematics.js';
 import { renderFindingMessage } from '../public/finding-messages.js';
+const POLL_OVERLAP_MS = 120000; // Sicherheitsspanne für inkrementelle Abrufe von /v1/cases (next_poll_since)
 
 // Tokens: INTEGRATION_TOKEN (lesen + Telematik schreiben), optional INTEGRATION_TOKEN_NEXT (gleiche Rechte, für Wechsel ohne Ausfall)
 // und INTEGRATION_TOKEN_READ (nur lesen, z. B. für Auswertungen). Ergebnis: 'write' oder 'read'.
@@ -149,7 +150,11 @@ export async function integrationRouter(request, env, ctx, url) {
     // Blättern ohne Lücken: gleiche updated_at (Sammeländerungen) über after_id = id der letzten Zeile; additiv (ohne after_id wie bisher)
     const more = rows.length > pageSize; if (more) rows.length = pageSize;
     const last = rows[rows.length - 1];
-    return json({ schema_version: '1.0', cases: rows, has_more: more, ...(more ? { next: { since: last.updated_at, after_id: last.id } } : {}) });
+    // Letzte Seite: empfohlener nächster Abruf mit 2 Min. Überlappung (22.10.2026, Fund Teilagent „n8n-Client“): eine Änderung kann mit früherem
+    // updated_at erst nach einer späteren festgeschrieben werden (Zeitstempel vor den Prüfabfragen gesetzt) – ein Cursor aus der letzten Zeile verlöre sie.
+    // Additiv; doppelte Zeilen verwirft der Client über (id, version).
+    const pollMs = Math.min(last ? Date.parse(last.updated_at) : sinceMs, Date.now() - POLL_OVERLAP_MS);
+    return json({ schema_version: '1.0', cases: rows, has_more: more, ...(more ? { next: { since: last.updated_at, after_id: last.id } } : { next_poll_since: new Date(Math.max(pollMs, 0)).toISOString() }) });
   }
   // Verfügbarkeit für Tourenplanung: gesperrt / Werkstatt / Meldung offen / laut System einsatzbereit (keine Freigabe-Aussage)
   if (p === '/v1/availability' && m === 'GET') {

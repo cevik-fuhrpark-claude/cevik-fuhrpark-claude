@@ -17531,6 +17531,26 @@ await test('Standortwechsel (Teilagent 22.10.): Werkstatt sieht laufende Aufträ
   for (const l of ['de', 'uk', 'en']) for (const k of ['veh_site_ws_open', 'veh_site_planned']) ok(PLURALS[l][k] && PLURALS[l][k].one.includes('{list}') === (k === 'veh_site_ws_open'), `${l} Plural ${k}`);
 });
 
+await test('Integrations-API /v1/cases (Teilagent n8n-Client 22.10.): letzte Seite liefert next_poll_since mit 2 Min. Überlappung – später festgeschriebene Änderung mit früherem Zeitstempel geht nicht verloren', async () => {
+  const { e, newCase } = await freshWorld(); const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const get = async (q) => { const r = await an.req('GET', '/api/integration/v1/cases?environment=test' + q, undefined, H); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  const A = await newCase(); const B = await newCase({ description: 'Spiegel locker' });
+  const now = Date.now(); const iso = (ms) => new Date(ms).toISOString();
+  e.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(iso(now - 10000), A); e.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(iso(now - 9000), B);
+  const r1 = await get('&since=' + iso(now - 60000));
+  eq(r1.has_more, false); ok(!r1.next, 'kein next auf der letzten Seite');
+  ok(Date.parse(r1.next_poll_since) <= Date.now() - 119000 && Date.parse(r1.next_poll_since) <= now - 9000, 'Überlappung: höchstens Serverzeit − 2 Min. und letzte Zeile');
+  // B wurde gelesen; danach wird A mit einem Zeitstempel VOR B festgeschrieben (Zeitstempel vor den Prüfabfragen gesetzt)
+  e.DB.db.prepare(`UPDATE cases SET status='abgelehnt', version=version+1, updated_at=? WHERE id=?`).run(iso(now - 9500), A);
+  const naive = await get('&since=' + iso(now - 9000)); ok(!naive.cases.some((c) => c.id === A), 'Cursor aus der letzten Zeile verliert A (Grund für next_poll_since)');
+  const r2 = await get('&since=' + encodeURIComponent(r1.next_poll_since));
+  const a2 = r2.cases.find((c) => c.id === A); ok(a2 && a2.status === 'abgelehnt' && a2.version === 2, 'Storno von A im nächsten Abruf');
+  ok(r2.cases.some((c) => c.id === B), 'B kommt erneut (Client verwirft über id/version)');
+  // mehrere Seiten: next wie bisher, next_poll_since erst auf der letzten Seite
+  const p1 = await get('&since=' + iso(now - 60000) + '&limit=1'); eq(p1.has_more, true); ok(p1.next && !p1.next_poll_since, 'Blättern unverändert');
+  const empty = await get('&since=' + iso(now + 3600000)); eq(empty.cases.length, 0); ok(Date.parse(empty.next_poll_since) <= Date.now() - 119000, 'ohne Zeilen: höchstens Serverzeit − 2 Min.');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
