@@ -5,7 +5,7 @@ import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag
 import { audit, auditStmt } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
-import { sha256Hex, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
+import { sha256Hex, sha256HexSync, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt, maintKindLang } from './notify.js';
 import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone } from './maintenance.js';
@@ -1283,9 +1283,11 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
   const exp = body.expected && typeof body.expected === 'object' ? body.expected : before;
   // erwartete Werte nur Text oder leer (Objekt/Liste → 400 statt 500, 17.10.2026)
   for (const k of ['kind', 'note', 'valid_until']) if (exp[k] !== undefined && exp[k] !== null && typeof exp[k] !== 'string') throw bad('validation', 'expected: ungültiger Wert.');
-  const r = await env.DB.prepare(`UPDATE files SET doc_kind=?, doc_note=?, doc_valid_until=? WHERE id=? AND COALESCE(doc_kind,'sonstiges')=? AND doc_note IS ? AND doc_valid_until IS ?`)
-    .bind(kind, after.note, after.valid_until, f.id, String(exp.kind || 'sonstiges'), exp.note ?? null, exp.valid_until ?? null).run();
-  if (!r.meta || r.meta.changes !== 1) throw conflict('doc_changed', 'Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.');
+  // Dokument, Umschlüsseln des Befunds und Protokoll in EINEM Stapel (22.10.2026, Backlog 127a: vorher getrennt – nach Abbruch dazwischen
+  // schloss der Agent den alten Befund und übergab/pushte ihn neu, eine Wiederholung war „unverändert“)
+  const stmts = [env.DB.prepare(`UPDATE files SET doc_kind=?, doc_note=?, doc_valid_until=? WHERE id=? AND COALESCE(doc_kind,'sonstiges')=? AND doc_note IS ? AND doc_valid_until IS ?`)
+    .bind(kind, after.note, after.valid_until, f.id, String(exp.kind || 'sonstiges'), exp.note ?? null, exp.valid_until ?? null),
+  env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN changes() = 1 THEN 1 ELSE 0 END'), env.DB.prepare('DELETE FROM cmd_guard')];
   // Bemerkung eines „sonstigen“ Dokuments korrigiert (Thema = Befundschlüssel): offenen/erledigten Befund mit umschlüsseln, statt ihn zu schließen
   // und als neuen Fall erneut zu übergeben und zu pushen (22.10.2026, Fund „Flattern“) – nur wenn kein anderes Dokument im alten Thema bleibt
   // und unter dem neuen Schlüssel noch kein Befund besteht; Schlüssel exakt wie documentFindings (lower(trim()))
@@ -1298,11 +1300,15 @@ export async function updateVehicleDocument(env, user, envName, vehicleId, fileI
           AND o.doc_valid_until IS NOT NULL AND lower(trim(COALESCE(o.doc_note,''))) = lower(trim(COALESCE(?3,''))))`)
       .bind(vehicleId, envName, before.note, after.note, f.id).all()).results;
     // Fingerabdruck wie der Agent (`code|subject|severity|requires_decision`) – sonst gälte der umgeschlüsselte Befund als geändert (neue Übergabe)
-    if (hit.length) await env.DB.batch(await Promise.all(hit.map(async (h) => env.DB.prepare('UPDATE agent_findings SET subject_key=?, fingerprint=?, fp_src=NULL WHERE id=? AND subject_key=?')
-      .bind(h.nk, await sha256Hex(`${h.finding_code}|${h.nk}|${h.severity}|${h.requires_decision}`), h.id, h.subject_key))));
+    for (const h of hit) stmts.push(env.DB.prepare('UPDATE agent_findings SET subject_key=?, fingerprint=?, fp_src=NULL WHERE id=? AND subject_key=?')
+      .bind(h.nk, sha256HexSync(`${h.finding_code}|${h.nk}|${h.severity}|${h.requires_decision}`), h.id, h.subject_key));
   }
   const diff = {}; for (const [k, dk] of [['kind', 'doc_kind'], ['valid_until', 'valid_until'], ['note', 'note']]) if (before[k] !== after[k]) diff[dk] = { from: before[k], to: after[k] };
-  await audit(env, user.id, 'vehicle.document_update', vehicleId, { filename: f.filename, ...diff });
+  stmts.push(auditStmt(env, user.id, 'vehicle.document_update', vehicleId, { filename: f.filename, ...diff }));
+  try { await env.DB.batch(stmts); } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw conflict('doc_changed', 'Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.');
+    throw e;
+  }
   return { ok: true };
 }
 

@@ -902,6 +902,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     ]);
     if (extra.length) { internal.extraDone = true; internal.extraResults = batchRes.slice(batchRes.length - extra.length); }
   } catch (e) {
+    // nichts angelegt (409-Wege wie order_exists/inspection_race, Doppelklick, Fehler): gezogene Nummern zurückgeben, solange niemand danach
+    // eine gezogen hat – sonst Nummernlücken (22.10.2026, Backlog 127b)
+    await env.DB.prepare('UPDATE case_counters SET last_no=last_no-? WHERE environment=? AND year=? AND last_no=?').bind(k, envName, year, counter.last_no).run().catch(() => null);
     if (String(e && e.message).includes('CHECK')) {
       const act = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId))).first()).n;
       if (act < new Set(specs.map((x) => x.vehicleId)).size) {
@@ -1599,9 +1602,12 @@ export async function uploadFile(env, user, envName, caseId, request) {
   await env.FILES.put(key, buf, { metadata: { type, case_id: c.id, env: envName } });
   try {
     // Höchstzahl und Dublette in derselben Anweisung geprüft – parallele Uploads (zwei Geräte, Offline-Postausgang) überschritten sonst die 10
-    const ins = await env.DB.prepare(`INSERT INTO files(id,case_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
+    // „zuletzt geändert“ im selben Stapel, nur wenn die Datei eingetragen wurde (22.10.2026, Backlog 127e)
+    const [ins] = await env.DB.batch([env.DB.prepare(`INSERT INTO files(id,case_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE (SELECT COUNT(*) FROM files WHERE case_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE case_id=?2 AND sha256=?8)`)
-      .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso(), MAX_FILES).run();
+      .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso(), MAX_FILES),
+    // neue Datei ist Bewegung am Vorgang („Ohne Bewegung“, „zuletzt geändert“ – 20.10.2026)
+    env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM files WHERE id=?)').bind(nowIso(), c.id, id)]);
     if (!(ins.meta && ins.meta.changes)) {
       await env.FILES.delete(key);
       const d2 = await env.DB.prepare('SELECT id FROM files WHERE case_id=? AND sha256=?').bind(c.id, sha).first();
@@ -1613,8 +1619,6 @@ export async function uploadFile(env, user, envName, caseId, request) {
     await env.FILES.delete(key);
     throw e;
   }
-  // neue Datei ist Bewegung am Vorgang („Ohne Bewegung“, „zuletzt geändert“ – 20.10.2026)
-  await env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(nowIso(), c.id).run();
   return { id, duplicate: false, content_type: type, size: buf.length };
 }
 

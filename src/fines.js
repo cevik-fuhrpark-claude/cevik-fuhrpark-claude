@@ -196,6 +196,8 @@ export async function createFine(env, user, envName, body) {
   const year = Number(berlinDate().slice(0, 4)); // Berliner Kalenderjahr wie alle Tagesangaben
   const c = await env.DB.prepare(`INSERT INTO fine_counters(environment, year, last_no) VALUES (?, ?, 1) ON CONFLICT(environment, year) DO UPDATE SET last_no = last_no + 1 RETURNING last_no`).bind(envName, year).first();
   const fineNo = `${envName === 'test' ? 'TB' : 'B'}-${year}-${String(c.last_no).padStart(4, '0')}`;
+  // nicht angelegt (Dublette, Wiederholung, Fehler): Nummer zurückgeben, solange niemand danach eine gezogen hat – keine Nummernlücke (22.10.2026, Backlog 127b)
+  const giveBackNo = () => env.DB.prepare('UPDATE fine_counters SET last_no=last_no-1 WHERE environment=? AND year=? AND last_no=?').bind(envName, year, c.last_no).run().catch(() => null);
   const id = uuid();
   const now = nowIso();
   // Aktenzeichen-Dublette auch bei gleichzeitiger Erfassung ausschließen: Einfügen nur, wenn (Umgebung, Behörde, Aktenzeichen) noch fehlt –
@@ -210,11 +212,12 @@ export async function createFine(env, user, envName, body) {
       fnote, user.id, now, now, rkey),
     env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
   ]); } catch (e) {
+    await giveBackNo();
     // gleichzeitige Wiederholung mit demselben Schlüssel: der eindeutige Index weist die zweite ab → den ersten Vorgang melden
     if (rkey && /request_key|UNIQUE/i.test(String(e && e.message))) { const w = await byKey(); if (w) return w; }
     throw e;
   }
-  if (!(res[0] && res[0].meta && res[0].meta.changes)) { const w = await byKey(); if (w) return w; await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
+  if (!(res[0] && res[0].meta && res[0].meta.changes)) { await giveBackNo(); const w = await byKey(); if (w) return w; await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
   return { id, fine_no: fineNo, vehicle_matched: !!veh, ...(pick.ambiguous ? { vehicle_ambiguous: true } : {}) };
 }
 
@@ -397,9 +400,13 @@ export async function uploadFineFile(env, user, envName, id, request) {
   const name = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'schreiben'); } catch { return 'schreiben'; } })().replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'schreiben';
   await env.FILES.put(key, buf, { metadata: { type, fine_id: id } });
   // Höchstzahl und Dublette im Einfügen selbst geprüft – 25 gleichzeitige Uploads ergaben vorher 25 Dateien (17.10.2026)
-  const ins = await env.DB.prepare(`INSERT INTO files(id,case_id,fine_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
+  let ins;
+  // D1-Fehler beim Eintragen: gespeicherte Datei wieder entfernen (wie bei Vorgangsdateien/Fahrzeugdokumenten; 22.10.2026, Backlog 127c)
+  try {
+    ins = await env.DB.prepare(`INSERT INTO files(id,case_id,fine_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
     SELECT ?1,NULL,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE (SELECT COUNT(*) FROM files WHERE fine_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE fine_id=?2 AND sha256=?8)`)
-    .bind(fid, id, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_FINE_FILES).run();
+      .bind(fid, id, envName, key, name, type, buf.length, sha, user.id, nowIso(), MAX_FINE_FILES).run();
+  } catch (e) { await env.FILES.delete(key).catch(() => {}); throw e; }
   if (!ins.meta || ins.meta.changes !== 1) {
     await env.FILES.delete(key).catch(() => {});
     const d2 = await env.DB.prepare('SELECT id FROM files WHERE fine_id=? AND sha256=?').bind(id, sha).first();

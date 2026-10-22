@@ -65,14 +65,18 @@ function cookieHeader(token, maxAgeSec) {
 // eine gültige Sitzung anlegen; ebenso nach Deaktivierung.
 // passwordOnly (18.10.2026): Sitzung ohne zweiten Faktor nur, solange die Zwei-Faktor-Anmeldung aus ist – sonst legte eine
 // Passwort-Anmeldung, deren Prüfung lief, während die Person die Zwei-Faktor-Anmeldung einschaltete, danach eine Sitzung ohne Code an.
-async function createSession(env, userId, request, pwHash, passwordOnly = false) {
+// audit: [action, detail] – Anmelde-Protokoll im selben Stapel wie die Sitzung, nur wenn sie angelegt wurde (22.10.2026, Backlog 127d:
+// der Eintrag ist Grundlage für „Letzte Anmeldung“ und „lange nicht angemeldet“)
+async function createSession(env, userId, request, pwHash, passwordOnly = false, auditAs = null) {
   const token = randomToken(32);
   const h = await sha256Hex(token);
   const now = new Date();
   const exp = new Date(now.getTime() + SESSION_DAYS * 86400000).toISOString();
-  const r = await env.DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at,last_seen,user_agent) SELECT ?,?,?,?,?,?
+  const ins = env.DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at,last_seen,user_agent) SELECT ?,?,?,?,?,?
     WHERE EXISTS (SELECT 1 FROM users WHERE id=? AND active=1 AND password_hash=?${passwordOnly ? ' AND totp_enabled_at IS NULL' : ''})`)
-    .bind(h, userId, now.toISOString(), exp, now.toISOString(), (request.headers.get('user-agent') || '').slice(0, 200), userId, pwHash || '').run();
+    .bind(h, userId, now.toISOString(), exp, now.toISOString(), (request.headers.get('user-agent') || '').slice(0, 200), userId, pwHash || '');
+  const r = auditAs ? (await env.DB.batch([ins, env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT ?1, ?2, ?3, ?2, ?4, ?5 WHERE EXISTS (SELECT 1 FROM sessions WHERE token_hash=?6)`)
+    .bind(uuid(), userId, auditAs[0], auditAs[1] ? JSON.stringify(auditAs[1]) : null, nowIso(), h)]))[0] : await ins.run();
   if (!r.meta || !r.meta.changes) throw new HttpError(401, 'invalid_login', 'Benutzername oder Passwort falsch.');
   return cookieHeader(token, SESSION_DAYS * 86400);
 }
@@ -120,8 +124,7 @@ export async function login(env, request, body, ctx = null) {
     return { second_factor: 'totp', challenge: await createChallenge(env, user.id, user.password_hash) };
   }
   await clearAttempts(env, username);
-  const cookie = await createSession(env, user.id, request, user.password_hash, true);
-  await audit(env, user.id, 'login', user.id, null);
+  const cookie = await createSession(env, user.id, request, user.password_hash, true, ['login', null]);
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }
@@ -265,8 +268,7 @@ export async function loginSecondFactor(env, request, body, ctx = null) {
   const { row, factor } = res;
   await releaseIp(env, ik, win);
   await clearAttempts(env, row.username);
-  const cookie = await createSession(env, row.id, request, row.password_hash);
-  await audit(env, row.id, 'login', row.id, { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) });
+  const cookie = await createSession(env, row.id, request, row.password_hash, false, ['login', { factor: factor.kind, ...(factor.kind === 'recovery' ? { recovery_left: factor.left } : {}) }]);
   await noteLoginDevice(env, ctx, row, request, body.device_id);
   return { user: publicUser(row), cookie, recovery_left: factor.kind === 'recovery' ? factor.left : undefined };
 }
@@ -388,8 +390,7 @@ export async function acceptInvite(env, request, body, ctx = null) {
     await audit(env, user.id, 'password.set_by_invite', user.id, null);
     return { second_factor: 'totp', challenge: await createChallenge(env, user.id, ph) };
   }
-  const cookie = await createSession(env, row.user_id, request, ph, true);
-  await audit(env, user.id, 'invite.accept', user.id, null); // zählt als Anmeldung (Benutzerliste „Letzte Anmeldung“)
+  const cookie = await createSession(env, row.user_id, request, ph, true, ['invite.accept', null]); // zählt als Anmeldung (Benutzerliste „Letzte Anmeldung“)
   await noteLoginDevice(env, ctx, user, request, body.device_id);
   return { user: publicUser(user), cookie };
 }

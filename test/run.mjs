@@ -8106,7 +8106,7 @@ await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code 
   const { AUDIT_ACTION_CODES, auditActionLabel } = await import('../public/i18n.js');
   const src = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
   const codes = new Set();
-  for (const m of src.matchAll(/\b(?:audit|auditFn)\(\s*env\s*,\s*[^,]+,\s*([^\n]{0,120})/g)) {
+  for (const m of src.matchAll(/\b(?:audit|auditFn|auditStmt)\(\s*env\s*,\s*[^,]+,\s*([^\n]{0,120})/g)) {
     const head = m[1].includes('?') ? m[1].slice(0, 100) : m[1].split(',')[0];
     for (const x of head.matchAll(/'([a-z_]+(?:\.[a-z_]+)*)'/g)) if (x[1].includes('.') || x[1] === 'login') codes.add(x[1]); // Detailwerte wie 'neu' nicht
   }
@@ -17236,6 +17236,49 @@ await test('Atomar 22.10.: Abbruch mitten in einer Aktion hinterlässt keinen ha
   eq(locked, 1, `gesperrt (${st.join(',')})`); eq(n1('SELECT COUNT(*) n FROM sessions'), 0, 'gesperrt → alle Anmeldungen beendet'); eq((await owner.get('/api/me')).status, 401);
   eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='login.locked'`), 1, 'Sperre einmal protokolliert');
   env.DB.batch = orig;
+});
+await test('Atomar 22.10. (2): Nummern ohne Lücke nach gescheitertem Anlegen (Vorgang, Bußgeld), Anmeldung + Protokoll „Anmeldung“ zusammen, Dokumentkorrektur + Protokoll zusammen, Datei + „zuletzt geändert“ zusammen', async () => {
+  const { e, U, newCase } = await freshWorld(); const db = e.DB.db; const n1 = (sql, ...a) => db.prepare(sql).get(...a).n;
+  const orig = e.DB.batch.bind(e.DB); let failIf = null;
+  e.DB.batch = async (stmts) => { if (failIf && failIf(stmts)) { failIf = null; throw new Error('D1_ERROR: simulierter Abbruch'); } return orig(stmts); };
+  const has = (re) => (st) => st.some((x) => re.test(x.sql));
+  // (b) Vorgangsnummer: gescheitertes Anlegen gibt die Nummer zurück
+  const c1 = await newCase(); const no1 = db.prepare('SELECT case_no FROM cases WHERE id=?').get(c1).case_no;
+  failIf = has(/INSERT INTO cases\(/);
+  const bad = await U.fleet.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM722774', description: 'Spiegel lose links', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); ok(bad.status >= 500, String(bad.status));
+  const c2 = await newCase(); const no2 = db.prepare('SELECT case_no FROM cases WHERE id=?').get(c2).case_no;
+  eq(Number(no2.slice(-4)), Number(no1.slice(-4)) + 1, `keine Lücke (${no1} → ${no2})`);
+  // Bußgeldnummer ebenso
+  const fb = (ref) => ({ kind: 'anhoerung', offense_type: 'parken', offense_at: '2026-10-01T10:00', plate_in_letter: 'SZ-YC 5513', authority: 'Stadt', reference: ref });
+  const f1 = await U.fleet.post('/api/fines', fb('AZ-1')); eq(f1.status, 201, JSON.stringify(f1.data));
+  failIf = has(/INSERT INTO fines\(/); ok((await U.fleet.post('/api/fines', fb('AZ-2'))).status >= 500);
+  const f3 = await U.fleet.post('/api/fines', fb('AZ-3')); eq(Number(f3.data.fine_no.slice(-4)), Number(f1.data.fine_no.slice(-4)) + 1, `Bußgeld ohne Lücke (${f1.data.fine_no} → ${f3.data.fine_no})`);
+  // (d) Anmeldung: Sitzung und Protokoll „Anmeldung“ (Grundlage „Letzte Anmeldung“) zusammen
+  const before = n1(`SELECT COUNT(*) n FROM audit_log WHERE action='login'`);
+  const C = new Client(worker, e, 'x'); const uname = db.prepare('SELECT username FROM users WHERE id=?').get(U.ws.id).username;
+  failIf = (st) => has(/INSERT INTO sessions/)(st) && has(/INSERT INTO audit_log/)(st);
+  ok((await C.post('/api/login', { username: uname, password: 'Sicheres-Passwort-2026' })).status >= 500);
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='login'`), before, 'kein Protokoll ohne Sitzung');
+  const lg = await C.post('/api/login', { username: uname, password: 'Sicheres-Passwort-2026' }); eq(lg.status, 200, JSON.stringify(lg.data));
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='login' AND target=?`, U.ws.id) >= 1, true);
+  // (a) Dokument korrigieren: Änderung und Protokoll zusammen; Konflikt weiter 409
+  const V = 'VIN:WMA15SZZ2HM722774'; const pdf = new TextEncoder().encode('%PDF-1.4\n% atom\n%%EOF');
+  const up = await U.fleet.req('POST', `/api/vehicles/${V}/documents?kind=sonstiges&valid_until=2027-01-31&note=ADR`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'adr.pdf' }); ok(up.status < 300);
+  failIf = has(/UPDATE files SET doc_kind/);
+  ok((await U.fleet.req('PATCH', `/api/vehicles/${V}/documents/${up.data.id}`, { note: 'ADR neu' })).status >= 500);
+  eq(db.prepare('SELECT doc_note FROM files WHERE id=?').get(up.data.id).doc_note, 'ADR', 'unverändert');
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.document_update'`), 0);
+  eq((await U.fleet.req('PATCH', `/api/vehicles/${V}/documents/${up.data.id}`, { note: 'ADR neu' })).status, 200);
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.document_update'`), 1);
+  eq((await U.fleet.req('PATCH', `/api/vehicles/${V}/documents/${up.data.id}`, { note: 'ADR x', expected: { kind: 'sonstiges', note: 'ADR', valid_until: '2027-01-31' } })).status, 409, 'veralteter Stand → 409');
+  eq(n1(`SELECT COUNT(*) n FROM audit_log WHERE action='vehicle.document_update'`), 1, 'kein Protokoll bei Konflikt');
+  // (e) Vorgangsdatei: „zuletzt geändert“ nur mit eingetragener Datei; gescheitert → Datei auch nicht im Speicher
+  const t0 = db.prepare('SELECT updated_at FROM cases WHERE id=?').get(c2).updated_at; const kv0 = e.FILES.m.size;
+  failIf = has(/INSERT INTO files\(/);
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+  ok((await U.fleet.req('POST', `/api/cases/${c2}/files`, png, { 'content-type': 'image/png', 'x-filename': 'a.png' })).status >= 500);
+  eq(db.prepare('SELECT updated_at FROM cases WHERE id=?').get(c2).updated_at, t0); eq(e.FILES.m.size, kv0, 'keine verwaiste Datei');
+  e.DB.batch = orig;
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
