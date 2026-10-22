@@ -1180,7 +1180,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       }
       const name = stockItem ? stockItem.name : str(p.name, { required: true, max: 200, field: 'Teil' });
       const price = stockItem && stockItem.unit_price_net !== null && stockItem.unit_price_net !== undefined ? stockItem.unit_price_net : inPrice;
-      const valuation = price === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
+      // Lagerartikel mit hinterlegtem Preis: Wert steht fest (Lagerjournal bucht ihn als tatsächlich) – nie „Schätzung“
+      // (22.10.2026: Teil zählte als Schätzung, die Entnahme im Lagerjournal als tatsächlicher Wert)
+      const stockPriced = !!stockItem && stockItem.unit_price_net !== null && stockItem.unit_price_net !== undefined;
+      const valuation = price === null ? 'unvalued' : stockPriced ? (oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart'), 'actual') : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const warranty = warrantyDate(p.warranty_until);
       extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,

@@ -17647,6 +17647,22 @@ await test('Push-Wiederholung nach Ausfall des Push-Dienstes (Teilagent Benachri
   eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND push_status='accepted'`).get(U.ws.id).n, 8, 'alle 8 zugestellt');
 });
 
+await test('Lagerteil mit Artikelpreis nie als „Schätzung“ (Teilagent Lager 22.10.): Teil und Lagerjournal bewerten dieselbe Entnahme gleich; ohne Artikelpreis bleibt die Schätzung möglich', async () => {
+  const { U, cmd, toRepair, e } = await freshWorld();
+  const it1 = await U.ws.post('/api/stock', { name: 'Filter mit Preis', unit_price_net: '5', initial_qty: 4 }); eq(it1.status, 201);
+  const it2 = await U.ws.post('/api/stock', { name: 'Schlauch ohne Preis', initial_qty: 4 }); eq(it2.status, 201);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: it1.data.id, quantity: 1, valuation: 'estimate' })).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: it2.data.id, quantity: 1, unit_price_net: '7', valuation: 'estimate' })).status, 200);
+  const parts = e.DB.db.prepare('SELECT stock_item_id, valuation, unit_price_net FROM parts WHERE case_id=?').all(id);
+  const by = Object.fromEntries(parts.map((x) => [x.stock_item_id, x]));
+  eq(by[it1.data.id].valuation, 'actual', 'Artikelpreis: tatsächlicher Wert'); eq(by[it1.data.id].unit_price_net, 5);
+  eq(by[it2.data.id].valuation, 'estimate', 'ohne Artikelpreis: Schätzung bleibt');
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: it1.data.id, quantity: 1, valuation: 'egal' })).status, 400, 'ungültige Wertart weiter abgewiesen');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/querySelector\('\[name=estimate\]'\);\s*if \(es\) \{ es\.disabled = fixed;/.test(app), 'Oberfläche sperrt „Schätzung“ bei Artikelpreis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

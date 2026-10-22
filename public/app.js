@@ -2449,6 +2449,9 @@ async function loadStockSelect(c) {
     const it = items.find((i) => i.id === sel.value); const fixed = !!it && it.unit_price_net !== null && it.unit_price_net !== undefined;
     const pr = el.closest('form') && el.closest('form').querySelector('[name=unit_price_net]');
     if (pr) { pr.disabled = fixed; if (fixed) pr.value = ''; }
+    // … und „Schätzung“ ebenso (fester Artikelpreis ist kein Schätzwert, 22.10.2026)
+    const es = el.closest('form') && el.closest('form').querySelector('[name=estimate]');
+    if (es) { es.disabled = fixed; if (fixed) es.checked = false; }
     $('#stockpricehint').hidden = !fixed;
   };
 }
