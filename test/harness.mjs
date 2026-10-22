@@ -39,6 +39,9 @@ class Stmt {
   constructor(db, sql, args = []) { this.db = db; this.sql = sql; this.args = args; }
   bind(...args) {
     // D1 lehnt LIKE-/GLOB-Muster über 50 Byte ab („LIKE or GLOB pattern too complex“) – node:sqlite nicht; hier nachgebildet (19.10.2026)
+    // D1-Grenzen (developers.cloudflare.com/d1/platform/limits): höchstens 100 gebundene Parameter und 100 KB SQL je Anweisung (22.10.2026)
+    if (args.length > 100) throw new Error(`too many SQL variables (${args.length} > 100, D1-Grenze): SQLITE_ERROR`);
+    if (Buffer.byteLength(this.sql) > 100000) throw new Error('SQL statement too long (> 100 KB, D1-Grenze): SQLITE_TOOBIG');
     if (/\b(LIKE|GLOB)\b/i.test(this.sql)) for (const a of args) if (typeof a === 'string' && /[%*]/.test(a) && Buffer.byteLength(a) > 50) throw new Error('LIKE or GLOB pattern too complex: SQLITE_ERROR');
     return new Stmt(this.db, this.sql, args.map((a) => (a === undefined ? null : typeof a === 'boolean' ? (a ? 1 : 0) : a)));
   }
