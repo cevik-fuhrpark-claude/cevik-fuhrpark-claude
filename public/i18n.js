@@ -2043,4 +2043,7 @@ Object.assign(STRINGS.uk, { push_err_denied: 'Не вдалося увімкну
   home_site_hint_dispo: 'Попереднє значення фільтра «Локація» у списках (огляд, транспорт, заявки, план майстерні, терміни перевірок). Лише відображення – будь-коли можна вибрати «Усі».', dispo_winter_incomplete: 'Зимові шини – дані внесено не повністю' });
 Object.assign(STRINGS.en, { push_err_denied: 'Push could not be enabled: the browser does not allow it (e.g. private/incognito window or notifications blocked for this site). Please use a normal browser window or the installed app and allow notifications.', push_err_service: 'Push could not be enabled: the browser’s push service is currently unreachable. Please try again later.', push_err_state: 'Push could not be enabled: this device already has a different push registration. Reload the page and try again.', push_err_other: 'Push could not be enabled. Please reload the page and try again.',
   home_site_hint_dispo: 'Preset for the “Site” filter in the lists (overview, vehicles, cases, workshop plan, inspection dates). Display only – you can choose “All” at any time.', dispo_winter_incomplete: 'Winter tyres – recording incomplete' });
+Object.assign(STRINGS.de, { location_shown: 'Standort des Fahrzeugs' });
+Object.assign(STRINGS.uk, { location_shown: 'Місцезнаходження' });
+Object.assign(STRINGS.en, { location_shown: 'Vehicle location' });
 

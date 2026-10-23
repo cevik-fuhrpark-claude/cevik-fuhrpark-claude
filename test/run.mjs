@@ -18821,6 +18821,17 @@ await test('Disposition erster Tag (23.10.): Nachweistext der Fahrerzuordnung nu
   for (const l of ['de', 'uk', 'en']) for (const k of ['push_err_denied', 'push_err_service', 'push_err_state', 'push_err_other', 'home_site_hint_dispo', 'dispo_winter_incomplete']) ok(STRINGS[l][k], `${l} ${k}`);
 });
 
+await test('Unfall nachts (23.10.): offline gespeicherte kritische Meldung/Kontrolle zeigt Weg zu „Panne & Notfall“ (Fahrzeug) und 112; Ort in der Vorgangsansicht ohne „(optional)“ (DE/UK/EN)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const callBox = (vid) =>") && app.includes("href=\"${vid ? `#/emergency?v=${esc(vid)}` : '#/emergency'}\"") && app.includes('href="tel:112"'), 'Baustein');
+  eq((app.match(/callBox\(body\.vehicle_id\)/g) || []).length, 2, 'Meldung und Abfahrtskontrolle');
+  ok(!app.includes("`<p><b>${esc(t('outbox_call'))}</b></p>` : ''"), 'kein Hinweis ohne Weg mehr');
+  ok(app.includes("<dt>${esc(t('location_shown'))}</dt>"), 'Anzeige-Beschriftung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].location_shown && !/optional|необов/.test(STRINGS[l].location_shown), l); ok(STRINGS[l].em_112_btn && STRINGS[l].em_title, l); }
+  ok(/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/.test('#/emergency?v=VIN:WMA15SZZ2HM722774'), 'Adresse passt zur Route');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
