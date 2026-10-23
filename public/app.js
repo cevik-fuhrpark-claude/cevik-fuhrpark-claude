@@ -1472,6 +1472,7 @@ async function viewNew(preId) {
     ${mine.length ? `<h3>${esc(t('my_vehicles'))}</h3>${pick(mine)}<details><summary>${esc(t('other_vehicles'))}</summary>${pick(others)}</details>` : pick(vs)}
     <div id="known"></div><label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('what_wrong_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>
     <div id="acc" class="panel" hidden role="status"><b>${esc(t('acc_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('acc_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div id="tacho" class="panel" hidden role="status"><b>${esc(t('tacho_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('tacho_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <label id="lbl_prio">${esc(t('urgency'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_prio">${['niedrig', 'mittel', 'kritisch'].map((p, i) => `<label class="choice c-${p}"><input type="radio" name="prio" value="${p}"${i === 0 ? ' checked' : ''}><span><b>${esc(t('prio_' + p))}</b><span class="small muted">${esc(t('prio_' + p + '_d'))}</span></span></label>`).join('')}</div>
     <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><b>${esc(t('drv_' + p))}</b></label>`).join('')}</div>
     <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
@@ -1491,9 +1492,14 @@ async function viewNew(preId) {
   }
   // Beschreibung nennt einen Unfall: kurze Hinweise für vollständige Unterlagen (Fotos, Unfallstelle, Fuhrparkleitung informieren)
   const ACC = /unfall|accident|дтп|авар/i;
-  $('#d').addEventListener('input', () => { $('#acc').hidden = !ACC.test($('#d').value); });
+  // Beschreibung nennt Fahrtenschreiber/Fahrerkarte: Pflichten laut VO (EU) 165/2014 Art. 29/35/37 (Vermerk, Reparatur, Ersatzkarte) –
+  // reine Information, keine Frist im System (Backlog 212, 23.10.2026; „Tachometer“ ist kein Fahrtenschreiber)
+  const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія/i;
+  const hints = () => { $('#acc').hidden = !ACC.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); };
+  $('#d').addEventListener('input', hints);
   photoLimitWatch($('#ph'));
   const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);
+  hints(); // wiederhergestellter Entwurf: Hinweise gleich zeigen (das input-Ereignis kommt erst beim nächsten Tippen)
   const key = uid();
   // Suchfeld: Enter („Los“ am Handy) filtert nur – sendet nicht ab; ein ausgeblendetes gewähltes Fahrzeug wird abgewählt (19.10.2026:
   // Meldung ging sonst an das vorausgewählte, durch den Filter verdeckte Fahrzeug)
