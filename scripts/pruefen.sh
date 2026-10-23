@@ -143,6 +143,7 @@ UI-Versicherungsfälle ruhender Fahrzeuge (Summe, Chip)|ui-versicherung-ruhend.p
 UI-Versicherungsfall mit Gutachter (Abschnitt, Filter)|ui-versicherung-gutachter.py|/tmp/cfp-versicherung-gutachter.log
 UI-Werkstattauftrag ohne Reparatur beenden (Totalschaden)|ui-ohne-reparatur.py|/tmp/cfp-ohne-reparatur.log
 UI-Fahrtenschreiber-/Fahrerkarten-Hinweis im Meldeformular|ui-fahrtenschreiber-hinweis.py|/tmp/cfp-fahrtenschreiber-hinweis.log
+UI-Diebstahl-/Einbruch-Hinweis im Meldeformular und Hilfe|ui-diebstahl-hinweis.py|/tmp/cfp-diebstahl-hinweis.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
 UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Bußgeld-Verlauf mit Fahrernamen, Kandidat-Nachweis übersetzt, berechnete SP beim Fahrer, Reifenverlauf|ui-bussgeld-verlauf-sp-fahrer.py|/tmp/cfp-bussgeld-verlauf-sp-fahrer.log

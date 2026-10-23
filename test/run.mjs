@@ -19161,12 +19161,32 @@ await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): M
   // Hinweis-Panel im Formular; beim Wiederherstellen des Entwurfs meldet formDraft.restore ein input-Ereignis – der Listener steht davor
   ok(app.includes(`<div id="tacho" class="panel" hidden role="status">`), 'Panel #tacho');
   // Backlog 213: Hilfe-Abschnitt „Fahrtenschreiber gestört“ für alle meldenden Rollen, Pflichten wie im Formular, Weg über „Melden“
-  ok(app.includes("const parts = ['report', 'accident', 'tachofault', 'prio',"), 'Hilfe-Abschnitt tachofault');
+  ok(app.includes("const parts = ['report', 'accident', 'tachofault', "), 'Hilfe-Abschnitt tachofault');
   for (const l of ['de', 'uk', 'en']) {
     const h = STRINGS[l].help_tachofault_s; ok(STRINGS[l].help_tachofault_t && h, 'Hilfe ' + l);
     ok(h.includes(STRINGS[l].tacho_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe nennt Pflichten und „' + STRINGS[l].nav_new + '“ ' + l);
   }
   ok(app.indexOf("$('#d').addEventListener('input', hints)") > 0 && app.indexOf("$('#d').addEventListener('input', hints)") < app.indexOf("bindFormDraft('new'"), 'Listener vor bindFormDraft');
+});
+
+await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Meldeformular zeigt bei Diebstahl/Einbruch die Schritte (Polizei, Spuren, Liste, Fuhrparkleitung; DE/UK/EN), Hilfe-Abschnitt für alle meldenden Rollen; „Leistungseinbruch“, „вкрай“, „зламано“ lösen nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const THEFT_HINT = \/(.+)\/i;/); ok(m, 'THEFT_HINT im Meldeformular');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Lkw über Nacht gestohlen', 'Diebstahl von Diesel', 'Diesel abgezapft', 'Einbruch in die Kabine', 'Plane aufgebrochen, Ladung entwendet', 'Navi geklaut', 'Diebe haben die Batterien mitgenommen', 'truck stolen', 'theft of cargo', 'cab broken into', 'Break-in at the yard', 'Крадіжка пального', 'Вкрали навігатор', 'вантаж викрадено', 'вкрадено документи']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Leistungseinbruch am Berg', 'Motor hat Leistungseinbruch', 'Spiegel abgebrochen', 'Reifen platt', 'Стан вкрай поганий', 'Дзеркало зламано', 'steel bumper bent', 'Unfall beim Rangieren']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].theft_hint_title, 'Titel ' + l);
+    const st = STRINGS[l].theft_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/110/.test(st[0]) && /112/.test(st[0]), 'Notrufnummern ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год)/i.test(STRINGS[l].theft_hint_steps), 'keine erfundene Frist ' + l);
+    const h = STRINGS[l].help_theft_s; ok(STRINGS[l].help_theft_t && h, 'Hilfe ' + l);
+    ok(h.includes(STRINGS[l].theft_hint_steps) && h.includes(STRINGS[l].nav_new) && h.includes(STRINGS[l].help_tachofault_t), 'Hilfe nennt Schritte, „' + STRINGS[l].nav_new + '“ und Fahrerkarten-Abschnitt ' + l);
+  }
+  ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
+  ok(app.includes("const parts = ['report', 'accident', 'tachofault', 'theft', 'prio',"), 'Hilfe-Abschnitt theft');
+  ok(app.indexOf("$('#theft').hidden = !THEFT_HINT.test") > 0 && app.indexOf("$('#theft').hidden = !THEFT_HINT.test") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
