@@ -4011,11 +4011,11 @@ await test('Kosten je km wie „Fahrleistung je Monat“: exakte Berliner Monats
     // Summe der Monate = Zeitraum (wie Fahrzeugakte)
     eq([...pm.months.values()].reduce((s, x) => s + x, 0), v.km);
     let csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n');
-    ok(csv[0].endsWith(';Gefahrene km (Monat)'), 'CSV-Spalte'); ok(csv[1].startsWith('TZ-KM 1;') && csv[1].endsWith(';1000'), 'CSV April 1000 km');
+    ok(csv[0].endsWith(';Gefahrene km (Monat);Fahrzeugstatus'), 'CSV-Spalte'); ok(csv[1].startsWith('TZ-KM 1;') && csv[1].endsWith(';1000;aktiv'), 'CSV April 1000 km');
     add('tzkm-6', 2900, '2026-04-25T10:00:00.000Z'); // Rückgang im April
     r = await get(); v = r.vehicles.find((x) => x.vehicle_id === VID);
     eq(v.km, null, 'Rückgang → kein Wert'); eq(v.km_status, 'decrease'); eq(v.cost_per_km, null); eq(r.rows[0].km, null, 'April ohne Wert');
-    csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n'); ok(csv[1].endsWith('ja;') || csv[1].endsWith('nein;'), 'CSV leer statt 0');
+    csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n'); ok(csv[1].endsWith('ja;;aktiv') || csv[1].endsWith('nein;;aktiv'), 'CSV leer statt 0');
     const pm2 = await periodMileageOf(VID); eq(pm2.months.get('2026-03'), 200, 'März bleibt');
     // Rückgang gegenüber dem Vorwert vor dem Zeitraum
     db.prepare(`DELETE FROM odometer_readings WHERE id='tzkm-6'`).run(); db.prepare(`UPDATE odometer_readings SET km=2100 WHERE id='tzkm-0'`).run();
@@ -7046,7 +7046,7 @@ const csvExportUrls = () => {
   return {
     'fuhrpark-fahrzeuge': '/api/vehicles?format=csv', 'fuhrpark-vertraege': '/api/contracts?format=csv', 'fuhrpark-prueftermine': '/api/maintenance?format=csv',
     'fuhrpark-durchgefuehrte-pruefungen': `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, 'fuhrpark-reifen': '/api/tires/fleet?format=csv',
-    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`,
+    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`,
     'werkstatt-auslastung': '/api/reports/workshop-load?weeks=4&format=csv', 'fuhrpark-kennzahlen': `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
@@ -17887,6 +17887,93 @@ await test('Fahrzeug-Neuzugang / Disposition / Lager-Inventur (Teilagenten 23.10
   ok(app.includes("v.last_km != null && fmtKm(v.last_km)"), 'km 0 in der Liste'); ok(app.includes('minlength="17" maxlength="25"'), 'FIN mit Leerzeichen einfügbar');
   ok(app.includes("av === 'dormant' ? !!v.eval_excluded : v.availability === av && !v.eval_excluded") && app.includes("'with_findings_crit', 'dormant']"), 'Liste: Verfügbarkeit ohne ruhende, eigener Knopf');
   ok(app.includes('data-retunk') && app.includes('data-dormant') && app.includes('id="dmover"') && app.includes('data-fbk'), 'Dispo-Startseite');
+});
+
+await test('Fahrerwechsel bei offenem Bußgeld (Teilagent 23.10.): Tatzeit vor der Fahrerermittlung korrigierbar, ausgeschiedener Fahrer ohne „informieren“-Knopf mit Hinweis, Aktenvermerk nennt Ende der Zuordnung', async () => {
+  const { ensureSchema } = await import('../src/worker.js'); const { makeCtx } = await import('./harness.mjs');
+  const fines = await import('../src/fines.js');
+  const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF');
+  const E = 'production'; const now = new Date().toISOString(); const run = (q, ...a) => db.prepare(q).run(...a);
+  for (const [id, role] of [['o', 'owner'], ['dA', 'driver'], ['dB', 'driver']]) run(`INSERT INTO users(id,username,display_name,role,environment,active,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)`, id, 'u' + id, 'Name ' + id, role, E, now, now);
+  run(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('v1','WDB00000000000001','T-FW 1','lkw',1,0,?,?)`, now, now);
+  // A: 01.09.–01.10. (Berlin), B ab 01.10.
+  run(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,environment,created_at) VALUES('a1','dA','v1','2026-08-31T22:00:00.000Z','2026-09-30T22:00:00.000Z',NULL,?,?)`, E, now);
+  run(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,environment,created_at) VALUES('b1','dB','v1','2026-09-30T22:00:00.000Z',NULL,NULL,?,?)`, E, now);
+  const O = { id: 'o', role: 'owner' };
+  const rej = async (pr, pred, msg = '') => { let x = null; try { await pr; } catch (err) { x = err; } ok(x && pred(x), `${msg}: ${x ? x.status + ' ' + x.code : 'kein Fehler'}`); };
+  // Tatzeit vertippt (Oktober statt September) → Kandidat B
+  const { id } = await fines.createFine(e, O, E, { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: '2026-10-15T09:30', plate_in_letter: 'T-FW 1', authority: 'Stadt Y', reference: 'AZ-FW1' });
+  let d = await fines.fineDetail(e, O, E, id);
+  eq(JSON.stringify(d.candidates.map((c) => c.user_id)), '["dB"]', 'falsche Tatzeit → B');
+  const cmd = (b) => fines.fineCommand(e, makeCtx(), O, E, id, b);
+  await rej(cmd({ action: 'update', expected_version: d.fine.version, payload: { offense_at: '2099-01-01T10:00' } }), (x) => x.status === 400, 'Zukunft abgewiesen');
+  await rej(cmd({ action: 'update', expected_version: d.fine.version, payload: { offense_at: '15.09.2026 09:30' } }), (x) => x.status === 400, 'Format abgewiesen');
+  const r = await cmd({ action: 'update', expected_version: d.fine.version, payload: { offense_at: '2026-09-15T09:30' } });
+  ok(!r.unchanged, 'Tatzeit geändert');
+  d = await fines.fineDetail(e, O, E, id);
+  eq(d.fine.offense_at, '2026-09-15T07:30:00.000Z', 'Berliner Ortszeit → UTC');
+  const ev = d.events.find((x) => x.action === 'update'); const pl = JSON.parse(ev.payload);
+  eq(pl.prev.offense_at, '2026-10-15T07:30:00.000Z', 'Verlauf alt → neu');
+  const c = d.candidates.find((x) => x.user_id === 'dA');
+  ok(c && c.until === '2026-10-01' && /^Fahrzeugzuordnung seit 01\.09\.2026 bis 01\.10\.2026/.test(c.evidence), 'Vermerk mit Ende: ' + (c && c.evidence));
+  eq((await cmd({ action: 'update', expected_version: d.fine.version, payload: { offense_at: '2026-09-15T09:30' } })).unchanged, true, 'gleiche Tatzeit = unverändert');
+  // Frist vor neuer Tatzeit
+  await rej(cmd({ action: 'update', expected_version: d.fine.version, payload: { response_due: '2026-09-01' } }), (x) => x.status === 400);
+  // A bestätigen, A scheidet aus → kein „informieren“, sondern Hinweis
+  await cmd({ action: 'confirm_driver', payload: { basis: 'zuordnung', evidence: c.evidence, driver_id: 'dA' } });
+  d = await fines.fineDetail(e, O, E, id);
+  ok(d.allowed_actions.includes('inform_driver') && !d.driver_unreachable, 'aktiver Fahrer: informieren');
+  await rej(cmd({ action: 'update', expected_version: d.fine.version, payload: { offense_at: '2026-09-16T09:30' } }), (x) => x.status === 409 && x.code === 'driver_confirmed', 'nach Ermittlung gesperrt');
+  run(`UPDATE users SET active=0 WHERE id='dA'`);
+  d = await fines.fineDetail(e, O, E, id);
+  ok(!d.allowed_actions.includes('inform_driver') && d.driver_unreachable === true, 'ausgeschieden: Hinweis statt Knopf ' + JSON.stringify(d.allowed_actions));
+  ok(d.allowed_actions.includes('set_status'), 'Status weiterführen möglich');
+  // Oberfläche und Texte
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['cand_until', 'fine_offense_locked']) ok(STRINGS[l][k], `${l} ${k}`);
+  for (const l of ['uk', 'en']) ok(translateValidation(l, 'Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.') !== 'Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.', l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<form id="uf"><label>${esc(t(\'offense_at\'))}</label><input type="datetime-local" name="offense_at"') && app.includes('b.offense_at = uf.offense_at.value'), 'Formular „Angaben ändern“ mit Tatzeit');
+  ok(app.includes("(?: bis (\\d{2}\\.\\d{2}\\.\\d{4}))?"), 'Vermerk „bis“ übersetzt');
+});
+
+await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): Einzelpositionen-CSV stimmt mit den Summen überein, Fahrzeugstatus in Bericht und CSV; Reifen-Erfassung bleibt offen, Listen springen zum Abschnitt Reifen', async () => {
+  const q = `from=2026-01&to=${COST_TO}`;
+  const r = (await users.fleet.get(`/api/reports/costs?${q}`)).data;
+  const { costItems, costItemsCsv, costReportCsv } = await import('../src/reports.js');
+  const it = await users.fleet.get(`/api/reports/costs?${q}&part=items`);
+  eq(it.status, 200); ok((it.headers.get('content-type') || '').startsWith('text/csv'));
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(it.data);
+  ok(text.startsWith('\ufeffDatum;Monat;Vorgang;Kennzeichen;Standort;Fahrzeugstatus;Art;Bezeichnung;Lieferant;Rechnung/Beleg;'), 'Kopfzeile');
+  // Summen aus den Einzelpositionen = Bericht (gleiche Regeln: Ersetzt-Regel, unbewertet nie 0, Schätzung getrennt)
+  const fenv = (await users.fleet.get('/api/me')).data.user.environment;
+  const rep = await costItems(env, { id: 'x', role: 'fleet' }, fenv, { from: '2026-01', to: COST_TO });
+  ok(rep.items.length > 0 && !rep.truncated, 'Positionen vorhanden');
+  const c2 = (x) => Math.round(x * 100) / 100;
+  const counted = rep.items.filter((i) => i.counted);
+  eq(c2(counted.filter((i) => i.valuation === 'actual').reduce((a, i) => a + i.amount_net, 0)), r.totals.actual_net, 'Summe belegt');
+  eq(c2(counted.filter((i) => i.valuation === 'estimate').reduce((a, i) => a + i.amount_net, 0)), r.totals.estimate_net, 'Summe geschätzt');
+  eq(counted.filter((i) => i.valuation === 'unvalued').length, r.totals.unvalued_items, 'unbewertete Positionen');
+  ok(rep.items.filter((i) => i.valuation === 'unvalued').every((i) => i.amount_net === null), 'unbewertet ohne Betrag');
+  eq(text.trim().split('\r\n').length, rep.items.length + 1, 'eine Zeile je Position');
+  ok(rep.items.every((i) => /^\d{4}-\d{2}-\d{2}$/.test(i.date) && i.month === i.date.slice(0, 7) && i.plate), 'Datum/Monat/Kennzeichen');
+  eq((await users.driver.get(`/api/reports/costs?${q}&part=items`)).status, 403); eq((await users.ws.get(`/api/reports/costs?${q}&part=items`)).status, 403);
+  eq((await users.fleet.get(`/api/reports/costs?from=2020-01&to=2026-12&part=items`)).status, 400, '36 Monate');
+  const inj = costItemsCsv({ items: [{ date: '2026-12-31', month: '2026-12', case_no: 'V-1', plate: '=X', site: 'A;B', vehicle_active: false, type: 'fremdleistung', description: null, supplier: '@Werkstatt', document: 'RE 1', quantity: null, unit: null, unit_price_net: null, amount_net: 900.5, valuation: 'actual', counted: true }], truncated: false });
+  ok(inj.includes("31.12.2026;2026-12;V-1;'=X;\"A;B\";außer Betrieb;Fremdleistung;;'@Werkstatt;RE 1;;;;900,5;belegt;ja"), 'CSV-Zeile: ' + inj.split('\r\n')[1]);
+  ok(r.rows.every((x) => typeof x.vehicle_active === 'boolean'), 'Bericht: Fahrzeugstatus je Zeile');
+  ok(costReportCsv({ rows: [{ ...r.rows[0], vehicle_active: false }] }).split('\r\n')[1].endsWith(';außer Betrieb'), 'Bericht-CSV: Status');
+  ok(costReportCsv({ rows: [] }).includes(';Fahrzeugstatus'), 'Kopfzeile Status');
+  // Texte und Oberfläche
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['cost_items_csv', 'cost_items_csv_hint']) ok(STRINGS[l][k], `${l} ${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(!/nie gemessen|не вимірювалися|never measured/.test(STRINGS[l].tires_never), `${l}: Reiter ohne „nie“`);
+  eq(new Set(['de', 'uk', 'en'].map((l) => STRINGS[l].help_tires_s.split('|').length)).size, 1, 'Hilfe Reifen: gleiche Absatzzahl');
+  eq(new Set(['de', 'uk', 'en'].map((l) => STRINGS[l].help_costs_s.split('|').length)).size, 1, 'Hilfe Kosten: gleiche Absatzzahl');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("\\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')]") && (app.match(/encodeURIComponent\(x\.vehicle_id\)\}\?sec=tires/g) || []).length >= 4, 'Reifen-/Winterlisten springen zum Abschnitt');
+  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position })") && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
+  ok(app.includes("part=items`)") && app.includes('data-cinact'), 'Kosten: Knopf Einzelpositionen, Status-Chip');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

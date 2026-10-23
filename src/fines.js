@@ -87,7 +87,9 @@ export async function driverCandidates(env, envName, f) {
   for (const a of assigned) {
     const via = a.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${a.plate}` : '';
     if (out.some((o) => o.user_id === a.user_id && o.basis === 'zuordnung')) continue;
-    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
+    // beendete Zuordnung: Ende im Aktenvermerk nennen (23.10.2026, Teilagent Fahrerwechsel – vorher klang „seit …“ nach heute noch zugeordnet)
+    const until = a.valid_to ? ` bis ${berlinDateTime(a.valid_to).slice(0, 10)}` : '';
+    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${until}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), ...(a.valid_to ? { until: berlinDate(a.valid_to) } : {}), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
   }
   const day = berlinDate(f.offense_at);
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at, i.vehicle_id, vv.plate FROM inspections i JOIN users u ON u.id=i.performed_by JOIN vehicles vv ON vv.id=i.vehicle_id
@@ -111,8 +113,11 @@ export async function fineDetail(env, user, envName, id) {
   const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
   // „Fahrer informiert“, Quittung offen, Konto inzwischen deaktiviert bzw. Rolle/Umgebung gewechselt: die Quittung kann nicht mehr kommen
   // (Fahrer sieht das Schreiben nicht mehr) – Hinweis für die Leitung statt stillem Warten (22.10.2026, Teilagent Rollenwechsel)
-  if (isMgr(user) && f.status === 'fahrer_informiert' && f.driver_id && !f.driver_ack_at && driver
-    && !(driver.active && driver.role === 'driver' && driver.environment === envName)) out.driver_unreachable = true;
+  // 23.10.2026 (Teilagent Fahrerwechsel): auch schon bei „Fahrer ermittelt“ – ausgeschiedener Fahrer war zur Tatzeit richtig, „Fahrer informieren“
+  // scheiterte dann immer mit „neu ermitteln“; jetzt Hinweis statt Knopf
+  const unreachable = !!(isMgr(user) && ['fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) && f.driver_id && !f.driver_ack_at && driver
+    && !(driver.active && driver.role === 'driver' && driver.environment === envName));
+  if (unreachable) out.driver_unreachable = true;
   // nicht zugeordnet, weil das Kennzeichen an mehreren aktiven Fahrzeugen steht → Fahrzeugstamm bereinigen statt „Fremdfahrzeug?“ (20.10.2026)
   if (!f.vehicle_id && f.plate_in_letter) {
     const vs = (await env.DB.prepare('SELECT id, plate, active, eval_excluded, trailer_plate FROM vehicles').all()).results;
@@ -129,7 +134,7 @@ export async function fineDetail(env, user, envName, id) {
     for (const e of events) { let p = null; try { p = e.payload ? JSON.parse(e.payload) : null; } catch {} if (p && p.driver_id) evIds.add(p.driver_id); if (p && p.driver_reset && p.driver_reset.driver_id) evIds.add(p.driver_reset.driver_id); }
     out.event_driver_names = evIds.size ? Object.fromEntries((await env.DB.prepare('SELECT id, display_name FROM users WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify([...evIds])).all()).results.map((u) => [u.id, u.display_name])) : {};
     out.candidates = await driverCandidates(env, envName, f);
-    out.allowed_actions = fineActions(user, f);
+    out.allowed_actions = fineActions(user, f).filter((a) => !(a === 'inform_driver' && unreachable));
   } else {
     out.allowed_actions = user.role === 'driver' && !f.driver_ack_at ? ['driver_ack'] : [];
   }
@@ -144,12 +149,10 @@ function fineActions(user, f) {
   return a;
 }
 
-export async function createFine(env, user, envName, body) {
-  if (!isMgr(user)) throw forbidden();
-  const kind = oneOf(body.kind, FINE_KINDS, 'Art');
-  const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß');
-  // Tatzeit wie im Schreiben (Berliner Ortszeit, ohne Zeitzone) → UTC; Angaben mit Zeitzone werden nur vereinheitlicht
-  const offenseRaw = berlinLocalToIso(str(body.offense_at, { required: true, max: 30, field: 'Tatzeit' }));
+// Tatzeit wie im Schreiben (Berliner Ortszeit, ohne Zeitzone) → UTC; Angaben mit Zeitzone werden nur vereinheitlicht.
+// Gemeinsam für Anlegen und „Angaben ändern“ (23.10.2026: Tatzeit war nicht korrigierbar, „update“ meldete still „unverändert“)
+function parseOffenseAt(v) {
+  const offenseRaw = berlinLocalToIso(str(v, { required: true, max: 30, field: 'Tatzeit' }));
   // nur ISO-Schreibweisen (ohne Zone = Berlin, sonst mit Z/±hh:mm) – freies Datumsformat („10/01/2026 14:30“) wäre als UTC gelesen worden
   if (!offenseRaw || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})$/i.test(offenseRaw) || Number.isNaN(Date.parse(offenseRaw))
     || !isCalendarDate(offenseRaw.slice(0, 10))) throw bad('validation', 'Tatzeit ungültig.'); // 2026-02-30T10:00Z rollte sonst still auf den 02.03.
@@ -157,6 +160,14 @@ export async function createFine(env, user, envName, body) {
   // Tippfehler im Jahr (2062): Fahrerermittlung „zum Tatzeitpunkt“ lieferte sonst die heutige Zuordnung (17.10.2026); 5 Min. Uhrenspiel
   if (Date.parse(offenseAt) > Date.now() + 5 * 60000) throw bad('validation', 'Tatzeit liegt in der Zukunft.');
   if (offenseAt < '2000-01-01') throw bad('validation', 'Tatzeit vor 2000 – bitte Jahr prüfen.'); // Tippfehler 1926 (18.10.2026), wie Versicherungsfälle
+  return offenseAt;
+}
+
+export async function createFine(env, user, envName, body) {
+  if (!isMgr(user)) throw forbidden();
+  const kind = oneOf(body.kind, FINE_KINDS, 'Art');
+  const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß');
+  const offenseAt = parseOffenseAt(body.offense_at);
   const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { max: 10, field: 'Antwortfrist' });
   if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
@@ -311,8 +322,19 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
           if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
           if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.'); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
-          if (due && due < berlinDate(f.offense_at)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
           set.response_due = due;
+        }
+        // Tatzeit korrigierbar – nur vor der Fahrerermittlung (die Kandidaten hängen an ihr), wie das Kennzeichen (23.10.2026)
+        if (p.offense_at !== undefined) {
+          const oa = parseOffenseAt(p.offense_at);
+          if (oa !== f.offense_at) {
+            if (f.driver_confirmed_at) throw conflict('driver_confirmed', 'Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.');
+            set.offense_at = oa;
+          }
+        }
+        {
+          const due = set.response_due !== undefined ? set.response_due : f.response_due; const oa = set.offense_at || f.offense_at;
+          if (('response_due' in set || 'offense_at' in set) && due && due < berlinDate(oa)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
         }
         if (p.reference !== undefined) set.reference = str(p.reference, { max: 80 });
         // Behörde korrigierbar (19.10.2026, Backlog 91) – Pflichtfeld wie beim Anlegen

@@ -440,6 +440,12 @@ async function handleApi(request, env, ctx, url) {
     return new Response(JSON.stringify(b), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-sicherung_${berlinDate(b.created_at)}.json"` } });
   }
 
+  // Kostenbericht: Einzelpositionen (Jahresabschluss, 23.10.2026) – nur als CSV
+  if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'items') {
+    const rep = await reports.costItems(env, user, envName, Object.fromEntries(url.searchParams));
+    await auth.audit(env, user.id, 'reports.costs.items_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, items: rep.items.length });
+    return new Response(reports.costItemsCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kostenpositionen_${envName}_${rep.from}_${rep.to}.csv"` } });
+  }
   // Kostenbericht je Fahrzeug/Monat
   if (path === '/api/reports/costs' && m === 'GET') {
     const rep = await reports.costReport(env, user, envName, Object.fromEntries(url.searchParams));

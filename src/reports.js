@@ -114,7 +114,7 @@ export async function costReport(env, user, envName, query = {}) {
     else if (e.valuation === 'estimate') r.external_estimate_net += r2(e.amount_net);
     else { r.external_actual_net += r2(e.amount_net); r.valued_items++; r.ev++; }
   }
-  const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded FROM vehicles').all()).results.map((v) => [v.id, v]));
+  const allPlates = new Map((await env.DB.prepare('SELECT id, plate, site, eval_excluded, active FROM vehicles').all()).results.map((v) => [v.id, v]));
   // Standortfilter (Standort laut Fahrzeugstamm, 'ohne' = ohne Standort): wirkt auf Zeilen, km, Vertragsraten und Erstattungen
   // Schreibweisen desselben Standorts (Dortmund/DORTMUND) zählen zusammen; angezeigt wird die häufigste Schreibweise
   const sel = siteSelection([...allPlates.values()].filter((v) => !v.eval_excluded), query.site);
@@ -131,6 +131,8 @@ export async function costReport(env, user, envName, query = {}) {
     return {
       // Standort in Anzeige-Schreibweise wie die Standortsumme (21.10.2026: CSV hatte „DORTMUND“ und „Dortmund“ getrennt)
       vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site ? (label.get(siteKey(v.site)) || v.site) : null, month: r.month, cases_opened: r.cases_opened,
+      // außer Betrieb genommen (z. B. im Jahr verkauft) kennzeichnen – Jahresabschluss (23.10.2026, Teilagent Kostenbericht)
+      vehicle_active: v.active === 0 ? false : true,
       hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
       actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0,
@@ -299,15 +301,80 @@ export function costReportCsv(rep) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Monat', 'Neue Vorgänge', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto',
-    'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km (Monat)'];
+    'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km (Monat)', 'Fahrzeugstatus'];
   const lines = [head.join(';')];
   for (const r of rep.rows) {
     // unbewertet nie als 0: ohne belegte Position bleibt „Summe belegt“ leer (wie „–“ in der App), ebenso Teile/Fremdleistung nur unbewertet
     const ist = r.valued_items === 0 && r.unvalued_items > 0 ? '' : num(r.actual_net);
     lines.push([cell(r.plate), cell(r.vehicle_id), cell(r.site), r.month, r.cases_opened, num(r.hours), num(r.work_net), r.parts_unvalued_only ? '' : num(r.parts_actual_net), num(r.parts_estimate_net),
-      r.external_unvalued_only ? '' : num(r.external_actual_net), num(r.external_estimate_net), ist, num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km)].join(';'));
+      r.external_unvalued_only ? '' : num(r.external_actual_net), num(r.external_estimate_net), ist, num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km), r.vehicle_active === false ? 'außer Betrieb' : 'aktiv'].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
+}
+
+// Einzelpositionen des Kostenberichts (Jahresabschluss/Steuerberater, 23.10.2026): je Teil und Fremdleistung eine Zeile mit Lieferant und
+// Rechnungsnummer bzw. Beleg, Arbeitszeit je Vorgang und Monat (Betrag fortlaufend gerundet wie im Bericht). Gleiche Monats-, Standort- und
+// Ruhend-Regeln wie costReport; „Zählt in Summe“ = nein bei eigenen Stunden/Teilen, die eine Fremdleistung „ersetzt eigene Arbeit/Teile“ abdeckt.
+// Unbewertet = leerer Betrag (nie 0). Keine Personen.
+export const COST_ITEMS_MAX = 20000;
+export async function costItems(env, user, envName, query = {}) {
+  if (user && !READ_ROLES.includes(user.role)) throw forbidden();
+  const { from, to } = monthRange(query);
+  const rate = rateOf((await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first() || {}).value);
+  const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
+  const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
+  const covered = new Set((await env.DB.prepare(`SELECT DISTINCT e.case_id FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE c.environment=? AND e.covers_work_and_parts=1`).bind(envName).all()).results.map((x) => x.case_id));
+  const work = (await env.DB.prepare(`SELECT w.case_id, c.case_no, c.vehicle_id, w.hours, w.work_date AS d FROM work_entries w JOIN cases c ON c.id=w.case_id
+    WHERE c.environment=? AND w.work_date <= ? AND w.case_id IN (SELECT w2.case_id FROM work_entries w2 WHERE w2.work_date >= ? AND w2.work_date <= ?)`).bind(envName, `${to}-31`, `${from}-01`, `${to}-31`).all()).results;
+  const parts = (await env.DB.prepare(`SELECT p.case_id, c.case_no, c.vehicle_id, p.name, p.part_number, p.quantity, p.unit, p.unit_price_net, p.valuation, p.supplier, p.document_ref, p.created_at AS d
+    FROM parts p JOIN cases c ON c.id=p.case_id WHERE c.environment=? AND p.created_at >= ? AND p.created_at < ?`).bind(envName, lo, hi).all()).results;
+  const ext = (await env.DB.prepare(`SELECT e.case_id, c.case_no, c.vehicle_id, e.supplier, e.invoice_no, e.amount_net, e.valuation, e.covers_work_and_parts, e.note, e.created_at AS d
+    FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE c.environment=? AND e.created_at >= ? AND e.created_at < ?`).bind(envName, lo, hi).all()).results;
+  const allV = (await env.DB.prepare('SELECT id, plate, site, eval_excluded, active FROM vehicles').all()).results;
+  const vmap = new Map(allV.map((v) => [v.id, v]));
+  const sel = siteSelection(allV.filter((v) => !v.eval_excluded), query.site);
+  const keep = (vid) => { const v = vmap.get(vid); return !!v && !v.eval_excluded && (!query.site || sel.match(v.site)); };
+  const inRange = (m) => m >= from && m <= to;
+  const dayOf = (d) => (d.length === 10 ? d : berlinDate(d));
+  const items = [];
+  const base = (x, day) => { const v = vmap.get(x.vehicle_id); return { date: day, month: day.slice(0, 7), case_no: x.case_no, plate: v.plate, site: v.site ? (sel.label.get(siteKey(v.site)) || v.site) : null, vehicle_active: v.active !== 0 }; };
+  // Arbeitszeit: je Vorgang und Monat eine Position, Betrag fortlaufend gerundet (Monate eines Vorgangs ergeben den Betrag der Akte)
+  const wm = new Map();
+  for (const w of work) { const day = dayOf(w.d); const k = `${w.case_id}|${day.slice(0, 7)}`; const x = wm.get(k) || { ...w, m: day.slice(0, 7), last: day, h: 0 }; x.h += w.hours; if (day > x.last) x.last = day; wm.set(k, x); }
+  const cum = new Map();
+  for (const x of [...wm.values()].sort((a, b) => (a.case_id === b.case_id ? (a.m < b.m ? -1 : 1) : a.case_id < b.case_id ? -1 : 1))) {
+    const before = cum.get(x.case_id) || 0; const after = before + x.h; cum.set(x.case_id, after);
+    if (!inRange(x.m) || !keep(x.vehicle_id) || !(x.h > 0)) continue;
+    items.push({ ...base(x, x.last), type: 'arbeitszeit', description: null, supplier: null, document: null, quantity: r2(x.h), unit: 'h', unit_price_net: rate,
+      amount_net: rate === null ? null : r2(r2(after * rate) - r2(before * rate)), valuation: rate === null ? 'unvalued' : 'actual', counted: !covered.has(x.case_id) });
+  }
+  for (const p of parts) {
+    const day = dayOf(p.d); if (!inRange(day.slice(0, 7)) || !keep(p.vehicle_id)) continue;
+    const unv = p.unit_price_net === null || p.valuation === 'unvalued';
+    items.push({ ...base(p, day), type: 'teil', description: [p.name, p.part_number].filter(Boolean).join(' · '), supplier: p.supplier || null, document: p.document_ref || null, quantity: p.quantity, unit: p.unit,
+      unit_price_net: unv ? null : p.unit_price_net, amount_net: unv ? null : r2(p.quantity * p.unit_price_net), valuation: unv ? 'unvalued' : p.valuation, counted: !covered.has(p.case_id) });
+  }
+  for (const e of ext) {
+    const day = dayOf(e.d); if (!inRange(day.slice(0, 7)) || !keep(e.vehicle_id)) continue;
+    const unv = e.amount_net === null || e.valuation === 'unvalued';
+    items.push({ ...base(e, day), type: 'fremdleistung', description: e.covers_work_and_parts ? 'ersetzt eigene Arbeit/Teile' : null, supplier: e.supplier, document: e.invoice_no || null, quantity: null, unit: null,
+      unit_price_net: null, amount_net: unv ? null : r2(e.amount_net), valuation: unv ? 'unvalued' : e.valuation, counted: true });
+  }
+  items.sort((a, b) => a.date.localeCompare(b.date) || String(a.plate).localeCompare(String(b.plate)) || String(a.case_no).localeCompare(String(b.case_no)) || a.type.localeCompare(b.type));
+  const truncated = items.length > COST_ITEMS_MAX;
+  return { from, to, site: sel.site, items: truncated ? items.slice(0, COST_ITEMS_MAX) : items, truncated };
+}
+
+export function costItemsCsv(rep) {
+  const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const cell = csvCell;
+  const ART = { arbeitszeit: 'Arbeitszeit', teil: 'Teil', fremdleistung: 'Fremdleistung' };
+  const WERT = { actual: 'belegt', estimate: 'geschätzt', unvalued: 'unbewertet' };
+  const lines = [['Datum', 'Monat', 'Vorgang', 'Kennzeichen', 'Standort', 'Fahrzeugstatus', 'Art', 'Bezeichnung', 'Lieferant', 'Rechnung/Beleg', 'Menge', 'Einheit', 'Einzelpreis netto', 'Betrag netto', 'Wertart', 'Zählt in Summe belegt'].join(';')];
+  for (const i of rep.items) lines.push([i.date.split('-').reverse().join('.'), i.month, cell(i.case_no), cell(i.plate), cell(i.site), i.vehicle_active ? 'aktiv' : 'außer Betrieb', ART[i.type], cell(i.description), cell(i.supplier), cell(i.document),
+    num(i.quantity), cell(i.unit), num(i.unit_price_net), num(i.amount_net), WERT[i.valuation], i.counted ? (i.valuation === 'actual' && i.amount_net !== null ? 'ja' : 'nein') : 'nein (durch Fremdleistung ersetzt)'].join(';'));
+  if (rep.truncated) lines.push(`Gekürzt: nur die ersten ${COST_ITEMS_MAX} Positionen – Zeitraum verkleinern.`);
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
 // Kennzahlen als CSV (Excel DE): part=vehicles (je Fahrzeug, alle – die App zeigt nur die ersten 20) oder part=priority (je Dringlichkeit).

@@ -67,6 +67,7 @@ UI-Druck UK/EN (Spaltenbreiten, Werkstatt EXTERN übersetzt)|ui-druck-ukrainisch
 UI-Sitzungsende während der Eingabe, Speicher voll|ui-sitzungsende-eingaben.py|/tmp/cfp-sitzungsende.log
 UI-Schichtwechsel am Werkstatt-Tablet (Konflikt, Eingaben behalten, 401 leert Offline-Daten)|ui-schichtwechsel.py|/tmp/cfp-schichtwechsel.log
 UI-Disposition im Tagesgeschäft (Rückkehr ungeklärt, Ruhend, Überfällig-Link) und Restbestand ausbuchen|ui-dispo-tagesgeschaeft.py|/tmp/cfp-dispo-tag.log
+UI-Reifen-Saison, Bußgeld-Tatzeit ändern, Kosten-Einzelpositionen|ui-saison-bussgeld-kosten.py|/tmp/cfp-saison.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log
