@@ -19123,6 +19123,8 @@ await test('Backlog 211 (Totalschaden): Werkstattauftrag „Ohne Reparatur beend
   ok(nk.includes('workshop') && nk.includes('dispatch'), 'Werkstatt und Disposition informiert: ' + nk.join(','));
   ok((await users.ws.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Werkstatt)');
   ok((await users.driver.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Melder-Art)');
+  // Datenqualität: Unfall ohne Versicherungsfall bleibt sichtbar (abgelehnte Meldungen nicht)
+  ok((await users.fleet.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'accident_no_claim' && i.case_id === cid), 'Totalschaden ohne Versicherungsfall in der Datenqualität');
   // Kennzahlen: „davon ohne Reparatur beendet“ (Teilmenge von „abgelehnt“), CSV-Spalte
   const mm = bDayOff(0).slice(0, 7);
   const kp = (await users.fleet.get(`/api/reports/kpi?from=${mm}&to=${mm}`)).data.by_priority.find((p) => p.priority === 'alle');

@@ -146,9 +146,10 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Leasing-/Mietdokumente ohne erfassten Vertrag dieser Art
     env.DB.prepare(`SELECT DISTINCT f.vehicle_id FROM files f WHERE f.environment=? AND f.case_id IS NULL AND f.doc_kind='leasing'
       AND NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=f.vehicle_id AND c.kind IN ('leasing','miete','finanzierung'))`).bind(envName).all(),
-    // Vorgänge der letzten 365 Tage, deren Beschreibung „Unfall“ nennt (DE/UK/EN), ohne erfassten Versicherungsfall – nur Hinweis (Wortsuche, keine Bewertung)
+    // Vorgänge der letzten 365 Tage, deren Beschreibung „Unfall“ nennt (DE/UK/EN), ohne erfassten Versicherungsfall – nur Hinweis (Wortsuche, keine Bewertung).
+    // Abgelehnte Meldungen nicht, wohl aber „ohne Reparatur beendete“ Werkstattaufträge (abgelehnt mit Werkstatt, z. B. Totalschaden – Backlog 211)
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.created_at FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
-      WHERE c.environment=? AND c.created_at >= ? AND c.status<>'abgelehnt' AND v.eval_excluded=0
+      WHERE c.environment=? AND c.created_at >= ? AND (c.status<>'abgelehnt' OR c.workshop_site IS NOT NULL) AND v.eval_excluded=0
       AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
       AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ${vf ? 'AND c.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, berlinWindowStartIso(365), ...ACC_CYR, ...(vf ? [vf] : [])).all(),
     // Prüfungen der letzten 12 Monate mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher ohne Vorgang zum Fahrzeug seit dem Prüfdatum
