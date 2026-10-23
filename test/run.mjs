@@ -18855,7 +18855,7 @@ await test('Backlog 200: noch nicht gesendete kritische Meldung/Kontrolle im Pos
   eq(JSON.stringify(fn({ me: null }, () => box).outboxVeh('V1')), '{"n":0,"crit":false}', 'ohne Anmeldung nichts');
   // Einbindung: Startseite (eigenes und gekoppeltes Fahrzeug, grün nur ohne Postausgang), Abfahrtskontrolle
   ok(app.includes("const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id)"), 'Startseite');
-  ok(app.includes("obN ? '' : `<span class=\"chip ok\">${esc(t('no_open_reports'))}</span>`"), 'kein grünes „keine offenen Meldungen“');
+  ok(app.includes("obN || v.coupled?.locked || v.coupled?.open_cases_total ? '' : `<span class=\"chip ok\">${esc(t('no_open_reports'))}</span>`"), 'kein grünes „keine offenen Meldungen“');
   ok(app.includes("return (sv ? outboxVehAlert(sv.id) : '') + (locked ?"), 'Abfahrtskontrolle');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].outbox_veh_crit && STRINGS[l].outbox_veh_crit !== STRINGS.de.outbox_veh_crit || l === 'de', l); ok(PLURALS[l].outbox_veh_pending && PLURALS[l].outbox_veh_pending.one.includes('{n}') && PLURALS[l].outbox_veh_pending.other.includes('{n}'), l); }
@@ -18889,6 +18889,42 @@ await test('Backlog 201: Push „KRITISCH: neue Meldung“ bei Priorität niedri
   eq(localizedBody({ kind: 'created', body: 'T-2026-0009 · SZ-YC 1 · low' }, 'de'), 'T-2026-0009 · SZ-YC 1 · niedrig', 'alte Form unverändert');
   eq(localizedBody({ kind: 'received', body: 'T-2026-0009 · SZ-YC 1 · niedrig · gesperrt' }, 'en'), 'T-2026-0009 · SZ-YC 1 · niedrig · gesperrt', 'Grund nur bei „Neue Meldung“');
   for (const l of ['de', 'uk', 'en']) ok(nt(l, 'why_nicht_fahrbereit') && nt(l, 'why_gesperrt'), l);
+});
+
+await test('Backlog 202 (Straßenkontrolle): „Mein Fahrzeug“ zeigt HU/SP und Mängel des gekoppelten Anhängers, ungeklärte HU/SP ohne Datum, kein grünes „keine offenen Meldungen“ bei offenem/gesperrtem Anhänger', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'SK-Z 7', vin: 'WDB96340310720701', site: 'Dortmund', trailer_plate: 'SK-H 7' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'SK-H 7', vin: 'WDB96340310720702', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  const VZ = 'VIN:WDB96340310720701'; const VH = 'VIN:WDB96340310720702';
+  eq((await users.fleet.post(`/api/vehicles/${VZ}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  const myV = async () => (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VZ);
+  let mv = await myV();
+  ok(mv && mv.coupled && mv.coupled.id === VH, 'Anhänger gekoppelt');
+  ok(mv.inspections_unclear.includes('HU'), 'HU der Zugmaschine ungeklärt (ohne Nachweis), nicht still weggelassen');
+  ok(!mv.next_inspections.some((r) => r.kind === 'HU'), 'kein erfundenes Datum');
+  ok(mv.coupled.inspections_unclear.includes('HU'), 'HU des Anhängers ungeklärt');
+  eq(mv.coupled.open_cases_total, 0); eq(mv.coupled.known_defects.length, 0);
+  // HU des Anhängers vor 13 Monaten → überfällig
+  eq((await users.fleet.post(`/api/vehicles/${VH}/spec`, { zgm_class: 'ueber_10', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
+  eq((await users.fleet.post(`/api/vehicles/${VH}/maintenance`, { kind: 'HU', last_done_date: bDayOff(-400), interval_months: 12, evidence: 'Prüfbericht (Test Straßenkontrolle)' })).status, 201);
+  mv = await myV();
+  const hu = mv.coupled.next_inspections.find((r) => r.kind === 'HU');
+  ok(hu && hu.next_due_date < BERLIN_TODAY, 'überfällige HU des Anhängers sichtbar: ' + JSON.stringify(mv.coupled.next_inspections));
+  ok(!mv.coupled.inspections_unclear.includes('HU'), 'nicht mehr ungeklärt');
+  // offener Vorgang am Anhänger (fremde Meldung): Zähler und bekannter Mangel ohne Verweis
+  const c = await users.fleet.post('/api/cases', { vehicle_id: VH, description: 'Straßenkontrolle: Rückstrahler fehlt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(c.status, 201);
+  mv = await myV();
+  eq(mv.coupled.open_cases_total, 1, 'offene Meldung des Anhängers');
+  const kd = mv.coupled.known_defects.find((k) => k.case_no === c.data.case_no);
+  ok(kd && kd.description.includes('Rückstrahler') && kd.id === null, 'Mangel lesbar, kein Verweis auf fremden Vorgang');
+  ok(!JSON.stringify(mv.coupled).includes('reporter'), 'keine meldende Person');
+  eq(mv.open_cases_total, 0, 'Zugmaschine selbst ohne offene Meldung');
+  // Oberfläche
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('obN || v.coupled?.locked || v.coupled?.open_cases_total ? \'\' : `<span class="chip ok">'), 'grün nur ohne Anhänger-Sperre/-Meldungen');
+  ok(app.includes('${knownDefects(v.known_defects)}${drvCoupled(v.coupled)}</section>'), 'Anhänger-Block');
+  ok(app.includes("(v.inspections_unclear || []).map((k) => `<dt>${esc(mk(k))}</dt><dd><span class=\"chip mittel\" data-unclear>${esc(t('ms_ungeklaert'))}"), 'ungeklärt angezeigt');
+  ok(app.includes('known.find((x) => x.id === id) || coupledKnown(known, id)'), 'Abfahrtskontrolle: Anhänger-Mängel');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

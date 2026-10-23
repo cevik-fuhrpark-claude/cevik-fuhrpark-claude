@@ -718,15 +718,18 @@ export async function myVehicles(env, user, envName) {
   ]);
   // HU/SP ohne eigenen Eintrag, deren Frist sich berechnen lässt (z. B. SP aus HU + Erstzulassung): wie Übersicht/Akte als Zeile ohne Regel
   // (20.10.2026: überfällige berechnete SP fehlte auf der Fahrer-Startseite). Es wird nichts angelegt.
-  const virtBy = new Map();
+  const virtBy = new Map(); const unclearBy = new Map();
   {
-    const hin = await loadHuSpInputs(env, vs.map((v) => v.id));
+    // auch der fest gekoppelte Anhänger bzw. die Zugmaschine (Backlog 202, Teilagent „Straßenkontrolle“: überfällige HU des Anhängers fehlte)
+    const hin = await loadHuSpInputs(env, JSON.parse(ids));
     const wd = maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value);
     const today0 = berlinDate();
     for (const [vid, x] of hin) {
       const h = huSpFor(x, today0, wd);
       for (const kind of ['HU', 'SP']) {
         const y = kind === 'HU' ? h.hu : h.sp;
+        // Frist ungeklärt (kein Nachweis, nicht berechenbar): nicht still weglassen, sondern ohne Datum melden (Backlog 202; Regel „fehlend = ungeklärt“)
+        if (y && !y.due && y.status === 'ungeklaert') { if (!unclearBy.has(vid)) unclearBy.set(vid, []); unclearBy.get(vid).push(kind); continue; }
         if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
         // HU/SP immer nach der zentralen Regel (wie Akte/Fahrzeugliste/Übersicht) – der gespeicherte Rohwert zeigte z. B. eine alte SP-Plakette
         // eines nicht SP-pflichtigen Lkw als „überfällig“ (22.10.2026)
@@ -747,17 +750,20 @@ export async function myVehicles(env, user, envName) {
   const minDate = (arr) => arr.filter((d) => d && d >= today).sort()[0] || null;
   const WS = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
   const PRIO_RANK = { kritisch: 0, mittel: 1, niedrig: 2 };
+  // offene Vorgänge (bekannte Mängel) und Prüftermine je Fahrzeug – für eigene und den gekoppelten Anhänger/die Zugmaschine (Backlog 202)
+  const defects = (vid) => mine.results.filter((c) => c.vehicle_id === vid).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3) || String(b.created_at).localeCompare(String(a.created_at))).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
+        description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine,
+        planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
+        // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
+        parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null }));
+  const nextInsp = (vid) => [...rules.results.filter((r) => r.vehicle_id === vid && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(vid) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null }));
   return {
     vehicles: vs.map((v) => ({
       ...v, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
       my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, parts_expected_date: _e, ...c }) => c),
       // alle offenen (vorher still 10 – ältere sicherheitsrelevante verdrängt, 20.10.2026); gesperrte/kritische zuerst
-      known_defects: mine.results.filter((c) => c.vehicle_id === v.id).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3) || String(b.created_at).localeCompare(String(a.created_at))).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
-        description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine,
-        planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
-        // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
-        parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null })),
-      next_inspections: [...rules.results.filter((r) => r.vehicle_id === v.id && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(v.id) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null })),
+      known_defects: defects(v.id),
+      next_inspections: nextInsp(v.id), inspections_unclear: unclearBy.get(v.id) || [],
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),
@@ -772,7 +778,10 @@ export async function myVehicles(env, user, envName) {
         .map(({ vehicle_id, text, created_at, valid_until }) => ({ text, created_at, valid_until: valid_until || null, ...(vehicle_id !== v.id ? { plate: coupledOf.get(v.id).plate } : {}) })),
       // Winterreifen: nur „nicht erfüllt“ laut Erfassung (Information für die Fahrt bei Glätte, StVO § 2 Abs. 3a); nicht erfasst = null (kein Rauschen)
       winter: v.kind === 'anhaenger' ? null : (({ status, noncompliant }) => (status === 'nicht_erfuellt' ? { status, noncompliant } : null))(winterStatus(v.kind, winterMarks(tiresBy.get(v.id) || []))),
-      coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked }))(coupledOf.get(v.id)) : null,
+      // gekoppeltes Fahrzeug: Sperre, offene Vorgänge, bekannte Mängel (Verweis nur auf eigene Meldungen) und HU/SP-/Prüftermine – bei der Straßenkontrolle zählt das
+      // ganze Gespann (Backlog 202, Teilagent „Straßenkontrolle“: überfällige HU des Anhängers und dessen Mängel waren für den Fahrer unsichtbar)
+      coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked, open_cases_total: (lockMap.get(id) || {}).open || 0,
+        known_defects: defects(id), next_inspections: nextInsp(id), inspections_unclear: unclearBy.get(id) || [] }))(coupledOf.get(v.id)) : null,
     })),
   };
 }

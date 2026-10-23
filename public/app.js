@@ -958,10 +958,10 @@ async function viewHome() {
       api('GET', '/api/emergency').then((d) => { try { localStorage.setItem(`cfp_emerg_${S.me.id}_${S.me.environment}_`, JSON.stringify({ at: new Date().toISOString(), d })); } catch {} }).catch(() => {}); }
     catch { try { const c = JSON.parse(localStorage.getItem(mvKey) || 'null'); if (c) { mv = c.vehicles; mvOffline = c.at; } } catch {} }
     if (mvOffline || cases === null) html += `<div class="panel alert">${esc(t('offline_view'))}${mvOffline ? ` (${esc(t('as_of'))} ${fmtDT(mvOffline)})` : ''}</div>`;
-    if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => { const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id) : { n: 0, crit: false }; const obCrit = ob.crit || obc.crit; const obN = ob.n + obc.n; return `<section class="panel ${v.locked || v.coupled?.locked || obCrit ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${coupledLockedChip(v.coupled)}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${esc(tn('open_reports_n', v.open_cases_total))}</span>` : obN ? '' : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}${obN ? `<span class="chip ${obCrit ? 'kritisch' : 'mittel'}" data-outboxveh>${esc(tn('outbox_veh_pending', obN))}</span>` : ''}</div>${obCrit ? `<p role="alert" data-outboxcrit><b>⚠ ${esc(t('outbox_veh_crit'))}</b></p>` : ''}
+    if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => { const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id) : { n: 0, crit: false }; const obCrit = ob.crit || obc.crit; const obN = ob.n + obc.n; return `<section class="panel ${v.locked || v.coupled?.locked || obCrit ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${coupledLockedChip(v.coupled)}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${esc(tn('open_reports_n', v.open_cases_total))}</span>` : obN || v.coupled?.locked || v.coupled?.open_cases_total ? '' : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}${v.coupled && !v.coupled.locked && v.coupled.open_cases_total ? `<span class="chip mittel" data-coupledopen>${esc(v.coupled.plate)}: ${esc(tn('open_reports_n', v.coupled.open_cases_total))}</span>` : ''}${obN ? `<span class="chip ${obCrit ? 'kritisch' : 'mittel'}" data-outboxveh>${esc(tn('outbox_veh_pending', obN))}</span>` : ''}</div>${obCrit ? `<p role="alert" data-outboxcrit><b>⚠ ${esc(t('outbox_veh_crit'))}</b></p>` : ''}
       ${(v.notes || []).filter((n) => !n.valid_until || n.valid_until >= bDate()).length ? `<div class="vnotes-drv" role="note">${v.notes.filter((n) => !n.valid_until || n.valid_until >= bDate()).map((n) => `<p><b>ⓘ ${n.plate ? esc(n.plate) + ': ' : ''}${esc(n.text)}</b> <span class="small muted">${fmtD(n.created_at)}${n.valid_until ? ' · ' + esc(t('vnote_until').replace('{d}', fmtD(n.valid_until))) : ''}</span></p>`).join('')}</div>` : ''}
       ${v.winter ? `<p class="small" role="note" data-drvwinter><b>❄ ${esc(t('drv_winter').replace('{p}', v.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}
-      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${v.next_inspections.map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}</section>`; }).join('')}`;
+      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
     // Fahrer ohne zugeordnetes Fahrzeug (Erstnutzung, Rundgang Schritt 3): sagen, was fehlt (22.10.2026: Startseite zeigte nur die Knöpfe)
     else if (mv && !mvOffline) html += `<div class="panel" role="note" data-novehicle>${esc(t('drv_no_vehicle'))}</div>`;
     if (cases) html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
@@ -1547,6 +1547,18 @@ function myPlanned(v) {
 function myVehCached() { try { const c = JSON.parse(localStorage.getItem(`cfp_myveh_${S.me.id}_${S.me.environment}`) || 'null'); return c && Array.isArray(c.vehicles) ? c.vehicles : null; } catch { return null; } }
 
 // Bekannte (offene) Mängel am eigenen Fahrzeug – Fahrer sieht, was schon gemeldet ist (ohne Namen); eigene Meldungen verlinkt
+// Prüftermine auf der Fahrer-Startseite: mit Datum (überfällig rot) und HU/SP mit ungeklärter Frist ohne Datum (Backlog 202, Teilagent
+// „Straßenkontrolle“: ungeklärte Fristen fehlten still – Regel „fehlend = ungeklärt“)
+function drvInspRows(v) {
+  return (v.next_inspections || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')
+    + (v.inspections_unclear || []).map((k) => `<dt>${esc(mk(k))}</dt><dd><span class="chip mittel" data-unclear>${esc(t('ms_ungeklaert'))}</span></dd>`).join('');
+}
+// Gekoppelter Anhänger bzw. Zugmaschine: HU/SP-/Prüftermine und bekannte Mängel (Backlog 202) – Sperre steht schon oben im Kopf der Karte
+function drvCoupled(c) {
+  if (!c || (!(c.next_inspections || []).length && !(c.inspections_unclear || []).length && !(c.known_defects || []).length)) return '';
+  const rows = drvInspRows(c);
+  return `<div class="drv-coupled" data-coupled><p style="margin:10px 0 0"><b>${esc(t(c.kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(c.plate)}</b></p>${rows ? `<dl class="kv" style="margin-top:4px">${rows}</dl>` : ''}${knownDefects(c.known_defects)}</div>`;
+}
 function knownDefects(list) {
   if (!list || !list.length) return '';
   return `<details class="known"${list.length <= 3 ? ' open' : ''}><summary>${esc(t('known_defects'))} (${list.length})</summary><ul class="small">${list.map((k) => {
@@ -2050,7 +2062,7 @@ async function viewDepartureCheck(preId) {
   // Sperre des gewählten Fahrzeugs (und des gekoppelten) immer zeigen – auch für Springer an einem nicht zugeordneten Lkw
   // (Fahrzeugliste liefert `availability`), bekannte Mängel nur für zugeordnete Fahrzeuge des Fahrers (23.10.2026)
   let known = null;
-  const showKnown = () => { const box = $('#known'); if (!box) return; const id = $('#v').value; box.innerHTML = departureLockBox(vs.find((x) => x.id === id), known && known.find((x) => x.id === id)); };
+  const showKnown = () => { const box = $('#known'); if (!box) return; const id = $('#v').value; box.innerHTML = departureLockBox(vs.find((x) => x.id === id), known && (known.find((x) => x.id === id) || coupledKnown(known, id))); };
   showKnown();
   $('#v').addEventListener('change', showKnown);
   if (S.me.role === 'driver') api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
@@ -2238,6 +2250,8 @@ function coupledLockedChip(c) {
 }
 // Melde-/Kontrollformular: gesperrter Anhänger bzw. gesperrtes Zugfahrzeug des gewählten eigenen Fahrzeugs
 // Abfahrtskontrolle: Sperre des gewählten Fahrzeugs (Liste oder „Meine Fahrzeuge“) + gekoppeltes Fahrzeug + bekannte Mängel (23.10.2026)
+// Gekoppeltes Fahrzeug eines eigenen Fahrzeugs (z. B. Anhänger ohne eigene Zuordnung): Sperre und bekannte Mängel aus „Mein Fahrzeug“ (Backlog 202)
+function coupledKnown(known, id) { const p = known.find((x) => x.coupled && x.coupled.id === id); return p ? { locked: p.coupled.locked, known_defects: p.coupled.known_defects || [] } : null; }
 function departureLockBox(sv, kv) {
   const locked = (kv && kv.locked) || (sv && sv.availability === 'gesperrt');
   const c = (kv && kv.coupled) || (sv && sv.coupled && sv.coupled.availability === 'gesperrt' ? { ...sv.coupled, locked: true } : null);

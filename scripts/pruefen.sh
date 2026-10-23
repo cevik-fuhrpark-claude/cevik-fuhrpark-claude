@@ -54,6 +54,7 @@ UI-Befund Empfänger nicht zugestellt (Name/Rolle)|ui-befund-empfaenger.py|/tmp/
 UI-Befund gebündelt (gleiche Empfänger, Backlog 194)|ui-befund-buendel.py|/tmp/cfp-befund-buendel.log
 UI-Verträge Stichtag (km zum Monatsende, Backlog 196)|ui-vertrag-stichtag.py|/tmp/cfp-vertrag-stichtag.log
 UI-Postausgang wirkt auf dem Gerät (kritisch noch nicht gesendet, Backlog 200)|ui-postausgang-fahrzeug.py|/tmp/cfp-postausgang-fahrzeug.log
+UI-Straßenkontrolle (Gespann: HU/SP und Mängel des Anhängers, Backlog 202)|ui-strassenkontrolle.py|/tmp/cfp-strassenkontrolle.log
 UI-Erstnutzung mit leerem Bestand (Hinweise statt leerer Seiten)|ui-erstnutzung.py|/tmp/cfp-erstnutzung.log
 UI-Geräteuhr falsch (Hinweis, „heute“ nach Serverzeit)|ui-geraeteuhr.py|/tmp/cfp-geraeteuhr.log
 UI-Lebenszyklus Konto deaktivieren/Fahrzeug außer Betrieb (Hinweise)|ui-lebenszyklus.py|/tmp/cfp-lebenszyklus.log
