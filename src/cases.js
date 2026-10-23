@@ -67,7 +67,9 @@ export function staleBefore(days) {
 
 // Sortierung der Liste (vor dem LIMIT, damit z. B. „älteste zuerst“ auch bei vielen Vorgängen stimmt); Standard: Dringlichkeit
 const CASE_SORTS = {
-  priority: `CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END,
+  // gesperrter offener Vorgang („nicht fahrbereit“ mit Dringlichkeit „niedrig“) wie kritisch vorn (Backlog 193, Teilagent „Frostmorgen“:
+  // stand hinter 11 ungesperrten „mittel“-Vorgängen und fiel bei der 500er-Kappung der Startseiten-Zähler als erster heraus)
+  priority: `CASE WHEN c.priority='kritisch' OR (c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) THEN 0 WHEN c.priority='mittel' THEN 1 ELSE 2 END,
       CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, c.updated_at DESC`,
   oldest: 'c.created_at ASC, c.id',
   updated: 'c.updated_at DESC, c.id',

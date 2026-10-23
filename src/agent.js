@@ -628,7 +628,7 @@ export async function masterPanel(env, environment) {
     env.DB.prepare(`SELECT c.id, c.case_no, c.status, c.priority, c.safety_lock, c.description, c.workshop_site, c.fleet_received_at, c.workshop_ack_at, c.updated_at, c.created_at,
       v.plate, v.vin, (SELECT COUNT(*) FROM open_items o WHERE o.case_id=c.id AND o.status='offen') AS open_items
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND (c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR c.updated_at > ?)
-    ORDER BY CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, CASE c.priority WHEN 'kritisch' THEN 0 WHEN 'mittel' THEN 1 ELSE 2 END, c.updated_at DESC LIMIT ?`)
+    ORDER BY CASE WHEN c.status IN ('fahrzeug_freigegeben','abgelehnt') THEN 1 ELSE 0 END, CASE WHEN c.priority='kritisch' OR c.safety_lock=1 THEN 0 WHEN c.priority='mittel' THEN 1 ELSE 2 END, c.updated_at DESC LIMIT ?`)
       .bind(environment, since14, MASTER_CASES_MAX + 1).all(),
     env.DB.prepare(`SELECT status, COUNT(*) AS n FROM cases WHERE environment=? AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR updated_at > ?) GROUP BY status`)
       .bind(environment, since14).all(),

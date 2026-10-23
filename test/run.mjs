@@ -18647,6 +18647,36 @@ await test('Geschlossene Werkstatt in Namen und Filtern (Backlog 192): /api/meta
   ok(app.includes('<select name="workshop_site">${S.meta.workshops.map((w) =>'), 'Konto anlegen weiter nur aktive');
 });
 
+await test('Frostmorgen/Urlaubsvertretung (Backlog 193): gesperrter Vorgang mit Dringlichkeit „niedrig“ steht in Vorgangsliste und Management vorn; Deaktivieren einer Leitung entwertet ihre offenen Einladungen (Hinweis, Einrichtungsstand, nach Reaktivierung weiter ungültig)', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'frost.inhaber', display_name: 'Frost' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const envO = (await own.get('/api/me')).data.active_environment;
+  eq((await own.post('/api/vehicles', { plate: 'FR-OS 1', vin: 'WDB96340310593001', site: 'Dortmund' })).status, 201);
+  eq((await own.post('/api/vehicles', { plate: 'FR-OS 2', vin: 'WDB96340310593002', site: 'Dortmund' })).status, 201);
+  const k = () => crypto.randomUUID();
+  const locked = (await own.post('/api/cases', { vehicle_id: 'VIN:WDB96340310593001', description: 'Druckluft eingefroren, Bremse löst nicht', priority: 'niedrig', driveability: 'nicht_fahrbereit', request_key: k() })).data.id;
+  for (let i = 0; i < 3; i++) eq((await own.post('/api/cases', { vehicle_id: 'VIN:WDB96340310593002', description: `Scheibe vereist ${i}`, priority: 'mittel', driveability: 'fahrbereit', request_key: k() })).status, 201);
+  const list = (await own.get('/api/cases?status=open')).data; const rows = list.cases || list.rows || list;
+  eq(rows[0].id, locked, 'gesperrter Vorgang zuerst');
+  const mp = (await own.get('/api/master')).data; const mc = mp.cases || (mp.panel && mp.panel.cases) || [];
+  ok(mc.length && mc[0].id === locked, 'Management: gesperrter Vorgang zuerst');
+  // Leitung A lädt einen Fahrer ein, wird deaktiviert
+  const a = await own.post('/api/users', { username: 'frost.leitung', display_name: 'Leitung A', role: 'fleet', environment: envO });
+  const A = new Client(worker, e, 'fa'); eq((await A.post('/api/invite/accept', { token: a.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const inv = await A.post('/api/users', { username: 'frost.fahrer', display_name: 'Fahrer F', role: 'driver', environment: envO }); eq(inv.status, 201, JSON.stringify(inv.data));
+  const aid = (await e.DB.prepare(`SELECT id FROM users WHERE username='frost.leitung'`).first()).id;
+  const rd0 = (await own.get('/api/admin/readiness')).data; const pa0 = (rd0.items || rd0.checks || []).find((x) => x.key === 'prod_accounts');
+  const off = await own.patch(`/api/users/${aid}`, { active: false }); eq(off.status, 200, JSON.stringify(off.data)); eq(off.data.invites_voided, 1, 'Hinweis: 1 Einladung entwertet');
+  const rd1 = (await own.get('/api/admin/readiness')).data; const pa1 = (rd1.items || rd1.checks || []).find((x) => x.key === 'prod_accounts');
+  if (pa0 && pa1 && envO === 'production') eq(pa1.open_invites, pa0.open_invites - 1, 'Einrichtungsstand zählt sie nicht mehr');
+  eq((await own.patch(`/api/users/${aid}`, { active: true })).status, 200);
+  eq((await new Client(worker, e, 'x').get('/api/invite/' + inv.data.invite_token)).status, 410, 'nach Reaktivierung weiter ungültig');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (r && r.invites_voided) h.push(tn('ue_invites_voided', r.invites_voided));"), 'App-Hinweis');
+  const { PLURALS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(PLURALS[l].ue_invites_voided, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

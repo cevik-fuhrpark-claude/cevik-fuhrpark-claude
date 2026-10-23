@@ -1768,6 +1768,7 @@ Object.assign(STRINGS.en, { settings_stored_invalid: 'Saved settings invalid –
 Object.assign(STRINGS.en, { err_setting_invalid: '“{f}”: please enter a value from {min} to {max}{int} – nothing saved.', setting_int: ' (whole number)' });
 export const PLURALS = {
   de: {
+    ue_invites_voided: { one: '{n} offene Einladung dieses Kontos ist damit ungültig – bei Bedarf neu einladen.', other: '{n} offene Einladungen dieses Kontos sind damit ungültig – bei Bedarf neu einladen.' },
     dr_left_assignments: { one: 'Dem App-Konto ist noch {n} Fahrzeug zugeordnet – Zuordnung in der Fahrzeugakte beenden.', other: 'Dem App-Konto sind noch {n} Fahrzeuge zugeordnet – Zuordnungen in der Fahrzeugakte beenden.' },
     late_items_n: { one: '{n} nachträglich erfasst', other: '{n} nachträglich erfasst' },
     dup_driver_name_warn: { one: 'Hinweis: Es gibt bereits {n} aktiven Fahrer mit dem Namen „{name}“ ({list}). Gespeichert – bitte prüfen: dieselbe Person doppelt angelegt?', other: 'Hinweis: Es gibt bereits {n} aktive Fahrer mit dem Namen „{name}“ ({list}). Gespeichert – bitte prüfen: dieselbe Person doppelt angelegt?' },
@@ -1816,6 +1817,7 @@ export const PLURALS = {
     drv_nosite_hidden: { one: '{n} Fahrer ohne Standort ist ausgeblendet – mit „Alle“ sichtbar.', other: '{n} Fahrer ohne Standort sind ausgeblendet – mit „Alle“ sichtbar.' },
   },
   en: {
+    ue_invites_voided: { one: '{n} open invitation issued by this account is now invalid – re-invite if needed.', other: '{n} open invitations issued by this account are now invalid – re-invite if needed.' },
     dr_left_assignments: { one: '{n} vehicle is still assigned to the app account – end the assignment in the vehicle file.', other: '{n} vehicles are still assigned to the app account – end the assignments in the vehicle file.' },
     late_items_n: { one: '{n} recorded later', other: '{n} recorded later' },
     dup_driver_name_warn: { one: 'Note: there is already {n} active driver named “{name}” ({list}). Saved – please check: same person entered twice?', other: 'Note: there are already {n} active drivers named “{name}” ({list}). Saved – please check: same person entered twice?' },
@@ -1870,6 +1872,7 @@ export const PLURALS = {
     drv_nosite_hidden: { one: '{n} driver without a site is hidden – visible with “All”.', other: '{n} drivers without a site are hidden – visible with “All”.' },
   },
   uk: {
+    ue_invites_voided: { one: '{n} відкрите запрошення від цього облікового запису тепер недійсне – за потреби запросіть знову.', few: '{n} відкриті запрошення від цього облікового запису тепер недійсні – за потреби запросіть знову.', many: '{n} відкритих запрошень від цього облікового запису тепер недійсні – за потреби запросіть знову.', other: '{n} відкритого запрошення від цього облікового запису тепер недійсні – за потреби запросіть знову.' },
     dr_left_assignments: { one: 'За обліковим записом ще закріплено {n} транспортний засіб – завершіть закріплення в картці транспорту.', few: 'За обліковим записом ще закріплено {n} транспортні засоби – завершіть закріплення в картці транспорту.', many: 'За обліковим записом ще закріплено {n} транспортних засобів – завершіть закріплення в картці транспорту.', other: 'За обліковим записом ще закріплено {n} транспортного засобу – завершіть закріплення в картці транспорту.' },
     late_items_n: { one: '{n} внесено пізніше', few: '{n} внесено пізніше', many: '{n} внесено пізніше', other: '{n} внесено пізніше' },
     dup_driver_name_warn: { one: 'Увага: уже є {n} активний водій з ім’ям «{name}» ({list}). Збережено – перевірте: та сама особа створена двічі?', few: 'Увага: уже є {n} активні водії з ім’ям «{name}» ({list}). Збережено – перевірте: та сама особа створена двічі?', many: 'Увага: уже є {n} активних водіїв з ім’ям «{name}» ({list}). Збережено – перевірте: та сама особа створена двічі?' },
@@ -2024,3 +2027,6 @@ Object.assign(STRINGS.en, { dr_inactive_match: 'A driver file of a former employ
 Object.assign(STRINGS.de, { dq_driver_account_file_inactive: 'Aktives App-Konto, Fahrerakte ausgeschieden (Konto deaktivieren?)' });
 Object.assign(STRINGS.uk, { dq_driver_account_file_inactive: 'Активний обліковий запис, картку водія деактивовано (вимкнути обліковий запис?)' });
 Object.assign(STRINGS.en, { dq_driver_account_file_inactive: 'Active app account, driver file deactivated (deactivate account?)' });
+Object.assign(STRINGS.de, { ue_invites_voided: 'Offene Einladungen dieses Kontos sind damit ungültig ({n}).' });
+Object.assign(STRINGS.uk, { ue_invites_voided: 'Відкриті запрошення цього облікового запису тепер недійсні ({n}).' });
+Object.assign(STRINGS.en, { ue_invites_voided: 'Open invitations issued by this account are now invalid ({n}).' });

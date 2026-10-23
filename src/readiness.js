@@ -22,7 +22,7 @@ export async function readiness(env, user) {
       (SELECT MAX(created_at) FROM audit_log WHERE action='backup.export') AS backup_at,
       (SELECT json_object('started_at', started_at, 'finished_at', finished_at, 'error', error IS NOT NULL) FROM agent_runs WHERE environment='production' ORDER BY started_at DESC LIMIT 1) AS agent,
       (SELECT json_group_object(role, n) FROM (SELECT role, COUNT(*) AS n FROM users WHERE active=1 AND environment='production' AND password_hash IS NOT NULL GROUP BY role)) AS prod_roles,
-      (SELECT COUNT(*) FROM users u WHERE u.active=1 AND u.password_hash IS NULL AND EXISTS (SELECT 1 FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL AND i.expires_at > ?2)) AS open_invites,
+      (SELECT COUNT(*) FROM users u WHERE u.active=1 AND u.password_hash IS NULL AND EXISTS (SELECT 1 FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL AND i.expires_at > ?2 AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1)))) AS open_invites,
       (SELECT COUNT(*) FROM users WHERE active=1 AND environment='test') AS test_accounts,
       (SELECT COUNT(*) FROM vehicles WHERE active=1 AND eval_excluded=0) AS vehicles`).bind(user.id, now).first();
   const parse = (x, d) => { try { return x ? JSON.parse(x) : d; } catch { return d; } };

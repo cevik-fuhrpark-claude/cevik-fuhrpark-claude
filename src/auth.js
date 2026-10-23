@@ -622,6 +622,13 @@ export async function updateUser(env, actor, userId, body) {
   // nur für eingerichtete Konten (Zurücksetzen-Link der alten Rolle gab sonst Zugang mit der neuen; Erst-Einladung bleibt gültig) – 18.10.2026
   if (!active || role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE invites SET used_at=?1 WHERE user_id=?2 AND used_at IS NULL
     AND (?3 = 1 OR EXISTS (SELECT 1 FROM users WHERE id=?2 AND password_hash IS NOT NULL))`).bind(now, userId, active ? 0 : 1));
+  // Deaktivierung: von diesem Konto ausgestellte offene Einladungen entwerten (Backlog 193, Teilagent „Urlaubsvertretung“) – sie galten
+  // schon als ungültig (Aussteller inaktiv), lebten aber nach der Reaktivierung wieder auf; Anzahl als Hinweis an die Oberfläche
+  let invitesVoided = 0;
+  if (target.active && !active) {
+    invitesVoided = (await env.DB.prepare('SELECT COUNT(*) AS n FROM invites WHERE created_by=? AND used_at IS NULL AND expires_at > ?').bind(userId, now).first()).n || 0;
+    stmts.push(env.DB.prepare('UPDATE invites SET used_at=? WHERE created_by=? AND used_at IS NULL').bind(now, userId));
+  }
   // Erst-Einladung der Fuhrparkleitung nach Rollen-/Umgebungswechsel: gilt weiter, solange die Leitung diese Rolle/Umgebung selbst anlegen
   // dürfte – geprüft beim Einlösen (inviteInfo) und in der Benutzerliste (20.10.2026; vorher verfiel sie still auch bei Fahrer → Lesezugriff)
   try { await env.DB.batch(stmts); } catch (e) {
@@ -645,7 +652,7 @@ export async function updateUser(env, actor, userId, body) {
     driverFile = h && h.df ? JSON.parse(h.df) : null; orphaned = (h && h.orphan) || 0;
   }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
-    ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}) };
+    ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {
