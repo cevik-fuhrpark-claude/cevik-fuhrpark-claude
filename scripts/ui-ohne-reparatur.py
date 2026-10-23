@@ -1,11 +1,12 @@
 # [CLAUDE] UI-Test (Backlog 211, Teilagent „Totalschaden“): Leitung beendet einen Werkstattauftrag „Ohne Reparatur beenden“ –
 # Knopf sichtbar, Hinweis und Restarbeiten-Zahl im Formular, Grund Pflicht, danach Status „abgelehnt“ und Eintrag im Verlauf;
-# anschließend Fahrzeug außer Betrieb nehmen möglich. DE 390 / UK 820 / EN 1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
+# anschließend Fahrzeug außer Betrieb nehmen möglich; Kennzahlen zeigen „davon ohne Reparatur beendet“. DE 390 / UK 820 / EN 1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os
 from playwright.sync_api import sync_playwright
 B = os.environ.get('CFP_URL', 'http://localhost:8787'); PW = 'Sicheres-Passwort-2026'; SHOTS = os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+KPI = {'de': 'davon ohne Reparatur beendet 1', 'uk': 'з них завершено без ремонту 1', 'en': 'of which ended without repair 1'}
 BTN = {'de': 'Ohne Reparatur beenden', 'uk': 'Завершити без ремонту', 'en': 'End without repair'}
 LEFT = {'de': 'Offene Restarbeiten bleiben unerledigt: 1', 'uk': 'Незавершені залишкові роботи залишаються: 1', 'en': 'Open remaining tasks stay unfinished: 1'}
 fails = []
@@ -45,6 +46,8 @@ with sync_playwright() as p:
         check(BTN[lang] in q.inner_text('body'), f'{lang}/{w}: Verlauf zeigt die Aktion')
         r = api('POST', f'/api/vehicles/{VID}/active', {'active': False, 'reason': 'Totalschaden'})
         check(r['s'] == 200, f'{lang}/{w}: außer Betrieb nehmen möglich ({r["s"]})')
+        q.goto(B + '/#/kpi'); q.reload(); q.wait_for_timeout(2000)
+        check(KPI[lang].replace(' 1', f' {i+1}') in q.inner_text('body'), f'{lang}/{w}: Kennzahlen nennen „ohne Reparatur beendet“')
         check(not errs, f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

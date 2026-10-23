@@ -407,9 +407,9 @@ export function kpiReportCsv(rep, part = 'vehicles') {
   if (part === 'priority') {
     const st = (x) => [x.n, num(x.median_h), num(x.p90_h)];
     lines.push(['Dringlichkeit', 'Meldungen', 'Freigegeben', 'Abgelehnt', 'Offen', 'Erstbewertung Anzahl', 'Erstbewertung Median h', 'Erstbewertung P90 h',
-      'Werkstatt-Übernahme Anzahl', 'Werkstatt-Übernahme Median h', 'Werkstatt-Übernahme P90 h', 'Meldung bis Freigabe Anzahl', 'Meldung bis Freigabe Median h', 'Meldung bis Freigabe P90 h', 'Wartezeit Teile h', 'davon Dubletten', 'davon interne Aufträge'].join(';'));
+      'Werkstatt-Übernahme Anzahl', 'Werkstatt-Übernahme Median h', 'Werkstatt-Übernahme P90 h', 'Meldung bis Freigabe Anzahl', 'Meldung bis Freigabe Median h', 'Meldung bis Freigabe P90 h', 'Wartezeit Teile h', 'davon Dubletten', 'davon interne Aufträge', 'davon ohne Reparatur beendet'].join(';'));
     const PL = { niedrig: 'Niedrig', mittel: 'Mittel', kritisch: 'Kritisch', alle: 'Alle' }; // Bezeichnung statt Code (wie die übrigen CSVs)
-    for (const p of rep.by_priority) lines.push([PL[p.priority] || p.priority, p.created, p.released, p.rejected, p.open, ...st(p.triage), ...st(p.workshop_ack), ...st(p.created_to_release), num(p.parts_wait_h), p.duplicates || 0, p.internal || 0].join(';'));
+    for (const p of rep.by_priority) lines.push([PL[p.priority] || p.priority, p.created, p.released, p.rejected, p.open, ...st(p.triage), ...st(p.workshop_ack), ...st(p.created_to_release), num(p.parts_wait_h), p.duplicates || 0, p.internal || 0, p.withdrawn || 0].join(';'));
   } else {
     lines.push(['Kennzeichen', 'FIN-Schlüssel', 'Art', 'Standort', 'Vorgänge', 'Freigegeben', 'Werkstattzeit h', 'Wartezeit Teile h', 'Sperrzeit h', 'davon Dubletten', 'Ausfallzeit h', 'Verfügbarkeit %', 'Ausfall h (Verfügbarkeit)'].join(';'));
     for (const v of rep.vehicles) lines.push([cell(v.plate), cell(v.vehicle_id), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', cell(v.site), v.cases, v.released, num(v.workshop_h), num(v.parts_wait_h), num(v.locked_h), v.duplicates || 0, num(v.downtime_h), num(v.availability_pct), num(v.availability_downtime_h)].join(';'));
@@ -552,7 +552,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const addIv = (m, vid, a, b) => { if (Number.isFinite(a) && Number.isFinite(b) && b > a) { if (!m.has(vid)) m.set(vid, []); m.get(vid).push([a, b]); } };
   // Kostenfreigaben: je Überschreitung (Ereignis „cost_limit_exceeded“) bis „Kosten freigeben“ – nur Anzahl und Dauer, keine Beträge
   const ca = { exceeded: 0, approved: 0, pending: 0, closed_without: 0, cleared: 0, cases: 0, wait: [] };
-  const g = (k) => groups[k] || (groups[k] = { created: 0, internal: 0, released: 0, rejected: 0, duplicates: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
+  const g = (k) => groups[k] || (groups[k] = { created: 0, internal: 0, released: 0, rejected: 0, duplicates: 0, withdrawn: 0, open: 0, triage: [], ack: [], total: [], parts_wait_h: 0 });
   for (const c of cases) {
     const evs = evBy.get(c.id) || [];
     const t0 = Date.parse(c.created_at);
@@ -599,7 +599,7 @@ export async function kpiReport(env, user, envName, query = {}) {
     const workshop = approved && c.closed_at && c.status === 'fahrzeug_freigegeben' ? Date.parse(c.closed_at) - Date.parse(approved.created_at) : null;
     for (const k of [c.priority, 'alle']) {
       const x = g(k); x.created++;
-      if (c.status === 'fahrzeug_freigegeben') x.released++; else if (c.status === 'abgelehnt') { x.rejected++; if (c.duplicate_of) x.duplicates++; } else x.open++;
+      if (c.status === 'fahrzeug_freigegeben') x.released++; else if (c.status === 'abgelehnt') { x.rejected++; if (c.duplicate_of) x.duplicates++; if (c.workshop_site) x.withdrawn++; } else x.open++; // abgelehnt mit Werkstatt = „ohne Reparatur beendet“ (Backlog 211; „Ablehnen“ gibt es nur vor der Freigabe)
       // interne Aufträge (Prüftermin, Prüfmangel, Winterreifen) legt die Leitung selbst an und gibt sie sofort frei: keine Erstbewertung,
       // Vorlauf bis zum Termin ist keine Durchlaufzeit (zogen den Median sonst auf 0 h, 18.10.2026)
       const internal = c.origin === 'wartung'; if (internal) x.internal++;
@@ -632,7 +632,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const order = ['kritisch', 'mittel', 'niedrig', 'alle'];
   const by_priority = order.filter((k) => groups[k]).map((k) => {
     const x = groups[k];
-    return { priority: k, created: x.created, internal: x.internal, released: x.released, rejected: x.rejected, duplicates: x.duplicates, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
+    return { priority: k, created: x.created, internal: x.internal, released: x.released, rejected: x.rejected, duplicates: x.duplicates, withdrawn: x.withdrawn, open: x.open, triage: stat(x.triage), workshop_ack: stat(x.ack), created_to_release: stat(x.total), parts_wait_h: r1(x.parts_wait_h) };
   });
   // Zeile „alle“ = Summe der gerundeten Dringlichkeiten (sonst 0 + 0 = 0,1 durch Rundung, 18.10.2026)
   { const all = by_priority.find((x) => x.priority === 'alle'); if (all) all.parts_wait_h = r1(by_priority.filter((x) => x.priority !== 'alle').reduce((a, x) => a + x.parts_wait_h, 0)); }

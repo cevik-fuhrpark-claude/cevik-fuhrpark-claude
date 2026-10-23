@@ -4965,8 +4965,8 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   ok(k1.every((x) => x.duplicates <= x.rejected), 'Dubletten ≤ abgelehnt');
   eq((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}`)).data.vehicles.find((v) => v.plate === 'DU-PL 1').duplicates, 2, 'je Fahrzeug: zwei Dubletten');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${BERLIN_YM}&to=${BERLIN_YM}&format=csv&part=priority`)).data).trim().split('\r\n');
-  ok(kcsv[0].endsWith(';davon Dubletten;davon interne Aufträge'), 'CSV-Spalte am Ende');
-  eq(Number(kcsv.find((l) => l.startsWith('Alle;')).split(';').at(-2)), pick(k1, 'alle').duplicates, 'CSV = JSON');
+  ok(kcsv[0].endsWith(';davon Dubletten;davon interne Aufträge;davon ohne Reparatur beendet'), 'CSV-Spalte am Ende');
+  eq(Number(kcsv.find((l) => l.startsWith('Alle;')).split(';').at(-3)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
   ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';')).length === 2, 'CSV-Spalte „Dublette von“');
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
@@ -12693,7 +12693,7 @@ await test('Fehlersuche 18.10. (20): Hinweise – ruhendes Gespann-Doppel, gemei
   const m = BERLIN_TODAY.slice(0, 7);
   const all = (await U.fleet.get(`/api/reports/kpi?from=${m}&to=${m}`)).data.by_priority.find((p) => p.priority === 'alle');
   eq(all.internal, 1); eq(all.triage.n, db.prepare(`SELECT COUNT(*) n FROM cases WHERE environment='test' AND fleet_received_at IS NOT NULL AND COALESCE(origin,'')<>'wartung'`).get().n, 'ohne internen Auftrag');
-  ok(/;davon interne Aufträge\r\n/.test(new TextDecoder().decode((await U.fleet.get(`/api/reports/kpi?from=${m}&to=${m}&format=csv&part=priority`)).data)), 'CSV-Spalte');
+  ok(/;davon interne Aufträge;davon ohne Reparatur beendet\r\n/.test(new TextDecoder().decode((await U.fleet.get(`/api/reports/kpi?from=${m}&to=${m}&format=csv&part=priority`)).data)), 'CSV-Spalte');
   const r2 = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Tachograph', last_done_date: addD(-800), interval_months: 24, evidence: 'Tacho' }); eq(r2.status, 201, JSON.stringify(r2.data));
   eq((await U.fleet.post(`/api/maintenance/${r2.data.id}/complete`, { done_date: addD(-1), evidence: 'Prüfung 1', result: 'gefaehrliche_maengel' })).status, 200);
   eq((await U.fleet.post(`/api/maintenance/${r2.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Nachprüfung', result: 'ohne_maengel' })).status, 200);
@@ -19120,6 +19120,10 @@ await test('Backlog 211 (Totalschaden): Werkstattauftrag „Ohne Reparatur beend
   ok(nk.includes('workshop') && nk.includes('dispatch'), 'Werkstatt und Disposition informiert: ' + nk.join(','));
   ok((await users.ws.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Werkstatt)');
   ok((await users.driver.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Melder-Art)');
+  // Kennzahlen: „davon ohne Reparatur beendet“ (Teilmenge von „abgelehnt“), CSV-Spalte
+  const mm = bDayOff(0).slice(0, 7);
+  const kp = (await users.fleet.get(`/api/reports/kpi?from=${mm}&to=${mm}`)).data.by_priority.find((p) => p.priority === 'alle');
+  ok(kp.withdrawn >= 1 && kp.rejected >= kp.withdrawn, 'Kennzahl withdrawn ' + JSON.stringify({ r: kp.rejected, w: kp.withdrawn }));
   // danach außer Betrieb nehmen
   const de = await users.fleet.post(`/api/vehicles/${V}/active`, { active: false, reason: 'Totalschaden' });
   eq(de.status, 200, JSON.stringify(de.data));
