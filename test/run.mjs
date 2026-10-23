@@ -19189,6 +19189,19 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
   ok(app.indexOf("$('#theft').hidden = !THEFT_HINT.test") > 0 && app.indexOf("$('#theft').hidden = !THEFT_HINT.test") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
 });
 
+await test('Backlog 216 (Teilagent „Abfahrtskontrolle findet Fahrtenschreiber-Störung“): Abfahrtskontrolle zeigt bei einem Mangel, dessen Beschreibung Fahrtenschreiber/Fahrerkarte nennt, dieselben Pflichten wie das Meldeformular; ein Ok-Punkt mit Text löst nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // ein gemeinsames Muster und Panel für beide Formulare (Modulebene, nicht mehr nur in viewNew)
+  ok(/\nconst TACHO_HINT = \//.test(app) && (app.match(/const TACHO_HINT = /g) || []).length === 1, 'TACHO_HINT einmal auf Modulebene');
+  ok((app.match(/<div id="tacho" class="panel"/g) || []).length === 1, 'Panel einmal definiert (tachoPanel)');
+  const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
+  ok(dep.includes('${checklistHtml()}${tachoPanel()}'), 'Panel unter der Prüfliste');
+  ok(dep.includes("i.result === 'mangel' && TACHO_HINT.test(i.note || '')"), 'nur Mängel mit passender Beschreibung');
+  ok(dep.indexOf("form.addEventListener('input', tachoCheck)") > 0 && dep.indexOf("form.addEventListener('input', tachoCheck)") < dep.indexOf("bindFormDraft('check'") && dep.indexOf('tachoCheck();') > dep.indexOf("bindFormDraft('check'"), 'Listener vor dem Entwurf, Prüfung danach');
+  const nw = app.slice(app.indexOf('async function viewNew('), app.indexOf('async function viewNew(') + 6000);
+  ok(nw.includes('${tachoPanel()}'), 'Meldeformular nutzt dasselbe Panel');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
