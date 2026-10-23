@@ -175,10 +175,13 @@ export async function updateItem(env, user, envName, id, body) {
 export async function addMovement(env, user, envName, id, body) {
   const it = await loadItem(env, user, envName, id);
   // deaktivierte Artikel: keine Buchungen (Bestand wäre unsichtbar, wie Umlagerung/Entnahme im Vorgang – 17.10.2026)
-  if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
+  // Ausnahme (23.10.2026, Teilagent „Inventur zum Jahreswechsel“): Restbestand eines deaktivierten Artikels per Korrektur genau auf 0 ausbuchen –
+  // er zählte sonst im Stichtagsbestand weiter, ließ sich aber weder zählen noch korrigieren
+  if (!it.active && body.type !== 'korrektur') throw bad('validation', 'Artikel ist deaktiviert.');
   const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
   let qty = r3(num(body.qty, { min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  if (!it.active) { const oh = await onHand(env, id); if (oh === 0 || Math.abs(oh + qty) > 1e-9) throw bad('validation', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.'); }
   const rkey = requestKey(body);
   const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id, type, qty FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
   // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“);
@@ -355,7 +358,11 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   for (const c of body.counts) {
     if (!c || typeof c !== 'object') throw bad('validation', 'Artikel gehört nicht zu diesem Lager.'); // null/Zahl als Zählzeile → 400 statt 500
     const it = items.get(String(c.item_id || ''));
-    if (!it) throw bad('validation', 'Artikel gehört nicht zu diesem Lager.');
+    if (!it) {
+      // zwischen Prüfen und Buchen deaktiviert (Teilagent „Inventur zum Jahreswechsel“, 23.10.2026): verständlicher Grund statt „gehört nicht zu diesem Lager“
+      const ina = await env.DB.prepare('SELECT 1 FROM stock_items WHERE id=? AND environment=? AND site=? AND active=0').bind(String(c.item_id || ''), envName, site).first();
+      throw bad('validation', ina ? 'Artikel ist deaktiviert.' : 'Artikel gehört nicht zu diesem Lager.');
+    }
     if (seen.has(it.id)) throw bad('validation', `Artikel doppelt gezählt: ${it.name}`);
     seen.add(it.id);
     if (c.counted === '' || c.counted === null || c.counted === undefined) continue; // nicht gezählt = keine Buchung
@@ -372,7 +379,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   // Prüfung geändert, z. B. Entnahme in einem Auftrag, oder Zählmengen wurden danach geändert), wird nichts gebucht → erneut prüfen.
   if (Array.isArray(body.preview)) {
     const sig = (list) => list.map((d) => (d && typeof d === 'object' ? `${d.item_id}|${Number(d.book)}|${Number(d.counted)}` : '?')).sort().join('\n');
-    if (body.preview.length > 2000 || sig(body.preview) !== sig(diffs)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
+    if (body.preview.length > 2000 || sig(body.preview) !== sig(diffs)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Mit dieser Anfrage wurde nichts gebucht; eine frühere, bereits erfolgreiche Buchung steht im Lagerjournal.');
   }
   const now = nowIso();
   // „Zuletzt gezählt“ je Artikel (auch ohne Abweichung) – im selben Stapel wie die Korrekturen, also ganz oder gar nicht
@@ -386,7 +393,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   const allGuard = [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM json_each(?) j
       WHERE ABS((SELECT COALESCE(SUM(m.qty),0) FROM stock_movements m WHERE m.item_id=json_extract(j.value,'$.id')) - json_extract(j.value,'$.q')) >= 0.0005) THEN 0 ELSE 1 END`).bind(cj),
     env.DB.prepare('DELETE FROM cmd_guard')];
-  const changed = () => new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
+  const changed = () => new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Mit dieser Anfrage wurde nichts gebucht; eine frühere, bereits erfolgreiche Buchung steht im Lagerjournal.');
   // Protokoll im selben Stapel: „Letzte Inventur“ liest diesen Eintrag (22.10.2026; vorher getrennt – nach Abbruch gebucht, aber altes Datum)
   const invAudit = (n) => auditStmt(env, user.id, 'stock.inventory', `stock:${envName}:${site}`, { site, environment: envName, counted: countedN, differences: n });
   if (!diffs.length) { try { await env.DB.batch([markCounted, ...allGuard, invAudit(0)]); } catch (e) { if (isCheck(e)) throw changed(); throw e; } return result; }
@@ -399,7 +406,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
       SELECT json_extract(j.value,'$.id'),?,json_extract(j.value,'$.item'),'korrektur',json_extract(j.value,'$.q'),NULL,NULL,NULL,?,json_extract(j.value,'$.n'),?,?
       FROM json_each(?) j`).bind(envName, `Inventur ${date}`, user.id, now, dj), ...allGuard, invAudit(diffs.length)]);
   } catch (e) {
-    if (isCheck(e)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Es wurde nichts gebucht.');
+    if (isCheck(e)) throw new HttpError(409, 'inventory_changed', 'Der Buchbestand oder die Zählmengen haben sich seit der Prüfung geändert – bitte „Abweichungen prüfen“ erneut ausführen. Mit dieser Anfrage wurde nichts gebucht; eine frühere, bereits erfolgreiche Buchung steht im Lagerjournal.');
     throw e;
   }
   result.booked = diffs.length;

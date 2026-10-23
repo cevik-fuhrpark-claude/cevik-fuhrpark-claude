@@ -201,7 +201,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const needHs = vs.filter((v) => ['HU', 'SP'].some((k) => !hasRule.has(`${v.id}|${k}`)));
   if (needHs.length) {
     const today = berlinDate();
-    for (const [vid, x] of await loadHuSpInputs(env, needHs.map((v) => v.id))) { const h = huSpFor(x, today, 30); if (h.hu && h.hu.due) hasRule.add(`${vid}|HU`); if (h.sp && h.sp.due) hasRule.add(`${vid}|SP`); }
+    for (const [vid, x] of await loadHuSpInputs(env, needHs.map((v) => v.id))) { const h = huSpFor(x, today, 30); if (h.hu && h.hu.due) hasRule.add(`${vid}|HU`); if (h.sp && (h.sp.due || h.sp.status === 'erste_sp_kuenftig')) hasRule.add(`${vid}|SP`); }
   }
   const pulledBy = new Map();
   const siteLabel = siteLabels(vs);

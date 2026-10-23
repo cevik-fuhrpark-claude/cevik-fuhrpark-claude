@@ -295,7 +295,8 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   }).sort((a, b) => (RANK[b.status] >= 3 ? RANK[b.status] : 0) - (RANK[a.status] >= 3 ? RANK[a.status] : 0) || (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
   const has = new Set([...rules.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP'), ...virt].map((r) => `${r.vehicle_id}|${r.kind}`));
   // Nicht SP-pflichtige Fahrzeuge brauchen keinen SP-Eintrag
-  for (const [vid, h] of huspBy) if (h.sp.status === 'nicht_sp_pflichtig') has.add(`${vid}|SP`);
+  // erste SP künftig (Neufahrzeug mit EZ/zGM, Prognose in der Akte) ist keine Lücke (23.10.2026, Teilagent „Fahrzeug-Neuzugang“)
+  for (const [vid, h] of huspBy) if (h.sp.status === 'nicht_sp_pflichtig' || h.sp.status === 'erste_sp_kuenftig') has.add(`${vid}|SP`);
   const gaps = [];
   for (const v of vehicles.sort((a, b) => String(a.plate).localeCompare(String(b.plate)))) {
     const missing = (v.kind === 'anhaenger' ? REQUIRED_KINDS_TRAILER : REQUIRED_KINDS).filter((k) => !has.has(`${v.id}|${k}`));

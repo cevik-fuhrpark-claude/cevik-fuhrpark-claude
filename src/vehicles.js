@@ -898,6 +898,8 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   }
   const ez = body.first_registration ? str(body.first_registration, { max: 10, field: 'Erstzulassung' }) : null;
   if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
+  // Untergrenze wie Baujahr (23.10.2026: 1900-01-01 wurde angenommen und trieb die SP-Prognose)
+  if (ez && ez < '1950-01-01') throw bad('validation', 'Erstzulassung vor 1950 ist nicht plausibel.');
   // gelesener Stand (Formular sendet `expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026, Backlog 105)
   const expected = body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
   const up = await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=? AND (? IS NULL OR updated_at=?)').bind(cls, kg, ez, source, nowIso(), vehicleId, expected, expected).run();
@@ -1181,6 +1183,10 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
     result.preview.push({ line: r._line, vin: r.vin, plate: r.plate, action: changes.length ? 'geändert' : 'unverändert', changes, ...(ex.active ? {} : { inactive_kept: true }) });
   }
   for (const pv of result.preview) { const r = rows.get('VIN:' + pv.vin); if (r && r._yearBad) pv.year_unrecognized = r._yearBad; }
+  // Neue Zeile ohne Fahrzeugart wird als Lkw angelegt – in der Vorschau nennen, besonders wenn das Kennzeichen in einer anderen Zeile als Anhänger
+  // steht (Teilagent „Fahrzeug-Neuzugang“, 23.10.2026: Anhänger wurde still Lkw, Kopplung blieb leer, Datenqualität „Anhänger unbekannt“)
+  const trailerKeys = new Set([...rows.values()].map((r) => normPlate(r.trailer_plate)).filter(Boolean));
+  for (const pv of result.preview) { const r = rows.get('VIN:' + pv.vin); if (pv.action === 'neu' && r && !r.kind) { pv.kind_defaulted = true; if (trailerKeys.has(normPlate(r.plate))) pv.kind_maybe_trailer = true; } }
   result.preview.sort((a, b) => a.line - b.line); result.skipped.sort((a, b) => a.line - b.line);
   result.inactive_kept = result.preview.filter((p) => p.inactive_kept).map((p) => p.plate);
   // Hinweis (keine Automatik): Stammstatus „verkauft/abgemeldet/stillgelegt/verschrottet/ausgemustert“, Fahrzeug wird aber aktiv angelegt bzw. bleibt aktiv –

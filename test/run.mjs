@@ -17847,6 +17847,48 @@ await test('Erster Tag der Fuhrparkleitung / Unfall mit Drittschaden (Teilagente
   ok(/p\.cases\.length \? '' : `<p class="muted" data-none>\$\{esc\(t\('no_cases'\)\)\}<\/p>`/.test(app), 'Management: leere Vorgangsliste mit Text');
 });
 
+await test('Fahrzeug-Neuzugang / Disposition / Lager-Inventur (Teilagenten 23.10.): erste SP künftig ist keine Lücke, Erstzulassung ab 1950, Import nennt Zeilen ohne Fahrzeugart, deaktivierter Artikel: Restbestand nur auf 0 ausbuchen, Inventur meldet „deaktiviert“; Dispo-Startseite mit Rückkehr „ungeklärt“, Ruhend-Kennzeichen und Überfällig-Link', async () => {
+  const { U } = await freshWorld();
+  // 1. Neuer Lkw mit EZ und zGM, ohne HU/SP-Eintrag: SP „erste SP künftig“ → keine Lücke (HU bleibt Lücke, Frist ungeklärt)
+  const V = 'VIN:WDB9634031L000077';
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB 9634031L000077', plate: 'SZ-NZ 100', site: 'Dortmund' })).status, 201, 'FIN mit Leerzeichen');
+  eq((await U.fleet.post(`/api/vehicles/${V}/spec`, { zgm_kg: 18000, first_registration: '1900-01-01', spec_source: 'Fahrzeugschein' })).status, 400, 'EZ 1900');
+  const ez = BERLIN_TODAY.slice(0, 8) + '01';
+  eq((await U.fleet.post(`/api/vehicles/${V}/spec`, { zgm_kg: 18000, first_registration: ez, spec_source: 'Fahrzeugschein F.2/B' })).status, 200);
+  const gap = (await U.fleet.get('/api/maintenance')).data.gaps.find((g) => g.vehicle_id === V);
+  ok(gap && gap.missing.includes('HU') && !gap.missing.includes('SP'), 'Übersicht: SP keine Lücke ' + JSON.stringify(gap && gap.missing));
+  const dq = (await U.fleet.get('/api/admin/data-quality')).data.items.find((i) => i.check === 'missing_inspection' && i.vehicle_id === V);
+  ok(dq && /HU/.test(dq.detail) && !/\bSP\b/.test(dq.detail), 'Datenqualität: SP keine Lücke ' + (dq && dq.detail));
+  // 2. Import: neue Zeile ohne Fahrzeugart, Kennzeichen steht in anderer Zeile als Anhänger
+  const csv = 'Kennzeichen;FIN;Anhänger Kennzeichen\nSZ-IM 1;WDB9634031L000078;SZ-IM 9\nSZ-IM 9;WDB9634031L000079;';
+  const pv = (await U.own.req('POST', '/api/vehicles/import?dry_run=1', csv, { 'content-type': 'text/csv' })).data.preview;
+  const p9 = pv.find((x) => x.plate === 'SZ-IM 9'); const p1 = pv.find((x) => x.plate === 'SZ-IM 1');
+  ok(p9.kind_defaulted && p9.kind_maybe_trailer, 'Anhänger ohne Art erkannt'); ok(p1.kind_defaulted && !p1.kind_maybe_trailer, 'Lkw ohne Art: nur Hinweis');
+  const pv2 = (await U.own.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;FIN;Fahrzeugart\nSZ-IM 9;WDB9634031L000079;Anhänger', { 'content-type': 'text/csv' })).data.preview;
+  ok(!pv2[0].kind_defaulted, 'mit Art kein Hinweis');
+  // 3. Lager: deaktivierter Artikel mit Restbestand
+  const it = (await U.ws.post('/api/stock', { name: 'Filter X', unit_price_net: '10', initial_qty: 3 })).data.id;
+  eq((await U.ws.patch(`/api/stock/${it}`, { active: false })).status, 200, 'Deaktivieren bleibt möglich');
+  const inv = await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: it, counted: 3 }] });
+  eq(inv.status, 400); eq(inv.data.message, 'Artikel ist deaktiviert.', 'verständlicher Grund');
+  eq((await U.ws.post(`/api/stock/${it}/movements`, { type: 'zugang', qty: 1 })).status, 400, 'Zugang gesperrt');
+  const k1 = await U.ws.post(`/api/stock/${it}/movements`, { type: 'korrektur', qty: -1, note: 'Teilausbuchung' });
+  eq(k1.status, 400); eq(k1.data.message, 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.');
+  eq((await U.ws.post(`/api/stock/${it}/movements`, { type: 'korrektur', qty: -3 })).status, 400, 'Grund Pflicht');
+  eq((await U.ws.post(`/api/stock/${it}/movements`, { type: 'korrektur', qty: -3, note: 'Artikel ausgelistet', request_key: rk() })).status, 201, 'Ausbuchen auf 0');
+  eq((await U.ws.get(`/api/stock/${it}`)).data.item.on_hand, 0);
+  eq((await U.ws.post(`/api/stock/${it}/movements`, { type: 'korrektur', qty: 0, note: 'x' })).status, 400, 'bei 0 nichts mehr');
+  // 4. Texte und Oberfläche
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dispo_return_unknown', 'item_writeoff', 'item_writeoff_hint', 'item_writeoff_confirm', 'item_writeoff_reason', 'imp_kind_maybe_trailer']) ok(STRINGS[l][k], `${l} ${k}`);
+  for (const l of ['uk', 'en']) for (const m of ['Erstzulassung vor 1950 ist nicht plausibel.', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.']) ok(translateValidation(l, m) !== m, `${l}: ${m}`);
+  for (const l of ['de', 'uk', 'en']) ok(!/Es wurde nichts gebucht|Nothing was booked\.|Нічого не проведено/.test(STRINGS[l].err_inventory_changed), `${l}: Text nach verlorener Antwort`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("v.last_km != null && fmtKm(v.last_km)"), 'km 0 in der Liste'); ok(app.includes('minlength="17" maxlength="25"'), 'FIN mit Leerzeichen einfügbar');
+  ok(app.includes("av === 'dormant' ? !!v.eval_excluded : v.availability === av && !v.eval_excluded") && app.includes("'with_findings_crit', 'dormant']"), 'Liste: Verfügbarkeit ohne ruhende, eigener Knopf');
+  ok(app.includes('data-retunk') && app.includes('data-dormant') && app.includes('id="dmover"') && app.includes('data-fbk'), 'Dispo-Startseite');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
