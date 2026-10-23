@@ -218,6 +218,7 @@ Gleiche `command_id` wird nur einmal ausgeführt; veraltete `expected_version` �
 | `request_quality_check` | Werkstatt | in_reparatur → abschlusskontrolle | Arbeiten dokumentiert, Kontrolle nach Reparatur (nach einer Rückgabe zur Nacharbeit eine **neue**, sonst 400 `inspection_after_rework_missing`; seit 17.10.2026), keine offenen sicherheitsrel. Restarbeiten |
 | `return_for_rework` | fleet/owner | abschlusskontrolle → in_reparatur | Grund |
 | `technical_release` | fleet/owner (Mensch) | abschlusskontrolle → fahrzeug_freigegeben | Kontrollnachweis + `confirm`; hebt Sperre auf. Kostenfreigabe offen → 400 `cost_approval_open` (zuerst `approve_costs`); Kontrolle vor der letzten Nacharbeit → 400 `inspection_after_rework_missing` (seit 17.10.2026) |
+| `withdraw_order` | fleet/owner | Werkstattstatus → abgelehnt (seit 23.10.2026) | Grund (Totalschaden, Verkauf, Reparatur unwirtschaftlich); aktive Sperre → 400 `withdraw_locked`, offene sicherheitsrelevante Restarbeiten → 400 `safety_items_open`; gebuchte Kosten bleiben, `payload {from_status, open_items_left}`; Hinweis `withdrawn` an Melder, Werkstatt, Disposition (abschaltbar). Danach ist „außer Betrieb nehmen“ möglich |
 | `approve_costs` | fleet/owner | jeder offene, nur wenn `cost_over_limit_at` gesetzt | Freigabevermerk; setzt `cost_approved_net` = aktueller bewerteter Betrag (Ist + Schätzung), Hinweis an die Werkstatt |
 | `comment` | alle mit Zugriff | – | Text |
 

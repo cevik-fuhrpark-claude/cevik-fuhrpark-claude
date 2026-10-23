@@ -19085,6 +19085,57 @@ await test('Backlog 210 (Versicherungsschaden mit Gutachter): Gutachter, Besicht
   for (const l of ['de', 'uk', 'en']) { for (const k of ['ca_title', 'ca_hint', 'ca_appraiser', 'ca_on', 'ca_on_hint', 'ca_received', 'ca_net', 'ca_net_hint', 'ca_pending']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_claims_s.includes(STRINGS[l].ca_pending), `${l}: Hilfe`); }
 });
 
+await test('Backlog 211 (Totalschaden): Werkstattauftrag „Ohne Reparatur beenden“ – nur Leitung, Grund Pflicht, nicht bei Sperre/sicherheitsrelevanter Restarbeit, Kosten bleiben, Hinweis an Werkstatt/Disposition, danach außer Betrieb nehmen möglich', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'TS-W 1', vin: 'WDB96340310821101', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310821101';
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Unfall: Totalschaden Front (Test)', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  if (!(await users.fleet.get(`/api/cases/${cid}`)).data.case.safety_lock) eq((await cmd(users.fleet, 'set_safety_lock', {}, 'Unfall – nicht fahren')).status, 200);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Schaden begutachten')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 1.5, description: 'Schadensaufnahme' })).status, 200);
+  let d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  ok(d.allowed_actions.includes('withdraw_order'), 'Leitung darf beenden');
+  ok(!(await users.ws.get(`/api/cases/${cid}`)).data.allowed_actions.includes('withdraw_order'), 'Werkstatt nicht');
+  eq((await cmd(users.ws, 'withdraw_order', {}, 'Totalschaden')).status, 403);
+  eq((await cmd(users.fleet, 'withdraw_order', {}, '')).data.error, 'note_required');
+  const locked = await cmd(users.fleet, 'withdraw_order', {}, 'Totalschaden laut Gutachten');
+  eq(locked.status, 400); eq(locked.data.error, 'withdraw_locked');
+  // außer Betrieb nehmen scheitert am offenen Auftrag
+  eq((await users.fleet.post(`/api/vehicles/${V}/active`, { active: false, reason: 'Totalschaden' })).data.error, 'open_cases');
+  eq((await cmd(users.fleet, 'lift_safety_lock', { confirm: true }, 'Fahrzeug wird außer Betrieb genommen (Totalschaden)')).status, 200);
+  eq((await cmd(users.ws, 'add_open_item', { description: 'Bremsleitung prüfen', safety_relevant: true })).status, 200);
+  eq((await cmd(users.fleet, 'withdraw_order', {}, 'Totalschaden laut Gutachten')).data.error, 'safety_items_open');
+  const oi = (await users.fleet.get(`/api/cases/${cid}`)).data.open_items.find((o) => o.status === 'offen');
+  eq((await cmd(users.fleet, 'resolve_open_item', { open_item_id: oi.id }, 'entfällt – Totalschaden')).status, 200);
+  eq((await cmd(users.ws, 'add_open_item', { description: 'Lackierung', safety_relevant: false })).status, 200);
+  const before = env.DB.db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE case_id=? AND kind='withdrawn'`).get(cid).n; eq(before, 0);
+  const w = await cmd(users.fleet, 'withdraw_order', {}, 'Totalschaden laut Gutachten');
+  eq(w.status, 200, JSON.stringify(w.data));
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  eq(d.case.status, 'abgelehnt'); ok(d.case.closed_at, 'abgeschlossen');
+  const ev = d.events.find((e) => e.action === 'withdraw_order'); ok(ev, 'Verlauf'); eq(ev.from_status, 'werkstatt_freigegeben'); eq(ev.note, 'Totalschaden laut Gutachten'); eq(ev.payload.open_items_left, 1);
+  ok(d.work_entries && d.work_entries.length === 1 || (d.costs && d.costs.unvalued_items >= 0), 'Arbeitszeit bleibt');
+  const nk = env.DB.db.prepare(`SELECT u.role FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.case_id=? AND n.kind='withdrawn'`).all(cid).map((r) => r.role);
+  ok(nk.includes('workshop') && nk.includes('dispatch'), 'Werkstatt und Disposition informiert: ' + nk.join(','));
+  ok((await users.ws.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Werkstatt)');
+  ok((await users.driver.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Melder-Art)');
+  // danach außer Betrieb nehmen
+  const de = await users.fleet.post(`/api/vehicles/${V}/active`, { active: false, reason: 'Totalschaden' });
+  eq(de.status, 200, JSON.stringify(de.data));
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'reject', 'withdraw_order',") && app.includes("if (action === 'withdraw_order') {"), 'Formular mit Grund und Hinweisen');
+  ok(app.includes("err.code === 'open_cases' ? `${err.message} ${t('deact_open_hint')}`"), 'Hinweis beim Außer-Betrieb-Nehmen');
+  const { STRINGS } = await import('../public/i18n.js');
+  const { nt } = await import('../src/notify.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['act_withdraw_order', 'withdraw_hint', 'pk_withdrawn', 'err_withdraw_locked', 'withdraw_left', 'deact_open_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].act_withdraw_order), `${l}: Hilfe`);
+    eq(nt(l, 'withdrawn'), STRINGS[l].pk_withdrawn, `${l}: Hinweistitel = Einstellungstext`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

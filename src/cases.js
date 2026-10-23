@@ -653,6 +653,9 @@ export function allowedActions(user, c, access) {
   // Nicht sicherheitsrelevante Restarbeiten nach der Freigabe noch erledigen (sonst blieben sie und der Agentenbefund „Restarbeiten planen“ für immer offen)
   if (c.status === 'fahrzeug_freigegeben' && (ws || mgr)) a.push('resolve_open_item');
   if (WORK_STATUSES.includes(c.status) && mgr) a.push('add_external_cost');
+  // Werkstattauftrag ohne Reparatur beenden (Totalschaden, Verkauf, Reparatur unwirtschaftlich – 23.10.2026): vorher blieb nur
+  // Scheinreparatur mit Kontrolle und Freigabe, sonst ließ sich das Fahrzeug nie außer Betrieb nehmen
+  if (WORK_STATUSES.includes(c.status) && mgr) a.push('withdraw_order');
   if (mgr && c.cost_over_limit_at && OPEN_STATUSES.includes(c.status)) a.push('approve_costs');
   return a;
 }
@@ -1126,6 +1129,20 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       toStatus = 'abgelehnt'; set.closed_at = now;
       notifyKind = 'rejected';
       break;
+    case 'withdraw_order': {
+      // Werkstattauftrag ohne Reparatur beenden (Teilagent „Totalschaden“, 23.10.2026): Status „abgelehnt“ (abgeschlossen, keine technische Freigabe),
+      // Grund Pflicht; Sperre und sicherheitsrelevante Restarbeiten zuerst fachlich klären (wie „Ablehnen“) – sonst führe das Fahrzeug ohne Sperre weiter.
+      // Gebuchte Arbeitszeit/Teile/Fremdleistungen bleiben (Kostenbericht); offene, nicht sicherheitsrelevante Restarbeiten bleiben im Verlauf sichtbar.
+      requireNote('Bitte Grund angeben, warum der Auftrag ohne Reparatur endet (z. B. Totalschaden, Verkauf).');
+      if (c.safety_lock) throw bad('withdraw_locked', 'Vorgang mit aktiver Sicherheitssperre kann nicht ohne Reparatur beendet werden. Zuerst Sperre fachlich aufheben (z. B. „Fahrzeug wird außer Betrieb genommen“).');
+      const safetyOpenW = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
+      if (safetyOpenW.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
+      const openRest = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
+      payload = { from_status: c.status, open_items_left: openRest.n };
+      toStatus = 'abgelehnt'; set.closed_at = now;
+      notifyKind = 'withdrawn';
+      break;
+    }
     case 'acknowledge':
       set.workshop_ack_at = now; set.workshop_ack_by = user.id;
       // Terminänderung bei Übernahme im Verlauf festhalten (20.10.2026; vorher nur bei „Termin setzen/verschieben“)
