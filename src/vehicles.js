@@ -351,7 +351,7 @@ async function vehicleDowntime(env, envName, vehicleId, cases, createdAt) {
 }
 
 // Zeitleiste der Fahrzeugakte:// Zeitleiste der Fahrzeugakte: alle gespeicherten Ereignisse chronologisch (nur vorhandene Daten, gleiche Rechte wie die Akte)
-export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim', 'note'];
+export const TIMELINE_TYPES = ['case', 'case_closed', 'inspection', 'odometer', 'driver_from', 'driver_to', 'document', 'tire', 'maintenance', 'fine', 'tacho', 'contract', 'claim', 'note', 'status'];
 export async function vehicleTimeline(env, user, envName, vehicleId, query = {}) {
   const limit = intParam(query.limit, 300, 1, 1000);
   // Jede Quelle liefert bis zu limit + 1 Einträge: die neuesten `limit` Einträge der Gesamtliste stammen je Quelle aus deren
@@ -407,6 +407,13 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
       add('claim', c.reimbursed_on, { claim_event: 'reimbursed', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, reimbursed_net: c.reimbursed_net });
     }
     for (const f of fines) add('fine', f.offense_at, { fine_id: f.id, fine_no: f.fine_no, fine_kind: f.kind, offense_type: f.offense_type, status: f.status });
+    // Standzeit nachvollziehbar (Backlog 205, Teilagent „Wiederinbetriebnahme“): ruhend/außer Betrieb und Rückkehr aus dem Protokoll mit Grund
+    // und Person – beim Wiederaufnehmen wird der Grund am Fahrzeug geleert, die Akte zeigte danach keine Spur der Standzeit
+    if (!want.size || want.has('status')) {
+      const st = (await env.DB.prepare(`SELECT a.action, a.detail, a.created_at, u.display_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
+        WHERE a.target=? AND a.action IN ('vehicle.eval_exclude','vehicle.eval_include','vehicle.deactivate','vehicle.activate') ORDER BY a.created_at DESC, a.rowid DESC LIMIT ?`).bind(vehicleId, cap).all()).results;
+      for (const a of st) { let det = {}; try { det = JSON.parse(a.detail || '{}') || {}; } catch {} add('status', a.created_at, { status_event: a.action.slice(8), status_reason: typeof det.reason === 'string' ? det.reason : null, by: a.display_name || null }); }
+    }
   }
   // Datum ohne Uhrzeit (z. B. Prüfung „erledigt am“) als Tagesmitte einsortieren
   const key = (x) => (x.at.length === 10 ? x.at + 'T12:00:00.000Z' : x.at);

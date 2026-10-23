@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test Backlog 204 (23.10.2026, Teilagent „Wiederinbetriebnahme nach Standzeit“): Leitung nimmt ein ruhendes Fahrzeug wieder in die
 # Auswertungen bzw. ein außer Betrieb genommenes wieder in Betrieb – Hinweis „Vor der ersten Fahrt klären“ nennt überfällige Prüftermine,
-# ungeklärte HU/SP, abgelaufene Verträge und den km-Stand (statt nur „✓“). DE 1366, UK 820, EN 390.
+# ungeklärte HU/SP, abgelaufene Verträge und den km-Stand (statt nur „✓“); Knopf im Hinweisfeld, Grund optional, Zeitleiste „Betriebsstatus“
+# (Backlog 205). DE 1366, UK 820, EN 390.
 # Dev-Server: CFP_URL (Standard Port 8787), frischer Server nötig. Screenshots: CFP_SHOTS.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -34,13 +35,18 @@ with sync_playwright() as p:
         ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); check(q.evaluate(JS,['POST','/api/login',{'username':'wi.leitung','password':PW}])['s']==200,f'{lang}: Leitung angemeldet')
         q.evaluate(JS,['PATCH','/api/me',{'language':lang}]); q.goto(B+f'/#/vehicles/{V}'); q.wait_for_timeout(1500)
-        btn='#evx' if mode=='eval' else '#react'
-        if not q.is_visible(btn):
-            q.evaluate(f"() => {{ const b = document.querySelector('{btn}'); if (b) {{ let e = b; while ((e = e.parentElement)) if (e.tagName === 'DETAILS') e.open = true; }} }}")
-        q.click(btn); q.wait_for_timeout(1200)
+        # Knopf direkt im roten Hinweisfeld (Backlog 205), Grund optional per Rückfrage
+        q.on('dialog',lambda dlg: dlg.accept('nach Reparatur zurück (UI-Test)') if dlg.type=='prompt' else dlg.accept())
+        gb=f"[data-goto={'evx' if mode=='eval' else 'react'}]"
+        check(q.is_visible(gb),f'{lang}: Rückkehr-Knopf im Hinweisfeld sichtbar')
+        q.click(gb); q.wait_for_timeout(1200)
         txt=q.evaluate("() => [...document.querySelectorAll('.toast')].map((x) => x.textContent).join(' | ')")
         check(HEAD[lang] in txt and OVER[lang] in txt and CON[lang] in txt,f'{lang}: Hinweis nennt überfällige Prüfung und Vertrag – {txt[:200]}')
         if SHOTS: q.screenshot(path=f'{SHOTS}/wiederinbetriebnahme_{lang}_{w}.png')
+        q.goto(B+f'/#/vehicles/{V}/timeline?f=status'); q.wait_for_selector('.list .row',timeout=10000); q.wait_for_timeout(300)
+        tl=q.inner_text('.list')
+        check('nach Reparatur zurück (UI-Test)' in tl and ('Standzeit UI-Test' in tl or 'abgestellt UI-Test' in tl) and tl.count('\n')>=1,f'{lang}: Zeitleiste „Betriebsstatus“ zeigt Standzeit und Rückkehr mit Grund')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/wiederinbetriebnahme_zeitleiste_{lang}_{w}.png')
         check(not errs,f'{lang}: keine Skriptfehler {errs}'); ctx.close()
     br.close()
 print('FEHLER: '+' | '.join(fails) if fails else 'alle UI-Prüfungen bestanden')

@@ -18966,6 +18966,29 @@ await test('Backlog 204 (Wiederinbetriebnahme): wieder in Betrieb / wieder in Au
   for (const l of ['de', 'uk', 'en']) { for (const k of ['rc_head', 'rc_km', 'rc_km_none']) ok(STRINGS[l][k], `${l}.${k}`); for (const k of ['rc_overdue', 'rc_unclear', 'rc_locked', 'rc_contracts']) ok(PLURALS[l][k], `${l}.${k}`); }
 });
 
+await test('Backlog 205 (Wiederinbetriebnahme): Zeitleiste „Betriebsstatus“ zeigt ruhend/außer Betrieb und Rückkehr mit Grund und Person (nur Leitung); Rückkehr-Grund optional; Knöpfe im Hinweisfeld', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'WI-T 1', vin: 'WDB96340310820501', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310820501'; const vp = `/api/vehicles/${V}`;
+  eq((await users.fleet.post(`${vp}/evaluation`, { excluded: true, reason: 'Motorschaden, Entscheidung offen (Test)' })).status, 200);
+  eq((await users.fleet.post(`${vp}/evaluation`, { excluded: false, reason: 'Motor getauscht (Test)' })).status, 200);
+  eq((await users.fleet.post(`${vp}/active`, { active: false, reason: 'abgemeldet (Test)' })).status, 200);
+  eq((await users.fleet.post(`${vp}/active`, { active: true })).status, 200, 'Grund beim Reaktivieren optional');
+  const tl = (await users.fleet.get(`${vp}/timeline?types=status`)).data;
+  eq(tl.items.map((x) => x.status_event).join(','), 'activate,deactivate,eval_include,eval_exclude', 'neueste zuerst');
+  ok(tl.items.every((x) => x.type === 'status' && x.by), 'Person');
+  eq(tl.items.find((x) => x.status_event === 'eval_exclude').status_reason, 'Motorschaden, Entscheidung offen (Test)');
+  eq(tl.items.find((x) => x.status_event === 'eval_include').status_reason, 'Motor getauscht (Test)', 'Rückkehr-Grund bleibt erhalten');
+  eq(tl.items.find((x) => x.status_event === 'activate').status_reason, null);
+  ok((await users.fleet.get(`${vp}/timeline`)).data.items.some((x) => x.type === 'status'), 'auch in „Alle“');
+  ok(!(await users.dispatch.get(`${vp}/timeline`)).data.items.some((x) => x.type === 'status'), 'Disposition: nicht sichtbar');
+  ok(!(await users.ws.get(`${vp}/timeline`)).data.items.some((x) => x.type === 'status'), 'Werkstatt: nicht sichtbar');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("status: ['status'] };") && app.includes("const TL_MGR_ONLY = ['fine', 'tacho', 'contract', 'claim', 'status'];"), 'Filter nur Leitung');
+  ok(app.includes('data-goto="react"') && app.includes('data-goto="evx"'), 'Knöpfe im Hinweisfeld');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['tl_status', 'tl_st_eval_exclude', 'tl_st_eval_include', 'tl_st_deactivate', 'tl_st_activate', 'return_reason']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
