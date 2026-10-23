@@ -18410,6 +18410,26 @@ await test('Disposition plant die Woche (Teilagent 23.10.): Plan nennt das gekop
   eq((app.match(/planVehTag\(i\)/g) || []).length, 4, 'Anzeige in Disposition (Startseite) und Werkstattplan (Auftrag, Prüftermin)');
 });
 
+await test('Werkstatt-Tablet in der Halle (Teilagent 23.10.): Kontrolle nach Reparatur als Entwurf je Vorgang mit gleichbleibender Anfragekennung (Wiederholung liefert dieselbe Kontrolle), Netzabbruch bei Werkstatt-Befehlen mit Hinweis „nicht gespeichert“, spätere Versionsabweisung nach Netzabbruch mit Hinweis „vorige Eingabe evtl. angekommen“; Texte DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const vi = app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck('));
+  ok(vi.includes(`<input type="hidden" name="rk" value="\${esc(uid())}">`) && vi.includes("const draft = bindFormDraft('insp_' + caseId, form, '', null);") && vi.includes('const key = form.rk.value || uid();'), 'Entwurf + Kennung im Entwurf');
+  ok(vi.includes("draft.clear();") && vi.includes("if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true);"), 'Entwurf nach Erfolg gelöscht, bei Netzabbruch gesichert');
+  ok(app.includes("if (err.offline) S.cmdOffline = { key, at: Date.now() };") && app.includes("toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);") && app.includes("`${err.message} ${t('cmd_offline_kept')}`"), 'Befehle: Hinweise bei Netzabbruch/Konflikt danach');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_kept', 'cmd_offline_kept', 'cmd_maybe_saved']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 10, `${l}: ${k}`);
+  // Server: Kontrolle nach Reparatur mit derselben Anfragekennung zweimal → eine Kontrolle („duplicate“)
+  eq((await owner.post('/api/vehicles', { plate: 'WH-HL 1', vin: 'WDB96340310555701', site: 'Dortmund' })).status, 201);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310555701', description: 'Halle: Bremse prüfen', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Bremse')).status, 200);
+  eq((await cmd(users.ws, 'start_repair')).status, 200);
+  const items = (await users.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const key = rk(); const b = { kind: 'nach_reparatur', case_id: cid, request_key: key, items };
+  const r1 = await users.ws.post('/api/inspections', b); eq(r1.status, 201, JSON.stringify(r1.data));
+  const r2 = await users.ws.post('/api/inspections', b); ok([200, 201].includes(r2.status), JSON.stringify(r2.data)); eq(r2.data.duplicate, true, 'Wiederholung = dieselbe Kontrolle'); eq(r2.data.id, r1.data.id);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

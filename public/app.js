@@ -1626,17 +1626,23 @@ async function viewCase(id) {
     const key = JSON.stringify([c.id, action, note ?? null, payload]);
     // nur kurz nach dem Fehlschlag wiederverwenden: am geteilten Tablet bucht später ein anderer Mechaniker evtl. denselben Inhalt (23.10.2026)
     const commandId = S.pendCmd && S.pendCmd.key === key && Date.now() - S.pendCmd.at < 10 * 60000 ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId, at: Date.now() };
-    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
+    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
     // und behält das Formular; ist die Aktion danach nicht mehr erlaubt (z. B. inzwischen freigegeben), bleiben die Eingaben als Hinweis stehen
+    // Netzabbruch: Formular bleibt offen (Hinweis „nicht gespeichert“); derselbe Inhalt war unterwegs → spätere Versionsabweisung kann die eigene,
+    // doch angekommene Buchung sein (nach 10 Min. neue Kennung) – dann nicht „jemand anderes“ melden, sondern zuerst den Verlauf prüfen lassen
+    // (Backlog 186, Werkstatt-Tablet in der Halle: sonst doppelte Arbeitszeit)
     catch (err) {
+      if (err.offline) S.cmdOffline = { key, at: Date.now() };
+      const maybeMine = err.code === 'version_conflict' && S.cmdOffline && S.cmdOffline.key === key;
       const generic = err.code === 'version_conflict' && action !== 'approve_costs';
-      if (!generic) toast(err.message, true);
+      if (!generic) toast(err.offline ? `${err.message} ${t('cmd_offline_kept')}` : err.message, true);
       if (err.code === 'version_conflict') {
         S.actSince = []; S.lostAct = { caseId: c.id, action, note, payload }; try { await viewCase(c.id); } catch {}
-        const lost = $('#lostact'); if (lost) lost.scrollIntoView({ block: 'center' }); else if (generic) toast(t('case_conflict_kept'), true);
+        const lost = $('#lostact'); if (lost) lost.scrollIntoView({ block: 'center' }); else if (generic) toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);
+        if (maybeMine) S.cmdOffline = null;
       } else if (err.code === 'cost_approval_open') viewCase(c.id);
     }
   };
@@ -1961,17 +1967,21 @@ function collectChecklist(form) {
 async function viewInspection(caseId) {
   const d = await api('GET', '/api/cases/' + caseId);
   render(`<p><a class="backlink" href="#/cases/${esc(caseId)}">‹ ${esc(t('back'))}</a></p><h1 data-title="${esc(d.case.case_no)} · ${esc(d.vehicle.plate)} · ${esc(t('inspection'))}">${esc(t('inspection'))}</h1><p>${plate(d.vehicle.plate)} ${esc(d.case.case_no)}</p>
-    <form id="f">${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" name="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12"><label for="n">${esc(t('note'))}</label><textarea id="n" name="n"></textarea>
+    <form id="f">${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" name="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12"><label for="n">${esc(t('note'))}</label><textarea id="n" name="n"></textarea><input type="hidden" name="rk" value="${esc(uid())}">
     <div class="actions"><button class="btn block">${esc(t('submit_inspection'))}</button></div></form>`, 'cases');
   const form = $('#f'); bindChecklist(form);
-  const key = uid();
+  // Entwurf je Vorgang (Backlog 186, Werkstatt-Tablet in der Halle): Netzabbruch/Neuladen/Seitenwechsel verlieren die 18 Punkte nicht; die
+  // Anfragekennung steht im Entwurf (verstecktes Feld) – kam die erste Sendung doch an, liefert der Server dieselbe Kontrolle statt einer zweiten
+  const draft = bindFormDraft('insp_' + caseId, form, '', null);
   form.onsubmit = async (e) => {
     e.preventDefault();
+    const key = form.rk.value || uid();
     try {
       const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, checklist_version: S.meta.checklist_version || undefined, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null });
+      draft.clear();
       toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected);
       location.hash = '#/cases/' + caseId;
-    } catch (err) { toast(err.message, true); }
+    } catch (err) { if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true); }
   };
 }
 async function viewDepartureCheck(preId) {
