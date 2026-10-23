@@ -759,7 +759,9 @@ export async function myVehicles(env, user, envName) {
       for (const kind of ['HU', 'SP']) {
         const y = kind === 'HU' ? h.hu : h.sp;
         // Frist ungeklärt (kein Nachweis, nicht berechenbar): nicht still weglassen, sondern ohne Datum melden (Backlog 202; Regel „fehlend = ungeklärt“)
-        if (y && !y.due && y.status === 'ungeklaert') { if (!unclearBy.has(vid)) unclearBy.set(vid, []); unclearBy.get(vid).push(kind); continue; }
+        // auch mit Datum, wenn die Frist laut Regel ungeklärt ist (z. B. letzte HU/SP mit erheblichen Mängeln – Nachprüfung offen; Backlog 207:
+        // Fahrer sah „HU 31.10.2027“ nach einer nicht bestandenen HU)
+        if (y && y.status === 'ungeklaert') { if (!unclearBy.has(vid)) unclearBy.set(vid, []); unclearBy.get(vid).push(kind); continue; }
         if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
         // HU/SP immer nach der zentralen Regel (wie Akte/Fahrzeugliste/Übersicht) – der gespeicherte Rohwert zeigte z. B. eine alte SP-Plakette
         // eines nicht SP-pflichtigen Lkw als „überfällig“ (22.10.2026)
@@ -1068,6 +1070,13 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
         AND NOT EXISTS (SELECT 1 FROM (SELECT km, note FROM odometer_readings WHERE vehicle_id=?2 AND measured_at > ?4 ORDER BY measured_at ASC, rowid ASC LIMIT 1) n WHERE n.km < ?3 AND TRIM(COALESCE(n.note,''))='')`)
       .bind(uuid(), r.vehicle_id, km, kmAt, `wartung:${r.kind}`, user.id, nowIso()),
     ...guard('SELECT CASE WHEN EXISTS (SELECT 1 FROM odometer_readings WHERE vehicle_id=? AND measured_at=? AND source=?) THEN 1 ELSE 0 END', r.vehicle_id, kmAt, `wartung:${r.kind}`));
+  }
+  // Dieselbe Durchführung (Prüfart, Tag) hat eine andere Person schon in der App mit anderem Nachweis erfasst: nicht still überschreiben
+  // (Backlog 207, Teilagent „HU-Tag in der Werkstatt“: „DEKRA-Bericht 770“ stand danach nur noch im Protokoll). Korrektur durch dieselbe
+  // Person und gleicher Nachweis (Wiederholung) bleiben erlaubt; eine importierte Durchführung darf die App weiterhin ergänzen.
+  const same = await env.DB.prepare('SELECT evidence, source, recorded_by FROM maintenance_events WHERE rule_id=? AND done_date=?').bind(ruleId, date).first();
+  if (same && same.source !== 'import' && same.recorded_by && same.recorded_by !== user.id && String(same.evidence || '').trim() && String(same.evidence || '').trim() !== String(evidence || '').trim()) {
+    throw conflict('evidence_exists', `Für diese Durchführung am ${date.split('-').reverse().join('.')} ist bereits ein anderer Nachweis erfasst („${cutText(String(same.evidence).trim(), 80)}“) – bitte Datum und Bericht prüfen.`);
   }
   const ruleIdx = result ? 2 : 0;
   let out;

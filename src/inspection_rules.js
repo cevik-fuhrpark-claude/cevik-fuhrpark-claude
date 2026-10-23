@@ -75,7 +75,21 @@ function statusFor(due, today, warnDays) {
 // Hinweis: deutscher Text (Agent, Protokoll) + Code mit Werten, damit die App ihn in UK/EN anzeigen kann
 const note = (o, code, text, p = {}) => { o.notes.push(text); o.note_codes.push({ code, p }); };
 
-export function computeHuSp(vehicle, events, { today, warnDays = SETTING_DEFAULTS.maintenance_warn_days, documented = {}, planned = {} } = {}) {
+// Letzte SP mit erheblichen/gefährlichen Mängeln oder verkehrsunsicher: wie bei der HU nicht „in Ordnung“, sondern „Frist ungeklärt“ mit
+// Hinweis „Nachprüfung belegen“ (Backlog 207, Teilagent „HU-Tag in der Werkstatt“: SP mit erheblichen Mängeln galt als erledigt, Fahrer und
+// Akte zeigten „in Ordnung“). Gilt nur, wenn danach keine HU/SP ohne solche Mängel belegt ist; „überfällig“ bleibt überfällig.
+export function computeHuSp(vehicle, events, opts = {}) {
+  const res = computeHuSpRaw(vehicle, events, opts);
+  const sorted = (k) => events.filter((e) => e.kind === k && e.done_date).sort((a, b) => a.done_date.localeCompare(b.done_date));
+  const lastSp = sorted('SP').pop(); const lastHu = sorted('HU').pop();
+  const sp = res.sp;
+  if (lastSp && BAD_RESULTS.includes(lastSp.result) && (!lastHu || lastSp.done_date > lastHu.done_date) && !['ueberfaellig', 'nicht_sp_pflichtig'].includes(sp.status)) {
+    sp.status = 'ungeklaert';
+    note(sp, 'sp_bad_result', 'Letzte SP mit erheblichen/gefährlichen Mängeln – Nachprüfung belegen.');
+  }
+  return res;
+}
+function computeHuSpRaw(vehicle, events, { today, warnDays = SETTING_DEFAULTS.maintenance_warn_days, documented = {}, planned = {} } = {}) {
   const kind = vehicle.kind === 'anhaenger' ? 'anhaenger' : 'lkw';
   const cls = vehicle.zgm_class || null;
   const sorted = (k) => events.filter((e) => e.kind === k && e.done_date).sort((a, b) => a.done_date.localeCompare(b.done_date));

@@ -999,6 +999,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^Höchstens 24 Stunden je Benutzerkonto und Arbeitstag – am (\d{2}\.\d{2}\.\d{4}) sind bereits (\d{1,3}(?:,\d{1,2})?) h erfasst\.$/))) return T.work_day_max.replace('{d}', lang === 'en' ? m[1].replace(/\./g, '/') : m[1]).replace('{h}', lang === 'en' ? m[2].replace(',', '.') : m[2]);
   if ((m = msg.match(/^Arbeitsdatum: nicht in der Zukunft und nicht vor dem (\d{2}\.\d{2}\.\d{4})\.$/))) return T.work_date_range.replace('{d}', lang === 'en' ? m[1].replace(/\./g, '/') : m[1]);
   if ((m = msg.match(/^Fahrzeug hat noch offene Vorgänge \((\d{1,6}), alle Umgebungen\) – zuerst abschließen\.$/))) return T.open_cases.replace('{n}', m[1]);
+  if ((m = msg.match(/^Für diese Durchführung am (\d{2}\.\d{2}\.\d{4}) ist bereits ein anderer Nachweis erfasst \(„([\s\S]{1,120})“\) – bitte Datum und Bericht prüfen\.$/)) && T.evidence_exists) return T.evidence_exists.replace('{d}', lang === 'en' ? m[1].replace(/\./g, '/') : m[1]).replace('{v}', () => m[2]);
   if ((m = msg.match(/^(.{1,120}) ist diesem Fahrzeug bereits zugeordnet\.$/))) return T.already_assigned.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Aktenzeichen bereits erfasst \((\S{1,40})\)\.$/))) return T.duplicate_fine.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Fahrzeug mit dieser FIN besteht bereits \((.{1,40})\) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden\.$/))) return T.vin_exists.replace('{v}', () => m[1]);
@@ -2067,3 +2068,9 @@ Object.assign(PLURALS.en, { rc_overdue: { one: '{n} inspection overdue', other: 
 Object.assign(STRINGS.de, { tl_status: 'Betriebsstatus', tl_st_eval_exclude: 'Ruhend gesetzt (aus Auswertungen ausgenommen)', tl_st_eval_include: 'Wieder in Auswertungen aufgenommen', tl_st_deactivate: 'Außer Betrieb genommen', tl_st_activate: 'Wieder in Betrieb genommen', return_reason: 'Grund bzw. Vermerk (optional, z. B. „nach Reparatur zurück“) – erscheint in der Zeitleiste:' });
 Object.assign(STRINGS.uk, { tl_status: 'Статус експлуатації', tl_st_eval_exclude: 'Переведено в резерв (виключено з аналізу)', tl_st_eval_include: 'Знову враховано в аналізі', tl_st_deactivate: 'Виведено з експлуатації', tl_st_activate: 'Знову введено в експлуатацію', return_reason: 'Причина або примітка (необов’язково, напр. «повернено після ремонту») – з’явиться в хронології:' });
 Object.assign(STRINGS.en, { tl_status: 'Operating status', tl_st_eval_exclude: 'Set dormant (excluded from evaluations)', tl_st_eval_include: 'Included in evaluations again', tl_st_deactivate: 'Taken out of service', tl_st_activate: 'Put back into service', return_reason: 'Reason or note (optional, e.g. “back after repair”) – shown in the timeline:' });
+// Backlog 207 (23.10.2026, Teilagent „HU-Tag in der Werkstatt“): SP mit erheblichen/gefährlichen Mängeln
+Object.assign(STRINGS.de, { hn_sp_bad_result: 'Letzte SP mit erheblichen/gefährlichen Mängeln – Nachprüfung belegen.' });
+Object.assign(STRINGS.uk, { hn_sp_bad_result: 'Остання SP зі значними/небезпечними дефектами – підтвердіть повторну перевірку.' });
+Object.assign(STRINGS.en, { hn_sp_bad_result: 'Last SP with major/dangerous defects – provide proof of re-inspection.' });
+Object.assign(VALIDATION_TEXTS.uk, { evidence_exists: 'Для цього виконання {d} вже внесено інше підтвердження («{v}») – перевірте дату та протокол.' });
+Object.assign(VALIDATION_TEXTS.en, { evidence_exists: 'A different proof is already recorded for this inspection on {d} (“{v}”) – please check the date and report.' });

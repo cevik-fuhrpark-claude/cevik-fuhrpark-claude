@@ -1533,6 +1533,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     '`Aktenzeichen bereits erfasst (${dup.fine_no}).`': ['Aktenzeichen bereits erfasst (TB-2026-0007).', 'Номер справи вже внесено (TB-2026-0007).', 'Case reference already recorded (TB-2026-0007).'],
     '`Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`': ['Fahrzeug hat noch offene Vorgänge (3, alle Umgebungen) – zuerst abschließen.', 'Транспорт ще має відкриті заявки (3, усі середовища) – спочатку закрийте їх.', 'Vehicle still has open cases (3, all environments) – close them first.'],
     '`Fahrzeug mit dieser FIN besteht bereits (${before.plate}) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden.`': ['Fahrzeug mit dieser FIN besteht bereits (SZ-YC 5501) – bitte in der Fahrzeugakte „Stammdaten bearbeiten“ verwenden.', 'Транспорт із цим VIN уже існує (SZ-YC 5501) – скористайтеся «Редагувати дані» в картці транспорту.', 'A vehicle with this VIN already exists (SZ-YC 5501) – please use “Edit master data” in the vehicle file.'],
+    '`Für diese Durchführung am ${date.split(\'-\').reverse().join(\'.\')} ist bereits ein anderer Nachweis erfasst („${cutText(String(same.evidence).trim(), 80)}“) – bitte Datum und Bericht prüfen.`': ['Für diese Durchführung am 23.10.2026 ist bereits ein anderer Nachweis erfasst („DEKRA $& 770“) – bitte Datum und Bericht prüfen.', 'Для цього виконання 23.10.2026 вже внесено інше підтвердження («DEKRA $& 770») – перевірте дату та протокол.', 'A different proof is already recorded for this inspection on 23/10/2026 (“DEKRA $& 770”) – please check the date and report.'],
     '`${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`': ['Olena $& K. ist diesem Fahrzeug bereits zugeordnet.', 'Olena $& K. уже призначено цьому транспорту.', 'Olena $& K. is already assigned to this vehicle.'],
   };
   for (const [, code, lit, tplc] of conf) {
@@ -18987,6 +18988,35 @@ await test('Backlog 205 (Wiederinbetriebnahme): Zeitleiste „Betriebsstatus“ 
   ok(app.includes('data-goto="react"') && app.includes('data-goto="evx"'), 'Knöpfe im Hinweisfeld');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['tl_status', 'tl_st_eval_exclude', 'tl_st_eval_include', 'tl_st_deactivate', 'tl_st_activate', 'return_reason']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 207 (HU-Tag in der Werkstatt): SP mit erheblichen Mängeln nicht „in Ordnung“; Fahrer sieht ungeklärte HU ohne Datum; zweiter Nachweis einer anderen Person derselben Durchführung → 409', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const L = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2015-01-01' };
+  const HU = { kind: 'HU', done_date: '2026-05-10', result: 'ohne_maengel' };
+  const bad = computeHuSp(L, [HU, { kind: 'SP', done_date: '2026-11-05', result: 'erhebliche_maengel' }], { today: '2026-11-10', warnDays: 30 });
+  eq(bad.sp.status, 'ungeklaert', 'SP mit erheblichen Mängeln'); ok(bad.sp.note_codes.some((n) => n.code === 'sp_bad_result'), 'Hinweis Nachprüfung');
+  const fixed = computeHuSp(L, [HU, { kind: 'SP', done_date: '2026-11-05', result: 'erhebliche_maengel' }, { kind: 'SP', done_date: '2026-11-20', result: 'ohne_maengel' }], { today: '2026-11-25', warnDays: 30 });
+  eq(fixed.sp.status, 'ok', 'Nachprüfung ohne Mängel → in Ordnung');
+  eq(computeHuSp(L, [HU, { kind: 'SP', done_date: '2026-11-05', result: 'geringe_maengel' }], { today: '2026-11-10', warnDays: 30 }).sp.status, 'ok', 'geringe Mängel bleiben in Ordnung');
+  // API: Lkw mit HU „verkehrsunsicher“ → Fahrer sieht HU als ungeklärt (kein neues Datum), Hinweis bleibt trotz anderer Meldung
+  eq((await owner.post('/api/vehicles', { plate: 'HT-A 1', vin: 'WDB96340310820701', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310820701';
+  eq((await users.fleet.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
+  eq((await users.fleet.post(`/api/vehicles/${V}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  const hu = await users.fleet.post(`/api/vehicles/${V}/husp/HU/complete`, { done_date: bDayOff(-1), evidence: 'DEKRA-Bericht 770 (Test)', result: 'verkehrsunsicher' });
+  eq(hu.status, 200, JSON.stringify(hu.data));
+  const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V);
+  ok(mv.inspections_unclear.includes('HU') && !mv.next_inspections.some((r) => r.kind === 'HU'), 'HU ohne neues Datum: ' + JSON.stringify(mv.next_inspections));
+  eq((await users.fleet.get(`/api/vehicles/${V}`)).data.failed_inspection?.result, 'verkehrsunsicher');
+  // zweite Person trägt dieselbe Durchführung mit anderem Bericht ein → 409, Nachweis bleibt; gleicher Nachweis (Wiederholung) erlaubt
+  const dup = await users.ws.post(`/api/vehicles/${V}/husp/HU/complete`, { done_date: bDayOff(-1), evidence: 'Bericht 999 (falsch)' });
+  eq(dup.status, 409, JSON.stringify(dup.data)); eq(dup.data.error, 'evidence_exists');
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation('uk', dup.data.message) && translateValidation('en', dup.data.message), 'Meldung übersetzt');
+  ok((await users.fleet.get(`/api/vehicles/${V}`)).data.maintenance_history.some((h) => h.kind === 'HU' && h.evidence === 'DEKRA-Bericht 770 (Test)'), 'Nachweis unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].hn_sp_bad_result, l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
