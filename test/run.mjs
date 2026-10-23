@@ -18631,6 +18631,22 @@ await test('Wiedereinstellung (Backlog 191): neue Fahrerakte mit gleicher Person
   eq(await env.DB.prepare(`SELECT 1 AS x FROM agent_findings WHERE case_id=? AND finding_code='NO_WORKSHOP_RECIPIENT' AND status='offen'`).bind(cid).first(), null, 'wieder offen → Befund erledigt');
 });
 
+await test('Geschlossene Werkstatt in Namen und Filtern (Backlog 192): /api/meta liefert additiv workshops_all mit active, workshops bleibt nur aktive; App nutzt alle für Namen/Werkstattplan-Filter, Auswahl für Neues nur aktive', async () => {
+  await env.DB.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  try {
+    const m = (await users.fleet.get('/api/meta')).data;
+    ok(!m.workshops.some((w) => w.code === 'MUENCHEN'), 'Auswahl ohne geschlossene');
+    const mu = m.workshops_all.find((w) => w.code === 'MUENCHEN'); ok(mu && mu.active === false && mu.name, 'workshops_all mit active=false');
+    ok(m.workshops_all.find((w) => w.code === 'DORTMUND').active === true);
+    ok(m.workshops.every((w) => !('active' in w)), 'workshops unverändert (code, name)');
+  } finally { await env.DB.prepare(`UPDATE workshops SET active=1 WHERE code='MUENCHEN'`).run(); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const wsName = (code) => wsLabel(wsAll().find((w) => w.code === code)) || code || '–';"), 'Namen aus allen Werkstätten');
+  ok(app.includes("(w && w.active === false ? ` (${t('ws_closed')})` : '')"), 'Kennzeichnung „geschlossen“');
+  ok(app.includes('<select id="psite"><option value="">${esc(t(\'all\'))}</option>${wsAll().map((w) =>'), 'Werkstattplan-Filter mit allen');
+  ok(app.includes('<select name="workshop_site">${S.meta.workshops.map((w) =>'), 'Konto anlegen weiter nur aktive');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

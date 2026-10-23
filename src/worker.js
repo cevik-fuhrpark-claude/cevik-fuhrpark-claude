@@ -252,10 +252,12 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/me/password' && m === 'POST') return json(await auth.changePassword(env, user, await readJson(request)));
 
   if (path === '/api/meta' && m === 'GET') {
-    const workshops = (await env.DB.prepare('SELECT code, name FROM workshops WHERE active=1').all()).results;
+    // workshops = aktive (Auswahl für Neues); workshops_all additiv mit `active` – Namen/Filter geschlossener Werkstätten (Backlog 192)
+    const workshopsAll = (await env.DB.prepare('SELECT code, name, active FROM workshops').all()).results;
+    const workshops = workshopsAll.filter((w) => w.active).map(({ code, name }) => ({ code, name }));
     let vapid = null;
     try { vapid = (await getVapid(env)).publicKey; } catch {}
-    return json({ workshops, checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
+    return json({ workshops, workshops_all: workshopsAll.map((w) => ({ code: w.code, name: w.name, active: !!w.active })), checklist: cases.CHECKLIST, checklist_version: cases.CHECKLIST_VERSION, priorities: cases.PRIORITIES,
       driveability: cases.DRIVEABILITY, statuses: cases.STATUSES, maintenance_kinds: veh.MAINT_KINDS, doc_kinds: veh.DOC_KINDS, tire_positions: tires.POSITIONS, tire_axles: tires.AXLES, tire_events: tires.TIRE_EVENTS, tire_winter_marks: tires.WINTER_MARKS, legal_min_tread_mm: tires.LEGAL_MIN_TREAD_MM, fine_kinds: fines.FINE_KINDS, fine_offenses: fines.OFFENSES, fine_statuses: fines.FINE_STATUSES, vapid_public_key: vapid, app_name: env.APP_NAME });
   }
 

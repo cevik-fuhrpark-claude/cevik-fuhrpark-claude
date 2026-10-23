@@ -1748,10 +1748,12 @@ const bindTachoCancel = (root, reload) => $$('[data-tcancel]', root).forEach((b)
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
 // Werkstatt „EXTERN“ hat einen festen deutschen Namen aus dem Schema – in der App-Sprache anzeigen (22.10.2026, Fund Druck UK/EN)
-const wsLabel = (w) => (w && w.code === 'EXTERN' ? t('ws_extern') : (w && w.name) || '');
-const wsName = (code) => wsLabel(S.meta.workshops.find((w) => w.code === code)) || code || '–';
+const wsLabel = (w) => (w && w.code === 'EXTERN' ? t('ws_extern') : (w && w.name) || '') + (w && w.active === false ? ` (${t('ws_closed')})` : '');
+// alle Werkstätten inkl. geschlossener (Namen, Filter) – Auswahl für Neues bleibt S.meta.workshops (nur aktive), Backlog 192
+const wsAll = () => (S.meta && (S.meta.workshops_all || S.meta.workshops)) || [];
+const wsName = (code) => wsLabel(wsAll().find((w) => w.code === code)) || code || '–';
 // Lieferant einer Lagerentnahme wird als „Lager <Werkstattcode>“ gespeichert (src/cases.js) – Anzeige mit Werkstattnamen in der App-Sprache (19.10.2026)
-const supplierLabel = (x) => { const m = /^Lager (\S+)$/.exec(String(x || '')); return m && S.meta.workshops.some((w) => w.code === m[1]) ? t('part_from_stock').replace('{ws}', wsName(m[1])) : x; };
+const supplierLabel = (x) => { const m = /^Lager (\S+)$/.exec(String(x || '')); return m && wsAll().some((w) => w.code === m[1]) ? t('part_from_stock').replace('{ws}', wsName(m[1])) : x; };
 const checkLabel = (k) => (CHECK_LABELS[S.lang] || CHECK_LABELS.de)[k] || k;
 // Vorgangstext: aus Kontrollen erzeugte Vorgänge zeigen den Prüfpunkt in der Oberflächensprache statt des Schlüssels
 // … und Aufträge aus Prüftermin/Prüfmangel/Rückruf/Winterreifen mit Rahmen, Prüfart und Prüfergebnis in der Oberflächensprache (Freitexte unverändert)
@@ -4049,7 +4051,7 @@ async function viewPlan(sec) {
   let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${r.vehicle_site ? esc(t('kpi_vsite')) + ': ' + esc(r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-      ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : ''}
+      ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : ''}
       ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('pvsite', '', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
       <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30, 60].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${esc(nDays(n))}</option>`).join('')}</select></div>
       <button type="button" class="btn secondary" id="plprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
