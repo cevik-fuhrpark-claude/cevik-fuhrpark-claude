@@ -112,6 +112,8 @@ const fmtD = (iso) => { if (!iso) return '–'; const d = new Date(iso.length ==
 const isWeekendD = (iso) => !!iso && iso.length === 10 && [0, 6].includes(new Date(iso + 'T12:00:00Z').getUTCDay());
 // Erfassungstag einer Kostenposition (Teil/Fremdleistung) – danach zählt sie im Kostenbericht (Backlog 188: Dezember-Rechnung am 02.01. erfasst = Januar)
 const bookedAt = (iso) => (iso ? `<br><span class="small muted" title="${esc(t('cost_booked_hint'))}">${esc(t('cost_booked'))} ${fmtD(iso)}</span>` : '');
+// Konto schon mit einer (oft ausgeschiedenen) Fahrerakte verknüpft: Akte nennen (Backlog 191)
+const linkedMsg = (err) => { const ld = err && err.code === 'duplicate' && err.data && err.data.linked_driver; return ld ? `${err.message} ${t('dr_linked_to').replace('{name}', ld.display_name)}${ld.active ? '' : ' (' + t('inactive') + ')'}` : err.message; };
 const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
 // Eingabe der Antwortfrist: Hinweis, wenn der Tag auf ein Wochenende fällt (Frist wird nicht verschoben)
 function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { h.hidden = !isWeekendD(el.value); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
@@ -3189,11 +3191,17 @@ async function viewDrivers() {
   const dse = $('#dsite'); if (dse) dse.onchange = () => { S.drvSite = dse.value; viewDrivers(); };
   $('#dprl').onclick = () => window.print();
   $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv' + (dq ? '&' + dq : '')), `fuhrpark-fahrer-fristen_${envFn()}_${S.drvInactive ? 'inaktiv_' : ''}${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
-  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', '/api/drivers', b); location.hash = '#/drivers/' + r.id;
+  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.check_inactive = true; try {
+    // ausgeschiedene Akte mit gleicher Personalnummer/gleichem Namen (Wiedereinstellung, Backlog 191): nachfragen – Abbrechen öffnet die alte Akte
+    let r; try { r = await api('POST', '/api/drivers', b); } catch (err) {
+      const mm = err.code === 'inactive_match' && err.data && err.data.matches; if (!mm || !mm.length) throw err;
+      if (!confirm(t('dr_inactive_match').replace('{list}', mm.map((x) => x.personnel_no ? `${x.display_name} (${x.personnel_no})` : x.display_name).join(', ')))) { location.hash = '#/drivers/' + mm[0].id; return; }
+      r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }); }
+    location.hash = '#/drivers/' + r.id;
     // gleichnamige aktive Fahrer: nur Hinweis, gespeichert ist die Akte trotzdem (gleiche Namen sind möglich, 23.10.2026)
     const dn = r && r.duplicate_names;
     if (dn && dn.length) setTimeout(() => toast(tn('dup_driver_name_warn', dn.length).replace('{name}', b.display_name || '').replace('{list}', dn.slice(0, 3).map((x) => x.personnel_no ? x.display_name + ' (' + x.personnel_no + ')' : x.display_name).join(', ') + (dn.length > 3 ? ` +${dn.length - 3}` : '')), true), 400);
-  } catch (err) { toast(err.message, true); } };
+  } catch (err) { toast(linkedMsg(err), true); } };
 }
 async function viewDriver(id) {
   const x = await api('GET', '/api/drivers/' + id);
@@ -3248,7 +3256,7 @@ async function viewDriver(id) {
     if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b);
       // ausgeschieden: verknüpftes Konto weiter aktiv / Fahrzeug weiter zugeordnet → Hinweis (Backlog 190)
       const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments));
-      toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+      toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { toast(linkedMsg(err), true); } };
 }
 
 // Vom Server erzeugte Verlaufsvermerke (Kontrolle, erneut festgestellt) in der Oberflächensprache (17.10.2026: blieben deutsch);
@@ -4188,7 +4196,7 @@ async function viewQuality(pre) {
     ${r.items.length ? `<div class="actions noprint"><button type="button" class="btn secondary" id="dqcsv">${esc(t('export_csv'))}${f ? ' (' + esc(t('dq_' + f)) + ')' : sev ? ' (' + esc(t('dq_sev_' + sev)) + ')' : ''}</button><button type="button" class="btn secondary" id="dqprt">${esc(t('print'))}</button></div>` : ''}
     ${r.items.length ? `<div class="actions" style="flex-wrap:wrap" role="group" aria-label="${esc(t('dq_col_severity'))}"><span class="small muted" style="align-self:center">${esc(t('dq_col_severity'))}:</span><button type="button" class="btn ${sev ? 'secondary' : ''}" data-dqsev="" aria-pressed="${!sev}">${esc(t('filter_all'))} (${r.items.length})</button>${['fehler', 'luecke', 'hinweis'].filter((x) => sevCount(x)).map((x) => `<button type="button" class="btn ${sev === x ? '' : 'secondary'}" data-dqsev="${x}" aria-pressed="${sev === x}">${esc(t('dq_sev_' + x))} (${sevCount(x)})</button>`).join('')}</div>` : ''}
     ${r.items.length ? `<div class="actions" style="flex-wrap:wrap" role="group" aria-label="${esc(t('dq_col_check'))}"><span class="small muted" style="align-self:center">${esc(t('dq_col_check'))}:</span><button type="button" class="btn ${f ? 'secondary' : ''}" data-dq="">${esc(t('filter_all'))} (${sev ? sevCount(sev) : r.items.length})</button>${checks.map((c) => `<button type="button" class="btn ${f === c ? '' : 'secondary'}" data-dq="${esc(c)}">${esc(t('dq_' + c))} (${r.counts[c]}${(r.truncated_checks || []).includes(c) ? '+' : ''})</button>`).join('')}</div>` : `<div class="panel good"><b>${esc(t('dq_ok'))}</b></div>`}
-    <div class="list">${items.map((i) => { const href = i.case_id ? `#/cases/${esc(i.case_id)}` : i.vehicle_id && i.check === 'inspection_no_result' && i.event_id ? `#/vehicles/${esc(i.vehicle_id)}?ev=${esc(i.event_id)}` : i.vehicle_id && i.check === 'km_drop_unexplained' ? tlHash(esc(i.vehicle_id), 'maintenance') : i.vehicle_id ? `#/vehicles/${esc(i.vehicle_id)}` : i.driver_id ? `#/drivers/${esc(i.driver_id)}` : i.check === 'invite_pending' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers' : null; return `${href ? `<a class="row ${i.severity === 'fehler' ? 'p-kritisch' : i.severity === 'luecke' ? 'p-mittel' : ''}" href="${href}">` : `<div class="row">`}${i.plate ? plate(i.plate) : i.driver_id ? `<span class="chip">${esc(i.driver_name)}</span>` : `<span class="chip">${esc(t('users'))}</span>`}<span class="title" style="white-space:normal">${esc(t('dq_' + i.check))}</span><span class="chip ${sevCls[i.severity]}">${esc(t('dq_sev_' + i.severity))}</span>${i.detail ? `<span class="sub" style="white-space:normal">${esc(dqDetail(i))}</span>` : ''}${href ? '</a>' : '</div>'}`; }).join('')}</div>`, 'more');
+    <div class="list">${items.map((i) => { const href = i.case_id ? `#/cases/${esc(i.case_id)}` : i.vehicle_id && i.check === 'inspection_no_result' && i.event_id ? `#/vehicles/${esc(i.vehicle_id)}?ev=${esc(i.event_id)}` : i.vehicle_id && i.check === 'km_drop_unexplained' ? tlHash(esc(i.vehicle_id), 'maintenance') : i.vehicle_id ? `#/vehicles/${esc(i.vehicle_id)}` : i.driver_id ? `#/drivers/${esc(i.driver_id)}` : i.check === 'invite_pending' || i.check === 'driver_account_file_inactive' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers' : null; return `${href ? `<a class="row ${i.severity === 'fehler' ? 'p-kritisch' : i.severity === 'luecke' ? 'p-mittel' : ''}" href="${href}">` : `<div class="row">`}${i.plate ? plate(i.plate) : i.driver_id ? `<span class="chip">${esc(i.driver_name)}</span>` : `<span class="chip">${esc(t('users'))}</span>`}<span class="title" style="white-space:normal">${esc(t('dq_' + i.check))}</span><span class="chip ${sevCls[i.severity]}">${esc(t('dq_sev_' + i.severity))}</span>${i.detail ? `<span class="sub" style="white-space:normal">${esc(dqDetail(i))}</span>` : ''}${href ? '</a>' : '</div>'}`; }).join('')}</div>`, 'more');
   $$('[data-dq]').forEach((b) => (b.onclick = () => { S.dqFilter = b.dataset.dq; viewQuality(); }));
   $$('[data-dqsev]').forEach((b) => (b.onclick = () => { S.dqSev = b.dataset.dqsev; viewQuality(); }));
   const dqs = $('#dqsite'); if (dqs) dqs.onchange = () => { S.dqSite = dqs.value; viewQuality(); };

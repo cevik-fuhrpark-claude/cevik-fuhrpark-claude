@@ -858,6 +858,7 @@ const V_MORE = [
   ['Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.', 'Не більше 50 активних номерів – заархівуйте ті, що вже не дійсні.', 'At most 50 active phone numbers – please archive those no longer valid.'],
   // [CLAUDE] Konflikt-Meldungen (409) mit festem Text – übersetzt über dieselbe Tabelle (21:15-Sitzung 15.10.2026)
   ['Dieses App-Konto ist bereits einem Fahrer zugeordnet.', 'Цей обліковий запис застосунку вже призначено водієві.', 'This app account is already linked to a driver.'],
+  ['Es gibt eine ausgeschiedene Fahrerakte mit gleicher Personalnummer oder gleichem Namen – bei Wiedereinstellung besser diese reaktivieren.', 'Є картка звільненого водія з тим самим табельним номером або ім’ям – у разі повторного прийому краще активувати її знову.', 'There is a former employee’s driver file with the same personnel number or name – when re-hiring, better reactivate it.'],
   ['Für diesen Tag ist bereits eine Auslesung erfasst.', 'За цей день зчитування вже внесено.', 'A download has already been recorded for this day.'],
   ['Artikel existiert in diesem Lager bereits.', 'Така позиція вже є на цьому складі.', 'This item already exists in this store.'],
   ['Für dieses Gerät gibt es bereits eine bestätigte Zuordnung – zuerst aufheben.', 'Для цього пристрою вже є підтверджена прив’язка – спочатку скасуйте її.', 'This device already has a confirmed assignment – remove it first.'],
@@ -1297,6 +1298,8 @@ const NEXT_ACTIONS = [
   ['Meldung bewerten.', 'Оцініть повідомлення.', 'Assess the report.'],
   ['Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.', 'Створіть користувача майстерні або призначте іншу майстерню.', 'Create a workshop user or assign another workshop.'],
   ['Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.', 'Створіть користувача майстерні або продовжуйте замовлення як керівник автопарку.', 'Create a workshop user or continue the order as fleet management.'],
+  ['Werkstatt geschlossen – andere Werkstatt zuweisen.', 'Майстерню закрито – призначте іншу майстерню.', 'Workshop closed – assign another workshop.'],
+  ['Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.', 'Майстерню закрито – продовжуйте замовлення як керівництво автопарку.', 'Workshop closed – continue the order as fleet management.'],
   ['Werkstatt direkt kontaktieren oder Auftrag umleiten.', 'Зв’яжіться з майстернею напряму або перенаправте замовлення.', 'Contact the workshop directly or redirect the order.'],
   ['Auftrag übernehmen.', 'Прийміть замовлення.', 'Accept the order.'],
   ['Teilelieferung klären, Dispo informieren.', 'З’ясуйте постачання запчастин, повідомте диспетчерську.', 'Clarify the parts delivery, inform dispatch.'],
@@ -2014,3 +2017,10 @@ Object.assign(STRINGS.en, { ws_closed: 'closed' });
 Object.assign(STRINGS.de, { dr_left_account_active: 'Gespeichert. Das App-Konto „{name}“ ist weiter aktiv (Anmeldung, Push, Meldungen) – bei Ausscheiden unter Mehr → Benutzer deaktivieren.', dr_left_assignments: 'Dem App-Konto sind noch Fahrzeuge zugeordnet ({n}).' });
 Object.assign(STRINGS.uk, { dr_left_account_active: 'Збережено. Обліковий запис «{name}» залишається активним (вхід, push, повідомлення) – у разі звільнення деактивуйте його в розділі Ще → Користувачі.', dr_left_assignments: 'За обліковим записом ще закріплено транспорт ({n}).' });
 Object.assign(STRINGS.en, { dr_left_account_active: 'Saved. The app account “{name}” is still active (sign-in, push, reports) – if the person has left, deactivate it under More → Users.', dr_left_assignments: 'Vehicles are still assigned to the app account ({n}).' });
+// [CLAUDE] Backlog 191 (Wiedereinstellung): ausgeschiedene Akte statt neuer Akte, verknüpfte Akte nennen
+Object.assign(STRINGS.de, { dr_inactive_match: 'Es gibt bereits eine ausgeschiedene Fahrerakte: {list}. Bei Wiedereinstellung besser diese reaktivieren – Verlauf, Nachweise und Auslesungen bleiben zusammen.\n\nOK = trotzdem neue Akte anlegen, Abbrechen = ausgeschiedene Akte öffnen.', dr_linked_to: 'Verknüpft mit Fahrerakte „{name}“.' });
+Object.assign(STRINGS.uk, { dr_inactive_match: 'Уже є картка водія, який звільнився: {list}. У разі повторного прийому краще активувати її знову – історія, документи та зчитування залишаться разом.\n\nOK = все одно створити нову картку, Скасувати = відкрити картку звільненого водія.', dr_linked_to: 'Пов’язано з карткою водія «{name}».' });
+Object.assign(STRINGS.en, { dr_inactive_match: 'A driver file of a former employee already exists: {list}. When re-hiring, better reactivate it – history, documents and downloads stay together.\n\nOK = create a new file anyway, Cancel = open the former file.', dr_linked_to: 'Linked to driver file “{name}”.' });
+Object.assign(STRINGS.de, { dq_driver_account_file_inactive: 'Aktives App-Konto, Fahrerakte ausgeschieden (Konto deaktivieren?)' });
+Object.assign(STRINGS.uk, { dq_driver_account_file_inactive: 'Активний обліковий запис, картку водія деактивовано (вимкнути обліковий запис?)' });
+Object.assign(STRINGS.en, { dq_driver_account_file_inactive: 'Active app account, driver file deactivated (deactivate account?)' });

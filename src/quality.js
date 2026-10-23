@@ -24,7 +24,7 @@ export const CHECKS = {
   // gleicher Standort in abweichender Schreibweise (Dortmund/DORTMUND) – Auswertungen fassen sie zusammen, Stammdaten vereinheitlichen
   site_spelling: 'hinweis',
   // Fahrerakte & Auslesungen
-  driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis',
+  driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis', driver_account_file_inactive: 'fehler',
   // Fahrzeugverträge
   contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke',
   // letzter km-Stand unter „km bei Übernahme“ (Tippfehler im Vertrag oder Zähler) – Kontingent wird sonst nie überwacht (17.10.2026)
@@ -118,7 +118,8 @@ export async function dataQuality(env, user, envName, query = {}) {
       EXISTS(SELECT 1 FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0) AS has_card,
       EXISTS(SELECT 1 FROM tacho_downloads t WHERE t.driver_id=d.id AND t.cancelled_at IS NULL) AS has_download
       FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=1`).bind(envName).all(),
-    env.DB.prepare(`SELECT u.id, u.display_name FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id)`).bind(envName).all(),
+    // aktives Fahrerkonto, dessen Akte ausgeschieden (inaktiv) ist (Backlog 191): eigener Fehler – Konto arbeitete weiter (Push, Meldungen)
+    env.DB.prepare(`SELECT u.id, u.display_name, EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id) AS has_file FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id AND d.active=1)`).bind(envName).all(),
     env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL AND cancelled_at IS NULL`).bind(envName).all(),
     // nur aktive, bewertete Fahrzeuge schon in SQL – ruhende/außer Betrieb verbrauchten sonst die Grenze (18.10.2026)
     // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung;
@@ -303,7 +304,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!d.has_license) addD('driver_no_license', d);
     if (d.has_card && !d.has_download) addD('driver_card_no_download', d);
   }
-  for (const u of acc.results) items.push({ check: 'driver_account_no_file', severity: CHECKS.driver_account_no_file, vehicle_id: null, plate: null, detail: u.display_name });
+  for (const u of acc.results) { const ck = u.has_file ? 'driver_account_file_inactive' : 'driver_account_no_file'; items.push({ check: ck, severity: CHECKS[ck], vehicle_id: null, plate: null, detail: u.display_name }); }
   for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${!u.expires_at || u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}`,
     detail_args: { name: u.display_name, role: u.role, expired: !u.expires_at || u.expires_at < nowIso() } });
   const rank = { fehler: 0, luecke: 1, hinweis: 2 };

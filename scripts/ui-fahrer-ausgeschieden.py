@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test (23.10.2026, Backlog 190 „Fahrer verlässt das Unternehmen“): Fahrerakte unter „Stammdaten ändern“ auf inaktiv setzen,
 # verknüpftes App-Konto bleibt aktiv → Hinweis „App-Konto … weiter aktiv … Benutzer deaktivieren“ statt nur „✓“.
+# Backlog 191: „Neuer Fahrer“ mit derselben Personalnummer → Rückfrage nennt die ausgeschiedene Akte; Abbrechen öffnet sie, OK legt neu an.
 # Tablet 820 px (DE), Handy 390 px (UK), PC 1366 px (EN); kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os
 from playwright.sync_api import sync_playwright
@@ -34,6 +35,24 @@ with sync_playwright() as p:
         check(HINT[lang] in toasts and f'Fahrer {lang}' in toasts, f'{lang}/{w}: Hinweis Konto weiter aktiv ({toasts[:140]})')
         check(q.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/fahrer-ausgeschieden-{lang}-{w}.png')
+        # Wiedereinstellung: neue Akte mit gleicher Personalnummer
+        dlg = []; ans = {'ok': False}
+        def on_d(d):
+            dlg.append(d.message); (d.accept() if ans['ok'] else d.dismiss())
+        q.on('dialog', on_d)
+        for ok_ in (False, True):
+            ans['ok'] = ok_
+            q.goto(B + '/#/drivers'); q.wait_for_selector('#ndf', state='attached', timeout=15000)
+            q.evaluate("document.querySelector('#ndf').closest('details').open = true")
+            q.fill('#ndf [name=display_name]', f'Neu {lang}'); q.fill('#ndf [name=personnel_no]', f'FA-{lang}-{pid}')
+            q.click('#ndf button.btn'); q.wait_for_timeout(1500)
+            h = q.evaluate('location.hash')
+            if not ok_:
+                check(len(dlg) == 1 and f'Fahrer {lang}' in dlg[0], f'{lang}/{w}: Rückfrage nennt ausgeschiedene Akte ({dlg[:1]})')
+                check(h == '#/drivers/' + dr['d']['id'], f'{lang}/{w}: Abbrechen öffnet die alte Akte ({h})')
+                if SHOTS: q.screenshot(path=f'{SHOTS}/fahrer-wiedereinstellung-{lang}-{w}.png')
+            else:
+                check(len(dlg) == 2 and h.startswith('#/drivers/') and h != '#/drivers/' + dr['d']['id'], f'{lang}/{w}: OK legt neue Akte an ({h})')
         check(not errs, f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

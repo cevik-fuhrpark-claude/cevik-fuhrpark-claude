@@ -142,7 +142,8 @@ const BASICS_SQL = `SELECT
      WHERE NOT EXISTS (SELECT 1 FROM cases x WHERE x.id=q.cid AND x.status IN ('fahrzeug_freigegeben','abgelehnt'))
      AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=q.cid AND e.actor_id=q.user_id AND e.created_at >= q.created_at)
      GROUP BY q.cid, CASE WHEN q.cid IS NULL THEN q.vref END)) AS undelivered,
-  (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded`;
+  (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded,
+  (SELECT json_group_array(code) FROM workshops WHERE active=0) AS closed_ws`;
 
 // Empfänger einer nicht zugestellten dringenden Nachricht: [{name, role}] nach Name sortiert (gleiche Reihenfolge je Lauf – sonst würde der
 // Befund bei jedem Lauf neu geschrieben), höchstens 8 genannt, Rest als „+n“
@@ -157,7 +158,7 @@ export function undeliveredWho(list) {
 export async function agentBasics(env, environment) {
   const row = await env.DB.prepare(BASICS_SQL).bind(environment, new Date(Date.now() - 48 * 3600000).toISOString()).first();
   const out = {};
-  for (const k of ['settings', 'users', 'safety_open', 'locked', 'released_open', 'undelivered', 'excluded']) out[k] = JSON.parse(row?.[k] || '[]');
+  for (const k of ['settings', 'users', 'safety_open', 'locked', 'released_open', 'undelivered', 'excluded', 'closed_ws']) out[k] = JSON.parse(row?.[k] || '[]');
   return out;
 }
 
@@ -194,7 +195,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         AND (e.from_status IS NOT e.to_status OR e.action='reassign_workshop')), c.updated_at) AS status_since FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).all()).results;
 
-    const sitesWithUsers = new Set(activeUsers.filter((u) => u.role === 'workshop').map((r) => r.workshop_site));
+    // geschlossene Werkstatt (workshops.active=0, Backlog 191): ihr noch aktives Konto zählt nicht als Empfänger – vorher meldete der
+    // Master-Eingang „alles erledigt“, obwohl dort niemand mehr arbeitet; Handlungsempfehlung ohne „Werkstattbenutzer anlegen“ (dort unmöglich)
+    const closedWs = new Set(base.closed_ws || []);
+    const sitesWithUsers = new Set(activeUsers.filter((u) => u.role === 'workshop' && !closedWs.has(u.workshop_site)).map((r) => r.workshop_site));
 
     const safetyOpen = new Map(base.safety_open.map((r) => [r.case_id, r.n]));
 
@@ -244,7 +248,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         if (noUser) {
           add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
             ...fm('NO_WORKSHOP_RECIPIENT', { label, site: c.workshop_site }),
-            next_action: 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
+            next_action: closedWs.has(c.workshop_site) ? 'Werkstatt geschlossen – andere Werkstatt zuweisen.' : 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
         } else if (c.priority === 'kritisch' || (sla !== null && age > sla)) {
           add({ code: 'WORKSHOP_ACK_MISSING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: c.priority === 'kritisch' ? 1 : 0,
             ...fm('WORKSHOP_ACK_MISSING', { label, at: berlinDateTime(c.status_since), site: c.workshop_site }),
@@ -262,7 +266,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const crit = c.priority === 'kritisch' || !!c.safety_lock;
         add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: crit ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: 1,
           ...fm('NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site }),
-          next_action: 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
+          next_action: closedWs.has(c.workshop_site) ? 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.' : 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
       }
       if (c.status === 'wartet_teile') {
         add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',

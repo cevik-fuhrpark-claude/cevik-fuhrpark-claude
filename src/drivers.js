@@ -160,12 +160,20 @@ export async function createDriver(env, user, envName, body) {
   if (pno && others.some((x) => x.personnel_no && pnoKey(x.personnel_no) === pnoKey(pno))) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
   // gleichnamige aktive Fahrer nur als Hinweis (gleiche Namen sind möglich) – wie `duplicate_plates` bei Fahrzeugen
   const duplicateNames = others.filter((x) => normName(x.display_name) === normName(name)).map((x) => ({ id: x.id, display_name: x.display_name, personnel_no: x.personnel_no }));
+  // Wiedereinstellung (Backlog 191): ausgeschiedene Akte mit gleicher Personalnummer (pnoKey) oder gleichem Namen – die App fragt nach
+  // (`check_inactive`), damit nicht still eine zweite Akte entsteht (Führerschein-Nachweise/Auslesungen blieben in der alten, die danach
+  // wegen der Personalnummer nicht mehr reaktivierbar war); ohne Schalter (Import, Integrationen) wie bisher
+  if (body.check_inactive && !body.confirm_inactive) {
+    const inact = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=0').bind(envName).all()).results
+      .filter((x) => (pno && x.personnel_no && pnoKey(x.personnel_no) === pnoKey(pno)) || normName(x.display_name) === normName(name));
+    if (inact.length) throw conflict('inactive_match', 'Es gibt eine ausgeschiedene Fahrerakte mit gleicher Personalnummer oder gleichem Namen – bei Wiedereinstellung besser diese reaktivieren.', { matches: inact.slice(0, 5) });
+  }
   let r;
   try {
     r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10
       WHERE ?4 IS NULL OR NOT EXISTS (SELECT 1 FROM drivers x WHERE x.environment=?2 AND x.active=1 AND lower(trim(x.personnel_no))=lower(?4))`)
       .bind(id, envName, name, pno, str(body.site, { max: 60, field: 'Standort' }), userId, str(body.note, { max: 1000, field: 'Bemerkung' }), user.id, now, now).run();
-  } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
+  } catch (e) { if (String(e.message).includes('UNIQUE')) throw await linkedConflict(env, userId); throw e; }
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
   await audit(env, user.id, 'driver.create', id, { name, environment: envName, ...(pno ? { personnel_no: pno } : {}), ...(duplicateNames.length ? { duplicate_names: duplicateNames.length } : {}) });
   return { id, duplicate_names: duplicateNames };
@@ -175,6 +183,12 @@ export async function createDriver(env, user, envName, body) {
 // die App blendet sie in der Kontoauswahl aus, sonst endete das Speichern mit 409 (Backlog 101, 20.10.2026)
 export async function linkedUserIds(env) {
   return (await env.DB.prepare('SELECT user_id FROM drivers WHERE user_id IS NOT NULL').all()).results.map((r) => r.user_id);
+}
+
+// Konto schon verknüpft: welche Akte (oft eine ausgeschiedene, Backlog 191) – App nennt sie, statt nur „bereits zugeordnet“
+async function linkedConflict(env, userId) {
+  const d = userId ? await env.DB.prepare('SELECT id, display_name, active, environment FROM drivers WHERE user_id=?').bind(userId).first() : null;
+  return conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.', d ? { linked_driver: { id: d.id, display_name: d.display_name, active: !!d.active, environment: d.environment } } : undefined);
 }
 
 async function validLinkedUser(env, envName, raw) {
@@ -222,7 +236,7 @@ export async function updateDriver(env, user, envName, id, body) {
       }
       if (pnoCheck && (!r.meta || r.meta.changes !== 1)) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
     }
-  } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
+  } catch (e) { if (String(e.message).includes('UNIQUE')) throw await linkedConflict(env, f.user_id); throw e; }
   // alt → neu nur der tatsächlich geänderten Felder (22.10.2026: vorher nur Feldnamen inkl. expected_updated_at – alte Werte verloren);
   // verknüpftes App-Konto als Name (eine Abfrage nur bei Kontowechsel), Bemerkung gekürzt
   const changed = {};

@@ -16790,7 +16790,7 @@ await test('Fehlersuche 22.10. (Schnittstelle/Befunde): kurzes Token-Secret = ni
   ok(!(await kmItem()), 'späterer Stand ≥ vorigem: geklärt');
   // 5./6. Quelltext: Konto-Befunde verlinkt, Kosten-Hinweis nennt nur Mögliches (DE/UK/EN)
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.check === 'invite_pending' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers'"), 'Datenqualität: Konto-Zeilen mit Link');
+  ok(app.includes("i.check === 'invite_pending' || i.check === 'driver_account_file_inactive' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers'"), 'Datenqualität: Konto-Zeilen mit Link');
   const ag = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
   ok(!ag.includes('Rechnungsbeträge der Fremdleistungen nachtragen') && ag.includes('lassen sich nach der Freigabe nicht nachtragen'), 'Kosten-Hinweis ohne unmögliche Aktion');
 });
@@ -18587,6 +18587,48 @@ await test('Werkstatt geschlossen / Fahrer ausgeschieden (Backlog 190): Meldung 
   ok(app.includes("if (r && r.account_still_active) h.push(t('dr_left_account_active')"), 'App zeigt den Hinweis');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].dr_left_account_active.includes('{name}') && STRINGS[l].ws_closed, l); ok(PLURALS[l].dr_left_assignments && PLURALS[l].dr_left_assignments.other.includes('{n}'), l + ' Mehrzahl'); }
+});
+
+await test('Wiedereinstellung (Backlog 191): neue Fahrerakte mit gleicher Personalnummer/gleichem Namen wie eine ausgeschiedene → Rückfrage (inactive_match) nur mit check_inactive, Bestätigung legt an; 409 „Konto bereits zugeordnet“ nennt die Akte; Datenqualität meldet aktives Konto mit ausgeschiedener Akte', async () => {
+  const envF = (await users.fleet.get('/api/me')).data.active_environment;
+  const nu = await owner.post('/api/users', { username: 'wieder.fahrer191', display_name: 'Wieder Fahrer 191', role: 'driver', environment: envF }); eq(nu.status, 201);
+  const uid = (await env.DB.prepare(`SELECT id FROM users WHERE username='wieder.fahrer191'`).first()).id;
+  await new Client(worker, env, 'wf191').post('/api/invite/accept', { token: nu.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const old = await users.fleet.post('/api/drivers', { display_name: 'Wieder Fahrer 191', personnel_no: '0191', user_id: uid }); eq(old.status, 201);
+  eq((await users.fleet.patch(`/api/drivers/${old.data.id}`, { active: false })).status, 200);
+  // Datenqualität: aktives Konto, Akte ausgeschieden → Fehler
+  const dq = (await users.fleet.get('/api/admin/data-quality')).data;
+  const it = (dq.items || dq.issues || []).find((i) => i.check === 'driver_account_file_inactive' && i.detail === 'Wieder Fahrer 191');
+  ok(it && it.severity === 'fehler', 'Datenqualität: ' + JSON.stringify(it));
+  ok(!(dq.items || dq.issues || []).some((i) => i.check === 'driver_account_no_file' && i.detail === 'Wieder Fahrer 191'), 'nicht als „ohne Akte“');
+  // neue Akte mit „191“ (ohne führende Null) → Rückfrage
+  const q1 = await users.fleet.post('/api/drivers', { display_name: 'W. Fahrer', personnel_no: '191', check_inactive: true });
+  eq(q1.status, 409); eq(q1.data.error, 'inactive_match'); eq(q1.data.matches[0].id, old.data.id);
+  const q2 = await users.fleet.post('/api/drivers', { display_name: 'wieder  fahrer 191', check_inactive: true }); eq(q2.data.error, 'inactive_match', 'auch über den Namen');
+  // Konto der alten Akte verknüpfen → 409 nennt die (ausgeschiedene) Akte
+  const q3 = await users.fleet.post('/api/drivers', { display_name: 'Neu 191', personnel_no: 'N-191', user_id: uid, check_inactive: true });
+  eq(q3.status, 409); eq(q3.data.error, 'duplicate'); eq(q3.data.linked_driver.id, old.data.id); eq(q3.data.linked_driver.active, false);
+  // bestätigt bzw. ohne Schalter (Import/Integration): wie bisher angelegt
+  eq((await users.fleet.post('/api/drivers', { display_name: 'W. Fahrer', personnel_no: '191', check_inactive: true, confirm_inactive: true })).status, 201);
+  eq((await users.fleet.post('/api/drivers', { display_name: 'Wieder Fahrer 191' })).status, 201, 'ohne Schalter unverändert');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("b.check_inactive = true;") && app.includes("r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }); }"), 'App fragt nach');
+  ok(app.includes("toast(linkedMsg(err), true)"), 'App nennt die verknüpfte Akte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dr_inactive_match', 'dr_linked_to', 'dq_driver_account_file_inactive']) ok(STRINGS[l][k], `${l}: ${k}`);
+  // Fuhrparkagent: Konto einer geschlossenen Werkstatt zählt nicht als Empfänger, Empfehlung ohne „Werkstattbenutzer anlegen“
+  eq((await owner.post('/api/vehicles', { plate: 'WS-ZU 191', vin: 'WDB96340310591001', site: 'München' })).status, 201);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310591001', description: 'Auftrag an geschlossene Werkstatt', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const v0 = (await users.fleet.get(`/api/cases/${cid}`)).data.case.version;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: v0, note: 'Bremse prüfen und instand setzen', payload: { workshop_site: 'MUENCHEN' } })).status, 200);
+  await env.DB.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  try {
+    eq((await users.fleet.post('/api/agent/run')).status, 200);
+    const f = await env.DB.prepare(`SELECT next_action FROM agent_findings WHERE case_id=? AND finding_code='NO_WORKSHOP_RECIPIENT' AND status='offen'`).bind(cid).first();
+    eq(f && f.next_action, 'Werkstatt geschlossen – andere Werkstatt zuweisen.', 'Befund trotz aktivem Konto der geschlossenen Werkstatt');
+  } finally { await env.DB.prepare(`UPDATE workshops SET active=1 WHERE code='MUENCHEN'`).run(); }
+  eq((await users.fleet.post('/api/agent/run')).status, 200);
+  eq(await env.DB.prepare(`SELECT 1 AS x FROM agent_findings WHERE case_id=? AND finding_code='NO_WORKSHOP_RECIPIENT' AND status='offen'`).bind(cid).first(), null, 'wieder offen → Befund erledigt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
