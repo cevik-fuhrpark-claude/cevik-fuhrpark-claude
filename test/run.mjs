@@ -19145,7 +19145,7 @@ await test('Backlog 211 (Totalschaden): Werkstattauftrag „Ohne Reparatur beend
   }
 });
 
-await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): Meldeformular zeigt bei Fahrtenschreiber/Fahrerkarte die Pflichten laut VO (EU) 165/2014 (DE/UK/EN), auch nach wiederhergestelltem Entwurf; „Tachometer“ löst nichts aus', async () => {
+await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): Meldeformular zeigt bei Fahrtenschreiber/Fahrerkarte die Pflichten laut VO (EU) 165/2014 (DE/UK/EN), auch nach wiederhergestelltem Entwurf (Listener vor dem Wiederherstellen); „Tachometer“ löst nichts aus', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/const TACHO_HINT = \/(.+)\/i;/); ok(m, 'TACHO_HINT im Meldeformular');
   const re = new RegExp(m[1], 'i');
@@ -19158,9 +19158,9 @@ await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): M
     ok(/37/.test(st[0]) && /37/.test(st[1]) && /29, 35/.test(st[2]), 'Artikelangaben ' + l);
     ok(/7/.test(st[2]) && /15/.test(st[2]), '7/15 Kalendertage ' + l);
   }
-  // Hinweis-Panel im Formular, Prüfung nach dem Wiederherstellen des Entwurfs (sonst erst beim nächsten Tippen)
+  // Hinweis-Panel im Formular; beim Wiederherstellen des Entwurfs meldet formDraft.restore ein input-Ereignis – der Listener steht davor
   ok(app.includes(`<div id="tacho" class="panel" hidden role="status">`), 'Panel #tacho');
-  ok(/bindFormDraft\('new'[^\n]*\n\s*hints\(\);/.test(app), 'hints() nach bindFormDraft');
+  ok(app.indexOf("$('#d').addEventListener('input', hints)") > 0 && app.indexOf("$('#d').addEventListener('input', hints)") < app.indexOf("bindFormDraft('new'"), 'Listener vor bindFormDraft');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

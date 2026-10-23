@@ -1499,7 +1499,6 @@ async function viewNew(preId) {
   $('#d').addEventListener('input', hints);
   photoLimitWatch($('#ph'));
   const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);
-  hints(); // wiederhergestellter Entwurf: Hinweise gleich zeigen (das input-Ereignis kommt erst beim nächsten Tippen)
   const key = uid();
   // Suchfeld: Enter („Los“ am Handy) filtert nur – sendet nicht ab; ein ausgeblendetes gewähltes Fahrzeug wird abgewählt (19.10.2026:
   // Meldung ging sonst an das vorausgewählte, durch den Filter verdeckte Fahrzeug)
