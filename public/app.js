@@ -4402,7 +4402,7 @@ function helpSections(r) {
   // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
   if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'exports', 'push', 'login2fa'];
   // Disposition führt keine Abfahrtskontrolle durch (Server 403, kein Menüpunkt) – Abschnitt nicht anbieten (20.10.2026)
-  const parts = ['report', 'accident', 'prio', ...(r === 'dispatch' ? [] : ['check']), 'push', 'offline', 'login2fa'];
+  const parts = ['report', 'accident', 'tachofault', 'prio', ...(r === 'dispatch' ? [] : ['check']), 'push', 'offline', 'login2fa'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');

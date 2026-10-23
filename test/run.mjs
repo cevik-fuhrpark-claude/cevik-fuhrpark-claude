@@ -19160,6 +19160,12 @@ await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): M
   }
   // Hinweis-Panel im Formular; beim Wiederherstellen des Entwurfs meldet formDraft.restore ein input-Ereignis – der Listener steht davor
   ok(app.includes(`<div id="tacho" class="panel" hidden role="status">`), 'Panel #tacho');
+  // Backlog 213: Hilfe-Abschnitt „Fahrtenschreiber gestört“ für alle meldenden Rollen, Pflichten wie im Formular, Weg über „Melden“
+  ok(app.includes("const parts = ['report', 'accident', 'tachofault', 'prio',"), 'Hilfe-Abschnitt tachofault');
+  for (const l of ['de', 'uk', 'en']) {
+    const h = STRINGS[l].help_tachofault_s; ok(STRINGS[l].help_tachofault_t && h, 'Hilfe ' + l);
+    ok(h.includes(STRINGS[l].tacho_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe nennt Pflichten und „' + STRINGS[l].nav_new + '“ ' + l);
+  }
   ok(app.indexOf("$('#d').addEventListener('input', hints)") > 0 && app.indexOf("$('#d').addEventListener('input', hints)") < app.indexOf("bindFormDraft('new'"), 'Listener vor bindFormDraft');
 });
 
