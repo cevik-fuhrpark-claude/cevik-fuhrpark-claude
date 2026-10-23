@@ -35,9 +35,36 @@ export function warnDaysOf(settings) {
   return Number.isFinite(n) && n >= 0 ? n : SETTING_DEFAULTS.contract_warn_days;
 }
 
+// km gegen das Kontingent (Teil von contractStatus); forecast = lineare Hochrechnung erlaubt (nicht bei beendeten Verträgen)
+function kmStatus(c, latest, forecast) {
+  if (c.start_km === null || c.start_km === undefined) return { status: 'ohne_start', allowance: c.km_allowance };
+  // km-Zähler nach Vertragsbeginn gesunken (Tachotausch o. Ä.): gefahrene km gegen das Kontingent nicht berechenbar – nie schätzen
+  // Gilt nur, bis der Vertrag danach gespeichert wurde (km bei Übernahme geprüft) – wie `km_basis_at` bei Prüfterminen; vorher blieb ein
+  // korrigierter Tippfehler für immer „nicht berechenbar“ und eine echte Überschreitung unbemerkt (17.10.2026)
+  if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !((c.km_basis_at || c.updated_at) && (c.km_basis_at || c.updated_at) > (latest.drop_rec || latest.drop_at))) return { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
+  if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date)) return { status: 'ohne_km', allowance: c.km_allowance };
+  // km-Stand seit Beginn liegt unter „km bei Übernahme“ (Tippfehler im Vertrag oder beim km-Stand) – nicht „kein km-Stand“ (20.10.2026); ohne Zähler-Rücksprung seit Beginn
+  // auch nach bestätigtem Zähler-Rücksprung (Tachotausch): Hinweis statt „kein km-Stand“ – vorher blieb eine Überschreitung unsichtbar (20.10.2026)
+  if (latest.km < c.start_km) return { status: 'unter_start', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, start_km: c.start_km };
+  const driven = latest.km - c.start_km;
+  const km = { status: driven > c.km_allowance ? 'ueber' : 'ok', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, driven, remaining: c.km_allowance - driven, forecast_driven: null };
+  const measuredDay = berlinDate(latest.measured_at);
+  // Fahrzeug außer Betrieb (vehicle_active = 0): keine Hochrechnung – es fährt nicht mehr; echte Überschreitung und Fristen bleiben (22.10.2026)
+  if (c.start_date && c.end_date && forecast && km.status === 'ok' && measuredDay < c.end_date && c.vehicle_active !== 0 && c.vehicle_active !== false) {
+    const elapsed = days(c.start_date, measuredDay); const total = days(c.start_date, c.end_date);
+    if (elapsed >= FORECAST_MIN_DAYS && total > 0) {
+      km.forecast_driven = Math.round(driven * total / elapsed);
+      if (km.forecast_driven > c.km_allowance) km.status = 'prognose_ueber';
+    }
+  }
+  return km;
+}
+
 // Status eines Vertrags (reine Funktion, für Akte, Übersicht und Fuhrparkagent gleich)
-export function contractStatus(c, latest, today, warnDays) {
-  if (c.ended_on) return { overall: 'beendet', end: null, notice: null, km: null };
+// endLatest (Backlog 197): letzte Ablesung bis Ende des Berliner Tags `ended_on` – beendeter Vertrag zeigt km zur Endabrechnung
+// (gleiche Regeln, ohne Prognose; Status bleibt „beendet“, kein Agentenbefund). Ohne endLatest wie bisher km: null bzw. „kein km-Stand“.
+export function contractStatus(c, latest, today, warnDays, endLatest) {
+  if (c.ended_on) return { overall: 'beendet', end: null, notice: null, km: endLatest !== undefined && c.km_allowance ? kmStatus(c, endLatest, false) : null };
   let end = null; let notice = null; let km = null;
   if (c.end_date) {
     const d = days(today, c.end_date);
@@ -48,30 +75,7 @@ export function contractStatus(c, latest, today, warnDays) {
       notice = { by, days: nd, status: d < 0 ? null : nd < 0 ? 'verstrichen' : nd <= warnDays ? 'bald' : 'ok' };
     }
   }
-  if (c.km_allowance) {
-    if (c.start_km === null || c.start_km === undefined) km = { status: 'ohne_start', allowance: c.km_allowance };
-    // km-Zähler nach Vertragsbeginn gesunken (Tachotausch o. Ä.): gefahrene km gegen das Kontingent nicht berechenbar – nie schätzen
-    // Gilt nur, bis der Vertrag danach gespeichert wurde (km bei Übernahme geprüft) – wie `km_basis_at` bei Prüfterminen; vorher blieb ein
-    // korrigierter Tippfehler für immer „nicht berechenbar“ und eine echte Überschreitung unbemerkt (17.10.2026)
-    else if (latest && latest.drop_at && (!c.start_date || berlinDate(latest.drop_at) >= c.start_date) && !((c.km_basis_at || c.updated_at) && (c.km_basis_at || c.updated_at) > (latest.drop_rec || latest.drop_at))) km = { status: 'zaehler', allowance: c.km_allowance, drop_at: latest.drop_at };
-    else if (!latest || (c.start_date && berlinDate(latest.measured_at) < c.start_date)) km = { status: 'ohne_km', allowance: c.km_allowance };
-    // km-Stand seit Beginn liegt unter „km bei Übernahme“ (Tippfehler im Vertrag oder beim km-Stand) – nicht „kein km-Stand“ (20.10.2026); ohne Zähler-Rücksprung seit Beginn
-    // auch nach bestätigtem Zähler-Rücksprung (Tachotausch): Hinweis statt „kein km-Stand“ – vorher blieb eine Überschreitung unsichtbar (20.10.2026)
-    else if (latest.km < c.start_km) km = { status: 'unter_start', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, start_km: c.start_km };
-    else {
-      const driven = latest.km - c.start_km;
-      km = { status: driven > c.km_allowance ? 'ueber' : 'ok', allowance: c.km_allowance, current_km: latest.km, measured_at: latest.measured_at, driven, remaining: c.km_allowance - driven, forecast_driven: null };
-      const measuredDay = berlinDate(latest.measured_at);
-      // Fahrzeug außer Betrieb (vehicle_active = 0): keine Hochrechnung – es fährt nicht mehr; echte Überschreitung und Fristen bleiben (22.10.2026)
-      if (c.start_date && c.end_date && km.status === 'ok' && measuredDay < c.end_date && c.vehicle_active !== 0 && c.vehicle_active !== false) {
-        const elapsed = days(c.start_date, measuredDay); const total = days(c.start_date, c.end_date);
-        if (elapsed >= FORECAST_MIN_DAYS && total > 0) {
-          km.forecast_driven = Math.round(driven * total / elapsed);
-          if (km.forecast_driven > c.km_allowance) km.status = 'prognose_ueber';
-        }
-      }
-    }
-  }
+  if (c.km_allowance) km = kmStatus(c, latest, true);
   const handeln = (end && end.status === 'abgelaufen') || (km && km.status === 'ueber');
   const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start'));
   return { overall: handeln ? 'handeln' : hinweis ? 'hinweis' : 'ok', end, notice, km };
@@ -237,14 +241,29 @@ export async function endContract(env, user, id, body) {
   return { id, ended_on: on };
 }
 
+// Backlog 197: letzte Ablesung (und letzter km-Rücksprung) bis Ende des Berliner Tags `ended_on` je beendetem Vertrag mit Kontingent –
+// eine Sammelabfrage über json_each, nur wenn es solche Verträge gibt. Ergebnis Map Vertrags-ID → {km, measured_at, drop_at, drop_rec} | null
+export async function endKmByContract(env, list) {
+  const want = list.filter((c) => c.ended_on && c.km_allowance);
+  const out = new Map(); if (!want.length) return out;
+  const nextDay = (d) => new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const arg = JSON.stringify(want.map((c) => [c.id, c.vehicle_id, berlinDayStartIso(nextDay(c.ended_on))]));
+  const rows = (await env.DB.prepare(`SELECT json_extract(j.value, '$[0]') AS id,
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=json_extract(j.value, '$[1]') AND o.measured_at < json_extract(j.value, '$[2]') ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS lk,
+      (SELECT MAX(o.measured_at) || '|' || MAX(o.created_at) FROM odometer_readings o WHERE o.vehicle_id=json_extract(j.value, '$[1]') AND o.km_drop_prev IS NOT NULL AND o.measured_at < json_extract(j.value, '$[2]')) AS dr
+    FROM json_each(?) j`).bind(arg).all()).results;
+  for (const r of rows) { if (!r.lk) { out.set(r.id, null); continue; } const [k, at] = r.lk.split('|'); out.set(r.id, { km: Number(k), measured_at: at, ...parseKmDrop(r.dr) }); }
+  return out;
+}
+
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
 export async function vehicleContracts(env, vehicleId, latest, settings, envName) {
   const rows = (await env.DB.prepare(`SELECT c.*, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
-  const today = berlinDate(); const w = warnDaysOf(settings);
-  return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w) }));
+  const today = berlinDate(); const w = warnDaysOf(settings); const endKm = await endKmByContract(env, rows);
+  return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w, endKm.has(c.id) ? endKm.get(c.id) : undefined) }));
 }
 
 const ORDER = { handeln: 0, hinweis: 1, ok: 2, beendet: 3 };
@@ -269,16 +288,22 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Filter „Fahrzeug-Standort“ (Standort laut Fahrzeugstamm, Schreibweisen zusammengefasst) – vor den Zählern, damit diese zum Standort passen
   const sel = siteSelection(rows.results.map((r) => ({ site: r.vehicle_site })), query.site);
   // Vertragsart ebenfalls vor den Zählern (vorher „Handlungsbedarf (2)“ bei leerer Liste der gewählten Art, 17.10.2026)
-  let list = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind)).map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded, status: contractStatus(c, latestKm.get(c.vehicle_id), today, w) }));
+  const pre = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind));
+  // Stichtag vor dem Beenden: Vertrag lief damals noch – Status wie laufend (km bis zum Stichtag), beendet erst ab `ended_on`
+  const endKm = await endKmByContract(env, pre.filter((c) => !(asOf && c.ended_on && c.ended_on > asOf)));
+  let list = pre.map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded,
+    status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, endKm.has(c.id) ? endKm.get(c.id) : undefined) }));
+  // zum Stichtag beendet = vor oder am Stichtag beendet (sonst lief der Vertrag damals noch)
+  const ended = (c) => !!c.ended_on && !(asOf && c.ended_on > asOf);
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
-  for (const c of list) { if (c.ended_on) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
+  for (const c of list) { if (ended(c)) counts.beendet++; else { counts.aktiv++; if (c.status.overall !== 'ok') counts.aktion++; } }
   // laufend = nicht beendet und heute innerhalb der Laufzeit, unabhängig vom Listenfilter (17.10.2026: abgelaufene Verträge und der Filter
   // „Handlungsbedarf“ verfälschten die Summe gegenüber dem Kostenbericht)
   // ruhende Fahrzeuge zählen nicht (wie im Kostenbericht; 18.10.2026)
-  const running = list.filter((c) => !c.vehicle_eval_excluded && !c.ended_on && (!c.end_date || c.end_date >= today) && (!c.start_date || c.start_date <= today));
-  if (filter === 'aktiv') list = list.filter((c) => !c.ended_on);
-  else if (filter === 'aktion') list = list.filter((c) => !c.ended_on && c.status.overall !== 'ok');
-  else if (filter === 'beendet') list = list.filter((c) => c.ended_on);
+  const running = list.filter((c) => !c.vehicle_eval_excluded && !ended(c) && (!c.end_date || c.end_date >= today) && (!c.start_date || c.start_date <= today));
+  if (filter === 'aktiv') list = list.filter((c) => !ended(c));
+  else if (filter === 'aktion') list = list.filter((c) => !ended(c) && c.status.overall !== 'ok');
+  else if (filter === 'beendet') list = list.filter((c) => ended(c));
   list.sort((a, b) => ORDER[a.status.overall] - ORDER[b.status.overall] || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')) || a.plate.localeCompare(b.plate));
   // Summe der Monatsraten nur über aktive Verträge mit hinterlegter Rate (fehlende Rate = unbewertet, nie 0 €)
   const active = running;

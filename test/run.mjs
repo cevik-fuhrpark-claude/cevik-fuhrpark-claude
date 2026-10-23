@@ -18765,6 +18765,42 @@ await test('Backlog 196 (Monatsende Leasing): Vertragsübersicht/CSV zum Stichta
   ok(app.includes("(asof ? '&as_of=' + asof : '')") && app.includes("sq.replace(/&as_of=[^&]*/, '')"), 'Liste/CSV mit Stichtag, Kalender ohne');
 });
 
+await test('Backlog 197: beendeter Vertrag mit km-Kontingent zeigt km bis zum Beenden (Endabrechnung, ohne Prognose, kein Befund); Stichtag vor dem Beenden zählt ihn als laufend', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'end.inhaber', display_name: 'End' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await own.post('/api/vehicles', { plate: 'EN-DE 1', vin: 'WDB96340310597001', site: 'Dortmund' })).status, 201);
+  eq((await own.post('/api/vehicles', { plate: 'EN-DE 2', vin: 'WDB96340310597002', site: 'Dortmund' })).status, 201);
+  const V1 = 'VIN:WDB96340310597001'; const V2 = 'VIN:WDB96340310597002';
+  const odo = async (v, km, d) => eq((await own.post(`/api/vehicles/${v}/odometer`, { km, measured_on: d })).status, 201, `km ${km} ${d}`);
+  const ct = async (v, b) => { const x = await own.post(`/api/vehicles/${v}/contracts`, { kind: 'leasing', partner: 'LeaseCo', evidence: 'Vertrag', ...b }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  const d1 = await ct(V1, { contract_no: 'D1', start_date: day(-400), end_date: day(300), km_allowance: 200000, start_km: 0 });
+  await odo(V1, 1000, day(-400)); await odo(V1, 150000, day(-40));
+  eq((await own.post(`/api/contracts/${d1}/end`, { ended_on: day(-40), end_note: 'Ablöse' })).status, 200);
+  await ct(V1, { contract_no: 'D2', start_date: day(-39), end_date: day(700), km_allowance: 120000, start_km: 150000 });
+  await odo(V1, 155000, day(-10));
+  const d3 = await ct(V2, { contract_no: 'D3', start_date: day(-100), end_date: day(300), km_allowance: 50000, start_km: 10000 });
+  eq((await own.post(`/api/contracts/${d3}/end`, { ended_on: day(-60), end_note: 'Rückgabe' })).status, 200);
+  const row = (ov, no) => ov.contracts.find((c) => c.contract_no === no);
+  const ov = (await own.get('/api/contracts?filter=beendet')).data;
+  const k1 = row(ov, 'D1').status; eq(k1.overall, 'beendet'); eq(k1.km.driven, 150000, 'Ablesung bis zum Beenden, nicht die spätere'); eq(k1.km.remaining, 50000); eq(k1.km.forecast_driven, null);
+  eq(row(ov, 'D3').status.km.status, 'ohne_km', 'ohne Ablesung: nichts erfunden');
+  // Fahrzeugakte rechnet gleich
+  const ak = (await own.get(`/api/vehicles/${V1}`)).data.contracts; eq(ak.find((c) => c.contract_no === 'D1').status.km.driven, 150000);
+  eq(ak.find((c) => c.contract_no === 'D2').status.km.driven, 5000);
+  // CSV
+  const csv = new TextDecoder().decode((await own.get('/api/contracts?filter=beendet&format=csv')).data);
+  const l1 = csv.split('\r\n').find((l) => l.includes(';D1;')).split(';'); eq(l1.slice(20, 24).join('|'), `150000|${day(-40).split('-').reverse().join('.')}|-50000|im Kontingent`);
+  // kein Agentenbefund für beendete Verträge
+  eq((await own.post('/api/agent/run', {})).status, 200);
+  ok(!(await e.DB.prepare(`SELECT COUNT(*) AS n FROM agent_findings WHERE subject_key LIKE ?`).bind(d1 + '%').first()).n, 'kein Befund D1');
+  // Stichtag vor dem Beenden: D1 lief noch (aktiv, Status laufend, km bis Stichtag), D3 beendet erst danach ebenso
+  const ao = (await own.get(`/api/contracts?filter=aktiv&as_of=${day(-70)}`)).data;
+  ok(row(ao, 'D1') && row(ao, 'D1').status.overall !== 'beendet', 'D1 zum Stichtag laufend'); eq(row(ao, 'D1').status.km.driven, 1000, 'km bis zum Stichtag');
+  ok(row(ao, 'D3'), 'D3 zum Stichtag laufend'); eq(ao.counts.beendet, 0, 'zum Stichtag nichts beendet');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
