@@ -8,7 +8,7 @@ import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, case
 import { sha256Hex, sha256HexSync, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt, maintKindLang } from './notify.js';
-import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone } from './maintenance.js';
+import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone, FIXING_CASE_SQL, defectCase } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
 import { maintenanceWarnDays } from './settings.js';
@@ -47,7 +47,7 @@ export async function listVehicles(env, user, envName, query = {}) {
         AND e.result IN ('gefaehrliche_maengel','verkehrsunsicher')
         AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
           AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
-        AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date)
+        AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date AND ${FIXING_CASE_SQL})
         ORDER BY e.result='verkehrsunsicher' DESC, e.done_date DESC LIMIT 1) AS failed_insp,
       (SELECT COUNT(*) FROM vehicle_notes n WHERE n.vehicle_id=v.id AND n.environment=? AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?)) AS notes_active,
       -- offene Herstellerrückrufe (noch nicht durchgeführt; gleiche Regel wie Vorgangs-Kurzinfo „Zum Fahrzeug“), Frist nur laut Schreiben
@@ -116,13 +116,13 @@ export async function listVehicles(env, user, envName, query = {}) {
 }
 
 // „Prüfung nicht bestanden“ für die Fahrzeugakte – gleiche Regel wie die Unterabfrage in listVehicles:
-// jüngste Prüfung (≤ 12 Monate) mit gefährlichen Mängeln/verkehrsunsicher, keine neuere derselben Art, kein Vorgang (außer abgelehnt) seitdem;
+// jüngste Prüfung (≤ 12 Monate) mit gefährlichen Mängeln/verkehrsunsicher, keine neuere derselben Art, kein passender Vorgang (FIXING_CASE_SQL, außer abgelehnt) seitdem;
 // verkehrsunsicher vor gefährlichen Mängeln, dann neueste. Nur Information – ändert keine Verfügbarkeit.
 export function failedInspectionOf(v, events, cases, since) {
   if (v.eval_excluded) return null;
   const newer = (e2, e) => e2.kind === e.kind && e2.id !== e.id && (e2.done_date > e.done_date || (e2.done_date === e.done_date && e2.created_at > e.created_at));
   const hits = events.filter((e) => e.done_date >= since && ['gefaehrliche_maengel', 'verkehrsunsicher'].includes(e.result)
-    && !events.some((e2) => newer(e2, e)) && !cases.some((c) => c.status !== 'abgelehnt' && berlinDate(c.created_at) >= e.done_date)); // Berliner Tag wie SQL (17.10.2026)
+    && !events.some((e2) => newer(e2, e)) && !cases.some((c) => c.status !== 'abgelehnt' && berlinDate(c.created_at) >= e.done_date && defectCase(c, e))); // Berliner Tag wie SQL (17.10.2026)
   hits.sort((a, b) => (b.result === 'verkehrsunsicher') - (a.result === 'verkehrsunsicher') || (b.done_date > a.done_date ? 1 : b.done_date < a.done_date ? -1 : 0));
   return hits[0] ? { kind: hits[0].kind, done_date: hits[0].done_date, result: hits[0].result, event_id: hits[0].id } : null;
 }
@@ -145,14 +145,14 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     let reason = null; try { reason = JSON.parse(deact.detail || '{}').reason || null; } catch { reason = null; }
     inactiveInfo = isManager(user) ? { since: deact.created_at, reason, by_name: deact.display_name || null } : { since: deact.created_at };
   }
-  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id, reporter_id, suggested_workshop_site
+  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id, reporter_id, (SELECT u.role FROM users u WHERE u.id=cases.reporter_id) AS reporter_role, suggested_workshop_site
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
   // Vorgänge, die die Person öffnen darf – Verweise (Kontrolle, Reifenereignis) nur darauf verlinken (22.10.2026: Werkstatt sah in Akte/Zeitleiste
   // „Details“-Links auf Vorgänge einer anderen Werkstatt → „Vorgang nicht gefunden“)
   const okCase = ['owner', 'fleet', 'dispatch', 'viewer'].includes(user.role) ? null : new Set(allCases.filter((c) => caseAccess(user, c)).map((c) => c.id));
   if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');
-  caseRows = caseRows.map(({ reporter_id: _r, suggested_workshop_site: _s, ...c }) => c);
+  caseRows = caseRows.map(({ reporter_id: _r, reporter_role: _rr, suggested_workshop_site: _s, ...c }) => c);
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.received_at, i.case_id, u.display_name AS performed_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS performed_by_role
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT ?`).bind(vehicleId, envName, inspCap).all()).results;
   // letzte Abfahrtskontrolle (nur Information); meist in den letzten 50 Kontrollen enthalten, sonst gezielt nachladen

@@ -10048,9 +10048,9 @@ await test('Prüftermine/Fahrerzuordnung: älterer Bericht verschiebt keine Fäl
   eq(db.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE valid_to IS NULL OR valid_to > ?`).all(new Date().toISOString()).map((x) => x.vehicle_id).join(), 'VIN:WDB00000000000002', 'Wechsel beendet das bisherige:');
   // 7. „Prüfmangel ohne Auftrag“/„Prüfung nicht bestanden“: Auftrag am Prüftag kurz nach Mitternacht Berlin (UTC noch Vortag) zählt
   const pd = d(-1); const c0 = new Date(Date.parse(pd + 'T00:00:00Z') - 1800000).toISOString(); // Vortag 23:30 UTC = Prüftag 00:30/01:30 Berlin
-  eq(veh.failedInspectionOf({ eval_excluded: 0 }, [{ id: 'x', kind: 'HU', done_date: pd, result: 'verkehrsunsicher', created_at: now }], [{ status: 'gemeldet', created_at: c0 }], d(-12)), null, 'Akte nach Berliner Tag:');
+  eq(veh.failedInspectionOf({ eval_excluded: 0 }, [{ id: 'x', kind: 'HU', done_date: pd, result: 'verkehrsunsicher', created_at: now }], [{ status: 'gemeldet', created_at: c0, maintenance_event_id: 'x' }], d(-12)), null, 'Akte nach Berliner Tag:');
   run(`INSERT INTO maintenance_events(id,rule_id,vehicle_id,kind,done_date,evidence,source,result,created_at) VALUES('ev7','r7',?,'HU',?,'B','erledigt','gefaehrliche_maengel',?)`, 'VIN:WDB00000000000002', pd, now);
-  run(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at) VALUES('c7','V-7','production','VIN:WDB00000000000002','f','Mängel','mittel','mittel','fahrbereit','gemeldet','rk7','h',?,?)`, c0, c0);
+  run(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,description,reported_priority,priority,reported_driveability,status,request_key,content_hash,created_at,updated_at,maintenance_event_id) VALUES('c7','V-7','production','VIN:WDB00000000000002','f','Mängel','mittel','mittel','fahrbereit','gemeldet','rk7','h',?,?,'ev7')`, c0, c0);
   ok(!(await mt.defectsWithoutCaseQuery(e, 'production').all()).results.some((x) => x.id === 'ev7'), 'Liste nach Berliner Tag');
 });
 
@@ -19009,6 +19009,16 @@ await test('Backlog 207 (HU-Tag in der Werkstatt): SP mit erheblichen Mängeln n
   const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V);
   ok(mv.inspections_unclear.includes('HU') && !mv.next_inspections.some((r) => r.kind === 'HU'), 'HU ohne neues Datum: ' + JSON.stringify(mv.next_inspections));
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.failed_inspection?.result, 'verkehrsunsicher');
+  // Backlog 208: fremder, nicht dringender Vorgang erledigt „Prüfung nicht bestanden“/„Prüfmangel ohne Auftrag“ nicht – ein kritischer schon
+  eq((await users.driver.post('/api/cases', { vehicle_id: V, description: 'Innenraumlicht defekt (Test HU-Tag)', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).status, 201);
+  eq((await users.fleet.get(`/api/vehicles/${V}`)).data.failed_inspection?.result, 'verkehrsunsicher', 'Akte: fremder Vorgang erledigt den Hinweis nicht');
+  eq((await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === V).failed_inspection?.result, 'verkehrsunsicher', 'Fahrzeugliste ebenso');
+  const { defectsWithoutCaseQuery } = await import('../src/maintenance.js');
+  const envName = (await users.fleet.get('/api/me')).data.active_environment || 'test';
+  ok((await defectsWithoutCaseQuery(env, envName).all()).results.some((x) => x.vehicle_id === V), 'Prüfmangel ohne Auftrag ebenso');
+  eq((await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Bremsanlage laut HU-Bericht (Test HU-Tag)', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() })).status, 201);
+  eq((await users.fleet.get(`/api/vehicles/${V}`)).data.failed_inspection, null, 'kritischer Auftrag erledigt den Hinweis');
+  ok(!(await defectsWithoutCaseQuery(env, envName).all()).results.some((x) => x.vehicle_id === V), 'und die Liste');
   // zweite Person trägt dieselbe Durchführung mit anderem Bericht ein → 409, Nachweis bleibt; gleicher Nachweis (Wiederholung) erlaubt
   const dup = await users.ws.post(`/api/vehicles/${V}/husp/HU/complete`, { done_date: bDayOff(-1), evidence: 'Bericht 999 (falsch)' });
   eq(dup.status, 409, JSON.stringify(dup.data)); eq(dup.data.error, 'evidence_exists');

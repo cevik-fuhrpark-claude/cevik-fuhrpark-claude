@@ -184,6 +184,12 @@ function noResultSql(recordedBy = null, limit = 200, vf = null) {
 // Ist danach bereits eine neuere Durchführung derselben Prüfart eingetragen (Nachprüfung, z. B. nach Reparatur außerhalb der App), gilt
 // die ältere als überholt: Zeigt die neuere erneut Mängel, erscheint stattdessen sie selbst.
 export const DEFECT_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsunsicher'];
+// Welcher Vorgang erledigt „Prüfmangel ohne Auftrag“/„Prüfung nicht bestanden“ (Backlog 208, Teilagent „HU-Tag in der Werkstatt“): der Auftrag
+// zu genau dieser Prüfung (maintenance_event_id), ein Vorgang mit Dringlichkeit kritisch oder Sperre, oder einer der Leitung/Werkstatt – vorher
+// jeder Vorgang seit dem Prüftag, z. B. „Innenlicht defekt“ eines Fahrers ließ „verkehrsunsicher“ verschwinden. Gleiche Regel in JS und SQL.
+// Ein von Leitung/Werkstatt/Disposition selbst angelegter Vorgang zählt weiter (manueller Mängelauftrag), die Meldung eines Fahrers nur, wenn kritisch/gesperrt.
+export const FIXING_CASE_SQL = "(c.maintenance_event_id=e.id OR c.priority='kritisch' OR c.safety_lock=1 OR c.reporter_id IN (SELECT u.id FROM users u WHERE u.role<>'driver'))";
+export const defectCase = (c, e) => c.maintenance_event_id === e.id || c.priority === 'kritisch' || !!c.safety_lock || (!!c.reporter_role && c.reporter_role !== 'driver');
 export function defectsWithoutCaseQuery(env, envName, limit = 200, vf = null) {
   const [sql, params] = defectsWithoutCaseSql(envName, limit, vf);
   return env.DB.prepare(sql).bind(...params);
@@ -191,7 +197,7 @@ export function defectsWithoutCaseQuery(env, envName, limit = 200, vf = null) {
 function defectsWithoutCaseSql(envName, limit = 200, vf = null) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
-      AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date) -- Berliner Tag (Auftrag 00:30 Uhr am Prüftag zählt, 17.10.2026)
+      AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date AND ${FIXING_CASE_SQL}) -- Berliner Tag (Auftrag 00:30 Uhr am Prüftag zählt, 17.10.2026)
       AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
       ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), addMonths(berlinDate(), -12), envName]];
