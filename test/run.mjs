@@ -18927,6 +18927,16 @@ await test('Backlog 202 (Straßenkontrolle): „Mein Fahrzeug“ zeigt HU/SP und
   ok(app.includes('known.find((x) => x.id === id) || coupledKnown(known, id)'), 'Abfahrtskontrolle: Anhänger-Mängel');
 });
 
+await test('Backlog 203 (Straßenkontrolle): Fahrerakte nennt bei abgelaufenen/bald ablaufenden Nachweisen den Status als Text neben dem Datum (nicht nur Farbe; DE/UK/EN)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${it && ['laeuft_ab', 'abgelaufen'].includes(it.status) ? ` <b class=\"small\" data-dst>${esc(t('dst_' + it.status))}</b>` : ''}"), 'Statustext in der Nachweistabelle');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dst_laeuft_ab', 'dst_abgelaufen']) ok(STRINGS[l][k], `${l}.${k}`);
+  // Server liefert nur diese Zustände für Nachweise (sonst fehlte der Text still)
+  const src = (await import('node:fs')).readFileSync(new URL('../src/drivers.js', import.meta.url), 'utf8');
+  ok(src.includes("status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok'"), 'Zustände der Nachweise');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
