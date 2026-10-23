@@ -74,6 +74,7 @@ UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-st
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log
 UI-Formularentwurf Abfahrtskontrolle/Meldung (Hilfe, Sprachwechsel, QR, Verwerfen, Senden)|ui-formularentwurf.py|/tmp/cfp-formularentwurf.log
 UI-Bußgeld-Antwortfrist am Wochenende (Wochentag, Markierung, Formularhinweis)|ui-frist-wochenende.py|/tmp/cfp-frist-we.log
+UI-Plan: Gespann und ruhende Fahrzeuge bei geplanten Terminen (Disposition, Werkstattplan)|ui-plan-gespann.py|/tmp/cfp-plan-gespann.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

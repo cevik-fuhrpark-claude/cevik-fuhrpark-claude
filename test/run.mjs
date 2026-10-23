@@ -18372,6 +18372,44 @@ await test('Bußgeld-Antwortfrist am Wochenende: Anzeige mit Wochentag und Marki
   eq(r.status, 201, JSON.stringify(r.data)); eq((await users.fleet.get('/api/fines/' + r.data.id)).data.fine.response_due, '2030-11-02', 'Frist unverändert');
 });
 
+await test('Disposition plant die Woche (Teilagent 23.10.): Plan nennt das gekoppelte Fahrzeug, ruhende Fahrzeuge mit Termin gekennzeichnet statt unsichtbar; verschobener Auftrag aus Prüftermin zieht den Prüftermin mit (nur Betrieb, Testauftrag ändert ihn nicht)', async () => {
+  const db = env.DB.db; const today = BERLIN_TODAY; const now = new Date().toISOString();
+  const day = (n) => new Date(Date.parse(today + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await owner.post('/api/vehicles', { plate: 'PL-ZM 1', vin: 'WDB96340310555601', site: 'Dortmund', trailer_plate: 'PL-AH 1' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'PL-AH 1', vin: 'WDB96340310555602', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'PL-RU 1', vin: 'WDB96340310555603', site: 'Dortmund' })).status, 201);
+  db.prepare(`UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WDB96340310555603'`).run();
+  const insR = db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,planned_date,evidence,created_by,created_at,updated_at) VALUES (?,?,?,12,?,'Beleg',?,?,?)`);
+  const by = users.fleet.id;
+  insR.run('R-PL-AH', 'VIN:WDB96340310555602', 'Bremsen', day(2), by, now, now); insR.run('R-PL-RU', 'VIN:WDB96340310555603', 'UVV', day(3), by, now, now); insR.run('R-PL-ZM', 'VIN:WDB96340310555601', 'UVV', day(4), by, now, now);
+  const items = (p) => p.days.flatMap((d) => d.items);
+  let p = (await users.dispatch.get('/api/workshop/plan?days=7')).data;
+  const ah = items(p).find((i) => i.id === 'R-PL-AH'); ok(ah, 'Anhänger-Termin im Plan');
+  eq(ah.coupled && ah.coupled.plate, 'PL-ZM 1', 'Anhänger nennt Zugmaschine'); eq(ah.eval_excluded, false);
+  eq(items(p).find((i) => i.id === 'R-PL-ZM').coupled.plate, 'PL-AH 1', 'Zugmaschine nennt Anhänger');
+  const ru = items(p).find((i) => i.id === 'R-PL-RU'); ok(ru && ru.eval_excluded === true && ru.coupled === null, 'ruhendes Fahrzeug mit Termin gekennzeichnet');
+  // Betrieb: Auftrag aus Prüftermin (Tag +4), Werkstatt verschiebt auf +1 → Prüftermin zieht mit, Plan zeigt das Fahrzeug nur einmal
+  const prodWs = await invite(owner, { username: 'prod.werkstatt.pl', display_name: 'Betrieb Werkstatt DO', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const o = await users.prodFleet.post('/api/maintenance/R-PL-ZM/order', { workshop_site: 'DORTMUND' }); eq(o.status, 201, JSON.stringify(o.data)); eq(o.data.planned_date, day(4));
+  const cmd = async (u, id, action, payload = {}) => { const c = (await u.get(`/api/cases/${id}`)).data.case; return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: c.version, payload }); };
+  eq((await cmd(prodWs, o.data.id, 'acknowledge')).status, 200);
+  eq((await cmd(prodWs, o.data.id, 'set_planned_date', { planned_date: day(1) })).status, 200);
+  eq(db.prepare(`SELECT planned_date FROM maintenance_rules WHERE id='R-PL-ZM'`).get().planned_date, day(1), 'Prüftermin mitgezogen');
+  const pp = (await users.prodFleet.get('/api/workshop/plan?days=7')).data;
+  eq(items(pp).filter((i) => i.vehicle_id === 'VIN:WDB96340310555601').length, 1, 'Fahrzeug nur an einem Tag');
+  // Prüftermin bereits anders geplant (nicht vom Auftrag übernommen) → bleibt
+  db.prepare(`UPDATE maintenance_rules SET planned_date=? WHERE id='R-PL-ZM'`).run(day(6));
+  eq((await cmd(prodWs, o.data.id, 'set_planned_date', { planned_date: day(2) })).status, 200);
+  eq(db.prepare(`SELECT planned_date FROM maintenance_rules WHERE id='R-PL-ZM'`).get().planned_date, day(6), 'abweichender Prüftermin bleibt');
+  // Test: Auftrag übernimmt Tag +6, Verschieben ändert den (gemeinsamen) Prüftermin nicht
+  const t1 = await users.fleet.post('/api/maintenance/R-PL-ZM/order', { workshop_site: 'DORTMUND' }); eq(t1.status, 201, JSON.stringify(t1.data)); eq(t1.data.planned_date, day(6));
+  eq((await cmd(users.ws, t1.data.id, 'acknowledge')).status, 200);
+  eq((await cmd(users.ws, t1.data.id, 'set_planned_date', { planned_date: day(5) })).status, 200);
+  eq(db.prepare(`SELECT planned_date FROM maintenance_rules WHERE id='R-PL-ZM'`).get().planned_date, day(6), 'Testauftrag ändert Betriebsplanung nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/planVehTag\(i\)/g) || []).length, 4, 'Anzeige in Disposition (Startseite) und Werkstattplan (Auftrag, Prüftermin)');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

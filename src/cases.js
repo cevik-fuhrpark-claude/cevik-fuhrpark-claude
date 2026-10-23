@@ -1049,6 +1049,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const d = p.planned_date ? planDate(p.planned_date) : null;
       if (d === (c.planned_date || null)) throw bad('validation', 'Termin ist unverändert.');
       set.planned_date = d; payload = { from: c.planned_date || null, to: d };
+      // Auftrag aus Prüftermin verschoben: der vom Auftrag übernommene Prüftermin (gleicher Tag) zieht mit – sonst stand das Fahrzeug im Plan an
+      // zwei Tagen (23.10.2026). Nur im Betrieb: Prüftermine gelten für beide Umgebungen, ein Testauftrag ändert keine Betriebsplanung.
+      if (d && c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date=?').bind(d, now, c.maintenance_rule_id, c.planned_date));
       break;
     }
     case 'set_followup': {

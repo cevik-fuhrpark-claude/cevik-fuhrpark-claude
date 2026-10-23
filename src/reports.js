@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents, roundMilli } from './util.js';
+import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents, roundMilli } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -768,12 +768,13 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
   const [cs, mt, vs, mo] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
-    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
-      WHERE v.active=1 AND v.eval_excluded=0 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),
-    env.DB.prepare(`SELECT site FROM vehicles WHERE active=1 AND eval_excluded=0`).all(),
+    // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)
+    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, v.eval_excluded, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+      WHERE v.active=1 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),
+    env.DB.prepare(`SELECT id, plate, kind, trailer_plate, site, eval_excluded FROM vehicles WHERE active=1`).all(),
     // offene Aufträge aus Prüfterminen ALLER Werkstätten (ohne Standortfilter): ein Termin, dessen Auftrag bei einer anderen Werkstatt liegt,
     // erschien sonst bei der eigenen Werkstatt als offener Prüftermin ohne Auftrag (Gefahr doppelter Prüfung, 19.10.2026)
     env.DB.prepare(`SELECT id, case_no, planned_date, workshop_site, maintenance_rule_id FROM cases WHERE environment=? AND maintenance_rule_id IS NOT NULL AND status IN (${PLAN_STATUSES.map(() => '?').join(',')})`).bind(envName, ...PLAN_STATUSES).all(),
@@ -782,14 +783,19 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // Auslastung je Tag und Werkstatt aus ALLEN Aufträgen (vor dem Fahrzeug-Standortfilter) – Grundlage für den Terminvorschlag
   const case_load = {};
   for (const c of cs.results) if (c.planned_date && c.planned_date >= today && c.planned_date <= to) { const d = (case_load[c.planned_date] ||= {}); d[c.workshop_site] = (d[c.workshop_site] || 0) + 1; }
-  const vSel = siteSelection(vs.results, query.vsite);
+  // Gespann laut Stammliste (Kopplung fest, wie Fahrzeugliste): Zugmaschine ↔ Anhänger je Termin nennen (nur Anzeige, 23.10.2026)
+  const byPlate = new Map(); for (const v of vs.results) if (v.plate) byPlate.set(normPlate(v.plate), v);
+  const coupledOf = new Map();
+  for (const v of vs.results) if (v.kind === 'lkw' && v.trailer_plate) { const tr = byPlate.get(normPlate(v.trailer_plate)); if (!tr || tr.kind !== 'anhaenger') continue; const p = coupledOf.get(tr.id); if (!p || (p.eval_excluded && !v.eval_excluded)) coupledOf.set(tr.id, v); coupledOf.set(v.id, tr); }
+  const coupled = (vid) => { const p = coupledOf.get(vid); return p ? { id: p.id, plate: p.plate, kind: p.kind } : null; };
+  const vSel = siteSelection(vs.results.filter((v) => !v.eval_excluded), query.vsite);
   if (vSel.site) { cs.results = cs.results.filter((c) => vSel.match(c.vehicle_site)); mt.results = mt.results.filter((m) => vSel.match(m.vehicle_site)); }
   const byDay = new Map();
   const put = (d, item) => { if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(item); };
   const overdue = []; const unplanned = [];
   for (const c of cs.results) {
     // can_plan: Termin direkt aus dem Plan setzbar – gleiche Regel wie Vorgangsbefehl set_planned_date (nach Übernahme)
-    const item = { type: 'case', ...c, safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at) };
+    const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at) };
     if (!c.planned_date) unplanned.push(item);
     else if (c.planned_date < today) overdue.push(item);
     else if (c.planned_date <= to) put(c.planned_date, item);
@@ -800,7 +806,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   for (const m of mt.results) {
     const o = orders.get(m.id);
     if (o && o.planned_date === m.planned_date) continue;
-    put(m.planned_date, { type: 'maintenance', ...m, order: o ? { id: o.id, case_no: o.case_no, workshop_site: o.workshop_site } : null });
+    put(m.planned_date, { type: 'maintenance', ...m, eval_excluded: !!m.eval_excluded, coupled: coupled(m.vehicle_id), order: o ? { id: o.id, case_no: o.case_no, workshop_site: o.workshop_site } : null });
   }
   // weitere geplante Tage desselben Fahrzeugs (ab heute, im Zeitraum): Hinweis zum Zusammenlegen – das Fahrzeug fiele sonst mehrfach aus
   const vDates = new Map();
