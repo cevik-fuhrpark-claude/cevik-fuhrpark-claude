@@ -31,6 +31,16 @@ http.createServer(async (req, res) => {
     for (let i = 0; i < n; i++) st.run(`last-${envName}-${i}`, envName, codes[i % codes.length], `last|${i}`, sev[i % 4], `Lasttest-Befund ${i + 1}`, 'Prüfen', `fp${i}`, now, now);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ seeded: n })); return;
   }
+  // Nur lokal (nicht im Worker): n ungelesene Hinweise für ein Konto (scripts/ui-urlaub-anhaenger.py, „Ältere laden“)
+  if (url.pathname === '/__dev/seed-notifications' && req.method === 'POST') {
+    const n = Math.min(Number(url.searchParams.get('n')) || 0, 2000); const envName = url.searchParams.get('env') || 'production';
+    const u = env.DB.db.prepare('SELECT id FROM users WHERE username=?').get(url.searchParams.get('user') || '');
+    if (!u) { res.writeHead(404); res.end('{}'); return; }
+    const st = env.DB.db.prepare(`INSERT OR IGNORE INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status) VALUES (?,?,?,?,?,?,?,?,?,?,'no_subscription')`);
+    const t0 = Date.now() - n * 60000;
+    for (let i = 0; i < n; i++) st.run(`seed-n-${i}`, envName, u.id, null, `seed-n-${i}`, 'agent', i % 10 === 0 ? 1 : 0, `Testhinweis ${i + 1}`, 'Urlaubsrückkehr', new Date(t0 + i * 60000).toISOString());
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ seeded: n })); return;
+  }
   // Nur lokal (nicht im Worker): HTML-Einschleusungs-Probe für den UI-Rauchtest (CFP_XSS=1 python3 scripts/ui-rauchtest.py).
   // Hängt an alle Freitext-Spalten (Beschreibung, Name, Kennzeichen, Standort, Nachweis, Vermerk …) eine HTML-Probe an.
   // IDs, Zeitstempel, Datumswerte, Statuswerte/Aufzählungen, JSON und Schlüssel bleiben unverändert, damit die App funktionsfähig bleibt;

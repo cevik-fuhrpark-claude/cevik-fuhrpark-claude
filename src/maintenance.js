@@ -669,6 +669,7 @@ async function runBatchesCounting(env, stmts, creates, updates = [], rowStarts =
 // Rückruf-Import (z. B. Hersteller-/KBA-Liste je FIN): je Zeile ein einmaliger Rückruf (Prüfart „Rückruf“) mit Referenz als Nachweis.
 // Frist nur, wenn sie in der Liste steht (nie erfunden). Idempotent: gleiche Referenz am selben Fahrzeug wird nicht doppelt angelegt;
 // eine fehlende Frist wird ergänzt, eine abweichende nie überschrieben (Hinweis), ein bereits durchgeführter Rückruf bleibt unverändert.
+const RECALL_DORMANT_NOTE = 'Fahrzeug ruhend – Rückruf erscheint nicht in Prüftermin-Übersicht, Werkstattplan und Fuhrparkagent (nur in der Fahrzeugakte)';
 export async function importRecallsCsv(env, user, text, { dryRun = false } = {}) {
   if (!WRITE_ROLES.includes(user.role)) throw forbidden('Nur Inhaber und Fuhrparkleitung dürfen Rückrufe importieren.');
   const table = parseCsv(text);
@@ -727,11 +728,13 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
     if (!cur) {
       action = 'neu'; result.created++;
       // gleiche Referenz am Fahrzeug nur einmal – auch bei zwei gleichzeitigen Importen (17.10.2026)
-      const r = refOf(ref);
+      // roh binden und in SQL beidseitig lower(): SQLite-lower() wandelt nur A–Z, JS-toLowerCase auch Ä/Ü – „ÄB-4711“ entstand bei zwei
+      // gleichzeitigen Importen doppelt (23.10.2026)
+      const r = String(ref).split(' · Durchführung: ')[0].split(' – ')[0].trim();
       creates.push(stmts.length);
       stmts.push(env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source)
         SELECT ?1,?2,'Rückruf',NULL,NULL,NULL,NULL,NULL,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS (SELECT 1 FROM maintenance_rules WHERE vehicle_id=?2 AND kind='Rückruf'
-          AND (lower(evidence)=?9 OR instr(lower(evidence), ?9 || ' – ')=1 OR instr(lower(evidence), ?9 || ' · durchführung: ')=1))`)
+          AND (lower(evidence)=lower(?9) OR instr(lower(evidence), lower(?9) || ' – ')=1 OR instr(lower(evidence), lower(?9) || ' · durchführung: ')=1))`)
         .bind(uuid(), v.id, due.date, evidence, user.id, now, now, due.date ? 'nachweis' : null, r));
     } else if (cur.last_done_date) {
       action = 'erledigt'; result.unchanged++; row.done_on = cur.last_done_date; // bereits durchgeführt – bleibt unverändert
@@ -742,6 +745,8 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
       action = 'unverändert'; result.unchanged++;
       if (due.date && cur.next_due_date && due.date !== cur.next_due_date) { row.note = `Frist in der Liste (${due.date}) weicht ab – vorhandene Frist ${cur.next_due_date} bleibt; in der Fahrzeugakte prüfen`; row.previous_due_date = cur.next_due_date; }
     }
+    // ruhendes Fahrzeug (aus Bewertungen ausgenommen): Rückruf wird angelegt, erscheint aber nicht in Übersicht/Werkstattplan/Agent (23.10.2026)
+    if (v.eval_excluded && action === 'neu') { row.note = RECALL_DORMANT_NOTE; row.dormant = true; }
     row.action = action; result.rows.push(row);
   });
   result.skipped.sort((a, b) => a.line - b.line);

@@ -163,6 +163,10 @@ async function handleApi(request, env, ctx, url) {
   if (claimedEnv && m !== 'GET' && m !== 'HEAD' && path !== '/api/logout' && user.role !== 'owner' && claimedEnv !== user.environment) {
     throw new HttpError(409, 'env_mismatch', 'Die Umgebung dieses Kontos wurde inzwischen geändert – nichts gespeichert. Bitte Seite neu laden.');
   }
+  // Zahlenformat der Eingabe nach der Oberflächensprache des sendenden Geräts, nicht nach der Kontosprache (23.10.2026: geteiltes
+  // Werkstatt-Konto – ein Tablet stellt auf EN um, das andere zeigt DE, „1.250“ wurde still 1,25 €). Nicht aufzählbar: erscheint nicht in /api/me.
+  const inputLang = request.headers.get('x-cfp-lang');
+  if (['de', 'uk', 'en'].includes(inputLang)) Object.defineProperty(user, 'inputLang', { value: inputLang, enumerable: false });
   const envName = auth.effectiveEnv(user, request);
   usageEnv.set(request, envName);
   await guardSharedWrite(env, user, path, m);
@@ -667,8 +671,15 @@ async function handleApi(request, env, ctx, url) {
     const counts = { all: c.all_n, unread: c.unread_n, urgent: c.urgent_n };
     if (url.searchParams.get('count') === '1') return json({ unread: counts.unread, counts });
     const filter = { unread: UNREAD, urgent: 'n.urgent=1' }[url.searchParams.get('filter') || ''] || null;
+    // „Ältere laden“: weiter nach dem letzten angezeigten Eintrag (before = Kennung), gleiche Sortierung – vorher waren nach den neuesten
+    // 100 ältere ungelesene unerreichbar (23.10.2026, Rückkehr aus dem Urlaub mit 300 Hinweisen)
+    const beforeId = url.searchParams.get('before');
+    const cur = beforeId ? await env.DB.prepare('SELECT created_at, rowid AS r FROM notifications WHERE id=? AND user_id=?').bind(String(beforeId).slice(0, 64), user.id).first() : null;
+    if (beforeId && !cur) throw new HttpError(400, 'validation', 'Liste veraltet – bitte neu laden.');
     const rows = (await env.DB.prepare(`SELECT n.id, n.case_id, n.kind, n.urgent, n.title, n.body, n.created_at, n.push_status, n.push_hold_until, n.device_received_at, n.opened_at, n.acknowledged_at, n.ref, u.language AS lang
-      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? AND (n.environment=? OR n.kind='new_login') AND n.hidden_at IS NULL ${filter ? 'AND ' + filter : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`).bind(user.id, envName, NOTIF_MAX + 1).all()).results;
+      FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.user_id=? AND (n.environment=? OR n.kind='new_login') AND n.hidden_at IS NULL ${filter ? 'AND ' + filter : ''}
+      ${cur ? 'AND (n.created_at < ? OR (n.created_at = ? AND n.rowid < ?))' : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`)
+      .bind(user.id, envName, ...(cur ? [cur.created_at, cur.created_at, cur.r] : []), NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
     for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();

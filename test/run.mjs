@@ -1410,7 +1410,7 @@ await test('Fahrzeugliste: Standortauswahl fasst Schreibweisen zusammen (Dortmun
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const src = app.slice(app.indexOf('async function viewVehicles('), app.indexOf('\n}\n', app.indexOf('async function viewVehicles(')));
   ok(src.includes("(!site || sk(v.site) === sk(site))"), 'Filter ohne Groß-/Kleinschreibung');
-  ok(src.includes("toLocaleLowerCase('de')"), 'gleicher Schlüssel wie siteKey');
+  ok(src.includes('const sk = siteKeyUi;') && /const siteKeyUi = .*replace\(\/\\s\+\/g, ' '\)\.trim\(\)\.toLocaleLowerCase\('de'\)/.test(app), 'gleicher Schlüssel wie siteKey (auch Leerraum, 23.10.2026)');
   const { siteKey } = await import('../src/reports.js');
   const sk = (x) => (x ? String(x).trim().toLocaleLowerCase('de') : '');
   for (const x of ['Dortmund', 'DORTMUND', ' dortmund ', 'MÜNCHEN']) eq(sk(x), siteKey(x));
@@ -8463,7 +8463,7 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
     eq((await users.wsMuc.get('/api/notifications?count=1')).data.unread, 0);
   } finally { if (db.isTransaction) db.exec('ROLLBACK'); db.prepare(`DELETE FROM notifications WHERE id LIKE 'ntx-%'`).run(); }
   const { STRINGS } = await import('../public/i18n.js');
-  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_truncated.includes('{max}') && STRINGS[l].nf_truncated.includes('{n}') && STRINGS[l].nf_truncated.includes(STRINGS[l].nf_unread) && STRINGS[l].nf_truncated.includes(STRINGS[l].mark_read), 'Text ' + l + ' nennt die echten Knopfnamen');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_truncated.includes('{max}') && STRINGS[l].nf_truncated.includes('{n}') && STRINGS[l].nf_truncated.includes(STRINGS[l].nf_more) && STRINGS[l].nf_truncated.includes(STRINGS[l].mark_read), 'Text ' + l + ' nennt die echten Knopfnamen');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("'/api/notifications?count=1'") && app.includes('n.counts[k]') && app.includes("t('nf_truncated')"), 'Oberfläche: Zähler vom Server, Hinweis');
   // Hintergrund-Abfrage (x-cfp-bg) verlängert die Sitzung nicht, normale Abfrage schon
@@ -11031,7 +11031,7 @@ await test('Fehlersuche 17.10. (5): Telematik älter nie über neuer, Rufnummer-
   const y = addMonths(BERLIN_TODAY, 0); const ra = await toRepair(); const rb = await toRepair();
   eq((await cmd(U.ws, ra, 'record_work', { hours: 20, description: 'Motor', work_date: y })).status, 200);
   const over = await cmd(U.ws, rb, 'record_work', { hours: 5, description: 'Bremse', work_date: y });
-  eq(over.status, 400); ok(/^Höchstens 24 Stunden je Person und Arbeitstag – am \d{2}\.\d{2}\.\d{4} sind bereits 20 h erfasst\.$/.test(over.data.message), over.data.message);
+  eq(over.status, 400); ok(/^Höchstens 24 Stunden je Benutzerkonto und Arbeitstag – am \d{2}\.\d{2}\.\d{4} sind bereits 20 h erfasst\.$/.test(over.data.message), over.data.message);
   const { translateValidation } = await import('../public/i18n.js');
   ok(/20 h are already recorded/.test(translateValidation('en', over.data.message)), 'EN'); ok(/вже внесено 20 год/.test(translateValidation('uk', over.data.message)), 'UK');
   eq((await cmd(U.ws, rb, 'record_work', { hours: 4, description: 'Bremse', work_date: y })).status, 200, 'bis 24 h');
@@ -14338,7 +14338,7 @@ await test('Fehlersuche 20.10. (Vorgang/Fahrzeugliste/Hilfe): veraltete Seite �
   // fremde Rolle mit aktueller Version bleibt „nicht erlaubt“
   eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'reject', command_id: rk(), expected_version: d.case.version, note: 'x', payload: {} })).status, 403);
   const { translateValidation } = await import('../public/i18n.js');
-  eq(translateValidation('en', 'Höchstens 24 Stunden je Person und Arbeitstag – am 18.10.2026 sind bereits 20,5 h erfasst.').includes('18/10/2026'), true, 'EN-Datum');
+  eq(translateValidation('en', 'Höchstens 24 Stunden je Benutzerkonto und Arbeitstag – am 18.10.2026 sind bereits 20,5 h erfasst.').includes('18/10/2026'), true, 'EN-Datum');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("String(v.planned_inspection_kind).split(', ').map(mk)"), 'geplante Prüfart übersetzt');
   ok(app.includes("const q = searchKey($('#q').value);"), 'Fahrzeugsuche ohne Bindestrich (seit 21.10. searchKey)');
@@ -15405,7 +15405,7 @@ await test('Fehlersuche 20.10. (18): Vertrag nach bestätigtem Tachotausch „un
   ok(cand, 'Kandidat aus Kontrolle'); eq(cand.via_plate, 'FX-ZM 1'); ok(/Zugmaschine FX-ZM 1$/.test(cand.evidence), cand.evidence);
   // 4. App: Befehlskennung je Inhalt, Bußgeld-Hinweis in der Suche, Übersetzung des Nachweises; Doku-Pfad
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/S\.pendCmd && S\.pendCmd\.key === key \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; toast'), 'Befehlswiederholung mit gleicher Kennung');
+  ok(/S\.pendCmd && S\.pendCmd\.key === key && Date\.now\(\) - S\.pendCmd\.at < 10 \* 60000 \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; toast'), 'Befehlswiederholung mit gleicher Kennung');
   ok(/fineTrunc = !!fr\.truncated/.test(app) && app.includes('id="gftrunc"'), 'Suche: Hinweis auf die 500 jüngsten Schreiben');
   ok(app.includes("Uhr(?: – Zugmaschine (.+))?$/") , 'Nachweis-Übersetzung mit Zugmaschine');
   const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(!api.includes('/api/fines/:id/command`'), 'Doku: /commands');
@@ -18009,7 +18009,7 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('async function viewDepartureCheck(') + 6000);
   ok(dep.includes("departureLockBox(vs.find((x) => x.id === id)") && dep.includes("v.availability === 'gesperrt' ? ' – ' + esc(t('locked'))"), 'Kontrolle zeigt Sperre aus der Fahrzeugliste');
   ok(dep.indexOf('showKnown();') < dep.indexOf("if (S.me.role === 'driver') api('GET', '/api/me/vehicles')"), 'Sperre auch für andere Rollen / vor „Meine Fahrzeuge“');
-  ok(app.includes("${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);") && app.includes("photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);"), 'Hinweis nach Senden und aus dem Postausgang');
+  ok(app.includes("${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes("photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);"), 'Hinweis nach Senden und aus dem Postausgang');
   // 2. Fahrzeugwechsel mit „Bisherige Zuordnung beenden“: Ende steht im Protokoll des alten Fahrzeugs
   eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id })).status, 201);
   eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: true })).status, 201);
@@ -18158,6 +18158,123 @@ await test('Fahrzeugabgang / Integrations-Token (Teilagenten 23.10.): Vertragsim
   eq(integrationTokens({ INTEGRATION_TOKEN: 'kurz' }).full.length, 0); eq(integrationTokens({ INTEGRATION_TOKEN_READ: 'lese-token-abcdefgh' }).read.length, 1);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("(c.vehicle_active === false ? ` (${t('inactive_vehicles')})` : '')") && app.includes("const d = r && r.duplicate_plates; if (d && d.length) setTimeout(() => toast(t('dup_plate_warn')"), 'Oberfläche: außer Betrieb / Kennzeichen-Hinweis');
+});
+
+await test('Geteiltes Werkstatt-Konto / Rückrufaktion / Monatswechsel (Teilagenten 23.10.): Tagesgrenze ungerundet (kein endloser Versionskonflikt), Text „je Benutzerkonto“, Zahlenformat nach Gerätesprache, Wiederholung als Hinweis; Rückruf-Import mit Umlaut-Referenz parallel nur einmal, Hinweis bei ruhendem Fahrzeug, Agent mit geplantem Termin; Einzelpositionen „Erfasst am“, Kennzahlen mit Stichtag (Anzeige/JSON)', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const dPlus = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  // 1. Tagesgrenze: 8,002 + 8,002 h, dann 8 h → verständliche 400 statt 409 version_conflict (Rundung in der Vorprüfung)
+  const ra = await toRepair(); const rb = await toRepair(); const y = BERLIN_TODAY;
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 8.002, description: 'Tablet A', work_date: y })).status, 200);
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 8.002, description: 'Tablet B', work_date: y })).status, 200);
+  const over = await cmd(U.ws, rb, 'record_work', { hours: 8, description: 'Tablet B', work_date: y });
+  eq(over.status, 400, JSON.stringify(over.data)); eq(over.data.error, 'validation');
+  ok(/^Höchstens 24 Stunden je Benutzerkonto und Arbeitstag – am \d{2}\.\d{2}\.\d{4} sind bereits 16 h erfasst\.$/.test(over.data.message), over.data.message);
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(/per user account/.test(translateValidation('en', over.data.message)), 'EN'); ok(/на обліковий запис/.test(translateValidation('uk', over.data.message)), 'UK');
+  eq((await cmd(U.ws, rb, 'record_work', { hours: 7.99, description: 'Tablet B', work_date: y })).status, 200, 'bis 24 h');
+  // 2. Zahlenformat nach der Sprache des sendenden Geräts (Kopf x-cfp-lang), nicht nach der Kontosprache
+  const ver = async (id) => (await F.get(`/api/cases/${id}`)).data.case.version;
+  const part = (lang, price) => (async () => U.ws.post(`/api/cases/${ra}/commands`, { action: 'add_part', command_id: rk(), expected_version: await ver(ra), payload: { name: 'Filter', quantity: 1, unit_price_net: price } }, { 'x-cfp-lang': lang }))();
+  eq((await U.ws.req('PATCH', '/api/me', { language: 'en' })).status, 200, 'Konto auf EN (anderes Tablet)');
+  const p1 = await part('de', '1.250'); eq(p1.status, 400, 'deutsches Gerät: „1.250“ bleibt mehrdeutig, nicht still 1,25 €');
+  eq((await part('de', '1.250,50')).status, 200, 'deutsches Format am deutschen Gerät');
+  eq((await part('en', '1,250.50')).status, 200, 'englisches Format am englischen Gerät');
+  const prices = db.prepare(`SELECT unit_price_net AS p FROM parts WHERE case_id=? ORDER BY created_at`).all(ra).map((x) => x.p); eq(prices.join('|'), '1250.5|1250.5');
+  const me = (await U.ws.get('/api/me', { 'x-cfp-lang': 'de' })).data.user; eq(me.inputLang, undefined, 'nicht in /api/me'); eq(me.language, 'en');
+  // 3. App: Wiederholung als eigener Hinweis, Befehlskennung nur 10 Min. wiederverwendet, Sprache als Kopf
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("toast(r && r.duplicate ? t('cmd_duplicate') : '✓')") && app.includes('Date.now() - S.pendCmd.at < 10 * 60000') && app.includes("headers['x-cfp-lang'] = S.lang"), 'App');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['cmd_duplicate', 'cost_rate_today', 'kpi_status_basis']) ok(STRINGS[l][k], `${l}.${k}`);
+  // 4. Rückruf-Import: Umlaut-Referenz bei zwei gleichzeitigen Importen nur einmal
+  const H = { 'content-type': 'text/csv' }; const VIN1 = 'WMA15SZZ2HM722774'; const VIN2 = 'WDB9630051L917317';
+  addLatency(e);
+  const par = await Promise.all([1, 2].map(() => F.req('POST', '/api/maintenance/recalls/import', `FIN;Referenz;Frist\n${VIN1};ÄB-4711;${dPlus(10)}`, H)));
+  eq(par.map((x) => x.status).join(), '200,200');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='Rückruf'`).get(V1).n, 1, 'eine Regel');
+  // 5. ruhendes Fahrzeug: angelegt mit Hinweis
+  eq((await F.post(`/api/vehicles/VIN:${VIN2}/evaluation`, { excluded: true, reason: 'abgestellt' })).status, 200);
+  const dor = await F.req('POST', '/api/maintenance/recalls/import', `FIN;Referenz\n${VIN2};KBA-77`, H); eq(dor.status, 200);
+  eq(dor.data.rows[0].action, 'neu'); eq(dor.data.rows[0].dormant, true); ok(/^Fahrzeug ruhend – Rückruf erscheint nicht/.test(dor.data.rows[0].note), dor.data.rows[0].note);
+  const { translateImportReason } = await import('../public/i18n.js');
+  ok(/^Vehicle dormant/.test(translateImportReason('en', dor.data.rows[0].note)) && /відкликання/.test(translateImportReason('uk', dor.data.rows[0].note)), 'übersetzt');
+  // 6. Agent: geplanter Termin → nicht erneut „einplanen“
+  const rule = db.prepare(`SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind='Rückruf'`).get(V1).id;
+  await F.post('/api/agent/run', {});
+  const na = () => db.prepare(`SELECT next_action FROM agent_findings WHERE finding_code='MAINTENANCE_DUE' AND subject_key=? AND status='offen'`).get(rule);
+  eq(na() && na().next_action, 'Werkstatttermin einplanen.');
+  eq((await F.post(`/api/maintenance/${rule}/plan`, { planned_date: dPlus(5) })).status, 200);
+  await F.post('/api/agent/run', {});
+  eq(na() && na().next_action, 'Geplanten Termin wahrnehmen und Durchführung belegen.');
+  // 7. Einzelpositionen: Spalte „Erfasst am“; Kennzahlen mit Stichtag (JSON, CSV, Schnittstelle)
+  const m = BERLIN_TODAY.slice(0, 7);
+  const it = await F.get(`/api/reports/costs?from=${m}&to=${m}&part=items`); eq(it.status, 200);
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(it.data).trim().split('\r\n');
+  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am'), lines[0]);
+  ok(lines.slice(1).length >= 2 && lines.slice(1).every((l) => /;\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(l)), lines.slice(1).join(' / '));
+  const k = await F.get(`/api/reports/kpi?from=${m}&to=${m}`); eq(k.status, 200);
+  ok(Math.abs(Date.parse(k.data.generated_at) - Date.now()) < 60000, 'generated_at'); ok(/Abrufzeitpunkt/.test(k.data.definitions.status_basis));
+  ok(app.includes("t('kpi_status_basis').replace('{at}', fmtDT(r.generated_at))") && app.includes("' ' + esc(t('cost_rate_today'))"), 'Anzeige');
+});
+
+await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagenten 23.10.): Abfahrtskontrolle meldet gesperrtes Gespann, Anhänger außer Betrieb mit Hinweis auf Zugmaschine und eigener Datenqualitätsmeldung; Hinweise „Ältere laden“, Master-Eingang nach Dringlichkeit; Standortnamen mit doppeltem/geschütztem Leerzeichen ein Standort', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const F = await inv({ username: 'a.fuhrpark', display_name: 'Leitung', role: 'fleet', environment: 'production' });
+  const D = await inv({ username: 'a.springer', display_name: 'Springer', role: 'driver', environment: 'production' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n'
+    + 'SZ-YC 5513;Hamburg Nord;MAN;2016;WMA15SZZ2HM722774;SZ-YC 5514;Lkw\nSZ-YC 5514;Hamburg  Nord;Krone;2016;VAK656EBDG1613170;;ANH\n'
+    + 'SZ-KC 5515;Hamburg Nord;DAIMLER;2015;WDB9630051L917317;SZ-KC 5516;Lkw\nSZ-KC 5516;Hamburg Nord;Krone;2016;VAK656EBDG1613171;;ANH';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const TK = 'VIN:WMA15SZZ2HM722774'; const TR = 'VIN:VAK656EBDG1613170'; const TK2 = 'VIN:WDB9630051L917317'; const TR2 = 'VIN:VAK656EBDG1613171';
+  // 1. Sperre am Anhänger: Abfahrtskontrolle der Zugmaschine meldet das gesperrte Gespann
+  const c = await F.post('/api/cases', { vehicle_id: TR, description: 'Bremse Anhänger defekt', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() }); eq(c.status, 201, JSON.stringify(c.data));
+  const items = (await F.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const ins = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), items }); eq(ins.status, 201, JSON.stringify(ins.data));
+  eq(ins.data.vehicle_locked, false); eq(JSON.stringify(ins.data.coupled_locked), JSON.stringify({ plate: 'SZ-YC 5514', kind: 'anhaenger' }));
+  const ins2 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK2, request_key: rk(), items }); eq(ins2.data.coupled_locked, null, 'anderes Gespann frei');
+  // 2. Anhänger außer Betrieb: Hinweis auf die Zugmaschine; Datenqualität „Anhänger außer Betrieb“ statt „ohne Anhänger im Bestand“
+  const off = await F.post(`/api/vehicles/${TR2}/active`, { active: false, reason: 'verkauft' }); eq(off.status, 200);
+  eq(JSON.stringify(off.data.trailer_of_trucks), JSON.stringify([{ id: TK2, plate: 'SZ-KC 5515' }]));
+  const dq = (await own.get('/api/admin/data-quality')).data;
+  const ti = dq.items.filter((x) => x.vehicle_id === TK2 && /^trailer_/.test(x.check)); eq(ti.map((x) => x.check).join(), 'trailer_inactive'); eq(ti[0].severity, 'hinweis');
+  // 3. Standortnamen: doppeltes/geschütztes Leerzeichen = derselbe Standort
+  const { siteKey } = await import('../src/reports.js');
+  eq(siteKey('Hamburg  Nord'), siteKey('Hamburg Nord')); eq(siteKey(' hamburg nord '), 'hamburg nord');
+  const sites = (await F.get('/api/sites')).data; const opts = JSON.stringify(sites);
+  eq((opts.match(/Hamburg.Nord/g) || []).length >= 1 && !/Hamburg {2}Nord|Hamburg\\u00a0Nord|Hamburg Nord/.test(opts), true, opts);
+  ok(dq.items.some((x) => x.check === 'site_spelling'), 'abweichende Leerzeichen als Schreibweise gemeldet');
+  // 4. Hinweise: „Ältere laden“ mit before (gleiche Sortierung, keine Lücke/Dublette)
+  const ins3 = db.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status) VALUES (?,?,?,?,?,?,?,?,?,?,'pending')`);
+  const base = Date.parse('2026-01-01T08:00:00Z');
+  for (let i = 0; i < 250; i++) ins3.run(`nt-${i}`, 'production', F.id, null, `nt-${i}`, 'agent', i % 10 === 0 ? 1 : 0, `Hinweis ${i}`, 'Text', new Date(base + Math.floor(i / 2) * 60000).toISOString());
+  const seen = new Set(); let before = null; let pages = 0;
+  for (;;) {
+    const l = await F.get(`/api/notifications?filter=unread${before ? '&before=' + before : ''}`); eq(l.status, 200); pages++;
+    for (const n of l.data.notifications) { ok(!seen.has(n.id), 'doppelt ' + n.id); seen.add(n.id); }
+    if (!l.data.truncated) break; before = l.data.notifications[l.data.notifications.length - 1].id; ok(pages < 10, 'Endlosschleife');
+  }
+  eq([...seen].filter((x) => x.startsWith('nt-')).length, 250, 'alle 250 erreichbar'); eq(pages, 3);
+  eq((await F.get('/api/notifications?before=gibt-es-nicht')).status, 400);
+  // 5. Master-Eingang: offene Einträge nach Dringlichkeit, dann neueste
+  const mi = db.prepare(`INSERT INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,severity,payload,received_at) VALUES (?,?,?,?,?,?,?,?)`);
+  mi.run('m-alt-krit', '1.0', 'production', 'fleet-agent', 'finding', 'kritisch', '{}', '2026-01-01T08:00:00Z');
+  for (let i = 0; i < 5; i++) mi.run(`m-neu-${i}`, '1.0', 'production', 'fleet-agent', 'finding', 'hinweis', '{}', `2026-02-0${i + 1}T08:00:00Z`);
+  mi.run('m-mitte-handeln', '1.0', 'production', 'fleet-agent', 'finding', 'handeln', '{}', '2026-01-15T08:00:00Z');
+  const mp = (await F.get('/api/master')).data; const order = (mp.inbox || mp.master_inbox || []).map((x) => x.event_id).filter((x) => x.startsWith('m-'));
+  eq(order.slice(0, 3).join(), 'm-alt-krit,m-mitte-handeln,m-neu-4');
+  // 6. App: Gespann-Sperre in der Kontrollantwort, Hinweis beim Außer-Betrieb-Nehmen, Filter ohne ruhende, „Ältere laden“, Standort-Schlüssel, Werkstatt-Vorauswahl
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : '')") && (app.match(/!!r\.vehicle_locked \|\| !!r\.coupled_locked\)/g) || []).length === 2, 'Kontrollantwort');
+  ok(app.includes("t('trailer_deact_warn').replace('{list}'") && app.includes("const cLocked = (v) => !v.eval_excluded &&"), 'Anhänger');
+  ok(app.includes('id="nmore"') && app.includes("before=${encodeURIComponent(last)}") && app.includes("api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'))"), 'Hinweise');
+  ok(app.includes('const dk = siteKeyUi;') && app.includes('const sk = siteKeyUi;') && app.includes('byName.length === 1 ? byName[0] : null'), 'Standort');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['nf_more', 'trailer_deact_warn', 'dq_trailer_inactive']) ok(STRINGS[l][k] && !/\((n|s|і)\)/.test(STRINGS[l][k]), `${l}.${k}`);
+  ok(/^List out of date/.test(translateValidation('en', 'Liste veraltet – bitte neu laden.')), 'V_MORE');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

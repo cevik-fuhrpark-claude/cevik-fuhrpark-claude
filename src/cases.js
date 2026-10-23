@@ -1155,7 +1155,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Tippfehler im Jahr (2062/1926) fielen sonst aus dem Monats-Kostenbericht: nicht in der Zukunft, höchstens 1 Jahr vor der Meldung
       const earliest = addMonths(berlinDate(c.created_at), -12);
       if (date > berlinDate() || date < earliest) throw bad('validation', `Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`);
-      // höchstens 24 Stunden je Person und Arbeitstag über alle Vorgänge (vorher 3 × 24 h am selben Tag möglich, 17.10.2026) – Vorprüfung
+      // höchstens 24 Stunden je Benutzerkonto und Arbeitstag über alle Vorgänge (vorher 3 × 24 h am selben Tag möglich, 17.10.2026) – Vorprüfung
       // für die verständliche Meldung, Prüfung im Stapel gegen gleichzeitige Buchungen
       const dayH = await workHoursOn(env, user.id, date);
       if (dayH + hours > 24 + 1e-9) throw bad('validation', workDayMsg(date, dayH));
@@ -1348,9 +1348,11 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
 // gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)
 async function workHoursOn(env, userId, date) {
   const r = await env.DB.prepare('SELECT COALESCE(SUM(hours),0) AS h FROM work_entries WHERE user_id=? AND work_date=?').bind(userId, date).first();
-  return Math.round((r ? r.h : 0) * 100) / 100;
+  // ungerundet: Vorprüfung und Stapel-Guard müssen dieselbe Summe vergleichen (23.10.2026: 8,002 + 8,002 + 8 h → endloser „Vorgang geändert“)
+  return r ? Number(r.h) || 0 : 0;
 }
-const workDayMsg = (date, h) => `Höchstens 24 Stunden je Person und Arbeitstag – am ${date.split('-').reverse().join('.')} sind bereits ${String(h).replace('.', ',')} h erfasst.`;
+// je Benutzerkonto (ein geteiltes Werkstatt-Tablet = ein Konto für mehrere Mechaniker, 23.10.2026) – gerundet nur für den Text
+const workDayMsg = (date, h) => `Höchstens 24 Stunden je Benutzerkonto und Arbeitstag – am ${date.split('-').reverse().join('.')} sind bereits ${String(Math.round(h * 100) / 100).replace('.', ',')} h erfasst.`;
 
 // ---------- Fahrzeugkontrolle nach Reparatur / Abfahrtskontrolle ----------
 
@@ -1605,7 +1607,18 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   // „nicht fahren“ zeigt – die Kontrolle selbst bleibt gespeichert (23.10.2026)
   const vehicleLocked = kind === 'abfahrt' && !!(await env.DB.prepare(`SELECT 1 AS x FROM cases WHERE environment=? AND vehicle_id=? AND safety_lock=1
     AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1`).bind(envName, vehicleId).first());
-  return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt, vehicle_locked: vehicleLocked };
+  // fest gekoppeltes Gespann gesperrt (z. B. Anhänger): ebenfalls „nicht fahren“ – sonst fehlte der Hinweis beim Nachsenden aus dem
+  // Postausgang, wenn die Sperre erst nach der Offline-Kontrolle kam (23.10.2026)
+  let coupledLocked = null;
+  if (kind === 'abfahrt') {
+    const PK = PLATE_KEY_SQL;
+    coupledLocked = await env.DB.prepare(`SELECT o.plate, o.kind FROM vehicles o JOIN vehicles v ON v.id=?2 WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
+        (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
+        OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))
+      AND EXISTS (SELECT 1 FROM cases x WHERE x.environment=?1 AND x.vehicle_id=o.id AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) LIMIT 1`).bind(envName, vehicleId).first() || null;
+  }
+  return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt, vehicle_locked: vehicleLocked,
+    coupled_locked: coupledLocked ? { plate: coupledLocked.plate, kind: coupledLocked.kind } : null };
 }
 
 // ---------- Dateien ----------

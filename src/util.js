@@ -191,9 +191,11 @@ export function oneOf(v, allowed, field) {
 // Bei ganzzahligen Feldern (grouped: km, km-Kontingent) gilt „120.000“ als 120000. Sonst ist „2.000“ ohne Komma mehrdeutig (2 oder 2000?) und wird abgewiesen, statt still als 2 gespeichert zu werden.
 // cents: Geldbetrag – höchstens 2 Nachkommastellen (18.10.2026: „100,0051“ wurde ungerundet gespeichert, Summen wichen ab)
 // Komma als Dezimalzeichen für Mengenfelder – nicht bei englischer Oberfläche: „1,500“ meint dort 1500 (19.10.2026: wurde still 1,5)
-export const commaDec = (user) => !(user && user.language === 'en');
+// Sprache des sendenden Geräts (Kopf x-cfp-lang, worker.js) vor der Kontosprache
+const numLang = (user) => user && (user.inputLang || user.language);
+export const commaDec = (user) => numLang(user) !== 'en';
 // Punkt als Dezimalzeichen (englische Oberfläche): „150.555“ ist 150,555 → „höchstens 2 Nachkommastellen“ statt „mehrdeutig“ (19.10.2026)
-export const pointDec = (user) => !!(user && user.language === 'en');
+export const pointDec = (user) => numLang(user) === 'en';
 // decimalComma: Mengenfeld (Lager, Teile) – „4,750“ ist 4,75 (3 Nachkommastellen), nicht das englische Tausenderkomma
 // km-Stände/-Fälligkeiten: nur ganze Zahlen (21.10.2026: „158,5“ wurde still zu 159 km, „0,4“ zu 0 km gerundet – wer 158.500 meinte, bekam 159);
 // Tausenderpunkt „120.000“ bleibt erlaubt. Telematik (Kommawerte vom Gerät) rundet weiter selbst.

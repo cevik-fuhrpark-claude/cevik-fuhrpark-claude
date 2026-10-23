@@ -19,6 +19,8 @@ export const CHECKS = {
   km_drop_unexplained: 'hinweis', missing_manufacturer: 'hinweis', missing_build_year: 'hinweis', invite_pending: 'hinweis', trailer_without_truck: 'hinweis',
   // fest gekoppeltes Gespann (Stammliste), aber Lkw und Anhänger mit unterschiedlichem Standort – Stammdaten prüfen
   coupled_site_mismatch: 'hinweis',
+  // Anhängerkennzeichen an der Zugmaschine gehört zu einem außer Betrieb genommenen Anhänger – Stammliste nachziehen (23.10.2026)
+  trailer_inactive: 'hinweis',
   // gleicher Standort in abweichender Schreibweise (Dortmund/DORTMUND) – Auswertungen fassen sie zusammen, Stammdaten vereinheitlichen
   site_spelling: 'hinweis',
   // Fahrerakte & Auslesungen
@@ -94,7 +96,8 @@ export async function dataQuality(env, user, envName, query = {}) {
   const VF = vf ? 'AND i.vehicle_id IN (SELECT value FROM json_each(?))' : '';
   const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates] = await Promise.all([
     // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
-    env.DB.prepare('SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded FROM vehicles WHERE active=1').all(),
+    // dazu außer Betrieb genommene Anhänger (nur für „Anhänger außer Betrieb“, 23.10.2026) – gleich danach abgetrennt
+    env.DB.prepare(`SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded, active FROM vehicles WHERE active=1 OR kind='anhaenger'`).all(),
     // letzter km-Stand je Fahrzeug; dazu der späteste Rücksprung OHNE Begründung (Ablesung kleiner als die unmittelbar vorherige, z. B. aus
     // „Prüfung erledigt“ oder Import – die Akte verlangt sonst eine Begründung) mit Anzahl – eine Abfrage (Abfragebudget)
     env.DB.prepare(`WITH u AS (SELECT vehicle_id, km, km_drop_prev AS prev_km, measured_at, source, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at DESC) AS rn, COUNT(*) OVER (PARTITION BY vehicle_id) AS n
@@ -171,6 +174,8 @@ export async function dataQuality(env, user, envName, query = {}) {
       LEFT JOIN odometer_readings p ON p.id = (SELECT o.id FROM odometer_readings o WHERE o.vehicle_id=t.vehicle_id AND o.measured_at <= COALESCE(t.km_at, t.gps_time) ORDER BY o.measured_at DESC LIMIT 1)
       WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) OR v.active=0`).all(),
   ]);
+  const offTrailers = new Map(veh.results.filter((v) => !v.active).map((v) => [normPlate(v.plate), v]));
+  veh.results = veh.results.filter((v) => v.active);
   const truncatedChecks = [];
   for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult]]) {
     if (res.results.length > DQ_MAX) { truncatedChecks.push(check); res.results = res.results.slice(0, DQ_MAX); }
@@ -207,6 +212,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const siteLabel = siteLabels(vs);
   for (const v of vs) {
     if (!v.site) add('missing_site', v);
+    // abweichende Leerzeichen (doppelt, geschützt aus Excel) zählen als abweichende Schreibweise (23.10.2026)
     else if (String(v.site).trim() !== siteLabel.get(siteKey(v.site))) add('site_spelling', v, `${String(v.site).trim()} → ${siteLabel.get(siteKey(v.site))}`);
     if (!v.manufacturer) add('missing_manufacturer', v);
     if (!v.build_year && v.kind === 'lkw') add('missing_build_year', v);
@@ -216,10 +222,12 @@ export async function dataQuality(env, user, envName, query = {}) {
       if (v.trailer_plate) {
         const t = (byPlate.get(normPlate(v.trailer_plate)) || []).find((x) => x.kind === 'anhaenger');
         const tAny = t || (byPlateAll.get(normPlate(v.trailer_plate)) || []).find((x) => x.kind === 'anhaenger');
-        if (!tAny) add('trailer_unknown', v, v.trailer_plate);
+        // Anhänger außer Betrieb genommen: eigener Hinweis statt „ohne Anhänger im Bestand“ (23.10.2026)
+        if (!tAny && offTrailers.has(normPlate(v.trailer_plate))) add('trailer_inactive', v, v.trailer_plate);
+        else if (!tAny) add('trailer_unknown', v, v.trailer_plate);
         else if (t) {
           pulledBy.set(t.id, [...(pulledBy.get(t.id) || []), v.plate]);
-          if (v.site && t.site && v.site.trim().toLowerCase() !== t.site.trim().toLowerCase()) add('coupled_site_mismatch', v, `${v.site} · ${t.plate}: ${t.site}`);
+          if (v.site && t.site && siteKey(v.site) !== siteKey(t.site)) add('coupled_site_mismatch', v, `${v.site} · ${t.plate}: ${t.site}`);
         }
       }
     }

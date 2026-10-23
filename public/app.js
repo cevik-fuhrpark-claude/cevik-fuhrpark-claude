@@ -103,6 +103,8 @@ const afLink = (caseId, code, subj) => { const c = String(code || ''); const d =
   if (c.startsWith('STOCK_')) return d(`#/stock/${encodeURIComponent(subj)}`, ' data-astock');
   return ''; };
 const notifHref = (x) => { const m = /^(vehicle|fine):(.+)$/.exec(x.ref || ''); return x.case_id ? '#/cases/' + encodeURIComponent(x.case_id) : m ? (m[1] === 'vehicle' ? '#/vehicles/' + encodeURIComponent(m[2]) : '#/fines/' + encodeURIComponent(m[2])) : x.kind === 'new_login' ? '#/more?o=sess' : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'; };
+// Standort-Schlüssel wie der Server (siteKey): Leerraum vereinheitlicht, Groß-/Kleinschreibung egal (23.10.2026)
+const siteKeyUi = (x) => (x && String(x).trim() ? String(x).normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de') : 'ohne');
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
 // Kalenderdatum „JJJJ-MM-TT“ bleibt dieser Tag; Zeitstempel → Berliner Kalendertag
 const fmtD = (iso) => { if (!iso) return '–'; const d = new Date(iso.length === 10 ? iso + 'T12:00:00Z' : iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt(iso.length === 10 ? 'd10' : 'd').format(d); };
@@ -127,6 +129,8 @@ function plate(p, opts = {}) {
 // ---------- API ----------
 async function api(method, path, body, extra = {}) {
   const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
+  // Zahlen werden nach der hier angezeigten Sprache gelesen (geteiltes Konto: andere Geräte können eine andere Sprache zeigen, 23.10.2026)
+  if (S.lang && !headers['x-cfp-lang']) headers['x-cfp-lang'] = S.lang;
   if (S.viewEnv && S.me && S.me.role === 'owner') headers['x-cfp-env'] = S.viewEnv;
   // Postausgang: Umgebung, in der die Meldung erfasst wurde (Inhaber kann die Ansicht inzwischen gewechselt haben – 18.10.2026)
   if (extra.env && S.me && S.me.role === 'owner') headers['x-cfp-env'] = extra.env;
@@ -987,7 +991,7 @@ async function viewHome() {
       }
       if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
       // Disposition mit Standard-Standort: offene Vorgänge ebenfalls nur dieses Standorts (gleiche Regel wie Server: getrimmt, ohne Groß-/Kleinschreibung)
-      const dk = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : 'ohne');
+      const dk = siteKeyUi;
       const shown = S.me.role === 'dispatch' && S.me.home_site && !S.dispoAll && cases ? cases.filter((c) => dk(c.vehicle_site) === dk(S.me.home_site === 'ohne' ? null : S.me.home_site)) : cases;
       html += `<h2>${esc(t('open'))}</h2>${caseList(shown)}<p class="navlinks"><a href="${hj('#/cases')}">${esc(t('all'))}</a></p>`;
       if (S.me.role === 'viewer') html += helpLink('viewer');
@@ -1253,7 +1257,7 @@ async function flushOutboxRun() {
           await photosDel(item.body.request_key).catch(() => {});
         }
         done.add(item.body.request_key);
-        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);
+        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);
       }
       catch (err) {
         if (err.offline || err.status === 429 || err.status >= 500) { kept++; continue; }
@@ -1606,8 +1610,9 @@ async function viewCase(id) {
   // der Server meldet dann „duplicate“ statt doppelt zu buchen (20.10.2026: 2 × 1,5 h Arbeitszeit, doppelte Lagerentnahme); nach Erfolg verworfen
   const cmd = async (action, note, payload = {}) => {
     const key = JSON.stringify([c.id, action, note ?? null, payload]);
-    const commandId = S.pendCmd && S.pendCmd.key === key ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId };
-    try { await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); S.pendCmd = null; toast('✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
+    // nur kurz nach dem Fehlschlag wiederverwenden: am geteilten Tablet bucht später ein anderer Mechaniker evtl. denselben Inhalt (23.10.2026)
+    const commandId = S.pendCmd && S.pendCmd.key === key && Date.now() - S.pendCmd.at < 10 * 60000 ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId, at: Date.now() };
+    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); S.pendCmd = null; toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
@@ -1943,7 +1948,7 @@ async function viewDepartureCheck(preId) {
       const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
       if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb, who));
-      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);
+      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       sb.disabled = false;
@@ -2034,12 +2039,12 @@ async function viewVehicles() {
   const site = vsDef('vehSite') || '';
   // Schreibweisen desselben Standorts (Dortmund/DORTMUND) als ein Eintrag – wie Kostenbericht und Datenqualität; angezeigt die häufigste
   // ohne Standort = 'ohne' (wie Startseite/Server; 20.10.2026: Standard-Standort „ohne Standort“ ergab eine leere Liste)
-  const sk = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : 'ohne');
+  const sk = siteKeyUi;
   const siteCnt = new Map(); for (const v of vs) if (v.site && String(v.site).trim()) { const m = siteCnt.get(sk(v.site)) || new Map(); const raw = String(v.site).trim(); m.set(raw, (m.get(raw) || 0) + 1); siteCnt.set(sk(v.site), m); }
   const sites = [...siteCnt.values()].map((m) => [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'))[0][0]).sort((a, b) => a.localeCompare(b, 'de'));
   const base = vs.filter((v) => (!site || sk(v.site) === sk(site)) && (f === 'all' || v.kind === f));
   // „Gespann gesperrt“: eigenes Fahrzeug nicht gesperrt, aber gekoppelter Anhänger/Lkw gesperrt (nur Information, Kopplung laut Stammliste)
-  const cLocked = (v) => v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt';
+  const cLocked = (v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt'; // ruhende nicht (wie die übrigen Verfügbarkeits-Knöpfe, 23.10.2026)
   const nCL = base.filter(cLocked).length;
   const nN = base.filter((v) => v.notes_active > 0).length; // aktive Hinweise zum Fahrzeug (nicht für Fahrer)
   // Prüfung/Wartung überfällig: frühester Termin vor heute oder km-Fälligkeit überschritten (gespeicherte Werte, nur Anzeige)
@@ -2109,7 +2114,7 @@ function departureLockBox(sv, kv) {
   const c = (kv && kv.coupled) || (sv && sv.coupled && sv.coupled.availability === 'gesperrt' ? { ...sv.coupled, locked: true } : null);
   return (locked ? `<div class="alert" role="alert" style="margin-bottom:8px"><b>${esc(t('scan_locked'))}</b></div>` : '') + coupledAlert(c) + (kv ? knownDefects(kv.known_defects) : '');
 }
-const lockedWarn = (r) => (r && r.vehicle_locked ? ` · ${t('locked')} – ${t('do_not_drive')}` : '');
+const lockedWarn = (r) => (r && r.vehicle_locked ? ` · ${t('locked')} – ${t('do_not_drive')}` : '') + (r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : ''); // gekoppeltes Gespann gesperrt (23.10.2026)
 const coupledAlert = (c) => (c && c.locked ? `<div class="alert" role="alert" style="margin-bottom:8px">${esc(coupledLockedText(c))}</div>` : '');
 function coupledChip(c) {
   if (!c || !['gesperrt', 'werkstatt'].includes(c.availability)) return '';
@@ -2165,7 +2170,9 @@ function winterOrderHtml(d) {
 const wsTranslit = (x) => String(x || '').normalize('NFC').trim().toLocaleLowerCase('de').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
 function wsForSite(site) {
   const k = wsTranslit(site); if (!k) return '';
-  const w = S.meta.workshops.find((x) => wsTranslit(x.code) === k) || S.meta.workshops.find((x) => wsTranslit(x.name).includes(k));
+  // über den Namen nur bei genau einem Treffer (23.10.2026: „Hamburg“ wählte bei Hamburg-Nord/-Süd einfach die erste, „e“ jede)
+  const byName = S.meta.workshops.filter((x) => wsTranslit(x.name).includes(k));
+  const w = S.meta.workshops.find((x) => wsTranslit(x.code) === k) || (byName.length === 1 ? byName[0] : null);
   return w ? w.code : '';
 }
 const wsOptions = (site) => `${site ? '' : '<option value="" selected>–</option>'}${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}`;
@@ -2364,7 +2371,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   $$('[data-rmgo]').forEach((b) => (b.onclick = () => openResAdd(b.dataset.rmgo, true)));
   const vfiGo = $('#vfi-go'); if (vfiGo) vfiGo.onclick = () => { const mh = $('#mhist'); if (mh) { mh.open = true; mh.style.scrollMarginTop = '90px'; mh.scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
   const evx = $('#evx'); if (evx) evx.onclick = async () => { let reason = null; if (!v.eval_excluded) { reason = prompt(t('evx_reason')); if (!reason) return; } try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/evaluation`, { excluded: !v.eval_excluded, reason }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
-  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : '', (r.trailer_of_trucks || []).length ? t('trailer_deact_warn').replace('{list}', r.trailer_of_trucks.map((x) => x.plate).join(', ')) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const react = $('#react'); if (react) react.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true }); toast('✓'); await viewVehicle(id);
     // Nachfolger mit gleichem Kennzeichen in Betrieb: Hinweis wie beim Anlegen (23.10.2026)
     const d = r && r.duplicate_plates; if (d && d.length) setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(d[0].plate || '').toUpperCase()).replace('{list}', d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '')), true), 400);
@@ -3016,7 +3023,7 @@ async function viewCosts() {
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn" id="csv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="csvi" title="${esc(t('cost_items_csv_hint'))}">${esc(t('cost_items_csv'))}</button><button type="button" class="btn secondary" id="costprt">${esc(t('print'))}</button></div></form>
     <section class="panel"><dl class="kv"><dt>${esc(t('cost_actual'))}</dt><dd><b>${eurIst(rep.totals)}</b></dd><dt>${esc(t('cost_estimate'))}</dt><dd>${eur(rep.totals.estimate_net)}</dd>
     <dt>${esc(t('hours'))}</dt><dd>${esc(fmtNum(rep.totals.hours))}</dd><dt>${esc(t('unvalued_positions'))}</dt><dd>${rep.totals.unvalued_items ? `<span class="chip kritisch">${rep.totals.unvalued_items}</span>` : '0'}</dd></dl>
-    <p class="small muted" style="margin-top:8px">${esc(t('cost_rules'))}${rep.hourly_rate_net === null ? ' ' + esc(t('no_rate')) : ''} ${esc(t('cost_per_km_rule'))}</p></section>`;
+    <p class="small muted" style="margin-top:8px">${esc(t('cost_rules'))}${rep.hourly_rate_net === null ? ' ' + esc(t('no_rate')) : ' ' + esc(t('cost_rate_today'))} ${esc(t('cost_per_km_rule'))}</p></section>`;
   const sites = rep.sites || [];
   if (sites.length > 1) html += `<section class="panel" id="costsites"><h3>${esc(t('cs_title'))}</h3><dl class="kv">${sites.map((s) => `<dt>${esc(s.site === 'ohne' ? t('cs_nosite') : s.site)}</dt><dd><b>${eurIst(s)}</b>${s.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(s.estimate_net) : ''}${s.unvalued_items ? ` · <span class="chip kritisch">${s.unvalued_items} ${esc(t('unvalued_short'))}</span>` : ''} · ${esc(t('cs_vehicles').replace('{n}', s.vehicles))}</dd>`).join('')}</dl><p class="small muted" style="margin-top:8px">${esc(t('cs_rule'))}</p></section>`;
   html += `<div class="list print-summary">${vs.map(([id, v]) => `<details class="row" style="display:block"><summary style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer">${plate(v.plate || id)}${v.inactive ? `<span class="chip" data-cinact>${esc(t('inactive_vehicles'))}</span>` : ''}<span class="title">${eurIst({ actual_net: Math.round(v.actual * 100) / 100, valued_items: v.valued, unvalued_items: v.unvalued })}</span>${v.estimate ? `<span class="chip">${esc(t('estimate'))}: ${eur(Math.round(v.estimate * 100) / 100)}</span>` : ''}${v.unvalued ? `<span class="chip kritisch">${v.unvalued} ${esc(t('unvalued_short'))}</span>` : ''}${(() => { const k = kmBy.get(id); return k && k.km ? `<span class="chip">${fmtKm(k.km)} · ${k.cost_per_km !== null ? fmtNum(k.cost_per_km, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + (S.lang === 'uk' ? ' €/км' : ' €/km') : '–'}${k.complete ? '' : ' (' + esc(t('incomplete')) + ')'}</span>` : k && k.km_status === 'decrease' ? `<span class="chip" data-ckm="decrease">${esc(t('vm_decrease'))}</span>` : ''; })()}</summary>
@@ -3260,7 +3267,7 @@ async function viewEmergencyEdit() {
     <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="30" required value="${esc(e.phone || '')}">
     <label>${esc(t('em_note'))}</label><input name="note" maxlength="200" value="${esc(e.note || '')}">
     <label>${esc(t('em_scope'))}</label><select name="scope" id="emscope">${['all', 'site', 'vehicle'].map((k) => opt(k, e.scope, t('em_scope_' + k))).join('')}</select>
-    <div id="emsite"${e.scope === 'site' ? '' : ' hidden'}><label>${esc(t('site'))}</label><select name="site">${[...new Set([...sites, ...(e.site ? [e.site] : [])])].map((x) => opt(x, e.site, x)).join('')}</select></div>
+    <div id="emsite"${e.scope === 'site' ? '' : ' hidden'}><label>${esc(t('site'))}</label><select name="site">${(() => { const cur = (e.site && sites.find((x) => siteKeyUi(x) === siteKeyUi(e.site))) || e.site; return [...new Set([...sites, ...(cur ? [cur] : [])])].map((x) => opt(x, cur, x)).join(''); })()}</select></div>
     <div id="emveh"${e.scope === 'vehicle' ? '' : ' hidden'}><label>${esc(t('vehicle'))}</label><select name="vehicle_id">${vs.slice().sort((a, b) => plateCmp(a.plate, b.plate)).map((v) => opt(v.id, e.vehicle_id, v.plate)).join('')}${e.vehicle_id && !vs.some((v) => v.id === e.vehicle_id) ? opt(e.vehicle_id, e.vehicle_id, e.plate || e.vehicle_id) : ''}</select></div>
     <div class="actions"><button class="btn">${esc(t('save'))}</button>${edit ? `<button type="button" class="btn secondary" id="emcancel">${esc(t('cancel'))}</button>` : ''}</div></form></section>`;
   const rows = d.contacts.map((c) => `<div class="row emman"><span class="title"><b>${esc(c.label)}</b> · <a class="emphone" href="${esc(telHref(c.phone))}">${esc(c.phone)}</a> <span class="chip">${esc(t('em_kind_' + c.kind))}</span><br><span class="small">${esc(t('em_scope'))}: ${esc(emScope(c))}${c.note ? ' · ' + esc(c.note) : ''}</span><br><span class="small muted">${showArch ? `${esc(t('em_archived_at'))} ${fmtDT(c.archived_at)} · ${esc(c.archived_by_name || '')}` : `${fmtDT(c.updated_at)} · ${esc(c.changed_by_name || '')}`}</span></span>${showArch ? '' : `<span class="actions" style="margin:0"><button type="button" class="btn secondary" data-emedit="${esc(c.id)}">${esc(t('em_edit'))}</button><button type="button" class="btn secondary" data-emarch="${esc(c.id)}">${esc(t('em_archive'))}</button></span>`}</div>`).join('');
@@ -3379,13 +3386,16 @@ async function viewTacho() {
 }
 
 // ---------- Hinweise & Push ----------
+// Zeile der Hinweisliste (auch für „Ältere laden“)
+const nRow = (x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${esc(notifHref(x))}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : x.push_status === 'pending' && x.push_hold_until && x.push_hold_until >= '0001' && (x.opened_at || x.acknowledged_at) ? t('pst_held_opened') : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`;
 async function viewInbox() {
   // Filter: alle / ungelesen (weder geöffnet noch quittiert) / dringend – serverseitig, Zähler über ALLE Hinweise (nicht nur die neuesten 100)
   const NF = { all: () => true, unread: (x) => !x.opened_at && !x.acknowledged_at, urgent: (x) => !!x.urgent };
   // Gewählter Filter gilt für die App-Sitzung; ohne Wahl: „Ungelesen“, solange es ungelesene gibt, sonst „Alle“
-  let n = await api('GET', '/api/notifications' + (NF[S.inboxF] && S.inboxF !== 'all' ? '?filter=' + S.inboxF : ''));
+  // ohne Wahl gleich „Ungelesen“ anfragen (vorher erst „Alle“ geladen und verworfen – doppelte Abfrage bei jedem Quittieren, 23.10.2026)
+  let n = await api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'));
   const nf = NF[S.inboxF] ? S.inboxF : n.counts.unread ? 'unread' : 'all';
-  if (nf !== n.filter) n = await api('GET', '/api/notifications?filter=' + nf);
+  if (nf !== n.filter) n = await api('GET', '/api/notifications' + (nf === 'all' ? '' : '?filter=' + nf));
   S.unread = n.counts.unread;
   const shown = n.notifications;
   render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>
@@ -3393,7 +3403,9 @@ async function viewInbox() {
     ${n.counts.all ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
     <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.counts[k]})</a>`).join('')}</div>` : ''}
     ${n.truncated ? `<p class="small panel" id="ntrunc">${esc(t('nf_truncated').replace('{max}', n.max).replace('{n}', n.counts[nf]))}</p>` : ''}
-    <div class="list">${shown.map((x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at ? 'opacity:.7' : ''}"><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${esc(notifHref(x))}" data-open="${esc(x.id)}">${esc(x.title)}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : x.push_status === 'pending' && x.push_hold_until && x.push_hold_until >= '0001' && (x.opened_at || x.acknowledged_at) ? t('pst_held_opened') : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`).join('') || `<p class="muted">${esc(t(n.counts.all ? 'nf_none' : 'no_notifications'))}</p>`}</div>`, '');
+    <div class="list" id="nlist">${shown.map((x) => nRow(x)).join('') || `<p class="muted">${esc(t(n.counts.all ? 'nf_none' : 'no_notifications'))}</p>`}</div>
+    ${n.truncated ? `<div class="actions"><button type="button" class="btn secondary" id="nmore">${esc(t('nf_more'))}</button></div>` : ''}`, '');
+  
   pushPanel($('#push'));
   const np = $('#np');
   np.ontoggle = async () => {
@@ -3420,8 +3432,23 @@ async function viewInbox() {
   };
   // Nach Quittieren/„Alle gelesen“/Filterwechsel: aufgeklappter Bereich „Push für diese Hinweise“ bleibt offen; Fehler (z. B. kein Netz) als Meldung statt stillem Abbruch
   const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
-  $$('[data-ack]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
-  $$('[data-open]').forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
+  const bindRows = (root) => {
+    $$('[data-ack]', root).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
+    $$('[data-open]', root).forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
+  };
+  bindRows(document);
+  // „Ältere laden“: nächste Seite nach dem letzten angezeigten Hinweis anhängen (23.10.2026 – vorher nach 100 nicht erreichbar)
+  let last = shown.length ? shown[shown.length - 1].id : null;
+  const more = $('#nmore');
+  if (more) more.onclick = async () => {
+    try {
+      const m = await api('GET', `/api/notifications?${nf === 'all' ? '' : 'filter=' + nf + '&'}before=${encodeURIComponent(last)}`);
+      const box = document.createElement('div'); box.innerHTML = m.notifications.map((x) => nRow(x)).join(''); bindRows(box);
+      $('#nlist').append(...box.children);
+      if (m.notifications.length) last = m.notifications[m.notifications.length - 1].id;
+      if (!m.truncated) more.parentElement.remove();
+    } catch (err) { toast(err.message, true); }
+  };
   const ra = $('#ra'); if (ra) ra.onclick = async () => { try { await api('POST', '/api/notifications/read-all', n.as_of ? { before: n.as_of } : {}); S.unread = 0; paintBadge(); again(); } catch (err) { toast(err.message, true); } };
   $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; again().catch((err) => toast(err.message, true)); }));
 }
@@ -3705,7 +3732,7 @@ async function viewKpi() {
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     ${r.sites.length > 1 || r.site ? `<div><label>${esc(t('workshop'))}</label><select name="site"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...r.sites, ...(r.site ? [r.site] : [])])].map((x) => `<option value="${esc(x)}"${x === r.site ? ' selected' : ''}>${esc(x === 'ohne' ? t('kpi_no_site') : wsName(x))}</option>`).join('')}</select></div>` : ''}
     ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('kvsite', 'vsite', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
-    <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="kpiprt">${esc(t('print'))}</button></div></form>${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}${r.vehicle_site ? `<p class="small muted">${esc(t('kpi_vsite_hint'))}</p>` : ''}${r.by_priority.length ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kcsvv">${esc(t('kpi_csv_veh'))}</button><button type="button" class="btn secondary" id="kcsvp">${esc(t('kpi_csv_prio'))}</button></div>` : ''}`;
+    <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="kpiprt">${esc(t('print'))}</button></div></form>${r.generated_at ? `<p class="small muted">${esc(t('kpi_status_basis').replace('{at}', fmtDT(r.generated_at)))}</p>` : ''}${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}${r.vehicle_site ? `<p class="small muted">${esc(t('kpi_vsite_hint'))}</p>` : ''}${r.by_priority.length ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kcsvv">${esc(t('kpi_csv_veh'))}</button><button type="button" class="btn secondary" id="kcsvp">${esc(t('kpi_csv_prio'))}</button></div>` : ''}`;
   html += r.by_priority.length ? r.by_priority.map((p) => `<section class="panel ${p.priority === 'kritisch' ? 'alert' : ''}"><h3>${esc(p.priority === 'alle' ? t('filter_all') : t('prio_' + p.priority))}</h3><dl class="kv">
     <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}${p.duplicates ? ` (${esc(t('kpi_dupes').replace('{n}', p.duplicates))})` : ''}` : ''}${p.internal ? ` · ${esc(t('kpi_internal').replace('{n}', p.internal))}` : ''}</dd>
     <dt>${esc(t('kpi_triage'))}</dt><dd>${st(p.triage)}</dd><dt>${esc(t('kpi_ack'))}</dt><dd>${st(p.workshop_ack)}</dd><dt>${esc(t('kpi_total'))}</dt><dd>${st(p.created_to_release)}</dd><dt>${esc(t('kpi_parts'))}</dt><dd>${dur(p.parts_wait_h)}</dd></dl></section>`).join('') : noneP();
@@ -4308,7 +4335,8 @@ function viewMore(open) {
   const hs = $('#homesite');
   if (hs) {
     api('GET', '/api/sites').then((r) => {
-      const cur = S.me.home_site || '';
+      // gespeicherter Standort in anderer Schreibweise („Hamburg“ ↔ „HAMBURG“): vorhandene Option wählen statt doppelt anzeigen (23.10.2026)
+      const cur0 = S.me.home_site || ''; const cur = (cur0 && r.sites.find((x) => siteKeyUi(x) === siteKeyUi(cur0))) || cur0;
       hs.innerHTML = `<option value="">${esc(t('filter_all'))}</option>` + [...new Set([...r.sites, ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('');
     }).catch(() => {});
     hs.onchange = async () => {

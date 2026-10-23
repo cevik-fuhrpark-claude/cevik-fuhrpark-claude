@@ -579,7 +579,7 @@ export async function setVehicleEvaluation(env, user, envName, vehicleId, body) 
 
 export async function setVehicleActive(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const v = await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, active, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const active = flag(body.active, 'Aktiv');
   const reason = str(body.reason, { required: !active, max: 300, field: 'Grund' });
@@ -619,7 +619,12 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   // Wieder in Betrieb: dasselbe Kennzeichen an einem anderen aktiven Fahrzeug (Nachfolger) – Hinweis wie beim Anlegen, Bußgelder/Importe sind sonst „mehrdeutig“ (23.10.2026)
   const duplicates = active ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>? AND active=1').bind(vehicleId).all()).results
     .filter((x) => normPlate(x.plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, active: true, eval_excluded: !!x.eval_excluded })) : [];
-  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates } : {}) };
+  // Anhänger außer Betrieb: Zugmaschinen tragen sein Kennzeichen weiter in der Stammliste (feste Kopplung) – Hinweis wie beim Umkennzeichnen (23.10.2026)
+  const trailerOf = !active && v.kind === 'anhaenger' && normPlate(v.plate)
+    ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
+      .filter((x) => normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate })) : [];
+  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates } : {}),
+    ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}) };
 }
 
 export async function assignDriver(env, user, envName, vehicleId, body) {

@@ -338,12 +338,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const latestKm = rules.some((r) => ruleDueKm(r) !== null) ? await latestKmByVehicle(env) : new Map();
     for (const r of rules) {
       if (r.kind === 'Rückruf' && r.last_done_date) continue; // durchgeführt: keine Folgefrist (20.10.2026)
+      // geplanter Werkstatttermin (ab heute) wie bei HU/SP: nicht erneut „einplanen“ raten (23.10.2026, Rückrufaktion mit Termin + Auftrag)
+      const planned = r.planned_date && r.planned_date >= today;
       // km-Fälligkeit (belegt oder aus Intervall + letzter Durchführung in km) – nur mit belegtem km-Stand
       const k = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
       if (k && k.km_status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, rest: k.km_remaining }), next_action: 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, rest: k.km_remaining }), next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
       // km-Zähler nach der letzten Änderung der Regel gesunken (Tachotausch o. Ä.): Fälligkeit nach km ungeklärt statt falscher Restlaufleistung
       else if (k && k.km_status === 'ungeklaert' && k.km_unclear === 'counter_drop') add({ code: 'INSPECTION_UNCLEAR', subject: `${r.id}|km|zaehler`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         ...fm('MAINT_KM_UNCLEAR', { plate: r.plate, kind: r.kind, date: berlinDateTime(k.km_drop_at).slice(0, 10) }), next_action: 'Durchführung mit km-Stand des neuen Zählers erfassen oder km-Fälligkeit mit Nachweis neu eintragen.' });
@@ -352,9 +354,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (!due) continue;
       const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
       if (days < 0) add({ code: 'MAINTENANCE_OVERDUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        ...fm('MAINT_DATE_OVERDUE', { plate: r.plate, kind: r.kind, days: -days, due }), next_action: 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_DATE_OVERDUE', { plate: r.plate, kind: r.kind, days: -days, due }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (days <= warnDays) add({ code: 'MAINTENANCE_DUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('MAINT_DATE_DUE', { plate: r.plate, kind: r.kind, due, days }), next_action: 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_DATE_DUE', { plate: r.plate, kind: r.kind, due, days }), next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
     }
 
     // HU/SP nach StVZO Anlage VIII: gespiegelte Fälligkeiten aktualisieren (nur Betrieb-Lauf, protokolliert) und Befunde bilden
@@ -629,9 +631,11 @@ export async function masterPanel(env, environment) {
   const findings = (await env.DB.prepare(`SELECT * FROM agent_findings WHERE environment=? AND status='offen' ORDER BY CASE severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END, last_seen DESC`).bind(environment).all()).results.map(({ fp_src, ...f }) => f); // fp_src nur intern (Migration 0073)
   // has_newer: es gibt eine neuere Übergabe desselben Befunds – unabhängig von deren Entscheidung (18.10.2026: nach Entscheidung der neuesten
   // zählte die ältere, nie entschiedene wieder als offene Entscheidung)
+  // offene Einträge nach Dringlichkeit (wie die Befundliste), dann neueste zuerst – nach dem Urlaub standen kritische sonst hinter 70 Hinweisen (23.10.2026)
   const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, f.subject_key AS finding_subject, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id
       AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer, du.display_name AS decided_by_name FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id LEFT JOIN users du ON du.id=m.decided_by
-    WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END, m.received_at DESC, m.rowid DESC
+    WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END,
+      CASE WHEN m.decision_status IN ('offen','gesehen') THEN CASE m.severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END ELSE 0 END, m.received_at DESC, m.rowid DESC
     LIMIT (SELECT COUNT(*) FROM master_inbox WHERE environment=?1 AND decision_status IN ('offen','gesehen')) + ${MASTER_INBOX_DONE_MAX}`).bind(environment).all()).results
     .map((m) => ({ ...m, payload: JSON.parse(m.payload) }));
   const lastRun = await env.DB.prepare('SELECT * FROM agent_runs WHERE environment=? ORDER BY started_at DESC LIMIT 1').bind(environment).first();
