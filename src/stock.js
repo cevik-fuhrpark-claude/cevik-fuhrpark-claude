@@ -177,25 +177,27 @@ export async function addMovement(env, user, envName, id, body) {
   // deaktivierte Artikel: keine Buchungen (Bestand wäre unsichtbar, wie Umlagerung/Entnahme im Vorgang – 17.10.2026)
   // Ausnahme (23.10.2026, Teilagent „Inventur zum Jahreswechsel“): Restbestand eines deaktivierten Artikels per Korrektur genau auf 0 ausbuchen –
   // er zählte sonst im Stichtagsbestand weiter, ließ sich aber weder zählen noch korrigieren
-  if (!it.active && body.type !== 'korrektur') throw bad('validation', 'Artikel ist deaktiviert.');
   const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
   let qty = r3(num(body.qty, { min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
-  if (!it.active) { const oh = await onHand(env, id); if (oh === 0 || Math.abs(oh + qty) > 1e-9) throw bad('validation', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.'); }
   const rkey = requestKey(body);
   const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id, type, qty FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
   // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“);
   // gleiche Buchungsart und Menge (21.10.2026: nach verlorener Antwort korrigierte „Zugang 8“ statt „Entnahme 5“ wurde still verworfen)
   if (dup && (dup.item_id !== id || dup.transfer_id || dup.type !== type || Math.abs(Number(dup.qty) - (type === 'entnahme' ? -qty : qty)) > 1e-9)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (dup) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
+  // erst nach der Wiederholungsprüfung (23.10.2026: Ausbuchen/Zugang mit verlorener Antwort, Artikel inzwischen deaktiviert → 400 statt „duplicate“)
+  if (!it.active && type !== 'korrektur') throw bad('validation', 'Artikel ist deaktiviert.');
+  if (!it.active) { const oh = await onHand(env, id); if (oh === 0 || Math.abs(oh + qty) > 1e-9) throw bad('validation', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.'); }
   if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
   if (type === 'korrektur' && !str(body.note, { max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.');
   if (type === 'entnahme') qty = -qty;
   if (qty < 0 && (await onHand(env, id)) + qty < 0) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
   const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
-  // Entnahme: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
-  const price = type === 'entnahme' && it.unit_price_net !== null ? it.unit_price_net : entered;
+  // Entnahme und Korrektur: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
+  // (23.10.2026: Korrekturen – Rückgabe, Retoure, Mengenfehler – standen „unbewertet“ im Journal, Summe passte nicht zum Lagerwert)
+  const price = type !== 'zugang' && it.unit_price_net !== null ? it.unit_price_net : entered;
   const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
     VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120, field: 'Lieferant' }), str(body.document_ref, { max: 200, field: 'Beleg' }),
     str(body.note, { max: 500, field: 'Bemerkung' }), user.id, nowIso(), rkey)];
@@ -258,7 +260,6 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
 // (Bezeichnung/Teilenummer/Einheit/Preis übernommen, ohne Mindestbestand/Lagerort). Wert neutral: Preis des Quellartikels.
 export async function transfer(env, user, envName, id, body, retried = false) {
   const it = await loadItem(env, user, envName, id);
-  if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
   const toSite = str(body.to_site, { required: true, max: 20, field: 'Ziellager' });
   if (toSite === it.site) throw bad('validation', 'Ziellager ist das eigene Lager.');
   if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.');
@@ -269,6 +270,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   // Schlüssel einer Umlagerung eines anderen Artikels ist keine Wiederholung (18.10.2026: Umlagerung B wurde still als „duplicate“ von A beantwortet, nichts gebucht)
   if (prevT && (!prevT.transfer_id || prevT.item_id !== id)) throw conflict('request_key_reused', 'request_key wurde bereits für eine andere Buchung verwendet.');
   if (prevT) return { ok: true, duplicate: true, transfer_id: prevT.transfer_id, qty, on_hand: await onHand(env, id) };
+  if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.'); // nach der Wiederholungsprüfung (23.10.2026)
   const avail = await onHand(env, id);
   if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
   const note = str(body.note, { max: 300, field: 'Bemerkung' });

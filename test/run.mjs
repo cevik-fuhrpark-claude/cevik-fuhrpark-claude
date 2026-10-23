@@ -1498,6 +1498,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`${field}: darf nicht in der Zukunft liegen.`', 'Ausgestellt am: darf nicht in der Zukunft liegen.', 'Видано: не може бути в майбутньому.', 'Issued on: must not be in the future.'],
     ['`${field}: ganze Zahl.`', 'km-Kontingent: ganze Zahl.', 'Ліміт пробігу: ціле число.', 'Mileage allowance: whole number.'],
     ['`Maximal ${MAX_IMPORT} Zeilen je Import.`', 'Maximal 2000 Zeilen je Import.', 'Не більше 2000 рядків за один імпорт.', 'At most 2000 rows per import.'],
+    ['`Datumsspalte „${table[0][dateHead]}“ nicht zugeordnet – bitte „Beginn“ und „Ende“ als Spaltennamen verwenden.`', 'Datumsspalte „Policenstart“ nicht zugeordnet – bitte „Beginn“ und „Ende“ als Spaltennamen verwenden.', 'Стовпець дати «Policenstart» не розпізнано – використайте назви стовпців «Beginn» (початок) і «Ende» (кінець).', 'Date column “Policenstart” not assigned – please use “Beginn” (start) and “Ende” (end) as column names.'],
     ['`Maximal ${MAX_ROWS} Zeilen je Import.`', 'Maximal 500 Zeilen je Import.', 'Не більше 500 рядків за один імпорт.', 'At most 500 rows per import.'],
     ['`Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`', 'Höchstens 20 aktive Hinweise je Fahrzeug – bitte erledigte archivieren.', 'Не більше 20 активних приміток на транспорт – заархівуйте виконані.', 'At most 20 active notes per vehicle – please archive completed ones.'],
     ['`Fahrzeugart unbekannt: ${raw} (Lkw oder Anhänger)`', 'Fahrzeugart unbekannt: Bus (Lkw oder Anhänger)', 'Невідомий тип транспорту: Bus (Lkw або Anhänger)', 'Unknown vehicle type: Bus (Lkw or Anhänger)'],
@@ -18291,6 +18292,47 @@ await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagente
   for (const l of ['de', 'uk', 'en']) for (const k of ['nf_more', 'trailer_deact_warn', 'dq_trailer_inactive']) ok(STRINGS[l][k] && !/\((n|s|і)\)/.test(STRINGS[l][k]), `${l}.${k}`);
   ok(/^List out of date/.test(translateValidation('en', 'Liste veraltet – bitte neu laden.')), 'V_MORE');
   ok(app.includes("if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true);") && ['de', 'uk', 'en'].every((l) => STRINGS[l].no_ws_user_warn), 'Hinweis Werkstatt ohne Konto');
+});
+
+await test('Versichererwechsel / Lager-Rückgabe / Fahrer auf Ukrainisch (Teilagenten 23.10.): Vertragsimport mit „Versicherungsbeginn/-ende“, unbekannte Datumsspalte abgewiesen, Folgepolice mit laufender Nummer übersprungen statt „vorhanden“; Lager-Wiederholung nach Deaktivieren, Korrektur zum Artikelpreis; Fehlermeldung bleibt nicht auf der nächsten Seite, Vordruck-Spalten ohne Umbruch', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const F = U.fleet; const H = { 'content-type': 'text/csv' };
+  const imp = (csv, dry) => F.req('POST', `/api/contracts/import${dry ? '?dry_run=1' : ''}`, csv, H);
+  // 1. Versicherer-Köpfe
+  const r1 = await imp('Kennzeichen;Vertragsart;Versicherer;Versicherungsschein;Versicherungsbeginn;Versicherungsende;Monatsrate netto;Nachweis\nSZ-YC 5513;Versicherung;HDI;HD-1;01.01.2026;31.12.2026;120,00;Police');
+  eq(r1.status, 200, JSON.stringify(r1.data));
+  const c1 = db.prepare(`SELECT start_date, end_date FROM vehicle_contracts WHERE contract_no='HD-1'`).get(); eq(`${c1.start_date}|${c1.end_date}`, '2026-01-01|2026-12-31');
+  const r2 = await imp('Kennzeichen;Vertragsart;Versicherer;Gültig ab;Gültig bis;Nachweis\nSZ-KC 5515;Versicherung;HDI;01.01.2026;31.12.2026;Police', true); eq(r2.status, 200, 'Gültig ab/bis');
+  const r3 = await imp('Kennzeichen;Vertragsart;Versicherer;Hauptfälligkeit Beginn;Nachweis\nSZ-KC 5515;Versicherung;HDI;01.01.2026;Police', true);
+  eq(r3.status, 400); ok(/^Datumsspalte „Hauptfälligkeit Beginn“ nicht zugeordnet/.test(r3.data.message), r3.data.message);
+  const { translateValidation, translateImportReason } = await import('../public/i18n.js');
+  ok(/^Date column “Hauptfälligkeit Beginn” not assigned/.test(translateValidation('en', r3.data.message)), 'EN');
+  // 2. Folgepolice mit gleicher, noch laufender Nummer: übersprungen mit Grund statt „vorhanden“
+  const r4 = await imp('Kennzeichen;Vertragsart;Versicherer;Versicherungsschein;Beginn;Ende;Nachweis\nSZ-YC 5513;Versicherung;HDI;HD-1;01.01.2027;31.12.2027;Police 2027');
+  eq(r4.status, 200); eq(r4.data.skipped.length, 1, JSON.stringify(r4.data));
+  ok(/^Vertragsnummer läuft noch \(Beginn 2026-01-01\) – Folgevertrag erst nach „Vertrag beenden“ importieren$/.test(r4.data.skipped[0].reason), r4.data.skipped[0].reason);
+  ok(/^Contract number still running \(start 2026-01-01\)/.test(translateImportReason('en', r4.data.skipped[0].reason)), 'EN Grund');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM vehicle_contracts WHERE contract_no='HD-1'`).get().n, 1);
+  const r5 = await imp('Kennzeichen;Vertragsart;Versicherer;Versicherungsschein;Beginn;Ende;Nachweis\nSZ-YC 5513;Versicherung;HDI;HD-1;01.01.2026;31.12.2026;Police'); eq(r5.status, 200); eq(r5.data.skipped.length, 0, 'gleicher Beginn bleibt „vorhanden“');
+  // 3. Lager: Wiederholung nach Deaktivieren = duplicate; Korrektur zum Artikelpreis
+  const it = await U.ws.post('/api/stock', { name: 'Filter Retoure', part_number: 'FR-1', unit_price_net: '20,00', initial_qty: 5 }); eq(it.status, 201); const IT = it.data.id;
+  const kor = { type: 'korrektur', qty: -4, note: 'Lieferschein nur 1', request_key: rk() };
+  eq((await U.ws.post(`/api/stock/${IT}/movements`, kor)).status, 201);
+  const mv = db.prepare(`SELECT unit_price_net FROM stock_movements WHERE item_id=? AND type='korrektur'`).get(IT); eq(mv.unit_price_net, 20, 'Korrektur zum Artikelpreis');
+  const out = { type: 'korrektur', qty: -1, note: 'Restbestand ausgebucht', request_key: rk() };
+  eq((await U.ws.req('PATCH', `/api/stock/${IT}`, { active: false })).status, 200);
+  const o1 = await U.ws.post(`/api/stock/${IT}/movements`, out); eq(o1.status, 201, JSON.stringify(o1.data));
+  const o2 = await U.ws.post(`/api/stock/${IT}/movements`, out); eq(o2.status, 201); eq(o2.data.duplicate, true, 'Wiederholung nach Ausbuchen');
+  const zu = await U.ws.post('/api/stock', { name: 'Filter Zwei', part_number: 'FR-2', unit_price_net: '10,00' }); const Z = zu.data.id;
+  const zk = { type: 'zugang', qty: 2, unit_price_net: '10,00', request_key: rk() };
+  eq((await U.ws.post(`/api/stock/${Z}/movements`, zk)).status, 201);
+  eq((await U.ws.req('PATCH', `/api/stock/${Z}`, { active: false })).status, 200);
+  const z2 = await U.ws.post(`/api/stock/${Z}/movements`, zk); eq(z2.status, 201); eq(z2.data.duplicate, true, 'Zugang-Wiederholung nach Deaktivieren');
+  eq((await U.ws.post(`/api/stock/${Z}/movements`, { ...zk, request_key: rk() })).status, 400, 'neue Buchung weiter abgewiesen');
+  // 4. App
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (S.toastPage && S.toastPage !== base) document.querySelectorAll('.toast.err')") && app.includes("el.dataset.at = String(Date.now());"), 'Fehlermeldung beim Seitenwechsel');
+  ok(app.includes("const fixed = mfType.value !== 'zugang' && !!$('#mfpricehint');") && app.includes(`<th style="white-space:nowrap">\${esc(t('na'))}</th>`), 'Lager/Vordruck');
+  void V1;
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

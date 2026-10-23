@@ -411,9 +411,13 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   // Beginn auch „Laufzeitbeginn“/„Leasingbeginn“ (wurde still ignoriert, 17.10.2026)
   const ci = { plate: col(['kennzeichen', 'amtl'], (h) => /anh(ä|ae)nger|auflieger|trailer/.test(h)) /* „Kennzeichen Anhänger“ ist nicht das Fahrzeug (21.10.2026) */, vin: col(['fin', 'fahrgestell', 'vin'], (h) => /anh(ä|ae)nger|auflieger|trailer/.test(h)), kind: col(['vertragsart', 'art', 'typ']),
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'vertrag nr', 'vertrag-nr', 'police', 'versicherungsschein', 'versicherungsnummer', 'vsnr', 'nummer', 'nr'], (h) => /schild|kennz|kfz-nr|amtl/.test(h)), // auch Versicherungsköpfe (19.10.2026)
-    start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'beginn', 'start']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'ende']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
+    start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'versicherungsbeginn', 'policenbeginn', 'beginn', 'start', 'gültig ab', 'gueltig ab', 'gültig von', 'gueltig von']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'versicherungsende', 'policenende', 'ende', 'ablauf', 'gültig bis', 'gueltig bis']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
     allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], isAnnual), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
     rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], isGrossOrCount), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
+  // Datumsspalte erkannt, aber keiner Spalte Beginn/Ende zugeordnet (z. B. „Hauptfälligkeit“-Varianten): nicht still ohne Laufzeit anlegen (23.10.2026:
+  // „Versicherungsbeginn/-ende“ ergaben Verträge ohne Beginn/Ende – nie „läuft aus“, beim Re-Import doppelt)
+  const dateHead = head.findIndex((h, i) => { const b = h.replace(/\s*\(.*\)$/, ''); return i !== ci.start && i !== ci.end && !/km|prognose/.test(b) && /(beginn|ende|ablauf)$|^gültig|^gueltig/.test(b); });
+  if (dateHead >= 0) throw bad('validation', `Datumsspalte „${table[0][dateHead]}“ nicht zugeordnet – bitte „Beginn“ und „Ende“ als Spaltennamen verwenden.`);
   const fallbackEv = str(source, { max: 300, field: 'Quelle' });
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
   if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');
@@ -422,7 +426,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
 
   const [vehRes, exRes] = await Promise.all([
     env.DB.prepare('SELECT id, vin, plate, active, eval_excluded FROM vehicles').all(),
-    env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date, ended_on FROM vehicle_contracts').all(),
+    env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date, end_date, ended_on FROM vehicle_contracts').all(),
   ]);
   const vehicles = vehRes.results;
   const byVin = new Map(vehicles.map((v) => [normVin(v.vin), v]));
@@ -459,7 +463,11 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     const key = keyOf(v.id, f.kind, f.contract_no, f.partner, f.start_date);
     if (seen.has(key)) return skip('doppelt in der Datei');
     seen.add(key);
-    const status = exRes.results.some((c) => c.vehicle_id === v.id && sameContract(c, f)) ? 'vorhanden' : 'neu';
+    const match = exRes.results.find((c) => c.vehicle_id === v.id && sameContract(c, f));
+    // gleiche Vertragsnummer läuft noch mit anderem Beginn (Verlängerung/Folgepolice): nicht „vorhanden“ melden, ohne etwas anzulegen (23.10.2026 –
+    // ab 01.01. meldete der Agent „abgelaufen“); das Formular weist denselben Fall mit 409 ab
+    if (match && f.contract_no && f.start_date && !match.ended_on && (match.start_date || '') !== f.start_date) return skip(`Vertragsnummer läuft noch (Beginn ${match.start_date || '–'}) – Folgevertrag erst nach „Vertrag beenden“ importieren`);
+    const status = match ? 'vorhanden' : 'neu';
     // nur über das Kennzeichen zugeordnet: derselbe Vertrag steht schon an einem anderen Fahrzeug mit diesem Kennzeichen (z. B. zurückgegebener Lkw,
     // Nachfolger trägt das Kennzeichen) → nicht als neuen laufenden Vertrag am Nachfolger anlegen (23.10.2026: Raten doppelt im Kostenbericht)
     if (status === 'neu' && !vin) {

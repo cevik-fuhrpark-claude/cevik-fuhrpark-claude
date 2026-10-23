@@ -223,7 +223,7 @@ function toast(msg, err = false) {
   if (!live) { live = document.createElement('div'); live.id = 'live'; live.className = 'sr-only'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite'); document.body.appendChild(live); }
   if (!err) { live.textContent = ''; setTimeout(() => { live.textContent = msg; }, 50); }
   const el = document.createElement('div');
-  el.className = 'toast' + (err ? ' err' : '');
+  el.className = 'toast' + (err ? ' err' : ''); el.dataset.at = String(Date.now());
   if (err) el.setAttribute('role', 'alert'); else el.setAttribute('aria-hidden', 'true'); // Erfolg sagt die Live-Region an (nicht doppelt)
   el.textContent = msg;
   // Fehler: nur einer gleichzeitig (keine übereinanderliegenden Meldungen), Anzeigedauer nach Textlänge (6–20 s, WCAG 2.2.1),
@@ -402,6 +402,9 @@ const routeArg = (x) => { if (x === undefined) return undefined; try { return de
 async function route() {
   // Links mit encodeURIComponent(Fahrzeug-ID) enthalten „VIN%3A…“ – vor dem Abgleich mit den Routen auf „VIN:“ zurückführen
   let h = (location.hash || '#/').replace(/%3A/gi, ':');
+  // anderer Seite: ältere Fehlermeldung der vorherigen Seite entfernen (23.10.2026: Meldungshinweis verdeckte „Panne & Notfall“);
+  // eben erst gezeigte (Fehler, der zum Seitenwechsel geführt hat) bleiben
+  { const base = h.split('?')[0]; if (S.toastPage && S.toastPage !== base) document.querySelectorAll('.toast.err').forEach((x) => { if (Date.now() - Number(x.dataset.at || 0) > 1500) x.remove(); }); S.toastPage = base; }
   const pub = /^#\/(login|setup|invite\/)/.test(h);
   // Seitenwechsel während eine Seite noch lädt (langsames Netz, schnelles Tippen): die ältere Seite darf die neuere nicht überschreiben
   const gen = S.routeGen = (S.routeGen || 0) + 1;
@@ -1974,7 +1977,7 @@ function viewCheckPaper() {
   render(`<p class="noprint"><a class="backlink" href="#/check">‹ ${esc(t('back'))}</a></p><h1>${esc(t('departure_check'))} – ${esc(t('paper_form'))}</h1>
     <p class="small noprint">${esc(t('paper_hint'))}</p><div class="actions noprint"><button type="button" class="btn" id="pprt">${esc(t('print'))}</button></div>
     <div class="paper-head">${[t('plate_label'), t('date'), t('km'), t('driver_name')].map(line).join('')}</div>
-    <div class="scroll"><table class="paper"><thead><tr><th>${esc(t('check_item'))}</th><th>${esc(t('ok'))}</th><th>${esc(t('defect'))}</th><th>${esc(t('na'))}</th><th>${esc(t('defect_note'))}</th></tr></thead>
+    <div class="scroll"><table class="paper"><thead><tr><th>${esc(t('check_item'))}</th><th style="white-space:nowrap">${esc(t('ok'))}</th><th style="white-space:nowrap">${esc(t('defect'))}</th><th style="white-space:nowrap">${esc(t('na'))}</th><th>${esc(t('defect_note'))}</th></tr></thead>
     <tbody>${S.meta.checklist.map((i) => `<tr><td>${esc(checkLabel(i.key))}</td><td class="box">☐</td><td class="box">☐</td><td class="box">☐</td><td></td></tr>`).join('')}</tbody></table></div>
     <p class="small">☐ ${esc(t('safety_relevant'))} – ${esc(t('outbox_call'))}</p>
     <div class="paper-head">${line(t('signature'))}</div>
@@ -2845,7 +2848,7 @@ async function viewStockItem(id) {
   $('#histjournal').onclick = () => { try { const today = bDate(); const f = bDate(-365);
     sessionStorage.setItem('cfp_sj_item', id); sessionStorage.setItem('cfp_sj_from', f); sessionStorage.setItem('cfp_sj_to', today); sessionStorage.setItem('cfp_sj_type', ''); sessionStorage.setItem('cfp_sj_site', ''); } catch { /* ohne Sitzungsspeicher: Journal ungefiltert */ } location.hash = '#/stock/journal'; };
   // Entnahme: Wert = hinterlegter Artikelpreis (Server übernimmt ihn) – Preisfeld dann aus, Hinweis an
-  const mfType = $('#mf [name=type]'); const mfSync = () => { const fixed = mfType.value === 'entnahme' && !!$('#mfpricehint'); $('#mfprice').hidden = fixed; $('#mf [name=unit_price_net]').disabled = fixed; if ($('#mfpricehint')) $('#mfpricehint').hidden = !fixed; };
+  const mfType = $('#mf [name=type]'); const mfSync = () => { const fixed = mfType.value !== 'zugang' && !!$('#mfpricehint'); /* Korrektur ebenfalls zum Artikelpreis (23.10.2026) */ $('#mfprice').hidden = fixed; $('#mf [name=unit_price_net]').disabled = fixed; if ($('#mfpricehint')) $('#mfpricehint').hidden = !fixed; };
   mfType.onchange = mfSync; mfSync();
   // Restbestand eines deaktivierten Artikels ausbuchen (23.10.2026): Korrektur genau auf 0, Grund Pflicht
   if ($('#wof')) $('#wof').onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('item_writeoff_confirm').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)))) return;
