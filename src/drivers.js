@@ -4,7 +4,7 @@
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
 import { audit } from './auth.js';
-import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
+import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
@@ -154,6 +154,12 @@ export async function createDriver(env, user, envName, body) {
   const pno = str(body.personnel_no, { max: 40, field: 'Personalnummer' });
   // Personalnummer je Umgebung unter aktiven Fahrern eindeutig (Schreibweise wie beim Auslesungen-Import) – Doppelklick/parallel ergab
   // sonst zwei Fahrer, und der Import übersprang danach jede Zeile „Fahrer nicht eindeutig“ (17.10.2026)
+  // Vorprüfung mit derselben Vergleichsregel wie der Auslesungen-Import (`pnoKey`: ohne führende Nullen, Groß-/Kleinschreibung auch Ä/Д);
+  // die SQL-Bedingung unten bleibt als Schutz gegen gleichzeitiges Anlegen (23.10.2026: „123“/„00123“ und „ä-7“/„Ä-7“ wurden zwei Fahrer)
+  const others = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
+  if (pno && others.some((x) => x.personnel_no && pnoKey(x.personnel_no) === pnoKey(pno))) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
+  // gleichnamige aktive Fahrer nur als Hinweis (gleiche Namen sind möglich) – wie `duplicate_plates` bei Fahrzeugen
+  const duplicateNames = others.filter((x) => normName(x.display_name) === normName(name)).map((x) => ({ id: x.id, display_name: x.display_name, personnel_no: x.personnel_no }));
   let r;
   try {
     r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10
@@ -161,8 +167,8 @@ export async function createDriver(env, user, envName, body) {
       .bind(id, envName, name, pno, str(body.site, { max: 60, field: 'Standort' }), userId, str(body.note, { max: 1000, field: 'Bemerkung' }), user.id, now, now).run();
   } catch (e) { if (String(e.message).includes('UNIQUE')) throw conflict('duplicate', 'Dieses App-Konto ist bereits einem Fahrer zugeordnet.'); throw e; }
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
-  await audit(env, user.id, 'driver.create', id, { name, environment: envName });
-  return { id };
+  await audit(env, user.id, 'driver.create', id, { name, environment: envName, ...(pno ? { personnel_no: pno } : {}), ...(duplicateNames.length ? { duplicate_names: duplicateNames.length } : {}) });
+  return { id, duplicate_names: duplicateNames };
 }
 
 // Konten, die schon einer Fahrerakte zugeordnet sind (alle Umgebungen, aktiv/inaktiv – der eindeutige Index idx_drivers_user gilt global);
@@ -192,6 +198,11 @@ export async function updateDriver(env, user, envName, id, body) {
     active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active) ? 1 : 0),
     note: body.note !== undefined ? str(body.note, { max: 1000, field: 'Bemerkung' }) : d.note,
   };
+  // Personalnummer: gleiche Vergleichsregel wie beim Anlegen (pnoKey), vor dem Schreiben (23.10.2026)
+  if ((body.personnel_no !== undefined || body.active !== undefined) && f.active === 1 && f.personnel_no) {
+    const others = (await env.DB.prepare('SELECT personnel_no FROM drivers WHERE environment=? AND active=1 AND id<>? AND personnel_no IS NOT NULL').bind(d.environment || envName, id).all()).results;
+    if (others.some((x) => pnoKey(x.personnel_no) === pnoKey(f.personnel_no))) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
+  }
   try {
     // nur mitgesendete Felder schreiben (17.10.2026: gleichzeitige Änderungen verschiedener Felder gingen sonst verloren)
     const cols = Object.keys(f).filter((k) => body[k] !== undefined && k !== 'expected_updated_at');

@@ -7679,11 +7679,11 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/async function viewKpi[\s\S]*?printHead\(\[`\$\{t\('period'\)\}[\s\S]*?id="kpiprt"[\s\S]*?\$\('#kpiprt'\)\.onclick = async \(\) => \{[^\n]*window\.print\(\)/.test(app), 'Kennzahlen druckbar');
     ok(/@media print[\s\S]*?\.print-summary details:not\(\[open\]\) \{ display: block !important; \}/.test((await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Druck-CSS: zugeklappte Zeilen als Zusammenfassung');
     ok(/const PRINT_OPEN = '#mhist, #vaf[^']*';/.test(app) && /addEventListener\('beforeprint'[^\n]*PRINT_OPEN/.test(app) && /addEventListener\('afterprint'[^\n]*PRINT_OPEN/.test(app), 'Druck: Prüfhistorie und Agentenbefunde der Akte werden mitgedruckt');
-    ok(/VEH_AV_LINK\.includes\(hf\) && \(!hf\.startsWith\('with_findings'\) \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(null, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
+    ok(/VEH_AV_LINK\.includes\(hf\) && \(!hf\.startsWith\('with_findings'\) \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(history\.state, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
     ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
-    ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && app.includes("[/^#\\/master(?:\\?(q|sev)=([^&]*))?$/, viewMaster]") && /async function viewMaster\(argKey, argVal, cached\) \{\n  const q = argKey === 'q' \? \(argVal \?\? ''\) : undefined;[\s\S]{0,400}?history\.replaceState\(null, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
+    ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && app.includes("[/^#\\/master(?:\\?(q|sev)=([^&]*))?$/, viewMaster]") && /async function viewMaster\(argKey, argVal, cached\) \{\n  const q = argKey === 'q' \? \(argVal \?\? ''\) : undefined;[\s\S]{0,400}?history\.replaceState\(history\.state, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
     ok(app.includes("href=\"${hj('#/vehicles?f=with_notes')}\" id=\"dnotes\"") && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
     const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
     eq(crit, env.DB.db.prepare("SELECT COUNT(DISTINCT f.vehicle_id) AS n FROM agent_findings f JOIN vehicles v ON v.id=f.vehicle_id WHERE v.active=1 AND f.environment='test' AND f.status='offen' AND f.severity='kritisch'").get().n, 'Anzahl Fahrzeuge mit kritischen Befunden = Datenbank'); }
@@ -12214,7 +12214,8 @@ await test('Auslesungen-Import: Personalnummer ohne führende Nullen, Ersatzzuor
   const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
   const mk = async (name, pno) => (await F.post('/api/drivers', { display_name: name, ...(pno ? { personnel_no: pno } : {}) })).data.id;
   const a = await mk('Anna Null', '00123'); const b = await mk('Bernd Ohne', null); const c = await mk('Clara Nummer', '777');
-  const d1 = await mk('Dora Eins', '0042'); const d2 = await mk('Dieter Zwei', '42');
+  const d1 = await mk('Dora Eins', '0042'); const d2 = await mk('Dieter Zwei', null);
+  db.prepare("UPDATE drivers SET personnel_no='42' WHERE id=?").run(d2); // Bestand von vor dem 23.10.2026 (heute weist das Anlegen „42“ neben „0042“ ab)
   const day = BERLIN_TODAY;
   const csv = ['Art;Personalnummer;Name;Auslesedatum;Nachweis',
     `Fahrerkarte;123;;${day};A`,          // Excel hat die Nullen entfernt → Anna
@@ -13529,7 +13530,8 @@ await test('Fehlersuche 19.10. (47): km der Abfahrtskontrolle im Einfügen gepr�
   eq(e.DB.db.prepare('SELECT odometer_km FROM inspections WHERE id=?').get(r.data.id).odometer_km, 60000, 'km bleibt an der Kontrolle');
   // Personalnummern mit/ohne führende Null
   eq((await U.fleet.post('/api/drivers', { display_name: 'Anna A', personnel_no: '0123' })).status, 201);
-  eq((await U.fleet.post('/api/drivers', { display_name: 'Bernd B', personnel_no: '123' })).status, 201);
+  // Bestand von vor dem 23.10.2026: „123“ neben „0123“ (heute weist das Anlegen das ab) – direkt in der Datenbank
+  const bb = await U.fleet.post('/api/drivers', { display_name: 'Bernd B' }); eq(bb.status, 201); e.DB.db.prepare("UPDATE drivers SET personnel_no='123' WHERE id=?").run(bb.data.id);
   const csv = `Art;Personalnummer;Name;Auslesedatum;Datei\r\nFahrerkarte;0123;Anna A;${day(-2)};a.ddd\r\nFahrerkarte;123;Bernd B;${day(-2)};b.ddd\r\nFahrerkarte;123;Unbekannt;${day(-2)};c.ddd\r\n`;
   const im = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', csv, { 'content-type': 'text/csv' });
   eq(im.status, 200); eq(im.data.counts.neu, 2, JSON.stringify(im.data.skipped)); eq(im.data.skipped.length, 1, 'ohne passenden Namen weiter mehrdeutig');
@@ -14341,7 +14343,7 @@ await test('Fehlersuche 20.10. (Vorgang/Fahrzeugliste/Hilfe): veraltete Seite �
   ok(app.includes("String(v.planned_inspection_kind).split(', ').map(mk)"), 'geplante Prüfart übersetzt');
   ok(app.includes("const q = searchKey($('#q').value);"), 'Fahrzeugsuche ohne Bindestrich (seit 21.10. searchKey)');
   ok(app.includes("['all', t('filter_all'), bySite.length]"), 'Art-Reiter je Standort');
-  ok(app.includes("S.unread = 0; refreshUnread(); route();"), 'Glocke nach Umgebungswechsel');
+  ok(app.includes("S.unread = 0; refreshUnread();\n") && /es\.onchange = \(\) => \{[^]*?S\.unread = 0; refreshUnread\(\);[^]*?route\(\); \};/.test(app), 'Glocke nach Umgebungswechsel');
   ok(app.includes("${eur3(p.unit_price_net)}") && app.includes("o.safety_relevant && o.status === 'offen' ? 'p-kritisch'"), 'Stückpreis/erledigte Restarbeit');
 });
 
@@ -15914,7 +15916,7 @@ await test('Startseite „Befunde (kritisch + handeln)“ → Management-Panel m
   const { STRINGS } = await import('../public/i18n.js');
   ok(app.includes('href="#/master?sev=act" id="homefind"'), 'Startseite verlinkt die Auswahl kritisch + handeln');
   ok(/const n = d\.findings\.filter\(\(f\) => \['kritisch', 'handeln'\]\.includes\(f\.severity\)\)/.test(app), 'Zähler zählt kritisch + handeln');
-  ok(/if \(sevArg !== undefined\) \{ S\.afSev = AF_SEVS\.includes\(sevArg\) \? sevArg : 'all'; S\.afQ = ''; try \{ history\.replaceState\(null, '', '#\/master'\)/.test(app), 'Direktsprung setzt Auswahl, leert Suche, bereinigt Adresse');
+  ok(/if \(sevArg !== undefined\) \{ S\.afSev = AF_SEVS\.includes\(sevArg\) \? sevArg : 'all'; S\.afQ = ''; try \{ history\.replaceState\(history\.state, '', '#\/master'\)/.test(app), 'Direktsprung setzt Auswahl, leert Suche, bereinigt Adresse');
   // Filterlogik ausführen (gleicher Quelltext wie in der App)
   const src = app.match(/const AF_SEVS = \[[^\]]*\];\nconst afSevMatch = [^\n]*;/); ok(src, 'AF_SEVS/afSevMatch gefunden');
   const { AF_SEVS, afSevMatch } = new Function(`${src[0]}; return { AF_SEVS, afSevMatch };`)();
@@ -18052,6 +18054,58 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   ok(lines.length >= 3, 'd1-Befehle gefunden');
   for (const l of lines) ok(new RegExp(`npx wrangler d1 (time-travel \\w+|export|execute) ${dbName.replace(/-/g, '\\-')}(\\s|$)`).test(l), 'D1-Name: ' + l);
   ok(fs.readFileSync(new URL('../docs/BETRIEB.md', import.meta.url), 'utf8').includes('enthält der SQL-Vollexport **alle Geheimnisse**'), 'Warnung SQL-Export');
+});
+
+await test('Fahrerakten / Fremdvergabe / Inhaber am Handy (Teilagenten 23.10.): Personalnummer wie beim Auslesungen-Import (führende Nullen, Ä/Д), Namensdubletten als Hinweis, unbewertete Ersatz-Fremdleistung hebt Kostenfreigabe nicht auf, Verlauf mit Schalter, CSV-Protokoll mit Filtern, Startseite bei Teilausfall, Push-Umgebung nach Abmeldung, Erledigt mit Rückfrage, Umschalten auf Detailseite, Zurück mit Scrollposition, Einrichtungsstand springt zum Feld', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  // 1. Personalnummer: führende Nullen und Groß-/Kleinschreibung außerhalb A–Z wie pnoKey im Auslesungen-Import
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Nummer Eins', personnel_no: '123' })).status, 201);
+  const d2 = await U.fleet.post('/api/drivers', { display_name: 'Nummer Zwei', personnel_no: '00123' }); eq(d2.status, 409); eq(d2.data.error, 'duplicate_personnel_no');
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Umlaut', personnel_no: 'Ä-7' })).status, 201);
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Umlaut 2', personnel_no: 'ä-7' })).status, 409, 'Ä/ä');
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Kyr', personnel_no: 'ДВ-5' })).status, 201);
+  eq((await U.fleet.post('/api/drivers', { display_name: 'Kyr 2', personnel_no: 'дв-5' })).status, 409, 'Д/д');
+  const d3 = await U.fleet.post('/api/drivers', { display_name: 'Nummer Drei', personnel_no: '124' }); eq(d3.status, 201);
+  const pz = await U.fleet.patch(`/api/drivers/${d3.data.id}`, { personnel_no: '0123' }); eq(pz.status, 409, 'Ändern auf 0123'); eq(pz.data.error, 'duplicate_personnel_no');
+  eq((await U.fleet.patch(`/api/drivers/${d3.data.id}`, { personnel_no: '0124' })).status, 200, 'eigene Nummer mit Null bleibt erlaubt');
+  // 2. gleicher Name (Schreibweise/Leerzeichen/zerlegter Umlaut): gespeichert, Antwort nennt die vorhandene Akte
+  const m1 = await U.fleet.post('/api/drivers', { display_name: 'Max Müller', personnel_no: 'MM-1' }); eq(m1.status, 201); eq(m1.data.duplicate_names.length, 0);
+  const m2 = await U.fleet.post('/api/drivers', { display_name: ' max  müller ' }); eq(m2.status, 201, 'gleiche Namen sind möglich');
+  eq(m2.data.duplicate_names.length, 1); eq(m2.data.duplicate_names[0].id, m1.data.id); eq(m2.data.duplicate_names[0].personnel_no, 'MM-1');
+  const au = JSON.parse(db.prepare(`SELECT detail FROM audit_log WHERE action='driver.create' AND target=?`).get(m1.data.id).detail); eq(au.personnel_no, 'MM-1');
+  // 3. Kostenfreigabe: Fremdleistung „ersetzt eigene“ ohne Betrag hebt die Markierung nicht auf
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: '80', repair_cost_limit_net: '500' })).status, 200);
+  const A = await toRepair({ description: 'Getriebe' });
+  eq((await cmd(U.ws, A, 'add_part', { name: 'Getriebeteil', quantity: 1, unit_price_net: 700 })).status, 200);
+  ok(db.prepare('SELECT cost_over_limit_at FROM cases WHERE id=?').get(A).cost_over_limit_at, 'Markierung gesetzt');
+  eq((await cmd(U.fleet, A, 'add_external_cost', { supplier: 'Getriebe Fremd', invoice_no: 'RE-77', covers_work_and_parts: true }, 'Rechnung folgt')).status, 200);
+  ok(db.prepare('SELECT cost_over_limit_at FROM cases WHERE id=?').get(A).cost_over_limit_at, 'Markierung bleibt bei unbewerteter Ersatz-Fremdleistung');
+  const dA = (await U.fleet.get(`/api/cases/${A}`)).data; ok(dA.allowed_actions.includes('approve_costs'), 'Kosten freigeben weiter angeboten');
+  eq(dA.costs.external_replaces_own, true);
+  const ev = dA.events.find((x) => x.action === 'add_external_cost'); const pl = typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload;
+  eq(pl.covers_work_and_parts, true); eq(pl.invoice_no, 'RE-77');
+  // Fremdleistung mit Betrag unter der Grenze ersetzt die eigenen 700 € → Markierung fällt weg (bisheriges Verhalten)
+  const B = await toRepair({ description: 'Kupplung' });
+  eq((await cmd(U.ws, B, 'add_part', { name: 'Kupplung', quantity: 1, unit_price_net: 700 })).status, 200);
+  eq((await cmd(U.fleet, B, 'add_external_cost', { supplier: 'Fremd', amount_net: 300, covers_work_and_parts: true }, 'Rechnung')).status, 200);
+  eq(db.prepare('SELECT cost_over_limit_at FROM cases WHERE id=?').get(B).cost_over_limit_at, null, 'bewerteter Ersatz unter Grenze');
+  // 4. Vorgangs-CSV: Protokoll nennt gesetzte Filter
+  eq((await U.fleet.get('/api/cases?format=csv&status=open&warranty=1&repeat_days=30')).status, 200);
+  const ex = JSON.parse(db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY created_at DESC LIMIT 1`).get().detail);
+  eq(ex.warranty, '1'); eq(ex.repeat_days, '30'); ok(!('followup' in ex), 'nicht gesetzte Filter fehlen');
+  // 5. Einrichtungsstand: Einstellungs-Punkte mit Abschnitt
+  const rd = (await U.own.get('/api/admin/readiness')).data.items;
+  for (const k of ['idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup']) eq(rd.find((x) => x.key === k).link, '#/settings?s=' + k);
+  // 6. Oberfläche (statisch)
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const ft = app.slice(app.indexOf('async function fleetTodo('), app.indexOf('const TODO_TRUNC'));
+  ok(!ft.includes('.catch(() => [])') && !ft.includes('.catch(() => null)') && ft.includes('if (failed && !groups.length) return failNote;'), 'Startseite: Teilausfall nie grün');
+  ok(app.includes("if (!S.me && ['test', 'production'].includes(e.data.env)) history.replaceState(history.state, '', location.pathname + '?env=' + e.data.env + location.hash);"), 'Push-Umgebung nach Abmeldung gemerkt');
+  ok(app.includes(`<button type="button" class="btn secondary small" data-dec="\${esc(m.event_id)}" data-st="erledigt"`) && app.includes("if (a.dataset.st === 'erledigt' && !confirm(t('dec_resolve_confirm'))) return;"), 'Erledigt als Knopf mit Rückfrage');
+  ok(app.includes("const m = location.hash.match(/^#\\/(cases|inspect|fines|drivers)\\/[^?]+/);"), 'Umschalten auf Detailseite');
+  ok(app.includes("window.addEventListener('hashchange', () => navMark());\nwindow.addEventListener('hashchange', route);") && app.includes('requestAnimationFrame(() => window.scrollTo(0, y))') && !app.includes('history.replaceState(null,'), 'Zurück mit Scrollposition, Verlaufszustand bleibt erhalten');
+  ok(app.includes("[/^#\\/settings(?:\\?s=([a-z_]+))?$/, (sec) => viewSettings(sec)]") && app.includes("secEl.scrollIntoView({ block: 'center' })"), 'Einstellungen springen zum Feld');
+  ok(app.includes("tn('dup_driver_name_warn', dn.length)") && app.includes("t('ext_replaces_note')"), 'Hinweise Namensdublette / Ersatz-Fremdleistung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

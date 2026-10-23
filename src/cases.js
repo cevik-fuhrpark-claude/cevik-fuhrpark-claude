@@ -461,6 +461,9 @@ export async function revalidateCostMarks(env, actorId, caseIds = null) {
     const k = computeCosts(rate, work.get(c.id) || [], parts.get(c.id) || [], ext.get(c.id) || []);
     const total = round2(k.actual_net + k.estimate_net);
     if (limit !== null && total > Math.max(limit, c.approved || 0)) continue;
+    // Fremdleistung „ersetzt eigene Arbeit/Teile“ noch ohne Betrag: die eigenen Kosten fallen heraus, der Ersatz ist aber unbewertet –
+    // die Markierung bleibt, bis ein Betrag vorliegt (23.10.2026: Rechnung folgt → Kostenfreigabe still aufgehoben, Freigabe ohne „Kosten freigeben“)
+    if (k.external_replaces_own && (ext.get(c.id) || []).some((e) => e.covers_work_and_parts && (e.amount_net === null || e.valuation === 'unvalued'))) continue;
     clear.push({ id: c.id, at: c.at, ev: uuid(), env: c.environment, status: c.status, payload: JSON.stringify({ total_net: total, limit_net: limit, approved_net: c.approved ?? null }) });
   }
   if (!clear.length) return [];
@@ -1219,7 +1222,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const warranty = warrantyDate(p.warranty_until);
       extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty));
-      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}) };
+      const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile');
+      // Verlauf nennt Schalter und Rechnungsnummer: nachvollziehbar, ab wann eigene Stunden/Teile nicht mehr zählen (23.10.2026)
+      const invNo = str(p.invoice_no, { max: 60 });
+      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}) };
       break;
     }
     case 'approve_costs': {

@@ -166,7 +166,10 @@ export function tachoCsv(ov, cell) {
 // Datum (JJJJ-MM-TT oder TT.MM.JJJJ), Nachweis/Datei (sonst Pflichtangabe `source` für alle Zeilen).
 // Zuordnung nur eindeutig: Fahrer über Personalnummer, sonst exakt gleicher Name; Fahrzeug über FIN, sonst eindeutiges Kennzeichen.
 const MAX_IMPORT = 2000;
-const normName = (n) => String(n || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' '); // NFC: Namen vom Mac (zerlegte Umlaute)
+// Personalnummer ohne führende Nullen vergleichen (Excel macht aus „00123“ die Zahl 123, 18.10.2026), Groß-/Kleinschreibung auch außerhalb A–Z;
+// gilt für Auslesungen-Import und seit 23.10.2026 auch für Anlegen/Ändern der Fahrerakte (dort vorher SQL-lower nur ASCII, ohne Nullen)
+export const pnoKey = (x) => { const k = String(x || '').normalize('NFC').trim().toLowerCase(); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k || null; };
+export const normName = (n) => String(n || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' '); // NFC: Namen vom Mac (zerlegte Umlaute)
 function parseDay(raw) {
   const t = String(raw || '').trim(); let m;
   const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
@@ -242,7 +245,6 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const cancelled = new Set(existingRows.filter((r) => r.cancelled_at).map((r) => `${r.k}|${String(r.evidence || '').trim().toLowerCase()}`));
   const uniq = (list, keyFn) => { const m = new Map(); for (const x of list) { const k = keyFn(x); if (!k) continue; m.set(k, m.has(k) ? 'mehrdeutig' : x); } return m; };
   // Personalnummer ohne führende Nullen vergleichen (Excel macht aus „00123“ die Zahl 123, 18.10.2026); zwei Nummern, die dadurch gleich werden → mehrdeutig
-  const pnoKey = (x) => { const k = String(x || '').normalize('NFC').trim().toLowerCase(); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k || null; };
   const byPno = uniq(drivers, (d) => (d.personnel_no ? pnoKey(d.personnel_no) : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));
   const byVin = new Map(vehicles.map((v) => [v.vin, v]));

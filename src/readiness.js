@@ -32,18 +32,19 @@ export async function readiness(env, user) {
   const agentOk = !!agent && !agent.error && (agent.finished_at ? nowMs - Date.parse(agent.finished_at) <= 75 * 60000 : nowMs - Date.parse(agent.started_at) <= 10 * 60000);
   const roles = parse(r.prod_roles, {});
   const backupDays = r.backup_at ? Math.floor((nowMs - Date.parse(r.backup_at)) / 86400000) : null;
+  // Einstellungs-Links mit Abschnitt (`?s=`): die App springt zum Feld statt an den Anfang der langen Seite (23.10.2026, Inhaber am Handy)
   const items = [
     { key: 'agent', state: agentOk ? 'ok' : 'open', last: agent ? agent.finished_at || agent.started_at : null, link: '#/master' },
-    { key: 'vehicles', state: r.vehicles ? 'ok' : 'open', n: r.vehicles, link: r.vehicles ? '#/vehicles' : '#/settings' },
+    { key: 'vehicles', state: r.vehicles ? 'ok' : 'open', n: r.vehicles, link: r.vehicles ? '#/vehicles' : '#/settings?s=import' },
     { key: 'emergency', state: r.em_prod ? 'ok' : 'open', n: r.em_prod, link: '#/emergency/edit' },
     { key: 'two_factor', state: no2fa.length ? 'open' : 'ok', n: no2fa.length, names: no2fa.slice(0, 8), link: '#/users' },
     { key: 'own_push', state: r.own_push ? 'ok' : 'open', n: r.own_push, link: '#/inbox' },
-    { key: 'idle_workshop', state: set(r.idle_ws) ? 'ok' : 'open', value: set(r.idle_ws) ? Number(r.idle_ws) : null, link: '#/settings' },
-    { key: 'test_readonly', state: r.test_ro === '1' ? 'ok' : 'open', link: '#/settings' },
-    { key: 'hourly_rate', state: set(r.rate) ? 'ok' : 'open', link: '#/settings' },
-    { key: 'license_interval', state: set(r.lic_months) ? 'ok' : 'open', link: '#/settings' },
-    { key: 'cost_limit', state: set(r.cost_limit) && Number(r.cost_limit) > 0 ? 'ok' : 'info', link: '#/settings' },
-    { key: 'backup', state: backupDays !== null && backupDays <= 31 ? 'ok' : 'open', last: r.backup_at || null, days: backupDays, link: '#/settings' },
+    { key: 'idle_workshop', state: set(r.idle_ws) ? 'ok' : 'open', value: set(r.idle_ws) ? Number(r.idle_ws) : null, link: '#/settings?s=idle_workshop' },
+    { key: 'test_readonly', state: r.test_ro === '1' ? 'ok' : 'open', link: '#/settings?s=test_readonly' },
+    { key: 'hourly_rate', state: set(r.rate) ? 'ok' : 'open', link: '#/settings?s=hourly_rate' },
+    { key: 'license_interval', state: set(r.lic_months) ? 'ok' : 'open', link: '#/settings?s=license_interval' },
+    { key: 'cost_limit', state: set(r.cost_limit) && Number(r.cost_limit) > 0 ? 'ok' : 'info', link: '#/settings?s=cost_limit' },
+    { key: 'backup', state: backupDays !== null && backupDays <= 31 ? 'ok' : 'open', last: r.backup_at || null, days: backupDays, link: '#/settings?s=backup' },
     { key: 'prod_accounts', state: 'info', roles, open_invites: r.open_invites, test_accounts: r.test_accounts, link: '#/users' },
     { key: 'integration', state: env.INTEGRATION_TOKEN ? 'ok' : 'info', link: '#/help' },
   ];

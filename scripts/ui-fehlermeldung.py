@@ -37,7 +37,10 @@ with sync_playwright() as p:
         check(q.locator(f'[data-dec="{ev}"]').count()==2,f'{w}px: Eintrag bleibt offen')
         check(q.locator(f'[data-dec="{ev}"][data-busy]').count()==0,f'{w}px: Link wieder bedienbar')
         q.unroute('**/api/master/*/decision'); q.evaluate("()=>document.querySelectorAll('.toast').forEach(x=>x.remove())")
-        q.locator(f'[data-dec="{ev}"][data-st="erledigt"]').click()
+        # „Erledigt“ fragt nach (endgültig): erst abbrechen → bleibt offen, dann bestätigen
+        q.once('dialog', lambda d: d.dismiss()); q.locator(f'[data-dec="{ev}"][data-st="erledigt"]').click(); q.wait_for_timeout(300)
+        check(q.locator(f'[data-dec="{ev}"]').count()==2,f'{w}px: Rückfrage abgebrochen – Eintrag bleibt offen')
+        q.once('dialog', lambda d: d.accept()); q.locator(f'[data-dec="{ev}"][data-st="erledigt"]').click()
         q.wait_for_function(f"()=>!document.querySelector('[data-dec=\"{ev}\"]')")
         check(q.locator('.toast.err').count()==0,f'{w}px: mit Netz entschieden, keine Fehlermeldung')
         # Sicherheitsnetz: Agentenlauf gelingt, Neuladen des Panels scheitert → Meldung (vorher still)

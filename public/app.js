@@ -308,7 +308,11 @@ function render(html, active, { defer = false } = {}) {
   document.getElementById('app').innerHTML = S.me ? frame(html, active) : `<main>${html}</main>`;
   const sk = $('.skip'); if (sk) sk.onclick = (e) => { e.preventDefault(); $('#main').focus(); };
   const es = $('#envsel');
-  if (es) es.onchange = () => { S.viewEnv = es.value; localStorage.setItem('cfp_env', es.value); S.unread = 0; refreshUnread(); route(); };
+  if (es) es.onchange = () => { S.viewEnv = es.value; try { localStorage.setItem('cfp_env', es.value); } catch {} S.unread = 0; refreshUnread();
+    // Detailseiten gehören zu einer Umgebung (Vorgang, Kontrolle, Bußgeld, Fahrerakte) – nach dem Umschalten auf die passende Liste statt „nicht gefunden“ (23.10.2026)
+    const m = location.hash.match(/^#\/(cases|inspect|fines|drivers)\/[^?]+/);
+    if (m) { location.hash = m[1] === 'fines' ? '#/fines' : m[1] === 'drivers' ? '#/drivers' : '#/cases'; return; }
+    route(); };
   stackTables(document.getElementById('app'));
   markToggles(document.getElementById('app'));
   bindOutbox();
@@ -317,6 +321,7 @@ function render(html, active, { defer = false } = {}) {
   S.renderSame = same;
   // defer: Seite baut nach render() noch dynamische Teile auf (z. B. offenes Aktionsformular im Vorgang) – Wiederherstellen dann per finishRender()
   if (same && S.keep) { if (defer) S.pendingRestore = true; else keepRestore(); } else window.scrollTo(0, 0);
+  if (!interim && S.restoreScroll != null) { const y = S.restoreScroll; S.restoreScroll = null; requestAnimationFrame(() => window.scrollTo(0, y)); }
 }
 function finishRender() { if (S.pendingRestore) { S.pendingRestore = false; if (S.keep) keepRestore(); } }
 
@@ -374,7 +379,7 @@ const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox], [/^#\/push$/, () => { location.replace(notifHref({})); }],
-  [/^#\/master(?:\?(q|sev)=([^&]*))?$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings$/, viewSettings], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
+  [/^#\/master(?:\?(q|sev)=([^&]*))?$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings(?:\?s=([a-z_]+))?$/, (sec) => viewSettings(sec)], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 // `vs` aus Startseiten-Sprüngen (hj): Standortfilter der Zielliste setzen ('*' = alle), dann ohne `vs` weiter (Routen-Muster bleiben streng)
@@ -385,7 +390,7 @@ function applySiteJump(h) {
   const v = String(p.get('vs') || '').slice(0, 80); p.delete('vs');
   const k = VS_KEYS[m[1]]; if (k && S.me && S.me.role !== 'driver') S[k] = v === '*' ? '' : v;
   const q = p.toString(); const nh = h.slice(0, h.indexOf('?')) + (q ? '?' + q : '');
-  try { history.replaceState(null, '', nh); } catch {}
+  try { history.replaceState(history.state, '', nh); } catch {}
   return nh;
 }
 const routeArg = (x) => { if (x === undefined) return undefined; try { return decodeURIComponent(x); } catch { return x; } };
@@ -413,7 +418,7 @@ async function route() {
       }
       if (S.me.role === 'owner') S.viewEnv = localStorage.getItem('cfp_env') || null;
       // Push angetippt bei geschlossener App: Umgebung aus „?env=“ übernehmen (Inhaber), danach aus der Adresse entfernen
-      { const pe = new URLSearchParams(location.search).get('env'); if (pe) { pushEnv(pe); history.replaceState(null, '', location.pathname + location.hash); } }
+      { const pe = new URLSearchParams(location.search).get('env'); if (pe) { pushEnv(pe); history.replaceState(history.state, '', location.pathname + location.hash); } }
       if (!S.offlineStart) {
         S.meta = await api('GET', '/api/meta');
         saveOfflineSession();
@@ -448,6 +453,18 @@ async function route() {
     const eh = document.getElementById('errh'); if (eh) eh.focus({ preventScroll: true });
   }
 }
+// Zurück-Taste: Scrollposition je Verlaufseintrag merken und wiederherstellen (23.10.2026: Inhaber am Handy landete nach „Zurück“ aus einem
+// Vorgang wieder oben in der langen Master-Liste). Eintrag bekommt eine Nummer im history.state; neue Einträge beginnen oben.
+const NAV_SCROLL = new Map(); let navCur = null; let navSeq = Date.now();
+function navMark(initial = false) {
+  if (!initial && navCur !== null) NAV_SCROLL.set(navCur, window.scrollY);
+  const st = history.state && history.state.cfpNav;
+  if (st) { navCur = st; S.restoreScroll = initial ? null : (NAV_SCROLL.has(st) ? NAV_SCROLL.get(st) : null); return; }
+  navCur = ++navSeq; S.restoreScroll = null;
+  try { history.replaceState({ ...(history.state && typeof history.state === 'object' ? history.state : {}), cfpNav: navCur }, ''); } catch { /* z. B. eingeschränkte Vorschau */ }
+}
+navMark(true);
+window.addEventListener('hashchange', () => navMark());
 window.addEventListener('hashchange', route);
 // Tastatur: Escape schließt ein aufgeklapptes Aktionsformular am Vorgang bzw. „Erledigt“ in der Fahrzeugakte, Fokus zurück auf den Auslöser (22.10.2026)
 document.addEventListener('keydown', (e) => {
@@ -977,6 +994,7 @@ async function viewHome() {
     }
   }
   render(html, 'home');
+  const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
 }
 
@@ -1037,18 +1055,20 @@ async function dispoPlanned(vsite = '') {
 
 // Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
 async function fleetTodo() {
+  // Teilausfall (Funkloch, Zeitüberschreitung) zählen: vorher still „leer“ → grünes „Nichts Dringendes offen“ trotz offener Kostenfreigaben (23.10.2026)
+  let failed = 0; const soft = (d) => () => { failed++; return d; };
   const [cs, ov, fs, tc, dr, ct, cl, wi, af] = await Promise.all([
-    api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(() => []),
-    api('GET', '/api/maintenance').catch(() => null),
-    api('GET', '/api/fines?status=open').then((r) => r.fines).catch(() => []),
-    isMgr() ? api('GET', '/api/tacho').catch(() => null) : null,
-    isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(() => []) : [],
-    isMgr() ? api('GET', '/api/contracts?filter=aktiv').then((r) => r.contracts).catch(() => []) : [],
-    isMgr() ? api('GET', '/api/claims?filter=offen').then((r) => r.claims.filter((c) => c.followup_due)).catch(() => []) : [],
+    api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(soft([])),
+    api('GET', '/api/maintenance').catch(soft(null)),
+    api('GET', '/api/fines?status=open').then((r) => r.fines).catch(soft([])),
+    isMgr() ? api('GET', '/api/tacho').catch(soft(null)) : null,
+    isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(soft([])) : [],
+    isMgr() ? api('GET', '/api/contracts?filter=aktiv').then((r) => r.contracts).catch(soft([])) : [],
+    isMgr() ? api('GET', '/api/claims?filter=offen').then((r) => r.claims.filter((c) => c.followup_due)).catch(soft([])) : [],
     // Lkw ohne Alpine-Symbol laut Erfassung – Entscheidung zur Umrüstung liegt bei der Fuhrparkleitung (nur Information, keine Sperre)
-    isMgr() ? api('GET', '/api/tires/winter').then((r) => r.noncompliant).catch(() => []) : [],
+    isMgr() ? api('GET', '/api/tires/winter').then((r) => r.noncompliant).catch(soft([])) : [],
     // Fahrzeuge mit kritischen offenen Agentenbefunden (Felder nur für Inhaber/Fuhrparkleitung, Umgebung der Person)
-    isMgr() ? api('GET', '/api/vehicles').then((r) => r.vehicles.filter((v) => v.agent_findings_critical > 0)).catch(() => []) : [],
+    isMgr() ? api('GET', '/api/vehicles').then((r) => r.vehicles.filter((v) => v.agent_findings_critical > 0)).catch(soft([])) : [],
   ]);
   af.sort((a, b) => b.agent_findings_critical - a.agent_findings_critical || b.agent_findings_open - a.agent_findings_open || plateCmp(a.plate, b.plate));
   const today = bDate();
@@ -1078,11 +1098,13 @@ async function fleetTodo() {
     ['todo_winter', wi, (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires`, (x) => `${x.plate} · ${t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', '))}${x.open_order ? ` · 🔧 ${t('mo_open')} ${x.open_order.case_no}` : ''}${x.closed_order ? ` · ⚠ ${t('wo_closed_short').replace('{no}', x.closed_order.case_no)}` : ''}`, ''],
     ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7 && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status)), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtD(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
+  const failNote = failed ? `<section class="panel alert" role="alert" data-todofail><b>${esc(t('todo_partial_fail'))}</b> <button type="button" class="btn secondary" id="todoretry">${esc(t('retry'))}</button></section>` : '';
+  if (failed && !groups.length) return failNote;
   // Erstnutzung/Lücken (22.10.2026): „Nichts Dringendes offen“ stand grün auch ohne Fahrzeuge bzw. mit Pflichtprüfungen ohne Termin
   if (!groups.length && ov && ov.totals && ov.totals.vehicles === 0) return `<section class="panel" role="note" data-novehicles><b>${esc(t('todo_none'))}</b><p class="small">${esc(t('todo_no_vehicles'))} <a href="#/vehicles">${esc(t('nav_vehicles'))} ›</a></p></section>`;
   if (!groups.length && ov && ov.gaps && ov.gaps.length) return `<section class="panel" role="note" data-todogaps><b>${esc(t('todo_none'))}</b><p class="small">${esc(tn('todo_gaps_hint', ov.gaps.length))} <a href="#/maintenance?f=gaps">${esc(t('maintenance'))} ›</a></p></section>`;
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
-  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}${(ov && ov.lists_truncated || []).includes(TODO_TRUNC[k]) ? '+' : ''}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_vfind_crit' ? `<p class="small"><a href="${hj('#/vehicles?f=with_findings_crit')}" id="todovfind">${esc(t('show_in_vlist'))} ›</a> · <a href="#/master">${esc(t('nav_master'))} ›</a></p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="${hj('#/cases?f=repeat')}">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_tacho' ? `<p class="small"><a href="${hj('#/tacho')}" id="todotacho">${esc(t('tacho'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="${hj('#/plan')}">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="${hj('#/plan?s=mdue')}">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_winter' ? `<p class="small"><a href="${hj('#/tires?f=winter_bad')}" id="todowinter">${esc(t('ws_winter_show'))} ›</a></p>${list.some((x) => x.closed_order) ? `<p class="small"><a href="${hj('#/tires?f=winter_closed')}" id="todowclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="${hj('#/quality?f=inspection_no_result')}">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
+  return `${failNote}<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}${(ov && ov.lists_truncated || []).includes(TODO_TRUNC[k]) ? '+' : ''}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_vfind_crit' ? `<p class="small"><a href="${hj('#/vehicles?f=with_findings_crit')}" id="todovfind">${esc(t('show_in_vlist'))} ›</a> · <a href="#/master">${esc(t('nav_master'))} ›</a></p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="${hj('#/cases?f=repeat')}">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_tacho' ? `<p class="small"><a href="${hj('#/tacho')}" id="todotacho">${esc(t('tacho'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="${hj('#/plan')}">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="${hj('#/plan?s=mdue')}">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_winter' ? `<p class="small"><a href="${hj('#/tires?f=winter_bad')}" id="todowinter">${esc(t('ws_winter_show'))} ›</a></p>${list.some((x) => x.closed_order) ? `<p class="small"><a href="${hj('#/tires?f=winter_closed')}" id="todowclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="${hj('#/quality?f=inspection_no_result')}">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
 }
 
 // Listen der Prüftermin-Übersicht, die der Server bei 200 kappt (`lists_truncated`) → Zähler „200+“
@@ -1132,7 +1154,7 @@ async function viewCases() {
   const ci = $('#cics'); if (ci) ci.onclick = async () => { try { download(await api('GET', `/api/cases?format=ics${vq()}`), `fuhrpark-wiedervorlagen_${envFn()}_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
   const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { const blob = await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${sq()}`); download(blob, `fuhrpark-vorgaenge_${envFn()}_${bDate()}.csv`); if (blob.cfpTruncated) toast(t('csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
   // Reiter: ein Filter aus dem Link (#/cases?f=…) hätte sonst Vorrang und der Klick bliebe ohne Wirkung (19.10.2026)
-  $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); S.caseLimit = null; if (location.hash.includes('?')) history.replaceState(null, '', '#/cases'); viewCases(); }));
+  $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); S.caseLimit = null; if (location.hash.includes('?')) history.replaceState(history.state, '', '#/cases'); viewCases(); }));
   const cvs = $('#cvsite'); if (cvs) cvs.onchange = () => { S.caseVsite = cvs.value; S.caseLimit = null; viewCases(); };
   const cso = $('#csort'); if (cso) cso.onchange = () => { S.caseSort = sortPref('cases', CASE_SORTS, 'priority', CASE_SORTS.includes(cso.value) ? cso.value : 'priority'); viewCases(); };
   bindMore();
@@ -1557,7 +1579,7 @@ async function viewCase(id) {
   if (d.costs) {
     const k = d.costs;
     html += `<section class="panel ${k.complete ? '' : ''}"><h3>${esc(t('costs'))}</h3><dl class="kv"><dt>${esc(t('actual_cost'))}</dt><dd>${eurIst(k)}</dd><dt>${esc(t('estimate'))}</dt><dd>${eur(k.estimate_net)}</dd><dt>${esc(t('unvalued'))}</dt><dd>${k.unvalued_items ? `<span class="chip mittel">${k.unvalued_items}</span>` : '0'}</dd><dt>${esc(t('hours'))}</dt><dd>${hrs(k.hours)}${k.hourly_rate_net === null ? ` <span class="small muted">(${esc(t('hourly_rate'))}: –)</span>` : ''}</dd>${d.cost_limit ? `<dt>${esc(t('cost_limit'))}</dt><dd>${d.cost_limit.limit_net !== null ? eur(d.cost_limit.limit_net) : '–'}${d.cost_limit.approved_net !== null ? ` · ${esc(t('cost_approved_upto'))} ${eur(d.cost_limit.approved_net)}` : ''}${d.cost_limit.over_since ? ` <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}</dd>` : ''}</dl>
-      ${d.external_costs && d.external_costs.length ? `<table>${d.external_costs.map((x) => `<tr><td style="overflow-wrap:anywhere">${esc(x.supplier)} ${esc(x.invoice_no || '')}${warrChip(x.warranty_until)}</td><td>${x.amount_net === null ? esc(t('unvalued')) : eur(x.amount_net) + (x.valuation === 'estimate' ? ' (' + esc(t('estimate')) + ')' : '')}</td></tr>`).join('')}</table>` : ''}</section>`;
+      ${d.external_costs && d.external_costs.length ? `<table>${d.external_costs.map((x) => `<tr><td style="overflow-wrap:anywhere">${esc(x.supplier)} ${esc(x.invoice_no || '')}${warrChip(x.warranty_until)}${x.covers_work_and_parts ? `<br><span class="small muted">${esc(t('covers_all'))}</span>` : ''}</td><td>${x.amount_net === null ? esc(t('unvalued')) : eur(x.amount_net) + (x.valuation === 'estimate' ? ' (' + esc(t('estimate')) + ')' : '')}</td></tr>`).join('')}</table>` : ''}${k.external_replaces_own ? `<p class="small muted">${esc(t('ext_replaces_note'))}</p>` : ''}</section>`;
   }
 
   // Als Dublette abgelehnt ohne eigenen Fall: kein Formular (Server lehnt ab), Hinweis auf den Ursprungsvorgang (20.10.2026)
@@ -2003,7 +2025,7 @@ async function viewVehicles() {
   if (hf !== null) {
     // Sprung aus einem Zähler: übrige Filter zurücksetzen (Art, außer Betrieb) – sonst zeigte die Liste weniger/andere Fahrzeuge als die Zahl (22.10.2026)
     if (VEH_AV_LINK.includes(hf) && (!hf.startsWith('with_findings') || isMgr())) { S.vehAvail = hf; S.vehKind = 'all'; S.vehInactive = false; if (hf.startsWith('with_findings')) S.vehSort = 'findings'; }
-    try { history.replaceState(null, '', '#/vehicles'); } catch {}
+    try { history.replaceState(history.state, '', '#/vehicles'); } catch {}
   }
   const inact = !!S.vehInactive && isMgr();
   const vs = (await api('GET', '/api/vehicles' + (inact ? '?inactive=1' : ''))).vehicles;
@@ -3040,7 +3062,11 @@ async function viewDrivers() {
   const dse = $('#dsite'); if (dse) dse.onchange = () => { S.drvSite = dse.value; viewDrivers(); };
   $('#dprl').onclick = () => window.print();
   $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv' + (dq ? '&' + dq : '')), `fuhrpark-fahrer-fristen_${envFn()}_${S.drvInactive ? 'inaktiv_' : ''}${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
-  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', '/api/drivers', b); location.hash = '#/drivers/' + r.id; } catch (err) { toast(err.message, true); } };
+  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', '/api/drivers', b); location.hash = '#/drivers/' + r.id;
+    // gleichnamige aktive Fahrer: nur Hinweis, gespeichert ist die Akte trotzdem (gleiche Namen sind möglich, 23.10.2026)
+    const dn = r && r.duplicate_names;
+    if (dn && dn.length) setTimeout(() => toast(tn('dup_driver_name_warn', dn.length).replace('{name}', b.display_name || '').replace('{list}', dn.slice(0, 3).map((x) => x.personnel_no ? x.display_name + ' (' + x.personnel_no + ')' : x.display_name).join(', ') + (dn.length > 3 ? ` +${dn.length - 3}` : '')), true), 400);
+  } catch (err) { toast(err.message, true); } };
 }
 async function viewDriver(id) {
   const x = await api('GET', '/api/drivers/' + id);
@@ -3487,9 +3513,9 @@ const DEC_SHOW = 100;
 async function viewMaster(argKey, argVal, cached) {
   const q = argKey === 'q' ? (argVal ?? '') : undefined; const sevArg = argKey === 'sev' ? (argVal ?? '') : undefined;
   // Direktsprung #/master?q=<Kennzeichen> (z. B. aus der Fahrzeugakte): Suche vorbelegen, alle Schweregrade, Adresse ohne Parameter
-  if (q !== undefined) { S.afQ = String(q).slice(0, 80); S.afSev = 'all'; try { history.replaceState(null, '', '#/master'); } catch {} }
+  if (q !== undefined) { S.afQ = String(q).slice(0, 80); S.afSev = 'all'; try { history.replaceState(history.state, '', '#/master'); } catch {} }
   // Direktsprung #/master?sev=act (Startseite „Befunde: n“ zählt kritisch + handeln): passende Auswahl vorbelegen, Suche leeren
-  if (sevArg !== undefined) { S.afSev = AF_SEVS.includes(sevArg) ? sevArg : 'all'; S.afQ = ''; try { history.replaceState(null, '', '#/master'); } catch {} }
+  if (sevArg !== undefined) { S.afSev = AF_SEVS.includes(sevArg) ? sevArg : 'all'; S.afQ = ''; try { history.replaceState(history.state, '', '#/master'); } catch {} }
   const p = cached || await api('GET', '/api/master');
   if (!cached) S.mDecAll = false;
   const decOpen = p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && !m.superseded);
@@ -3505,7 +3531,7 @@ async function viewMaster(argKey, argVal, cached) {
     <div class="stats"><div><b>${p.vehicles_total}</b>${esc(t('total'))}</div><div><b style="color:var(--stop)">${p.vehicles_locked}</b>${esc(t('locked_vehicles'))}</div><div><b>${p.vehicles_in_workshop}</b>${esc(t('in_workshop'))}</div></div>
     <div class="actions"><button class="btn secondary" id="ra">${esc(t('run_agent'))}</button><a class="btn secondary" href="#/vehicles">${esc(t('vehicles'))}</a>${p.findings.length ? `<button class="btn secondary noprint" id="afcsv">${esc(t('export_csv'))}</button>` : ''}<button type="button" class="btn secondary noprint" id="mprt">${esc(t('print'))}</button></div>
     ${printHead([t(p.environment === 'test' ? 'env_testname' : 'env_prod'), `${t('findings')}: ${p.findings.length}`, ...(afSev !== 'all' || (S.afQ || '').trim() ? [`${t('af_filter')}: ${afSev !== 'all' ? t('asev_' + afSev) : ''}${(S.afQ || '').trim() ? ` „${S.afQ.trim()}“` : ''}`] : []), `${t('decisions')}: ${p.decisions_open}`])}
-    <h2>${esc(t('decisions'))}</h2><div class="list">${decShown.map((m) => `<div class="row ${m.severity === 'kritisch' ? 'p-kritisch' : 'p-mittel'}"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span>${afLink(m.case_id, m.payload.finding_code, m.finding_subject)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, m.payload.next_action))}${!m.case_id && m.vehicle_id ? ` · <a href="#/vehicles/${esc(m.vehicle_id)}">${esc(t('vehicle_file'))}</a>` : ''} · ${fmtDT(m.received_at)}${m.finding_status === 'erledigt' ? ' · ✓ ' + esc(t('resolved')) : ''} · ${m.decision_status === 'gesehen' ? `<span data-seen>${esc(t('seen_by').replace('{n}', m.decided_by_name || '–').replace('{t}', m.decided_at ? fmtDT(m.decided_at) : ''))}</span>` : `<a href="#" data-dec="${esc(m.event_id)}" data-st="gesehen" data-was="${esc(m.decision_status)}">${esc(t('seen'))}</a>`} · <a href="#" data-dec="${esc(m.event_id)}" data-st="erledigt" data-was="${esc(m.decision_status)}">${esc(t('resolved'))}</a></span></div>`).join('') || noneP()}</div>${decOpen.length > decShown.length ? `<p class="small muted" id="decmore">${esc(t('dec_shown').replace('{n}', fmtNum(decShown.length)).replace('{m}', fmtNum(decOpen.length)))} <button type="button" class="btn secondary noprint" id="decall">${esc(t('kpi_veh_all').replace('{m}', fmtNum(decOpen.length)))}</button></p>` : ''}${decDone.length ? `<details class="panel noprint" id="decdone"><summary>${esc(t('dec_recent').replace('{n}', fmtNum(decDone.length)))}</summary><p class="small muted">${esc(t('dec_recent_hint'))}</p><div class="list">${decDone.map((m) => `<div class="row"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span class="chip ok">${esc(t(m.decision_status === 'erledigt' ? 'resolved' : 'dec_decided'))}</span><span class="sub" style="white-space:normal">${esc(m.decided_by_name || '–')}${m.decided_at ? ' · ' + fmtDT(m.decided_at) : ''}${m.decision_note ? ' · ' + esc(m.decision_note) : ''}${m.case_id ? ' · ' + afLink(m.case_id, m.payload.finding_code, m.finding_subject) : ''}</span></div>`).join('')}</div></details>` : ''}
+    <h2>${esc(t('decisions'))}</h2><div class="list">${decShown.map((m) => `<div class="row ${m.severity === 'kritisch' ? 'p-kritisch' : 'p-mittel'}"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span>${afLink(m.case_id, m.payload.finding_code, m.finding_subject)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, m.payload.next_action))}${!m.case_id && m.vehicle_id ? ` · <a href="#/vehicles/${esc(m.vehicle_id)}">${esc(t('vehicle_file'))}</a>` : ''} · ${fmtDT(m.received_at)}${m.finding_status === 'erledigt' ? ' · ✓ ' + esc(t('resolved')) : ''} · ${m.decision_status === 'gesehen' ? `<span data-seen>${esc(t('seen_by').replace('{n}', m.decided_by_name || '–').replace('{t}', m.decided_at ? fmtDT(m.decided_at) : ''))}</span>` : `<button type="button" class="btn secondary small" data-dec="${esc(m.event_id)}" data-st="gesehen" data-was="${esc(m.decision_status)}">${esc(t('seen'))}</button>`} <button type="button" class="btn secondary small" data-dec="${esc(m.event_id)}" data-st="erledigt" data-was="${esc(m.decision_status)}">${esc(t('resolved'))}</button></span></div>`).join('') || noneP()}</div>${decOpen.length > decShown.length ? `<p class="small muted" id="decmore">${esc(t('dec_shown').replace('{n}', fmtNum(decShown.length)).replace('{m}', fmtNum(decOpen.length)))} <button type="button" class="btn secondary noprint" id="decall">${esc(t('kpi_veh_all').replace('{m}', fmtNum(decOpen.length)))}</button></p>` : ''}${decDone.length ? `<details class="panel noprint" id="decdone"><summary>${esc(t('dec_recent').replace('{n}', fmtNum(decDone.length)))}</summary><p class="small muted">${esc(t('dec_recent_hint'))}</p><div class="list">${decDone.map((m) => `<div class="row"><span class="chip ${sev[m.severity]}">${esc(t('asev_' + m.severity))}</span><span class="title" style="white-space:normal">${fcLabel(m.payload.finding_code)}${esc(fMsg(m.payload.message_args, m.payload.message))}</span><span class="chip ok">${esc(t(m.decision_status === 'erledigt' ? 'resolved' : 'dec_decided'))}</span><span class="sub" style="white-space:normal">${esc(m.decided_by_name || '–')}${m.decided_at ? ' · ' + fmtDT(m.decided_at) : ''}${m.decision_note ? ' · ' + esc(m.decision_note) : ''}${m.case_id ? ' · ' + afLink(m.case_id, m.payload.finding_code, m.finding_subject) : ''}</span></div>`).join('')}</div></details>` : ''}
     <h2>${esc(t('findings'))}</h2>${p.findings.length > 1 ? `<div class="actions noprint" style="flex-wrap:wrap;margin-top:0">${[['all', t('filter_all'), p.findings.length], ...(afSev === 'act' ? [['act', t('asev_act'), p.findings.filter((f) => afSevMatch('act', f.severity)).length]] : []), ...['kritisch', 'handeln', 'hinweis', 'info'].map((k) => [k, t('asev_' + k), p.findings.filter((f) => f.severity === k).length]).filter(([k, , n]) => n || afSev === k)].map(([k, l, n]) => `<button type="button" class="btn ${afSev === k ? '' : 'secondary'}" data-afsev="${k}">${esc(l)} (${n})</button>`).join('')}</div><input id="afq" class="noprint" placeholder="${esc(t('search_label'))}" aria-label="${esc(t('search_label'))}" style="margin-bottom:8px" value="${esc(S.afQ || '')}"><p class="small muted noprint" id="afcnt" aria-live="polite"></p>` : ''}<div class="list" id="afl">${p.findings.map((f, i) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}" data-afi="${i}" data-sev="${esc(f.severity)}"><span class="chip ${sev[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${afLink(f.case_id, f.finding_code, f.subject_key)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))}${!f.case_id && f.vehicle_id ? ` · <a href="#/vehicles/${esc(f.vehicle_id)}" data-afv>${esc(t('vehicle_file'))}</a>` : ''} · ${esc(t('role_' + f.owner_role))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('') || noneP()}</div>
     <h2>${esc(t('nav_cases'))}</h2><div class="scroll"><table class="stack mtab"><thead><tr><th></th><th>${esc(t('case_no'))}</th><th>${esc(t('urgency'))}</th><th>${esc(t('status_label'))}</th><th>${esc(t('workshop'))}</th><th>${esc(t('received'))}</th><th>${esc(t('workshop_ack'))}</th><th>${esc(t('open_items'))}</th></tr></thead><tbody>
     ${p.cases.map((c) => `<tr><td>${plate(c.plate, { locked: c.safety_lock })}</td><td><a href="#/cases/${esc(c.id)}" style="white-space:nowrap">${esc(c.case_no)}</a><div class="small muted">${esc(cDesc(c.description).slice(0, 60))}</div></td><td><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span></td><td>${esc(t('st_' + c.status))}</td><td>${esc(wsName(c.workshop_site))}</td><td>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : '–'}</td><td>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : '–'}</td><td>${c.open_items || ''}</td></tr>`).join('')}</tbody></table></div>${p.cases.length ? '' : `<p class="muted" data-none>${esc(t('no_cases'))}</p>`}${p.cases_truncated ? `<p class="small muted" id="mctrunc">${esc(t('master_cases_truncated').replace('{n}', p.cases.length))} <a href="#/cases">${esc(t('nav_cases'))} ›</a></p>` : ''}`;
@@ -3527,7 +3553,8 @@ async function viewMaster(argKey, argVal, cached) {
   const afc = $('#afcsv'); if (afc) afc.onclick = () => download(new Blob([agentFindingsCsv(afShown(), t, (f) => fMsg(f.message_args, f.message), (x) => translateNextAction(S.lang, x), fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-agentenbefunde_${p.environment}_${bDate()}.csv`);
   $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${t('findings')}: ${fmtNum(r.findings_open)}`); viewMaster(); } catch (err) { toast(err.message, true); } };
   // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
-  $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
+  // „Erledigt“ ist endgültig (Status steigt nur auf, schließt auch ältere Einträge desselben Befunds) – Rückfrage gegen Fehltipp am Handy (23.10.2026)
+  $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; if (a.dataset.st === 'erledigt' && !confirm(t('dec_resolve_confirm'))) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
     try { await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }); await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
 }
 
@@ -3725,7 +3752,7 @@ async function viewAudit(more, uArg, vArg) {
   // (Fahrzeugakte → „Protokoll“); Adresse danach bereinigt. Ein Direktsprung ersetzt die jeweils andere Auswahl nicht.
   if (uArg) { S.auditUser = uArg; S.auditUserName = null; }
   if (vArg) { S.auditVeh = vArg; S.auditVehName = null; }
-  if (uArg || vArg) { history.replaceState(null, '', '#/audit'); S.lastHash = '#/audit'; }
+  if (uArg || vArg) { history.replaceState(history.state, '', '#/audit'); S.lastHash = '#/audit'; }
   const pv = S.auditVeh || '';
   const f = S.auditFilter || '';
   const pu = S.auditUser || '';
@@ -4217,7 +4244,7 @@ async function viewFleetTires() {
   // Direktsprung von der Werkstatt-Startseite (#/tires?f=winter_bad|winter_unknown): Reiter übernehmen, danach normale Bedienung
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf && ['attention', 'stale', 'never', 'winter_bad', 'winter_unknown', 'winter_closed', 'age', 'all'].includes(hf)) S.tireFilter = hf;
-  if (hf) try { history.replaceState(null, '', '#/tires'); } catch {} // Reiterwechsel danach nicht vom Link überschrieben
+  if (hf) try { history.replaceState(history.state, '', '#/tires'); } catch {} // Reiterwechsel danach nicht vom Link überschrieben
   const f = S.tireFilter || 'attention';
   const sel = { attention: (x) => x.status === 'unter_minimum' || x.status === 'warnung', never: (x) => x.measured_positions === 0, stale: (x) => x.stale && x.measured_positions > 0, winter_bad: (x) => x.winter === 'nicht_erfuellt', winter_unknown: (x) => x.winter === 'unbekannt', winter_closed: (x) => !!x.winter_closed_order, age: (x) => x.age_warn > 0, all: () => true }[f] || (() => true);
   const rows = r.rows.filter(sel);
@@ -4464,7 +4491,7 @@ async function viewUsers() {
   $$('[data-act]').forEach((b) => (b.onclick = async () => { if (b.dataset.on !== '1' && !confirm(t('deactivate_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('PATCH', `/api/users/${b.dataset.act}`, { active: b.dataset.on === '1' }); const h = userUpdateHints(r); if (h.length) toast(h.join(' · '), true); viewUsers(); } catch (err) { toast(err.message, true); } }));
 }
 
-async function viewSettings() {
+async function viewSettings(sec) {
   const s = await api('GET', '/api/settings');
   const v = s.values;
   // gespeicherte Kommazahlen („12.5“) im Formular mit Dezimalkomma (DE/UK) – der Server liest beide Schreibweisen
@@ -4490,6 +4517,10 @@ async function viewSettings() {
     });
     $('#sinv').innerHTML = `<section class="panel warn" role="alert"><p style="margin-top:0"><b>${esc(t('settings_stored_invalid'))}</b></p><ul class="small">${items.join('')}</ul></section>`;
   }
+  // Sprung aus dem Einrichtungsstand (Adresse mit Abschnitt s=…): Feld zeigen und fokussieren
+  const SEC = { idle_workshop: '#idle_logout_workshop_min', test_readonly: '#tmr', hourly_rate: '#workshop_hourly_rate_net', license_interval: '#license_check_months', cost_limit: '#repair_cost_limit_net', backup: '#bkp', import: '#csv' };
+  const secEl = sec && SEC[sec] ? $(SEC[sec]) : null;
+  if (secEl) { secEl.scrollIntoView({ block: 'center' }); try { secEl.focus({ preventScroll: true }); } catch {} }
   $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${bDate()}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); if (blob && Array.isArray(blob.truncated) && blob.truncated.length) toast(t('backup_truncated').replace('{t}', blob.truncated.join(', ')), true); } catch (err) { toast(err.message, true); } };
   $('#tcsv').onchange = async () => {
     const f = $('#tcsv').files[0]; if (!f) return;
@@ -4608,7 +4639,10 @@ setInterval(checkVersion, 30 * 60 * 1000);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
   // Push-Klick auf die schon offene Ansicht: neu aufbauen (gleicher Hash löst kein hashchange aus; 18.10.2026), Eingaben bleiben unangetastet
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') { if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') {
+    // abgemeldet (Leerlauf) bei offenem Fenster: Umgebung für die Anmeldung in der Adresse merken – wie beim Kaltstart „?env=“ (23.10.2026: Test-Vorgang → „nicht gefunden“)
+    if (!S.me && ['test', 'production'].includes(e.data.env)) history.replaceState(history.state, '', location.pathname + '?env=' + e.data.env + location.hash);
+    if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
 }
 document.documentElement.lang = S.lang;
 route();
