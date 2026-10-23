@@ -1463,6 +1463,7 @@ async function viewNew(preId) {
   const ACC = /unfall|accident|дтп|авар/i;
   $('#d').addEventListener('input', () => { $('#acc').hidden = !ACC.test($('#d').value); });
   photoLimitWatch($('#ph'));
+  const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);
   const key = uid();
   // Suchfeld: Enter („Los“ am Handy) filtert nur – sendet nicht ab; ein ausgeblendetes gewähltes Fahrzeug wird abgewählt (19.10.2026:
   // Meldung ging sonst an das vorausgewählte, durch den Filter verdeckte Fahrzeug)
@@ -1484,6 +1485,7 @@ async function viewNew(preId) {
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
     try {
       const r = await api('POST', '/api/cases', body);
+      draft.clear();
       const files = photoFiles;
       const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, sb, who) : { failed: 0, later: 0 };
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
@@ -1496,6 +1498,7 @@ async function viewNew(preId) {
         let stored = 0;
         if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/cases', body, stored, who);
+        draft.clear();
         if (!err.offline || !sb.isConnected) { toast(t(err.offline ? 'outbox_saved' : 'outbox_saved_login')); return; }
         render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
@@ -1894,6 +1897,55 @@ function bindChecklist(form) {
     toast(tn('check_missing', open), true);
   }, true);
 }
+// Formularentwurf (Abfahrtskontrolle/Meldung) im Sitzungsspeicher dieses Fensters – je Person/Umgebung/Seite, höchstens 12 h (Backlog 183):
+// Sprachwechsel unter „Mehr“ oder der Hilfe-Link mitten in der Kontrolle verloren sonst alle Eingaben. Gesichert wird erst nach einer
+// Eingabe; Fotos nicht (nur ihre Anzahl für den Hinweis), Suchfeld nicht. Gelöscht nach Senden/Postausgang, „Entwurf verwerfen“ und beim
+// Abmelden (resetUserState löscht alle cfp_-Schlüssel des Sitzungsspeichers).
+const FORM_DRAFT_MS = 12 * 3600000;
+function formDraft(page, form, skip = []) {
+  const key = `cfp_fd_${page}_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}`;
+  const fields = () => [...form.elements].filter((x) => (x.name || x.id) && !['file', 'button', 'submit', 'search'].includes(x.type) && !skip.includes(x.id));
+  const fk = (x) => x.name || x.id;
+  const d = {
+    load() { try { const x = JSON.parse(sessionStorage.getItem(key) || 'null'); return x && x.v && typeof x.v === 'object' && Date.now() - Date.parse(x.at) < FORM_DRAFT_MS ? x : null; } catch { return null; } },
+    save() {
+      try {
+        const v = {};
+        for (const x of fields()) { if (x.type === 'radio') { if (x.checked) v[fk(x)] = x.value; } else if (x.type === 'checkbox') { if (x.checked) v[fk(x)] = true; } else if (x.value !== '') v[fk(x)] = x.value; }
+        const ph = $('input[type=file]', form); const photos = ph && ph.files ? ph.files.length : 0;
+        sessionStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), v, photos }));
+      } catch { /* ohne Sitzungsspeicher: kein Entwurf */ }
+    },
+    clear() { try { sessionStorage.removeItem(key); } catch {} },
+    // Werte in Dokumentreihenfolge setzen und wie eine Eingabe melden (Mängel-Details aufklappen, bekannte Mängel/Unfallhinweis zeigen)
+    restore(x) {
+      for (const el of fields()) {
+        const k = fk(el); if (!(k in x.v)) continue;
+        if (el.type === 'radio') { if (el.value !== x.v[k] || el.checked) continue; el.checked = true; const det = el.closest('details'); if (det) det.open = true; el.dispatchEvent(new Event('change', { bubbles: true })); }
+        else if (el.type === 'checkbox') { el.checked = x.v[k] === true; }
+        else if (el.tagName === 'SELECT') { if ([...el.options].some((o) => o.value === x.v[k])) { el.value = x.v[k]; el.dispatchEvent(new Event('change', { bubbles: true })); } }
+        else { el.value = String(x.v[k]); el.dispatchEvent(new Event('input', { bubbles: true })); }
+      }
+    },
+  };
+  return d;
+}
+// Entwurf wiederherstellen (vor einer QR-Vorauswahl: zeigt der Aufkleber ein anderes Fahrzeug als der Entwurf, bleibt das Formular leer –
+// Antworten gehören nie an ein anderes Fahrzeug) und Hinweis mit „Entwurf verwerfen“ zeigen; jede Eingabe sichert den Entwurf
+function bindFormDraft(page, form, vehField, preId, skip) {
+  const d = formDraft(page, form, skip);
+  const x = d.load();
+  if (x && !(preId && x.v[vehField] && x.v[vehField] !== preId)) {
+    d.restore(x);
+    const box = document.createElement('div'); box.className = 'panel'; box.id = 'fdraft'; box.setAttribute('role', 'status'); box.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+    box.innerHTML = `<span class="small" style="flex:1 1 200px">${esc(t('form_draft_restored').replace('{d}', fmtDT(x.at)))}${x.photos ? ' ' + esc(t('form_draft_photos')) : ''}</span><button type="button" class="btn secondary" id="fdx">${esc(t('inventory_draft_discard'))}</button>`;
+    form.prepend(box);
+    $('#fdx').onclick = () => { if (!confirm(t('form_draft_discard_confirm'))) return; d.clear(); route(); };
+  }
+  const save = (e) => { if (e.isTrusted) d.save(); };
+  form.addEventListener('input', save); form.addEventListener('change', save);
+  return d;
+}
 function collectChecklist(form) {
   const fd = new FormData(form);
   return S.meta.checklist.map((i) => ({ key: i.key, result: fd.get(i.key), note: fd.get(i.key + '__note') || null, safety_relevant: !!fd.get(i.key + '__safety') }));
@@ -1932,6 +1984,7 @@ async function viewDepartureCheck(preId) {
   $('#v').addEventListener('change', showKnown);
   if (S.me.role === 'driver') api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
   photoLimitWatch($('#ph'));
+  const draft = bindFormDraft('check', form, 'v', preId);
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -1945,6 +1998,7 @@ async function viewDepartureCheck(preId) {
     try {
       sb.disabled = true;
       const r = await api('POST', '/api/inspections', body);
+      draft.clear();
       // Fotos gehören zum Mangel: an den (ersten) Folgeauftrag hängen; ohne Mangel wird nichts hochgeladen
       let failed = 0;
       // Ziel: erster eigener Folgeauftrag; ein Wiederholungsvermerk an einem fremden Vorgang ist für Fahrer nicht sichtbar (17.10.2026)
@@ -1959,6 +2013,7 @@ async function viewDepartureCheck(preId) {
         let stored = 0;
         if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/inspections', body, stored, who);
+        draft.clear();
         if (!err.offline || !sb.isConnected) { toast(t(err.offline ? 'outbox_saved' : 'outbox_saved_login')); return; }
         const critical = body.items.some((i) => i.result === 'mangel' && i.safety_relevant);
         render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${critical ? `<p><b>${esc(t('outbox_call'))}</b></p>` : ''}${files.length && !hasDefect ? `<p class="small">${esc(t('check_photos_skipped'))}</p>` : files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'check');

@@ -72,6 +72,7 @@ UI-Springer: Abfahrtskontrolle zeigt Sperre (auch fremdes Fahrzeug), Startseite 
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log
 UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-stichtag-rueckruf.py|/tmp/cfp-stichtag.log
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log
+UI-Formularentwurf Abfahrtskontrolle/Meldung (Hilfe, Sprachwechsel, QR, Verwerfen, Senden)|ui-formularentwurf.py|/tmp/cfp-formularentwurf.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

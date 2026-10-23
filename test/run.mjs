@@ -18335,6 +18335,27 @@ await test('Versichererwechsel / Lager-Rückgabe / Fahrer auf Ukrainisch (Teilag
   void V1;
 });
 
+await test('Formularentwurf (Backlog 183): Abfahrtskontrolle und Meldung sichern Eingaben im Sitzungsspeicher je Person/Umgebung/Seite, stellen sie nach Sprachwechsel/Hilfe wieder her (nicht bei QR eines anderen Fahrzeugs), keine Fotos, gelöscht nach Senden/Postausgang und beim Abmelden; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes("const key = `cfp_fd_${page}_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}`;"), 'Schlüssel je Seite/Person/Umgebung mit cfp_-Präfix (resetUserState löscht ihn beim Abmelden)');
+  ok(app.includes("!['file', 'button', 'submit', 'search'].includes(x.type)"), 'keine Dateifelder (Fotos) im Entwurf');
+  ok(/sessionStorage\.setItem\(key, JSON\.stringify\(\{ at: new Date\(\)\.toISOString\(\), v, photos \}\)\)/.test(app), 'Sitzungsspeicher, nicht localStorage');
+  ok(app.includes("if (x && !(preId && x.v[vehField] && x.v[vehField] !== preId))"), 'QR eines anderen Fahrzeugs übernimmt den Entwurf nicht');
+  ok(app.includes("const save = (e) => { if (e.isTrusted) d.save(); };"), 'nur echte Eingaben sichern');
+  ok(app.includes("const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);") && app.includes("const draft = bindFormDraft('check', form, 'v', preId);"), 'beide Formulare angebunden');
+  const nNew = app.slice(app.indexOf('async function viewNew('), app.indexOf('function myPlanned('));
+  const nChk = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
+  for (const [nm, src, path] of [['Meldung', nNew, '/api/cases'], ['Kontrolle', nChk, '/api/inspections']]) {
+    ok(src.includes(`await api('POST', '${path}', body);\n      draft.clear();`), `${nm}: Entwurf nach erfolgreichem Senden gelöscht`);
+    ok(src.includes(`outboxAdd('${path}', body, stored, who);\n        draft.clear();`), `${nm}: Entwurf nach Sicherung im Postausgang gelöscht`);
+  }
+  ok(app.includes("try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}"), 'Abmelden löscht Entwürfe');
+  ok(app.includes("$('#fdx').onclick = () => { if (!confirm(t('form_draft_discard_confirm'))) return; d.clear(); route(); };"), 'Verwerfen als Eigenschafts-Handler mit Rückfrage');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_restored', 'form_draft_photos', 'form_draft_discard_confirm', 'inventory_draft_discard']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 5, `${l}: ${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].form_draft_restored.includes('{d}'), `${l}: Platzhalter {d}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
