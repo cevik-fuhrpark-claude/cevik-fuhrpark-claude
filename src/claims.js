@@ -14,12 +14,14 @@ const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
 const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
-function day(v, field, required = false) {
+function day(v, field, required = false, future = false) {
   const d = str(v, { max: 10, field, required });
   if (!d) return null;
   if (!ISO.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', `${field}: gültiges Datum im Format JJJJ-MM-TT.`);
   if (d < '2000-01-01') throw bad('validation', `${field}: Datum außerhalb des zulässigen Bereichs.`);
-  if (d > berlinDate()) throw bad('validation', `${field}: darf nicht in der Zukunft liegen.`);
+  // Besichtigungstermin darf geplant sein (höchstens ein Jahr voraus), alle übrigen Daten nicht in der Zukunft
+  if (future) { if (d > new Date(Date.parse(berlinDate() + 'T00:00:00Z') + 366 * 86400000).toISOString().slice(0, 10)) throw bad('validation', 'Besichtigung am: höchstens ein Jahr im Voraus.'); }
+  else if (d > berlinDate()) throw bad('validation', `${field}: darf nicht in der Zukunft liegen.`);
   return d;
 }
 
@@ -38,7 +40,14 @@ function readBody(body, existing = {}, user = null) {
     reimbursed_on: day(pick('reimbursed_on'), 'Erstattet am'),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
+    // Gutachter (Teilagent „Versicherungsschaden mit Gutachter“, 23.10.2026): alles optional, nur laut Schreiben/Termin des Gutachters bzw. Versicherers
+    appraiser: str(pick('appraiser'), { max: 120, field: 'Gutachter' }),
+    appraisal_on: day(pick('appraisal_on'), 'Besichtigung am', false, true),
+    appraisal_received_on: day(pick('appraisal_received_on'), 'Gutachten eingegangen am'),
+    appraisal_net: num(pick('appraisal_net'), { min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
   };
+  if (f.appraisal_net !== null && !f.appraisal_received_on) throw bad('validation', 'Schadenhöhe laut Gutachten nur mit dem Eingangsdatum des Gutachtens angeben.');
+  if (f.appraisal_on && f.appraisal_received_on && f.appraisal_received_on < f.appraisal_on) throw bad('validation', 'Gutachten eingegangen am liegt vor der Besichtigung.');
   if ((f.reimbursed_net === null) !== (f.reimbursed_on === null)) throw bad('validation', 'Erstattung: Betrag und Datum nur zusammen laut Abrechnung des Versicherers angeben.');
   if (f.reimbursed_on && f.reimbursed_on < f.reported_on) throw bad('validation', 'Erstattet am liegt vor dem Meldedatum.');
   if (f.reimbursed_net !== null && ['abgelehnt', 'zurueckgezogen'].includes(f.status)) throw bad('validation', 'Bei „abgelehnt“/„zurückgezogen“ keine Erstattung eintragen.');
@@ -81,8 +90,8 @@ export async function saveClaim(env, user, envName, caseId, body) {
   const now = nowIso();
   if (!ex) {
     const id = uuid();
-    await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,file_id,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(case_id) DO NOTHING`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, user.id, now, now).run()
+    await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,file_id,appraiser,appraisal_on,appraisal_received_on,appraisal_net,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(case_id) DO NOTHING`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, user.id, now, now).run()
       .then((r) => { if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.'); });
     await audit(env, user.id, 'claim.create', id, { case_no: c.case_no, insurer: f.insurer, status: f.status });
     return { id, created: true };
@@ -91,20 +100,22 @@ export async function saveClaim(env, user, envName, caseId, body) {
   if (!changed.length) return { id: ex.id, changed: [], ...(stale ? { duplicate: true } : {}) };
   if (stale) throw staleErr();
   // nur auf dem gelesenen Stand (parallele Änderungen überschrieben sich sonst still, 17.10.2026)
-  const r = await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,updated_at=? WHERE id=? AND updated_at=?`)
-    .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, laterIso(ex.updated_at), ex.id, ex.updated_at).run();
+  const r = await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,appraiser=?,appraisal_on=?,appraisal_received_on=?,appraisal_net=?,updated_at=? WHERE id=? AND updated_at=?`)
+    .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, laterIso(ex.updated_at), ex.id, ex.updated_at).run();
   if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'claim.update', ex.id, { case_no: c.case_no, changed: Object.fromEntries(changed.map((k) => [k, { from: ex[k], to: f[k] }])) });
   return { id: ex.id, changed };
 }
 
-const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_open: OPEN_STATUS.includes(r.status) ? days(r.reported_on, today) : null });
+// „Gutachten ausstehend“: Besichtigung eingetragen, noch kein Eingang des Gutachtens, Fall offen (keine eigene Frist – nur Zustand)
+const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_open: OPEN_STATUS.includes(r.status) ? days(r.reported_on, today) : null,
+  appraisal_pending: OPEN_STATUS.includes(r.status) && !!r.appraisal_on && !r.appraisal_received_on, appraisal_upcoming: !!r.appraisal_on && !r.appraisal_received_on && r.appraisal_on >= today });
 
 // Für die Vorgangsansicht (nur Leitung): Versicherungsfall + Versicherungsverträge des Fahrzeugs zur Auswahl (eine Abfrage)
 export async function claimForCase(env, caseId, vehicleId) {
-  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
+  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
       FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.environment=ic.environment WHERE ic.case_id=?1
-    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
+    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
       FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'`).bind(caseId, vehicleId).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
   const today = berlinDate();
@@ -117,7 +128,7 @@ export async function claimForCase(env, caseId, vehicleId) {
 // Übersicht (Mehr → Versicherungsfälle): offen/alle/Status; Kosten des Vorgangs (nur belegte Ist-Kosten) und Saldo nach Erstattung
 export async function claimOverview(env, user, envName, query = {}) {
   if (!isMgr(user)) throw forbidden();
-  const filter = ['offen', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
+  const filter = ['offen', 'gutachten', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','claim_followup_days')`).all()).results.map((r) => [r.key, r.value]));
   const rv = sets.get('workshop_hourly_rate_net');
   const rate = rateOf(rv);
@@ -150,9 +161,9 @@ export async function claimOverview(env, user, envName, query = {}) {
     const excluded = !!vehicle_excluded;
     return { ...sh, eval_excluded: excluded, followup_due: !excluded && followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, cost_incomplete: items > 0 && !complete, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
   });
-  const counts = { offen: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
-  for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; }
-  if (filter === 'offen') list = list.filter((c) => c.open); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
+  const counts = { offen: 0, gutachten: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
+  for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; if (c.appraisal_pending) counts.gutachten++; }
+  if (filter === 'offen') list = list.filter((c) => c.open); else if (filter === 'gutachten') list = list.filter((c) => c.appraisal_pending); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
   const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
   const reimbX = list.filter((c) => c.reimbursed_net !== null && c.eval_excluded);
   const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);
@@ -161,11 +172,13 @@ export async function claimOverview(env, user, envName, query = {}) {
 
 export function claimsCsv(ov) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
-    'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet'];
+    'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung',
+    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
-    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
+    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein',
+    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

@@ -1733,12 +1733,22 @@ async function viewCase(id) {
 const CLAIM_ST = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 const CLAIM_CLS = { gemeldet: 'mittel', in_pruefung: 'mittel', reguliert: 'ok', abgelehnt: 'kritisch', zurueckgezogen: '' };
 const claimChip = (st) => `<span class="chip ${CLAIM_CLS[st]}">${esc(t('cls_' + st))}</span>`;
+// Gutachter-Angaben im Versicherungsfall (Teilagent „Versicherungsschaden mit Gutachter“, 23.10.2026): nur was eingetragen ist
+function claimAppraisalInfo(cl) {
+  if (!cl || !(cl.appraiser || cl.appraisal_on || cl.appraisal_received_on || cl.appraisal_net !== null && cl.appraisal_net !== undefined)) return '';
+  const rows = [];
+  if (cl.appraiser) rows.push(`<dt>${esc(t('ca_appraiser'))}</dt><dd>${esc(cl.appraiser)}</dd>`);
+  if (cl.appraisal_on) rows.push(`<dt>${esc(t('ca_on'))}</dt><dd>${fmtD(cl.appraisal_on)}${cl.appraisal_on === bDate() && !cl.appraisal_received_on ? ` <span class="chip mittel">${esc(t('today'))}</span>` : ''}</dd>`);
+  rows.push(`<dt>${esc(t('ca_received'))}</dt><dd>${cl.appraisal_received_on ? fmtD(cl.appraisal_received_on) : cl.appraisal_pending ? `<span class="chip mittel">${esc(t('ca_pending'))}</span>` : '–'}</dd>`);
+  if (cl.appraisal_net !== null && cl.appraisal_net !== undefined) rows.push(`<dt>${esc(t('ca_net'))}</dt><dd>${eur(cl.appraisal_net)}</dd>`);
+  return `<h4 style="margin:.4rem 0 .2rem">${esc(t('ca_title'))}</h4><dl class="kv">${rows.join('')}</dl>`;
+}
 function claimSection(cl, contracts, files = []) {
   const v = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(String(cl[k])) : '');
   const money = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(decIn(cl[k])) : ''); // EN mit Punkt wie Bußgeld-Formular (19.10.2026)
   const info = cl ? `<p style="margin-top:0">${claimChip(cl.status)} ${esc(cl.insurer)}${cl.claim_no ? ` · ${esc(t('claim_no'))} ${esc(cl.claim_no)}` : ''}</p>
     <dl class="kv"><dt>${esc(t('claim_reported'))}</dt><dd>${fmtD(cl.reported_on)}${cl.days_open !== null ? ` · ${esc(tn('claim_days_open', cl.days_open))}` : ''}</dd>${cl.deductible_net !== null ? `<dt>${esc(t('claim_deductible'))}</dt><dd>${eur(cl.deductible_net)}</dd>` : ''}${cl.reimbursed_net !== null ? `<dt>${esc(t('claim_reimbursed'))}</dt><dd>${eur(cl.reimbursed_net)} · ${fmtD(cl.reimbursed_on)}</dd>` : ''}</dl>
-    <p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
+    ${claimAppraisalInfo(cl)}<p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
   return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf"><input type="hidden" name="expected_updated_at" value="${cl ? esc(cl.updated_at || '') : ''}">
     <p class="small muted">${esc(t('claim_hint'))}</p>
     <label>${esc(t('claim_contract'))}</label><select name="contract_id"><option value="">${esc(t('claim_no_contract'))}</option>${contracts.map((k) => `<option value="${esc(k.id)}"${cl && cl.contract_id === k.id ? ' selected' : ''}>${esc(k.partner)}${k.contract_no ? ' · ' + esc(k.contract_no) : ''}${k.ended_on ? ` (${esc(t('cs_beendet'))})` : ''}</option>`).join('')}</select>
@@ -1750,6 +1760,11 @@ function claimSection(cl, contracts, files = []) {
     <label>${esc(t('claim_reimbursed'))}</label><input name="reimbursed_net" inputmode="decimal" value="${money('reimbursed_net')}">
     <label>${esc(t('claim_reimbursed_on'))}</label><input type="date" name="reimbursed_on" max="${bDate()}" value="${v('reimbursed_on')}">
     <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" value="${v('evidence')}"><label>${esc(t('note'))}</label><input name="note" maxlength="1000" value="${v('note')}">
+    <fieldset class="panel" style="margin:.6rem 0"><legend>${esc(t('ca_title'))}</legend><p class="small muted" style="margin-top:0">${esc(t('ca_hint'))}</p>
+    <label>${esc(t('ca_appraiser'))}</label><input name="appraiser" maxlength="120" value="${v('appraiser')}">
+    <label>${esc(t('ca_on'))}<span class="hint">${esc(t('ca_on_hint'))}</span></label><input type="date" name="appraisal_on" max="${bDate(366)}" value="${v('appraisal_on')}">
+    <label>${esc(t('ca_received'))}</label><input type="date" name="appraisal_received_on" max="${bDate()}" value="${v('appraisal_received_on')}">
+    <label>${esc(t('ca_net'))}<span class="hint">${esc(t('ca_net_hint'))}</span></label><input name="appraisal_net" inputmode="decimal" value="${money('appraisal_net')}"></fieldset>
     <label>${esc(t('claim_file'))}<span class="hint">${esc(t('claim_file_hint'))}</span></label><select name="file_id"><option value="">–</option>${files.map((f) => `<option value="${esc(f.id)}"${cl && cl.file_id === f.id ? ' selected' : ''}>${esc(f.filename)}</option>`).join('')}${cl && cl.file_id && cl.file_name && !files.some((f) => f.id === cl.file_id) ? `<option value="${esc(cl.file_id)}" selected>${esc(cl.file_name)}</option>` : ''}</select>
     <div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details></section>`;
 }
@@ -1757,13 +1772,14 @@ async function viewClaims() {
   const f = S.clFilter || 'offen';
   const cs = vsDef('claimSite') || ''; const csq = cs ? '&site=' + encodeURIComponent(cs) : '';
   const r = await api('GET', `/api/claims?filter=${f}${csq}`);
-  const tabs = ['offen', 'alle', 'reguliert', 'abgelehnt'];
-  const fLabel = f === 'offen' ? t('claim_f_open') : f === 'alle' ? t('filter_all') : t('cls_' + f);
+  const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];
+  const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : t('cls_' + x));
+  const fLabel = fName(f);
   let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
-    <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(x === 'offen' ? t('claim_f_open') : x === 'alle' ? t('filter_all') : t('cls_' + x))} (${r.counts[x] || 0})</button>`).join('')}</div>
+    <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(fName(x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     ${r.reimbursed_sum_net !== null || r.reimbursed_sum_excluded_net != null ? `<section class="panel"><dl class="kv">${r.reimbursed_sum_net !== null ? `<dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd>` : ''}${r.reimbursed_sum_excluded_net != null ? `<dt>${esc(t('claim_sum_excluded'))}</dt><dd>${eur(r.reimbursed_sum_excluded_net)}<div class="small muted">${esc(t('claim_sum_excluded_hint'))}</div></dd>` : ''}</dl></section>` : ''}
-    <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${c.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(tn('claim_days_open', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} – <span class="chip mittel">${esc(t('incomplete'))}</span>` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
+    <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${c.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(tn('claim_days_open', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} – <span class="chip mittel">${esc(t('incomplete'))}</span>` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}${c.appraisal_pending ? ` · <span class="chip mittel">${esc(t('ca_pending'))}</span>${c.appraisal_on ? ` ${esc(t('ca_on'))} ${fmtD(c.appraisal_on)}` : ''}` : c.appraisal_net !== null && c.appraisal_net !== undefined ? ` · ${esc(t('ca_net'))} ${eur(c.appraisal_net)}` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="clprt">${esc(t('print'))}</button></div>`;
   render(html, 'more');
   $$('[data-clf]').forEach((b) => (b.onclick = () => { S.clFilter = b.dataset.clf; viewClaims(); }));

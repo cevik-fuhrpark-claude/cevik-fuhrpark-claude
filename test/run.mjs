@@ -19043,6 +19043,48 @@ await test('Backlog 209 (Panne – Ersatzfahrzeug): Dispo-Startseite verlinkt �
   }
 });
 
+await test('Backlog 210 (Versicherungsschaden mit Gutachter): Gutachter, Besichtigung (auch geplant), Gutachten-Eingang und Schadenhöhe laut Gutachten – Prüfungen, Filter „Gutachten ausstehend“, CSV, Rechte, Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'GA-T 1', vin: 'WDB96340310821001', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310821001';
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Unfall: Heckschaden durch Auffahren', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const P = `/api/cases/${cid}/claim`; const base = { insurer: 'Gutachter-Test AG', reported_on: bDayOff(-3), evidence: 'Schadenmeldung (Test)' };
+  eq((await users.fleet.put(P, { ...base, appraisal_net: 1000 })).status, 400, 'Schadenhöhe nur mit Eingang');
+  eq((await users.fleet.put(P, { ...base, appraisal_received_on: bDayOff(1) })).status, 400, 'Eingang nicht Zukunft');
+  eq((await users.fleet.put(P, { ...base, appraisal_on: bDayOff(400) })).status, 400, 'Besichtigung höchstens ein Jahr voraus');
+  eq((await users.fleet.put(P, { ...base, appraisal_on: bDayOff(-1), appraisal_received_on: bDayOff(-2) })).status, 400, 'Eingang vor Besichtigung');
+  for (const u of [users.ws, users.dispatch]) eq((await u.put(P, { ...base, appraiser: 'X' })).status, 403);
+  const c1 = await users.fleet.put(P, { ...base, appraiser: 'Sachverständigenbüro Test', appraisal_on: bDayOff(2), expected_updated_at: null });
+  eq(c1.status, 200, JSON.stringify(c1.data));
+  let d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq(d.appraiser, 'Sachverständigenbüro Test'); eq(d.appraisal_on, bDayOff(2)); eq(d.appraisal_pending, true); eq(d.appraisal_upcoming, true);
+  ok(!('claim' in (await users.ws.get(`/api/cases/${cid}`)).data), 'Werkstatt sieht weiter keinen Versicherungsfall');
+  let ov = (await users.fleet.get('/api/claims?filter=gutachten')).data;
+  eq(ov.filter, 'gutachten'); ok(ov.claims.some((c) => c.case_id === cid && c.appraisal_pending), 'Filter Gutachten ausstehend'); ok(ov.counts.gutachten >= 1);
+  // Felder weglassen = unverändert (wie die übrigen Angaben)
+  eq((await users.fleet.put(P, { claim_no: 'GA-1' })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.appraisal_on, bDayOff(2), 'Besichtigung bleibt');
+  // Besichtigung war gestern, Gutachten heute mit Betrag (Dezimalkomma DE)
+  const r2 = await users.fleet.put(P, { appraisal_on: bDayOff(-1), appraisal_received_on: bDayOff(0), appraisal_net: '4.250,50', expected_updated_at: d.updated_at });
+  eq(r2.status, 200, JSON.stringify(r2.data)); ok(r2.data.changed.includes('appraisal_net'));
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.appraisal_net, 4250.5); eq(d.appraisal_pending, false);
+  ov = (await users.fleet.get('/api/claims?filter=gutachten')).data; ok(!ov.claims.some((c) => c.case_id === cid), 'nicht mehr ausstehend');
+  const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.update' AND target=? ORDER BY created_at DESC LIMIT 1`).get(d.id);
+  ok(au && au.detail.includes('appraisal_net'), 'Protokoll nennt die Änderung');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
+  ok(csv.includes(';Bemerkung;Gutachter;Besichtigung am;Gutachten eingegangen am;Schadenhöhe laut Gutachten netto (EUR);Gutachten ausstehend;Schreiben verknüpft;'), 'CSV-Kopf');
+  const line = csv.split('\r\n').find((l) => l.includes('GA-T 1')); ok(line && line.includes('Sachverständigenbüro Test') && line.includes('4250,5;nein;nein;nein;'), line);
+  // geleert = Verknüpfung aufgehoben
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq((await users.fleet.put(P, { appraisal_net: null, appraisal_received_on: null, expected_updated_at: d.updated_at })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.appraisal_net, null); eq(d.appraisal_pending, true, 'wieder ausstehend');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const n of ['appraiser', 'appraisal_on', 'appraisal_received_on', 'appraisal_net']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
+  ok(app.includes("const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];"), 'Filterknopf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['ca_title', 'ca_hint', 'ca_appraiser', 'ca_on', 'ca_on_hint', 'ca_received', 'ca_net', 'ca_net_hint', 'ca_pending']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_claims_s.includes(STRINGS[l].ca_pending), `${l}: Hilfe`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
