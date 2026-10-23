@@ -377,7 +377,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
 
   // km_drop: letzter km-Rücksprung je Fahrzeug (km-Grundlage einer Durchführung vor dem Tachotausch bleibt „ungeklärt“, kmBasisForDone)
-  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, ${KM_DROP_SQL('v.id')} AS km_drop FROM vehicles v WHERE v.active=1`).all()).results;
+  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, v.created_at, ${KM_DROP_SQL('v.id')} AS km_drop FROM vehicles v WHERE v.active=1`).all()).results;
   const offOf = await inactiveIndex(env); // außer Betrieb genommene Fahrzeuge: eigener Grund statt „nicht im Fahrzeugstamm“ (20.10.2026)
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = plateIndex(vehicles);
@@ -427,6 +427,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (last.month_only) return skip('Letzte Prüfung bitte taggenau (JJJJ-MM-TT oder TT.MM.JJJJ)');
     // wie Einzelerfassung/„erledigt“: keine Durchführung in der Zukunft (sonst verdeckte eine erfundene Folgefrist einen fälligen Termin, 17.10.2026)
     if (last.date && last.date > berlinDate()) return skip('Letzte Prüfung liegt in der Zukunft');
+    if (matchedBy === 'Kennzeichen' && platePassedOn(offOf.plates, v, last.date)) return skip(PLATE_PASSED_ON_SKIP);
     let interval = null;
     const husp = kind === 'HU' || kind === 'SP';
     const ir = husp ? '' : get(cells, ci.interval); // HU/SP: Intervall spielt keine Rolle (Zeile mit „12 Monate“ fiel sonst weg, 18.10.2026)
@@ -634,6 +635,11 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 // Kennzeichen → Fahrzeug; doppeltes Kennzeichen wegen ruhendem Doppel (Fall SZ-YC 5539) → das bewertete Fahrzeug, wie beim
 // Auslesungen-Import und bei Bußgeldern (17.10.2026); sonst „mehrdeutig“
 const INACTIVE_SKIP = 'Fahrzeug außer Betrieb – nicht übernommen';
+// Kennzeichen weitergegeben (Fahrzeugverkauf, Backlog 188): Nachweis nur mit Kennzeichen, datiert vor der Anlage des heutigen Fahrzeugs,
+// während ein außer Betrieb genommenes Fahrzeug dasselbe Kennzeichen trägt → gehört vermutlich zum Altfahrzeug; FIN verlangen
+// (vorher: HU vom 15.09. des verkauften Lkw am Nachfolger → dessen fällige HU nirgends gemeldet). Ohne Datum oder nach der Anlage: Nachfolger.
+export const PLATE_PASSED_ON_SKIP = 'Kennzeichen auch an außer Betrieb genommenem Fahrzeug, Datum vor Anlage dieses Fahrzeugs – bitte FIN angeben';
+export const platePassedOn = (offPlates, v, day) => !!(day && v && v.created_at && offPlates.has(normPlate(v.plate)) && day < berlinDate(v.created_at));
 async function inactiveIndex(env) {
   const rows = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=0').all()).results;
   return { vins: new Set(rows.filter((r) => String(r.id).startsWith('VIN:')).map((r) => r.id.slice(4))), plates: new Set(rows.map((r) => normPlate(r.plate))) };

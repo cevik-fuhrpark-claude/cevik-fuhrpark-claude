@@ -1888,8 +1888,9 @@ await test('Kennzahlen: technische Verfügbarkeit – Vorgänge aus dem Vormonat
   ok(av.downtime_h + 0.1 >= (span * 0.75) / 3600000, 'Flottenausfall enthält das Fahrzeug');
   ok(!('by_vehicle' in av) && av.lowest.length <= 5 && av.lowest.every((x) => x.downtime_h > 0 || x.pct < 100), 'nur die geringsten mit Ausfall (auch < 0,05 h bei Quote < 100 %), höchstens 5');
   for (let i = 1; i < av.lowest.length; i++) ok(av.lowest[i - 1].pct <= av.lowest[i].pct, 'aufsteigend');
-  const n0 = (await env.DB.prepare('SELECT COUNT(*) AS n FROM vehicles WHERE active=1 AND eval_excluded=0').first()).n;
-  eq(av.vehicles, n0, 'alle aktiven, nicht ruhenden Fahrzeuge');
+  // seit Backlog 188 auch außer Betrieb genommene bis zur Außerbetriebnahme (hier: im laufenden Monat außer Betrieb genommene)
+  const n0 = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicles v WHERE v.eval_excluded=0 AND (v.active=1 OR (SELECT MAX(a.created_at) FROM audit_log a WHERE a.target=v.id AND a.action='vehicle.deactivate') > MAX(v.created_at, ?))`).bind(iso(lo)).first()).n;
+  eq(av.vehicles, n0, 'alle aktiven, nicht ruhenden Fahrzeuge (dazu im Zeitraum außer Betrieb genommene)');
   // Werkstattfilter: keine Verfügbarkeit (gilt fürs ganze Fahrzeug)
   eq((await users.fleet.get(q + '&site=dortmund')).data.availability, null, 'mit Werkstattfilter null');
   // CSV-Spalte
@@ -18455,6 +18456,105 @@ await test('Aktionsformular nach Netzabbruch (Backlog 187): Eingaben samt Befehl
   const a1 = await users.ws.post(`/api/cases/${cid}/commands`, { action: 'record_work', command_id: id, expected_version: v1, note: null, payload }); eq(a1.status, 200, JSON.stringify(a1.data));
   const a2 = await users.ws.post(`/api/cases/${cid}/commands`, { action: 'record_work', command_id: id, expected_version: await ver(), note: null, payload }); eq(a2.status, 200, JSON.stringify(a2.data)); eq(a2.data.duplicate, true, 'Wiederholung erkannt');
   eq((await users.ws.get(`/api/cases/${cid}`)).data.work.length, 1, 'eine Buchung');
+});
+
+await test('Fahrzeugverkauf (Backlog 188): Kennzeichen an Nachfolger weitergegeben – Prüftermin-/Auslesungs-Import nur mit Kennzeichen und Datum vor Anlage des Nachfolgers verlangt die FIN; Auslesungs-Import findet außer Betrieb genommene Fahrzeuge über FIN bzw. eindeutiges Kennzeichen; Verfügbarkeit vergangener Monate bleibt nach Außerbetriebnahme; Jahresabschluss: Kostenbericht mit Abrufzeitpunkt/Zuordnungsregeln, Rückfrage bei rückwirkender Ratenänderung, Erfassungstag je Kostenposition', async () => {
+  const env = makeEnv(); const owner = new Client(worker, env, 'owner');
+  const s0 = await owner.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'verkauf.inhaber', display_name: 'Verkauf' });
+  await owner.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const H = { 'content-type': 'text/csv' };
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310588801', plate: 'VK-AB 188', site: 'Dortmund' })).status, 201);
+  const A = 'VIN:WDB96340310588801';
+  eq((await owner.post(`/api/vehicles/${encodeURIComponent(A)}/active`, { active: false, reason: 'verkauft (Test)' })).status, 200);
+  // letzte Massenspeicher-Auslesung des verkauften Lkw, Export erst danach importiert: FIN und Kennzeichen treffen das Altfahrzeug
+  const tFin = await owner.req('POST', '/api/tacho/import?dry_run=1', `Art;FIN;Datum;Nachweis\nMassenspeicher;WDB96340310588801;${day(-2)};vu_188.ddd`, H);
+  eq(tFin.status, 200, JSON.stringify(tFin.data)); eq(tFin.data.skipped.length, 0, JSON.stringify(tFin.data.skipped)); eq(tFin.data.rows[0].target_id, A);
+  const tPl = await owner.req('POST', '/api/tacho/import?dry_run=1', `Art;Kennzeichen;Datum;Nachweis\nMassenspeicher;VK-AB 188;${day(-2)};vu_188.ddd`, H);
+  eq(tPl.data.rows[0].target_id, A, 'Kennzeichen nur am außer Betrieb genommenen Fahrzeug');
+  // Nachfolger übernimmt das Kennzeichen; Anlage künstlich auf gestern (Berliner Tag) gesetzt
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310588802', plate: 'VK-AB 188', site: 'Dortmund', create_only: true })).status, 201);
+  const B = 'VIN:WDB96340310588802';
+  await env.DB.prepare('UPDATE vehicles SET created_at=? WHERE id=?').bind(new Date(Date.parse(day(-1) + 'T10:00:00Z')).toISOString(), B).run();
+  const MSG = 'Kennzeichen auch an außer Betrieb genommenem Fahrzeug, Datum vor Anlage dieses Fahrzeugs – bitte FIN angeben';
+  const t2 = await owner.req('POST', '/api/tacho/import?dry_run=1', `Art;Kennzeichen;Datum;Nachweis\nMassenspeicher;VK-AB 188;${day(-5)};alt.ddd\nMassenspeicher;VK-AB 188;${day(0)};neu.ddd`, H);
+  eq(t2.data.skipped.map((x) => x.reason).join('|'), MSG, 'alte Auslesung nicht am Nachfolger'); eq(t2.data.rows.map((r) => r.target_id).join('|'), B, 'heutige am Nachfolger');
+  const t3 = await owner.req('POST', '/api/tacho/import?dry_run=1', `Art;FIN;Datum;Nachweis\nMassenspeicher;WDB96340310588801;${day(-5)};alt.ddd`, H);
+  eq(t3.data.rows[0].target_id, A, 'mit FIN eindeutig');
+  // Prüftermin-Import: HU des verkauften Lkw nur mit Kennzeichen → abgewiesen; nach Anlage oder ohne Durchführungsdatum → Nachfolger
+  const m1 = await owner.req('POST', '/api/maintenance/import?dry_run=1', `Kennzeichen;Art;Letzte Prüfung;Nachweis\nVK-AB 188;HU;${day(-30)};TÜV-Bericht (Test)\nVK-AB 188;UVV;${day(0)};UVV (Test)`, H);
+  eq(m1.status, 200, JSON.stringify(m1.data)); eq(m1.data.skipped.map((x) => x.reason).join('|'), MSG);
+  eq(m1.data.rows.length, 1); eq(m1.data.rows[0].vehicle_id, B);
+  const m2 = await owner.req('POST', '/api/maintenance/import?dry_run=1', `FIN;Art;Letzte Prüfung;Nachweis\nWDB96340310588802;HU;${day(-30)};TÜV-Bericht (Test)`, H);
+  eq(m2.data.skipped.length, 0, 'mit FIN des Nachfolgers bewusst übernommen: ' + JSON.stringify(m2.data.skipped));
+  // ohne außer Betrieb genommenes Doppel: früher datierter Nachweis an einem später angelegten Fahrzeug bleibt erlaubt (Bestand vor App-Start)
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310588803', plate: 'VK-AB 189', site: 'Dortmund' })).status, 201);
+  await env.DB.prepare('UPDATE vehicles SET created_at=? WHERE id=?').bind(new Date().toISOString(), 'VIN:WDB96340310588803').run();
+  eq((await owner.req('POST', '/api/maintenance/import?dry_run=1', `Kennzeichen;Art;Letzte Prüfung;Nachweis\nVK-AB 189;HU;${day(-30)};TÜV (Test)`, H)).data.skipped.length, 0);
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(src.includes(`['${MSG}', `), 'Grund übersetzt (UK/EN)');
+  // Technische Verfügbarkeit: Ausfall im Vormonat bleibt nach der Außerbetriebnahme in der Vormonatsquote (bis zur Außerbetriebnahme gezählt)
+  const { addMonths } = await import('../src/util.js'); const pm = addMonths(BERLIN_TODAY.slice(0, 7) + '-01', -1).slice(0, 7);
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310588804', plate: 'VK-AB 190', site: 'Dortmund' })).status, 201);
+  const C = 'VIN:WDB96340310588804';
+  await env.DB.prepare('UPDATE vehicles SET created_at=? WHERE id=?').bind(addMonths(pm + '-01', -1) + 'T08:00:00.000Z', C).run();
+  const cs = await owner.post('/api/cases', { vehicle_id: C, description: 'Verkauf: Werkstatt im Vormonat', priority: 'mittel', driveability: 'fahrbereit', request_key: crypto.randomUUID() });
+  eq(cs.status, 201, JSON.stringify(cs.data));
+  await env.DB.prepare(`UPDATE cases SET created_at=?, workshop_ack_at=?, status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).bind(pm + '-10T08:00:00.000Z', pm + '-10T10:00:00.000Z', pm + '-12T10:00:00.000Z', cs.data.id).run();
+  await env.DB.prepare(`UPDATE case_events SET created_at=? WHERE case_id=?`).bind(pm + '-10T08:00:00.000Z', cs.data.id).run();
+  const before = (await owner.get(`/api/reports/kpi?from=${pm}&to=${pm}`)).data;
+  const rowB = before.vehicles.find((x) => x.vehicle_id === C); ok(rowB && rowB.availability_downtime_h === 48, 'Ausfall 48 h vor Verkauf: ' + JSON.stringify(rowB));
+  eq((await owner.post(`/api/vehicles/${encodeURIComponent(C)}/active`, { active: false, reason: 'verkauft (Test)' })).status, 200);
+  const after = (await owner.get(`/api/reports/kpi?from=${pm}&to=${pm}`)).data;
+  eq(after.availability.vehicles, before.availability.vehicles, 'Fahrzeugzahl des Vormonats unverändert');
+  eq(after.availability.downtime_h, before.availability.downtime_h, 'Ausfallstunden des Vormonats unverändert');
+  eq(after.vehicles.find((x) => x.vehicle_id === C).availability_downtime_h, 48);
+  ok(/außer Betrieb genommene bis zur Außerbetriebnahme/.test(after.definitions.availability), 'Definition genannt');
+  // Kostenbericht/Schnittstelle: Abrufzeitpunkt und Zuordnungsregeln (Jahresabschluss)
+  const cr = (await owner.get(`/api/reports/costs?from=${pm}&to=${pm}`)).data;
+  ok(cr.generated_at && /Erfassungszeitpunkt/.test(cr.definitions.month_basis) && /rückwirkend|vergangener Monate/.test(cr.definitions.retroactive + cr.definitions.contract_rate), 'costs: generated_at + definitions');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return;"), 'Rückfrage bei rückwirkender Ratenänderung');
+  ok(app.includes('${bookedAt(p.created_at)}') && app.includes('${bookedAt(x.created_at)}'), 'Erfassungstag bei Teilen/Fremdleistungen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['ct_rate_retro_confirm', 'cost_booked', 'cost_booked_hint']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 3, `${l}: ${k}`); ok(STRINGS[l].cc_rule.length > STRINGS.de.cc_rule.length / 2 && /{m}/.test(STRINGS[l].cc_rule), `${l}: cc_rule`); }
+  ok(/rückwirkend/.test(STRINGS.de.cc_rule) && /including past/.test(STRINGS.en.cc_rule), 'Regeltext nennt Rückwirkung');
+});
+
+await test('Nachträglich erfasste Arbeitszeit (Backlog 189): Kostenbericht zählt je Monat nach Monatsende gebuchte Positionen (late_items), Einzelpositionen trennen sie je Buchungstag bei gleicher Monatssumme; Formular fragt bei Arbeitsdatum vor dem laufenden Monat nach', async () => {
+  const { addMonths } = await import('../src/util.js'); const reports = await import('../src/reports.js');
+  const pm = addMonths(BERLIN_TODAY.slice(0, 7) + '-01', -1).slice(0, 7);
+  const rate0 = (await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first()) || null;
+  if (!rate0 || !rate0.value) eq((await owner.put('/api/settings', { workshop_hourly_rate_net: 95 })).status, 200);
+  eq((await owner.post('/api/vehicles', { plate: 'NE-AZ 189', vin: 'WDB96340310589001', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310589001';
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Nachbuchung Arbeitszeit', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  await env.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(addMonths(pm + '-01', -1) + 'T08:00:00.000Z', cid).run();
+  const ver = async () => (await users.fleet.get(`/api/cases/${cid}`)).data.case.version;
+  { const r = await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: await ver(), note: 'Bremse prüfen und instand setzen', payload: { workshop_site: 'DORTMUND' } }); eq(r.status, 200, JSON.stringify(r.data)); }
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'start_repair', command_id: rk(), expected_version: await ver(), payload: {} })).status, 200);
+  const book = async (h) => { const r = await users.ws.post(`/api/cases/${cid}/commands`, { action: 'record_work', command_id: rk(), expected_version: await ver(), note: null, payload: { hours: h, description: 'Bremse', work_date: pm + '-05' } }); eq(r.status, 200, JSON.stringify(r.data)); };
+  await book('1,333'); await book('2');
+  const wids = (await env.DB.prepare('SELECT id FROM work_entries WHERE case_id=? ORDER BY created_at').bind(cid).all()).results.map((x) => x.id);
+  await env.DB.prepare('UPDATE work_entries SET created_at=? WHERE id=?').bind(pm + '-05T15:00:00.000Z', wids[0]).run(); // rechtzeitig, zweite heute (nachträglich)
+  const rep = (await users.fleet.get(`/api/reports/costs?from=${pm}&to=${pm}&vehicle_id=${encodeURIComponent(V)}`)).data;
+  const row = rep.rows.find((r) => r.vehicle_id === V && r.month === pm);
+  eq(row.late_items, 1, 'eine nachträgliche Position'); eq(row.hours, 3.33);
+  ok(/nach Ende des Monats/.test(rep.definitions.late_items), 'Definition');
+  const envF = (await users.fleet.get('/api/me')).data.active_environment;
+  const it = (await reports.costItems(env, null, envF, { from: pm, to: pm })).items.filter((i) => i.case_no === row.case_no || i.plate === 'NE-AZ 189').filter((i) => i.type === 'arbeitszeit');
+  eq(it.length, 2, 'zwei Zeilen: rechtzeitig + nachträglich'); eq(it.filter((i) => i.late).length, 1);
+  eq(Math.round(it.reduce((a, i) => a + i.amount_net, 0) * 100) / 100, row.work_net, 'Summe der Positionen = Monatswert');
+  // alles rechtzeitig: keine nachträgliche Position
+  await env.DB.prepare('UPDATE work_entries SET created_at=? WHERE id=?').bind(pm + '-06T15:00:00.000Z', wids[1]).run();
+  eq((await users.fleet.get(`/api/reports/costs?from=${pm}&to=${pm}&vehicle_id=${encodeURIComponent(V)}`)).data.rows.find((r) => r.month === pm).late_items, 0);
+  eq((await reports.costItems(env, null, envF, { from: pm, to: pm })).items.filter((i) => i.plate === 'NE-AZ 189' && i.type === 'arbeitszeit').length, 1, 'wieder eine Position');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (action === 'record_work' && p.work_date && p.work_date < bDate().slice(0, 7) + '-01' && !confirm(t('work_past_month_confirm')"), 'Rückfrage Arbeitsdatum');
+  ok(app.includes("tn('late_items_n', m.late_items)"), 'Chip im Bericht');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].work_past_month_confirm.includes('{m}') && STRINGS[l].late_items_hint.length > 20, l); ok(PLURALS[l].late_items_n && PLURALS[l].late_items_n.other.includes('{n}'), l + ' Mehrzahl'); }
+  if (!rate0) await env.DB.prepare(`DELETE FROM settings WHERE key='workshop_hourly_rate_net'`).run(); else if (!rate0.value) await env.DB.prepare(`UPDATE settings SET value=? WHERE key='workshop_hourly_rate_net'`).bind(rate0.value).run();
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

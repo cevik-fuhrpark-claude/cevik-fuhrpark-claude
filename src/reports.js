@@ -58,7 +58,7 @@ export async function costReport(env, user, envName, query = {}) {
   const bind = (...a) => (vehicleFilter ? [...a, vehicleFilter] : a);
   const covered = new Set((await env.DB.prepare(`SELECT DISTINCT e.case_id FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE c.environment=? AND e.covers_work_and_parts=1${vf}`)
     .bind(...bind(envName)).all()).results.map((x) => x.case_id));
-  const work = (await env.DB.prepare(`SELECT w.case_id, w.hours, w.work_date AS d, c.vehicle_id FROM work_entries w JOIN cases c ON c.id=w.case_id
+  const work = (await env.DB.prepare(`SELECT w.case_id, w.hours, w.work_date AS d, w.created_at AS rec, c.vehicle_id FROM work_entries w JOIN cases c ON c.id=w.case_id
     WHERE c.environment=? AND w.work_date <= ?${vf} AND w.case_id IN (SELECT w2.case_id FROM work_entries w2 WHERE w2.work_date >= ? AND w2.work_date <= ?)`)
     .bind(...(vehicleFilter ? [envName, `${to}-31`, vehicleFilter, `${from}-01`, `${to}-31`] : [envName, `${to}-31`, `${from}-01`, `${to}-31`])).all()).results; // auch Vormonate dieser Vorgänge (fortlaufende Rundung unten)
   const parts = (await env.DB.prepare(`SELECT p.case_id, p.quantity, p.unit_price_net, p.valuation, p.created_at AS d, c.vehicle_id FROM parts p JOIN cases c ON c.id=p.case_id
@@ -71,7 +71,7 @@ export async function costReport(env, user, envName, query = {}) {
   const rows = new Map();
   const row = (vehicleId, month) => {
     const k = `${vehicleId}|${month}`;
-    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0, pv: 0, pu: 0, ev: 0, eu: 0 });
+    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, late_items: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0, pv: 0, pu: 0, ev: 0, eu: 0 });
     return rows.get(k);
   };
   const inRange = (m) => m >= from && m <= to;
@@ -81,6 +81,7 @@ export async function costReport(env, user, envName, query = {}) {
   // Betrag je Vorgang und Monat fortlaufend gerundet: Monat = rund(Stunden bis Monatsende × Satz) − rund(Stunden davor × Satz) – die Monate
   // eines Vorgangs ergeben zusammen genau den Betrag der Akte/des Vorgangs (computeCosts: rund(alle Stunden × Satz)); vorher je Monat
   // einzeln gerundet → Bericht und Akte wichen um Cent ab (19.10.2026)
+  const lateKeys = new Set();
   const workItem = new Set(); const workHours = new Map(); // `${case}|${month}` → { vehicle_id, case_id, m, h } (alle Monate, auch außerhalb des Zeitraums)
   for (const w of work) {
     if (covered.has(w.case_id) || rate === null) continue;
@@ -91,6 +92,9 @@ export async function costReport(env, user, envName, query = {}) {
     if (covered.has(w.case_id)) continue;
     const m = monthOf(w.d); if (!inRange(m)) continue;
     const r = row(w.vehicle_id, m); r.hours += w.hours;
+    // nach Ende des Monats gebucht (z. B. im Januar für Dezember, Backlog 189): je Vorgang/Monat/Buchungstag eine nachträgliche Position –
+    // der Monatswert hat sich nach Monatsende geändert; gleiche Gruppierung wie die Einzelpositionen-CSV
+    if (w.hours > 0 && w.rec) { const rd = berlinDate(w.rec); if (rd.slice(0, 7) > m) { const lk = `${w.case_id}|${m}|${rd}`; if (!lateKeys.has(lk)) { lateKeys.add(lk); r.late_items++; } } }
     const k = `${w.case_id}|${m}`;
     if (!(w.hours > 0) || workItem.has(k)) continue;
     workItem.add(k);
@@ -137,7 +141,7 @@ export async function costReport(env, user, envName, query = {}) {
       vehicle_active: v.active === 0 ? false : true,
       hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
-      actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0,
+      actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0, late_items: r.late_items,
       // nur unbewertete Teile/Fremdleistungen in der Zeile → Spalte ohne Betrag (nie „0 €“), wie „–“ in der App (18.10.2026)
       ...(r.pu && !r.pv ? { parts_unvalued_only: true } : {}), ...(r.eu && !r.ev ? { external_unvalued_only: true } : {}),
     };
@@ -177,7 +181,10 @@ export async function costReport(env, user, envName, query = {}) {
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) } };
+  return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) },
+    // Zuordnungsregeln und Abrufzeitpunkt wie /v1/kpi (Backlog 188, Jahresabschluss): im Januar nachgetragene Dezember-Rechnungen, rückdatierte
+    // Arbeitszeit oder eine geänderte Vertragsrate ändern Werte vergangener Monate – Abnehmer (n8n/Buchhaltung) sehen, wann und wonach gerechnet wurde
+    generated_at: new Date().toISOString(), definitions: COST_DEFINITIONS };
 }
 
 // Rohwerte je Fahrzeug und Monat (n, dec, last_km/at, first_km/at nur im ersten Monat mit Ablesung, base = letzte Ablesung vor „Von“) –
@@ -258,6 +265,14 @@ export async function periodMileage(env, from, to, vehicleFilter = null) {
 // (Beginn bis „Beendet am“ bzw. Vertragsende; ohne Ende bis heute), höchstens bis zum laufenden Monat – keine Abgrenzung angebrochener Monate,
 // keine künftigen Raten. Ohne Vertragsbeginn oder ohne Rate wird nichts gerechnet (nur gezählt) – nie 0 €.
 export const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)) + 1;
+export const COST_DEFINITIONS = {
+  month_basis: 'Monatszuordnung (Berliner Kalender): Arbeitszeit nach Arbeitsdatum; Teile und Fremdleistungen nach Erfassungszeitpunkt (nicht Rechnungs- oder Leistungsdatum); Vorgänge nach Meldedatum; Versicherungserstattungen nach Erstattungsdatum; Vertragsraten je vollem Monat der Laufzeit',
+  hourly_rate: 'Arbeitszeit mit dem heute eingestellten Stundensatz bewertet (hourly_rate_net) – eine Satzänderung bewertet auch vergangene Monate neu; je Vorgang fortlaufend auf Cent gerundet',
+  contract_rate: 'Vertragsraten mit der aktuell hinterlegten Monatsrate für alle Monate der Laufzeit (keine Abgrenzung je Ratenänderung) – bei Ratenänderung Vertrag zum Stichtag beenden und Folgevertrag anlegen',
+  retroactive: 'Spätere Erfassungen mit früherem Arbeitsdatum, ersetzte Schätzungen und Ratenänderungen ändern Werte bereits vergangener Monate; Stand zum Abrufzeitpunkt (generated_at)',
+  late_items: 'Je Zeile: Arbeitszeit-Positionen (je Vorgang, Monat und Buchungstag), die erst nach Ende des Monats gebucht wurden (Berliner Kalender); in den Einzelpositionen je Buchungstag eigene Zeile (`late`)',
+  estimates: 'Geschätzte Positionen getrennt (estimate_net), fehlender Preis/Satz = unbewertet (unvalued_items), nie 0 €',
+};
 export async function contractCosts(env, from, to, vehicleFilter, plates) {
   const rows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, partner, start_date, end_date, ended_on, monthly_rate_net FROM vehicle_contracts${vehicleFilter ? ' WHERE vehicle_id=?' : ''}`)
     .bind(...(vehicleFilter ? [vehicleFilter] : [])).all()).results;
@@ -342,13 +357,16 @@ export async function costItems(env, user, envName, query = {}) {
   const base = (x, day) => { const v = vmap.get(x.vehicle_id); return { date: day, month: day.slice(0, 7), case_no: x.case_no, plate: v.plate, site: v.site ? (sel.label.get(siteKey(v.site)) || v.site) : null, vehicle_active: v.active !== 0 }; };
   // Arbeitszeit: je Vorgang und Monat eine Position, Betrag fortlaufend gerundet (Monate eines Vorgangs ergeben den Betrag der Akte)
   const wm = new Map();
-  for (const w of work) { const day = dayOf(w.d); const k = `${w.case_id}|${day.slice(0, 7)}`; const x = wm.get(k) || { ...w, m: day.slice(0, 7), last: day, h: 0, rec: null }; x.h += w.hours; if (day > x.last) x.last = day; if (w.rec && (!x.rec || w.rec > x.rec)) x.rec = w.rec; wm.set(k, x); }
+  // nach Monatsende gebuchte Arbeitszeit als eigene Position je Buchungstag (Backlog 189: vorher 2 h aus Dezember + im Februar nachgebuchte 3 h
+  // als eine Zeile „Erfasst am <Februar>“ – die Dezember-Buchung war nicht mehr zu erkennen); fortlaufende Rundung je Vorgang bleibt
+  for (const w of work) { const day = dayOf(w.d); const m = day.slice(0, 7); const rd = w.rec ? berlinDate(w.rec) : ''; const late = !!rd && rd.slice(0, 7) > m;
+    const k = `${w.case_id}|${m}|${late ? rd : ''}`; const x = wm.get(k) || { ...w, m, sub: late ? rd : '', late, last: day, h: 0, rec: null }; x.h += w.hours; if (day > x.last) x.last = day; if (w.rec && (!x.rec || w.rec > x.rec)) x.rec = w.rec; wm.set(k, x); }
   const cum = new Map();
-  for (const x of [...wm.values()].sort((a, b) => (a.case_id === b.case_id ? (a.m < b.m ? -1 : 1) : a.case_id < b.case_id ? -1 : 1))) {
+  for (const x of [...wm.values()].sort((a, b) => (a.case_id !== b.case_id ? (a.case_id < b.case_id ? -1 : 1) : a.m !== b.m ? (a.m < b.m ? -1 : 1) : a.sub < b.sub ? -1 : a.sub > b.sub ? 1 : 0))) {
     const before = cum.get(x.case_id) || 0; const after = before + x.h; cum.set(x.case_id, after);
     if (!inRange(x.m) || !keep(x.vehicle_id) || !(x.h > 0)) continue;
     // recorded_at: Erfassungszeitpunkt (Arbeitszeit: jüngste Buchung der Position) – nachgereichte Belege erkennbar (23.10.2026)
-    items.push({ ...base(x, x.last), recorded_at: x.rec || null, type: 'arbeitszeit', description: null, supplier: null, document: null, quantity: r2(x.h), unit: 'h', unit_price_net: rate,
+    items.push({ ...base(x, x.last), recorded_at: x.rec || null, ...(x.late ? { late: true } : {}), type: 'arbeitszeit', description: null, supplier: null, document: null, quantity: r2(x.h), unit: 'h', unit_price_net: rate,
       amount_net: rate === null ? null : r2(r2(after * rate) - r2(before * rate)), valuation: rate === null ? 'unvalued' : 'actual', counted: !covered.has(x.case_id) });
   }
   for (const p of parts) {
@@ -462,8 +480,10 @@ export async function fleetAvailability(env, envName, from, to, vehicles, now = 
   const lo = Date.parse(berlinDayStartIso(`${from}-01`));
   const hi = Math.min(now, Date.parse(berlinDayStartIso(mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`)));
   if (!(hi > lo) || !vehicles.length) return null;
-  const vStart = new Map();
-  for (const v of vehicles) { const c = Date.parse(v.created_at); const a = Number.isFinite(c) ? Math.max(lo, c) : lo; if (hi > a) vStart.set(v.id, a); }
+  const vStart = new Map(); const vEnd = new Map();
+  // außer Betrieb genommene Fahrzeuge (Backlog 188, Fahrzeugverkauf): bis zur Außerbetriebnahme (`ended_ms`) – vorher fielen sie auch aus
+  // vergangenen Zeiträumen heraus (Ausfall im September verschwand nach dem Verkauf im Oktober aus der Septemberquote)
+  for (const v of vehicles) { const c = Date.parse(v.created_at); const a = Number.isFinite(c) ? Math.max(lo, c) : lo; const z = Number.isFinite(v.ended_ms) ? Math.min(hi, v.ended_ms) : hi; if (z > a) { vStart.set(v.id, a); vEnd.set(v.id, z); } }
   if (!vStart.size) return null;
   const loIso = new Date(lo).toISOString(); const hiIso = new Date(hi).toISOString();
   const cs = (await env.DB.prepare(`SELECT id, vehicle_id, status, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, closed_at FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
@@ -477,12 +497,12 @@ export async function fleetAvailability(env, envName, from, to, vehicles, now = 
   for (const c of cs) {
     const a0 = vStart.get(c.vehicle_id);
     const list = [...lockIntervalsOf(evBy.get(c.id) || [], now)]; const w = workshopIntervalOf(c, now); if (w) list.push(w);
-    for (const [a, b] of list) { const x = Math.max(a, a0); const z = Math.min(b, hi); if (z > x) { if (!ivs.has(c.vehicle_id)) ivs.set(c.vehicle_id, []); ivs.get(c.vehicle_id).push([x, z]); } }
+    for (const [a, b] of list) { const x = Math.max(a, a0); const z = Math.min(b, vEnd.get(c.vehicle_id)); if (z > x) { if (!ivs.has(c.vehicle_id)) ivs.set(c.vehicle_id, []); ivs.get(c.vehicle_id).push([x, z]); } }
   }
   let vh = 0; let dh = 0; const by_vehicle = [];
   for (const v of vehicles) {
     if (!vStart.has(v.id)) continue;
-    const span = (hi - vStart.get(v.id)) / H; const d = unionMs(ivs.get(v.id) || []) / H;
+    const span = (vEnd.get(v.id) - vStart.get(v.id)) / H; const d = unionMs(ivs.get(v.id) || []) / H;
     vh += span; dh += d;
     by_vehicle.push({ vehicle_id: v.id, plate: v.plate || null, downtime_h: r1(d), pct: Math.round(1000 * (1 - d / span)) / 10 });
   }
@@ -599,7 +619,12 @@ export async function kpiReport(env, user, envName, query = {}) {
   for (const [vid, list] of shop) byVehicle.get(vid).workshop_h = unionMs(list) / H;
   for (const [vid, list] of down) byVehicle.get(vid).downtime_h = unionMs(list) / H;
   for (const [vid, list] of pwait) byVehicle.get(vid).parts_wait_h = unionMs(list) / H;
-  const availability = site ? null : await fleetAvailability(env, envName, from, to, [...plates.values()].filter((v) => v.active && !v.eval_excluded && vOk(v.id)), now);
+  // außer Betrieb genommene: Ende = letzte Außerbetriebnahme laut Protokoll (wie `inactive_info`); ohne Protokolleintrag weiter nicht gezählt
+  const offIds = [...plates.values()].filter((v) => !v.active && !v.eval_excluded && vOk(v.id)).map((v) => v.id);
+  const offEnd = new Map(offIds.length && !site ? (await env.DB.prepare(`SELECT target, MAX(created_at) AS at FROM audit_log WHERE action='vehicle.deactivate' AND target IN (SELECT value FROM json_each(?)) GROUP BY target`)
+    .bind(JSON.stringify(offIds)).all()).results.map((r) => [r.target, Date.parse(r.at)]) : []);
+  const availability = site ? null : await fleetAvailability(env, envName, from, to, [...plates.values()].filter((v) => !v.eval_excluded && vOk(v.id) && (v.active || offEnd.has(v.id)))
+    .map((v) => (v.active ? v : { ...v, ended_ms: offEnd.get(v.id) })), now);
   const avBy = new Map(availability ? availability.by_vehicle.map((x) => [x.vehicle_id, x]) : []);
   // Fahrzeuge, die nur mit Ausfall aus früheren Vorgängen in den Zeitraum reichen (z. B. seit dem Vormonat in der Werkstatt), als eigene Zeile –
   // sonst fehlten sie in Liste/CSV und die Ausfallstunden der Zeilen ergaben nicht die Flottenquote (22.10.2026, Fund Teilagent „Nachrechnung“)
@@ -640,7 +665,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const inspection_defects = { inspections: dd.inspections, without_order: dd.without_order, settled_without_order: dd.settled_without_order, ordered: dd.ordered, released: dd.released, open: dd.open, reinspected: dd.reinspected, defects_again: dd.defects_again,
     to_release_days: { n: dd.days.length, median_d: r1(quantile(dd.days, 0.5)), p90_d: r1(quantile(dd.days, 0.9)) } };
   return { from, to, environment: envName, site, sites, vehicle_site, vehicle_sites, by_priority, vehicles, generated_at: new Date().toISOString(), availability: availability ? { ...availability, by_vehicle: undefined, lowest: availability.by_vehicle.filter((x) => x.downtime_h > 0 || x.pct < 100).slice(0, 5) } : null, parts_eta, cost_approvals, inspection_defects,
-    definitions: { status_basis: 'Vorgänge nach Meldemonat; Status (offen/freigegeben/abgelehnt), Dauern, ausstehende Kostenfreigaben und überschrittene Liefertermine zum Abrufzeitpunkt (generated_at) – spätere Freigaben ändern auch Werte vergangener Monate', duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung); ohne interne Aufträge (Prüftermin, Prüfmangel, Winterreifen – von der Leitung selbst angelegt)', internal: 'Teilmenge von „Vorgänge“: interne Aufträge der Leitung (Prüftermin, Prüfmangel, Winterreifen); nicht in Erstbewertung und „Meldung → Freigabe“', workshop_ack: 'Werkstattfreigabe → erste Übernahme durch eine Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene, ohne interne Aufträge)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug (nur freigegebene Aufträge, höchstens bis Zeitraumende; parallele Aufträge am selben Fahrzeug zählen einmal)', availability_downtime_h: 'Ausfallstunden der technischen Verfügbarkeit je Fahrzeug (alle Vorgänge, die in den Zeitraum hineinreichen; Grundlage von „Verfügbarkeit %“)', downtime_h: 'Ausfallzeit je Fahrzeug: Werkstatt-Übernahme → technische Freigabe bzw. Ablehnung (offen bis jetzt, höchstens bis Zeitraumende) und Zeit mit Sicherheitssperre zusammen, Überschneidungen einmal; Vorgänge aus dem Zeitraum, ohne Übernahme-Zeitstempel nicht gezählt', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe, höchstens bis Zeitraumende; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; ohne Auftrag erledigt = ohne Mängelauftrag, aber später erneut durchgeführt oder Fahrzeug außer Betrieb (nicht „ohne Auftrag“); mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', availability: 'Technische Verfügbarkeit: 100 % minus Ausfallstunden (Werkstatt-Übernahme → technische Freigabe/Ablehnung, offen bis jetzt, und Sicherheitssperre; je Fahrzeug Überschneidungen einmal) durch Fahrzeugstunden im Zeitraum (Monatsbeginn bis Monatsende bzw. jetzt, Berliner Zeit; frühestens ab Anlage des Fahrzeugs). Alle Vorgänge, die in den Zeitraum hineinreichen, auf den Zeitraum zugeschnitten. Aktive Fahrzeuge laut Stamm, ohne von der Bewertung ausgenommene; Werkstattaufenthalte ohne Vorgang in der App sind nicht erfasst. Mit Werkstattfilter nicht berechnet', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
+    definitions: { status_basis: 'Vorgänge nach Meldemonat; Status (offen/freigegeben/abgelehnt), Dauern, ausstehende Kostenfreigaben und überschrittene Liefertermine zum Abrufzeitpunkt (generated_at) – spätere Freigaben ändern auch Werte vergangener Monate', duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung); ohne interne Aufträge (Prüftermin, Prüfmangel, Winterreifen – von der Leitung selbst angelegt)', internal: 'Teilmenge von „Vorgänge“: interne Aufträge der Leitung (Prüftermin, Prüfmangel, Winterreifen); nicht in Erstbewertung und „Meldung → Freigabe“', workshop_ack: 'Werkstattfreigabe → erste Übernahme durch eine Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene, ohne interne Aufträge)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug (nur freigegebene Aufträge, höchstens bis Zeitraumende; parallele Aufträge am selben Fahrzeug zählen einmal)', availability_downtime_h: 'Ausfallstunden der technischen Verfügbarkeit je Fahrzeug (alle Vorgänge, die in den Zeitraum hineinreichen; Grundlage von „Verfügbarkeit %“)', downtime_h: 'Ausfallzeit je Fahrzeug: Werkstatt-Übernahme → technische Freigabe bzw. Ablehnung (offen bis jetzt, höchstens bis Zeitraumende) und Zeit mit Sicherheitssperre zusammen, Überschneidungen einmal; Vorgänge aus dem Zeitraum, ohne Übernahme-Zeitstempel nicht gezählt', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe, höchstens bis Zeitraumende; Überschneidungen einmal), Vorgänge aus dem Zeitraum', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; ohne Auftrag erledigt = ohne Mängelauftrag, aber später erneut durchgeführt oder Fahrzeug außer Betrieb (nicht „ohne Auftrag“); mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', availability: 'Technische Verfügbarkeit: 100 % minus Ausfallstunden (Werkstatt-Übernahme → technische Freigabe/Ablehnung, offen bis jetzt, und Sicherheitssperre; je Fahrzeug Überschneidungen einmal) durch Fahrzeugstunden im Zeitraum (Monatsbeginn bis Monatsende bzw. jetzt, Berliner Zeit; frühestens ab Anlage des Fahrzeugs). Alle Vorgänge, die in den Zeitraum hineinreichen, auf den Zeitraum zugeschnitten. Aktive Fahrzeuge laut Stamm, außer Betrieb genommene bis zur Außerbetriebnahme (Protokoll), ohne von der Bewertung ausgenommene; Werkstattaufenthalte ohne Vorgang in der App sind nicht erfasst. Mit Werkstattfilter nicht berechnet', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
 }
 
 // Werkstatt-Auslastung als CSV (Excel DE): eine Zeile je Standort und Kalenderwoche (älteste zuerst), offene Aufträge je Status

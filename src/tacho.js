@@ -9,6 +9,7 @@ import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
 import { siteSelection, siteKey } from './reports.js';
 import { audit } from './auth.js';
+import { PLATE_PASSED_ON_SKIP, platePassedOn } from './maintenance.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
 export const TACHO_RULE = { card_days: 28, vu_days: 90, source: 'FPersV § 2 Abs. 5' };
@@ -237,7 +238,11 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   if (ci.pno < 0 && ci.name < 0 && ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Personalnummer/Fahrer oder Kennzeichen/FIN erforderlich.');
 
   const drivers = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
-  const vehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded FROM vehicles WHERE active=1`).all()).results;
+  // auch außer Betrieb genommene (Backlog 188): Massenspeicher am Verkaufstag ausgelesen, Export erst danach importiert – FIN trifft das
+  // Altfahrzeug (vorher „Fahrzeug nicht gefunden“, Einzelerfassung ging); Kennzeichen zuerst an aktiven, sonst eindeutig am außer Betrieb genommenen
+  const allVehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded, active, created_at FROM vehicles`).all()).results;
+  const vehicles = allVehicles.filter((v) => v.active);
+  const offPlates = new Set(allVehicles.filter((v) => !v.active).map((v) => normPlate(v.plate)));
   const existingRows = (await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k, evidence, cancelled_at FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results;
   const existing = new Set(existingRows.filter((r) => !r.cancelled_at).map((r) => r.k));
   // stornierte Auslesung (z. B. falscher Fahrer/Tag): derselbe Export (gleicher Nachweis) erneut importiert bringt sie nicht still zurück;
@@ -247,11 +252,12 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   // Personalnummer ohne führende Nullen vergleichen (Excel macht aus „00123“ die Zahl 123, 18.10.2026); zwei Nummern, die dadurch gleich werden → mehrdeutig
   const byPno = uniq(drivers, (d) => (d.personnel_no ? pnoKey(d.personnel_no) : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));
-  const byVin = new Map(vehicles.map((v) => [v.vin, v]));
+  const byVin = new Map(allVehicles.map((v) => [v.vin, v]));
   // Kennzeichen doppelt, aber nur eines bewertet (ruhendes Doppel, z. B. Tippfehler-FIN): das bewertete Fahrzeug – wie die Fristen-Übersicht
   const byPlate = uniq(vehicles, (v) => normPlate(v.plate));
   const byPlateEval = uniq(vehicles.filter((v) => !v.eval_excluded), (v) => normPlate(v.plate));
   for (const [k, v] of byPlate) if (v === 'mehrdeutig' && byPlateEval.get(k) && byPlateEval.get(k) !== 'mehrdeutig') byPlate.set(k, byPlateEval.get(k));
+  const byPlateOff = uniq(allVehicles.filter((v) => !v.active), (v) => normPlate(v.plate));
   const today = berlinDate();
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim() : '');
   const rows = []; const skipped = []; const seen = new Set();
@@ -281,8 +287,10 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
       label = target.display_name;
     } else {
       const vin = get(cells, ci.vin) ? normalizeVin(get(cells, ci.vin)) : '';
-      target = vin ? byVin.get(vin) : get(cells, ci.plate) ? byPlate.get(normPlate(get(cells, ci.plate))) : undefined;
+      const pk = normPlate(get(cells, ci.plate));
+      target = vin ? byVin.get(vin) : pk ? (byPlate.get(pk) || byPlateOff.get(pk)) : undefined;
       if (target === 'mehrdeutig') return skip(`Kennzeichen nicht eindeutig: ${get(cells, ci.plate)}`);
+      if (!vin && target && target.active && platePassedOn(offPlates, target, day)) return skip(PLATE_PASSED_ON_SKIP);
       if (!target) return skip(`Fahrzeug nicht gefunden: ${get(cells, ci.vin) || get(cells, ci.plate) || '–'}`);
       if (target.kind === 'anhaenger') return skip(`Anhänger ohne Fahrtenschreiber: ${target.plate}`);
       label = target.plate;
