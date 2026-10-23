@@ -18340,7 +18340,7 @@ await test('Formularentwurf (Backlog 183): Abfahrtskontrolle und Meldung sichern
   const { STRINGS } = await import('../public/i18n.js');
   ok(app.includes("const key = `cfp_fd_${page}_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}`;"), 'Schlüssel je Seite/Person/Umgebung mit cfp_-Präfix (resetUserState löscht ihn beim Abmelden)');
   ok(app.includes("!['file', 'button', 'submit', 'search'].includes(x.type)"), 'keine Dateifelder (Fotos) im Entwurf');
-  ok(/sessionStorage\.setItem\(key, JSON\.stringify\(\{ at: new Date\(\)\.toISOString\(\), v, photos \}\)\)/.test(app), 'Sitzungsspeicher, nicht localStorage');
+  ok(/sessionStorage\.setItem\(key, JSON\.stringify\(\{ \.\.\.extra, at: new Date\(\)\.toISOString\(\), v, photos \}\)\)/.test(app), 'Sitzungsspeicher, nicht localStorage');
   ok(app.includes("if (x && !(preId && x.v[vehField] && x.v[vehField] !== preId))"), 'QR eines anderen Fahrzeugs übernimmt den Entwurf nicht');
   ok(app.includes("const save = (e) => { if (e.isTrusted) d.save(); };"), 'nur echte Eingaben sichern');
   ok(app.includes("const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);") && app.includes("const draft = bindFormDraft('check', form, 'v', preId);"), 'beide Formulare angebunden');
@@ -18416,7 +18416,7 @@ await test('Werkstatt-Tablet in der Halle (Teilagent 23.10.): Kontrolle nach Rep
   const vi = app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck('));
   ok(vi.includes(`<input type="hidden" name="rk" value="\${esc(uid())}">`) && vi.includes("const draft = bindFormDraft('insp_' + caseId, form, '', null);") && vi.includes('const key = form.rk.value || uid();'), 'Entwurf + Kennung im Entwurf');
   ok(vi.includes("draft.clear();") && vi.includes("if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true);"), 'Entwurf nach Erfolg gelöscht, bei Netzabbruch gesichert');
-  ok(app.includes("if (err.offline) S.cmdOffline = { key, at: Date.now() };") && app.includes("toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);") && app.includes("`${err.message} ${t('cmd_offline_kept')}`"), 'Befehle: Hinweise bei Netzabbruch/Konflikt danach');
+  ok(app.includes("if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, action); }") && app.includes("toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);") && app.includes("`${err.message} ${t('cmd_offline_kept')}`"), 'Befehle: Hinweise bei Netzabbruch/Konflikt danach');
   for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_kept', 'cmd_offline_kept', 'cmd_maybe_saved']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 10, `${l}: ${k}`);
   // Server: Kontrolle nach Reparatur mit derselben Anfragekennung zweimal → eine Kontrolle („duplicate“)
   eq((await owner.post('/api/vehicles', { plate: 'WH-HL 1', vin: 'WDB96340310555701', site: 'Dortmund' })).status, 201);
@@ -18428,6 +18428,33 @@ await test('Werkstatt-Tablet in der Halle (Teilagent 23.10.): Kontrolle nach Rep
   const key = rk(); const b = { kind: 'nach_reparatur', case_id: cid, request_key: key, items };
   const r1 = await users.ws.post('/api/inspections', b); eq(r1.status, 201, JSON.stringify(r1.data));
   const r2 = await users.ws.post('/api/inspections', b); ok([200, 201].includes(r2.status), JSON.stringify(r2.data)); eq(r2.data.duplicate, true, 'Wiederholung = dieselbe Kontrolle'); eq(r2.data.id, r1.data.id);
+});
+
+await test('Aktionsformular nach Netzabbruch (Backlog 187): Eingaben samt Befehlskennung je Person/Umgebung/Vorgang im Sitzungsspeicher, Wiederherstellen beim nächsten Öffnen desselben Vorgangs, nicht mehr erlaubte Aktion als Hinweis; Wiederholung mit derselben Kennung bucht nicht doppelt', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes("const actDraft = (caseId) => formDraft('act_' + caseId, $('#af'));") && app.includes("formDraft('act_' + caseId, af).save({ action, preset: S.openAct.preset || {}, cmd: S.pendCmd || null });"), 'Entwurf mit Aktion, Vorbelegung und Befehlskennung');
+  ok(app.includes('sessionStorage.setItem(key, JSON.stringify({ ...extra, at: new Date().toISOString(), v, photos }));'), 'Zusatzfelder überschreiben Zeit/Werte nicht');
+  ok(app.includes('if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, action); }'), 'Sicherung bei Netzabbruch');
+  ok(app.includes("if (S.openAct && S.openAct.action === action) S.openAct = null; actDraft(c.id).clear(); viewCase(c.id); }"), 'nach Erfolg gelöscht');
+  ok(app.includes("if (maybeMine) { S.cmdOffline = null; actDraft(c.id).clear(); }"), 'bei vermutlich angekommener Eingabe gelöscht');
+  ok(app.includes("S.openAct = null; actDraft(c.id).clear(); const ab") && app.includes("S.lostAct = null; S.openAct = null; actDraft(c.id).clear(); box.innerHTML = '';"), 'Abbrechen/Hinweis schließen löschen den Entwurf');
+  ok(app.includes("if (x && x.action && A.includes(x.action)) { S.openAct = { caseId: c.id, action: x.action, preset: x.preset || {} }; actDr = x; }") && app.includes("S.lostAct = { caseId: c.id, action: x.action, note, payload }; ad.clear(); }"), 'Wiederherstellen bzw. Hinweis bei nicht mehr erlaubter Aktion');
+  ok(app.includes("if (actDr && $('#af')) restoreActDraft(c, actDr);") && app.indexOf("if (actDr && $('#af')) restoreActDraft(c, actDr);") > app.indexOf("await actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true });"), 'Werte erst nach Aufbau (Lagerauswahl) setzen');
+  ok(app.includes('if (x.cmd && x.cmd.key && Date.now() - x.cmd.at < 10 * 60000) { S.pendCmd = x.cmd;'), 'Befehlskennung höchstens 10 Min. wiederverwendet');
+  ok(/resetUserState[\s\S]{0,400}k\.startsWith\('cfp_'\)/.test(app), 'Abmelden löscht den Entwurf');
+  for (const l of ['de', 'uk', 'en']) { ok(typeof STRINGS[l].act_draft_check === 'string' && STRINGS[l].act_draft_check.length > 10, `${l}: act_draft_check`); ok(!/nicht verlassen|не залишайте|do not leave/.test(STRINGS[l].cmd_offline_kept), `${l}: cmd_offline_kept ohne „Seite nicht verlassen“`); }
+  // Server: dieselbe Befehlskennung mit gleichem Inhalt nach Versionswechsel → „duplicate“, eine Buchung
+  eq((await owner.post('/api/vehicles', { plate: 'AE-NT 1', vin: 'WDB96340310557187', site: 'Dortmund' })).status, 201);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310557187', description: 'Netzabbruch: Arbeitszeit', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const ver = async () => (await users.fleet.get(`/api/cases/${cid}`)).data.case.version;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: await ver(), note: 'Bremse', payload: { workshop_site: 'DORTMUND' } })).status, 200);
+  eq((await users.ws.post(`/api/cases/${cid}/commands`, { action: 'start_repair', command_id: rk(), expected_version: await ver(), payload: {} })).status, 200);
+  const id = rk(); const payload = { hours: '1,5', description: 'Bremsbeläge' };
+  const v1 = await ver();
+  const a1 = await users.ws.post(`/api/cases/${cid}/commands`, { action: 'record_work', command_id: id, expected_version: v1, note: null, payload }); eq(a1.status, 200, JSON.stringify(a1.data));
+  const a2 = await users.ws.post(`/api/cases/${cid}/commands`, { action: 'record_work', command_id: id, expected_version: await ver(), note: null, payload }); eq(a2.status, 200, JSON.stringify(a2.data)); eq(a2.data.duplicate, true, 'Wiederholung erkannt');
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.work.length, 1, 'eine Buchung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

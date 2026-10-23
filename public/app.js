@@ -1626,7 +1626,7 @@ async function viewCase(id) {
     const key = JSON.stringify([c.id, action, note ?? null, payload]);
     // nur kurz nach dem Fehlschlag wiederverwenden: am geteilten Tablet bucht später ein anderer Mechaniker evtl. denselben Inhalt (23.10.2026)
     const commandId = S.pendCmd && S.pendCmd.key === key && Date.now() - S.pendCmd.at < 10 * 60000 ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId, at: Date.now() };
-    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; viewCase(c.id); }
+    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; actDraft(c.id).clear(); viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
@@ -1635,14 +1635,14 @@ async function viewCase(id) {
     // doch angekommene Buchung sein (nach 10 Min. neue Kennung) – dann nicht „jemand anderes“ melden, sondern zuerst den Verlauf prüfen lassen
     // (Backlog 186, Werkstatt-Tablet in der Halle: sonst doppelte Arbeitszeit)
     catch (err) {
-      if (err.offline) S.cmdOffline = { key, at: Date.now() };
+      if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, action); }
       const maybeMine = err.code === 'version_conflict' && S.cmdOffline && S.cmdOffline.key === key;
       const generic = err.code === 'version_conflict' && action !== 'approve_costs';
       if (!generic) toast(err.offline ? `${err.message} ${t('cmd_offline_kept')}` : err.message, true);
       if (err.code === 'version_conflict') {
         S.actSince = []; S.lostAct = { caseId: c.id, action, note, payload }; try { await viewCase(c.id); } catch {}
         const lost = $('#lostact'); if (lost) lost.scrollIntoView({ block: 'center' }); else if (generic) toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);
-        if (maybeMine) S.cmdOffline = null;
+        if (maybeMine) { S.cmdOffline = null; actDraft(c.id).clear(); }
       } else if (err.code === 'cost_approval_open') viewCase(c.id);
     }
   };
@@ -1651,11 +1651,20 @@ async function viewCase(id) {
   // Neuaufbau derselben Seite (z. B. nach einem Kommentar): ein offenes, nicht abgeschicktes Aktionsformular bleibt offen samt Eingaben
   // (17.10.2026: „Teil erfassen“ halb ausgefüllt war danach weg); nur solange die Aktion noch erlaubt ist
   if (S.openAct && (S.openAct.caseId !== c.id || !S.renderSame || !A.includes(S.openAct.action))) S.openAct = null;
+  // Backlog 187: nach Netzabbruch gesichertes Aktionsformular dieses Vorgangs (anderer Vorgang geöffnet, Neuladen, Sprachwechsel) wieder öffnen;
+  // ist die Aktion inzwischen nicht mehr erlaubt (z. B. freigegeben), die Eingaben als Hinweis zeigen statt still zu verwerfen
+  let actDr = null;
+  if (!S.openAct && !(S.lostAct && S.lostAct.caseId === c.id)) {
+    const ad = actDraft(c.id); const x = ad.load();
+    if (x && x.action && A.includes(x.action)) { S.openAct = { caseId: c.id, action: x.action, preset: x.preset || {} }; actDr = x; }
+    else if (x && x.action) { const { note = null, ...payload } = x.v; S.lostAct = { caseId: c.id, action: x.action, note, payload }; ad.clear(); }
+  }
   // Abgewiesene Eingaben, deren Aktion nicht mehr erlaubt ist: nicht still verwerfen (Arbeitszeit nach Freigabe ging verloren, 22.10.2026)
   if (S.lostAct && (S.lostAct.caseId !== c.id || A.includes(S.lostAct.action))) S.lostAct = null;
   if (S.lostAct && $('#actform')) showLostInputs(c);
   // Lagerauswahl („Teil erfassen“) wird nachgeladen – erst danach Eingaben wiederherstellen, sonst passt die Formular-Signatur nicht (19.10.2026)
   if (S.openAct) { try { await actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true }); } catch { /* Lagerliste nicht ladbar: Formular ohne Lager */ } }
+  if (actDr && $('#af')) restoreActDraft(c, actDr);
   finishRender();
   const clf = $('#clf'); if (clf) clf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(clf)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; try { await api('PUT', `/api/cases/${c.id}/claim`, b); toast('✓'); viewCase(c.id); } catch (err) { toast(err.message, true); if (err.code === 'version_conflict') viewCase(c.id); } };
   const cf = $('#cf'); if (cf) cf.onsubmit = (e) => { e.preventDefault(); const notify = $$('[data-nt]', cf).filter((x) => x.checked).map((x) => x.dataset.nt); return cmd('comment', $('#ct').value, notify.length ? { notify } : {}); };
@@ -1790,7 +1799,7 @@ function showLostInputs(c) {
   const rows = Object.entries(la.payload || {}).filter(([k, v]) => v !== null && v !== '' && typeof v !== 'object' && typeof v !== 'boolean' && !/^(confirm|command|stock_item_id)/.test(k)).map(([k, v]) => [t(LOST_LABELS[k] || k), /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? fmtD(String(v)) : String(v)]);
   if (la.note) rows.push([t('note'), la.note]);
   box.innerHTML = `<div class="panel warn" id="lostact" role="alert"><h3>${esc(t('act_' + la.action))}</h3><p>${esc(t('case_conflict_lost').replace('{st}', t('st_' + c.status)))}</p>${rows.length ? `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd style="white-space:pre-wrap;user-select:text">${esc(v)}</dd>`).join('')}</dl>` : ''}<div class="actions"><button type="button" class="btn secondary" id="lostok">${esc(t('case_conflict_dismiss'))}</button></div></div>`;
-  $('#lostok').onclick = () => { S.lostAct = null; S.openAct = null; box.innerHTML = ''; };
+  $('#lostok').onclick = () => { S.lostAct = null; S.openAct = null; actDraft(c.id).clear(); box.innerHTML = ''; };
 }
 
 function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } = {}) {
@@ -1847,11 +1856,14 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Tastatur/Screenreader: Fokus ins Formular, „Abbrechen“ gibt ihn an den auslösenden Knopf zurück (21.10.2026: blieb auf dem Knopf bzw. fiel auf body)
   if (!restore) { const h3 = box.querySelector('#af h3'); if (h3) { h3.tabIndex = -1; h3.focus({ preventScroll: true }); } } // Überschrift statt Feld: keine Bildschirmtastatur am Tablet
-  $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; const ab = document.querySelector(`button[data-act="${action}"]`); if (ab) ab.focus(); };
+  $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; actDraft(c.id).clear(); const ab = document.querySelector(`button[data-act="${action}"]`); if (ab) ab.focus(); };
   // Wiedervorlage: ein inzwischen vergangenes Datum bleibt nur unverändert zulässig – nach einer Änderung gilt „ab heute“ wie am Server
   // (vorher bot das Feld alle Tage ab dem alten Datum an, der Server wies sie mit „liegt in der Vergangenheit“ ab, 21.10.2026)
   if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
+  // Gibt es für diese Aktion schon einen Entwurf (nach Netzabbruch), halten weitere Eingaben ihn aktuell (Backlog 187)
+  const afUpd = (e) => { if (!e.isTrusted) return; const x = actDraft(c.id).load(); if (x && x.action === action) actDraftSave(c.id, action); };
+  $('#af').addEventListener('input', afUpd); $('#af').addEventListener('change', afUpd);
   const stockP = action === 'add_part' ? loadStockSelect(c) : null; // Promise erst am Ende zurückgeben – die Handler unten müssen gesetzt werden
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
   $('#af').onsubmit = (e) => {
@@ -1916,18 +1928,37 @@ function bindChecklist(form) {
 // Eingabe; Fotos nicht (nur ihre Anzahl für den Hinweis), Suchfeld nicht. Gelöscht nach Senden/Postausgang, „Entwurf verwerfen“ und beim
 // Abmelden (resetUserState löscht alle cfp_-Schlüssel des Sitzungsspeichers).
 const FORM_DRAFT_MS = 12 * 3600000;
+// Aktionsformular eines Vorgangs („Teil erfassen“, „Arbeitszeit“ …) nach Netzabbruch je Person/Umgebung/Vorgang sichern (Backlog 187):
+// vorher verworfen, sobald ein anderer Vorgang geöffnet oder die Seite neu geladen wurde. Mit gesichert wird die Befehlskennung –
+// kam die erste Sendung doch an, meldet der Server beim erneuten Speichern „bereits gespeichert“ statt doppelt zu buchen.
+const actDraft = (caseId) => formDraft('act_' + caseId, $('#af'));
+function actDraftSave(caseId, action) {
+  const af = $('#af'); if (!af || !S.openAct || S.openAct.caseId !== caseId || S.openAct.action !== action) return;
+  formDraft('act_' + caseId, af).save({ action, preset: S.openAct.preset || {}, cmd: S.pendCmd || null });
+}
+function restoreActDraft(c, x) {
+  const af = $('#af'); const ad = formDraft('act_' + c.id, af);
+  ad.restore(x);
+  // Befehlskennung nur so lange wiederverwenden wie im Formular selbst (10 Min.) – danach bucht evtl. ein anderer Mechaniker denselben Inhalt
+  if (x.cmd && x.cmd.key && Date.now() - x.cmd.at < 10 * 60000) { S.pendCmd = x.cmd; S.cmdOffline = { key: x.cmd.key, at: x.cmd.at }; }
+  const box = document.createElement('div'); box.className = 'panel'; box.id = 'adraft'; box.setAttribute('role', 'status'); box.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+  box.innerHTML = `<span class="small" style="flex:1 1 200px">${esc(t('form_draft_restored').replace('{d}', fmtDT(x.at)))} ${esc(t('act_draft_check'))}</span><button type="button" class="btn secondary" id="adx">${esc(t('inventory_draft_discard'))}</button>`;
+  af.querySelector('h3').insertAdjacentElement('afterend', box);
+  $('#adx').onclick = () => { if (!confirm(t('form_draft_discard_confirm'))) return; ad.clear(); S.openAct = null; S.pendCmd = null; $('#actform').innerHTML = ''; };
+  $('#actform').scrollIntoView({ block: 'start' });
+}
 function formDraft(page, form, skip = []) {
   const key = `cfp_fd_${page}_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}`;
   const fields = () => [...form.elements].filter((x) => (x.name || x.id) && !['file', 'button', 'submit', 'search'].includes(x.type) && !skip.includes(x.id));
   const fk = (x) => x.name || x.id;
   const d = {
     load() { try { const x = JSON.parse(sessionStorage.getItem(key) || 'null'); return x && x.v && typeof x.v === 'object' && Date.now() - Date.parse(x.at) < FORM_DRAFT_MS ? x : null; } catch { return null; } },
-    save() {
+    save(extra = {}) {
       try {
         const v = {};
         for (const x of fields()) { if (x.type === 'radio') { if (x.checked) v[fk(x)] = x.value; } else if (x.type === 'checkbox') { if (x.checked) v[fk(x)] = true; } else if (x.value !== '') v[fk(x)] = x.value; }
         const ph = $('input[type=file]', form); const photos = ph && ph.files ? ph.files.length : 0;
-        sessionStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), v, photos }));
+        sessionStorage.setItem(key, JSON.stringify({ ...extra, at: new Date().toISOString(), v, photos }));
       } catch { /* ohne Sitzungsspeicher: kein Entwurf */ }
     },
     clear() { try { sessionStorage.removeItem(key); } catch {} },
