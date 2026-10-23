@@ -18832,6 +18832,36 @@ await test('Unfall nachts (23.10.): offline gespeicherte kritische Meldung/Kontr
   ok(/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/.test('#/emergency?v=VIN:WMA15SZZ2HM722774'), 'Adresse passt zur Route');
 });
 
+await test('Backlog 200: noch nicht gesendete kritische Meldung/Kontrolle im Postausgang wirkt auf dem Gerät (Startseite ohne „keine offenen Meldungen“, Abfahrtskontrolle mit Warnung; DE/UK/EN)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const outboxCrit = '); const b = app.indexOf('const outboxVehAlert = ');
+  ok(a > 0 && b > a, 'Bausteine vorhanden');
+  // Bausteine mit Gerätespeicher-Ersatz ausführen
+  let box = [];
+  const fn = new Function('S', 'outboxGet', app.slice(a, b) + '; return { outboxCrit, outboxVeh };');
+  const { outboxVeh } = fn({ me: { id: 'u1' } }, () => box);
+  eq(JSON.stringify(outboxVeh('V1')), '{"n":0,"crit":false}', 'leer');
+  box = [{ path: '/api/cases', body: { vehicle_id: 'V1', priority: 'niedrig', driveability: 'fahrbereit' } }];
+  eq(JSON.stringify(outboxVeh('V1')), '{"n":1,"crit":false}', 'normale Meldung');
+  eq(JSON.stringify(outboxVeh('V2')), '{"n":0,"crit":false}', 'anderes Fahrzeug');
+  box.push({ path: '/api/cases', body: { vehicle_id: 'V1', priority: 'niedrig', driveability: 'nicht_fahrbereit' }, failed: 'x' });
+  eq(JSON.stringify(outboxVeh('V1')), '{"n":2,"crit":true}', 'nicht fahrbereit (auch abgewiesen = nicht gesendet)');
+  box = [{ path: '/api/inspections', body: { vehicle_id: 'V1', items: [{ result: 'ok' }] } }];
+  eq(JSON.stringify(outboxVeh('V1')), '{"n":0,"crit":false}', 'Kontrolle ohne Mangel zählt nicht');
+  box = [{ path: '/api/inspections', body: { vehicle_id: 'V1', items: [{ result: 'mangel', safety_relevant: false }] } }];
+  eq(JSON.stringify(outboxVeh('V1')), '{"n":1,"crit":false}', 'Mangel');
+  box = [{ path: '/api/inspections', body: { vehicle_id: 'V1', items: [{ result: 'mangel', safety_relevant: true }] } }, { path: '/api/cases', body: { vehicle_id: 'V1', priority: 'kritisch' } }];
+  eq(JSON.stringify(outboxVeh('V1')), '{"n":2,"crit":true}', 'sicherheitsrelevant/kritisch');
+  eq(JSON.stringify(fn({ me: null }, () => box).outboxVeh('V1')), '{"n":0,"crit":false}', 'ohne Anmeldung nichts');
+  // Einbindung: Startseite (eigenes und gekoppeltes Fahrzeug, grün nur ohne Postausgang), Abfahrtskontrolle
+  ok(app.includes("const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id)"), 'Startseite');
+  ok(app.includes("obN ? '' : `<span class=\"chip ok\">${esc(t('no_open_reports'))}</span>`"), 'kein grünes „keine offenen Meldungen“');
+  ok(app.includes("return (sv ? outboxVehAlert(sv.id) : '') + (locked ?"), 'Abfahrtskontrolle');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].outbox_veh_crit && STRINGS[l].outbox_veh_crit !== STRINGS.de.outbox_veh_crit || l === 'de', l); ok(PLURALS[l].outbox_veh_pending && PLURALS[l].outbox_veh_pending.one.includes('{n}') && PLURALS[l].outbox_veh_pending.other.includes('{n}'), l); }
+  ok(PLURALS.uk.outbox_veh_pending.few && PLURALS.uk.outbox_veh_pending.many, 'uk Formen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

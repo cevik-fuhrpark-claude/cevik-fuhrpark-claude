@@ -2047,3 +2047,10 @@ Object.assign(STRINGS.de, { location_shown: 'Standort des Fahrzeugs' });
 Object.assign(STRINGS.uk, { location_shown: 'Місцезнаходження' });
 Object.assign(STRINGS.en, { location_shown: 'Vehicle location' });
 
+// Backlog 200 (23.10.2026, Teilagent „Unfall nachts“): noch nicht gesendete Meldung/Kontrolle im Postausgang wirkt auf dem eigenen Gerät
+Object.assign(STRINGS.de, { outbox_veh_pending: 'Meldungen noch nicht gesendet: {n}', outbox_veh_crit: 'Gemeldet: kritisch / nicht fahrbereit – noch nicht gesendet. Nicht fahren, Disposition anrufen.' });
+Object.assign(STRINGS.uk, { outbox_veh_pending: 'Ще не надіслані повідомлення: {n}', outbox_veh_crit: 'Повідомлено: критично / не на ходу – ще не надіслано. Не їхати, зателефонуйте диспетчеру.' });
+Object.assign(STRINGS.en, { outbox_veh_pending: 'Reports not sent yet: {n}', outbox_veh_crit: 'Reported: critical / not roadworthy – not sent yet. Do not drive, call dispatch.' });
+Object.assign(PLURALS.de, { outbox_veh_pending: { one: '{n} Meldung noch nicht gesendet', other: '{n} Meldungen noch nicht gesendet' } });
+Object.assign(PLURALS.uk, { outbox_veh_pending: { one: '{n} повідомлення ще не надіслано', few: '{n} повідомлення ще не надіслано', many: '{n} повідомлень ще не надіслано', other: '{n} повідомлення ще не надіслано' } });
+Object.assign(PLURALS.en, { outbox_veh_pending: { one: '{n} report not sent yet', other: '{n} reports not sent yet' } });
