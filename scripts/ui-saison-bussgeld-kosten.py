@@ -1,7 +1,8 @@
 # [CLAUDE] UI-Test (23.10.2026, Teilagenten „Reifenwechsel-Saison“ / „Fahrerwechsel bei offenem Bußgeld“ / „Jahresabschluss Kosten“):
 # Reifen: Sprung aus Reifen – Flotte (#/vehicles/…?sec=tires) zeigt den Abschnitt Reifen mit aufgeklappter Erfassung; nach dem Speichern bleibt
 # die Erfassung offen (Art und km-Stand bleiben, Position rückt weiter, Profiltiefe leer). Bußgeld: „Angaben ändern“ mit Tatzeit (Berliner Ortszeit),
-# Änderung erscheint in Anzeige und Verlauf. Kosten: Knopf „CSV Einzelpositionen“. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
+# Änderung erscheint in Anzeige und Verlauf. Kosten: Knopf „CSV Einzelpositionen“. Werkstattplan: 60 Tage, Standort je Zeile.
+# Management: „Zuletzt entschieden/erledigt“ mit Person und Vermerk. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -26,6 +27,13 @@ with sync_playwright() as p:
         vin=f'WDB9634031L2000{i:02d}'; api('POST','/api/vehicles',{'vin':vin,'plate':f'SB-RW {i+1}','site':'Dortmund'}); VIDS.append('VIN:'+vin)
     f=api('POST','/api/fines',{'kind':'anhoerung','offense_type':'geschwindigkeit','offense_at':'2026-10-15T09:30','plate_in_letter':'SB-RW 1','authority':'Stadt Test','reference':'AZ-SB-1'})
     check(f['s'] in (200,201),'Bußgeld angelegt'); FID=f['d']['id']
+    # zweiter Standort + Prüftermin je Standort im Folgemonat; Agentenbefund entschieden (Vertretung)
+    for i,(pl,site) in enumerate([('SB-HA 1','Hamm'),('SB-DO 2','Dortmund')]):
+        vin=f'WDB9634031L3000{i:02d}'; api('POST','/api/vehicles',{'vin':vin,'plate':pl,'site':site})
+        api('POST',f'/api/vehicles/VIN:{vin}/maintenance',{'kind':'UVV','last_done_date':'2025-09-10','interval_months':12,'evidence':'UVV-Protokoll (Test)'})
+    api('POST','/api/agent/run'); mi=api('GET','/api/master')['d']['inbox']
+    print('  Übergaben:', len(mi))
+    if mi: api('POST',f"/api/master/{mi[0]['event_id']}/decision",{'decision_status':'erledigt','note':'Vertretung: Fahrer angerufen'})
     n=0
     for lang in ['de','uk','en']:
       for wd,h in [(390,844),(820,1180),(1366,900)]:
@@ -62,6 +70,16 @@ with sync_playwright() as p:
         check(r.locator('#csvi').is_visible() and len(r.inner_text('#csvi').strip())>3,f'{lang} {wd}px: Knopf Einzelpositionen')
         check(r.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {wd}px: Kosten ohne Querscrollen')
         if SHOTS: r.screenshot(path=f'{SHOTS}/kosten_{lang}_{wd}.png')
+        r.goto(B+'/#/plan'); r.wait_for_selector('#pdays',timeout=15000)
+        check(r.locator('#pdays option[value="60"]').count()==1,f'{lang} {wd}px: Plan bis 60 Tage')
+        check(r.locator('[data-vsite]').count()>=2,f'{lang} {wd}px: Fahrzeug-Standort je Zeile')
+        check(r.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {wd}px: Plan ohne Querscrollen')
+        if SHOTS: r.screenshot(path=f'{SHOTS}/plan_{lang}_{wd}.png',full_page=True)
+        if mi:
+            r.goto(B+'/#/master'); r.wait_for_selector('#decdone',timeout=15000); r.click('#decdone summary'); r.wait_for_timeout(200)
+            check('Vertretung: Fahrer angerufen' in r.inner_text('#decdone') and 'SB Inhaber' in r.inner_text('#decdone'),f'{lang} {wd}px: zuletzt entschieden mit Person und Vermerk')
+            check(r.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {wd}px: Management ohne Querscrollen')
+        else: check(False,'kein Agentenbefund für die Vertretungsprüfung')
         check(not errs,f'{lang} {wd}px: keine Skriptfehler {errs[:2]}')
         ctx.close(); o.close()
     br.close()

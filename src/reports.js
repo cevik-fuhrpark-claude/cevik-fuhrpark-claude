@@ -833,6 +833,11 @@ export async function workshopPlan(env, user, envName, query = {}) {
       ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}), ...(prevOpen(r) ? { prev_cycle_open: r.prev_cycle_open } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
   for (const i of maintenance_due) i.other_dates = others(i, null);
+  // Fahrzeug-Standort je Zeile in Anzeige-Schreibweise (23.10.2026, Teilagent Monatsplanung: Plan/Ausdruck für „alle Standorte“ zeigte nicht,
+  // woher ein Fahrzeug kommt)
+  const vLab = (x) => (x && String(x).trim() ? vSel.label.get(siteKey(x)) || String(x).trim() : 'ohne');
+  for (const [, items] of byDay) for (const i of items) i.vehicle_site_label = vLab(i.vehicle_site);
+  for (const i of [...overdue, ...unplanned, ...maintenance_due]) i.vehicle_site_label = vLab(i.vehicle_site);
   return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned, maintenance_due, warn_km: ov.warn_km };
 }
 

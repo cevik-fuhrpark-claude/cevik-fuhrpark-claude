@@ -14530,7 +14530,7 @@ await test('Fehlersuche 20.10. (4): Kontroll-Wiederholung vor Zustandsprüfungen
   const pf = (await F.get('/api/master')).data.findings.find((x) => x.finding_code === 'FINE_VEHICLE_UNKNOWN' && x.subject_key === fid); ok(pf, 'Befund mit subject_key');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("if (c.startsWith('FINE_')) return d(`#/fines/${encodeURIComponent(subj)}`, ' data-afine');"), 'afLink');
-  eq((app.match(/afLink\(/g) || []).length, 3, 'Akte, Entscheidungen, Befunde');
+  eq((app.match(/afLink\(/g) || []).length, 4, 'Akte, Entscheidungen, Befunde, zuletzt entschieden');
   // 4. „heute fällig“ statt „in 0 Tagen“
   const { fineFindings } = await import('../src/fines.js'); const { BERLIN_TODAY: today } = { BERLIN_TODAY };
   db.prepare(`UPDATE fines SET response_due=? WHERE id=?`).run(today, fid);
@@ -17974,6 +17974,23 @@ await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): 
   ok(app.includes("\\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')]") && (app.match(/encodeURIComponent\(x\.vehicle_id\)\}\?sec=tires/g) || []).length >= 4, 'Reifen-/Winterlisten springen zum Abschnitt');
   ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position })") && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
   ok(app.includes("part=items`)") && app.includes('data-cinact'), 'Kosten: Knopf Einzelpositionen, Status-Chip');
+});
+
+await test('Urlaubsvertretung / Monatsplanung (Teilagenten 23.10.): Werkstattplan bis 60 Tage mit Fahrzeug-Standort je Zeile, Dateinamen mit Standort, Management zeigt zuletzt entschiedene Übergaben mit Person und Vermerk', async () => {
+  const r = await users.fleet.get('/api/workshop/plan?days=60');
+  eq(r.status, 200); ok(Date.parse(r.data.to) - Date.parse(r.data.from) >= 59 * 86400000, '60 Tage');
+  const all = [...r.data.days.flatMap((d) => d.items), ...r.data.overdue, ...r.data.unplanned, ...r.data.maintenance_due];
+  ok(all.length > 0 && all.every((i) => typeof i.vehicle_site_label === 'string' && i.vehicle_site_label.length > 0), 'Standort-Anzeige je Zeile');
+  ok(all.filter((i) => !i.vehicle_site || !String(i.vehicle_site).trim()).every((i) => i.vehicle_site_label === 'ohne'), 'ohne Standort = ohne');
+  const m = (await users.fleet.get('/api/master')).data;
+  ok(Array.isArray(m.inbox), 'inbox');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dec_recent', 'dec_recent_hint', 'dec_decided']) ok(STRINGS[l][k], `${l} ${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${[7, 14, 30, 60].map((n) =>'), 'Plan bis 60 Tage');
+  ok((app.match(/subs\(vsTag\(i\),/g) || []).length === 3, 'Standort in Auftrag, Prüftermin, fällig ohne Termin');
+  ok(app.includes("werkstattplan_${envFn()}_${bDate()}${site ? '_' + fnPart(site) : ''}${r.vehicle_site ? '_' + fnPart(r.vehicle_site) : ''}.ics") && app.includes("fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}.ics"), 'ICS-Dateinamen mit Standort');
+  ok(app.includes('id="decdone"') && app.includes("!['offen', 'gesehen'].includes(m.decision_status) && m.decided_at"), 'Abschnitt zuletzt entschieden');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
