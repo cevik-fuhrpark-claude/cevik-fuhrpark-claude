@@ -1595,7 +1595,11 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
       kmRejected = last && odo < last.km ? { km: odo, previous_km: last.km, previous_at: last.measured_at } : later && odo > later.km ? { km: odo, next_km: later.km, next_at: later.measured_at } : { km: odo };
     }
   }
-  return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt };
+  // Abfahrtskontrolle an einem gesperrten Fahrzeug (z. B. Springer an einem fremden Lkw): Antwort meldet die Sperre, damit die App
+  // „nicht fahren“ zeigt – die Kontrolle selbst bleibt gespeichert (23.10.2026)
+  const vehicleLocked = kind === 'abfahrt' && !!(await env.DB.prepare(`SELECT 1 AS x FROM cases WHERE environment=? AND vehicle_id=? AND safety_lock=1
+    AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') LIMIT 1`).bind(envName, vehicleId).first());
+  return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt, vehicle_locked: vehicleLocked };
 }
 
 // ---------- Dateien ----------

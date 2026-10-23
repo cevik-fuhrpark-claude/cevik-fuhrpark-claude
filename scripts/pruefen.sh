@@ -68,6 +68,7 @@ UI-Sitzungsende während der Eingabe, Speicher voll|ui-sitzungsende-eingaben.py|
 UI-Schichtwechsel am Werkstatt-Tablet (Konflikt, Eingaben behalten, 401 leert Offline-Daten)|ui-schichtwechsel.py|/tmp/cfp-schichtwechsel.log
 UI-Disposition im Tagesgeschäft (Rückkehr ungeklärt, Ruhend, Überfällig-Link) und Restbestand ausbuchen|ui-dispo-tagesgeschaeft.py|/tmp/cfp-dispo-tag.log
 UI-Reifen-Saison, Bußgeld-Tatzeit ändern, Kosten-Einzelpositionen|ui-saison-bussgeld-kosten.py|/tmp/cfp-saison.log
+UI-Springer: Abfahrtskontrolle zeigt Sperre (auch fremdes Fahrzeug), Startseite → Auslesungen|ui-springer-sperre.py|/tmp/cfp-springer.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

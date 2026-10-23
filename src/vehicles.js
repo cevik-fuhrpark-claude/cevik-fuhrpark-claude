@@ -653,6 +653,8 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
     throw e;
   }
   await audit(env, user.id, 'vehicle.assign_driver', vehicleId, { driver: driver.id, ended_previous: endPrev ? open.map((o) => o.plate) : [] });
+  // Fahrzeugwechsel: Ende auch im Protokoll des bisherigen Fahrzeugs (23.10.2026 – Springer mit täglichem Wechsel wirkte dort dauerhaft zugeordnet)
+  if (endPrev) for (const o of open) await audit(env, user.id, 'vehicle.end_assignment', o.vehicle_id, { driver: driver.id, assignment: o.id, vehicle_change: true });
   return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate) };
 }
 

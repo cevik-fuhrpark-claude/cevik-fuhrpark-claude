@@ -378,7 +378,7 @@ const routes = [
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 // `vs` aus Startseiten-Sprüngen (hj): Standortfilter der Zielliste setzen ('*' = alle), dann ohne `vs` weiter (Routen-Muster bleiben streng)
-const VS_KEYS = { cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite' };
+const VS_KEYS = { cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite', tacho: 'tachoSite' };
 function applySiteJump(h) {
   const m = h.match(/^#\/(\w+)\?(.*)$/); if (!m) return h;
   const p = new URLSearchParams(m[2]); if (!p.has('vs')) return h;
@@ -1068,7 +1068,9 @@ async function fleetTodo() {
     ['todo_result_missing', ov && ov.result_missing ? ov.result_missing : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?ev=${encodeURIComponent(x.id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)}`, ''],
     ['todo_maint_unrecorded', ov ? ov.rows.filter((r) => r.unrecorded_order) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.unrecorded_order.case_no} ${t('released_short')} ${fmtD(r.unrecorded_order.closed_at)}`, 'mittel'],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7 && r.date_status !== 'erledigt')) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.km_status === 'ueberfaellig' ? `${t('due_at_km')} ${fmtKm(r.next_due_km)} (${t('km_over')} ${fmtKm(-r.km_remaining)})` : r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')} · ${r.planned_date && r.planned_date >= today ? t('planned') + ' ' + fmtD(r.planned_date) : t('no_planned_date')}`, 'mittel'],
-    ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/vehicles/' + encodeURIComponent(x.id) }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald') : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
+    ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/vehicles/' + encodeURIComponent(x.id) }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald')
+      // Fahrer und Fahrzeuge gemeinsam nach Dringlichkeit, dann Frist – ein überfälliger Massenspeicher stand sonst hinter acht „bald fälligen“ Fahrerkarten im „+N“ (23.10.2026)
+      .sort((a, b) => (a.status === 'ueberfaellig' ? 0 : 1) - (b.status === 'ueberfaellig' ? 0 : 1) || String(a.due || '9').localeCompare(String(b.due || '9'))) : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
     ['todo_driver_docs', dr.filter((d) => (d.status.overall_docs || d.status.overall) === 'kritisch'), /* Auslesung steht unter todo_tacho */ (d) => `#/drivers/${d.id}`, (d) => `${d.display_name} · ${[...d.status.items.filter((i) => i.status === 'abgelaufen').map((i) => t('dk2_' + i.kind) + (i.title ? ' ' + i.title : '')), d.status.check.status === 'mangel' ? t('license_check') : ''].filter(Boolean).join(', ')}`, 'kritisch'],
     ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
       (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
@@ -1080,7 +1082,7 @@ async function fleetTodo() {
   if (!groups.length && ov && ov.totals && ov.totals.vehicles === 0) return `<section class="panel" role="note" data-novehicles><b>${esc(t('todo_none'))}</b><p class="small">${esc(t('todo_no_vehicles'))} <a href="#/vehicles">${esc(t('nav_vehicles'))} ›</a></p></section>`;
   if (!groups.length && ov && ov.gaps && ov.gaps.length) return `<section class="panel" role="note" data-todogaps><b>${esc(t('todo_none'))}</b><p class="small">${esc(tn('todo_gaps_hint', ov.gaps.length))} <a href="#/maintenance?f=gaps">${esc(t('maintenance'))} ›</a></p></section>`;
   if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
-  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}${(ov && ov.lists_truncated || []).includes(TODO_TRUNC[k]) ? '+' : ''}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_vfind_crit' ? `<p class="small"><a href="${hj('#/vehicles?f=with_findings_crit')}" id="todovfind">${esc(t('show_in_vlist'))} ›</a> · <a href="#/master">${esc(t('nav_master'))} ›</a></p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="${hj('#/cases?f=repeat')}">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="${hj('#/plan')}">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="${hj('#/plan?s=mdue')}">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_winter' ? `<p class="small"><a href="${hj('#/tires?f=winter_bad')}" id="todowinter">${esc(t('ws_winter_show'))} ›</a></p>${list.some((x) => x.closed_order) ? `<p class="small"><a href="${hj('#/tires?f=winter_closed')}" id="todowclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="${hj('#/quality?f=inspection_no_result')}">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
+  return `<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}${(ov && ov.lists_truncated || []).includes(TODO_TRUNC[k]) ? '+' : ''}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted">+${list.length - 8}</p>` : ''}${k === 'todo_vfind_crit' ? `<p class="small"><a href="${hj('#/vehicles?f=with_findings_crit')}" id="todovfind">${esc(t('show_in_vlist'))} ›</a> · <a href="#/master">${esc(t('nav_master'))} ›</a></p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="${hj('#/cases?f=repeat')}">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_tacho' ? `<p class="small"><a href="${hj('#/tacho')}" id="todotacho">${esc(t('tacho'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="${hj('#/plan')}">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="${hj('#/plan?s=mdue')}">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_winter' ? `<p class="small"><a href="${hj('#/tires?f=winter_bad')}" id="todowinter">${esc(t('ws_winter_show'))} ›</a></p>${list.some((x) => x.closed_order) ? `<p class="small"><a href="${hj('#/tires?f=winter_closed')}" id="todowclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="${hj('#/quality?f=inspection_no_result')}">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
 }
 
 // Listen der Prüftermin-Übersicht, die der Server bei 200 kappt (`lists_truncated`) → Zähler „200+“
@@ -1229,7 +1231,7 @@ async function flushOutboxRun() {
           await photosDel(item.body.request_key).catch(() => {});
         }
         done.add(item.body.request_key);
-        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed || !!r.km_rejected);
+        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);
       }
       catch (err) {
         if (err.offline || err.status === 429 || err.status >= 500) { kept++; continue; }
@@ -1886,18 +1888,19 @@ async function viewDepartureCheck(preId) {
   if (!mayCheck()) { render(`<h1>${esc(t('departure_check'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'check'); return; }
   const vs = await vehiclesCached();
   if (!vs.length) { render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${noVehiclesNote()}`, 'check'); return; }
-  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}</option>`).join('')}</select><div id="known"></div>
+  render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}${v.availability === 'gesperrt' ? ' – ' + esc(t('locked')) : ''}</option>`).join('')}</select><div id="known"></div>
     ${checklistHtml()}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p>`, 'check');
   const form = $('#f'); bindChecklist(form);
   if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
-  if (S.me.role === 'driver') {
-    let known = null;
-    const showKnown = () => { const box = $('#known'); if (!box) return; const v = known && known.find((x) => x.id === $('#v').value); box.innerHTML = v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : ''; };
-    api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
-    $('#v').addEventListener('change', showKnown);
-  }
+  // Sperre des gewählten Fahrzeugs (und des gekoppelten) immer zeigen – auch für Springer an einem nicht zugeordneten Lkw
+  // (Fahrzeugliste liefert `availability`), bekannte Mängel nur für zugeordnete Fahrzeuge des Fahrers (23.10.2026)
+  let known = null;
+  const showKnown = () => { const box = $('#known'); if (!box) return; const id = $('#v').value; box.innerHTML = departureLockBox(vs.find((x) => x.id === id), known && known.find((x) => x.id === id)); };
+  showKnown();
+  $('#v').addEventListener('change', showKnown);
+  if (S.me.role === 'driver') api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
   photoLimitWatch($('#ph'));
   const key = uid();
   form.onsubmit = async (e) => {
@@ -1918,7 +1921,7 @@ async function viewDepartureCheck(preId) {
       const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
       if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb, who));
-      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`, !!failed || !!r.km_rejected);
+      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       sb.disabled = false;
@@ -2078,6 +2081,13 @@ function coupledLockedChip(c) {
   return `<span class="chip kritisch">${esc(coupledLockedText(c))}</span>`;
 }
 // Melde-/Kontrollformular: gesperrter Anhänger bzw. gesperrtes Zugfahrzeug des gewählten eigenen Fahrzeugs
+// Abfahrtskontrolle: Sperre des gewählten Fahrzeugs (Liste oder „Meine Fahrzeuge“) + gekoppeltes Fahrzeug + bekannte Mängel (23.10.2026)
+function departureLockBox(sv, kv) {
+  const locked = (kv && kv.locked) || (sv && sv.availability === 'gesperrt');
+  const c = (kv && kv.coupled) || (sv && sv.coupled && sv.coupled.availability === 'gesperrt' ? { ...sv.coupled, locked: true } : null);
+  return (locked ? `<div class="alert" role="alert" style="margin-bottom:8px"><b>${esc(t('scan_locked'))}</b></div>` : '') + coupledAlert(c) + (kv ? knownDefects(kv.known_defects) : '');
+}
+const lockedWarn = (r) => (r && r.vehicle_locked ? ` · ${t('locked')} – ${t('do_not_drive')}` : '');
 const coupledAlert = (c) => (c && c.locked ? `<div class="alert" role="alert" style="margin-bottom:8px">${esc(coupledLockedText(c))}</div>` : '');
 function coupledChip(c) {
   if (!c || !['gesperrt', 'werkstatt'].includes(c.availability)) return '';

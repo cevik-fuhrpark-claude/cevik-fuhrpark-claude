@@ -15285,9 +15285,9 @@ await test('Backlog 100: Unterweisungen mit langem, gleich beginnendem Titel –
 await test('Backlog 102: Startseiten-Sprünge tragen den Standort des Zählers (vs), Router setzt den Listenfilter und entfernt vs', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const home = app.slice(app.indexOf('async function viewHome()'), app.indexOf('async function viewCases()'));
-  for (const l of ['#/cases', '#/cases?f=repeat', '#/plan', '#/plan?s=mdue', '#/quality?f=inspection_no_result', '#/tires?f=winter_bad', '#/vehicles?f=with_findings_crit', '#/vehicles?f=with_notes'])
+  for (const l of ['#/cases', '#/cases?f=repeat', '#/plan', '#/plan?s=mdue', '#/quality?f=inspection_no_result', '#/tires?f=winter_bad', '#/vehicles?f=with_findings_crit', '#/vehicles?f=with_notes', '#/tacho'])
     ok(home.includes(`href="\${hj('${l}')}"`) && !home.includes(`href="${l}"`), 'Startseite: ' + l);
-  ok(app.includes('h = applySiteJump(h);') && /VS_KEYS = \{ cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite' \}/.test(app), 'Router');
+  ok(app.includes('h = applySiteJump(h);') && /VS_KEYS = \{ cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite', tacho: 'tachoSite' \}/.test(app), 'Router');
   // Logik der Hilfsfunktionen isoliert prüfen
   const grab = (name) => { const i = app.indexOf(`function ${name}(`); let d = 0, j = app.indexOf('{', i); for (; j < app.length; j++) { if (app[j] === '{') d++; else if (app[j] === '}' && --d === 0) break; } return app.slice(i, j + 1); };
   const keys = app.match(/const VS_KEYS = [^;]+;/)[0];
@@ -16377,7 +16377,7 @@ await test('Fehlersuche 21.10. (Datensicherung/Datenauskunft): Probe meldet fehl
   const r4 = await probe((j) => { j.data.cases.pop(); });
   ok(!r4.ok && /laut Export/.test(r4.tables.find((t) => t.table === 'cases').error || ''), 'Zeilen unter Export-Zähler');
   const r5 = await probe((j) => { j.data.cases[0].spalte_x = 1; });
-  ok(r5.ok && r5.warnings.some((w) => /unbekannte Spalten.*spalte_x/.test(w)), 'unbekannte Spalte: Hinweis');
+  ok(!r5.ok && /unbekannte Spalten.*spalte_x/.test(r5.tables.find((t) => t.table === 'cases').error || ''), 'unbekannte Spalte bei gleichem Stand: Fehler (23.10.2026)');
   // Datenauskunft
   const now = new Date().toISOString();
   db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at,note) VALUES ('o1',?,123456,?,'manuell',?,?,'Tacho getauscht')`).run(db.prepare("SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'").get().id, now, U.driver.id, now);
@@ -17991,6 +17991,67 @@ await test('Urlaubsvertretung / Monatsplanung (Teilagenten 23.10.): Werkstattpla
   ok((app.match(/subs\(vsTag\(i\),/g) || []).length === 3, 'Standort in Auftrag, Prüftermin, fällig ohne Termin');
   ok(app.includes("werkstattplan_${envFn()}_${bDate()}${site ? '_' + fnPart(site) : ''}${r.vehicle_site ? '_' + fnPart(r.vehicle_site) : ''}.ics") && app.includes("fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}.ics"), 'ICS-Dateinamen mit Standort');
   ok(app.includes('id="decdone"') && app.includes("!['offen', 'gesehen'].includes(m.decision_status) && m.decided_at"), 'Abschnitt zuletzt entschieden');
+});
+
+await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrtskontrolle meldet Sperre (auch fremdes Fahrzeug), Fahrzeugwechsel im Protokoll des alten Fahrzeugs, Auslese-Status inaktiver Fahrer in Liste/CSV, Probe zieht Migrationen samt Rückfüllung nach, BETRIEB nennt den D1-Namen', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317'; const db = e.DB.db;
+  // 1. Springer: Lkw V1 gesperrt (kritisch, nicht fahrbereit), Fahrer ist ihm nicht zugeordnet
+  await newCase({ priority: 'kritisch', driveability: 'nicht_fahrbereit' }, U.fleet);
+  const vl = (await U.driver.get('/api/vehicles')).data.vehicles;
+  eq(vl.find((v) => v.id === V1).availability, 'gesperrt'); eq(vl.find((v) => v.id === V1).assigned, false);
+  const keys = (await U.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const chk = (vid) => U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: vid, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })) });
+  const c1 = await chk(V1); eq(c1.status, 201); eq(c1.data.vehicle_locked, true, 'Antwort meldet Sperre');
+  const c2 = await chk(V2); eq(c2.status, 201); eq(c2.data.vehicle_locked, false, 'nicht gesperrt');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('async function viewDepartureCheck(') + 6000);
+  ok(dep.includes("departureLockBox(vs.find((x) => x.id === id)") && dep.includes("v.availability === 'gesperrt' ? ' – ' + esc(t('locked'))"), 'Kontrolle zeigt Sperre aus der Fahrzeugliste');
+  ok(dep.indexOf('showKnown();') < dep.indexOf("if (S.me.role === 'driver') api('GET', '/api/me/vehicles')"), 'Sperre auch für andere Rollen / vor „Meine Fahrzeuge“');
+  ok(app.includes("${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);") && app.includes("photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked);"), 'Hinweis nach Senden und aus dem Postausgang');
+  // 2. Fahrzeugwechsel mit „Bisherige Zuordnung beenden“: Ende steht im Protokoll des alten Fahrzeugs
+  eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: true })).status, 201);
+  const ends = db.prepare(`SELECT detail FROM audit_log WHERE action='vehicle.end_assignment' AND target=?`).all(V2).map((r) => JSON.parse(r.detail));
+  eq(ends.length, 1); eq(ends[0].vehicle_change, true); eq(ends[0].driver, U.driver.id);
+  // 3. inaktiver Fahrer: Liste/CSV „inaktive“ zeigen den Auslese-Status wie die Akte
+  const ago = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Springer Inaktiv', personnel_no: 'SP-23' }); eq(dr.status, 201); const did = dr.data.id;
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: did, downloaded_on: ago(35), evidence: 'Test' })).status, 201);
+  const akte = (await U.fleet.get(`/api/drivers/${did}`)).data;
+  eq((await U.fleet.patch(`/api/drivers/${did}`, { active: false, expected_updated_at: akte.driver.updated_at })).status, 200);
+  const li = (await U.fleet.get('/api/drivers?inactive=1')).data.drivers.find((x) => x.id === did);
+  ok(li, 'in der Liste inaktiver'); eq(li.status.tacho_status, 'ueberfaellig', JSON.stringify(li.status));
+  const csv = await U.fleet.get('/api/drivers?inactive=1&format=csv'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data);
+  const line = txt.split('\n').find((l) => l.includes('Springer Inaktiv')); ok(line && (line.includes(ago(35).split('-').reverse().join('.')) || line.includes(ago(35))), 'CSV mit letzter Auslesung: ' + line);
+  ok(!(await U.fleet.get('/api/tacho')).data.drivers.some((x) => x.id === did), 'Übersicht weiter nur aktive (Frage an Auftraggeber)');
+  // Startseite: Fahrer und Fahrzeuge gemeinsam nach Dringlichkeit, Sprung in die Auslesungen
+  ok(app.includes(".sort((a, b) => (a.status === 'ueberfaellig' ? 0 : 1) - (b.status === 'ueberfaellig' ? 0 : 1)") && app.includes(`href="\${hj('#/tacho')}" id="todotacho"`), 'Startseite Auslesungen');
+  // 4. Probe: ältere Sicherung (ohne 0075, ohne Spalte environment) → Rückfüllung läuft nach dem Einspielen
+  const { probeBackup, requiredTables, restoreInto } = await import('../scripts/sicherung-probe.mjs');
+  const b = await U.own.get('/api/admin/backup'); eq(b.status, 200);
+  const j0 = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data;
+  ok(j0.data.driver_vehicles.length >= 2, 'Zuordnungen in der Sicherung');
+  const old = JSON.parse(JSON.stringify(j0)); const i75 = old.data._migrations.findIndex((m) => /^0075/.test(m.id)); ok(i75 > 0, '0075 bekannt');
+  old.data._migrations = old.data._migrations.slice(0, i75); for (const r of old.data.driver_vehicles) delete r.environment;
+  const pr = await probeBackup(old, { required: await requiredTables() });
+  ok(pr.ok, JSON.stringify(pr.tables.filter((t) => !t.ok))); ok(pr.migrations_applied_after >= 1, 'nachgezogen');
+  const envs = pr.env.DB.db.prepare('SELECT DISTINCT environment FROM driver_vehicles').all().map((r) => r.environment);
+  eq(envs.join(','), 'test', 'Umgebung aus dem Protokoll rückgefüllt (vorher NULL)');
+  const same = await probeBackup(JSON.parse(JSON.stringify(j0)), { required: await requiredTables() }); ok(same.ok && same.migrations_applied_after === 0 && same.warnings.length === 0, JSON.stringify(same.warnings));
+  // neuere Sicherung als Programmstand → ✘ „git pull“
+  const newer = JSON.parse(JSON.stringify(j0)); newer.data._migrations.push({ id: '9999_zukunft.sql', applied_at: new Date().toISOString() });
+  const pn = await probeBackup(newer, { required: await requiredTables() }); ok(!pn.ok && pn.tables.some((t) => t.table === '_migrations' && /git pull/.test(t.error || '')), 'neuere Sicherung');
+  // gleicher Stand + unbekannte Spalte → Fehler (würde verworfen)
+  const { ensureSchema } = await import('../src/worker.js'); const f = makeEnv(); await ensureSchema(f);
+  const unk = JSON.parse(JSON.stringify(j0)); unk.data.cases[0].spalte_x = 1; const ru = restoreInto(f.DB.db, unk);
+  ok(!ru.ok && /unbekannte Spalten.*spalte_x/.test(ru.tables.find((t) => t.table === 'cases').error || ''), 'unbekannte Spalte bei gleichem Stand');
+  // 5. BETRIEB.md: jede wrangler-d1-Zeile nennt den Datenbanknamen aus wrangler.toml
+  const fs = await import('node:fs');
+  const dbName = fs.readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8').match(/database_name\s*=\s*"([^"]+)"/)[1];
+  const lines = fs.readFileSync(new URL('../docs/BETRIEB.md', import.meta.url), 'utf8').split('\n').filter((l) => /npx wrangler d1 (time-travel \w+|export|execute) /.test(l));
+  ok(lines.length >= 3, 'd1-Befehle gefunden');
+  for (const l of lines) ok(new RegExp(`npx wrangler d1 (time-travel \\w+|export|execute) ${dbName.replace(/-/g, '\\-')}(\\s|$)`).test(l), 'D1-Name: ' + l);
+  ok(fs.readFileSync(new URL('../docs/BETRIEB.md', import.meta.url), 'utf8').includes('enthält der SQL-Vollexport **alle Geheimnisse**'), 'Warnung SQL-Export');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

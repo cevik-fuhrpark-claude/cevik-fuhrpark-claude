@@ -1537,7 +1537,7 @@ const AUDIT_DETAIL_KEYS = {
   failures: ['Fehlversuche', 'Невдалі спроби', 'Failed attempts'], ended_on: ['beendet am', 'завершено', 'ended on'],
   insurer: ['Versicherer', 'Страховик', 'Insurer'], source: ['Quelle', 'Джерело', 'Source'], active: ['aktiv', 'активний', 'active'],
   user: ['Person', 'Особа', 'Person'], counted: ['gezählt', 'пораховано', 'counted'], differences: ['Abweichungen', 'Відхилення', 'Differences'], eta: ['erwartet am', 'очікується', 'expected on'],
-  with_driver: ['mit Fahrer', 'з водієм', 'with driver'], ended_previous: ['beendete Zuordnungen', 'завершені призначення', 'ended assignments'],
+  with_driver: ['mit Fahrer', 'з водієм', 'with driver'], ended_previous: ['beendete Zuordnungen', 'завершені призначення', 'ended assignments'], vehicle_change: ['durch Fahrzeugwechsel', 'через зміну транспортного засобу', 'by vehicle change'],
   action: ['Bereich', 'Розділ', 'Area'], counts: ['Anzahlen', 'Кількості', 'Counts'], item: ['Artikel', 'Артикул', 'Item'],
   part_number: ['Teilenummer', 'Номер деталі', 'Part number'], min_qty: ['Mindestbestand', 'Мінімальний залишок', 'Minimum stock'],
   location: ['Lagerort', 'Місце зберігання', 'Location'], unit_price_net: ['Preis netto (€)', 'Ціна нетто (євро)', 'Net price (€)'],

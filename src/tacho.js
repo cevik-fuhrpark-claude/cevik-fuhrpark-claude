@@ -39,12 +39,13 @@ export async function warnDays(env) {
 }
 
 // Zwei Sammelabfragen (unabhängig von der Anzahl Fahrer/Fahrzeuge) – auch vom Fuhrparkagenten genutzt
-export async function tachoRows(env, envName, warn, today = berlinDate()) {
+// active = 0: Fahrerliste/CSV „inaktive Fahrer“ – Auslese-Status wie in der Akte (23.10.2026; vorher leer); Übersicht/Agent nur aktive
+export async function tachoRows(env, envName, warn, today = berlinDate(), active = 1) {
   const drv = (await env.DB.prepare(`SELECT d.id, d.display_name, d.personnel_no, d.site,
       (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.driver_id=d.id AND t.cancelled_at IS NULL) AS last,
       (SELECT x.valid_until FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0 ORDER BY x.created_at DESC LIMIT 1) AS card_valid_until,
       (SELECT COUNT(*) FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.superseded=0) AS has_card
-    FROM drivers d WHERE d.environment=? AND d.active=1 ORDER BY d.display_name`).bind(envName).all()).results.sort((a, b) => String(a.display_name || '').localeCompare(String(b.display_name || ''), 'de', { sensitivity: 'base' }));
+    FROM drivers d WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, active ? 1 : 0).all()).results.sort((a, b) => String(a.display_name || '').localeCompare(String(b.display_name || ''), 'de', { sensitivity: 'base' }));
   const veh = (await env.DB.prepare(`SELECT v.id, v.plate, v.site,
       (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.vehicle_id=v.id AND t.environment=? AND t.cancelled_at IS NULL) AS last
     FROM vehicles v WHERE v.active=1 AND v.eval_excluded=0 AND v.kind<>'anhaenger' ORDER BY v.plate`).bind(envName).all()).results;

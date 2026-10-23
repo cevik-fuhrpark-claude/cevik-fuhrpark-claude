@@ -93,19 +93,29 @@ herunterladen und im eigenen Drive ablegen. Jeder Export steht im Audit-Log.
 spielt die Datei in eine frische In-Memory-Datenbank mit aktuellem Schema ein und prüft (seit 21.10.2026): jede Pflicht-Tabelle
 vorhanden („fehlt in Sicherung“), Zeilenzahl je Tabelle gegen die beim Export notierte Anzahl (`counts`), Spalten gegen das Schema
 (fehlende Spalte = Fehler, wenn die Sicherung denselben Migrationsstand hat; bei älteren Sicherungen nur Hinweis „⚠“, ebenso
-unbekannte Spalten) sowie die Fremdschlüssel. Ein automatischer Test macht das bei jedem `npm test` mit der Sicherung der Testdaten. Die JSON-Sicherung ist ein
+unbekannte Spalten) sowie die Fremdschlüssel. Seit 23.10.2026 baut die Probe die frische Datenbank zuerst nur mit den Migrationen
+der Sicherung auf, spielt ein und zieht danach die neueren Migrationen **samt ihren Rückfüllungen** nach (z. B. 0075 Umgebung der
+Fahrzeugzuordnungen) – vorher blieben solche Spalten bei älteren Sicherungen leer, und die Probe meldete trotzdem „vollständig“.
+Kennt die Sicherung Migrationen, die der lokale Programmstand nicht hat, meldet die Probe ✘ „Repo aktualisieren (git pull)“; bei
+gleichem Stand ist eine unbekannte Spalte ein Fehler (würde verworfen). Ein automatischer Test macht das bei jedem `npm test` mit der Sicherung der Testdaten. Die JSON-Sicherung ist ein
 Archiv der Fachdaten – Benutzer müssten nach einer Wiederherstellung daraus neu eingeladen werden (keine Passwörter enthalten).
 Zeilengrenze: je Tabelle höchstens 200 000 Zeilen. Darüber enthält die Sicherung die **neuesten** 200 000 Zeilen, `truncated[]` nennt die Tabelle,
 die App warnt nach dem Herunterladen und die Probe meldet „UNVOLLSTÄNDIG“ (seit 18.10.2026; vorher fielen still die neuesten Zeilen weg). Dann D1 Time Travel nutzen.
 
 **Wiederherstellung der Datenbank auf einen Zeitpunkt** (nur nach Freigabe durch den Inhaber – überschreibt den aktuellen Stand):
 ```
-npx wrangler d1 time-travel info cevik-fuhrpark-claude                       # aktuelles Lesezeichen anzeigen und notieren
-npx wrangler d1 time-travel restore cevik-fuhrpark-claude --timestamp=2026-10-10T08:00:00Z
+npx wrangler d1 time-travel info cevik-fuhrpark-claude-db                    # aktuelles Lesezeichen anzeigen und notieren
+npx wrangler d1 time-travel restore cevik-fuhrpark-claude-db --timestamp=2026-10-10T08:00:00Z
 ```
 Vor dem Zurückspielen das aktuelle Lesezeichen notieren – damit lässt sich auch die Wiederherstellung selbst rückgängig machen.
 
-**Vollexport der Datenbank als SQL:** `npx wrangler d1 export cevik-fuhrpark-claude --remote --output=sicherung.sql`
+**Vollexport der Datenbank als SQL:** `npx wrangler d1 export cevik-fuhrpark-claude-db --remote --output=sicherung.sql`
+(Datenbankname laut `wrangler.toml` `database_name` – nicht der Worker-Name; bis 23.10.2026 stand hier der Worker-Name, die Befehle wären
+mit „Datenbank nicht gefunden“ abgebrochen. Ein Test vergleicht jetzt jede `wrangler d1`-Zeile dieser Datei mit `wrangler.toml`.)
+**Achtung:** Anders als die JSON-Sicherung enthält der SQL-Vollexport **alle Geheimnisse** – Passwort-Hashes, Zwei-Faktor-Geheimnisse und
+Ersatzcodes, Sitzungs-/Einladungs-Token-Hashes, Push-Geräteschlüssel und den privaten VAPID-Schlüssel (`settings.vapid_private_jwk`).
+Nur verschlüsselt und getrennt von der JSON-Sicherung aufbewahren, nie in einem geteilten Drive-Ordner; nach einem Verlust die
+Push-Schlüssel neu erzeugen und alle Sitzungen beenden.
 
 **Fotos/PDFs (KV `FILES`):** Schlüssel `<umgebung>/<Vorgangs-ID>/<Datei-ID>` bzw. `<umgebung>/fines/<Bußgeld-ID>/<Datei-ID>` bzw. `<umgebung>/vehicles/<Fahrzeug-ID>/<Datei-ID>` (Fahrzeugdokumente) (Zuordnung über Tabelle `files` in der Sicherung); Liste mit
 `npx wrangler kv key list --binding FILES --remote`, einzelne Datei mit `npx wrangler kv key get <Schlüssel> --binding FILES --remote > datei`.

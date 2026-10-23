@@ -539,7 +539,7 @@ async function handleApi(request, env, ctx, url) {
     const noSiteHidden = dsel && dsel.site && dsel.site !== 'ohne' ? list.filter((d) => reports.siteKey(d.site) === 'ohne').length : 0;
     if (dsel && dsel.site) list = list.filter((d) => dsel.match(d.site));
     // Leitung: Gesamtstatus mit Auslese-Frist wie CSV und Akte (Fahrer: listDrivers liefert die eigene Akte schon so)
-    const tr = ['owner', 'fleet'].includes(user.role) ? await tacho.tachoRows(env, envName, await tacho.warnDays(env)) : null;
+    const tr = ['owner', 'fleet'].includes(user.role) ? await tacho.tachoRows(env, envName, await tacho.warnDays(env), undefined, q.inactive === '1' ? 0 : 1) : null;
     if (tr) { const tb = new Map(tr.drivers.map((x) => [x.id, x])); list = list.map((d) => ({ ...d, status: drivers.withTacho(d.status, tb.get(d.id)) })); }
     if (q.format === 'csv') {
       if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
