@@ -19029,6 +19029,20 @@ await test('Backlog 207 (HU-Tag in der Werkstatt): SP mit erheblichen Mängeln n
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].hn_sp_bad_result, l);
 });
 
+await test('Backlog 209 (Panne – Ersatzfahrzeug): Dispo-Startseite verlinkt „Gespann gesperrt (n)“, Fahrzeugliste markiert Termine „(heute)“, Hilfe erklärt „Keine offenen Meldungen“ (DE/UK/EN)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`href="\${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"`), 'Link auf den Filter');
+  ok(app.includes("const cl = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt'"), 'gleiche Regel wie cLocked');
+  ok(app.includes("const cLocked = (v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt';"), 'Filterregel unverändert');
+  ok(app.includes('+ todayMark(v.planned_workshop_date)') && app.includes('+ todayMark(v.planned_inspection_date)'), '(heute) in der Liste');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const h = STRINGS[l].help_dispo_s;
+    ok(h.includes(STRINGS[l].av_einsatzbereit_lt_system) && h.includes(STRINGS[l].av_coupled_locked) && h.includes(STRINGS[l].av_maint_overdue), `${l}: Hilfe nennt die Bezeichnungen der Oberfläche`);
+    ok(!/einsatzbereit laut System|готовий за даними системи|ready according to the system/.test(h), `${l}: alter Begriff entfernt`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
