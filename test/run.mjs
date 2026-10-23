@@ -5550,7 +5550,7 @@ await test('Vertragsdokument: nur Dokument desselben Fahrzeugs und derselben Umg
   eq((await users.fleet.get(`/api/vehicles/${V}`)).data.contracts.find((x) => x.id === c.data.id).file_id, f1, 'bleibt verknüpft');
   ok((await users.fleet.get('/api/contracts')).data.contracts.find((x) => x.id === c.data.id).file_id, 'Übersicht kennt Verknüpfung');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/contracts?format=csv&filter=alle')).data);
-  ok(csv.split('\r\n')[0].endsWith(';Vertragsdokument verknüpft;Fahrzeug ruhend (nicht in Summen)') && csv.split('\r\n').some((l) => l.startsWith('VT-DOC 1;Leasing;Doc-Leasing;D-1;') && l.endsWith(';ja;nein')), 'CSV-Spalte');
+  ok(csv.split('\r\n')[0].includes(';Vertragsdokument verknüpft;Fahrzeug ruhend (nicht in Summen);km-Stand;') && csv.split('\r\n').some((l) => l.startsWith('VT-DOC 1;Leasing;Doc-Leasing;D-1;') && l.split(';').slice(18, 20).join(';') === 'ja;nein'), 'CSV-Spalte (ab Backlog 196 folgen km-Spalten)');
   let dq = (await users.fleet.get('/api/admin/data-quality')).data.items;
   ok(!dq.some((i) => i.check === 'contract_no_document' && i.vehicle_id === V), 'mit Dokument kein Hinweis');
   eq((await users.fleet.patch(`/api/contracts/${c.data.id}`, { file_id: null })).status, 200);
@@ -12552,7 +12552,7 @@ await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag 
   db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
   const ov = (await own.get('/api/contracts?filter=alle')).data;
   ok(ov.contracts.every((c) => c.vehicle_eval_excluded === true), 'ruhend gekennzeichnet'); eq(ov.monthly_rate_sum_net, null, 'nicht in der Summe');
-  ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').slice(1).filter(Boolean).every((l) => l.endsWith(';ja')), 'CSV-Spalte ruhend = ja');
+  ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').slice(1).filter(Boolean).every((l) => l.split(';')[19] === 'ja'), 'CSV-Spalte ruhend = ja');
   db.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').run(V1);
   // Vertragsdokument aus „test“ gilt im Betrieb nicht als verknüpft (wie die Fahrzeugakte)
   own.envHeader = 'test';
@@ -12562,7 +12562,7 @@ await test('Fehlersuche 18.10. (17): Verträge – Rückimport mit Folgevertrag 
   own.envHeader = null;
   const inProd = (await own.get('/api/contracts?filter=alle')).data.contracts.find((x) => x.id === c.data.id);
   eq(inProd.file_id, null, 'Betrieb: nicht verknüpft'); eq(inProd.file_other_env, true);
-  ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').some((l) => l.includes(';MietCo;') && l.endsWith(';nein;nein')), 'CSV Betrieb: nein');
+  ok(dec(await own.get('/api/contracts?filter=alle&format=csv')).split('\r\n').some((l) => l.includes(';MietCo;') && l.split(';').slice(18, 20).join(';') === 'nein;nein'), 'CSV Betrieb: nein');
   // Protokoll-Ausdruck nennt weitere ältere Einträge (Knopf „Weitere laden“ wird nicht gedruckt)
   ok(/id="amore">[^`]*<p class="print-only small" id="aumorep">\$\{esc\(t\('audit_more_print'\)\)\}/.test((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Druckhinweis Protokoll');
 });
@@ -18716,6 +18716,53 @@ await test('Backlog 194: „Dringend nicht zugestellt“ ab 3 Vorgängen an dies
   ok(b.labels.startsWith('N-11, N-12') && b.labels.endsWith(', +2'), b.labels);
   eq(bundleUndelivered(rows.slice().reverse()).find((x) => !x.single).subject, b.subject, 'Betreff unabhängig von der Reihenfolge');
   eq(renderFindingMessage('URGENT_NOT_DELIVERED_BULK', { k: 4, n: 1, labels: null, who: null }, 'de'), 'Dringende Benachrichtigungen an dieselben Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler) – Nachrichten: 4, Empfänger: 1.');
+});
+
+await test('Backlog 196 (Monatsende Leasing): Vertragsübersicht/CSV zum Stichtag (nur Ablesungen bis Tagesende Berlin), Ablesedatum, Mehr-/Minder-km und km-Status in der CSV, Stichtag geprüft (DE/UK/EN)', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'lea.inhaber', display_name: 'Lea' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await own.post('/api/vehicles', { plate: 'LE-AS 1', vin: 'WDB96340310596001', site: 'Dortmund' })).status, 201);
+  eq((await own.post('/api/vehicles', { plate: 'LE-AS 2', vin: 'WDB96340310596002', site: 'Dortmund' })).status, 201);
+  const V1 = 'VIN:WDB96340310596001'; const V2 = 'VIN:WDB96340310596002';
+  const odo = async (v, km, d) => eq((await own.post(`/api/vehicles/${v}/odometer`, { km, measured_on: d })).status, 201, `km ${km} ${d}`);
+  const ct = async (v, b) => { const x = await own.post(`/api/vehicles/${v}/contracts`, { kind: 'leasing', partner: 'LeaseCo', evidence: 'Vertrag', ...b }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  await ct(V1, { contract_no: 'A', start_date: day(-300), end_date: day(400), km_allowance: 40000, start_km: 100000 });
+  await odo(V1, 100000, day(-300)); await odo(V1, 130000, day(-30)); await odo(V1, 150500, day(-2));
+  await ct(V2, { contract_no: 'B', start_date: day(-20), end_date: day(700), km_allowance: 90000, start_km: 50000 });
+  await odo(V2, 52000, day(-5));
+  const row = (ov, no) => ov.contracts.find((c) => c.contract_no === no);
+  // heute: letzte Ablesung, Überschreitung um 10 500 km
+  const now = (await own.get('/api/contracts?filter=alle')).data; eq(now.as_of, null);
+  const a0 = row(now, 'A').status.km; eq(a0.status, 'ueber'); eq(a0.driven, 50500); eq(a0.remaining, -10500);
+  // Stichtag vor 30 Tagen: nur die Ablesung von damals, kein Ablesewert für B (Vertrag begann danach, Ablesung erst später)
+  const ov = (await own.get(`/api/contracts?filter=alle&as_of=${day(-30)}`)).data;
+  eq(ov.as_of, day(-30)); eq(ov.today, day(-30)); eq(ov.generated_on, BERLIN_TODAY);
+  const a1 = row(ov, 'A').status.km; eq(a1.driven, 30000, 'Stand zum Stichtag'); eq(a1.current_km, 130000);
+  ok(a1.measured_at < new Date(Date.parse(day(-29) + 'T00:00:00Z')).toISOString(), 'Ablesung vor Tagesende');
+  ok(!row(ov, 'B') || row(ov, 'B').status.km.status === 'ohne_km' || row(ov, 'B').status.km.status === 'ok', 'B nicht interpoliert');
+  // Stichtag zwischen den Ablesungen von B: keine erfundene Zahl
+  const ovb = (await own.get(`/api/contracts?filter=alle&as_of=${day(-10)}`)).data; eq(row(ovb, 'B').status.km.status, 'ohne_km'); eq(row(ovb, 'B').status.km.driven, undefined);
+  // CSV: angehängte Spalten, alte Spalten unverändert an ihrer Stelle
+  const csv = new TextDecoder().decode((await own.get(`/api/contracts?filter=alle&format=csv&as_of=${day(-10)}`)).data).replace(/^﻿/, '');
+  const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
+  eq(head.slice(0, 20).join('|').startsWith('Kennzeichen|Vertragsart|Vertragspartner'), true);
+  eq(head.slice(20).join('|'), 'km-Stand|Ablesung vom|Mehr-km (+) / Minder-km (−) bisher|km-Status|Stichtag');
+  const la = lines.find((l) => l.startsWith('LE-AS 1')).split(';'); const lb = lines.find((l) => l.startsWith('LE-AS 2')).split(';');
+  eq(la.slice(20).join('|'), `130000|${day(-30).split('-').reverse().join('.')}|-10000|Prognose über Kontingent|${day(-10).split('-').reverse().join('.')}`);
+  eq(lb.slice(20).join('|'), `||||${day(-10).split('-').reverse().join('.')}`.replace('||||', '|||kein km-Stand|'));
+  const cd = (await own.req('GET', `/api/contracts?filter=alle&format=csv&as_of=${day(-10)}`)); ok(String(cd.headers.get('content-disposition')).includes(`stichtag-${day(-10)}`), 'Dateiname mit Stichtag');
+  const csvNow = new TextDecoder().decode((await own.get('/api/contracts?filter=alle&format=csv')).data);
+  ok(csvNow.split('\r\n').find((l) => l.startsWith('LE-AS 1')).split(';').slice(20, 24).join('|') === `150500|${day(-2).split('-').reverse().join('.')}|10500|Kontingent überschritten`, 'Mehr-km heute');
+  // Prüfung des Stichtags
+  eq((await own.get(`/api/contracts?as_of=${day(1)}`)).status, 400, 'Zukunft');
+  eq((await own.get('/api/contracts?as_of=2026-02-30')).status, 400, 'ungültig');
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  eq(translateValidation('en', 'Stichtag: darf nicht in der Zukunft liegen.'), 'Key date: must not be in the future.');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_asof && STRINGS[l].ct_asof_note.includes('{d}') && STRINGS[l].ct_km_read && STRINGS[l].ct_km_excess && STRINGS[l].ct_asof_clear, l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(asof ? '&as_of=' + asof : '')") && app.includes("sq.replace(/&as_of=[^&]*/, '')"), 'Liste/CSV mit Stichtag, Kalender ohne');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

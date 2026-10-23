@@ -253,14 +253,19 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   if (!isMgr(user)) throw forbidden();
   const filter = ['aktiv', 'aktion', 'beendet', 'alle'].includes(query.filter) ? query.filter : 'aktiv';
   const kind = CONTRACT_KINDS.includes(query.kind) ? query.kind : null;
+  // Stichtag (Backlog 196, Monatsmeldung an den Leasinggeber): Status und km zum Ende des Berliner Tags `as_of` – nur Ablesungen bis
+  // dahin, nichts interpoliert (fehlt eine, bleibt „kein km-Stand“). Ohne Angabe wie bisher heute.
+  const realToday = berlinDate();
+  const asOf = query.as_of ? date(query.as_of, 'Stichtag', { notFuture: true }) : null;
+  const before = asOf ? berlinDayStartIso(new Date(Date.parse(asOf + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)) : null;
   const [rows, settingsRows, latestKm] = await Promise.all([
     // Vertragsdokument nur aus der eigenen Umgebung (wie die Fahrzeugakte; 18.10.2026: Übersicht/CSV zeigten „verknüpft“ für ein Test-Dokument im Betrieb)
     env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site, f.id AS file_ok FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id LEFT JOIN files f ON f.id=c.file_id AND f.environment=? ORDER BY v.plate, c.kind`).bind(envName).all(),
     env.DB.prepare(`SELECT key, value FROM settings WHERE key='contract_warn_days'`).all(),
-    latestKmByVehicle(env),
+    latestKmByVehicle(env, { before }),
   ]);
   const settings = new Map(settingsRows.results.map((r) => [r.key, r.value]));
-  const today = berlinDate(); const w = warnDaysOf(settings);
+  const today = asOf || realToday; const w = warnDaysOf(settings);
   // Filter „Fahrzeug-Standort“ (Standort laut Fahrzeugstamm, Schreibweisen zusammengefasst) – vor den Zählern, damit diese zum Standort passen
   const sel = siteSelection(rows.results.map((r) => ({ site: r.vehicle_site })), query.site);
   // Vertragsart ebenfalls vor den Zählern (vorher „Handlungsbedarf (2)“ bei leerer Liste der gewählten Art, 17.10.2026)
@@ -278,19 +283,25 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Summe der Monatsraten nur über aktive Verträge mit hinterlegter Rate (fehlende Rate = unbewertet, nie 0 €)
   const active = running;
   const rated = active.filter((c) => c.monthly_rate_net !== null);
-  return { today, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
+  return { today, as_of: asOf, generated_on: realToday, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
 }
 
+const KM_ST_DE = { ok: 'im Kontingent', ueber: 'Kontingent überschritten', prognose_ueber: 'Prognose über Kontingent', ohne_km: 'kein km-Stand',
+  ohne_start: 'km bei Übernahme fehlt', zaehler: 'nicht berechenbar (Zähler-Rücksprung)', unter_start: 'km-Stand unter km bei Übernahme' };
 const ST_DE = { handeln: 'handeln', hinweis: 'Hinweis', ok: 'in Ordnung', beendet: 'beendet' };
 export function contractsCsv(ov) {
   const head = ['Kennzeichen', 'Vertragsart', 'Vertragspartner', 'Vertragsnummer', 'Beginn', 'Ende', 'Kündigungsfrist (Monate)', 'Kündigung spätestens', 'Monatsrate netto (EUR)',
-    'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung', 'Vertragsdokument verknüpft', 'Fahrzeug ruhend (nicht in Summen)'];
+    'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung', 'Vertragsdokument verknüpft', 'Fahrzeug ruhend (nicht in Summen)',
+    // Backlog 196 (Monatsmeldung Leasing): angehängt, damit bestehende Auswertungen ihre Spalten behalten
+    'km-Stand', 'Ablesung vom', 'Mehr-km (+) / Minder-km (−) bisher', 'km-Status', 'Stichtag'];
   const lines = [head.join(';')];
   for (const c of ov.contracts) {
     const s = c.status;
     lines.push([c.plate, KIND_DE[c.kind], c.partner, c.contract_no, c.start_date, c.end_date, c.notice_months, s.notice ? s.notice.by : '',
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
-      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein'].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
+      s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
+      s.km && s.km.current_km !== undefined ? s.km.current_km : '', s.km && s.km.measured_at ? berlinDate(s.km.measured_at) : '',
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : '', ov.as_of || ov.today].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

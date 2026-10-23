@@ -320,8 +320,8 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/contracts' && m === 'GET') {
     const ov = await contracts.contractOverview(env, user, Object.fromEntries(url.searchParams), envName);
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter, site: ov.site });
-      return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.csv"` } });
+      await auth.audit(env, user.id, 'contract.export', null, { rows: ov.contracts.length, filter: ov.filter, site: ov.site, ...(ov.as_of ? { as_of: ov.as_of } : {}) });
+      return new Response(contracts.contractsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.as_of ? 'stichtag-' + ov.as_of : ov.today}.csv"` } });
     }
     if (url.searchParams.get('format') === 'ics') return new Response(contracts.contractsIcs(ov, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.ics"` } });
     return json(ov);

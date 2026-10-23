@@ -52,6 +52,7 @@ UI-Tastatur (Fokus nach Aktion, Escape, aria-current, Fehlerseite, Lesezugriff N
 UI-km-Begründung nachtragen (Datenqualität → Zeitleiste)|ui-km-begruendung.py|/tmp/cfp-km-begruendung.log
 UI-Befund Empfänger nicht zugestellt (Name/Rolle)|ui-befund-empfaenger.py|/tmp/cfp-befund-empfaenger.log
 UI-Befund gebündelt (gleiche Empfänger, Backlog 194)|ui-befund-buendel.py|/tmp/cfp-befund-buendel.log
+UI-Verträge Stichtag (km zum Monatsende, Backlog 196)|ui-vertrag-stichtag.py|/tmp/cfp-vertrag-stichtag.log
 UI-Erstnutzung mit leerem Bestand (Hinweise statt leerer Seiten)|ui-erstnutzung.py|/tmp/cfp-erstnutzung.log
 UI-Geräteuhr falsch (Hinweis, „heute“ nach Serverzeit)|ui-geraeteuhr.py|/tmp/cfp-geraeteuhr.log
 UI-Lebenszyklus Konto deaktivieren/Fahrzeug außer Betrieb (Hinweise)|ui-lebenszyklus.py|/tmp/cfp-lebenszyklus.log
