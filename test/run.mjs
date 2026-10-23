@@ -18557,6 +18557,38 @@ await test('Nachträglich erfasste Arbeitszeit (Backlog 189): Kostenbericht zäh
   if (!rate0) await env.DB.prepare(`DELETE FROM settings WHERE key='workshop_hourly_rate_net'`).run(); else if (!rate0.value) await env.DB.prepare(`UPDATE settings SET value=? WHERE key='workshop_hourly_rate_net'`).bind(rate0.value).run();
 });
 
+await test('Werkstatt geschlossen / Fahrer ausgeschieden (Backlog 190): Meldung mit inzwischen geschlossener Werkstatt wird ohne Vorschlag angenommen (Wiederholung gleich), kein Nachbestell-Befund für das Restlager, Kontobearbeitung behält die geschlossene Werkstatt; Fahrerakte deaktiviert → Hinweis auf weiter aktives Konto', async () => {
+  const envF = (await users.fleet.get('/api/me')).data.active_environment;
+  eq((await owner.post('/api/vehicles', { plate: 'WS-ZU 190', vin: 'WDB96340310590001', site: 'Dortmund' })).status, 201);
+  const st = await owner.post('/api/stock', { site: 'EXTERN', name: 'Restlager Filter 190', min_qty: 5, initial_qty: 1 });
+  ok([200, 201].includes(st.status), 'Artikel Restlager: ' + JSON.stringify(st.data));
+  const { stockFindings } = await import('../src/stock.js');
+  const ownerEnv = (await owner.get('/api/me')).data.active_environment;
+  ok((await stockFindings(env, ownerEnv)).some((f) => f.site === 'EXTERN' && f.code === 'STOCK_BELOW_MIN'), 'offen: Befund');
+  await env.DB.prepare(`UPDATE workshops SET active=0 WHERE code='EXTERN'`).run();
+  try {
+    ok(!(await stockFindings(env, ownerEnv)).some((f) => f.site === 'EXTERN'), 'geschlossen: kein Nachbestell-Befund');
+    const key = rk(); const body = { vehicle_id: 'VIN:WDB96340310590001', description: 'Spiegel lose (Postausgang, alte Werkstattliste)', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'EXTERN', request_key: key };
+    const c1 = await users.fleet.post('/api/cases', body); eq(c1.status, 201, JSON.stringify(c1.data));
+    const c2 = await users.fleet.post('/api/cases', body); ok([200, 201].includes(c2.status) && c2.data.id === c1.data.id, 'Wiederholung liefert denselben Vorgang');
+    eq((await env.DB.prepare('SELECT suggested_workshop_site AS s FROM cases WHERE id=?').bind(c1.data.id).first()).s, null, 'Vorschlag entfällt');
+    eq((await users.fleet.post('/api/cases', { ...body, workshop_site: 'GIBTSNICHT', request_key: rk() })).status, 400, 'unbekannte Werkstatt weiter abgewiesen');
+  } finally { await env.DB.prepare(`UPDATE workshops SET active=1 WHERE code='EXTERN'`).run(); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("!S.meta.workshops.some((w) => w.code === u.workshop_site) ? `<option value=\"${esc(u.workshop_site)}\" selected data-wsclosed>"), 'Kontobearbeitung: geschlossene Werkstatt bleibt ausgewählt');
+  // Fahrerakte ausgeschieden, Konto weiter aktiv
+  const nu = await owner.post('/api/users', { username: 'aus.fahrer190', display_name: 'Aus Fahrer 190', role: 'driver', environment: envF }); eq(nu.status, 201, JSON.stringify(nu.data));
+  const uid = nu.data.id || nu.data.user_id || (await env.DB.prepare(`SELECT id FROM users WHERE username='aus.fahrer190'`).first()).id;
+  await new Client(worker, env, 'aus190').post('/api/invite/accept', { token: nu.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const dr = await users.fleet.post('/api/drivers', { display_name: 'Aus Fahrer 190', personnel_no: 'AF-190', user_id: uid }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const off = await users.fleet.patch(`/api/drivers/${dr.data.id}`, { active: false }); eq(off.status, 200, JSON.stringify(off.data));
+  eq(off.data.account_still_active && off.data.account_still_active.name, 'Aus Fahrer 190', 'Hinweis: Konto weiter aktiv');
+  eq((await users.fleet.patch(`/api/drivers/${dr.data.id}`, { note: 'ausgeschieden' })).data.account_still_active, undefined, 'nur beim Deaktivieren');
+  ok(app.includes("if (r && r.account_still_active) h.push(t('dr_left_account_active')"), 'App zeigt den Hinweis');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].dr_left_account_active.includes('{name}') && STRINGS[l].ws_closed, l); ok(PLURALS[l].dr_left_assignments && PLURALS[l].dr_left_assignments.other.includes('{n}'), l + ' Mehrzahl'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

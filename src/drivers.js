@@ -240,6 +240,12 @@ export async function updateDriver(env, user, envName, id, body) {
     changed.account = { from: changed.account.from ? names.get(changed.account.from) || changed.account.from : null, to: changed.account.to ? names.get(changed.account.to) || changed.account.to : null };
   }
   if (Object.keys(changed).length) await audit(env, user.id, 'driver.update', id, { changed });
+  // Akte auf „ausgeschieden“ gesetzt, verknüpftes App-Konto aber weiter aktiv bzw. Fahrzeug weiter zugeordnet (Backlog 190, Teilagent
+  // „Fahrer verlässt das Unternehmen“): Hinweis statt stiller Weiterarbeit (Push, Kontrollen, Meldungen gingen weiter); nichts automatisch geändert
+  if (changed.active && changed.active.to === false && f.user_id) {
+    const u = await env.DB.prepare(`SELECT u.display_name, u.active, (SELECT COUNT(*) FROM driver_vehicles dv WHERE dv.user_id=u.id AND (dv.valid_to IS NULL OR dv.valid_to > ?)) AS n FROM users u WHERE u.id=?`).bind(nowIso(), f.user_id).first();
+    if (u && (u.active || u.n)) return { ok: true, ...(u.active ? { account_still_active: { name: u.display_name } } : {}), ...(u.n ? { open_assignments: u.n } : {}) };
+  }
   return { ok: true };
 }
 

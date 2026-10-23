@@ -547,7 +547,9 @@ export function journalCsv(rep, csvCell) {
 export async function stockFindings(env, environment) {
   const today = berlinDate();
   const out = [];
-  for (const i of (await listStock(env, { role: 'owner' }, environment, {})).filter((x) => x.below_min)) {
+  // geschlossene Werkstatt (workshops.active=0): kein Nachbestell-Befund für ihr Restlager (Backlog 190) – Bestand bleibt sichtbar/umlagerbar
+  const closed = new Set((await env.DB.prepare('SELECT code FROM workshops WHERE active=0').all()).results.map((r) => r.code));
+  for (const i of (await listStock(env, { role: 'owner' }, environment, {})).filter((x) => x.below_min && !closed.has(x.site))) {
     const open = r3(Math.max(0, i.min_qty - i.on_hand - (i.ordered_on ? i.ordered_qty || 0 : 0)));
     if (!i.ordered_on || open > 0) out.push({ ...i, code: 'STOCK_BELOW_MIN', open });
     else if (i.ordered_eta && i.ordered_eta < today) out.push({ ...i, code: 'STOCK_ORDER_OVERDUE', open });

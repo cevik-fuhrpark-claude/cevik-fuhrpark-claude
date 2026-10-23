@@ -820,8 +820,12 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   }
   const sites = specs.map((x) => x.suggested).filter(Boolean);
   if (sites.length && !internal.site_checked) {
-    const ok = new Set((await env.DB.prepare('SELECT code FROM workshops WHERE active=1 AND code IN (SELECT value FROM json_each(?))').bind(J(sites)).all()).results.map((r) => r.code));
-    if (sites.some((x) => !ok.has(x))) throw bad('validation', 'Unbekannte Werkstatt.');
+    const known = (await env.DB.prepare('SELECT code, active FROM workshops WHERE code IN (SELECT value FROM json_each(?))').bind(J(sites)).all()).results;
+    const ok = new Set(known.filter((r) => r.active).map((r) => r.code)); const closed = new Set(known.filter((r) => !r.active).map((r) => r.code));
+    // inzwischen geschlossene Werkstatt (App/Postausgang noch mit alter Werkstattliste): Vorschlag entfällt statt die ganze Meldung abzuweisen –
+    // vorher 400 bei jedem „Erneut senden“, nur „Verwerfen“ (Fotos weg) blieb (Backlog 190, Teilagent „Werkstatt schließt“)
+    for (const x of specs) if (x.suggested && closed.has(x.suggested)) x.suggested = null;
+    if (specs.some((x) => x.suggested && !ok.has(x.suggested))) throw bad('validation', 'Unbekannte Werkstatt.');
   }
   const hashes = await Promise.all(specs.map((x) => sha256Hex(JSON.stringify([x.vehicleId, x.description, x.reportedPriority, x.driveability, x.suggested, x.location, x.parentId]))));
   specs.forEach((x, i) => { x.contentHash = hashes[i]; });

@@ -1765,6 +1765,7 @@ Object.assign(STRINGS.en, { settings_stored_invalid: 'Saved settings invalid –
 Object.assign(STRINGS.en, { err_setting_invalid: '“{f}”: please enter a value from {min} to {max}{int} – nothing saved.', setting_int: ' (whole number)' });
 export const PLURALS = {
   de: {
+    dr_left_assignments: { one: 'Dem App-Konto ist noch {n} Fahrzeug zugeordnet – Zuordnung in der Fahrzeugakte beenden.', other: 'Dem App-Konto sind noch {n} Fahrzeuge zugeordnet – Zuordnungen in der Fahrzeugakte beenden.' },
     late_items_n: { one: '{n} nachträglich erfasst', other: '{n} nachträglich erfasst' },
     dup_driver_name_warn: { one: 'Hinweis: Es gibt bereits {n} aktiven Fahrer mit dem Namen „{name}“ ({list}). Gespeichert – bitte prüfen: dieselbe Person doppelt angelegt?', other: 'Hinweis: Es gibt bereits {n} aktive Fahrer mit dem Namen „{name}“ ({list}). Gespeichert – bitte prüfen: dieselbe Person doppelt angelegt?' },
     imp_kind_defaulted: { one: '{n} neue Zeile ohne Fahrzeugart – wird als Lkw angelegt', other: '{n} neue Zeilen ohne Fahrzeugart – werden als Lkw angelegt' },
@@ -1812,6 +1813,7 @@ export const PLURALS = {
     drv_nosite_hidden: { one: '{n} Fahrer ohne Standort ist ausgeblendet – mit „Alle“ sichtbar.', other: '{n} Fahrer ohne Standort sind ausgeblendet – mit „Alle“ sichtbar.' },
   },
   en: {
+    dr_left_assignments: { one: '{n} vehicle is still assigned to the app account – end the assignment in the vehicle file.', other: '{n} vehicles are still assigned to the app account – end the assignments in the vehicle file.' },
     late_items_n: { one: '{n} recorded later', other: '{n} recorded later' },
     dup_driver_name_warn: { one: 'Note: there is already {n} active driver named “{name}” ({list}). Saved – please check: same person entered twice?', other: 'Note: there are already {n} active drivers named “{name}” ({list}). Saved – please check: same person entered twice?' },
     imp_kind_defaulted: { one: '{n} new row without vehicle type – will be created as a truck', other: '{n} new rows without vehicle type – will be created as trucks' },
@@ -1865,6 +1867,7 @@ export const PLURALS = {
     drv_nosite_hidden: { one: '{n} driver without a site is hidden – visible with “All”.', other: '{n} drivers without a site are hidden – visible with “All”.' },
   },
   uk: {
+    dr_left_assignments: { one: 'За обліковим записом ще закріплено {n} транспортний засіб – завершіть закріплення в картці транспорту.', few: 'За обліковим записом ще закріплено {n} транспортні засоби – завершіть закріплення в картці транспорту.', many: 'За обліковим записом ще закріплено {n} транспортних засобів – завершіть закріплення в картці транспорту.', other: 'За обліковим записом ще закріплено {n} транспортного засобу – завершіть закріплення в картці транспорту.' },
     late_items_n: { one: '{n} внесено пізніше', few: '{n} внесено пізніше', many: '{n} внесено пізніше', other: '{n} внесено пізніше' },
     dup_driver_name_warn: { one: 'Увага: уже є {n} активний водій з ім’ям «{name}» ({list}). Збережено – перевірте: та сама особа створена двічі?', few: 'Увага: уже є {n} активні водії з ім’ям «{name}» ({list}). Збережено – перевірте: та сама особа створена двічі?', many: 'Увага: уже є {n} активних водіїв з ім’ям «{name}» ({list}). Збережено – перевірте: та сама особа створена двічі?' },
     imp_kind_defaulted: { one: '{n} новий рядок без типу транспорту – буде створено як вантажівку', few: '{n} нові рядки без типу транспорту – буде створено як вантажівки', many: '{n} нових рядків без типу транспорту – буде створено як вантажівки', other: '{n} нового рядка без типу транспорту – буде створено як вантажівки' },
@@ -2003,3 +2006,11 @@ Object.assign(STRINGS.en, { cost_booked: 'recorded', cost_booked_hint: 'Counted 
 Object.assign(STRINGS.de, { late_items_n: '{n} nachträglich erfasst', late_items_hint: 'Arbeitszeit, die erst nach Ende dieses Monats gebucht wurde – der Monatswert hat sich danach geändert (Einzelpositionen-CSV: Spalte „Erfasst am“).', work_past_month_confirm: 'Das Arbeitsdatum liegt im {m}. Die Buchung ändert diesen vergangenen Monat im Kostenbericht (wird dort als „nachträglich erfasst“ gekennzeichnet). Trotzdem speichern?' });
 Object.assign(STRINGS.uk, { late_items_n: '{n} внесено пізніше', late_items_hint: 'Робочий час, внесений лише після закінчення цього місяця – значення за місяць після цього змінилося (CSV окремих позицій: стовпець «Erfasst am»).', work_past_month_confirm: 'Дата роботи припадає на {m}. Запис змінює цей минулий місяць у звіті про витрати (там він позначається як «внесено пізніше»). Все одно зберегти?' });
 Object.assign(STRINGS.en, { late_items_n: '{n} recorded later', late_items_hint: 'Working time booked only after this month ended – the monthly figure changed afterwards (line-item CSV: column “Erfasst am”).', work_past_month_confirm: 'The work date is in {m}. This booking changes that past month in the cost report (marked there as “recorded later”). Save anyway?' });
+// [CLAUDE] Backlog 190 (Werkstatt geschlossen): bisherige, nicht mehr aktive Werkstatt eines Kontos bleibt beim Bearbeiten ausgewählt
+Object.assign(STRINGS.de, { ws_closed: 'geschlossen' });
+Object.assign(STRINGS.uk, { ws_closed: 'закрито' });
+Object.assign(STRINGS.en, { ws_closed: 'closed' });
+// [CLAUDE] Backlog 190 (Fahrer verlässt das Unternehmen): Fahrerakte deaktiviert, App-Konto aber noch aktiv / Fahrzeug zugeordnet
+Object.assign(STRINGS.de, { dr_left_account_active: 'Gespeichert. Das App-Konto „{name}“ ist weiter aktiv (Anmeldung, Push, Meldungen) – bei Ausscheiden unter Mehr → Benutzer deaktivieren.', dr_left_assignments: 'Dem App-Konto sind noch Fahrzeuge zugeordnet ({n}).' });
+Object.assign(STRINGS.uk, { dr_left_account_active: 'Збережено. Обліковий запис «{name}» залишається активним (вхід, push, повідомлення) – у разі звільнення деактивуйте його в розділі Ще → Користувачі.', dr_left_assignments: 'За обліковим записом ще закріплено транспорт ({n}).' });
+Object.assign(STRINGS.en, { dr_left_account_active: 'Saved. The app account “{name}” is still active (sign-in, push, reports) – if the person has left, deactivate it under More → Users.', dr_left_assignments: 'Vehicles are still assigned to the app account ({n}).' });

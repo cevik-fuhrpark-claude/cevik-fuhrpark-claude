@@ -3245,7 +3245,10 @@ async function viewDriver(id) {
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
     const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active, user_id: d.user_id || '' };
     const b = Object.fromEntries(Object.entries(all).filter(([k, v]) => v !== was[k])); if (!Object.keys(b).length) { toast('✓'); return; }
-    if (d.updated_at) b.expected_updated_at = d.updated_at; try { await api('PATCH', `/api/drivers/${id}`, b); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+    if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b);
+      // ausgeschieden: verknüpftes Konto weiter aktiv / Fahrzeug weiter zugeordnet → Hinweis (Backlog 190)
+      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments));
+      toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
 }
 
 // Vom Server erzeugte Verlaufsvermerke (Kontrolle, erneut festgestellt) in der Oberflächensprache (17.10.2026: blieben deutsch);
@@ -4616,7 +4619,7 @@ async function viewUsers() {
     $('#inv').innerHTML = `<form class="panel" id="uef" style="scroll-margin-top:84px"><h2 style="margin-top:0">${esc(t('ue_title').replace('{name}', u.display_name))}</h2>
       <label for="uen">${esc(t('display_name'))}</label><input id="uen" name="display_name" required maxlength="120" value="${esc(u.display_name)}">
       <label for="uer">${esc(t('role'))}</label><select id="uer" name="role">${roles.map((r) => `<option value="${r}"${u.role === r ? ' selected' : ''}>${esc(t('role_' + r))}</option>`).join('')}</select>
-      <div id="uewsrow"${u.role === 'workshop' ? '' : ' hidden'}><label for="uews">${esc(t('workshop'))}</label><select id="uews" name="workshop_site">${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${u.workshop_site === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>
+      <div id="uewsrow"${u.role === 'workshop' ? '' : ' hidden'}><label for="uews">${esc(t('workshop'))}</label><select id="uews" name="workshop_site">${u.workshop_site && !S.meta.workshops.some((w) => w.code === u.workshop_site) ? `<option value="${esc(u.workshop_site)}" selected data-wsclosed>${esc(u.workshop_site)} (${esc(t('ws_closed'))})</option>` : ''}${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${u.workshop_site === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>
       ${S.me.role === 'owner' ? `<label for="uee">${esc(t('environment'))}</label><select id="uee" name="environment"><option value="test"${u.environment === 'test' ? ' selected' : ''}>${esc(t('env_testname'))}</option><option value="production"${u.environment === 'production' ? ' selected' : ''}>${esc(t('env_prod'))}</option></select>` : ''}
       <div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="uex">${esc(t('cancel'))}</button></div></form>`;
     $('#uer').onchange = () => ($('#uewsrow').hidden = $('#uer').value !== 'workshop');
