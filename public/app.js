@@ -2252,6 +2252,13 @@ function coupledLockedChip(c) {
 // Abfahrtskontrolle: Sperre des gewählten Fahrzeugs (Liste oder „Meine Fahrzeuge“) + gekoppeltes Fahrzeug + bekannte Mängel (23.10.2026)
 // Gekoppeltes Fahrzeug eines eigenen Fahrzeugs (z. B. Anhänger ohne eigene Zuordnung): Sperre und bekannte Mängel aus „Mein Fahrzeug“ (Backlog 202)
 function coupledKnown(known, id) { const p = known.find((x) => x.coupled && x.coupled.id === id); return p ? { locked: p.coupled.locked, known_defects: p.coupled.known_defects || [] } : null; }
+// Wieder in Betrieb / wieder in Auswertungen (Backlog 204): was vor der ersten Fahrt zu klären ist – km-Stand immer, Rest nur wenn vorhanden
+function returnCheckText(rc) {
+  if (!rc) return '';
+  const parts = [rc.locked_cases ? tn('rc_locked', rc.locked_cases) : '', rc.overdue_inspections ? tn('rc_overdue', rc.overdue_inspections) : '', rc.unclear_inspections ? tn('rc_unclear', rc.unclear_inspections) : '',
+    rc.expired_contracts ? tn('rc_contracts', rc.expired_contracts) : '', rc.last_km_at ? t('rc_km').replace('{d}', fmtD(rc.last_km_at)) : t('rc_km_none')].filter(Boolean);
+  return `${t('rc_head')}: ${parts.join(' · ')}`;
+}
 function departureLockBox(sv, kv) {
   const locked = (kv && kv.locked) || (sv && sv.availability === 'gesperrt');
   const c = (kv && kv.coupled) || (sv && sv.coupled && sv.coupled.availability === 'gesperrt' ? { ...sv.coupled, locked: true } : null);
@@ -2513,9 +2520,9 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   if (focusEv) openResAdd(focusEv, false);
   $$('[data-rmgo]').forEach((b) => (b.onclick = () => openResAdd(b.dataset.rmgo, true)));
   const vfiGo = $('#vfi-go'); if (vfiGo) vfiGo.onclick = () => { const mh = $('#mhist'); if (mh) { mh.open = true; mh.style.scrollMarginTop = '90px'; mh.scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
-  const evx = $('#evx'); if (evx) evx.onclick = async () => { let reason = null; if (!v.eval_excluded) { reason = prompt(t('evx_reason')); if (!reason) return; } try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/evaluation`, { excluded: !v.eval_excluded, reason }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const evx = $('#evx'); if (evx) evx.onclick = async () => { let reason = null; if (!v.eval_excluded) { reason = prompt(t('evx_reason')); if (!reason) return; } try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/evaluation`, { excluded: !v.eval_excluded, reason }); const rc = returnCheckText(r && r.return_check); toast(rc ? '✓ ' + rc : '✓', !!rc); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : '', (r.trailer_of_trucks || []).length ? t('trailer_deact_warn').replace('{list}', r.trailer_of_trucks.map((x) => x.plate).join(', ')) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
-  const react = $('#react'); if (react) react.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true }); toast('✓'); await viewVehicle(id);
+  const react = $('#react'); if (react) react.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true }); const rc = returnCheckText(r && r.return_check); toast(rc ? '✓ ' + rc : '✓', !!rc); await viewVehicle(id);
     // Nachfolger mit gleichem Kennzeichen in Betrieb: Hinweis wie beim Anlegen (23.10.2026)
     const d = r && r.duplicate_plates; if (d && d.length) setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(d[0].plate || '').toUpperCase()).replace('{list}', d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '')), true), 400);
   } catch (err) { toast(err.message, true); } };

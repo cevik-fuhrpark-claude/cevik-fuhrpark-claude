@@ -18937,6 +18937,35 @@ await test('Backlog 203 (Straßenkontrolle): Fahrerakte nennt bei abgelaufenen/b
   ok(src.includes("status: left < 0 ? 'abgelaufen' : left <= warnDays ? 'laeuft_ab' : 'ok'"), 'Zustände der Nachweise');
 });
 
+await test('Backlog 204 (Wiederinbetriebnahme): wieder in Betrieb / wieder in Auswertungen meldet überfällige Prüftermine, ungeklärte HU/SP, Sperren, abgelaufene Verträge und den letzten km-Stand; Wiederaufnehmen doppelt → 409 ohne zweiten Protokolleintrag', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'WI-B 1', vin: 'WDB96340310820401', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310820401'; const vp = `/api/vehicles/${V}`;
+  eq((await users.fleet.post(`${vp}/maintenance`, { kind: 'UVV', last_done_date: bDayOff(-500), interval_months: 12, evidence: 'UVV-Protokoll (Test Standzeit)' })).status, 201);
+  eq((await users.fleet.post(`${vp}/contracts`, { kind: 'leasing', partner: 'Test-Leasing Standzeit', evidence: 'Vertrag (Test)', start_date: bDayOff(-700), end_date: bDayOff(-30) })).status, 201);
+  // ruhend → wieder aufnehmen
+  eq((await users.fleet.post(`${vp}/evaluation`, { excluded: true, reason: 'Standzeit (Test)' })).status, 200);
+  eq((await users.fleet.post(`${vp}/evaluation`, { excluded: true, reason: 'nochmal' })).status, 409, 'schon ruhend');
+  const inc = await users.fleet.post(`${vp}/evaluation`, { excluded: false });
+  eq(inc.status, 200);
+  const rc = inc.data.return_check;
+  eq(rc.overdue_inspections, 1, 'UVV überfällig'); eq(rc.unclear_inspections >= 1, true, 'HU ungeklärt (kein Nachweis)');
+  eq(rc.expired_contracts, 1, 'Leasing abgelaufen, nicht beendet'); eq(rc.locked_cases, 0); eq(rc.last_km_at, null, 'noch kein km-Stand');
+  const again = await users.fleet.post(`${vp}/evaluation`, { excluded: false });
+  eq(again.status, 409); eq(again.data.error, 'already_included');
+  const n = env.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='vehicle.eval_include' AND target=?`).get(V).n;
+  eq(n, 1, 'nur ein Protokolleintrag');
+  // außer Betrieb → wieder in Betrieb (mit km-Stand)
+  eq((await users.fleet.post(`${vp}/odometer`, { km: 123456 })).status, 201);
+  eq((await users.fleet.post(`${vp}/active`, { active: false, reason: 'abgestellt (Test)' })).status, 200);
+  const act = await users.fleet.post(`${vp}/active`, { active: true });
+  eq(act.status, 200); eq(act.data.return_check.overdue_inspections, 1); ok(act.data.return_check.last_km_at, 'letzter km-Stand');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/returnCheckText\(r && r\.return_check\)/g) || []).length, 2, 'Reaktivieren und Wiederaufnehmen');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['rc_head', 'rc_km', 'rc_km_none']) ok(STRINGS[l][k], `${l}.${k}`); for (const k of ['rc_overdue', 'rc_unclear', 'rc_locked', 'rc_contracts']) ok(PLURALS[l][k], `${l}.${k}`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

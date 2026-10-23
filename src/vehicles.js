@@ -569,15 +569,38 @@ export async function upsertVehicle(env, user, body) {
 
 // Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent
 // Ruhend: im Bestand, aber aus allen Auswertungen (Kosten, Kennzahlen, Prüf-/Reifen-/Dokumentbefunde) herausgenommen
+// Rückkehr nach Standzeit (wieder in Betrieb / wieder in Auswertungen, Backlog 204, Teilagent „Wiederinbetriebnahme“): was vor der ersten
+// Fahrt zu klären ist – überfällige Prüftermine (HU/SP nach der zentralen Regel), HU/SP mit ungeklärter Frist, offene Sperren dieser Umgebung,
+// abgelaufene, nicht beendete Verträge und der letzte km-Stand. Nur Zähler (vorher nur „✓“; Agent-Befunde folgen erst im nächsten Lauf).
+async function returnCheck(env, envName, vehicleId) {
+  const today = berlinDate();
+  const row = await env.DB.prepare(`SELECT
+      (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND kind NOT IN ('HU','SP') AND next_due_date < ?2 AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) AS o,
+      (SELECT COUNT(*) FROM cases WHERE vehicle_id=?1 AND environment=?3 AND safety_lock=1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS l,
+      (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL AND end_date IS NOT NULL AND end_date < ?2) AS c,
+      (SELECT MAX(measured_at) FROM odometer_readings WHERE vehicle_id=?1) AS k`).bind(vehicleId, today, envName).first();
+  let overdue = row.o || 0; let unclear = 0;
+  const x = (await loadHuSpInputs(env, [vehicleId])).get(vehicleId);
+  if (x) {
+    const h = huSpFor(x, today, maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value));
+    for (const y of [h.hu, h.sp]) { if (!y) continue; if (y.status === 'ueberfaellig') overdue++; else if (y.status === 'ungeklaert') unclear++; }
+  }
+  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, last_km_at: row.k || null };
+}
+
 export async function setVehicleEvaluation(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const v = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, eval_excluded FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const excluded = flag(body.excluded, 'Ausgenommen');
   const reason = str(body.reason, { required: excluded, max: 300, field: 'Grund' });
-  await env.DB.prepare('UPDATE vehicles SET eval_excluded=?, eval_excluded_reason=?, updated_at=? WHERE id=?').bind(excluded ? 1 : 0, excluded ? reason : null, nowIso(), vehicleId).run();
+  // schon im gewünschten Zustand (Doppelklick, zweite Leitung mit veralteter Akte): nichts überschreiben, kein zweiter Protokolleintrag (Backlog 204)
+  const already = () => conflict(excluded ? 'already_excluded' : 'already_included', excluded ? 'Fahrzeug ist bereits ruhend (aus Auswertungen ausgenommen).' : 'Fahrzeug ist bereits in den Auswertungen.');
+  if (Number(v.eval_excluded || 0) === (excluded ? 1 : 0)) throw already();
+  const r = await env.DB.prepare('UPDATE vehicles SET eval_excluded=?, eval_excluded_reason=?, updated_at=? WHERE id=? AND COALESCE(eval_excluded,0)<>?').bind(excluded ? 1 : 0, excluded ? reason : null, nowIso(), vehicleId, excluded ? 1 : 0).run();
+  if (!r.meta || !r.meta.changes) throw already();
   await audit(env, user.id, excluded ? 'vehicle.eval_exclude' : 'vehicle.eval_include', vehicleId, { plate: v.plate, reason });
-  return { ok: true, excluded };
+  return { ok: true, excluded, ...(excluded ? {} : { return_check: await returnCheck(env, envName, vehicleId) }) };
 }
 
 export async function setVehicleActive(env, user, envName, vehicleId, body) {
@@ -626,7 +649,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const trailerOf = !active && v.kind === 'anhaenger' && normPlate(v.plate)
     ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
       .filter((x) => normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate })) : [];
-  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates } : {}),
+  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
     ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}) };
 }
 
