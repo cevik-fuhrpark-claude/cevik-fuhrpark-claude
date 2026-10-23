@@ -8871,7 +8871,7 @@ await test('Datumsanzeige immer zweistellig (01.01.2027 statt 1.1.2027) in DE/UK
     eq(new Intl.DateTimeFormat(f.locOf(lang), f.dateOpts('UTC')).format(new Date('2027-01-01T12:00:00Z')), want[lang][0], lang + ' Aushang');
   }
   // Wächter: jeder Datumsformatierer in app.js nutzt dateOpts, dateStyle oder ist der interne JJJJ-MM-TT-Formatierer (sv-SE)
-  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|day: '2-digit', month: '2-digit', year: 'numeric'|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour|^uiLoc\(\), \{ year: 'numeric', month: 'long', timeZone: 'UTC' \}\)/.test(x));
+  const bad = [...app.matchAll(/new Intl\.DateTimeFormat\(([^\n]{0,160})/g)].map((m) => m[1]).filter((x) => !/dateOpts\(|dateStyle|day: '2-digit', month: '2-digit', year: 'numeric'|^'sv-SE'|^'en-GB', \{ timeZone: 'Europe\/Berlin', hour|^uiLoc\(\), \{ year: 'numeric', month: 'long', timeZone: 'UTC' \}\)|^uiLoc\(\), \{ weekday: 'short', timeZone: 'UTC' \}\)/.test(x)); // Wochentag allein (Antwortfrist, 23.10.2026)
   eq(bad.join(' || '), '', 'Datumsformatierer ohne zweistellige Vorgabe');
   eq(app.split('\n').filter((l) => l.includes('toLocaleDateString(') && !l.includes("day: '2-digit'")).length, 0, 'toLocaleDateString nur mit 2-digit');
   // UI-Zeitreise: Server- und Browser-Uhr über CFP_FAKE_NOW
@@ -18354,6 +18354,22 @@ await test('Formularentwurf (Backlog 183): Abfahrtskontrolle und Meldung sichern
   ok(app.includes("$('#fdx').onclick = () => { if (!confirm(t('form_draft_discard_confirm'))) return; d.clear(); route(); };"), 'Verwerfen als Eigenschafts-Handler mit Rückfrage');
   for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_restored', 'form_draft_photos', 'form_draft_discard_confirm', 'inventory_draft_discard']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 5, `${l}: ${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].form_draft_restored.includes('{d}'), `${l}: Platzhalter {d}`);
+});
+
+await test('Bußgeld-Antwortfrist am Wochenende: Anzeige mit Wochentag und Markierung (Liste, Detail, Startseite), Formularhinweis nur bei Samstag/Sonntag, gespeicherte Frist unverändert; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const m = app.match(/const isWeekendD = (\(iso\) => [^\n]+);/); ok(m, 'isWeekendD vorhanden');
+  const isWeekendD = eval(m[1]);
+  eq([isWeekendD('2026-10-24'), isWeekendD('2026-10-25'), isWeekendD('2026-10-26'), isWeekendD('2026-10-23'), isWeekendD(null), isWeekendD('2026-03-29')].join(), 'true,true,false,false,false,true', 'Sa/So erkannt, Zeitumstellung egal');
+  ok(app.includes("${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}"), 'Liste');
+  ok(app.includes("<dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${isWeekendD(f.response_due) ?"), 'Detail mit Hinweis');
+  ok(app.includes("${fmtDue(f.response_due)}${f.response_due < today ? ' !' : ''}"), 'Startseite „Heute zu tun“');
+  eq((app.match(/dueWeekendWatch\(\);/g) || []).length, 2, 'Formularhinweis bei Erfassen und Ändern');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['due_weekend', 'due_weekend_hint']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 3, `${l}: ${k}`);
+  // Server speichert den Tag laut Schreiben (Samstag) unverändert
+  const r = await users.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: 'AZ-WE-' + Date.now(), offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1', plate_in_letter: 'XX-WE 1', amount_eur: 30, response_due: '2030-11-02' });
+  eq(r.status, 201, JSON.stringify(r.data)); eq((await users.fleet.get('/api/fines/' + r.data.id)).data.fine.response_due, '2030-11-02', 'Frist unverändert');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
