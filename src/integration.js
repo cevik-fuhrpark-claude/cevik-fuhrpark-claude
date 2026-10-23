@@ -108,7 +108,7 @@ function withoutFollowupNote(code, message, args) {
   let a = args; if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
   if (code === 'URGENT_NOT_DELIVERED') {
     if (!a || !a.a || !Array.isArray(a.a.who)) return message;
-    return renderFindingMessage('URGENT_NOT_DELIVERED', { ...a.a, who: a.a.who.map((x) => (x && typeof x === 'object' ? { role: x.role ?? null } : x)) }, 'de');
+    return renderFindingMessage(a.k || 'URGENT_NOT_DELIVERED', { ...a.a, who: a.a.who.map((x) => (x && typeof x === 'object' ? { role: x.role ?? null } : x)) }, 'de');
   }
   if (code === 'VEHICLE_LOCKED') return a && a.a && a.a.reason ? renderFindingMessage('VEHICLE_LOCKED_DEFAULT', { ...a.a, reason: null }, 'de') : message;
   return a && a.a && a.a.note ? renderFindingMessage(a.k || code, { ...a.a, note: null }, 'de') : message;

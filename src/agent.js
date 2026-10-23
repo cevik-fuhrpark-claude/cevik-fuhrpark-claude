@@ -124,7 +124,10 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
-  (SELECT json_group_array(json_object('case_id', case_id, 'vehicle_id', vehicle_id, 'n', n, 'who', json(who))) FROM (SELECT q.cid AS case_id, MAX(q.vref) AS vehicle_id, COUNT(DISTINCT q.user_id) AS n,
+  (SELECT json_group_array(json_object('case_id', case_id, 'vehicle_id', vehicle_id, 'n', n, 'who', json(who),
+     -- Bezeichnung für den gebündelten Befund (Backlog 194): Vorgang „Nr. (Kennzeichen)“ bzw. Kennzeichen des Fahrzeugs
+     'label', CASE WHEN case_id IS NOT NULL THEN (SELECT x.case_no || ' (' || xv.plate || ')' FROM cases x JOIN vehicles xv ON xv.id=x.vehicle_id WHERE x.id=case_id)
+       WHEN vehicle_id IS NOT NULL THEN (SELECT xv.plate FROM vehicles xv WHERE xv.id=vehicle_id) END)) FROM (SELECT q.cid AS case_id, MAX(q.vref) AS vehicle_id, COUNT(DISTINCT q.user_id) AS n,
      -- Empfänger mit Name und Rolle (Backlog 114, 22.10.2026: „telefonisch informieren“ ohne zu sagen, wen) – Schnittstelle schwärzt die Namen
      json_group_array(DISTINCT json_object('id', q.user_id, 'name', q.uname, 'role', q.urole)) AS who FROM (
      -- Hinweise an zugeordnete Fahrer tragen bewusst keine case_id (Fahrer sieht den Vorgang nicht) – Vorgang aus dem event_key
@@ -153,6 +156,30 @@ export function undeliveredWho(list) {
   for (const x of Array.isArray(list) ? list : []) { if (!x || seen.has(x.id)) continue; seen.add(x.id); out.push({ name: String(x.name || ''), role: x.role || null }); }
   out.sort((a, b) => a.name.localeCompare(b.name, 'de') || String(a.role).localeCompare(String(b.role)));
   return out.length > WHO_MAX ? [...out.slice(0, WHO_MAX), `+${out.length - WHO_MAX}`] : (out.length ? out : null);
+}
+
+// Bündelung der nicht zugestellten dringenden Nachrichten je Empfängerliste (Backlog 194). Schlüssel = sortierte Konto-IDs;
+// Betreff „recipients:<Hash>“ bleibt gleich, solange dieselben Personen betroffen sind. Bezeichnungen sortiert (gleicher Text je Lauf),
+// höchstens LABELS_MAX genannt, Rest „+n“.
+export const URGENT_BUNDLE_MIN = 3;
+export const LABELS_MAX = 8;
+export function bundleUndelivered(list) {
+  const groups = new Map();
+  for (const u of Array.isArray(list) ? list : []) {
+    const ids = [...new Set((Array.isArray(u.who) ? u.who : []).filter((x) => x && x.id).map((x) => String(x.id)))].sort();
+    const key = ids.join(',');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(u);
+  }
+  const out = [];
+  for (const [key, items] of groups) {
+    if (!key || items.length < URGENT_BUNDLE_MIN) { for (const u of items) out.push({ single: u }); continue; }
+    const labels = items.map((u) => String(u.label || '')).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
+    const shown = labels.length > LABELS_MAX ? [...labels.slice(0, LABELS_MAX), `+${labels.length - LABELS_MAX}`] : labels;
+    out.push({ subject: `recipients:${sha256HexSync(key).slice(0, 24)}`, items, n: key.split(',').length,
+      who: items[0].who, labels: shown.length ? shown.join(', ') : null });
+  }
+  return out;
 }
 
 export async function agentBasics(env, environment) {
@@ -305,7 +332,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Dringende Benachrichtigungen ohne Push-Zustellung
-    const undelivered = base.undelivered;
+    // Backlog 194 (Teilagent „Frostmorgen“, 23.10.2026): 13 kritische Meldungen an dieselben Empfänger ergaben 13 gleichlautende Befunde.
+    // Ab URGENT_BUNDLE_MIN Vorgängen/Fahrzeugen mit genau derselben Empfängerliste ein Befund „an N Vorgängen“ – nur Bündelung,
+    // nichts wird unterdrückt (jede Zeile zählt weiter, auch wenn sie später einzeln wieder auftaucht).
+    const undelivered = [];
+    for (const g of bundleUndelivered(base.undelivered)) {
+      if (g.single) { undelivered.push(g.single); continue; }
+      add({ code: 'URGENT_NOT_DELIVERED', subject: g.subject, severity: 'handeln', owner_role: 'fleet',
+        ...fm('URGENT_NOT_DELIVERED_BULK', { k: g.items.length, n: g.n, labels: g.labels, who: undeliveredWho(g.who) }),
+        next_action: 'Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.' });
+    }
     for (const u of undelivered) {
       add({ code: 'URGENT_NOT_DELIVERED', subject: u.case_id || (u.vehicle_id ? `vehicle:${u.vehicle_id}` : 'system'), case_id: u.case_id, ...(u.case_id || !u.vehicle_id ? {} : { vehicle_id: u.vehicle_id }), severity: 'handeln', owner_role: 'fleet',
         ...fm('URGENT_NOT_DELIVERED', { n: u.n, who: undeliveredWho(u.who) }),

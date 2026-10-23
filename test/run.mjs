@@ -18677,6 +18677,47 @@ await test('Frostmorgen/Urlaubsvertretung (Backlog 193): gesperrter Vorgang mit 
   const { PLURALS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(PLURALS[l].ue_invites_voided, l);
 });
 
+await test('Backlog 194: „Dringend nicht zugestellt“ ab 3 Vorgängen an dieselben Empfänger als ein Befund (Vorgänge genannt, DE/UK/EN, Schnittstelle ohne Namen), darunter wieder einzeln', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test-Zuordnung 194' })).status, 201);
+  const ids = [];
+  for (let i = 0; i < 3; i++) { const id = await newCase({}, U.fleet); ids.push(id); eq((await cmd(U.fleet, id, 'set_safety_lock', {}, `Frost ${i}`)).status, 200); }
+  const und = () => db.prepare(`SELECT subject_key, case_id, vehicle_id, message, message_args FROM agent_findings WHERE finding_code='URGENT_NOT_DELIVERED' AND status NOT IN ('erledigt','geschlossen')`).all();
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const f = und(); eq(f.length, 1, 'ein gebündelter Befund ' + JSON.stringify(f.map((x) => x.subject_key)));
+  ok(f[0].subject_key.startsWith('recipients:') && f[0].case_id === null, f[0].subject_key);
+  const nos = ids.map((id) => db.prepare('SELECT case_no FROM cases WHERE id=?').get(id).case_no);
+  for (const no of nos) ok(f[0].message.includes(no), 'nennt ' + no);
+  ok(f[0].message.includes('Nachrichten: 3') && f[0].message.includes('Empfänger: '), f[0].message);
+  const { findingMessage, renderFindingMessage } = await import('../public/finding-messages.js');
+  ok(findingMessage(f[0].message_args, f[0].message, 'en').startsWith('Urgent notifications to the same recipients') && findingMessage(f[0].message_args, f[0].message, 'en').includes('notifications: 3'), 'en');
+  ok(findingMessage(f[0].message_args, f[0].message, 'uk').includes('повідомлень: 3'), 'uk');
+  // zweiter Lauf: gleicher Betreff, kein neuer Befund
+  const subj = f[0].subject_key; eq((await U.fleet.post('/api/agent/run', {})).status, 200); eq(und().map((x) => x.subject_key).join(), subj, 'gleicher Betreff');
+  // Schnittstelle: Rolle statt Name
+  const H = { authorization: 'Bearer integration-token-xyz' }; const anon = new Client(worker, e, 'anon194');
+  const fi = (await anon.req('GET', '/api/integration/v1/findings?environment=test', undefined, H)).data.findings.find((y) => y.finding_code === 'URGENT_NOT_DELIVERED');
+  const dn = db.prepare('SELECT display_name FROM users WHERE id=?').get(U.driver.id).display_name;
+  ok(fi && fi.message.includes('Nachrichten: 3') && !fi.message.includes(dn) && fi.message.includes('Fahrer'), JSON.stringify(fi && fi.message));
+  // ein Vorgang abgeschlossen → nur noch 2: wieder einzeln je Vorgang, Bündel erledigt
+  eq((await cmd(U.fleet, ids[0], 'lift_safety_lock', { confirm: true }, 'aufgetaut')).status, 200);
+  eq((await cmd(U.fleet, ids[0], 'reject', {}, 'erledigt')).status, 200);
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const f2 = und(); eq(f2.map((x) => x.case_id).sort().join(), [ids[1], ids[2]].sort().join(), 'einzeln ' + JSON.stringify(f2.map((x) => x.subject_key)));
+  // Gruppierung: andere Empfängerliste nicht zusammengelegt, Bezeichnungen sortiert/gekappt
+  const { bundleUndelivered, URGENT_BUNDLE_MIN, LABELS_MAX } = await import('../src/agent.js');
+  eq(URGENT_BUNDLE_MIN, 3);
+  const w = (...xs) => xs.map((x) => ({ id: x, name: x, role: 'driver' }));
+  const rows = [...Array.from({ length: LABELS_MAX + 2 }, (_, i) => ({ case_id: 'c' + i, label: 'N-' + String(20 - i).padStart(2, '0'), n: 2, who: w('b', 'a') })),
+    { case_id: 'x1', label: 'X1', n: 1, who: w('a') }, { case_id: 'x2', label: 'X2', n: 1, who: w('a') }];
+  const g = bundleUndelivered(rows);
+  eq(g.filter((x) => x.single).length, 2, 'Empfänger „a“ allein: nur 2 → einzeln');
+  const b = g.find((x) => !x.single); eq(b.items.length, LABELS_MAX + 2); eq(b.n, 2);
+  ok(b.labels.startsWith('N-11, N-12') && b.labels.endsWith(', +2'), b.labels);
+  eq(bundleUndelivered(rows.slice().reverse()).find((x) => !x.single).subject, b.subject, 'Betreff unabhängig von der Reihenfolge');
+  eq(renderFindingMessage('URGENT_NOT_DELIVERED_BULK', { k: 4, n: 1, labels: null, who: null }, 'de'), 'Dringende Benachrichtigungen an dieselben Empfänger nicht per Push zugestellt (kein aktiviertes Gerät oder Fehler) – Nachrichten: 4, Empfänger: 1.');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
