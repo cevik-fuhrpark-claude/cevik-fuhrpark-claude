@@ -19068,6 +19068,9 @@ await test('Backlog 210 (Versicherungsschaden mit Gutachter): Gutachter, Besicht
   eq(r2.status, 200, JSON.stringify(r2.data)); ok(r2.data.changed.includes('appraisal_net'));
   d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.appraisal_net, 4250.5); eq(d.appraisal_pending, false);
   ov = (await users.fleet.get('/api/claims?filter=gutachten')).data; ok(!ov.claims.some((c) => c.case_id === cid), 'nicht mehr ausstehend');
+  const tl = (await users.fleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.filter((x) => x.type === 'claim');
+  ok(tl.some((x) => x.claim_event === 'appraisal' && x.at === bDayOff(-1) && x.appraiser === 'Sachverständigenbüro Test'), 'Zeitleiste: Besichtigung');
+  ok(tl.some((x) => x.claim_event === 'appraisal_received' && x.appraisal_net === 4250.5), 'Zeitleiste: Gutachten mit Schadenhöhe');
   const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.update' AND target=? ORDER BY created_at DESC LIMIT 1`).get(d.id);
   ok(au && au.detail.includes('appraisal_net'), 'Protokoll nennt die Änderung');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);

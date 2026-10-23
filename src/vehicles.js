@@ -400,11 +400,14 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
       add('contract', c.ended_on, { contract_event: 'end', contract_kind: c.kind, partner: c.partner, evidence: c.end_note });
     }
     // Versicherungsfälle (nur Leitung): Meldung an den Versicherer und Erstattung laut Abrechnung – nur gespeicherte Daten
-    const claims = (await env.DB.prepare(`SELECT ic.case_id, c.case_no, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.reimbursed_net, ic.reimbursed_on
-      FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.vehicle_id=? AND ic.environment=? ORDER BY MAX(COALESCE(ic.reported_on, ''), COALESCE(ic.reimbursed_on, '')) DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results; // jüngstes Ereignis (Meldung oder Erstattung) zählt für die Grenze
+    const claims = (await env.DB.prepare(`SELECT ic.case_id, c.case_no, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.reimbursed_net, ic.reimbursed_on, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net
+      FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id WHERE ic.vehicle_id=? AND ic.environment=? ORDER BY MAX(COALESCE(ic.reported_on, ''), COALESCE(ic.reimbursed_on, ''), COALESCE(ic.appraisal_received_on, '')) DESC LIMIT ?`).bind(vehicleId, envName, cap).all()).results; // jüngstes Ereignis (Meldung oder Erstattung) zählt für die Grenze
     for (const c of claims) {
       add('claim', c.reported_on, { claim_event: 'reported', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, status: c.status });
       add('claim', c.reimbursed_on, { claim_event: 'reimbursed', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, reimbursed_net: c.reimbursed_net });
+      // Gutachter (Backlog 210): Besichtigung erst ab dem Tag selbst (geplante Termine stehen nicht als Ereignis in der Zeitleiste), Eingang des Gutachtens mit Schadenhöhe
+      if (c.appraisal_on && c.appraisal_on <= berlinDate()) add('claim', c.appraisal_on, { claim_event: 'appraisal', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, appraiser: c.appraiser });
+      add('claim', c.appraisal_received_on, { claim_event: 'appraisal_received', case_id: c.case_id, case_no: c.case_no, insurer: c.insurer, claim_no: c.claim_no, appraiser: c.appraiser, appraisal_net: c.appraisal_net });
     }
     for (const f of fines) add('fine', f.offense_at, { fine_id: f.id, fine_no: f.fine_no, fine_kind: f.kind, offense_type: f.offense_type, status: f.status });
     // Standzeit nachvollziehbar (Backlog 205, Teilagent „Wiederinbetriebnahme“): ruhend/außer Betrieb und Rückkehr aus dem Protokoll mit Grund
