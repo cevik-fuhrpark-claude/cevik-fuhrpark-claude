@@ -1,4 +1,5 @@
 // [CLAUDE] Einrichtungsstand (22.10.2026, eigene Verbesserung): Was ist vor bzw. im Betrieb noch offen? Nur Inhaber, nur lesend.
+import { integrationTokens } from './integration.js';
 // Jeder Punkt kommt aus vorhandenen Daten/Einstellungen – die App gibt keine Werte vor und ändert nichts. Status:
 //   ok   = eingerichtet
 //   open = empfohlen, noch nicht eingerichtet (Entscheidung/Aufgabe des Inhabers)
@@ -46,7 +47,8 @@ export async function readiness(env, user) {
     { key: 'cost_limit', state: set(r.cost_limit) && Number(r.cost_limit) > 0 ? 'ok' : 'info', link: '#/settings?s=cost_limit' },
     { key: 'backup', state: backupDays !== null && backupDays <= 31 ? 'ok' : 'open', last: r.backup_at || null, days: backupDays, link: '#/settings?s=backup' },
     { key: 'prod_accounts', state: 'info', roles, open_invites: r.open_invites, test_accounts: r.test_accounts, link: '#/users' },
-    { key: 'integration', state: env.INTEGRATION_TOKEN ? 'ok' : 'info', link: '#/help' },
+    // gleiche Prüfung wie die Schnittstelle (Mindestlänge, Leerraum, Lese-Token) – vorher „ok“ bei zu kurzem Secret (23.10.2026)
+    { key: 'integration', state: (() => { const tk = integrationTokens(env); return tk.full.length || tk.read.length ? 'ok' : 'info'; })(), link: '#/help' },
   ];
   return { generated_at: now, items, open: items.filter((x) => x.state === 'open').length };
 }

@@ -1065,6 +1065,7 @@ const IMPORT_TPL = [
   [/^Monat ungültig: (.{0,200})$/, 'Недійсний місяць: $1', 'Invalid month: $1'],
   [/^Zahl nicht erkannt: (.{0,200})$/, 'Число не розпізнано: $1', 'Number not recognised: $1'],
   [/^Kennzeichen nicht eindeutig: (.{0,200})$/, 'Номерний знак неоднозначний: $1', 'Licence plate not unique: $1'],
+  [/^Vertrag besteht bereits beim Fahrzeug mit gleichem Kennzeichen \(FIN (.{0,40})\) – bitte FIN angeben$/, 'Договір уже є в транспортного засобу з тим самим номером (VIN $1) – вкажіть VIN', 'Contract already exists on the vehicle with the same plate (VIN $1) – please state the VIN'],
   [/^Fahrzeug nicht gefunden: (.{0,200})$/, 'Транспорт не знайдено: $1', 'Vehicle not found: $1'],
   [/^Vertragsart unbekannt: (.{0,200})$/, 'Невідомий вид договору: $1', 'Unknown contract type: $1'],
   [/^Art unbekannt: (.{0,200})$/, 'Невідомий вид: $1', 'Unknown type: $1'],

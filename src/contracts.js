@@ -460,6 +460,13 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     if (seen.has(key)) return skip('doppelt in der Datei');
     seen.add(key);
     const status = exRes.results.some((c) => c.vehicle_id === v.id && sameContract(c, f)) ? 'vorhanden' : 'neu';
+    // nur über das Kennzeichen zugeordnet: derselbe Vertrag steht schon an einem anderen Fahrzeug mit diesem Kennzeichen (z. B. zurückgegebener Lkw,
+    // Nachfolger trägt das Kennzeichen) → nicht als neuen laufenden Vertrag am Nachfolger anlegen (23.10.2026: Raten doppelt im Kostenbericht)
+    if (status === 'neu' && !vin) {
+      const pk = normPlate(v.plate);
+      const other = exRes.results.find((c) => c.vehicle_id !== v.id && sameContract(c, f) && vehicles.some((x) => x.id === c.vehicle_id && normPlate(x.plate) === pk));
+      if (other) { const ov = vehicles.find((x) => x.id === other.vehicle_id); return skip(`Vertrag besteht bereits beim Fahrzeug mit gleichem Kennzeichen (FIN ${ov.vin || '–'}) – bitte FIN angeben`); }
+    }
     // zwei neue Zeilen derselben Vertragsnummer (anderer oder fehlender Beginn) wären zwei laufende Verträge – das Formular weist das
     // schon ab (`sameContract` gegen laufenden Vertrag); die Einfüge-Prüfung sieht Zeilen derselben Anweisung nicht (18.10.2026)
     if (status === 'neu' && rows.some((r) => r.status === 'neu' && r.vehicle_id === v.id && sameContract({ ...r, ended_on: null }, f))) return skip('doppelt in der Datei');

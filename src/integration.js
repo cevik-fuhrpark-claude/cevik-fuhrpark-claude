@@ -16,11 +16,17 @@ const POLL_OVERLAP_MS = 120000; // Sicherheitsspanne für inkrementelle Abrufe v
 // Falsche Tokens je Netzadresse begrenzen (wie Login): ab TOKEN_FAIL_LIMIT.max Fehlversuchen im Fenster wird diese Adresse
 // für den Rest des Fensters abgewiesen – auch mit gültigem Token, damit Durchprobieren nichts verrät. Einmal im Protokoll vermerkt.
 export const TOKEN_FAIL_LIMIT = { max: 30, windowSec: 900 };
+// Secrets unter 16 Zeichen passen nie (Mindestlänge) – wie nicht gesetzt behandeln: 503 statt 401 + Sperre der Adresse nach 30 Versuchen (22.10.2026).
+// Leerraum am Rand (Zeilenumbruch beim Kopieren ins Secret) wird abgeschnitten – der HTTP-Header kommt immer beschnitten an, ein Secret mit
+// „token\n“ passte sonst nie und sperrte nach 30 Aufrufen die n8n-Adresse (23.10.2026). Auch der Einrichtungsstand nutzt diese Prüfung.
+// INTEGRATION_TOKEN_READ_NEXT: Wechsel des Lese-Tokens ohne Ausfall (23.10.2026, additiv).
+export function integrationTokens(env) {
+  const clean = (t) => (typeof t === 'string' ? t.trim() : '');
+  const usable = (t) => t.length >= 16;
+  return { full: [env.INTEGRATION_TOKEN, env.INTEGRATION_TOKEN_NEXT].map(clean).filter(usable), read: [env.INTEGRATION_TOKEN_READ, env.INTEGRATION_TOKEN_READ_NEXT].map(clean).filter(usable) };
+}
 async function checkToken(request, env) {
-  // Secrets unter 16 Zeichen passen nie (Mindestlänge) – wie nicht gesetzt behandeln: 503 statt 401 + Sperre der Adresse nach 30 Versuchen (22.10.2026)
-  const usable = (t) => typeof t === 'string' && t.length >= 16;
-  const full = [env.INTEGRATION_TOKEN, env.INTEGRATION_TOKEN_NEXT].filter(usable);
-  const read = [env.INTEGRATION_TOKEN_READ].filter(usable);
+  const { full, read } = integrationTokens(env);
   if (!full.length && !read.length) throw new HttpError(503, 'integration_disabled', 'Integrations-API ist nicht aktiviert (Secret INTEGRATION_TOKEN fehlt oder ist kürzer als 16 Zeichen).');
   const ip = request.headers.get('cf-connecting-ip') || 'unbekannt';
   const key = 'intfail:' + (await sha256Hex('cfp-ip:' + ip)).slice(0, 24);
@@ -28,12 +34,22 @@ async function checkToken(request, env) {
   const row = await env.DB.prepare('SELECT count FROM rate_limits WHERE key = ? AND window_start = ?').bind(key, win).first();
   if (row && row.count >= TOKEN_FAIL_LIMIT.max) {
     // Restzeit des festen Fensters als Retry-After (Sekunden) – n8n/Clients müssen sie nicht aus dem Text raten (22.10.2026)
-    const e = new HttpError(429, 'rate_limited', 'Zu viele ungültige Token-Versuche von dieser Adresse. Bitte in 15 Minuten erneut versuchen.');
-    e.headers = { 'retry-after': String(Math.max(1, win + TOKEN_FAIL_LIMIT.windowSec - Math.floor(Date.now() / 1000))) };
+    // Text nennt die tatsächliche Restzeit des festen Fensters (vorher immer „15 Minuten“, Retry-After z. B. 1 s; 23.10.2026)
+    const rest = Math.max(1, win + TOKEN_FAIL_LIMIT.windowSec - Math.floor(Date.now() / 1000));
+    const e = new HttpError(429, 'rate_limited', `Zu viele ungültige Token-Versuche von dieser Adresse. Bitte in ${Math.max(1, Math.ceil(rest / 60))} Min. erneut versuchen (Retry-After).`);
+    e.headers = { 'retry-after': String(rest) };
     throw e;
   }
   const h = request.headers.get('authorization') || '';
-  const token = (/^Bearer\s+(.+)$/i.exec(h) || [])[1] || ''; // Schema ohne Groß-/Kleinschreibung (RFC 7235, 20.10.2026)
+  const bearer = /^Bearer\s+(.+)$/i.exec(h.trim());
+  const token = (bearer || [])[1] || ''; // Schema ohne Groß-/Kleinschreibung (RFC 7235, 20.10.2026)
+  // ohne Header/Bearer-Schema wird kein Token geraten: 401, aber kein Fehlversuch (23.10.2026: ein vergessener Workflow ohne Token
+  // oder eine OPTIONS-Anfrage sperrte nach 30 Aufrufen auch die gültigen Aufrufe derselben n8n-Adresse)
+  if (!bearer) {
+    const e = new HttpError(401, 'invalid_token', 'Ungültiges Integrations-Token.');
+    e.headers = { 'www-authenticate': 'Bearer realm="integration"' };
+    throw e;
+  }
   // alle Vergleiche ausführen (gleiche Laufzeit unabhängig vom Treffer)
   let scope = null;
   for (const t of full) if (timingSafeEqual(token, t)) scope = 'write';
@@ -127,7 +143,8 @@ const envParam = (url) => {
 export async function integrationRouter(request, env, ctx, url) {
   const scope = await checkToken(request, env);
   const p = url.pathname.replace('/api/integration', '');
-  const m = request.method;
+  // HEAD wie GET (Verfügbarkeitsmonitore; die Laufzeit sendet keinen Body) – vorher 404 bzw. mit Lese-Token 403 (23.10.2026)
+  const m = request.method === 'HEAD' ? 'GET' : request.method;
   if (m !== 'GET' && scope !== 'write') throw new HttpError(403, 'read_only_token', 'Dieses Token darf nur lesen.');
   if (p === '/v1/vehicles' && m === 'GET') {
     envParam(url); // Wert prüfen wie überall (Stammdaten sind gemeinsam; 18.10.2026 wurde „tset“ angenommen)

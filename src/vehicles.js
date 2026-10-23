@@ -616,7 +616,10 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   // alle drei Zähler in einer Abfrage (Abfragebudget)
   const hint = active ? { r: 0, d: 0, p: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
       (SELECT COUNT(*) FROM telematics_latest WHERE vehicle_id=?1) AS d, (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p`).bind(vehicleId, berlinDate()).first();
-  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p };
+  // Wieder in Betrieb: dasselbe Kennzeichen an einem anderen aktiven Fahrzeug (Nachfolger) – Hinweis wie beim Anlegen, Bußgelder/Importe sind sonst „mehrdeutig“ (23.10.2026)
+  const duplicates = active ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>? AND active=1').bind(vehicleId).all()).results
+    .filter((x) => normPlate(x.plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, active: true, eval_excluded: !!x.eval_excluded })) : [];
+  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates } : {}) };
 }
 
 export async function assignDriver(env, user, envName, vehicleId, body) {
@@ -854,7 +857,7 @@ export async function planMaintenance(env, user, ruleId, body) {
 // Fahrzeugakte eine Durchführung erfasst, einen Termin plant oder einen Auftrag erstellt, wird der Eintrag angelegt (19.10.2026) – nie
 // automatisch. Ohne Nachweis-Datum/Fälligkeit: die Frist rechnet danach genauso wie vorher (syncHuSpDues). Vorhandener Eintrag → dessen id.
 export const HUSP_RULE_EVIDENCE = 'Frist nach StVZO Anlage VIII berechnet (aus der Fahrzeugakte angelegt)';
-export async function ensureHuSpRule(env, user, vehicleId, kind) {
+export async function ensureHuSpRule(env, user, vehicleId, kind, { allowInactive = false } = {}) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   if (kind !== 'HU' && kind !== 'SP') throw notFound();
   const existing = async () => (await env.DB.prepare('SELECT id FROM maintenance_rules WHERE vehicle_id=? AND kind=? ORDER BY created_at LIMIT 1').bind(vehicleId, kind).first() || {}).id || null;
@@ -862,7 +865,8 @@ export async function ensureHuSpRule(env, user, vehicleId, kind) {
   if (!v) throw notFound();
   const found = await existing();
   if (found) return { id: found, created: false };
-  if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+  // Durchführung vor dem Abgang nachtragen bleibt möglich (wie bei vorhandenem Eintrag, 23.10.2026); Termin/Auftrag nur in Betrieb
+  if (!v.active && !allowInactive) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   const x = (await loadHuSpInputs(env, [vehicleId])).get(vehicleId);
   const st = x ? huSpFor(x, berlinDate(), 0)[kind === 'HU' ? 'hu' : 'sp'] : null;
   if (st && st.status === 'nicht_sp_pflichtig') throw bad('validation', 'Für dieses Fahrzeug ist keine SP vorgeschrieben.');

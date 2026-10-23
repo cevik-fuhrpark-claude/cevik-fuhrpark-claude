@@ -254,7 +254,7 @@ Antwort (Aufbau; Werte nur zur Veranschaulichung, nicht aus dem Betrieb):
   genommenes Fahrzeug – verkauft? Gerät ausbauen bzw. Zuordnung lösen; Details unter Mehr → Datenqualität), `vehicles_without_data`.
 - `providers` enthält immer beide Anbieter; `last_received: null` und `devices: 0` = von diesem Anbieter kam noch nie ein Stand.
   Telematik-Daten sind gemeinsame Stammdaten (keine Trennung Test/Betrieb).
-- Abrufhäufigkeit: alle 15–60 Minuten reicht; mehr als 30 ungültige Token-Versuche in 15 Minuten sperren die Netzadresse vorübergehend (siehe `docs/API.md`).
+- Abrufhäufigkeit: alle 15–60 Minuten reicht; ab 30 ungültigen Token-Versuchen je Viertelstunde wird die Netzadresse bis zum Ende dieser Viertelstunde gesperrt – auch für Workflows mit gültigem Token (siehe `docs/API.md`). Beim Token-Wechsel daher zuerst das neue Token als `INTEGRATION_TOKEN_NEXT` (bzw. `INTEGRATION_TOKEN_READ_NEXT`) setzen, alle Workflows umstellen, dann das alte entfernen; Leerraum/Zeilenumbruch am Rand des Secrets wird ignoriert.
 
 ## Was die App bewusst nicht tut
 Keine automatische technische Fahrzeugfreigabe, keine Bestellungen oder kostenpflichtigen Aufträge, keine erfundenen Fristen,

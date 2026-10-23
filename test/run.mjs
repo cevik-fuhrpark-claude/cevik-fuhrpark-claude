@@ -18108,6 +18108,58 @@ await test('Fahrerakten / Fremdvergabe / Inhaber am Handy (Teilagenten 23.10.): 
   ok(app.includes("tn('dup_driver_name_warn', dn.length)") && app.includes("t('ext_replaces_note')"), 'Hinweise Namensdublette / Ersatz-Fremdleistung');
 });
 
+await test('Fahrzeugabgang / Integrations-Token (Teilagenten 23.10.): Vertragsimport per Kennzeichen hängt keinen Vertrag des Vorgängers an den Nachfolger, Notfallnummer am außer Betrieb genommenen Lkw gekennzeichnet und nicht neu anlegbar, HU nachtragen ohne Eintrag, Wieder-in-Betrieb-Nahme mit Kennzeichen-Hinweis; Secret mit Leerraum, Anfragen ohne Token zählen nicht, Restzeit im Text, Lese-Token-Wechsel, HEAD, Einrichtungsstand', async () => {
+  const { U } = await freshWorld(); const F = U.fleet; const V1 = 'VIN:WMA15SZZ2HM722774'; const V2 = 'VIN:WDB9630051L917317';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  // 1. Vertrag des zurückgegebenen Lkw, Nachfolger mit gleichem Kennzeichen, Import nur mit Kennzeichen
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'LeaseCo', contract_no: 'L-1', start_date: day(-700), end_date: day(60), monthly_rate_net: 1000, evidence: 'Vertrag' })).status, 201);
+  const cid = (await F.get('/api/contracts')).data.contracts.find((c) => c.contract_no === 'L-1').id;
+  eq((await F.post(`/api/contracts/${cid}/end`, { ended_on: day(0), end_note: 'Rückgabe' })).status, 200);
+  eq((await F.post('/api/emergency/contacts', { kind: 'panne', label: 'LeaseCo Pannenhilfe', phone: '0800 123456', scope: 'vehicle', vehicle_id: V1 })).status, 201);
+  eq((await F.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'Leasingrückgabe' })).status, 200);
+  ok([200, 201].includes((await F.post('/api/vehicles', { vin: 'WMA06XZZ7LP123456', plate: 'SZ-YC 5513', site: 'Dortmund', create_only: true })).status), 'Nachfolger angelegt');
+  const csv = 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Monatsrate;Nachweis\nSZ-YC 5513;Leasing;LeaseCo;L-1;' + day(-700) + ';' + day(60) + ';1000;Bestandsliste\n';
+  const im = await F.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(im.status, 200);
+  eq(im.data.counts.neu, 0); eq(im.data.skipped.length, 1); ok(/Vertrag besteht bereits beim Fahrzeug mit gleichem Kennzeichen \(FIN WMA15SZZ2HM722774\)/.test(im.data.skipped[0].reason), im.data.skipped[0].reason);
+  const { translateImportReason } = await import('../public/i18n.js');
+  eq(translateImportReason('en', im.data.skipped[0].reason), 'Contract already exists on the vehicle with the same plate (VIN WMA15SZZ2HM722774) – please state the VIN');
+  ok(/^Договір уже є/.test(translateImportReason('uk', im.data.skipped[0].reason)), 'UK');
+  // mit FIN bleibt die Zuordnung eindeutig (Nachfolger hat eigenen Vertrag)
+  const csv2 = 'FIN;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Monatsrate;Nachweis\nWMA06XZZ7LP123456;Leasing;LeaseCo;L-1;' + day(-700) + ';' + day(60) + ';1000;Bestandsliste\n';
+  eq((await F.req('POST', '/api/contracts/import?dry_run=1', csv2, { 'content-type': 'text/csv' })).data.counts.neu, 1, 'per FIN weiter möglich');
+  // 2. Notfallnummer: Liste kennzeichnet außer Betrieb, neue Nummer am alten Lkw abgewiesen
+  const em = (await F.get('/api/emergency/contacts')).data.contacts.find((c) => c.label === 'LeaseCo Pannenhilfe'); eq(em.vehicle_active, false);
+  const add = await F.post('/api/emergency/contacts', { kind: 'panne', label: 'Neu', phone: '0800 999999', scope: 'vehicle', vehicle_id: V1 }); eq(add.status, 400); eq(add.data.message, 'Fahrzeug ist außer Betrieb.');
+  eq((await F.patch(`/api/emergency/contacts/${em.id}`, { phone: '0800 1234567' })).status, 200, 'vorhandene Nummer bleibt korrigierbar');
+  // 3. HU vor dem Abgang nachtragen ohne eigenen Eintrag; Termin weiterhin abgewiesen
+  const hu = await F.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: day(-2), evidence: 'HU-Bericht vor Übergabe', result: 'ohne_maengel' }); eq(hu.status, 200, JSON.stringify(hu.data));
+  eq((await F.post(`/api/vehicles/${V1}/husp/SP/plan`, { planned_date: day(10) })).status, 400, 'Termin am außer Betrieb genommenen Fahrzeug');
+  // 4. Wieder in Betrieb neben dem Nachfolger → Hinweis
+  const re = await F.post(`/api/vehicles/${V1}/active`, { active: true }); eq(re.status, 200); eq(re.data.duplicate_plates.map((d) => d.id).join(), 'VIN:WMA06XZZ7LP123456');
+  // 5. Integrations-Token
+  const call = async (envX, method, path, auth, ip) => { const c = new Client(worker, envX, 'n8n'); const r = await c.req(method, path, undefined, { 'cf-connecting-ip': ip, ...(auth !== undefined ? { authorization: auth } : {}) }); return r; };
+  const T = 'integration-token-xyz';
+  for (const sec of [T + '\n', ' ' + T, T + '\r\n']) eq((await call(makeEnv({ INTEGRATION_TOKEN: sec }), 'GET', '/api/integration/v1/vehicles', 'Bearer ' + T, '203.0.113.7')).status, 200, 'Secret mit Leerraum ' + JSON.stringify(sec));
+  eq((await call(makeEnv({ INTEGRATION_TOKEN: ' '.repeat(20) }), 'GET', '/api/integration/v1/vehicles', 'Bearer ' + T, '203.0.113.7')).status, 503, 'nur Leerzeichen = nicht gesetzt');
+  const e1 = makeEnv();
+  for (let i = 0; i < 35; i++) eq((await call(e1, 'GET', '/api/integration/v1/vehicles', undefined, '192.0.2.10')).status, 401);
+  eq((await call(e1, 'GET', '/api/integration/v1/vehicles', 'Bearer ' + T, '192.0.2.10')).status, 200, 'ohne Header keine Sperre');
+  let last; for (let i = 0; i < 31; i++) last = await call(e1, 'GET', '/api/integration/v1/vehicles', 'Bearer falsches-token-1234567', '192.0.2.11');
+  eq(last.status, 429); ok(/Bitte in \d+ Min\. erneut versuchen/.test(last.data.message), last.data.message);
+  const mins = Number(/in (\d+) Min/.exec(last.data.message)[1]); ok(mins === Math.max(1, Math.ceil(Number(last.headers.get('retry-after')) / 60)), 'Text passt zu Retry-After');
+  const eR = makeEnv({ INTEGRATION_TOKEN_READ_NEXT: 'neues-lese-token-123456' });
+  eq((await call(eR, 'GET', '/api/integration/v1/telematics/status', 'Bearer neues-lese-token-123456', '198.51.100.1')).status, 200, 'Lese-Token _NEXT');
+  eq((await call(eR, 'HEAD', '/api/integration/v1/telematics/status', 'Bearer neues-lese-token-123456', '198.51.100.1')).status, 200, 'HEAD mit Lese-Token');
+  eq((await call(eR, 'POST', '/api/integration/v1/telematics', 'Bearer neues-lese-token-123456', '198.51.100.1')).status, 403, 'Lese-Token schreibt nicht');
+  // Einrichtungsstand nutzt dieselbe Prüfung
+  const src = (await import('node:fs')).readFileSync(new URL('../src/readiness.js', import.meta.url), 'utf8');
+  ok(src.includes('const tk = integrationTokens(env); return tk.full.length || tk.read.length'), 'Einrichtungsstand mit integrationTokens');
+  const { integrationTokens } = await import('../src/integration.js');
+  eq(integrationTokens({ INTEGRATION_TOKEN: 'kurz' }).full.length, 0); eq(integrationTokens({ INTEGRATION_TOKEN_READ: 'lese-token-abcdefgh' }).read.length, 1);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(c.vehicle_active === false ? ` (${t('inactive_vehicles')})` : '')") && app.includes("const d = r && r.duplicate_plates; if (d && d.length) setTimeout(() => toast(t('dup_plate_warn')"), 'Oberfläche: außer Betrieb / Kennzeichen-Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
