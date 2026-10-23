@@ -16,6 +16,7 @@ const T = {
     safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit',
     agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben', reassigned_away: 'Auftrag an andere Werkstatt übergeben', inspection_defect: 'Prüfung mit gefährlichen Mängeln', fine: 'Neues Schreiben einer Behörde', test: 'Testbenachrichtigung', test_body: 'Push funktioniert auf diesem Gerät.',
     new_login: 'Neue Anmeldung auf einem anderen Gerät', new_login_body: '{d} · {t}. Waren Sie das nicht? Mehr → Mein Konto: unter „Meine Anmeldungen (Geräte)“ das Gerät abmelden und das Passwort ändern.', unknown_device: 'Unbekanntes Gerät',
+    why_nicht_fahrbereit: 'nicht fahrbereit', why_gesperrt: 'gesperrt',
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
@@ -26,6 +27,7 @@ const T = {
     safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)',
     agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено', reassigned_away: 'Замовлення передано іншій майстерні', inspection_defect: 'Огляд із небезпечними дефектами', fine: 'Новий лист від органу влади', test: 'Тестове сповіщення', test_body: 'Push працює на цьому пристрої.',
     new_login: 'Новий вхід на іншому пристрої', new_login_body: '{d} · {t}. Це були не ви? Ще → Мій акаунт: у «Мої входи (пристрої)» вийдіть на цьому пристрої та змініть пароль.', unknown_device: 'Невідомий пристрій',
+    why_nicht_fahrbereit: 'не на ходу', why_gesperrt: 'заблоковано',
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
@@ -36,6 +38,7 @@ const T = {
     safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', open_item_safety: 'Safety-relevant open item',
     agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved', reassigned_away: 'Order handed over to another workshop', inspection_defect: 'Inspection with dangerous defects', fine: 'New letter from an authority', test: 'Test notification', test_body: 'Push works on this device.',
     new_login: 'New sign-in on another device', new_login_body: '{d} · {t}. Not you? More → My account: under “My sign-ins (devices)” sign out that device and change your password.', unknown_device: 'Unknown device',
+    why_nicht_fahrbereit: 'not roadworthy', why_gesperrt: 'locked',
     res_gefaehrliche_maengel: 'dangerous defects', res_verkehrsunsicher: 'unroadworthy', do_not_plan: 'do not schedule',
   },
 };
@@ -64,6 +67,14 @@ export const NOTIF_REF = /^(vehicle|fine):[A-Za-z0-9:_-]{1,80}$/;
 const PRIO_KEY = new Map(LANGS.flatMap((l) => Object.entries(PRIO[l]).map(([k, v]) => [v, k])));
 const RES_KEY = new Map(LANGS.flatMap((l) => ['gefaehrliche_maengel', 'verkehrsunsicher'].map((k) => [T[l]['res_' + k], k])));
 const DNP = new Set(LANGS.map((l) => T[l].do_not_plan));
+// Grund der Dringlichkeit im Text „Neue Meldung“, wenn die Priorität selbst nicht „kritisch“ ist (Backlog 201, 23.10.2026: Push „KRITISCH:
+// neue Meldung“ endete auf „· niedrig“ ohne Grund). Nur feste Wörter – keine Schadensbeschreibung im Sperrbildschirm.
+const WHY_KEY = new Map(LANGS.flatMap((l) => ['nicht_fahrbereit', 'gesperrt'].map((k) => [T[l]['why_' + k], k])));
+export function urgentWhy(c, urgent, lang) {
+  if (!urgent || c.priority === 'kritisch') return '';
+  const k = c.safety_lock ? 'gesperrt' : c.reported_driveability === 'nicht_fahrbereit' ? 'nicht_fahrbereit' : null;
+  return k ? ' · ' + nt(lang, 'why_' + k) : '';
+}
 const NO_CASE_BODY = new Set(['agent', 'agent_reminder', 'new_login', 'fine', 'test', 'inspection_defect']);
 // Anmelde-Hinweis „{Gerät} · {Zeit}. Waren Sie das nicht? …“: Zeit in der Schreibweise der Sprache (berlinDateTimeLang) zurücklesen und neu schreiben
 const EN_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -106,10 +117,14 @@ export function localizedBody(n, lang) {
   if (NO_CASE_BODY.has(n.kind) || !T.de[n.kind]) return b;
   const test = b.endsWith(' · TEST') ? ' · TEST' : '';
   const core = test ? b.slice(0, -test.length) : b;
-  const i = core.lastIndexOf(' · ');
-  const prio = i > 0 ? core.slice(i + 3) : null;
+  // „ · Grund“ (nur „Neue Meldung“) nach der Priorität
+  const w = n.kind === 'created' ? core.lastIndexOf(' · ') : -1;
+  const why = w > 0 && WHY_KEY.has(core.slice(w + 3)) ? WHY_KEY.get(core.slice(w + 3)) : null;
+  const core2 = why ? core.slice(0, w) : core;
+  const i = core2.lastIndexOf(' · ');
+  const prio = i > 0 ? core2.slice(i + 3) : null;
   if (!prio || !PRIO_KEY.has(prio)) return b;
-  return `${core.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${test}`;
+  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${test}`;
 }
 
 // Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
@@ -256,7 +271,7 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const k = u.kind || kind;
     const title = k === 'created' && urgent ? T[lang].created_urgent : T[lang][k] || k;
     // Sperrbildschirm: nur Vorgangsnummer, Kennzeichen, Priorität – keine Schadensbeschreibung
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`;
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
@@ -281,7 +296,7 @@ export async function notifyCasesCreated(env, ctx, cases, { actor, vehicles }) {
     for (const u of list) {
       const lang = T[u.language] ? u.language : 'de';
       const row = { id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned ? null : c.id, event_key: `${c.id}:created:${c.version}`, kind: 'created', urgent: urgent ? 1 : 0,
-        title: urgent ? T[lang].created_urgent : T[lang].created, body: `${c.case_no} · ${plate} · ${PRIO[lang][c.priority] || c.priority}${c.environment === 'test' ? ' · TEST' : ''}`, created_at: now, lang };
+        title: urgent ? T[lang].created_urgent : T[lang].created, body: `${c.case_no} · ${plate} · ${PRIO[lang][c.priority] || c.priority}${urgentWhy(c, urgent, lang)}${c.environment === 'test' ? ' · TEST' : ''}`, created_at: now, lang };
       rows.push(row); meta.set(row.id, urgent);
     }
   }

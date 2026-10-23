@@ -18862,6 +18862,35 @@ await test('Backlog 200: noch nicht gesendete kritische Meldung/Kontrolle im Pos
   ok(PLURALS.uk.outbox_veh_pending.few && PLURALS.uk.outbox_veh_pending.many, 'uk Formen');
 });
 
+await test('Backlog 201: Push „KRITISCH: neue Meldung“ bei Priorität niedrig/mittel nennt den Grund („· nicht fahrbereit“/„· gesperrt“), keine Beschreibung; Sprachwechsel übersetzt den Grund', async () => {
+  const { localizedBody, urgentWhy } = await import('../src/notify.js');
+  eq((await owner.post('/api/vehicles', { plate: 'PG-W 1', vin: 'WDB96340310620101', site: 'Dortmund' })).status, 201);
+  const VW = 'VIN:WDB96340310620101';
+  const c = await users.fleet.post('/api/cases', { vehicle_id: VW, description: 'Grundtest: Achse verbogen', priority: 'niedrig', driveability: 'nicht_fahrbereit', request_key: rk() });
+  eq(c.status, 201);
+  const rows = env.DB.db.prepare(`SELECT title, body, lang, urgent FROM notifications WHERE event_key LIKE ? AND kind='created'`).all(c.data.id + ':created:%');
+  ok(rows.length > 0, 'Hinweise angelegt');
+  for (const r of rows) {
+    eq(r.urgent, 1, 'dringend');
+    ok(/ · (nicht fahrbereit|не на ходу|not roadworthy|gesperrt|заблоковано|locked)( · TEST)?$/.test(r.body), 'Grund am Ende: ' + r.body); // Leitung meldet „nicht fahrbereit“ → Sperre
+    ok(!r.body.includes('Achse'), 'keine Beschreibung');
+  }
+  // Priorität „kritisch“: kein Zusatz (Titel und Priorität sagen es schon)
+  const k = await users.fleet.post('/api/cases', { vehicle_id: VW, description: 'Grundtest kritisch', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() });
+  for (const r of env.DB.db.prepare(`SELECT body FROM notifications WHERE event_key LIKE ? AND kind='created'`).all(k.data.id + ':created:%')) ok(!/fahrbereit|на ходу|roadworthy/.test(r.body), 'kein Zusatz bei kritisch: ' + r.body);
+  // Grundregel
+  eq(urgentWhy({ priority: 'mittel', safety_lock: 1, reported_driveability: 'nicht_fahrbereit' }, true, 'en'), ' · locked');
+  eq(urgentWhy({ priority: 'niedrig', reported_driveability: 'nicht_fahrbereit' }, true, 'uk'), ' · не на ходу');
+  eq(urgentWhy({ priority: 'niedrig', reported_driveability: 'nicht_fahrbereit' }, false, 'de'), '', 'nicht dringend (z. B. Priorität geprüft) → kein Zusatz');
+  eq(urgentWhy({ priority: 'mittel', reported_driveability: 'fahrbereit' }, true, 'de'), '');
+  // Anzeige in anderer Sprache (gespeicherte Hinweise)
+  eq(localizedBody({ kind: 'created', body: 'T-2026-0009 · SZ-YC 1 · niedrig · nicht fahrbereit · TEST' }, 'en'), 'T-2026-0009 · SZ-YC 1 · low · not roadworthy · TEST');
+  eq(localizedBody({ kind: 'created', body: 'T-2026-0009 · SZ-YC 1 · mittel · gesperrt' }, 'uk'), 'T-2026-0009 · SZ-YC 1 · середній · заблоковано');
+  eq(localizedBody({ kind: 'created', body: 'T-2026-0009 · SZ-YC 1 · low' }, 'de'), 'T-2026-0009 · SZ-YC 1 · niedrig', 'alte Form unverändert');
+  eq(localizedBody({ kind: 'received', body: 'T-2026-0009 · SZ-YC 1 · niedrig · gesperrt' }, 'en'), 'T-2026-0009 · SZ-YC 1 · niedrig · gesperrt', 'Grund nur bei „Neue Meldung“');
+  for (const l of ['de', 'uk', 'en']) ok(nt(l, 'why_nicht_fahrbereit') && nt(l, 'why_gesperrt'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
