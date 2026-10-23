@@ -1048,7 +1048,8 @@ async function dispoWinter(vsite = '') {
   const r = await api('GET', '/api/tires/winter' + (vsite ? '?site=' + encodeURIComponent(vsite) : '')).catch(() => null);
   if (!r || (!r.totals.nicht_erfuellt && !r.totals.unbekannt)) return '';
   const rows = r.noncompliant.map((x) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', ')))}</span><span class="chip mittel">${esc(t('ws_nicht_erfuellt'))}</span>${x.missing.length || x.open_order || x.closed_order ? `<span class="sub">${[x.missing.length && esc(t('winter_missing').replace('{p}', x.missing.map(posL).join(', '))), x.open_order && `🔧 ${esc(t('mo_open'))} ${esc(x.open_order.case_no)}`, x.closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.closed_order.case_no))}`].filter(Boolean).join(' · ')}</span>` : ''}</a>`).join('');
-  return `<section id="dwinter"><h2>${esc(t('dispo_winter'))}</h2>${rows ? `<div class="list">${rows}</div>` : ''}${r.totals.unbekannt ? `<p class="small">${esc(t('dispo_winter_unknown').replace('{n}', r.totals.unbekannt))}</p>` : ''}<p class="small muted">${esc(t('dispo_winter_hint'))}</p></section>`;
+  // nur unvollständig erfasst (keine Lkw „nicht erfüllt“): neutrale Überschrift statt „nicht wintertauglich“ (23.10.2026)
+  return `<section id="dwinter"><h2>${esc(t(r.totals.nicht_erfuellt ? 'dispo_winter' : 'dispo_winter_incomplete'))}</h2>${rows ? `<div class="list">${rows}</div>` : ''}${r.totals.unbekannt ? `<p class="small">${esc(t('dispo_winter_unknown').replace('{n}', r.totals.unbekannt))}</p>` : ''}<p class="small muted">${esc(t('dispo_winter_hint'))}</p></section>`;
 }
 
 // Kennzeichnung „Winterreifen“ für Aufträge aus der Fahrzeugakte → Reifen (Beschreibung ist deutsch, das Etikett übersetzt)
@@ -3131,6 +3132,13 @@ function siteSelect(id, name, options, cur, label = t('site'), allLabel = t('all
   return `<label for="${id}">${esc(label)}</label><select id="${id}"${name ? ` name="${name}"` : ''}><option value="">${esc(allLabel)}</option>${[...new Set([...(options || []), ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('')}</select>`;
 }
 // ---------- Kosten je Fahrzeug/Monat ----------
+// Fehler beim Einschalten von Push: Browsermeldungen (englisch, z. B. „Registration failed - permission denied“) als übersetzter Hinweis
+// mit Handlungsweg, Originaltext klein dahinter (23.10.2026, Teilagent „Disposition erster Tag“); Serverfehler (mit status) unverändert
+function pushErrText(err) {
+  if (!err || err.status || err.offline || err.code) return err && err.message ? err.message : String(err || '');
+  const k = err.name === 'NotAllowedError' ? 'push_err_denied' : err.name === 'AbortError' || err.name === 'NetworkError' ? 'push_err_service' : err.name === 'InvalidStateError' ? 'push_err_state' : 'push_err_other';
+  return `${t(k)}${err.message ? ` (${err.message})` : ''}`;
+}
 async function viewCosts() {
   const to = S.costTo || bYm(); const from = S.costFrom || bYm(11); const site = vsDef('costSite') || '';
   const siteQ = site ? `&site=${encodeURIComponent(site)}` : '';
@@ -3138,6 +3146,7 @@ async function viewCosts() {
   try { rep = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}`); } catch (err) {
     // ungültiger Zeitraum: Meldung zeigen und mit dem Standardzeitraum weiter – sonst blieb die Seite bis zum Neuladen gesperrt (19.10.2026)
     if (S.costFrom || S.costTo) { S.costFrom = null; S.costTo = null; toast(err.message, true); return viewCosts(); }
+    if (err.status === 403 || err.status === 404) throw err; // gemeinsamer Fehlerpfad „Seite nicht verfügbar“ + „Zur Übersicht“ (23.10.2026)
     render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const byV = new Map();
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, inactive: r.vehicle_active === false, actual: 0, valued: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.valued += r.valued_items || 0; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
@@ -3620,7 +3629,7 @@ async function pushPanel(el) {
       const j = s.toJSON();
       await api('POST', '/api/push/subscribe', { endpoint: j.endpoint, keys: j.keys, device_label: deviceLabel() });
       pushPanel(el);
-    } catch (err) { toast(err.message, true); }
+    } catch (err) { toast(pushErrText(err), true); }
   };
   const pt = $('#pt', el);
   if (pt) pt.onclick = async () => { pt.disabled = true; try {
@@ -3862,7 +3871,7 @@ const dur = (h) => (h === null || h === undefined ? '–' : h < 48 ? `${fmtNum(h
 async function viewKpi() {
   const to = S.kpiTo || bYm(); const from = S.kpiFrom || bYm(2);
   let r;
-  try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${vsDef('kpiVsite') ? '&vsite=' + encodeURIComponent(vsDef('kpiVsite')) : ''}`); } catch (err) { if (S.kpiFrom || S.kpiTo) { S.kpiFrom = null; S.kpiTo = null; toast(err.message, true); return viewKpi(); } render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
+  try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${vsDef('kpiVsite') ? '&vsite=' + encodeURIComponent(vsDef('kpiVsite')) : ''}`); } catch (err) { if (err.status === 403 || err.status === 404) throw err; if (S.kpiFrom || S.kpiTo) { S.kpiFrom = null; S.kpiTo = null; toast(err.message, true); return viewKpi(); } render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const st = (x) => (x.n ? `${dur(x.median_h)} <span class="small muted">(P90 ${dur(x.p90_h)}, n=${x.n})</span>` : '–');
   let html = `<h1>${esc(t('kpi'))}</h1>${printHead([`${t('period')}: ${fmtMonth(from)} – ${fmtMonth(to)}`, r.site ? `${t('workshop')}: ${r.site === 'ohne' ? t('kpi_no_site') : wsName(r.site)}` : '', r.vehicle_site ? `${t('kpi_vsite')}: ${r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site}` : ''])}${helpLink('kpi')}<form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
@@ -4462,7 +4471,7 @@ function viewMore(open) {
     ${S.me.role === 'owner' ? `<a class="row" href="#/settings"><span>⚙</span><span class="title">${esc(t('settings'))}</span><span></span></a>` : ''}
   </div>
   <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
-  ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t(S.me.role === 'workshop' ? 'home_site_hint_ws' : 'home_site_hint'))}</p></div>` : ''}
+  ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t(S.me.role === 'workshop' ? 'home_site_hint_ws' : S.me.role === 'dispatch' ? 'home_site_hint_dispo' : 'home_site_hint'))}</p></div>` : ''}
   <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" maxlength="200" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
   <details id="tfa"><summary>${esc(t('tf_title'))} <span class="chip ok" id="tfchip"${S.me.totp_enabled ? '' : ' hidden'}>${esc(t('tf_chip'))}</span></summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
   <details id="sess"><summary>${esc(t('my_sessions'))}</summary><p class="small muted">${esc(t('new_login_hint'))}</p><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div><h3>${esc(t('kd_title'))}</h3><p class="small muted">${esc(t('kd_hint'))}</p><div id="kdlist" class="list"></div></details>

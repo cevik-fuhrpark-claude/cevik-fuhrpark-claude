@@ -18801,6 +18801,26 @@ await test('Backlog 197: beendeter Vertrag mit km-Kontingent zeigt km bis zum Be
   ok(row(ao, 'D3'), 'D3 zum Stichtag laufend'); eq(ao.counts.beendet, 0, 'zum Stichtag nichts beendet');
 });
 
+await test('Disposition erster Tag (23.10.): Nachweistext der Fahrerzuordnung nur für Leitung (Akte und Zeitleiste), Push-Fehler übersetzt, Kosten/Kennzahlen ohne Recht → „Seite nicht verfügbar“, Standort-Hinweis und Winter-Überschrift der Disposition, Menü-Symbole', async () => {
+  const { U, e, V1 } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'd.erster', display_name: 'Dora Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'd.erster'); eq((await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Personalakte 12' })).status, 201);
+  const ak = (await D.get(`/api/vehicles/${V1}`)).data; ok(ak.drivers.length >= 1 && ak.drivers.every((r) => r.evidence === null), 'Akte ohne Nachweis');
+  const tl = (await D.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=driver_from`)).data; const it = (tl.items || []).filter((i) => i.type === 'driver_from');
+  ok(it.length && it.every((i) => !i.evidence), 'Zeitleiste ohne Nachweis ' + JSON.stringify(it));
+  ok(it.some((i) => i.by), 'Name bleibt');
+  const fl = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline?types=driver_from`)).data; ok((fl.items || []).some((i) => i.evidence === 'Personalakte 12'), 'Leitung sieht Nachweis');
+  eq((await D.get('/api/reports/costs?from=2026-01&to=2026-02')).status, 403);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(app.includes("} catch (err) { toast(pushErrText(err), true); }") && app.includes("err.name === 'NotAllowedError' ? 'push_err_denied'"), 'Push-Fehler übersetzt');
+  ok((app.match(/if \(err\.status === 403 \|\| err\.status === 404\) throw err;/g) || []).length === 2, 'Kosten/Kennzahlen: gemeinsamer Fehlerpfad');
+  ok(app.includes("S.me.role === 'dispatch' ? 'home_site_hint_dispo'") && app.includes("t(r.totals.nicht_erfuellt ? 'dispo_winter' : 'dispo_winter_incomplete')"), 'Dispo-Texte');
+  ok(css.includes('.morelist .row svg { width: 20px; height: 20px;'), 'Symbole im Menü');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['push_err_denied', 'push_err_service', 'push_err_state', 'push_err_other', 'home_site_hint_dispo', 'dispo_winter_incomplete']) ok(STRINGS[l][k], `${l} ${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

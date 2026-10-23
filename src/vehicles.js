@@ -185,6 +185,9 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const drivers = isManager(user) || user.role === 'dispatch'
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
         WHERE d.vehicle_id=? AND d.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
+      // Nachweistext der Zuordnung (frei, z. B. „Personalakte 12“) nur für Inhaber/Leitung – Disposition sieht Name und Zeitraum (23.10.2026,
+      // Teilagent „Disposition erster Tag“: Zeitleiste zeigte ihn, die Akte nicht)
+      .map((r) => (isManager(user) ? r : { ...r, evidence: null }))
     : [];
   // Kopplung Lkw ↔ Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“ des Lkw)
   // locked: Sicherheitssperre eines offenen Vorgangs des gekoppelten Fahrzeugs in dieser Umgebung (nur Information)
