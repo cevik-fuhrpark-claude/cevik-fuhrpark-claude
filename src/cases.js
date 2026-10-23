@@ -982,6 +982,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   let toStatus = c.status;
   let payload = {};
   let workGuard = null; // Arbeitszeit-Tagesgrenze im Stapel geprüft
+  let noWorkshopUser = false; // Reparatur an eine Werkstatt ohne aktives Konto freigegeben (Antwort-Hinweis, 23.10.2026)
   let stockGuardItem = null; // Lagerentnahme mit Bestandsprüfung im Stapel (Fehlerbild unterscheiden)
   const extra = []; // zusätzliche Statements in derselben Transaktion
   let notifyKind = null;
@@ -1036,6 +1037,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) { payload.planned_from = c.planned_date || null; payload.planned_to = set.planned_date; } }
       toStatus = 'werkstatt_freigegeben';
       payload.workshop_site = site;
+      // wie der Agentenbefund NO_WORKSHOP_RECIPIENT, aber sofort: niemand kann den Auftrag dort übernehmen (vorher erst beim nächsten Lauf)
+      noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first());
       // vorgeschlagene Werkstatt bekommt den Auftrag nicht: ihre Hinweise zum Vorgang ausblenden (18.10.2026: Link → 404; Melder ausgenommen)
       if (c.suggested_workshop_site && c.suggested_workshop_site !== site) extra.push(hideSuggestedSite(env, now, c));
       notifyKind = 'approved';
@@ -1342,7 +1345,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
-  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}) };
+  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser ? { no_workshop_user: true } : {}) };
 }
 
 // gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)

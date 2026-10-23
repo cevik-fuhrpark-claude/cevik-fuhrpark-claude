@@ -1,6 +1,6 @@
 // [CLAUDE] Fuhrparkagent (regelbasiert, deterministisch) und Übergabe an den Master-Agenten
 // Der Agent erzeugt Befunde – er gibt nie Fahrzeuge frei, beauftragt nichts und erfindet keine Fristen.
-import { nowIso, uuid, sha256HexSync, berlinDateTime, berlinDate, oneOf, str, notFound, conflict, rateOf } from './util.js';
+import { nowIso, uuid, sha256HexSync, berlinDateTime, berlinDate, oneOf, str, notFound, conflict, rateOf, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
 import { notifyUsers, deliverPush } from './notify.js';
 import { audit } from './auth.js';
 import { tireFindings } from './tires.js';
@@ -116,7 +116,10 @@ const BASICS_SQL = `SELECT
      WHERE environment=?1 AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL) AS users,
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
      WHERE c.environment=?1 AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id)) AS safety_open,
-  (SELECT json_group_array(json_object('id', c.id, 'case_no', c.case_no, 'vehicle_id', c.vehicle_id, 'plate', v.plate, 'safety_lock_reason', c.safety_lock_reason))
+  (SELECT json_group_array(json_object('id', c.id, 'case_no', c.case_no, 'vehicle_id', c.vehicle_id, 'plate', v.plate, 'safety_lock_reason', c.safety_lock_reason,
+       -- gesperrter Anhänger: fest gekoppelte Zugmaschine laut Stammliste (Befundtext nennt sie, 23.10.2026)
+       'truck', CASE WHEN v.kind='anhaenger' THEN (SELECT o.plate FROM vehicles o WHERE o.active=1 AND o.kind='lkw' AND ${PLATE_KEY_SQL('o.trailer_plate')}<>''
+         AND ${PLATE_KEY_SQL('o.trailer_plate')}=${PLATE_KEY_SQL('v.plate')} AND ${COUPLING_PREFERRED_SQL('o')} AND ${COUPLING_PREFERRED_SQL('v')} ORDER BY o.plate LIMIT 1) END))
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=?1 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
@@ -287,7 +290,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const locked = base.locked;
     for (const l of locked) {
       add({ code: 'VEHICLE_LOCKED', subject: l.vehicle_id, case_id: l.id, vehicle_id: l.vehicle_id, severity: 'info', owner_role: 'dispatch',
-        ...fm(l.safety_lock_reason ? 'VEHICLE_LOCKED' : 'VEHICLE_LOCKED_DEFAULT', { plate: l.plate, reason: l.safety_lock_reason || null }), next_action: 'Bis zur technischen Freigabe nicht einplanen.' });
+        ...fm(l.safety_lock_reason ? 'VEHICLE_LOCKED' : 'VEHICLE_LOCKED_DEFAULT', { plate: l.plate, reason: l.safety_lock_reason || null, ...(l.truck ? { truck: l.truck } : {}) }), next_action: 'Bis zur technischen Freigabe nicht einplanen.' });
     }
 
     // Freigegeben, aber Restarbeiten offen

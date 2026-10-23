@@ -15405,7 +15405,7 @@ await test('Fehlersuche 20.10. (18): Vertrag nach bestätigtem Tachotausch „un
   ok(cand, 'Kandidat aus Kontrolle'); eq(cand.via_plate, 'FX-ZM 1'); ok(/Zugmaschine FX-ZM 1$/.test(cand.evidence), cand.evidence);
   // 4. App: Befehlskennung je Inhalt, Bußgeld-Hinweis in der Suche, Übersetzung des Nachweises; Doku-Pfad
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/S\.pendCmd && S\.pendCmd\.key === key && Date\.now\(\) - S\.pendCmd\.at < 10 \* 60000 \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; toast'), 'Befehlswiederholung mit gleicher Kennung');
+  ok(/S\.pendCmd && S\.pendCmd\.key === key && Date\.now\(\) - S\.pendCmd\.at < 10 \* 60000 \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; if (r && r.no_workshop_user)'), 'Befehlswiederholung mit gleicher Kennung');
   ok(/fineTrunc = !!fr\.truncated/.test(app) && app.includes('id="gftrunc"'), 'Suche: Hinweis auf die 500 jüngsten Schreiben');
   ok(app.includes("Uhr(?: – Zugmaschine (.+))?$/") , 'Nachweis-Übersetzung mit Zugmaschine');
   const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(!api.includes('/api/fines/:id/command`'), 'Doku: /commands');
@@ -18218,7 +18218,7 @@ await test('Geteiltes Werkstatt-Konto / Rückrufaktion / Monatswechsel (Teilagen
   ok(app.includes("t('kpi_status_basis').replace('{at}', fmtDT(r.generated_at))") && app.includes("' ' + esc(t('cost_rate_today'))"), 'Anzeige');
 });
 
-await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagenten 23.10.): Abfahrtskontrolle meldet gesperrtes Gespann, Anhänger außer Betrieb mit Hinweis auf Zugmaschine und eigener Datenqualitätsmeldung; Hinweise „Ältere laden“, Master-Eingang nach Dringlichkeit; Standortnamen mit doppeltem/geschütztem Leerzeichen ein Standort', async () => {
+await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagenten 23.10.): Abfahrtskontrolle meldet gesperrtes Gespann, Anhänger außer Betrieb mit Hinweis auf Zugmaschine und eigener Datenqualitätsmeldung; Hinweise „Ältere laden“, Master-Eingang nach Dringlichkeit; Standortnamen mit doppeltem/geschütztem Leerzeichen ein Standort; Befund am gesperrten Anhänger nennt die Zugmaschine, Freigabe an Werkstatt ohne Konto mit Hinweis', async () => {
   const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
   const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
   await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
@@ -18266,6 +18266,21 @@ await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagente
   mi.run('m-mitte-handeln', '1.0', 'production', 'fleet-agent', 'finding', 'handeln', '{}', '2026-01-15T08:00:00Z');
   const mp = (await F.get('/api/master')).data; const order = (mp.inbox || mp.master_inbox || []).map((x) => x.event_id).filter((x) => x.startsWith('m-'));
   eq(order.slice(0, 3).join(), 'm-alt-krit,m-mitte-handeln,m-neu-4');
+  // 7. Befund „gesperrt“ am Anhänger nennt die Zugmaschine; Freigabe an eine Werkstatt ohne Konto meldet das sofort (Backlog 179)
+  await F.post('/api/agent/run', {});
+  const lf = db.prepare(`SELECT message, message_args FROM agent_findings WHERE environment='production' AND finding_code='VEHICLE_LOCKED' AND vehicle_id=? AND status='offen'`).get(TR);
+  ok(lf && lf.message.startsWith('SZ-YC 5514 (Anhänger von SZ-YC 5513): gesperrt'), lf && lf.message);
+  const { renderFindingMessage } = await import('../public/finding-messages.js'); const la = JSON.parse(lf.message_args);
+  ok(renderFindingMessage(la.k, la.a, 'en').includes('(trailer of SZ-YC 5513)') && renderFindingMessage(la.k, la.a, 'uk').includes('причіп тягача SZ-YC 5513'), 'übersetzt');
+  ok(renderFindingMessage('VEHICLE_LOCKED_DEFAULT', { plate: 'X 1', reason: null }, 'de') === 'X 1: gesperrt (Sicherheitsprüfung) – nicht disponieren.', 'ohne Zugmaschine unverändert');
+  const verP = async (id) => (await F.get(`/api/cases/${id}`)).data.case.version;
+  const c2 = await F.post('/api/cases', { vehicle_id: TK2, description: 'Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(c2.status, 201);
+  const ap = await F.post(`/api/cases/${c2.data.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: await verP(c2.data.id), note: 'frei', payload: { workshop_site: 'DORTMUND' } });
+  eq(ap.status, 200, JSON.stringify(ap.data)); eq(ap.data.no_workshop_user, true, 'keine Werkstatt mit Konto');
+  await inv({ username: 'a.werkstatt', display_name: 'WS DO', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const c3 = await F.post('/api/cases', { vehicle_id: TK2, description: 'Licht defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  const ap2 = await F.post(`/api/cases/${c3.data.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: await verP(c3.data.id), note: 'frei', payload: { workshop_site: 'DORTMUND' } });
+  eq(ap2.status, 200); eq(ap2.data.no_workshop_user, undefined, 'mit Konto kein Hinweis');
   // 6. App: Gespann-Sperre in der Kontrollantwort, Hinweis beim Außer-Betrieb-Nehmen, Filter ohne ruhende, „Ältere laden“, Standort-Schlüssel, Werkstatt-Vorauswahl
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("(r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : '')") && (app.match(/!!r\.vehicle_locked \|\| !!r\.coupled_locked\)/g) || []).length === 2, 'Kontrollantwort');
@@ -18275,6 +18290,7 @@ await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagente
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['nf_more', 'trailer_deact_warn', 'dq_trailer_inactive']) ok(STRINGS[l][k] && !/\((n|s|і)\)/.test(STRINGS[l][k]), `${l}.${k}`);
   ok(/^List out of date/.test(translateValidation('en', 'Liste veraltet – bitte neu laden.')), 'V_MORE');
+  ok(app.includes("if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true);") && ['de', 'uk', 'en'].every((l) => STRINGS[l].no_ws_user_warn), 'Hinweis Werkstatt ohne Konto');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
