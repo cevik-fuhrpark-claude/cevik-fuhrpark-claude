@@ -55,6 +55,8 @@ with sync_playwright() as p:
         q.unroute('**/commands')
         check(len(api('GET', f'/api/cases/{cid}')['d']['work']) == 1, f'{lang}/{w}: erste Sendung ist angekommen')
         q.goto(B + '/#/cases/' + other); q.wait_for_selector('[data-act]', timeout=15000)
+        # erst prüfen, wenn der andere Vorgang wirklich angezeigt wird (24.10.2026: Hash-Wechsel ohne Neuladen – sonst gelegentlich noch die alte Seite)
+        q.wait_for_function("t => document.querySelector('main') && document.querySelector('main').innerText.includes(t)", arg=f'Licht {lang}', timeout=15000)
         check(q.locator('#af').count() == 0, f'{lang}/{w}: anderer Vorgang ohne fremdes Formular')
         q.goto(B + '/#/cases/' + cid); q.wait_for_selector('#af', timeout=15000); q.wait_for_timeout(300)
         st = q.evaluate("""() => ({ h: document.querySelector('#af [name=hours]')?.value, d: document.querySelector('#af [name=description]')?.value, n: document.querySelector('#af [name=note]')?.value, box: !!document.querySelector('#adraft') })""")
