@@ -19951,9 +19951,36 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
+});
+
+await test('Backlog 239 („Heute zu tun“ nach dem Urlaub): Gruppen älteste zuerst, „+N“ verlinkt die Liste; Filter cost_approval=1 = offene Vorgänge mit ausstehender Kostenfreigabe (Fahrer nie)', async () => {
+  const vin = 'WDB96340310823901';
+  eq((await owner.post('/api/vehicles', { plate: 'UR-KF 1', vin, site: 'Dortmund' })).status, 201);
+  const ids = [];
+  for (let i = 0; i < 10; i++) ids.push((await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: 'Kostenfreigabe Urlaub ' + i, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id);
+  // Markierung direkt setzen (Ablauf der Kostengrenze ist in eigenen Tests geprüft): ältere Freigaben zuerst angelegt
+  for (let i = 0; i < 10; i++) await env.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id=?').bind(new Date(Date.now() - (20 - i) * 86400000).toISOString(), ids[i]).run();
+  const other = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: 'ohne Kostenfreigabe', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const r = (await users.fleet.get('/api/cases?status=open&cost_approval=1&limit=500')).data.cases;
+  ok(ids.every((id) => r.some((x) => x.id === id)) && !r.some((x) => x.id === other) && r.every((x) => x.cost_over_limit_at), 'nur ausstehende, alle zehn');
+  const all = (await users.fleet.get('/api/cases?status=open&limit=500')).data.cases;
+  eq(r.length, all.filter((c) => c.cost_over_limit_at).length, 'gleiche Regel wie „Heute zu tun“');
+  eq((await users.driver.get('/api/cases?status=open&cost_approval=1')).data.cases.length, 0, 'Fahrer nie');
+  // abgeschlossener Vorgang mit alter Markierung zählt nicht
+  const c0 = (await users.fleet.get(`/api/cases/${ids[0]}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${ids[0]}/commands`, { action: 'reject', command_id: rk(), expected_version: c0.version, note: 'Test' })).status, 200);
+  ok(!(await users.fleet.get('/api/cases?status=open&cost_approval=1&limit=500')).data.cases.some((x) => x.id === ids[0]), 'abgelehnt nicht mehr ausstehend');
+  ok(!(await users.fleet.get('/api/cases?cost_approval=1&limit=500')).data.cases.some((x) => x.id === ids[0]), 'auch ohne status=open nur offene');
+  // Oberfläche: Sortierung und Link
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)),"), 'Kostenfreigabe älteste zuerst');
+  ok(app.includes("cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b))"), 'Meldungen: Dringlichkeit, dann älteste');
+  ok(app.includes("cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on))"), 'Wiedervorlage nach Datum');
+  ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\">${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
+  ok(app.includes("f === 'cost_approval' ? 'status=open&cost_approval=1'"), 'Listenfilter');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -119,6 +119,8 @@ export async function listCases(env, user, envName, query, meta = null) {
     where.push('c.priority = ?'); args.push(query.priority);
   }
   if (on(query.locked)) where.push('c.safety_lock = 1');
+  // „Kostenfreigabe ausstehend“ (Backlog 239): gleiche Regel wie „Heute zu tun“ (offen und `cost_over_limit_at` gesetzt; Fahrer nie)
+  if (on(query.cost_approval)) where.push(user.role === 'driver' ? '0' : `c.cost_over_limit_at IS NOT NULL AND c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')})`);
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
   // noch lief (Meldetag = Berliner Kalendertag wie im Vorgang angezeigt); Werkstatt nur eigener Standort
   let withSql = '';
