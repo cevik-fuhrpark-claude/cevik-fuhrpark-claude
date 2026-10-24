@@ -19631,7 +19631,7 @@ await test('Backlog 226: Anmelde-Hinweis auf dem anmeldenden Gerät als „diese
   eq((await owner.patch(`/api/users/${u.id}`, { active: false })).status, 200);
 });
 
-await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrainisch/Russisch“): Unfall-Hinweis wie Datenqualität (Warnblinker „аварійна/аварийка“ kein Unfall, russ. „авария“ erkannt), Diktat per change, Freitext mit lang= (uk/ru, lateinisch in UK-Oberfläche unbestimmt) auch an Restarbeiten, Folgeaufträgen, bekannten Mängeln', async () => {
+await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrainisch/Russisch“): Unfall-Hinweis wie Datenqualität (Warnblinker „аварійна/аварийка“ kein Unfall, russ. „авария“ erkannt), Diktat per change, Freitext mit lang= (uk/ru, lateinisch in UK-Oberfläche unbestimmt) auch an Restarbeiten, Folgeaufträgen, bekannten Mängeln; Kraftstoffdiebstahl/Fahrerkarte russ./ukr. (230)', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/\nconst ACC_HINT = \/(.+)\/i;/); ok(m, 'ACC_HINT auf Modulebene'); eq((app.match(/const ACC_HINT = /g) || []).length, 1); ok(!/const ACC = /.test(app), 'altes Muster entfernt');
   const re = new RegExp(m[1], 'i');
@@ -19652,6 +19652,11 @@ await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrain
   ok(dq.includes(ru) && dq.includes(ruCap), 'russ. „авария“ in der Datenqualität'); ok(!dq.includes(haz), 'Warnblinker nicht');
   // Diktat: auch „change“ prüft die Hinweise
   ok(app.includes("$('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);"), 'input + change');
+  // Backlog 230: Kraftstoffdiebstahl per Diktat (ukr./russ./engl.), russ. „карта водителя“
+  const th = new RegExp(app.match(/const THEFT_HINT = \/(.+)\/i;/)[1], 'i'); const ta = new RegExp(app.match(/const TACHO_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Вночі злили пальне з бака', 'Злили дизель', 'Слили топливо ночью', 'слили солярку', 'fuel siphoned overnight']) ok(th.test(x), 'Diebstahl: ' + x);
+  for (const x of ['Злили масло при заміні', 'Масло злили', 'Розлили пальне на заправці', 'Пролили топливо']) ok(!th.test(x), 'kein Diebstahl: ' + x);
+  ok(ta.test('Карта водителя не читается') && ta.test('Не працює картка водія') && !ta.test('Тахометр не працює'), 'Fahrerkarte russ./ukr.');
   // Sprache des Freitexts
   const src = app.match(/\nconst freeLang = (\(s\) => \{[\s\S]+?\n\});/); ok(src, 'freeLang');
   const fl = (lang) => new Function('S', 'return ' + src[1])({ lang });

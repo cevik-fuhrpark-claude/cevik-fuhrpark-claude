@@ -1485,8 +1485,10 @@ const tachoPanel = () => `<div id="tacho" class="panel" hidden role="status"><b>
 // Dieselben Wörter wie die Datenqualität „Unfall ohne Versicherungsfall“ (`src/quality.js` ACC_CYR): ukr. nur Formen des Substantivs „аварія“
 // (+ russ. „авария“) – „аварійна сигналізація“/„аварийка“ (Warnblinkanlage) ist kein Unfall (Backlog 228, 24.10.2026; vorher /авар/)
 const ACC_HINT = /unfall|accident|дтп|авар(?:ія|ії|ію|ією|ия|ии|ию|ией)(?![а-яіїєґ])/i;
-const THEFT_HINT = /diebstahl|\bdieb|gestohlen|geklaut|entwendet|abgezapft|(?<![a-zäöüß])einbruch|aufgebrochen|theft|stolen|\bsteal|break-in|broken into|burglar|крадіж|в(?:и)?крал|в(?:и)?крад|украл|украд/i;
-const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія/i;
+// + Kraftstoffdiebstahl per Diktat: ukr./russ. „злили/слили (…) пальне/паливо/дизель/солярку/топливо“, engl. „siphoned“ (Backlog 230; „злили масло“ = Ölwechsel nicht)
+const THEFT_HINT = /diebstahl|\bdieb|gestohlen|geklaut|entwendet|abgezapft|(?<![a-zäöüß])einbruch|aufgebrochen|theft|stolen|\bsteal|break-in|broken into|burglar|крадіж|в(?:и)?крал|в(?:и)?крад|украл|украд|siphon|(?<![а-яіїєґ])(?:з|с)лил[иао]?\s+(?:\S+\s+)?(?:пальн|палив|дизел|солярк|топлив|бензин)/i;
+// + russ. „карта водителя“ (Backlog 230)
+const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія|карт\S* водител/i;
 async function viewNew(preId) {
   if (!mayReport()) { render(`<h1>${esc(t('report_damage'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }
   const vs = await vehiclesCached();
