@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (24.10.2026, Backlog 232, Teilagent „Werkstatt bucht Teile für zwei Aufträge“): zwei offene „Teil erfassen“-Formulare
 # wählen denselben Lagerartikel (Bestand 1). Nach der Buchung im ersten Auftrag wird der zweite abgewiesen; die Auswahl zeigt danach
 # „(0 Stk/шт./pcs)“, der Artikel ist gesperrt, das Formular steht auf „Ohne Lager“ mit übernommenem Namen/Teilenummer und Hinweis.
-# Danach lässt sich das Teil ohne Lager speichern. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
+# Danach lässt sich das Teil ohne Lager speichern. Backlog 234: Menge über dem angezeigten Bestand zeigt vorab einen Hinweis. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -45,6 +45,9 @@ with sync_playwright() as p:
             q.click('[data-act=add_part]'); q.wait_for_selector('#stocksel select',timeout=15000)
             q.select_option('#stocksel select',it['d']['id']); q.fill('#af [name=quantity]','1'); pages.append(q)
         A,Bp=pages
+        # Backlog 234: Menge über dem angezeigten Bestand → Hinweis vor dem Speichern, verschwindet bei passender Menge
+        A.fill('#af [name=quantity]','2'); check(A.query_selector('#stockqty') is not None and f"1 {UNIT[lang]}" in A.inner_text('#stockqty') and '..' not in A.inner_text('#stockqty'),f'{tag}: Hinweis Menge über Bestand')
+        A.fill('#af [name=quantity]','1'); check(A.query_selector('#stockqty') is None,f'{tag}: Hinweis weg bei passender Menge')
         A.click('#af button:not([type=button])'); A.wait_for_selector('#af',state='detached',timeout=15000)
         Bp.click('#af button:not([type=button])'); Bp.wait_for_selector('#stockshort',timeout=15000)
         st=Bp.evaluate("""(id)=>{const s=document.querySelector('#stocksel select');const o=[...s.options].find(x=>x.value===id);const f=document.querySelector('#freepart');

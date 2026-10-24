@@ -19778,6 +19778,20 @@ await test('Backlog 233 (Blickwinkel „Fuhrparkleitung prüft Rechnungen der Fr
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dup_invoice_hint.includes('{no}') && STRINGS[l].dup_invoice_confirm && STRINGS[l].dup_invoice_this_case, 'Texte ' + l);
 });
 
+await test('Backlog 234: „Teil erfassen“ mit Lagerartikel – Menge über dem angezeigten Bestand zeigt vor dem Speichern einen Hinweis (deutsche Schreibweise), Server prüft weiter verbindlich', async () => {
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function loadStockSelect('), app.indexOf('function stockShortfall('));
+  ok(fn.includes("qf.addEventListener('input', qtyCheck)") && fn.includes('qtyCheck();') && fn.includes("t('stock_qty_over')") && fn.includes("'role', 'status'"), 'Hinweis bei Eingabe und Artikelwechsel');
+  // gleiche Zahlenlesung wie im Formular: „1.234,5“ → 1234.5, „1,5“ → 1.5, „2“ → 2
+  const rd = (raw) => Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.'));
+  ok(fn.includes(String.raw`raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')`), 'Zahlenlesung im Formular');
+  eq(rd('1.234,5'), 1234.5); eq(rd('1,5'), 1.5); eq(rd('2'), 2); eq(rd('0.5'), 0.5);
+  const sf = app.slice(app.indexOf('function stockShortfall('), app.indexOf('async function viewStock()'));
+  ok(sf.includes('if (sel.onchange) sel.onchange();'), 'nach Abweisung neu bewertet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].stock_qty_over.includes('{q}') && STRINGS[l].stock_qty_over.includes('{u}'), 'Text ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

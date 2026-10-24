@@ -2892,7 +2892,19 @@ async function loadStockSelect(c) {
     const es = el.closest('form') && el.closest('form').querySelector('[name=estimate]');
     if (es) { es.disabled = fixed; if (fixed) es.checked = false; }
     $('#stockpricehint').hidden = !fixed;
+    qtyCheck();
   };
+  // Menge über dem angezeigten Bestand: Hinweis schon vor dem Speichern (Backlog 234; der Server prüft weiterhin verbindlich)
+  const qf = el.closest('form') && el.closest('form').querySelector('[name=quantity]');
+  const qtyCheck = () => {
+    let h = $('#stockqty'); const it = items.find((i) => i.id === sel.value);
+    const raw = qf ? String(qf.value).trim() : ''; const q = Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.'));
+    const over = !!it && raw !== '' && Number.isFinite(q) && q > it.on_hand + 1e-9;
+    if (!over) { if (h) h.remove(); return; }
+    if (!h) { h = document.createElement('p'); h.id = 'stockqty'; h.className = 'small panel warn'; h.setAttribute('role', 'status'); qf.after(h); }
+    h.textContent = t('stock_qty_over').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)).replace(/\.\.(?=\s|$)/g, '.');
+  };
+  if (qf) qf.addEventListener('input', qtyCheck);
 }
 
 // Zwei Aufträge greifen auf denselben Lagerartikel (Backlog 232): die Auswahl zeigte nach der Abweisung weiter den Bestand vom Öffnen
@@ -2915,6 +2927,7 @@ function stockShortfall(itemId, data) {
       h.textContent += ' ' + t('stock_short_out');
     }
   } else if (it) it.on_hand = data.available;
+  if (sel.onchange) sel.onchange();
   sel.focus();
 }
 
