@@ -267,7 +267,9 @@ export function shapeCaseRow(r, user) {
 export async function getCaseDetail(env, user, envName, caseId) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   const vehicle = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
-  const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role FROM users WHERE id=?`).bind(c.reporter_id).first();
+  // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
+  const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
+    CASE WHEN active<>1 THEN 0 WHEN password_hash IS NOT NULL AND (environment=? OR role='owner') THEN 1 ELSE 2 END AS reach FROM users WHERE id=?`).bind(c.environment, c.reporter_id).first();
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
@@ -332,6 +334,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Fahrer: nur die Fahrzeugangaben der Fahrer-Fahrzeugliste (21.10.2026: Vorgang lieferte den ganzen Stammsatz inkl. FIN und Vermerken der Leitung)
     case: shapeCase(c, user), access, vehicle: user.role === 'driver' && vehicle ? { id: vehicle.id, plate: vehicle.plate, kind: vehicle.kind, site: vehicle.site, manufacturer: vehicle.manufacturer, trailer_plate: vehicle.trailer_plate, active: vehicle.active } : vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
+    // Kommentar „nur Gemeldet von“ an einen deaktivierten/nicht erreichbaren Melder erreicht niemanden (Backlog 249) – Fahrer erhalten das Feld nicht
+    ...(user.role !== 'driver' && reporter && reporter.reach !== 1 ? { reporter_unreachable: reporter.reach === 0 ? 'inactive' : 'other' } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null, ...(hiddenNotes.includes(e.action) && e.note ? { note: null, note_hidden: true } : {}) } : e)),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
@@ -1424,14 +1428,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const vPlate = updated.v_plate; delete updated.v_plate;
   // Freigabe/Aufhebung: sperrt ein weiterer offener Vorgang das Fahrzeug oder das fest gekoppelte Gespann, keine „freigegeben“-Meldung
   const still_locked = ['released', 'safety_lock_lifted'].includes(notifyKind) ? await otherLockCaseNo(env, updated) : null;
-  if (notifyKind) await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked });
+  const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked }) : null;
+  // Kommentar ohne jeden Empfänger (z. B. nur „Gemeldet von“ an einen deaktivierten Melder): gespeichert, aber niemand informiert (Backlog 249)
+  const noRecipients = action === 'comment' && sent === 0;
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
   // schon markiert und Kosten jetzt nicht mehr über der Schwelle (z. B. Fremdleistung „ersetzt eigene Arbeit/Teile“): Markierung aufheben
   // (21.10.2026: „Kostenfreigabe ausstehend“ blieb stehen, technische Freigabe endete mit 409)
   const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
-  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser ? { no_workshop_user: true } : {}) };
+  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser ? { no_workshop_user: true } : {}), ...(noRecipients ? { no_recipients: true } : {}) };
 }
 
 // gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)

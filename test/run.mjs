@@ -19992,6 +19992,34 @@ await test('Backlog 248 (Blickwinkel „Fahrer verlässt das Unternehmen“): De
   ok(i18n.includes("account_deactivated: ['durch Deaktivierung des Kontos'") && i18n.includes("account_changed: ['durch Rollen-/Umgebungswechsel des Kontos'"), 'Protokoll-Beschriftungen');
 });
 
+await test('Backlog 249: Kommentar nur an „Gemeldet von“ bei deaktiviertem Melder – Vorgang zeigt den Melder als nicht erreichbar, Antwort meldet no_recipients; erreichbarer Melder ohne Zusatz', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const id = await newCase();
+  // aktiver Melder: kein Zusatz, Kommentar kommt an
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.reporter_unreachable, undefined, 'aktiv erreichbar');
+  const nRep = () => db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND case_id=?').get(U.driver.id, id).n;
+  const n0 = nRep();
+  let r = await cmd(U.fleet, id, 'comment', { notify: ['reporter'] }, 'Rückfrage an den Melder'); eq(r.status, 200); eq(r.data.no_recipients, undefined); eq(nRep(), n0 + 1, 'Melder erreicht');
+  // Melder deaktiviert
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.reporter_unreachable, 'inactive', 'deaktiviert');
+  r = await cmd(U.fleet, id, 'comment', { notify: ['reporter'] }, 'Rückfrage nach Austritt'); eq(r.status, 200); eq(r.data.no_recipients, true, 'niemand benachrichtigt'); eq(nRep(), n0 + 1);
+  ok(db.prepare(`SELECT COUNT(*) AS n FROM case_events WHERE case_id=? AND action='comment' AND note='Rückfrage nach Austritt'`).get(id).n === 1, 'Kommentar trotzdem gespeichert');
+  // Standard-Kommentar nach der Werkstattfreigabe erreicht die Werkstatt → kein Zusatz
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  r = await cmd(U.fleet, id, 'comment', {}, 'An alle Beteiligten'); eq(r.status, 200); eq(r.data.no_recipients, undefined, 'Werkstatt erreicht');
+  // andere Umgebung (aktiv, aber nicht benachrichtigbar)
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: true })).status, 200);
+  const envNow = db.prepare('SELECT environment FROM cases WHERE id=?').get(id).environment;
+  db.prepare('UPDATE users SET environment=? WHERE id=?').run(envNow === 'test' ? 'production' : 'test', U.driver.id);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.reporter_unreachable, 'other', 'andere Umgebung');
+  // Oberfläche + Texte
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const off = k === 'reporter' && d.reporter_unreachable;") && app.includes("else if (r && r.no_recipients) toast(t('no_recipients_warn'), true);"), 'Kästchen ausgegraut + Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].no_recipients_warn && STRINGS[l].reporter_off_inactive && STRINGS[l].reporter_off_other, l);
+});
+
 await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „kritisch“/„gesperrte Vorgänge“ der Startseite führen zur passenden Vorgangsliste (Filter priority/locked, gleiche Anzahl), ungültige Priorität 400', async () => {
   const vin = 'WDB96340310823801';
   eq((await owner.post('/api/vehicles', { plate: 'UR-LA 1', vin, site: 'Dortmund' })).status, 201);
