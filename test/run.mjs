@@ -19202,6 +19202,26 @@ await test('Backlog 216 (Teilagent „Abfahrtskontrolle findet Fahrtenschreiber-
   ok(nw.includes('${tachoPanel()}'), 'Meldeformular nutzt dasselbe Panel');
 });
 
+await test('Backlog 217 (Teilagent „Fahrer im Ausland mit Panne“): „Panne & Notfall“ bietet deutsche Nummern im Inlandsformat zusätzlich als „+49 …“ an, Hinweis beim Eintragen, Hilfe „Unfall melden“ nennt 112 EU-weit und die Standortangaben (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const telHref = eval(app.match(/const telHref = (.*);\n/)[1]);
+  const telAbroad = eval(app.match(/const telAbroad = (.*);\n/)[1]);
+  const a = telAbroad('0231 123456'); eq(a.label, '+49 231 123456'); eq(a.href, 'tel:+49231123456');
+  const b = telAbroad('(0231) 456-7'); eq(b.label, '+49 231 456-7'); eq(b.href, 'tel:+492314567');
+  eq(telAbroad(' 0800 1112223 ').href, 'tel:+498001112223');
+  for (const x of ['+49 231 1', '0049 231 1', '+43 662 123', '112', '22 22 22', '0 123', '00 43 1']) eq(telAbroad(x), null, 'kein Zusatz: ' + x);
+  eq(telHref('0231 123456'), 'tel:0231123456', 'Hauptlink unverändert');
+  ok(app.includes('class="small muted emabroad"') && app.includes("t('em_abroad_call')"), 'Zusatzlink in emRows mit eigener Beschriftung');
+  ok(app.includes('id="emnat" role="status" hidden') && app.includes("f.elements.phone.addEventListener('input', natHint)"), 'Hinweis im Formular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].em_abroad && STRINGS[l].em_abroad_call.includes('{x}') && STRINGS[l].em_phone_national.includes('{p}'), 'Texte ' + l);
+    const h = STRINGS[l].help_accident_s.split('|'); const last = h[h.length - 1];
+    ok(/112/.test(last) && last.includes('+49') && last.includes(STRINGS[l].em_title) && last.includes(STRINGS[l].em_abroad), 'Hilfe-Absatz Ausland ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|Min)/i.test(last), 'keine erfundene Frist ' + l);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

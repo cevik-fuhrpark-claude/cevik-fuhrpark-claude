@@ -3447,10 +3447,13 @@ async function viewScan(id) {
 // ---------- Panne & Notfall: Rufnummern für unterwegs (vom Betrieb eingetragen; fest nur Notruf 112) ----------
 // „+49 (0)231 …“ → tel:+49231… (die (0) wird international nicht gewählt; vorher wählte der Link +490231…, 18.10.2026)
 const telHref = (p) => 'tel:' + String(p).trim().replace(/^((?:\+|00)[\d\s]*?)\s*\(0\)/, '$1').replace(/[^\d+]/g, '');
+// Fahrer im Ausland (Backlog 217, 24.10.2026): Nummer im deutschen Inlandsformat („0231 …“, „(0231) …“; nicht „00…“, keine Kurzwahl)
+// wählt ein Handy im Ausland nicht → zusätzlich „+49 …“ anbieten. Annahme deutsche Nummer (wie phoneKey im Server); der Link selbst bleibt unverändert.
+const telAbroad = (p) => { const s = String(p).trim(); if (!/^\(?0[1-9]/.test(s)) return null; const label = '+49 ' + s.replace(/^\(0([^)]*)\)\s*/, '$1 ').replace(/^0/, '').trim(); return { label, href: telHref(label) }; };
 // Fahrzeug außer Betrieb kenntlich (Nachfolger kann dasselbe Kennzeichen tragen, 23.10.2026)
 const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle')) + (c.vehicle_active === false ? ` (${t('inactive_vehicles')})` : '') : c.scope === 'site' ? `${t('site')}: ${c.site}` : t('em_scope_all'));
 function emRows(list) {
-  return `<div class="list">${list.map((c) => `<div class="row emrow"><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
+  return `<div class="list">${list.map((c) => `<div class="row emrow"><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}${(() => { const a = telAbroad(c.phone); return a ? `<br><span class="small muted emabroad">${esc(t('em_abroad'))}: <a href="${esc(a.href)}" aria-label="${esc(t('em_abroad_call').replace('{x}', c.label))}">${esc(a.label)}</a></span>` : ''; })()}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
 }
 async function viewEmergency(vid) {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'more');
@@ -3491,7 +3494,7 @@ async function viewEmergencyEdit() {
   const form = showArch ? '' : emFull ? `<p class="panel small" id="emfull" role="note">${esc(t('em_full').replace('{m}', d.max_active))}</p>` : `<section class="panel"><h2 style="margin-top:0">${esc(t(edit ? 'em_edit' : 'em_add'))}</h2><form id="emf">${edit ? `<input type="hidden" name="expected_updated_at" value="${esc(edit.updated_at || '')}">` : ''}
     <label>${esc(t('em_kind'))}</label><select name="kind">${d.kinds.map((k) => opt(k, e.kind, t('em_kind_' + k))).join('')}</select>
     <label>${esc(t('em_label'))}</label><input name="label" maxlength="60" required value="${esc(e.label || '')}">
-    <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="30" required value="${esc(e.phone || '')}">
+    <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="30" required value="${esc(e.phone || '')}"><p class="small muted" id="emnat" role="status" hidden></p>
     <label>${esc(t('em_note'))}</label><input name="note" maxlength="200" value="${esc(e.note || '')}">
     <label>${esc(t('em_scope'))}</label><select name="scope" id="emscope">${['all', 'site', 'vehicle'].map((k) => opt(k, e.scope, t('em_scope_' + k))).join('')}</select>
     <div id="emsite"${e.scope === 'site' ? '' : ' hidden'}><label>${esc(t('site'))}</label><select name="site">${(() => { const cur = (e.site && sites.find((x) => siteKeyUi(x) === siteKeyUi(e.site))) || e.site; return [...new Set([...sites, ...(cur ? [cur] : [])])].map((x) => opt(x, cur, x)).join(''); })()}</select></div>
@@ -3505,6 +3508,8 @@ async function viewEmergencyEdit() {
   $$('[data-emtab]').forEach((b) => (b.onclick = () => { S.emArch = b.dataset.emtab === '1'; S.emEdit = null; viewEmergencyEdit(); }));
   const f = $('#emf');
   if (f) {
+    const natHint = () => { const a = telAbroad(f.elements.phone.value); $('#emnat').hidden = !a; $('#emnat').textContent = a ? t('em_phone_national').replace('{p}', a.label) : ''; };
+    f.elements.phone.addEventListener('input', natHint); natHint();
     $('#emscope').onchange = () => { const sc = $('#emscope').value; $('#emsite').hidden = sc !== 'site'; $('#emveh').hidden = sc !== 'vehicle'; };
     const cc = $('#emcancel'); if (cc) cc.onclick = () => { S.emEdit = null; viewEmergencyEdit(); };
     f.onsubmit = async (ev) => {
