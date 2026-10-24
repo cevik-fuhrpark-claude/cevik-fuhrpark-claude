@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (24.10.2026, Backlog 222, Teilagent „Fahrzeug wird abgeschleppt – wer sieht was?“): Leitung trägt im Vorgang über
 # „Standort / Abschleppung“ Standort, Abschleppdienst und Datum ein (Formular in der Oberfläche); Vorgang zeigt „Standort des Fahrzeugs“
 # mit Chip „abgeschleppt“, Verlauf alt → neu; Vorgangsliste markiert „abgeschleppt“; Disposition sieht unter „Nicht einplanen“ den Standort
-# und hat keinen Knopf. DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler. Braucht den Dev-Server; Screenshots: CFP_SHOTS=<Ordner>.
+# und hat keinen Knopf; Fahrzeugakte zeigt den Standort oben. DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler. Braucht den Dev-Server; Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -53,6 +53,12 @@ with sync_playwright() as p:
         check(ACT[lang] in hist and 'Abschlepp Muster GmbH' in hist,f'{lang}/{w}: Verlauf mit Eintrag')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Vorgang ohne Querscrollen')
         if SHOTS: q.locator('#vehloc').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/abschlepp-vorgang-{lang}-{w}.png')
+        vid=api('GET','/api/cases/'+cid)['d']['case']['vehicle_id']
+        q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#vvehloc',timeout=15000)
+        vv=q.inner_text('#vvehloc')
+        check('Hof Abschlepp Muster' in vv and CHIP[lang] in vv and TITLE[lang] in vv,f'{lang}/{w}: Fahrzeugakte zeigt Standort ({vv[:50]!r})')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Akte ohne Querscrollen')
+        if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/abschlepp-akte-{lang}.png')
         q.goto(B+'/#/cases'); q.wait_for_selector('.list a.row',timeout=15000); q.wait_for_timeout(300)
         row=[x for x in q.locator('.list a.row').all_inner_texts() if plate in x]
         check(row and CHIP[lang] in row[0],f'{lang}/{w}: Vorgangsliste markiert „{CHIP[lang]}“')

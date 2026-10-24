@@ -19394,6 +19394,12 @@ await test('Backlog 222 (Teilagent „Fahrzeug wird abgeschleppt – wer sieht w
   d = (await users.fleet.get(`/api/cases/${cid}`)).data;
   const ev2 = d.events.filter((e) => e.action === 'set_vehicle_location').pop();
   eq(ev2.payload.from.location, 'Hof Abschlepp Test, Gewerbestr. 1'); eq(ev2.payload.to.location, 'Werkstatt Dortmund'); eq(ev2.note, 'abgeholt'); eq(ev2.actor_role, 'workshop');
+  // Fahrzeugakte: Standort laut offenem Vorgang oben (Leitung und Disposition)
+  for (const u of [users.fleet, users.dispatch]) {
+    const vc = (await u.get(`/api/vehicles/${d.case.vehicle_id}`)).data.cases.find((x) => x.id === cid);
+    eq(vc.vehicle_location, 'Werkstatt Dortmund'); eq(vc.tow_service, 'Abschlepp Test GmbH'); eq(vc.towed_on, bDayOff(0));
+  }
+  ok((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('id="vvehloc"'), 'Hinweis in der Fahrzeugakte');
   // alles leer = entfernen
   eq((await cmd(users.fleet, { vehicle_location: '', tow_service: '', towed_on: '' })).status, 200);
   d = (await users.fleet.get(`/api/cases/${cid}`)).data; eq(d.case.vehicle_location, null); eq(d.case.tow_service, null); eq(d.case.towed_on, null);
