@@ -45,7 +45,13 @@ function readBody(body, existing = {}, user = null) {
     appraisal_on: day(pick('appraisal_on'), 'Besichtigung am', false, true),
     appraisal_received_on: day(pick('appraisal_received_on'), 'Gutachten eingegangen am'),
     appraisal_net: num(pick('appraisal_net'), { min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    // Unfallgegner (Teilagent „Unfall mit fremdem Fahrzeug“, 24.10.2026): alles optional und nur laut Unfallbericht/Schreiben.
+    // Kein Namens-/Adressfeld (Datenschutz-Frage offen) – wer Namen braucht, trägt sie wie bisher unter „Bemerkung“ ein.
+    opponent_plate: str(pick('opponent_plate'), { max: 20, field: 'Kennzeichen Unfallgegner' }),
+    opponent_insurer: str(pick('opponent_insurer'), { max: 120, field: 'Versicherer Unfallgegner' }),
+    opponent_claim_no: str(pick('opponent_claim_no'), { max: 60, field: 'Schadennummer Unfallgegner' }),
   };
+  if (f.opponent_claim_no && !f.opponent_insurer) throw bad('validation', 'Schadennummer Unfallgegner nur zusammen mit dem Versicherer der Gegenseite angeben.');
   if (f.appraisal_net !== null && !f.appraisal_received_on) throw bad('validation', 'Schadenhöhe laut Gutachten nur mit dem Eingangsdatum des Gutachtens angeben.');
   if (f.appraisal_on && f.appraisal_received_on && f.appraisal_received_on < f.appraisal_on) throw bad('validation', 'Gutachten eingegangen am liegt vor der Besichtigung.');
   if ((f.reimbursed_net === null) !== (f.reimbursed_on === null)) throw bad('validation', 'Erstattung: Betrag und Datum nur zusammen laut Abrechnung des Versicherers angeben.');
@@ -90,8 +96,8 @@ export async function saveClaim(env, user, envName, caseId, body) {
   const now = nowIso();
   if (!ex) {
     const id = uuid();
-    await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,file_id,appraiser,appraisal_on,appraisal_received_on,appraisal_net,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(case_id) DO NOTHING`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, user.id, now, now).run()
+    await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,file_id,appraiser,appraisal_on,appraisal_received_on,appraisal_net,opponent_plate,opponent_insurer,opponent_claim_no,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(case_id) DO NOTHING`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, f.opponent_plate, f.opponent_insurer, f.opponent_claim_no, user.id, now, now).run()
       .then((r) => { if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.'); });
     await audit(env, user.id, 'claim.create', id, { case_no: c.case_no, insurer: f.insurer, status: f.status });
     return { id, created: true };
@@ -100,8 +106,8 @@ export async function saveClaim(env, user, envName, caseId, body) {
   if (!changed.length) return { id: ex.id, changed: [], ...(stale ? { duplicate: true } : {}) };
   if (stale) throw staleErr();
   // nur auf dem gelesenen Stand (parallele Änderungen überschrieben sich sonst still, 17.10.2026)
-  const r = await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,appraiser=?,appraisal_on=?,appraisal_received_on=?,appraisal_net=?,updated_at=? WHERE id=? AND updated_at=?`)
-    .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, laterIso(ex.updated_at), ex.id, ex.updated_at).run();
+  const r = await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,appraiser=?,appraisal_on=?,appraisal_received_on=?,appraisal_net=?,opponent_plate=?,opponent_insurer=?,opponent_claim_no=?,updated_at=? WHERE id=? AND updated_at=?`)
+    .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, f.opponent_plate, f.opponent_insurer, f.opponent_claim_no, laterIso(ex.updated_at), ex.id, ex.updated_at).run();
   if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'claim.update', ex.id, { case_no: c.case_no, changed: Object.fromEntries(changed.map((k) => [k, { from: ex[k], to: f[k] }])) });
   return { id: ex.id, changed };
@@ -109,13 +115,13 @@ export async function saveClaim(env, user, envName, caseId, body) {
 
 // „Gutachten ausstehend“: Besichtigung eingetragen, noch kein Eingang des Gutachtens, Fall offen (keine eigene Frist – nur Zustand)
 const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_open: OPEN_STATUS.includes(r.status) ? days(r.reported_on, today) : null,
-  appraisal_pending: OPEN_STATUS.includes(r.status) && !!r.appraisal_on && !r.appraisal_received_on, appraisal_upcoming: !!r.appraisal_on && !r.appraisal_received_on && r.appraisal_on >= today });
+  appraisal_pending: OPEN_STATUS.includes(r.status) && !!r.appraisal_on && !r.appraisal_received_on, opponent: !!(r.opponent_plate || r.opponent_insurer || r.opponent_claim_no), appraisal_upcoming: !!r.appraisal_on && !r.appraisal_received_on && r.appraisal_on >= today });
 
 // Für die Vorgangsansicht (nur Leitung): Versicherungsfall + Versicherungsverträge des Fahrzeugs zur Auswahl (eine Abfrage)
 export async function claimForCase(env, caseId, vehicleId) {
-  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
+  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net, ic.opponent_plate, ic.opponent_insurer, ic.opponent_claim_no, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
       FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.environment=ic.environment WHERE ic.case_id=?1
-    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
+    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
       FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'`).bind(caseId, vehicleId).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
   const today = berlinDate();
@@ -173,12 +179,12 @@ export async function claimOverview(env, user, envName, query = {}) {
 export function claimsCsv(ov) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
     'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung',
-    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet'];
+    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
-    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein',
-    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
+    n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein', c.opponent_plate, c.opponent_insurer, c.opponent_claim_no,
+    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : ''].map((x, i) => ([3, 21].includes(i) ? csvText(x) : csvCell(x))).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

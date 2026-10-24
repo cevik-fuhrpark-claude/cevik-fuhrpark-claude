@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test (Backlog 210, Teilagent „Versicherungsschaden mit Gutachter“): Versicherungsfall mit geplanter Besichtigung –
 # Vorgangsansicht zeigt den Abschnitt „Gutachter“ mit „Gutachten ausstehend“, Formular hat die vier Felder, Liste „Versicherungsfälle“
+# (24.10.2026, Backlog 218 ergänzt: Abschnitt „Unfallgegner“ mit Kennzeichen/Versicherer/Schadennummer und Kennzeichnung in der Liste)
 # hat den Filter „Gutachten ausstehend“, Zeitleiste der Fahrzeugakte zeigt Besichtigung und Gutachten-Eingang. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -29,6 +30,10 @@ with sync_playwright() as p:
     r2=api('PUT',f'/api/cases/{c2}/claim',{'insurer':'Vers AG','reported_on':d(-3),'evidence':'Schadenmeldung','appraiser':'SV Zeitleiste','appraisal_on':d(-1),'appraisal_received_on':d(0),'appraisal_net':'1234,50'})
     check(r2['s']==200,f'Versicherungsfall mit Gutachten ({r2["s"]} {r2["d"]})')
     TLX={'de':('Besichtigung am','Gutachten eingegangen am'),'uk':('Огляд','Висновок отримано'),'en':('Inspection on','Appraisal received on')}
+    CO={'de':('Unfallgegner (Haftpflichtfall)','Unfallgegner erfasst'),'uk':('Друга сторона ДТП (відповідальність)','Другу сторону внесено'),'en':('Other party (liability claim)','Other party recorded')}
+    # Unfallgegner nur beim ersten Fall (Backlog 218): Kennzeichen, Versicherer und deren Schadennummer laut Unfallbericht
+    r3=api('PUT',f'/api/cases/{cid}/claim',{'opponent_plate':'DO-XY 987','opponent_insurer':'Gegner Vers AG','opponent_claim_no':'FR-2026/77'})
+    check(r3['s']==200,f'Unfallgegner eingetragen ({r3["s"]} {r3["d"]})')
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -38,11 +43,17 @@ with sync_playwright() as p:
         body=q.inner_text('body')
         check(TXT[lang][0] in body and TXT[lang][1] in body,f'{lang} {w}px: Vorgang zeigt Gutachter und „ausstehend“')
         check(all(q.locator(f'#clf [name="{n}"]').count()==1 for n in ['appraiser','appraisal_on','appraisal_received_on','appraisal_net']),f'{lang} {w}px: vier Formularfelder')
+        check(CO[lang][0] in body and 'DO-XY 987' in body and 'Gegner Vers AG' in body and 'FR-2026/77' in body,f'{lang} {w}px: Vorgang zeigt den Unfallgegner')
+        check(all(q.locator(f'#clf [name="{n}"]').count()==1 for n in ['opponent_plate','opponent_insurer','opponent_claim_no']),f'{lang} {w}px: drei Felder zum Unfallgegner')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Vorgang ohne Querscrollen')
         if SHOTS and w==390:
             q.locator('#clf').evaluate('f=>f.closest("details").open=true'); q.locator('#clf').scroll_into_view_if_needed()
             q.screenshot(path=f'{SHOTS}/gutachter_fall_{lang}_{w}.png',full_page=True)
-        q.goto(B+'/#/claims'); q.wait_for_selector('[data-clf="gutachten"]')
+        q.goto(B+'/#/claims'); q.wait_for_selector('[data-clf="alle"]')
+        q.locator('[data-clf="alle"]').click(); q.wait_for_timeout(400)
+        check(q.inner_text('body').count(CO[lang][1])==1,f'{lang} {w}px: Liste kennzeichnet genau einen Haftpflichtfall')
+        if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/unfallgegner_liste_{lang}_{w}.png',full_page=True)
+        q.wait_for_selector('[data-clf="gutachten"]')
         q.locator('[data-clf="gutachten"]').click(); q.wait_for_timeout(400)
         lb=q.inner_text('body')
         check(q.locator('a.row').count()==1 and TXT[lang][1] in lb,f'{lang} {w}px: Filter „ausstehend“ zeigt den Fall')

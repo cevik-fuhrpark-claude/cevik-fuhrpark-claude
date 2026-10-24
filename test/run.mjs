@@ -19074,8 +19074,8 @@ await test('Backlog 210 (Versicherungsschaden mit Gutachter): Gutachter, Besicht
   const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.update' AND target=? ORDER BY created_at DESC LIMIT 1`).get(d.id);
   ok(au && au.detail.includes('appraisal_net'), 'Protokoll nennt die Änderung');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Bemerkung;Gutachter;Besichtigung am;Gutachten eingegangen am;Schadenhöhe laut Gutachten netto (EUR);Gutachten ausstehend;Schreiben verknüpft;'), 'CSV-Kopf');
-  const line = csv.split('\r\n').find((l) => l.includes('GA-T 1')); ok(line && line.includes('Sachverständigenbüro Test') && line.includes('4250,5;nein;nein;nein;'), line);
+  ok(csv.includes(';Bemerkung;Gutachter;Besichtigung am;Gutachten eingegangen am;Schadenhöhe laut Gutachten netto (EUR);Gutachten ausstehend;Kennzeichen Unfallgegner;Versicherer Unfallgegner;Schadennummer Unfallgegner;Schreiben verknüpft;'), 'CSV-Kopf');
+  const line = csv.split('\r\n').find((l) => l.includes('GA-T 1')); ok(line && line.includes('Sachverständigenbüro Test') && line.includes('4250,5;nein;;;;nein;nein;'), line);
   // geleert = Verknüpfung aufgehoben
   d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
   eq((await users.fleet.put(P, { appraisal_net: null, appraisal_received_on: null, expected_updated_at: d.updated_at })).status, 200);
@@ -19219,6 +19219,45 @@ await test('Backlog 217 (Teilagent „Fahrer im Ausland mit Panne“): „Panne 
     const h = STRINGS[l].help_accident_s.split('|'); const last = h[h.length - 1];
     ok(/112/.test(last) && last.includes('+49') && last.includes(STRINGS[l].em_title) && last.includes(STRINGS[l].em_abroad), 'Hilfe-Absatz Ausland ' + l);
     ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|Min)/i.test(last), 'keine erfundene Frist ' + l);
+  }
+});
+
+await test('Backlog 218 (Teilagent „Unfall mit fremdem Fahrzeug“): Unfallgegner im Versicherungsfall – Kennzeichen, Versicherer und deren Schadennummer (Migration 0077), Prüfung, Übersicht/CSV, Rechte, Oberfläche und Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'UG-T 1', vin: 'WDB96340310822001', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310822001';
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Auffahrunfall, Gegner fuhr auf', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const P = `/api/cases/${cid}/claim`; const base = { insurer: 'Eigene Vers AG', reported_on: bDayOff(-2), evidence: 'Unfallbericht (Test)' };
+  // Schadennummer der Gegenseite ohne deren Versicherer ergibt keinen Sinn (nach wem fragen?)
+  eq((await users.fleet.put(P, { ...base, opponent_claim_no: 'FR-77' })).status, 400, 'Schadennummer ohne Versicherer');
+  for (const u of [users.ws, users.dispatch, users.driver]) eq((await u.put(P, { ...base, opponent_plate: 'DO-AB 123' })).status, 403, 'nur Leitung');
+  const c1 = await users.fleet.put(P, { ...base, opponent_plate: 'DO-AB 123', opponent_insurer: 'Gegner Vers AG', opponent_claim_no: 'FR-77/2026', expected_updated_at: null });
+  eq(c1.status, 200, JSON.stringify(c1.data));
+  let d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq(d.opponent_plate, 'DO-AB 123'); eq(d.opponent_insurer, 'Gegner Vers AG'); eq(d.opponent_claim_no, 'FR-77/2026');
+  ok(!('claim' in (await users.ws.get(`/api/cases/${cid}`)).data), 'Werkstatt sieht den Versicherungsfall weiterhin nicht');
+  // Felder weglassen = unverändert; einzeln leeren möglich
+  eq((await users.fleet.put(P, { claim_no: 'EIG-9' })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.opponent_plate, 'DO-AB 123', 'Gegner bleibt');
+  const ov = (await users.fleet.get('/api/claims?filter=alle')).data;
+  const row = ov.claims.find((c) => c.case_id === cid); ok(row && row.opponent === true, 'Übersicht kennzeichnet den Haftpflichtfall');
+  ok(ov.claims.filter((c) => c.case_id !== cid).every((c) => c.opponent === false || c.opponent === true), 'Kennzeichen immer gesetzt');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
+  const line = csv.split('\r\n').find((l) => l.includes('UG-T 1'));
+  ok(line && line.includes('DO-AB 123;Gegner Vers AG;FR-77/2026;nein;nein;'), line);
+  const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.update' AND target=? ORDER BY created_at DESC LIMIT 1`).get(d.id);
+  ok(au, 'Protokoll vorhanden');
+  const r3 = await users.fleet.put(P, { opponent_plate: '', opponent_insurer: '', opponent_claim_no: '', expected_updated_at: d.updated_at });
+  eq(r3.status, 200, JSON.stringify(r3.data));
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.opponent_plate, null); eq(d.opponent_insurer, null); eq(d.opponent, false);
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const n of ['opponent_plate', 'opponent_insurer', 'opponent_claim_no']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
+  ok(app.includes('function claimOpponentInfo(cl)') && app.includes('${claimAppraisalInfo(cl)}${claimOpponentInfo(cl)}'), 'Anzeige im Vorgang');
+  ok(app.includes("c.opponent ? ` <span class=\"chip\""), 'Kennzeichnung in der Liste');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['co_title', 'co_hint', 'co_plate', 'co_insurer', 'co_claim_no', 'co_chip']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_claims_s.includes(STRINGS[l].note), `Hilfe nennt „${STRINGS[l].note}“ für Namen ${l}`);
   }
 });
 
