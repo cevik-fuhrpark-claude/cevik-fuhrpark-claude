@@ -830,7 +830,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   if (vSel.site) { cs.results = cs.results.filter((c) => vSel.match(c.vehicle_site)); mt.results = mt.results.filter((m) => vSel.match(m.vehicle_site)); }
   const byDay = new Map();
   const put = (d, item) => { if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(item); };
-  const overdue = []; const unplanned = [];
+  const overdue = []; const unplanned = []; const inWork = [];
   // Wie oft wurde der Termin schon verschoben (Verlauf set_planned_date mit altem und neuem Termin)? Eine Abfrage für alle Aufträge mit Termin
   // (Blickwinkel „Termin verpasst“, 24.10.2026 – im Plan sah man ein mehrfach verschobenes Fahrzeug nicht)
   const withDate = cs.results.filter((c) => c.planned_date).map((c) => c.id);
@@ -840,7 +840,9 @@ export async function workshopPlan(env, user, envName, query = {}) {
     // can_plan: Termin direkt aus dem Plan setzbar – gleiche Regel wie Vorgangsbefehl set_planned_date (nach Übernahme)
     const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at), ...(moves.get(c.id) ? { reschedules: moves.get(c.id) } : {}) };
     if (!c.planned_date) unplanned.push(item);
-    else if (c.planned_date < today) overdue.push(item);
+    // begonnener Auftrag (in Reparatur/wartet auf Teile) mit vergangenem Termin: Fahrzeug ist gekommen – nicht „Termin überschritten“,
+    // sondern eigene Gruppe „in Arbeit“ (Backlog 253, 25.10.2026: Lkw stand wochenlang rot, obwohl er pünktlich kam und auf Teile wartet)
+    else if (c.planned_date < today) (['in_reparatur', 'wartet_teile'].includes(c.status) ? inWork : overdue).push(item);
     else if (c.planned_date <= to) put(c.planned_date, item);
   }
   // Werkstattauftrag aus diesem Prüftermin am selben Tag: nur der Auftrag erscheint (sonst doppelt); an anderem Tag Hinweis auf den Auftrag
@@ -856,7 +858,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   for (const [d, items] of byDay) for (const i of items) { if (!vDates.has(i.vehicle_id)) vDates.set(i.vehicle_id, new Set()); vDates.get(i.vehicle_id).add(d); }
   const others = (i, own) => [...(vDates.get(i.vehicle_id) || [])].filter((d) => d !== own).sort();
   for (const [d, items] of byDay) for (const i of items) i.other_dates = others(i, d);
-  for (const i of [...overdue, ...unplanned]) i.other_dates = others(i, null);
+  for (const i of [...overdue, ...inWork, ...unplanned]) i.other_dates = others(i, null);
   // Fällige Prüfungen/Wartung ohne Termin (nach Datum ODER nach km überschritten/bald fällig – gleiche Status wie die Prüftermin-Übersicht,
   // km-Vorwarnung nur mit eingestellter Schwelle). Ohne kommenden Plan-Termin und ohne offenen Werkstattauftrag (der steht oben als Auftrag).
   // Nur Anzeige: die App plant nichts selbst. Geplante Prüftermine im Zeitraum erhalten die km-Fälligkeit zur Anzeige.
@@ -868,7 +870,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   }
   // Auftrag aus einem Prüftermin mit Termin nach dessen Frist (z. B. zweimal verschoben, weil das Fahrzeug nicht kam): Hinweis am Auftrag –
   // bisher nur bei Prüfterminen ohne Auftrag (planned_after_due). Frist aus der Übersicht (HU/SP berechnet), nichts wird verschoben (24.10.2026)
-  for (const i of [...[...byDay.values()].flat(), ...overdue]) if (i.type === 'case' && i.maintenance_rule_id && i.planned_date) {
+  for (const i of [...[...byDay.values()].flat(), ...overdue, ...inWork]) if (i.type === 'case' && i.maintenance_rule_id && i.planned_date) {
     const o = ovById.get(i.maintenance_rule_id);
     if (o && o.next_due_date && i.planned_date > o.next_due_date) i.after_due_date = o.next_due_date;
   }
@@ -895,8 +897,8 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // woher ein Fahrzeug kommt)
   const vLab = (x) => (x && String(x).trim() ? vSel.label.get(siteKey(x)) || String(x).trim() : 'ohne');
   for (const [, items] of byDay) for (const i of items) i.vehicle_site_label = vLab(i.vehicle_site);
-  for (const i of [...overdue, ...unplanned, ...maintenance_due]) i.vehicle_site_label = vLab(i.vehicle_site);
-  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, unplanned, maintenance_due, warn_km: ov.warn_km };
+  for (const i of [...overdue, ...inWork, ...unplanned, ...maintenance_due]) i.vehicle_site_label = vLab(i.vehicle_site);
+  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, in_work: inWork, unplanned, maintenance_due, warn_km: ov.warn_km };
 }
 
 // Kalenderdatei des Werkstattplans: nur Vorgangsnummer, Kennzeichen, Status/Prüfart – keine Beschreibung, keine Namen

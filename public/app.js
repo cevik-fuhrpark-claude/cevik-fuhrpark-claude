@@ -2235,7 +2235,17 @@ async function viewDepartureCheck(preId) {
       const fTarget = (r.followups.find((f) => f && f.id && (!f.repeat || f.own)) || (S.me.role !== 'driver' ? r.followups.find((f) => f && f.id) : null) || {}).id;
       let later = 0;
       if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb, who));
-      toast(`${t('check_saved')}${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);
+      const lockedPage = sb.isConnected && (r.vehicle_locked || r.coupled_locked);
+      // Ergebnisseite „gesperrt“ nennt „gespeichert“ und die Sperre selbst – Einblendung nur noch für Foto-/km-Hinweise (verdeckte sonst die Überschrift)
+      const extra = `${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`;
+      if (!lockedPage) toast(`${t('check_saved')}${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);
+      else if (extra) toast(extra.slice(3), !!failed || !!r.km_rejected);
+      // Fahrzeug/Gespann gesperrt (Backlog 252, 25.10.2026): stehende rote Ergebnisseite mit Anruf-Knopf statt nur einer Einblendung,
+      // die von selbst verschwindet – wie im Offline-Zweig; Folgeauftrag bleibt über den Knopf erreichbar
+      if (lockedPage) {
+        render(`<h1>${esc(t('departure_check'))}</h1><div class="panel alert" role="alert" data-lockedresult><p><b>${esc(t('check_saved'))}</b></p>${r.vehicle_locked ? `<p><b>⚠ ${esc(t('locked'))} – ${esc(t('do_not_drive'))}</b></p>` : ''}${r.coupled_locked ? `<p><b>⚠ ${esc(coupledLockedText(r.coupled_locked))}</b></p>` : ''}${callBox(body.vehicle_id)}</div><div class="actions">${fTarget ? `<a class="btn secondary" href="#/cases/${esc(fTarget)}">${esc(t('locked_open_followup'))}</a>` : ''}<a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`);
+        return;
+      }
       if (sb.isConnected) location.hash = fTarget ? '#/cases/' + fTarget : '#/';
     } catch (err) {
       sb.disabled = false;
@@ -3604,6 +3614,11 @@ function evNote(e) {
     const km = k && Number.isFinite(Number(k.km)) ? ' · ' + (k.next_km !== undefined ? t('ev_km_greater').replace('{km}', fmtNum(Number(k.km))).replace('{next}', fmtNum(Number(k.next_km))) : t('ev_km_smaller').replace('{km}', fmtNum(Number(k.km))).replace('{prev}', fmtNum(Number(k.previous_km)))) : '';
     return (p.code === 'inspection_defects' ? tn('ev_defects', Number(p.defects) || 0) : t('ev_no_defects')) + km;
   }
+  // Abfahrtskontrolle trotz Sicherheitssperre (Backlog 252): Durchführungszeit und km-Stand in der Oberflächensprache
+  if (e.action === 'checked_while_locked' && p.code === 'departure_check_while_locked') {
+    const when = p.performed_at ? fmtDT(p.performed_at) : fmtDT(e.created_at);
+    return Number.isFinite(Number(p.km)) && p.km !== null && p.km !== undefined ? t('ev_checked_locked_km').replace('{t}', when).replace('{km}', fmtNum(Number(p.km))) : t('ev_checked_locked').replace('{t}', when);
+  }
   if (e.action === 'repeat_finding') return n.replace(/^Erneut festgestellt \(Abfahrtskontrolle\): /, '');
   // Freigabe-Vermerk der Aufträge aus Prüftermin/Prüfmangel/Winterreifen (src/cases.js): Rahmen in der Oberflächensprache, Vermerk unverändert
   if (e.action === 'approve_repair') {
@@ -4450,6 +4465,9 @@ async function viewPlan(sec) {
     : canEdit ? `<p class="small muted noprint planset">${esc(t('plan_need_ack'))}</p>` : '';
   const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}</div>` : base;
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;
+  // begonnene Aufträge mit vergangenem Termin (Backlog 253): eigene Gruppe, Termin neutral, Teile-Liefertermin in der Zeile
+  const iw = r.in_work || [];
+  if (iw.length) html += `<h2 id="wp-inwork">${esc(t('wplan_inwork'))} <span class="chip">${iw.length}</span></h2><p class="small muted noprint">${esc(t('wplan_inwork_hint'))}</p><div class="list">${iw.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip">${fmtD(i.planned_date)} · `))).join('')}</div>`;
   html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(row).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   const md = r.maintenance_due || [];
@@ -4458,7 +4476,7 @@ async function viewPlan(sec) {
   // Direktsprung aus Startseite/„Heute zu tun“ (#/plan?s=mdue): Abschnitt „Fällig – ohne Termin“ zeigen; fehlt er, bleibt der Plan oben
   $$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));
   if (sec === 'mdue') { const h = $('#wp-mdue'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } }
-  const all = [...r.overdue, ...r.unplanned];
+  const all = [...r.overdue, ...(r.in_work || []), ...r.unplanned];
   const suggest = (i) => {
     // Wartet der Auftrag auf Teile mit Liefertermin: frühestens an diesem Tag (Termin laut Werkstatt, die App schätzt nichts).
     const minD = i.status === 'wartet_teile' && i.parts_expected_date > r.today ? i.parts_expected_date : '';

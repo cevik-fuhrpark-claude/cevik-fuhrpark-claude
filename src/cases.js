@@ -57,7 +57,7 @@ export function caseAccess(user, c) {
 
 // Vorgang ohne Bewegung (Einstellung `case_stale_days`, leer = aus): bewertet/übernommen/in Reparatur und letzte Änderung vor dem
 // Berliner Tag „heute − N“ + 1 – gleiche Regel für Fuhrparkagent (CASE_STALE) und Vorgangsfilter „Ohne Bewegung“
-export const STALE_SQL = `(c.status='in_reparatur' OR (c.status='gemeldet' AND c.fleet_received_at IS NOT NULL) OR (c.status='werkstatt_freigegeben' AND c.workshop_ack_at IS NOT NULL))`;
+export const STALE_SQL = `(c.status IN ('in_reparatur','wartet_teile') OR (c.status='gemeldet' AND c.fleet_received_at IS NOT NULL) OR (c.status='werkstatt_freigegeben' AND c.workshop_ack_at IS NOT NULL))`;
 export function staleBefore(days) {
   const n = Number(days);
   if (!(n > 0)) return null;
@@ -1659,6 +1659,20 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
           ...(kmRejected ? { km_rejected: kmRejected.next_km !== undefined ? { km: odo, next_km: kmRejected.next_km } : { km: odo, previous_km: kmRejected.previous_km } } : {}) }), now));
       // Kontrolle ist Bewegung am Vorgang („Ohne Bewegung“, Sortierung „zuletzt geändert“) – vorher blieb updated_at stehen (20.10.2026)
       stmts.push(env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(now, c.id));
+    }
+    // Abfahrtskontrolle an einem zum Durchführungszeitpunkt gesperrten Fahrzeug (Backlog 252, 25.10.2026): Verlaufseintrag an jedem damals
+    // gesperrten Vorgang des Fahrzeugs – Sperre zum Zeitpunkt `performedAt` (offline nachgereicht: auch wenn inzwischen freigegeben), sonst sah
+    // die Leitung nur die Antwort an den Fahrer. Kein updated_at (keine Arbeit am Vorgang); Fuhrparkagent meldet VEHICLE_USED_WHILE_LOCKED.
+    if (kind === 'abfahrt') {
+      stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+        SELECT lower(hex(randomblob(16))), x.id, ?1, ?2, ?3, 'checked_while_locked', x.status, x.status, x.version, x.version, ?4, ?5, ?6 FROM (
+          SELECT c.id, c.status, c.version, (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.created_at <= ?7
+            AND (e.action='set_safety_lock' OR (e.action='create' AND json_extract(e.payload,'$.safety_lock')))) AS s
+          FROM cases c WHERE c.environment=?1 AND c.vehicle_id=?8 AND c.created_at < ?7) x
+        WHERE x.s IS NOT NULL AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=x.id AND e.created_at > x.s AND e.created_at <= ?7
+          AND (e.action='lift_safety_lock' OR e.to_status IN ('fahrzeug_freigegeben','abgelehnt')))`)
+        .bind(envName, user.id, user.role, `Abfahrtskontrolle trotz Sicherheitssperre${odo !== null ? ` · km-Stand ${odo}` : ''}`,
+          JSON.stringify({ inspection_id: id, code: 'departure_check_while_locked', performed_at: performedAt, ...(odo !== null ? { km: odo } : {}) }), now, performedAt, vehicleId));
     }
     if (repeats.length) { // zwei Anweisungen unabhängig von der Anzahl
       const rk2 = kind === 'nach_reparatur' ? ['Kontrolle nach Reparatur', 'repeat_repair_check'] : ['Abfahrtskontrolle', 'repeat_departure_check'];

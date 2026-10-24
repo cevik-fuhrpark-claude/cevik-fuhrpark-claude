@@ -3499,7 +3499,7 @@ await test('Positionen je Vorgang per Index (keine Volltabellen-Suche): Arbeitsz
   }
 });
 
-await test('Fuhrparkagent: Vorgang ohne Bewegung (CASE_STALE) nur mit Einstellung, Bezug letzte Änderung, nicht bei „wartet auf Teile“/unbewertet', async () => {
+await test('Fuhrparkagent: Vorgang ohne Bewegung (CASE_STALE) nur mit Einstellung, Bezug letzte Änderung, auch „wartet auf Teile“ (Backlog 253), nicht unbewertet', async () => {
   const V = (await users.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.active !== 0 && !v.eval_excluded).id;
   const mk = async (d) => (await users.fleet.post('/api/cases', { vehicle_id: V, description: d, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
   const cmd = async (cid, action, note = null) => { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; return users.fleet.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload: {} }); };
@@ -3514,13 +3514,14 @@ await test('Fuhrparkagent: Vorgang ohne Bewegung (CASE_STALE) nur mit Einstellun
   eq((await owner.put('/api/settings', { case_stale_days: '7' })).status, 200);
   eq((await owner.get('/api/settings')).data.values.case_stale_days, '7');
   let f = await stale(); const ids = f.map((x) => x.case_id);
-  ok(ids.includes(a) && ids.includes(b), 'bewertet und in Reparatur seit 10 Tagen → Befund'); ok(!ids.includes(w) && !ids.includes(u), 'wartet auf Teile / unbewertet: eigene Befunde');
+  ok(ids.includes(a) && ids.includes(b) && ids.includes(w), 'bewertet, in Reparatur, wartet auf Teile seit 10 Tagen → Befund'); ok(!ids.includes(u), 'unbewertet: eigener Befund');
+  ok(f.find((x) => x.case_id === w).message.includes('wartet auf Teile – letzte Änderung am'), 'Zustand im Text');
   const fa = f.find((x) => x.case_id === a), fb = f.find((x) => x.case_id === b);
   eq(fa.owner_role, 'fleet'); eq(fb.owner_role, 'workshop'); eq(fa.severity, 'hinweis');
   ok(/letzte Änderung am \d{2}\.\d{2}\.\d{4} \(Nachfassen nach 7 Tagen eingestellt\)/.test(fb.message), fb.message);
   // Vorgangsliste „Ohne Bewegung“: gleiche Regel wie der Agent, Einstellung in der Antwort, Werkstatt nur eigene, Fahrer ohne
   let lr = (await users.fleet.get('/api/cases?status=open&stale=1')).data; eq(lr.stale_days, 7);
-  eq(lr.cases.map((c) => c.id).filter((id) => [a, b, w, u].includes(id)).sort().join(), [a, b].sort().join(), 'Liste = Agent-Befunde');
+  eq(lr.cases.map((c) => c.id).filter((id) => [a, b, w, u].includes(id)).sort().join(), [a, b, w].sort().join(), 'Liste = Agent-Befunde');
   eq((await users.fleet.get('/api/cases?status=open')).data.stale_days, 7, 'auch ohne Filter (für den Reiter)');
   const wsl = (await users.ws.get('/api/cases?status=open&stale=1')).data.cases.map((c) => c.id);
   ok(wsl.includes(b) && !wsl.includes(a), 'Werkstatt: eigener Auftrag ja, fremde Meldung nein');
@@ -18014,7 +18015,7 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('async function viewDepartureCheck(') + 6000);
   ok(dep.includes("departureLockBox(vs.find((x) => x.id === id)") && dep.includes("v.availability === 'gesperrt' ? ' – ' + esc(t('locked'))"), 'Kontrolle zeigt Sperre aus der Fahrzeugliste');
   ok(dep.indexOf('showKnown();') < dep.indexOf("if (S.me.role === 'driver') api('GET', '/api/me/vehicles')"), 'Sperre auch für andere Rollen / vor „Meine Fahrzeuge“');
-  ok(app.includes("${kmWarn(r)}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes("photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);"), 'Hinweis nach Senden und aus dem Postausgang');
+  ok(app.includes("${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes('if (lockedPage) {') && app.includes("photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);"), 'Hinweis nach Senden und aus dem Postausgang');
   // 2. Fahrzeugwechsel mit „Bisherige Zuordnung beenden“: Ende steht im Protokoll des alten Fahrzeugs
   eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id })).status, 201);
   eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: true })).status, 201);
@@ -18831,7 +18832,7 @@ await test('Disposition erster Tag (23.10.): Nachweistext der Fahrerzuordnung nu
 await test('Unfall nachts (23.10.): offline gespeicherte kritische Meldung/Kontrolle zeigt Weg zu „Panne & Notfall“ (Fahrzeug) und 112; Ort in der Vorgangsansicht ohne „(optional)“ (DE/UK/EN)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const callBox = (vid) =>") && app.includes("href=\"${vid ? `#/emergency?v=${esc(vid)}` : '#/emergency'}\"") && app.includes('href="tel:112"'), 'Baustein');
-  eq((app.match(/callBox\(body\.vehicle_id\)/g) || []).length, 2, 'Meldung und Abfahrtskontrolle');
+  eq((app.match(/callBox\(body\.vehicle_id\)/g) || []).length, 3, 'Meldung und Abfahrtskontrolle (offline + gesperrt, Backlog 252)');
   ok(!app.includes("`<p><b>${esc(t('outbox_call'))}</b></p>` : ''"), 'kein Hinweis ohne Weg mehr');
   ok(app.includes("<dt>${esc(t('location_shown'))}</dt>"), 'Anzeige-Beschriftung');
   const { STRINGS } = await import('../public/i18n.js');
@@ -20319,6 +20320,89 @@ await test('Backlog 246 (Betriebsprüfung): Nachweise und Führerscheinkontrolle
   ok(app.includes('[/^#\\/drivers\\/records$/, viewDriverRecords], [/^#\\/drivers\\/([\\w-]+)$/, viewDriver]') && app.includes('href="#/drivers/records" id="drlink"'), 'Route vor der Fahrerakte, Link');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['dr_title', 'dr_link', 'dr_hint', 'dr_docs', 'dr_checks', 'dr_st_aktuell', 'dr_st_abgelaufen', 'dr_st_abgeloest', 'dr_st_storniert', 'dr_csv_docs', 'dr_csv_checks', 'dr_truncated']) ok(STRINGS[l][k], `${l} ${k}`);
+});
+
+await test('Backlog 252 (Blickwinkel „Gesperrtes Fahrzeug wird trotzdem bewegt“): Agent meldet km-Zuwachs/Abfahrtskontrolle nach Sperrbeginn (ohne Werkstatt-Probefahrt), Verlaufseintrag am Sperr-Vorgang zur Durchführungszeit (auch offline nachgereicht nach Freigabe)', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const items = (await U.driver.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 100000 })).status, 201);
+  db.prepare('UPDATE odometer_readings SET measured_at=? WHERE vehicle_id=?').run(ago(5), vid);
+  // Kontrolle vor der Sperre (offline, vor 6 h) – danach Vorgang mit Sperre (vor 4 h)
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: ago(6) })).status, 201);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Bremse zieht einseitig')).status, 200);
+  db.prepare('UPDATE cases SET created_at=? WHERE id=?').run(ago(4.5), id);
+  db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='create'`).run(ago(4.5), id);
+  db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='set_safety_lock'`).run(ago(4), id);
+  const used = async () => { eq((await U.fleet.post('/api/agent/run', {})).status, 200); return db.prepare(`SELECT * FROM agent_findings WHERE environment='test' AND finding_code='VEHICLE_USED_WHILE_LOCKED' AND status='offen'`).all(); };
+  const evs = () => db.prepare(`SELECT * FROM case_events WHERE case_id=? AND action='checked_while_locked' ORDER BY created_at`).all(id);
+  eq((await used()).length, 0, 'ohne Nutzung kein Befund'); eq(evs().length, 0, 'Kontrolle vor der Sperre: kein Eintrag');
+  // Werkstatt-Probefahrt (km von Hand durch die Werkstatt) zählt nicht
+  eq((await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 100010 })).status, 201);
+  eq((await used()).length, 0, 'Werkstatt-Eingabe zählt nicht');
+  // Abfahrtskontrolle trotz Sperre mit km-Zuwachs
+  const k = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, odometer_km: 100240 }); eq(k.status, 201, JSON.stringify(k.data)); eq(k.data.vehicle_locked, true);
+  eq(evs().length, 1, 'Verlaufseintrag am Sperr-Vorgang'); const p1 = JSON.parse(evs()[0].payload); eq(p1.code, 'departure_check_while_locked'); eq(p1.km, 100240); eq(evs()[0].actor_id, U.driver.id);
+  const f = await used(); eq(f.length, 1); eq(f[0].severity, 'handeln'); eq(f[0].owner_role, 'fleet'); eq(f[0].case_id, id); eq(f[0].vehicle_id, vid);
+  ok(f[0].message.startsWith('SZ-YC 5513: gesperrt seit ') && f[0].message.includes('km 100.000 → 100.240 (Abfahrtskontrolle, ') && f[0].message.includes('1 Abfahrtskontrolle seit der Sperre, zuletzt'), f[0].message);
+  const { findingMessage, renderFindingMessage } = await import('../public/finding-messages.js');
+  ok(findingMessage(f[0].message_args, '', 'uk').includes('1 перевірка перед виїздом після блокування') && findingMessage(f[0].message_args, '', 'en').includes('km 100,000 → 100,240 (departure check'), 'übersetzt');
+  // Detailansicht der Leitung zeigt den Eintrag; Fahrer sieht den fremden Vorgang nicht
+  const det = (await U.fleet.get(`/api/cases/${id}`)).data; ok(det.events.some((x) => x.action === 'checked_while_locked'), 'Verlauf');
+  // Telematik-ähnlicher späterer Stand durch die Leitung (Eingabe) → höchster Stand im Befund, kein zweiter Befund
+  eq((await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 100400 })).status, 201);
+  const f2 = await used(); eq(f2.length, 1); ok(f2[0].message.includes('100.000 → 100.400 (Eingabe'), f2[0].message);
+  // Sperre aufgehoben → Befund erledigt; offline nachgereichte Kontrolle aus der Sperrzeit bekommt trotzdem den Eintrag, eine aus der Zeit davor nicht
+  eq((await cmd(U.fleet, id, 'lift_safety_lock', { confirm: true }, 'geprüft, Bremse ok')).status, 200);
+  eq((await used()).length, 0, 'nach Aufhebung kein offener Befund');
+  const off = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: ago(3) }); eq(off.status, 201); eq(off.data.vehicle_locked, false, 'heute nicht mehr gesperrt');
+  eq(evs().length, 2, 'nachgereichte Kontrolle aus der Sperrzeit'); eq(JSON.parse(evs()[1].payload).performed_at, off.data.performed_at);
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items, performed_at: ago(4.2) })).status, 201);
+  eq(evs().length, 2, 'Kontrolle vor dem Sperrbeginn (nach Meldung) zählt nicht');
+  // Mangel mit Sperre aus derselben Kontrolle: kein Eintrag „trotz Sperre“ am eben angelegten Vorgang
+  const bad = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items.map((x, i) => i === 0 ? { key: x.key, result: 'mangel', note: 'Bremsleitung nass', safety_relevant: true } : x) });
+  eq(bad.status, 201, JSON.stringify(bad.data)); eq(db.prepare(`SELECT COUNT(*) AS n FROM case_events WHERE action='checked_while_locked'`).get().n, 2, 'eigener Mangel-Vorgang');
+  // Anhänger-Text und Oberfläche
+  for (const l of ['de', 'uk', 'en']) ok(renderFindingMessage('VEHICLE_USED_WHILE_LOCKED_TRAILER', { plate: 'A 1', truck: 'Z 2', at: '24.10.2026 08:00', km_from: 1, km_to: 2, src: 'telematik', date: '24.10.2026' }, l).includes('Z 2'), l);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const key of ['act_checked_while_locked', 'ev_checked_locked', 'ev_checked_locked_km', 'locked_open_followup']) ok(STRINGS[l][key], `${l}.${key}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("e.action === 'checked_while_locked' && p.code === 'departure_check_while_locked'") && app.includes('data-lockedresult'), 'Verlaufstext, stehende Ergebnisseite');
+});
+
+await test('Backlog 253 (Blickwinkel „Auftrag wartet wochenlang auf Teile“): WAITING_PARTS nennt den Liefertermin, überschritten → „handeln“; Werkstattplan führt begonnene Aufträge mit vergangenem Termin unter „in Arbeit“ statt „Termin überschritten“', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: day(3) }, 'Luftfederbalg bestellt')).status, 200);
+  const wp = async () => { eq((await U.fleet.post('/api/agent/run', {})).status, 200); return db.prepare(`SELECT * FROM agent_findings WHERE environment='test' AND finding_code='WAITING_PARTS' AND case_id=? AND status='offen'`).get(id); };
+  let f = await wp(); eq(f.severity, 'hinweis'); ok(f.message.includes(`Liefertermin laut Werkstatt ${day(3)}`), f.message);
+  const { findingMessage } = await import('../public/finding-messages.js');
+  const [y, m, d] = day(3).split('-');
+  ok(findingMessage(f.message_args, '', 'de').includes(`Liefertermin laut Werkstatt ${d}.${m}.${y}`) && findingMessage(f.message_args, '', 'en').includes(`delivery date per workshop ${d}/${m}/${y}`), 'Datum lokalisiert');
+  // Liefertermin verstrichen → „handeln“ mit eigener Empfehlung
+  db.prepare('UPDATE cases SET parts_expected_date=? WHERE id=?').run(day(-2), id);
+  f = await wp(); eq(f.severity, 'handeln'); ok(f.message.includes('überschritten'), f.message); eq(f.next_action, 'Neuen Liefertermin bei der Werkstatt erfragen, Dispo informieren.');
+  ok(findingMessage(f.message_args, '', 'uk').includes('минув'), 'UK');
+  // ohne Liefertermin wie bisher
+  db.prepare('UPDATE cases SET parts_expected_date=NULL WHERE id=?').run(id);
+  f = await wp(); eq(f.severity, 'hinweis'); ok(!f.message.includes('Liefertermin'), f.message);
+  // Werkstattplan: Termin gestern, Auftrag wartet auf Teile → in_work; nicht begonnener Auftrag mit Termin gestern → overdue
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id);
+  const id2 = await (async () => { const x = await U.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB9630051L917317', description: 'Licht', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); return x.data.id; })();
+  eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200); eq((await cmd(U.ws, id2, 'acknowledge')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id2);
+  const p = (await U.fleet.get('/api/workshop/plan?days=14')).data;
+  ok(p.in_work.some((i) => i.id === id) && !p.overdue.some((i) => i.id === id), 'wartet auf Teile → in Arbeit');
+  ok(p.overdue.some((i) => i.id === id2) && !p.in_work.some((i) => i.id === id2), 'nicht begonnen → überschritten');
+  ok(Array.isArray(p.in_work[0].other_dates) && p.in_work[0].vehicle_site_label, 'gleiche Zusatzangaben');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['wplan_inwork', 'wplan_inwork_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(/wartet auf Teile|очікують запчастин|waiting for parts/.test(STRINGS[l].filter_stale_hint), `${l} Filtertext`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const iw = r.in_work || [];") && app.includes("...(r.in_work || [])"), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

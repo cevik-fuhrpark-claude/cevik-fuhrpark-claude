@@ -116,11 +116,21 @@ const BASICS_SQL = `SELECT
      WHERE environment=?1 AND role IN ('fleet','owner','workshop') AND active=1 AND password_hash IS NOT NULL) AS users,
   (SELECT json_group_array(json_object('case_id', case_id, 'n', n)) FROM (SELECT o.case_id, COUNT(*) AS n FROM open_items o JOIN cases c ON c.id=o.case_id
      WHERE c.environment=?1 AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') AND o.status='offen' AND o.safety_relevant=1 GROUP BY o.case_id)) AS safety_open,
-  (SELECT json_group_array(json_object('id', c.id, 'case_no', c.case_no, 'vehicle_id', c.vehicle_id, 'plate', v.plate, 'safety_lock_reason', c.safety_lock_reason,
+  (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'safety_lock_reason', safety_lock_reason,
+       'truck', json_extract(tr, '$.plate'), 'ls', ls,
+       -- Nutzung trotz Sperre (Backlog 252, 25.10.2026): km-Stand bis Sperrbeginn, höchster späterer Stand (ohne Werkstatt-Probefahrt/Abschlusskontrolle/
+       -- Wartung) und Abfahrtskontrollen seit Sperrbeginn – beim gesperrten Anhänger an der fest gekoppelten Zugmaschine (Anhänger ohne km-Zähler)
+       'km_from', (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=mv AND o.measured_at <= ls ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1),
+       'moved', json((SELECT json_object('km', o.km, 'at', o.measured_at, 'src', o.source) FROM odometer_readings o WHERE o.vehicle_id=mv AND o.measured_at > ls
+         AND o.source NOT IN ('kontrolle:nach_reparatur','manuell:workshop') AND o.source NOT LIKE 'wartung:%' ORDER BY o.km DESC, o.measured_at DESC LIMIT 1)),
+       'checks', json((SELECT json_object('n', COUNT(*), 'last', MAX(i.created_at)) FROM inspections i WHERE i.environment=?1 AND i.vehicle_id=mv AND i.kind='abfahrt' AND i.created_at > ls))))
+     FROM (SELECT l1.*, COALESCE(json_extract(l1.tr, '$.id'), l1.vid) AS mv FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.safety_lock_reason,
+       COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock'), c.created_at) AS ls,
        -- gesperrter Anhänger: fest gekoppelte Zugmaschine laut Stammliste (Befundtext nennt sie, 23.10.2026)
-       'truck', CASE WHEN v.kind='anhaenger' THEN (SELECT o.plate FROM vehicles o WHERE o.active=1 AND o.kind='lkw' AND ${PLATE_KEY_SQL('o.trailer_plate')}<>''
-         AND ${PLATE_KEY_SQL('o.trailer_plate')}=${PLATE_KEY_SQL('v.plate')} AND ${COUPLING_PREFERRED_SQL('o')} AND ${COUPLING_PREFERRED_SQL('v')} ORDER BY o.plate LIMIT 1) END))
-     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=?1 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
+       CASE WHEN v.kind='anhaenger' THEN (SELECT json_object('id', o.id, 'plate', o.plate) FROM vehicles o WHERE o.active=1 AND o.kind='lkw' AND ${PLATE_KEY_SQL('o.trailer_plate')}<>''
+         AND ${PLATE_KEY_SQL('o.trailer_plate')}=${PLATE_KEY_SQL('v.plate')} AND ${COUPLING_PREFERRED_SQL('o')} AND ${COUPLING_PREFERRED_SQL('v')} ORDER BY o.plate LIMIT 1) END AS tr,
+       v.id AS vid
+     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=?1 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) l1) l0) AS locked,
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
@@ -230,8 +240,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const safetyOpen = new Map(base.safety_open.map((r) => [r.case_id, r.n]));
 
     // Vorgang ohne Bewegung: nur mit Einstellung `case_stale_days` (leer = aus, keine eigene Frist). Bezug = letzte Änderung am Vorgang
-    // (jede Aktion inkl. Kommentar setzt updated_at); der Text nennt das Datum statt einer laufenden Tageszahl. „Wartet auf Teile“ und
-    // „Abschlusskontrolle“ haben eigene Befunde, unbewertete Meldungen/nicht übernommene Aufträge ebenfalls.
+    // (jede Aktion inkl. Kommentar setzt updated_at); der Text nennt das Datum statt einer laufenden Tageszahl. „Abschlusskontrolle“ hat einen
+    // eigenen Befund, unbewertete Meldungen/nicht übernommene Aufträge ebenfalls. „Wartet auf Teile“ seit 25.10.2026 mit (Backlog 253): der Befund
+    // WAITING_PARTS sagt nichts über das Alter – ein seit Wochen unveränderter Auftrag sah aus wie einer von heute.
     const staleDays = Number(settings.get('case_stale_days'));
     const staleLimit = staleBefore(staleDays);
     const STALE_DE = FINDING_ENUMS.de.STALE; // Zustände mit Nachfassen (Texte in public/finding-messages.js)
@@ -296,8 +307,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
           next_action: closedWs.has(c.workshop_site) ? 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.' : 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
       }
       if (c.status === 'wartet_teile') {
-        add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'handeln' : 'hinweis', owner_role: 'fleet',
-          ...fm('WAITING_PARTS', { label, at: berlinDateTime(c.status_since) }), next_action: 'Teilelieferung klären, Dispo informieren.' });
+        // Liefertermin laut Werkstatt (Backlog 253, 25.10.2026): im Text; überschritten → „handeln“ (Datum stammt von der Werkstatt, keine eigene Frist)
+        const eta = c.parts_expected_date || null; const late = !!eta && eta < fuToday;
+        add({ code: 'WAITING_PARTS', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' || late ? 'handeln' : 'hinweis', owner_role: 'fleet',
+          ...fm(late ? 'WAITING_PARTS_LATE' : 'WAITING_PARTS', { label, at: berlinDateTime(c.status_since), ...(eta ? { eta } : {}) }),
+          next_action: late ? 'Neuen Liefertermin bei der Werkstatt erfragen, Dispo informieren.' : 'Teilelieferung klären, Dispo informieren.' });
       }
       // Kostenfreigabe ausstehend (Grenze überschritten): Zustand, keine Frist – ohne Beträge im Text
       if (c.cost_over_limit_at) {
@@ -322,6 +336,27 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     for (const l of locked) {
       add({ code: 'VEHICLE_LOCKED', subject: l.vehicle_id, case_id: l.id, vehicle_id: l.vehicle_id, severity: 'info', owner_role: 'dispatch',
         ...fm(l.safety_lock_reason ? 'VEHICLE_LOCKED' : 'VEHICLE_LOCKED_DEFAULT', { plate: l.plate, reason: l.safety_lock_reason || null, ...(l.truck ? { truck: l.truck } : {}) }), next_action: 'Bis zur technischen Freigabe nicht einplanen.' });
+    }
+
+    // Gesperrtes Fahrzeug trotzdem genutzt (Backlog 252, 25.10.2026): km-Zuwachs nach Sperrbeginn (Telematik, Kontrolle, Eingabe – ohne
+    // Werkstatt-Probefahrt/Abschlusskontrolle/Wartung) oder Abfahrtskontrolle mit Durchführungszeit nach Sperrbeginn (auch offline nachgereicht).
+    // Keine Schwelle: jeder Zuwachs zählt. Ein Befund je Fahrzeug (mehrere Sperr-Vorgänge → frühester Sperrbeginn).
+    const usedByVehicle = new Map();
+    for (const l of locked) {
+      const mv = l.moved && l.km_from !== null && l.km_from !== undefined && l.moved.km > l.km_from ? l.moved : null;
+      const nChecks = (l.checks && l.checks.n) || 0;
+      if (!mv && !nChecks) continue;
+      const prev = usedByVehicle.get(l.vehicle_id);
+      if (prev && prev.l.ls <= l.ls) continue;
+      usedByVehicle.set(l.vehicle_id, { l, mv, nChecks });
+    }
+    for (const { l, mv, nChecks } of usedByVehicle.values()) {
+      add({ code: 'VEHICLE_USED_WHILE_LOCKED', subject: l.vehicle_id, case_id: l.id, vehicle_id: l.vehicle_id, severity: 'handeln', owner_role: 'fleet',
+        ...fm(l.truck ? 'VEHICLE_USED_WHILE_LOCKED_TRAILER' : 'VEHICLE_USED_WHILE_LOCKED', {
+          plate: l.plate, ...(l.truck ? { truck: l.truck } : {}), at: berlinDateTime(l.ls),
+          ...(mv ? { km_from: l.km_from, km_to: mv.km, src: String(mv.src || '').split(':')[0], date: berlinDate(mv.at).split('-').reverse().join('.') } : {}),
+          ...(nChecks ? { n: nChecks, last: berlinDateTime(l.checks.last) } : {}) }),
+        next_action: 'Klären, wer das gesperrte Fahrzeug bewegt hat; Fahrzeug abstellen und bis zur technischen Freigabe nicht einsetzen.' });
     }
 
     // Freigegeben, aber Restarbeiten offen
