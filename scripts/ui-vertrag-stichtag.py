@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (23.10.2026, Backlog 196): Verträge mit Stichtag – Datumsfeld, Hinweis „Stand zum Stichtag“, Ablesedatum je Vertrag,
-# Mehr-km bei Überschreitung, „Stichtag aufheben“; DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
+# Mehr-km bei Überschreitung, „Stichtag aufheben“, Beschriftung ohne Umbruch (Backlog 242); DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -39,6 +39,7 @@ with sync_playwright() as p:
         body=q.inner_text('body')
         check(NOTE[lang] in body and EXC[lang] not in body,f'{lang} {w}px: Stichtag-Hinweis, keine Überschreitung zum Stichtag')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
+        check(q.evaluate("()=>{const sp=document.querySelector('#ctasof').closest('label').querySelector('span');return sp.getClientRects().length===1&&sp.getBoundingClientRect().height<30}"),f'{lang} {w}px: Beschriftung Stichtag bricht nicht um (Backlog 242)')
         if SHOTS: q.screenshot(path=f'{SHOTS}/stichtag_{lang}_{w}.png', full_page=True)
         q.click('#ctasofx'); q.wait_for_function("()=>!document.querySelector('[data-ct-asof]')", timeout=10000)
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
