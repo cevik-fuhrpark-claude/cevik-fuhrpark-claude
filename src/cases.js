@@ -1282,6 +1282,19 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);
+      // Doppelte Rechnung (Backlog 233): gleiche Rechnungsnummer schon als Fremdleistung gebucht (dieser oder ein anderer Vorgang derselben
+      // Umgebung) → Hinweis mit Fundstellen, Buchung nur nach ausdrücklicher Bestätigung (Sammelrechnung für mehrere Fahrzeuge ist zulässig).
+      // Fremdleistungen buchen nur Inhaber/Fuhrparkleitung (sehen alle Vorgänge und Kosten).
+      const invNo0 = str(p.invoice_no, { max: 60 });
+      const dupConfirmed = flag(p.confirm_duplicate_invoice, 'Bestätigung');
+      if (invNo0 && !dupConfirmed) {
+        const rows = (await env.DB.prepare(`SELECT c.id AS case_id, c.case_no, e.supplier, e.amount_net, e.created_at FROM external_costs e JOIN cases c ON c.id=e.case_id
+          WHERE e.invoice_no = ?1 COLLATE NOCASE AND c.environment=?2 ORDER BY e.created_at LIMIT 10`).bind(invNo0, envName).all()).results;
+        if (rows.length) {
+          const matches = rows.map((r) => ({ case_no: r.case_no, case_id: r.case_id, supplier: r.supplier, amount_net: r.amount_net, booked_at: r.created_at, same_case: r.case_id === c.id }));
+          throw bad('duplicate_invoice', 'Diese Rechnungsnummer ist bereits als Fremdleistung erfasst. Bitte prüfen (doppelte Buchung?) und nur bei Bedarf ausdrücklich bestätigen, z. B. bei einer Sammelrechnung für mehrere Fahrzeuge.', { invoice_no: invNo0, matches });
+        }
+      }
       // Beleg (Backlog 224): optional eine Datei dieses Vorgangs derselben Umgebung (Kostenvoranschlag/Rechnung als PDF oder Foto)
       let ecFile = null;
       if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
@@ -1293,7 +1306,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile');
       // Verlauf nennt Schalter und Rechnungsnummer: nachvollziehbar, ab wann eigene Stunden/Teile nicht mehr zählen (23.10.2026)
       const invNo = str(p.invoice_no, { max: 60 });
-      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}), ...(ecFile ? { file_id: ecFile.id, file_name: ecFile.filename } : {}) };
+      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}), ...(invNo && dupConfirmed ? { duplicate_invoice_confirmed: true } : {}), ...(ecFile ? { file_id: ecFile.id, file_name: ecFile.filename } : {}) };
       break;
     }
     case 'approve_costs': {

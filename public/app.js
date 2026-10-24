@@ -1722,6 +1722,7 @@ async function viewCase(id) {
         if (maybeMine) { S.cmdOffline = null; actDraft(c.id).clear(); }
       } else if (err.code === 'cost_approval_open') viewCase(c.id);
       else if (err.code === 'insufficient_stock' && action === 'add_part' && payload.stock_item_id) stockShortfall(payload.stock_item_id, err.data);
+      else if (err.code === 'duplicate_invoice' && action === 'add_external_cost') dupInvoiceHint(err.data);
     }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
@@ -2034,7 +2035,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     const fd = new FormData(e.target);
     const p = { ...preset };
     for (const [k, v] of fd.entries()) if (k !== 'note' && v !== '') p[k] = v;
-    for (const k of ['confirm', 'confirm_winter_open', 'safety_relevant', 'covers_work_and_parts']) if (k in p) p[k] = true;
+    for (const k of ['confirm', 'confirm_winter_open', 'confirm_duplicate_invoice', 'safety_relevant', 'covers_work_and_parts']) if (k in p) p[k] = true;
     if (p.estimate) { p.valuation = 'estimate'; delete p.estimate; }
     // Zahlen unverändert senden – der Server liest deutsche Schreibweise („4,750“, „1.234,50“); vorher wurde „4,750“ zu „4.750“ und abgewiesen (18.10.2026)
     for (const k of ['hours', 'quantity', 'unit_price_net', 'amount_net']) if (k in p) p[k] = String(p[k]).trim();
@@ -2915,6 +2916,17 @@ function stockShortfall(itemId, data) {
     }
   } else if (it) it.on_hand = data.available;
   sel.focus();
+}
+
+// Fremdleistung mit bereits gebuchter Rechnungsnummer (Backlog 233): Fundstellen im Formular, Häkchen zum ausdrücklichen Bestätigen
+function dupInvoiceHint(data) {
+  const f = $('#af'); const inv = f && f.querySelector('[name=invoice_no]'); if (!inv || !data || !Array.isArray(data.matches)) return;
+  const li = data.matches.map((m) => `<li><a href="#/cases/${esc(m.case_id)}">${esc(m.case_no)}</a>${m.same_case ? ` (${esc(t('dup_invoice_this_case'))})` : ''} · ${esc(m.supplier || '–')} · ${esc(eur(m.amount_net))} · ${esc(fmtD(m.booked_at))}</li>`).join('');
+  let h = $('#dupinv'); if (!h) { h = document.createElement('div'); h.id = 'dupinv'; h.className = 'panel warn small'; h.setAttribute('role', 'status'); inv.after(h); }
+  h.innerHTML = `<p>${esc(t('dup_invoice_hint').replace('{no}', data.invoice_no || inv.value))}</p><ul>${li}</ul><label class="check"><input type="checkbox" name="confirm_duplicate_invoice"> ${esc(t('dup_invoice_confirm'))}</label>`;
+  // andere Nummer eingetippt → Bestätigung gilt nicht mehr
+  inv.oninput = () => { const x = $('#dupinv'); if (x) x.remove(); inv.oninput = null; };
+  h.querySelector('input').focus();
 }
 
 async function viewStock() {

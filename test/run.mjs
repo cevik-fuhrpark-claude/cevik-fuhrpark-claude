@@ -19731,6 +19731,53 @@ await test('Backlog 232 (Teilagent „Werkstatt bucht Teile für zwei Aufträge�
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].stock_short_inline.includes('{q}') && STRINGS[l].stock_short_inline.includes('{u}') && STRINGS[l].stock_short_out, 'Texte ' + l);
 });
 
+const fsSync = await import('node:fs'); const fs0 = () => fsSync;
+await test('Backlog 233 (Blickwinkel „Fuhrparkleitung prüft Rechnungen der Fremdwerkstatt“): Fremdleistung mit bereits gebuchter Rechnungsnummer → Hinweis mit Fundstellen (Vorgang, Lieferant, Betrag), Buchung erst nach Bestätigung, Verlauf vermerkt die Bestätigung; Teilindex', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'RE-DP 1', vin: 'WDB96340310995921', site: 'Dortmund' })).status, 201);
+  const rk = () => 're-' + Math.random().toString(36).slice(2);
+  const prep = async (site, start = true) => {
+    const c = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310995921', description: 'RE doppelte Rechnung ' + site, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+    let v = (await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: 1, payload: { workshop_site: site }, note: 'Test' })).data.version;
+    if (start) v = (await users.ws.post(`/api/cases/${c.data.id}/commands`, { action: 'start_repair', command_id: rk(), expected_version: v })).data.version;
+    return { id: c.data.id, v };
+  };
+  const cmdX = async (u, cs, payload) => { const r = await u.post(`/api/cases/${cs.id}/commands`, { action: 'add_external_cost', command_id: rk(), expected_version: cs.v, payload }); if (r.status === 200) cs.v = r.data.version; return r; };
+  const m = await prep('MUENCHEN', false); const d = await prep('DORTMUND');
+  const caseNoM = (await users.fleet.get(`/api/cases/${m.id}`)).data.case.case_no;
+  eq((await cmdX(users.fleet, m, { supplier: 'Kienzle GmbH', invoice_no: 'RE-7001', amount_net: '312,50' })).status, 200, 'erste Buchung');
+  // gleiche Nummer in anderer Schreibweise → abgewiesen, nichts gebucht
+  const w = await cmdX(users.fleet, d, { supplier: 'Kienzle', invoice_no: ' re-7001 ', amount_net: '312,50' });
+  eq(w.status, 400); eq(w.data.error, 'duplicate_invoice'); eq(w.data.invoice_no, 're-7001'); eq(w.data.matches.length, 1);
+  eq((await users.fleet.get(`/api/cases/${d.id}`)).data.case.version, d.v, 'nichts gebucht');
+  eq((await users.ws.post(`/api/cases/${d.id}/commands`, { action: 'add_external_cost', command_id: rk(), expected_version: d.v, payload: { supplier: 'X', invoice_no: 'RE-7001' } })).status, 403, 'Werkstatt bucht keine Fremdleistung (keine Fundstellen)');
+  // Leitung: Fundstelle mit Vorgangsnummer, Lieferant, Betrag
+  const f = await cmdX(users.fleet, d, { supplier: 'Kienzle', invoice_no: 'RE-7001', amount_net: 100 });
+  eq(f.status, 400); eq(f.data.matches[0].case_no, caseNoM); eq(f.data.matches[0].supplier, 'Kienzle GmbH'); eq(f.data.matches[0].amount_net, 312.5); eq(f.data.matches[0].same_case, false);
+  // bestätigt (Sammelrechnung) → gebucht, Verlauf vermerkt es
+  eq((await cmdX(users.fleet, d, { supplier: 'Kienzle', invoice_no: 'RE-7001', amount_net: 100, confirm_duplicate_invoice: true })).status, 200, 'nach Bestätigung');
+  const ev = (await users.fleet.get(`/api/cases/${d.id}`)).data.events.filter((e) => e.action === 'add_external_cost').pop();
+  const pl = typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload; eq(pl.duplicate_invoice_confirmed, true); eq(pl.invoice_no, 'RE-7001');
+  // gleicher Vorgang erneut → Fundstelle „dieser Vorgang“
+  const s2 = await cmdX(users.fleet, d, { supplier: 'Kienzle', invoice_no: 'RE-7001', amount_net: 100 });
+  eq(s2.status, 400); ok(s2.data.matches.some((x) => x.same_case), 'dieser Vorgang erkannt');
+  // ohne Rechnungsnummer oder mit neuer Nummer wie bisher
+  eq((await cmdX(users.fleet, d, { supplier: 'Kienzle', amount_net: 5 })).status, 200); eq((await cmdX(users.fleet, d, { supplier: 'Kienzle', invoice_no: 'RE-7002', amount_net: 5 })).status, 200);
+  // Teilindex wird von der Abfrage genutzt
+  const sql = fs0().readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(sql.includes('WHERE e.invoice_no = ?1 COLLATE NOCASE AND c.environment=?2'), 'Abfrage passend zum Index');
+  ok(fs0().readFileSync(new URL('../migrations/0081_external_cost_invoice.sql', import.meta.url), 'utf8').includes('ON external_costs(invoice_no COLLATE NOCASE) WHERE invoice_no IS NOT NULL'), 'Migration 0081');
+  const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE external_costs (id TEXT, case_id TEXT, invoice_no TEXT, created_at TEXT); CREATE TABLE cases (id TEXT PRIMARY KEY, environment TEXT);');
+  db.exec(fs0().readFileSync(new URL('../migrations/0081_external_cost_invoice.sql', import.meta.url), 'utf8'));
+  const plan = db.prepare('EXPLAIN QUERY PLAN SELECT c.id FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE e.invoice_no = ?1 COLLATE NOCASE AND c.environment=?2 ORDER BY e.created_at LIMIT 10').all('x', 'y').map((r) => r.detail).join(' | ');
+  ok(plan.includes('idx_external_costs_invoice'), 'Index genutzt: ' + plan);
+  // Oberfläche
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("else if (err.code === 'duplicate_invoice' && action === 'add_external_cost') dupInvoiceHint(err.data);") && app.includes("'confirm_winter_open', 'confirm_duplicate_invoice'"), 'Hinweis + Häkchen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dup_invoice_hint.includes('{no}') && STRINGS[l].dup_invoice_confirm && STRINGS[l].dup_invoice_this_case, 'Texte ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
